@@ -3,6 +3,8 @@ import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { projectUnsubscribeToken } from "@tuti/jobs";
 
+import { optOut } from "./changelog-subscription";
+
 const same = (a: string, b: string) => {
   const given = Buffer.from(a);
   const wanted = Buffer.from(b);
@@ -26,6 +28,6 @@ export async function findOptOut(projectSlug: string, token: string) {
   return {
     project,
     optedOut: (await prisma.emailOptOut.findUnique({ where })) !== null,
-    optOut: () => prisma.emailOptOut.upsert({ where, create: { userId: user.id, projectId: project.id }, update: {} }),
+    optOut: () => optOut(project.id, user.id, "email"),
   };
 }

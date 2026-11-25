@@ -1787,6 +1787,9 @@ model ChangelogSubscriber {
   confirmTokenHash String?   @unique
   confirmExpiresAt DateTime?
   confirmUsedAt    DateTime?
+  /// When a confirmed subscription was last ended by its address's owner or the team (cleared by confirming again):
+  /// the team can't add it back, only a link emailed to the address can.
+  unsubscribedAt   DateTime?
   createdAt        DateTime  @default(now())
 
   project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)

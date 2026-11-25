@@ -1042,6 +1042,24 @@ Decided (2026-11-24):
 - [ ] M9. Tablets and foldables: list and conversation side by side
 - [ ] M10. Builds and releases: development, preview and store builds, over-the-air updates for fixes, the store listings and their reviews. With the first release, the API reference's overview says how the app's session is accepted (left out until there is an app to get)
 
+## Changelog subscribers: the team's list (asked 2026-11-25)
+
+Today only a reader can put an address on the changelog's list (the portal's form, double opt-in, or the Account switch), so a project starts with nobody and can't bring the customers it already has. Featurebase's teams add them (synced customers, the API), send an entry to some customers only, or by email only, and see who's subscribed. This closes those gaps, and tells the team's app when someone leaves the list so it can keep its own in step.
+
+Decided (2026-11-25):
+- **The team's word is consent.** An address the team adds (the API, `users.sync`) is confirmed at once, no email asks; never one that unsubscribed or turned the project's emails off: only a link emailed to the address restarts mail, as today.
+- **One webhook for leaving.** `changelog.unsubscribed` whenever the changelog stops being emailed to an address: its own unsubscribe (the email's link, one click from a mail app, the Account switch), turning all of the project's emails off, or the team removing it (`source` says which).
+- **Groups are the segments.** An entry for some customers only is for reader groups, as docs are; no second way to describe customers.
+- **No languages yet.** The portal has none; translated entries wait until a team asks.
+- **No CSV import.** The API covers it.
+
+- [x] S1. Leaving is recorded and told: `changelog_subscriber.unsubscribedAt`, and the `changelog.unsubscribed` webhook (`email`, the person's `userId` in the project's app where its SSO or API knows the address, `source`: email, account or api, `allEmails`) from every way out, once each. Done (2026-11-25): ending a confirmed subscription sets `unsubscribedAt` (confirming again clears it; the migration marks rows that unsubscribed before it: unconfirmed with no link out, or with an entry emailed to them); the event (Settings → Developers' "Changelog unsubscribe", in the API docs' Webhooks) is saved with the change, in its transaction, when the changelog was being emailed to the address (changelogReach) and this stopped it: the changelog's own unsubscribe (the email's page and one click, `source` email; the Account switch, account; `emailPreferences.update` with an API key, api) and turning all of the project's emails off (the emails' Unsubscribe, email; the Account's, account; `allEmails` true). `userId` is the acting person's where one acted, else the one user at the address (none when several share it). Not again for one already ended, not for an address that never confirmed or whose emails were all off already, not from a private portal (nothing was emailed), and not when `users.delete` erases someone
+- [ ] S2. The team adds and removes subscribers: `changelogSubscribers.add` and `.remove` (up to 1,000 addresses, optional user ids), `subscribedToChangelog` on `users.sync`; confirmed at once, skipping (and naming) addresses that unsubscribed or opted out. Its migration runs S1's backfill again (rows still without `unsubscribedAt`, unconfirmed with no link out or with an entry emailed to them), for the ones S1's previous release unsubscribed while a deploy ran both, and clears it on rows confirmed (`unsubscribedAt` = null where `confirmedAt` is set), for the ones that release confirmed again meanwhile without knowing the column
+- [ ] S3. Changelog → Subscribers in the app (`changelogSubscribers.list`): search, where each stands (changelogReach), how they joined, Remove; the editor's count links to it
+- [ ] S4. An entry for some groups only: hidden from everyone else everywhere it's listed, and emailed only to subscribers in those groups (anonymous ones get entries for everyone)
+- [ ] S5. A private portal's changelog emailed to its readers: subscribers who can read it, with the form for signed-in readers
+- [ ] S6. Email-only entries: emailed to subscribers, listed nowhere, its page only for the team
+
 ## Later
 
 - [ ] The app host's hourly limit on emailed links (`SIGN_IN_LINKS_PER_PORTAL_PER_HOUR`, shared by password resets) is one count for the whole server: on a server with many teams it wants a limit of its own, or none beside the per-address and per-visitor ones

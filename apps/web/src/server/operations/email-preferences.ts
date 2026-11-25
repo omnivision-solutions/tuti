@@ -1,9 +1,9 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { changelogReach, provenAddress, reached } from "@tuti/jobs";
+import { reached } from "@tuti/jobs";
 import { z } from "zod";
 
-import { findSubscription, optOutsAt } from "@/server/changelog-subscription";
+import { changelogAt, findSubscription, optOut, optOutsAt } from "@/server/changelog-subscription";
 
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
@@ -36,27 +36,6 @@ export async function accountEmails(projectId: string, userId: string) {
   return { preferences, changelog };
 }
 
-/**
- * The changelog's subscription at the address the project's emails go to (audienceReach's: the one its SSO gives, or
- * their own), and where it stands subscribed (changelogReach as if confirmed: "private" sends none, "opted-out" none to them).
- */
-export async function changelogAt(projectId: string, userId: string) {
-  const person = await prisma.user.findUniqueOrThrow({
-    where: { id: userId },
-    select: { email: true, emailVerified: true, ssoIdentity: { select: { projectId: true, email: true } } },
-  });
-  const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity : null;
-  // Lowercase, as the changelog's subscribers are; none from a sign-on that gave no address (or a placeholder).
-  const address = (sso ? sso.email : person.email)?.toLowerCase();
-  const email = address && !address.endsWith(".invalid") ? address : null;
-  const [subscriber, reach] = email
-    ? await Promise.all([
-        prisma.changelogSubscriber.findUnique({ where: { projectId_email: { projectId, email } }, select: { token: true, confirmedAt: true } }),
-        changelogReach(projectId, { email, confirmed: true }),
-      ])
-    : [null, null];
-  return { email, subscriber, reach, proven: provenAddress(person, projectId) };
-}
 
 export const updateEmailPreferences = defineOperation({
   name: "emailPreferences.update",
@@ -129,12 +108,14 @@ export const updateEmailPreferences = defineOperation({
     ) {
       throw new OperationError(409, "opted_out", "Emails to your address are turned off, so the changelog can't be sent to it.");
     }
+    // For the changelog.unsubscribed webhook: the person on their Account page, or the team's app (an API key).
+    const source = context.actor.kind === "apiKey" ? "api" : "account";
     const posts = { ownPosts: input.ownPosts, followedPosts: input.followedPosts };
     if (posts.ownPosts !== undefined || posts.followedPosts !== undefined) {
       await prisma.emailPreference.upsert({ where: { userId_projectId: key }, create: { ...key, ...posts }, update: posts });
     }
     if (input.unsubscribed) {
-      await prisma.emailOptOut.createMany({ data: key, skipDuplicates: true });
+      await optOut(context.projectId, userId, source);
     } else if (input.unsubscribed === false) {
       await prisma.emailOptOut.deleteMany({ where: key });
     }
@@ -142,11 +123,11 @@ export const updateEmailPreferences = defineOperation({
       // Signed in with the address proven: confirmed at once, no link to email. Already confirmed, it stays as it was.
       const at = { projectId: context.projectId, email: changelog.email };
       await prisma.changelogSubscriber.createMany({ data: at, skipDuplicates: true });
-      await prisma.changelogSubscriber.updateMany({ where: { ...at, confirmedAt: null }, data: { confirmedAt: new Date() } });
+      await prisma.changelogSubscriber.updateMany({ where: { ...at, confirmedAt: null }, data: { confirmedAt: new Date(), unsubscribedAt: null } });
     } else if (input.changelog === false && changelog?.subscriber) {
       // The unsubscribe link's own way.
       const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { slug: true } });
-      await (await findSubscription(slug, changelog.subscriber.token))?.unsubscribe();
+      await (await findSubscription(slug, changelog.subscriber.token))?.unsubscribe(source, userId);
     }
     return emailPreferences(context.projectId, userId);
   },

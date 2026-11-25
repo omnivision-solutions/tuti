@@ -49,10 +49,17 @@ const optedOutSql = (projectId: string, email: Prisma.Sql) => Prisma.sql`EXISTS 
   WHERE o."projectId" = ${projectId} AND (lower(u."email") = lower(${email}) OR lower(si."email") = lower(${email}))
 )`;
 
-/** ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). audienceSql is its SQL. */
-export async function changelogReach(projectId: string, subscriber: { email: string; confirmed: boolean }): Promise<ChangelogReach> {
-  const [{ optedOut }] = await prisma.$queryRaw<[{ optedOut: boolean }]>`SELECT ${optedOutSql(projectId, Prisma.sql`${subscriber.email}`)} AS "optedOut"`;
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
+/**
+ * ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). audienceSql is its SQL.
+ * `db`: a transaction to read it in (one holding a lock, so it needs no second connection).
+ */
+export async function changelogReach(
+  projectId: string,
+  subscriber: { email: string; confirmed: boolean },
+  db: Prisma.TransactionClient = prisma,
+): Promise<ChangelogReach> {
+  const [{ optedOut }] = await db.$queryRaw<[{ optedOut: boolean }]>`SELECT ${optedOutSql(projectId, Prisma.sql`${subscriber.email}`)} AS "optedOut"`;
+  const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
   // Paused only where projects are paused at all (projectEmailWaits).
   const paused = plansEnabled() && project.emailPausedAt !== null;
   return !subscriber.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : optedOut ? "opted-out" : paused ? "paused" : "gets";

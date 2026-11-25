@@ -6,6 +6,7 @@ export const WEBHOOK_EVENTS = {
   "post.status_changed": "Status changed",
   "comment.created": "New comment",
   "changelog.published": "Changelog published",
+  "changelog.unsubscribed": "Changelog unsubscribe",
   "code_change.ready": "Autopilot found updates",
   "conversation.created": "New conversation",
   "conversation.message_created": "New message from a user",

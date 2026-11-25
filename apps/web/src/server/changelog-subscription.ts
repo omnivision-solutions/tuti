@@ -1,8 +1,18 @@
 import { randomBytes } from "node:crypto";
 
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { changelogConfirmEmail, sendEmail } from "@tuti/email";
-import { changelogReach, type ChangelogReach, emailBrand, projectEmailWaits, projectSender } from "@tuti/jobs";
+import {
+  changelogReach,
+  type ChangelogReach,
+  emailBrand,
+  projectEmailWaits,
+  projectSender,
+  provenAddress,
+  queueDeliveries,
+  reached,
+  recordEvent,
+} from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { hashSecret } from "@/lib/portal-handoff";
@@ -54,6 +64,86 @@ export const optOutsAt = (projectId: string, email: string) => ({
 
 
 /**
+ * The changelog's subscription at the address the project's emails go to (audienceReach's: the one its SSO gives, or
+ * their own), and where it stands subscribed (changelogReach as if confirmed: "private" sends none, "opted-out" none to them).
+ */
+export async function changelogAt(projectId: string, userId: string) {
+  const person = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, emailVerified: true, ssoIdentity: { select: { projectId: true, email: true } } },
+  });
+  const sso = person.ssoIdentity?.projectId === projectId ? person.ssoIdentity : null;
+  // Lowercase, as the changelog's subscribers are; none from a sign-on that gave no address (or a placeholder).
+  const address = (sso ? sso.email : person.email)?.toLowerCase();
+  const email = address && !address.endsWith(".invalid") ? address : null;
+  const [subscriber, reach] = email
+    ? await Promise.all([
+        prisma.changelogSubscriber.findUnique({ where: { projectId_email: { projectId, email } }, select: { token: true, confirmedAt: true } }),
+        changelogReach(projectId, { email, confirmed: true }),
+      ])
+    : [null, null];
+  return { email, subscriber, reach, proven: provenAddress(person, projectId) };
+}
+
+/**
+ * How the changelog stopped being emailed to an address, for the changelog.unsubscribed webhook: the email's own link
+ * (its page or one click from a mail app, the project's Unsubscribe too), the portal's Account, or the team's app (the API).
+ */
+export type UnsubscribeSource = "email" | "account" | "api";
+
+/**
+ * The changelog.unsubscribed event (its deliveries saved with `tx`, to queue once it commits): the address, the
+ * person's id in the project's app, how, and whether it was all of the project's emails or just the changelog. The id
+ * is `by`'s (the account that acted) where it's known, else that of the one user the project's SSO or API has at the
+ * address; null for none, or several (addresses aren't unique).
+ */
+async function recordUnsubscribe(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  email: string,
+  { source, allEmails, by }: { source: UnsubscribeSource; allEmails: boolean; by?: string },
+) {
+  const known = await tx.ssoIdentity.findMany({
+    where: { projectId, ...(by ? { userId: by } : { email: { equals: email, mode: "insensitive" } }) },
+    select: { externalId: true },
+    take: 2,
+  });
+  return recordEvent(tx, projectId, "changelog.unsubscribed", {
+    email,
+    userId: known.length === 1 ? known[0]!.externalId : null,
+    source,
+    allEmails,
+    unsubscribedAt: new Date(),
+  });
+}
+
+/**
+ * Whether the changelog is emailed to `email` now (a confirmed subscriber that changelogReach reaches), with its row
+ * locked till `tx` ends: every way out at an address takes it first, so they take turns, each sees what the one before
+ * did, and only the one that stops it tells webhooks. Read in `tx` too: a second connection, waited for while holding
+ * the lock, would run the pool dry under a burst of one-click unsubscribes.
+ */
+async function emailedNow(tx: Prisma.TransactionClient, projectId: string, email: string) {
+  const [row] = await tx.$queryRaw<{ confirmed: boolean }[]>`
+    SELECT "confirmedAt" IS NOT NULL AS confirmed FROM "changelog_subscriber" WHERE "projectId" = ${projectId} AND "email" = ${email} FOR UPDATE`;
+  return !!row?.confirmed && reached(await changelogReach(projectId, { email, confirmed: true }, tx));
+}
+
+/**
+ * Turns off all of the project's emails for someone (the opt-out), telling webhooks changelog.unsubscribed when that
+ * stops the changelog at their address (changelogAt's): only when it was being emailed there and this is what stopped it.
+ */
+export async function optOut(projectId: string, userId: string, source: UnsubscribeSource) {
+  const { email } = await changelogAt(projectId, userId);
+  const deliveries = await prisma.$transaction(async (tx) => {
+    const stops = email !== null && (await emailedNow(tx, projectId, email));
+    const { count } = await tx.emailOptOut.createMany({ data: { userId, projectId }, skipDuplicates: true });
+    return count === 1 && stops ? recordUnsubscribe(tx, projectId, email, { source, allEmails: true, by: userId }) : [];
+  });
+  await queueDeliveries(deliveries);
+}
+
+/**
  * Emails a subscriber a confirmation link of their own (32 random bytes, stored hashed like sign-in links), used once,
  * for CONFIRM_LINK_HOURS. It replaces any link sent before, so an old one (forwarded, say) confirms nothing. To an
  * address that's turned all of the project's emails off, it says so and turns them back on, rather than promising the
@@ -99,18 +189,34 @@ export async function findSubscription(projectSlug: string, token: string) {
   if (!subscriber) {
     return null;
   }
+  // Where they stand, by the sender's own rule (changelogReach): what their page says.
+  const reach = await changelogReach(subscriber.projectId, { email: subscriber.email, confirmed: subscriber.confirmedAt !== null });
   return {
     ...subscriber,
-    // Where they stand, by the sender's own rule (changelogReach): what their page says.
-    reach: await changelogReach(subscriber.projectId, { email: subscriber.email, confirmed: subscriber.confirmedAt !== null }),
+    reach,
     // The project's email is paused: no link can be emailed for now (opted out, they'd ask for one).
     paused: await projectEmailWaits(subscriber.projectId),
-    // Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can).
-    unsubscribe: () =>
-      prisma.changelogSubscriber.updateMany({
-        where: { id: subscriber.id, token },
-        data: { confirmedAt: null, confirmTokenHash: null, confirmExpiresAt: null, confirmUsedAt: null },
-      }),
+    /**
+     * Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can). A confirmed
+     * one is marked unsubscribed (the team can't add it back), and webhooks hear changelog.unsubscribed if it was being
+     * emailed (changelogReach): not again for one already ended, nor where all of the project's emails were off already.
+     * `by`: the account that did it, where one did (the Account switch), named in the event.
+     */
+    unsubscribe: async (source: UnsubscribeSource, by?: string) => {
+      const deliveries = await prisma.$transaction(async (tx) => {
+        const stops = await emailedNow(tx, subscriber.projectId, subscriber.email);
+        const { count } = await tx.changelogSubscriber.updateMany({
+          where: { id: subscriber.id, token, confirmedAt: { not: null } },
+          data: { unsubscribedAt: new Date() },
+        });
+        await tx.changelogSubscriber.updateMany({
+          where: { id: subscriber.id, token },
+          data: { confirmedAt: null, confirmTokenHash: null, confirmExpiresAt: null, confirmUsedAt: null },
+        });
+        return count === 1 && stops ? recordUnsubscribe(tx, subscriber.projectId, subscriber.email, { source, allEmails: false, by }) : [];
+      });
+      await queueDeliveries(deliveries);
+    },
   };
 }
 
@@ -160,7 +266,7 @@ export async function findConfirmation(projectSlug: string, confirm: string) {
         const now = new Date();
         const { count } = await tx.changelogSubscriber.updateMany({
           where: { id, confirmTokenHash, confirmExpiresAt: { gt: now }, confirmUsedAt: null, project: { portalAccess: "PUBLIC" } },
-          data: { confirmedAt: now, confirmUsedAt: now },
+          data: { confirmedAt: now, confirmUsedAt: now, unsubscribedAt: null },
         });
         // Only the opt-outs from before the link was sent: one made since stays (and voids the link).
         if (count === 1 && emailsOn) {
