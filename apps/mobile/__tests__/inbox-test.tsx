@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Alert, AppState } from "react-native";
 
 import Inbox from "@/app/index";
+import { type Conversation, markRead } from "@/lib/conversation";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
@@ -216,6 +217,42 @@ describe("the Inbox", () => {
     const calls = mockApi.mock.calls.length;
     await act(async () => mockFocus!());
     expect(mockApi.mock.calls.length).toBe(calls);
+  });
+
+  it("fetches a conversation's row and the counts again once its read is saved, after a fetch on coming back that beat it", async () => {
+    const opened = row("Invite link expired", { unread: true });
+    serve({ "/conversations?view=open&limit": page([opened]) });
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("button", { name: /^Unread, Maya Chen, Northwind: Invite link expired/ }));
+
+    // The conversation's screen marks it read; the request is slow, and the server says unread till it's saved.
+    let read = false;
+    let saveRead!: () => void;
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) => (path === rowPath("open", opened.number) ? Promise.resolve(page([{ ...opened, unread: !read }])) : served(path)));
+    const reading = markRead(
+      () =>
+        new Promise((resolve) => {
+          saveRead = () => {
+            read = true;
+            resolve({});
+          };
+        }) as never,
+      { number: opened.number, messages: [] } as unknown as Conversation,
+    );
+    // Back in the Inbox before the read is saved: that fetch still says unread.
+    await act(async () => mockFocus!());
+    expect(screen.getByRole("button", { name: /\(#\d+\)/ })).toHaveAccessibleName(/^Unread, /);
+    const fetched = mockApi.mock.calls.filter(([path]) => path === rowPath("open", opened.number)).length;
+    const counted = mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length;
+
+    await act(async () => {
+      saveRead();
+      await reading;
+    });
+    expect(mockApi.mock.calls.filter(([path]) => path === rowPath("open", opened.number)).length).toBe(fetched + 1);
+    expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(counted + 1);
+    expect(screen.getByRole("button", { name: /\(#\d+\)/ })).toHaveAccessibleName(/^Maya Chen, Northwind: Invite link expired/);
   });
 
   it("starts the next page one earlier once a conversation shown leaves the view", async () => {

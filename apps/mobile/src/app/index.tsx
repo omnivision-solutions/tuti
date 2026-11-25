@@ -4,6 +4,7 @@ import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pre
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
 import { InboxRow } from "@/components/inbox-row";
+import { onRead } from "@/lib/conversation";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { useApi, useSession } from "@/lib/session";
@@ -284,6 +285,9 @@ export default function Inbox() {
       onLive(false, [returned.number]);
     }
   }, [returned]);
+  // A conversation marked read (in its screen, its read maybe answering after the fetch above): its row and the counts
+  // again, whether the Inbox is in front or not.
+  useEffect(() => onRead((number) => onLive(false, [number])), []);
 
   const current = projects?.find((p) => p.slug === project);
   const searching = !!q;

@@ -47,8 +47,22 @@ export const droppedLine = (dropped: number) => `${dropped === 1 ? "1 attachment
 export const getConversation = (api: Api, number: number) => api<Conversation>(`/conversations/${number}`);
 
 /** Read up to the latest message shown, never one that came after it. */
+/**
+ * Who wants to know a conversation was marked read, by its number: the Inbox, which shows it unread till it fetches its
+ * row again. A read sends no live change (unread is each teammate's own), and it may finish after the Inbox fetched the
+ * row on coming back.
+ */
+const readListeners = new Set<(number: number) => void>();
+export function onRead(listener: (number: number) => void) {
+  readListeners.add(listener);
+  return () => void readListeners.delete(listener);
+}
+
 export const markRead = (api: Api, conversation: Conversation) =>
-  api(`/conversations/${conversation.number}/read`, { method: "POST", body: { seen: conversation.messages.at(-1)?.createdAt ?? null } });
+  api(`/conversations/${conversation.number}/read`, { method: "POST", body: { seen: conversation.messages.at(-1)?.createdAt ?? null } }).then((answer) => {
+    readListeners.forEach((listener) => listener(conversation.number));
+    return answer;
+  });
 
 /**
  * Marks it read when it has something unread and the teammate is `looking` (the screen focused, the app in front), as
