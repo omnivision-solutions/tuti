@@ -50,6 +50,21 @@ vi.mock("@tuti/email", async (importOriginal) => {
 afterEach(() => {
   sending.hook = null;
 });
+// A removal of the team's to fail once, when it names this address (a lost connection, say).
+const removing = vi.hoisted(() => ({ failFor: null as string | null }));
+vi.mock("./changelog-subscription", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./changelog-subscription")>();
+  return {
+    ...real,
+    removeSubscribers: async (...args: Parameters<typeof real.removeSubscribers>) => {
+      if (removing.failFor && args[1].some((person) => person.email === removing.failFor)) {
+        removing.failFor = null;
+        throw new Error("The database went away");
+      }
+      return real.removeSubscribers(...args);
+    },
+  };
+});
 // The Account page's forms' router.
 vi.mock("next/navigation", async (original) => ({
   ...(await original<typeof import("next/navigation")>()),
@@ -1820,6 +1835,17 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     release();
     await held;
     expect(await adding).toEqual({ subscribed: [], skipped: [{ email, user: null, reason: "opted_out" }] });
+  });
+
+  test("users.sync's false with a new address, failing after the users are saved: sending it again stops the old address", async () => {
+    const [old, next] = [newAddress(), newAddress()];
+    await call(syncUsersOperation, key(), { users: [{ id: "app-moving", email: old, subscribedToChangelog: true }] });
+    const moving = { users: [{ id: "app-moving", email: next, subscribedToChangelog: false }] };
+    removing.failFor = next;
+    await expect(call(syncUsersOperation, key(), moving)).rejects.toThrow("The database went away");
+    await call(syncUsersOperation, key(), moving);
+    expect((await row(old))!.confirmedAt).toBeNull();
+    expect(await told()).toEqual([{ email: old, userId: "app-moving", source: "api", allEmails: false }]);
   });
 
   test("users.sync's subscribedToChangelog: true adds their address (the one just synced), false removes it", async () => {
