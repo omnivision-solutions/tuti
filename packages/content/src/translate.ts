@@ -102,7 +102,7 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
     // A tag is empty unless something comes inside it (two bold words joined may share one text node).
     const fill = () => stack.forEach((tag) => (tag.filled = true));
     const pushText = (raw: string) => {
-      const value = unescape(flat(raw));
+      const value = flat(unescape(raw));
       if (!value) return;
       // Only words fill a tag: a link around a space is a link no one can see.
       if (value.trim()) fill();
@@ -255,7 +255,7 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
     const out = translated
       .split(/(<x\d+\/>|<br\s*\/?>)/)
       .map((part, i) => {
-        if (i % 2 === 0) return unescape(flat(part));
+        if (i % 2 === 0) return flat(unescape(part));
         const id = /^<x(\d+)\/>$/.exec(part)?.[1];
         if (!id) return "\n";
         const n = Number(id);

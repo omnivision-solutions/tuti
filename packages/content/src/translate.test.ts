@@ -322,3 +322,7 @@ test("a segment with no words may come back with no words", async () => {
   const out = await translateSegments([{ id: "1", text: "<x1/> 👍" }], { to: "German", ask: async () => '{"segments": {"1": "<x1/> 👍"}}' });
   expect(out.translations).toEqual({ "1": "<x1/> 👍" });
 });
+
+test("a newline written as an entity is a space too", () => {
+  expect(segmentOfText("Hi there").apply("Hallo&#10;zusammen&#13;&#10;!")).toBe("Hallo zusammen !");
+});
