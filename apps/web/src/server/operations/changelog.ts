@@ -11,7 +11,7 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
-import { automaticDesign, COVER_DESIGNS, coverContent, coverDesigns, CoverPictureUnread, drawCover, MAX_COVER_HEADLINE } from "../cover-card";
+import { automaticDesign, COVER_DESIGNS, type CoverDesign, coverContent, coverDesigns, CoverPictureUnread, drawCover, MAX_COVER_HEADLINE } from "../cover-card";
 import { lastingImage, lastingMediaUrls } from "../media-urls";
 import {
   blocksToNotes,
@@ -794,46 +794,81 @@ export const composeChangelogCover = defineOperation({
   }),
   output: entryOutput.describe("The entry, with its new cover"),
   example: { design: "auto" },
-  run: async ({ actor, projectId }, { number, design, headline }) => {
-    const portal = await projectPortal(projectId);
-    const entry = await teamEntry(projectId, number);
-    if (!mediaStorage()) {
-      throw new OperationError(503, "uploads_unavailable", "Uploads aren't set up on this server");
-    }
-    const [brand, project] = await Promise.all([branding({ id: projectId }), prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } })]);
-    const content = await coverContent(projectId, entry, headline);
-    const picked = design === "auto" ? automaticDesign(content) : design;
-    if (!coverDesigns(content).includes(picked)) {
-      throw new OperationError(400, "invalid_input", picked === "screenshot" ? "This entry has no image at least 600px wide for the Screenshot design" : "This entry needs two headings for the Sections design");
-    }
-    // Drawing and storing: never under the project lock (storeImage takes it itself). A design asked for by name is that
-    // design or nothing: Screenshot whose image storage won't give just now isn't kept as a Title cover (`auto` is).
-    const png = await drawCover({ project, brand: brand! }, content, picked, undefined, { asAsked: design !== "auto" }).catch((error: unknown) => {
-      if (error instanceof CoverPictureUnread) {
-        throw new OperationError(503, "copy_failed", "Couldn't read the entry's image just now: try again in a moment");
-      }
-      throw error;
-    });
-    const stored = await storeImage(png, { projectId, uploaderId: uploaderOf(actor) });
-    if (!("mediaId" in stored)) {
-      throw stored.leftOut === "quota"
-        ? new OperationError(409, "no_room", "The cover can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour")
-        : new OperationError(503, "copy_failed", "Couldn't keep the cover just now: try again in a moment");
-    }
-    const updated = await saving(() =>
-      prisma.$transaction(async (tx) => {
-        await attachCover(tx, projectId, stored.mediaId);
-        // Deleted while its cover was drawn: gone, not an error of ours (the upload, in no entry, is freed like any unused one).
-        const { count } = await tx.changelogEntry.updateMany({ where: { id: entry.id }, data: { coverId: stored.mediaId } });
-        if (count === 0) {
-          throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
-        }
-        return tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
-      }),
-    );
-    return entryView(updated, portal);
-  },
+  run: (context, input) => composeCover(context, input),
 });
+
+/**
+ * changelog.composeCover's work. `ifBare` (the Publish dialog's pick): the cover is set only on a draft that still has
+ * none when it's drawn, so a cover a teammate set, or an entry they published, meanwhile stays as it is.
+ */
+export async function composeCover(
+  { actor, projectId }: { actor: Actor; projectId: string },
+  { number, design, headline }: { number: number; design: CoverDesign | "auto"; headline?: string },
+  { ifBare = false } = {},
+) {
+  const portal = await projectPortal(projectId);
+  const entry = await teamEntry(projectId, number);
+  // Nothing to draw: it has a cover or is out (checked again where it's set, as that can change while the cover is drawn),
+  // or it has lines left to fill in, so publishing will refuse it and a cover would be kept for nothing.
+  if (ifBare && (entry.cover !== null || entry.publishedAt !== null || markersIn(displayDoc(entry)).length > 0)) {
+    return entryView(entry, portal);
+  }
+  if (!mediaStorage()) {
+    throw new OperationError(503, "uploads_unavailable", "Uploads aren't set up on this server");
+  }
+  const [brand, project] = await Promise.all([branding({ id: projectId }), prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } })]);
+  const content = await coverContent(projectId, entry, headline);
+  const picked = design === "auto" ? automaticDesign(content) : design;
+  if (!coverDesigns(content).includes(picked)) {
+    throw new OperationError(400, "invalid_input", picked === "screenshot" ? "This entry has no image at least 600px wide for the Screenshot design" : "This entry needs two headings for the Sections design");
+  }
+  // Drawing and storing: never under the project lock (storeImage takes it itself). A design asked for by name is that
+  // design or nothing: Screenshot whose image storage won't give just now isn't kept as a Title cover (`auto` is).
+  const png = await drawCover({ project, brand: brand! }, content, picked, undefined, { asAsked: design !== "auto" }).catch((error: unknown) => {
+    if (error instanceof CoverPictureUnread) {
+      throw new OperationError(503, "copy_failed", "Couldn't read the entry's image just now: try again in a moment");
+    }
+    throw error;
+  });
+  const stored = await storeImage(png, { projectId, uploaderId: uploaderOf(actor) });
+  if (!("mediaId" in stored)) {
+    throw stored.leftOut === "quota"
+      ? new OperationError(409, "no_room", "The cover can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour")
+      : new OperationError(503, "copy_failed", "Couldn't keep the cover just now: try again in a moment");
+  }
+  const updated = await saving(() =>
+    prisma.$transaction(async (tx) => {
+      await attachCover(tx, projectId, stored.mediaId);
+      // Deleted while its cover was drawn: gone, not an error of ours (the upload, in no entry, is freed like any unused one).
+      const { count } = await tx.changelogEntry.updateMany({
+        where: { id: entry.id, ...(ifBare && { coverId: null, publishedAt: null }) },
+        data: { coverId: stored.mediaId },
+      });
+      const now = await tx.changelogEntry.findUnique({ where: { id: entry.id }, select: entrySelect });
+      if (!now) {
+        throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
+      }
+      // Covered or published meanwhile: theirs stays, and the drawing (attached above) goes with this transaction.
+      if (count === 0) {
+        throw new Kept(now);
+      }
+      return now;
+    }),
+  ).catch((error: unknown) => {
+    if (error instanceof Kept) {
+      return error.entry;
+    }
+    throw error;
+  });
+  return entryView(updated, portal);
+}
+
+/** Rolls back a cover that's no longer wanted, carrying the entry as it is. */
+class Kept extends Error {
+  constructor(readonly entry: Prisma.ChangelogEntryGetPayload<{ select: typeof entrySelect }>) {
+    super("kept");
+  }
+}
 
 export const draftChangelogEntry = defineOperation({
   name: "changelog.draft",

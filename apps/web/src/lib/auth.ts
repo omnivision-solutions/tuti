@@ -13,7 +13,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
-import { APP_ORIGIN, appSignIn, keepAppSignInLink, noAccountFromApp } from "./app-sign-in";
+import { APP_ORIGIN, appSignIn, noAccountFromApp } from "./app-sign-in";
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -24,18 +24,8 @@ import { jwtSso } from "./sso";
 
 /** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
-  const link = metadata as SignInLinkMetadata;
-  await prisma.signInLink.update({ where: { id: link.linkId }, data: { tokenHash: hashSecret(token) } });
-  if ("app" in link) {
-    // The mobile app's (lib/app-sign-in.ts): opened on the app's host, from Tuti, and it sends the app that asked a
-    // code for the session. What the app asked with stays here, for as long as the link works: nothing of it is in the link.
-    await keepAppSignInLink(token, link.app, new Date(Date.now() + SIGN_IN_LINK_MINUTES * 60_000));
-    const url = new URL("/app/auth/app-link", appUrl());
-    url.searchParams.set("token", token);
-    await sendEmail({ to: email, ...signInLinkEmail({ projectName: "Tuti", fromTuti: true, url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }) });
-    return;
-  }
-  const { slug, projectName, next } = link;
+  const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
+  await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
   // After the address: it can have a path (a portal under its site's /portal).
   const url = new URL(`${await portalAddress(slug)}/sign-in/link`);
   url.searchParams.set("token", token);
@@ -362,8 +352,8 @@ export const auth = betterAuth({
     magicLink({ expiresIn: SIGN_IN_LINK_MINUTES * 60, storeToken: "hashed", sendMagicLink: sendSignInLink }),
     // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
     genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
-    // The mobile app (lib/app-sign-in.ts): a sign-in it starts (Google, GitHub) or asks for (the emailed link) ends in
-    // the device's browser with a redirect to tuti://…, which carries a code the app exchanges for the session.
+    // The mobile app (lib/app-sign-in.ts): a Google or GitHub sign-in it starts ends in the device's browser with a
+    // redirect to tuti://…, which carries a code the app exchanges for the session; its password sign-in is the web's.
     appSignIn(),
     nextCookies(),
   ],
