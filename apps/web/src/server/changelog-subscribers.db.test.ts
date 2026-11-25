@@ -19,7 +19,7 @@ import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
-import { addChangelogSubscribers, removeChangelogSubscribers } from "@/server/operations/changelog-subscribers";
+import { addChangelogSubscribers, listChangelogSubscribers, removeChangelogSubscribers } from "@/server/operations/changelog-subscribers";
 import { emailPreferences, updateEmailPreferences } from "@/server/operations/email-preferences";
 import { syncUsersOperation } from "@/server/operations/users";
 import { call } from "@/server/operations/run";
@@ -1913,5 +1913,45 @@ test("S2's migration marks again the rows the release before S1 unsubscribed mea
     [askedAgain.id]: true,
     [confirmedAgain.id]: false,
     [confirmedOne.id]: false,
+  });
+});
+
+describe("the list (changelogSubscribers.list, Users → Subscribers)", () => {
+  test("every address, users or not, newest first: where each stands, the user at it, found by search and by status", async () => {
+    const tag = randomUUID();
+    const at = (name: string) => `e2e-${tag}-${name}@example.com`;
+    await call(addChangelogSubscribers, team(), { emails: [at("added")] });
+    expect(await subscribe(at("pending"))).toEqual({ sentTo: at("pending") });
+    const left = await confirmed(at("left"));
+    expect((await unsubscribe(left)).status).toBe(303);
+    const sam = await ssoUser(at("sam"));
+    await call(addChangelogSubscribers, team(), { emails: [at("sam")] });
+    await optOut(sam.id);
+    await call(addChangelogSubscribers, team(), { emails: [at("removed")] });
+    await call(removeChangelogSubscribers, team(), { emails: [at("removed")] });
+    // Created in this order a millisecond apart at least: newest first.
+    const list = (input: { q?: string; status?: "subscribed" | "pending" | "unsubscribed" | "opted_out" | "removed"; limit?: number; cursor?: number }) =>
+      call(listChangelogSubscribers, team(), { q: tag, limit: 50, cursor: 0, ...input });
+    expect(await list({})).toEqual({
+      subscribers: [
+        { email: at("removed"), user: null, status: "removed", subscribedAt: null, createdAt: expect.any(String) },
+        { email: at("sam"), user: sam.id, status: "opted_out", subscribedAt: expect.any(String), createdAt: expect.any(String) },
+        { email: at("left"), user: null, status: "unsubscribed", subscribedAt: null, createdAt: expect.any(String) },
+        { email: at("pending"), user: null, status: "pending", subscribedAt: null, createdAt: expect.any(String) },
+        { email: at("added"), user: null, status: "subscribed", subscribedAt: expect.any(String), createdAt: expect.any(String) },
+      ],
+      nextCursor: null,
+      total: 5,
+    });
+    expect((await list({ status: "subscribed" })).subscribers.map((s) => s.email)).toEqual([at("added")]);
+    expect((await list({ q: `${tag}-PEND` })).subscribers.map((s) => s.email)).toEqual([at("pending")]);
+    // "_" is a character, not a wildcard.
+    expect((await list({ q: `${tag}_pend` })).total).toBe(0);
+    const pages = [await list({ limit: 2 }), await list({ limit: 2, cursor: 4 }), await list({ limit: 2, cursor: 6 })];
+    expect(pages.map((p) => [p.subscribers.length, p.nextCursor, p.total])).toEqual([
+      [2, "2", 5],
+      [1, null, 5],
+      [0, null, 5],
+    ]);
   });
 });

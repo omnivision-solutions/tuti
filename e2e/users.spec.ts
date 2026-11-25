@@ -39,7 +39,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   // One pane: Users in its header, its views as pills (People with how many), Sync from your app at its right end.
   const header = owner.getByRole("region", { name: "Users" }).locator('[data-slot="pane-header"]');
   await expect(header.getByRole("heading", { name: "Users", level: 1 })).toBeVisible();
-  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People 3", "Companies"]);
+  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People 3", "Companies", "Subscribers"]);
   await expect(header.getByRole("link", { name: /^People\s*3$/ })).toHaveAttribute("aria-current", "page");
   await expect(header.getByRole("link", { name: "Sync from your app" })).toHaveAttribute("href", "/api/docs#users.sync");
   const table = owner.getByRole("main").getByRole("table");
@@ -529,4 +529,41 @@ test("on a phone, Who's asking's suggestion of a long-named property stays insid
   const trigger = (await value.boundingBox())!;
   expect(trigger.x + trigger.width).toBeLessThanOrEqual(box.x + box.width);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+});
+
+test("Users → Subscribers lists the changelog's email subscribers, users or not, and an admin removes one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+
+  // None yet: the view says how they get there.
+  await owner.goto(`/app/${slug}/users`);
+  await owner.getByRole("link", { name: "Subscribers" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users\\?view=subscribers$`));
+  await expect(owner.getByText("No subscribers yet")).toBeVisible();
+
+  // The team's app adds a user of theirs and an address with no user.
+  await api("/users", { users: [{ id: "user-1", name: "Ada Lovelace", email: "e2e-ada@example.com" }] });
+  await api("/changelog-subscribers", { users: ["user-1"], emails: ["e2e-reader@example.com"] });
+  await owner.reload();
+  const rows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");
+  await expect(rows).toHaveCount(2);
+  const ada = rows.filter({ hasText: "e2e-ada@example.com" });
+  await expect(ada).toContainText("Subscribed");
+  await expect(ada.getByRole("link", { name: "User user-1" })).toHaveAttribute("href", `/app/${slug}/users/user-1`);
+  await checkpoint(owner, "subscribers");
+
+  // Remove asks first; then they're removed, and Subscribed no longer lists them.
+  await rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button", { name: "Remove e2e-reader@example.com" }).click();
+  await expect(owner.getByRole("alertdialog")).toContainText("They stop getting your changelog by email.");
+  await owner.getByRole("button", { name: "Remove subscriber" }).click();
+  await expect(owner.getByText("e2e-reader@example.com removed")).toBeVisible();
+  await expect(rows.filter({ hasText: "e2e-reader@example.com" })).toContainText("Removed");
+  await expect(rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button")).toHaveCount(0);
+  await owner.getByRole("combobox", { name: "Status" }).click();
+  await owner.getByRole("option", { name: "Subscribed", exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("e2e-ada@example.com");
 });

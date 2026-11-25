@@ -1,0 +1,57 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { removeChangelogSubscriber } from "@/server/groups";
+
+/** Users → Subscribers' Remove: stops the changelog's emails to one address, after asking. */
+export function RemoveSubscriberButton({ projectSlug, email }: { projectSlug: string; email: string }) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label={`Remove ${email}`}>
+        Remove
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="wrap-anywhere">Remove {email}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            They stop getting your changelog by email. Your app can add them back with the API.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await removeChangelogSubscriber(projectSlug, email);
+                if (result.error) {
+                  toast.error(result.error);
+                  return;
+                }
+                setOpen(false);
+                toast.success(`${email} removed`);
+              })
+            }
+          >
+            Remove subscriber
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
