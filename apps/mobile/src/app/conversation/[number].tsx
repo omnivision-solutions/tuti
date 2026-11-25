@@ -596,7 +596,8 @@ function UnsentBubble({ unsent, sending, colors, onRetry, onEdit, onDiscard }: {
       {/* An edit kept as its first version had gone out is announced, on both platforms: not read twice here. */}
       <View style={styles.unsentStatus} accessibilityLiveRegion={unsent.error === FIRST_SENT ? "none" : "polite"}>
         <Text style={[styles.meta, { color: sending ? colors.muted : colors.error, textAlign: "right" }]}>
-          {sending ? "Sending…" : unsent.error ? `Not sent: ${unsent.error}` : "Not sent"}
+          {/* A Send and close that went out but didn't close says so as it is, not as "Not sent". */}
+          {sending ? "Sending…" : unsent.closeOnly ? unsent.error : unsent.error ? `Not sent: ${unsent.error}` : "Not sent"}
         </Text>
         <View style={styles.unsentActions}>
           <TextButton colors={colors} label="Retry" onPress={onRetry} disabled={sending} />

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Api, ApiError } from "./api";
 import {
+  CLOSE_LEFT,
   type Fetched,
   withoutSent,
   typed,
@@ -768,9 +769,13 @@ describe("a reply's requestId", () => {
       },
     });
     expect(await sendUnsent(offline.api, key, 12, closing, nothing)).toBeNull();
-    // A fetch finds its words arrived, but the conversation isn't closed: the close isn't lost, it stays for Retry.
+    // A fetch finds its words arrived, still waiting on the user: sent, the close left for Retry, and said so.
     afterFetch(key, await fetch(), draftsGeneration());
-    expect(getDraft(key).unsent.map((one) => one.id)).toEqual(["u1"]);
+    expect(getDraft(key).unsent).toEqual([{ ...closing, error: CLOSE_LEFT, closeOnly: true }]);
+    // A fetch again changes nothing.
+    const before = getDraft(key);
+    afterFetch(key, await fetch(), draftsGeneration());
+    expect(getDraft(key)).toBe(before);
     expect(afterSend(await sendUnsent(api, key, 12, getDraft(key).unsent[0]!, fetch), true)).toEqual({ leave: true, notice: null });
     expect(closes()).toBe(1);
     expect(getDraft(key).unsent).toEqual([]);
@@ -778,6 +783,13 @@ describe("a reply's requestId", () => {
     const again = { ...closing, id: "u7" };
     const done = withoutSent({ ...EMPTY_DRAFT, unsent: [again] }, { messages: [message({ id: "m7", author: "team", fromYou: true, body: "Thanks!", requestId: "u7" })], status: "closed" }, () => false);
     expect(done.unsent).toEqual([]);
+  });
+
+  it("drops a Send and close a fetch finds arrived when the conversation is open: the server did all it would", () => {
+    const closing: Unsent = { ...thanks, close: true, error: "Couldn't reach tuti.example.com. Check the address and your connection." };
+    const arrived = [message({ id: "m1", author: "team", fromYou: true, body: "Thanks!", requestId: "u1" })];
+    expect(withoutSent({ ...EMPTY_DRAFT, unsent: [closing] }, { messages: arrived, status: "open" }, () => false).unsent).toEqual([]);
+    expect(withoutSent({ ...EMPTY_DRAFT, unsent: [closing] }, { messages: arrived, status: "closed" }, () => false).unsent).toEqual([]);
   });
 
   it("says why when closing a repeated Send and close fails", async () => {

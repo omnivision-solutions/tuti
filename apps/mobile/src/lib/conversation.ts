@@ -206,7 +206,11 @@ export type Attached = { id: string; name: string; contentType: string; size: nu
  * closed while it was). Its `id` goes with every post of it as `requestId`: a post again after a lost answer gets the
  * reply already saved, never a second one (conversations.reply).
  */
-export type Unsent = { id: string; body: string; note: boolean; close: boolean; files: Attached[]; seen: string | null; error?: string; key?: string };
+/** `closeOnly`: a Send and close whose reply arrived, only the close left (`error` says so, `CLOSE_LEFT`). */
+export type Unsent = { id: string; body: string; note: boolean; close: boolean; files: Attached[]; seen: string | null; error?: string; key?: string; closeOnly?: boolean };
+
+/** Said on a Send and close whose reply went out but whose close didn't: Retry closes it. */
+export const CLOSE_LEFT = "Sent, but not closed: tap Retry to close it.";
 
 /** Which bubble an unsent reply is, for the list: the id it was first made with, kept when an edit is given a new id. */
 export const unsentKey = (unsent: Unsent) => unsent.key ?? unsent.id;
@@ -274,10 +278,18 @@ export function withoutSent(draft: Draft, fetched: Fetched, sending: (id: string
   let changed = false;
   const unsent = draft.unsent.flatMap((one) => {
     const first = sent.get(one.id);
-    // A Send and close arrived is done only once the conversation is closed: otherwise it stays for Retry, whose repeat
-    // closes it by the server's rule (`closeRepeat`).
-    if (sending(one.id) || !first || (one.close && fetched.status !== "closed" && sameMessage(first, one))) {
+    if (sending(one.id) || !first) {
       return [one];
+    }
+    // A Send and close that arrived, the conversation still waiting on the user: sent, only the close is left, for Retry
+    // (its repeat closes it, `closeRepeat`). Open or closed, the server already did all it would (kept it open for a
+    // waiting user, or the user opened it again): it goes, as any reply that arrived.
+    if (one.close && fetched.status === "waiting" && sameMessage(first, one)) {
+      if (one.closeOnly) {
+        return [one];
+      }
+      changed = true;
+      return [{ ...one, closeOnly: true, error: CLOSE_LEFT }];
     }
     changed = true;
     // Its files already on the first version went with it (a file goes with one message): the follow-up has the rest.
@@ -525,7 +537,11 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
     return going;
   }
   const since = generation;
-  const mark = (error: string | undefined) => (draft: Draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error } : one)) });
+  // Sending again, it's no longer "only the close left" till a fetch says so.
+  const mark = (error: string | undefined) => (draft: Draft) => ({
+    ...draft,
+    unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error, closeOnly: undefined } : one)),
+  });
   const drop = (draft: Draft) => ({ ...draft, unsent: draft.unsent.filter((one) => one.id !== unsent.id) });
   // Out of `sends` before the draft changes, so what's shown then says it isn't sending any more.
   const send = (async (): Promise<Sent | null> => {
