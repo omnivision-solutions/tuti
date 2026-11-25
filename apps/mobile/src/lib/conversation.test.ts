@@ -389,7 +389,8 @@ describe("a send whose answer was lost", () => {
         throw new Error("Couldn't reach tuti.example.com");
       },
     });
-    expect(await sendUnsent(api, key, 12, unsent, fetchShows(saved))).toBeNull();
+    // Sent after all: no "Not sent" is said for it.
+    expect(await sendUnsent(api, key, 12, unsent, fetchShows(saved))).toEqual({});
     expect(getDraft(key).unsent).toEqual([]);
   });
 
@@ -432,7 +433,7 @@ describe("a send's own fetch", () => {
         throw new Error("Couldn't reach tuti.example.com");
       },
     });
-    expect(await sendUnsent(api, key, 12, unsent, answers(saved))).toBeNull();
+    expect(await sendUnsent(api, key, 12, unsent, answers(saved))).toEqual({});
     expect(getDraft(key).unsent).toEqual([]);
   });
 });

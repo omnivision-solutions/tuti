@@ -461,7 +461,7 @@ export const isSending = (id: string) => sends.has(id);
  * server may have saved it though its answer was lost; and before a `retry`, which posts only after a check that
  * worked, and only if it still isn't there (a check that failed keeps it unsent with why). Unsent ones a fetch shows
  * arrived are dropped here, from what that fetch answered (the screen may keep a newer fetch's result instead). The
- * answer (`{}` when it was there already), or null when it wasn't sent.
+ * answer (`{}` when it was there already: found before a retry, or after a failure), or null when it wasn't sent.
  */
 export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent, saved: () => Promise<Message[]>, retry = false) {
   const going = sends.get(unsent.id);
@@ -511,6 +511,13 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
     } catch (error) {
       await fetched();
       sends.delete(unsent.id);
+      if (since !== generation) {
+        return null;
+      }
+      // The fetch shows it arrived though its answer was lost: sent, said as nothing (no "Not sent").
+      if (!kept()) {
+        return {};
+      }
       updateDraft(key, mark(error instanceof Error ? error.message : String(error)), since);
       return null;
     }
