@@ -524,7 +524,7 @@ export function ChangelogForm({
   entry: Entry | null;
   /** The project's reader groups, for "Who sees it" (not shown without any). */
   groups?: { key: string; name: string }[];
-  /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking always works). */
+  /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking works: changelog.update needs the plan only for groups added). */
   groupsUpgrade?: UpgradePrompt | null;
   /** The cover designs "Make a cover" offers (a saved entry, where uploads are set up). */
   covers?: CoverChoices | null;
@@ -737,7 +737,11 @@ export function WhoSeesIt({
                   setUpgrading(true);
                 }
               }}
-              onChange={() => {
+              onChange={(event) => {
+                // The pick the prompt refused (onClick put it back) isn't a change.
+                if (upgrade && event.currentTarget.checked) {
+                  return;
+                }
                 setChanged(true);
                 onChange();
               }}
