@@ -855,6 +855,10 @@ widths, in light and dark (in development only).
     who can see something (Access's Public or Private) stays a `Select`: in a `Segmented`, an arrow key would pick it.
     A list's rows that each hold the choice beside other things (User properties' format, beside the key and a
     currency) use a `Select` whatever the count, so they fit a phone.
+  - A choice that is best seen, not named (cover designs), is a grid of pictures, one radio each with its name under
+    it, in one `SettingBlock`: two a row on phones, three wider, and one muted line under it at most. An upload that
+    makes one of the choices (Changelog's Your background) is a tile of its own in the grid until it holds an image,
+    then that choice, with Replace and × under its name.
   - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card) has its count beside the
     card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list

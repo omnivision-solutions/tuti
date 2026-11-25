@@ -1469,6 +1469,8 @@ export function ChangelogStyleForm({
   const backgroundId = useId();
   const uploadBackground = useRef<HTMLButtonElement>(null);
   const background = useImageUpload({ projectSlug, name: "coverBackground", id: backgroundId, label: "Cover background", image: coverBackground, onBusy: () => {} });
+  const [uploads, setUploads] = useState(0);
+  const backgroundOption = useRef<HTMLInputElement>(null);
   const [backgroundWas, setBackgroundWas] = useState(coverBackground);
   // The background shown last: one uploaded here since is picked as the design.
   const [shownWas, setShownWas] = useState(coverBackground?.id);
@@ -1483,8 +1485,15 @@ export function ChangelogStyleForm({
     setShownWas(background.image?.id);
     if (background.image) {
       setDesign("background");
+      setUploads(uploads + 1);
     }
   }
+  // Uploaded, Upload's tile is gone: focus goes to the picture it made.
+  useEffect(() => {
+    if (uploads > 0) {
+      backgroundOption.current?.focus();
+    }
+  }, [uploads]);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
@@ -1531,7 +1540,8 @@ export function ChangelogStyleForm({
     <form {...form} inert={pending} className="flex flex-col gap-7">
       {model && (
         <SettingsCard title="Drafting with AI">
-          {model}
+          {/* Saved as it's chosen, not by the page's Save: Enter in its Custom boxes doesn't save the form too. */}
+          <div onKeyDown={(event) => event.stopPropagation()}>{model}</div>
           <SettingBlock className="gap-2">
             <label htmlFor="style-tone" className="font-medium">
               Instructions
@@ -1620,14 +1630,14 @@ export function ChangelogStyleForm({
           </SettingRow>
         </SettingsCard>
       )}
-      <SettingsCard title="Cover" description="Picked first when you publish an entry without a cover or make one. You can still change it there.">
+      <SettingsCard title="Cover" description="Picked first when you publish an entry without a cover, or make one.">
         <SettingBlock>
           <fieldset ref={designField} aria-describedby="style-cover-automatic" className="grid grid-cols-2 gap-x-3 gap-y-4 @min-[34rem]/settings:grid-cols-3">
             <legend className="sr-only">Cover picked first</legend>
             {([null, "title", "screenshot", "sections", "pattern", ...(background.image ? (["background"] as const) : [])] as const).map((each) => (
               <div key={each ?? "automatic"} {...(each === "background" && background.drop)} className="flex min-w-0 flex-col gap-1.5">
                 <label className={cn(coverOption, "text-sm")}>
-                  <input type="radio" name="coverDesign" value={each ?? ""} className="peer sr-only" checked={design === each} onChange={() => setDesign(each)} />
+                  <input ref={each === "background" ? backgroundOption : undefined} type="radio" name="coverDesign" value={each ?? ""} className="peer sr-only" checked={design === each} onChange={() => setDesign(each)} />
                   {each === null ? (
                     <span aria-hidden className={cn(coverPicture, "flex items-center justify-center text-muted-foreground")}>
                       <SparklesIcon className="size-5" />
@@ -1688,7 +1698,7 @@ export function ChangelogStyleForm({
                 <button
                   ref={uploadBackground}
                   type="button"
-                  aria-label="Upload cover background"
+                  aria-label="Upload Your background"
                   // Off while one uploads, yet focusable: focus stays here through the upload, "Uploading…" read below.
                   aria-disabled={background.uploading || undefined}
                   onClick={() => !background.uploading && background.pick()}
@@ -1711,7 +1721,7 @@ export function ChangelogStyleForm({
           </fieldset>
           {background.inputs}
           <p id="style-cover-automatic" className="text-sm text-muted-foreground">
-            Automatic is Screenshot when the entry has an image, else Title. Your background puts the title on an image of your own.
+            Automatic is Screenshot when the entry has a large enough image, else Title.
           </p>
           {background.uploading && (
             <p role="status" className="sr-only">

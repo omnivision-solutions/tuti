@@ -141,7 +141,7 @@ test("an admin picks the changelog's style examples: published entries from a se
   // Nothing published yet: the row says what it needs, with nothing to pick.
   await team.goto(`/app/${slug}/settings/changelog`);
   // One line on what the page is for, beside its title (above the card where the header has no room).
-  await expect(team.getByText("How AI drafts your changelog entries").locator("visible=true")).toHaveCount(1);
+  await expect(team.getByText("How entries are drafted and how their covers look").locator("visible=true")).toHaveCount(1);
   await expect(team.getByText("Publish an entry to use it as an example.")).toBeVisible();
   const pick = team.getByRole("button", { name: "Pick a style example" });
   await expect(pick).toHaveCount(0);
@@ -385,21 +385,24 @@ test("an admin picks the cover drawn first from the designs drawn with the porta
   // Automatic until the team picks; each design a picture drawn for this project; Your background is an upload till there's one.
   await expect(cover.locator("label")).toHaveText(["Automatic", "Title", "Screenshot", "Sections", "Pattern"]);
   await expect(design("Automatic")).toBeChecked();
-  await expect(cover).toHaveAccessibleDescription("Automatic is Screenshot when the entry has an image, else Title. Your background puts the title on an image of your own.");
+  await expect(cover).toHaveAccessibleDescription("Automatic is Screenshot when the entry has a large enough image, else Title.");
   for (const each of ["title", "screenshot", "sections", "pattern"]) {
     const picture = cover.locator(`img[src="/app/${slug}/settings/changelog/cover/${each}"]`);
     await expect(picture).toHaveJSProperty("complete", true);
     expect(await picture.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(800);
   }
-  await design("Pattern").check();
+  await cover.getByText("Pattern", { exact: true }).click();
+  await expect(design("Pattern")).toBeChecked();
   await expect(save).toBeEnabled();
-  await design("Automatic").check();
+  await cover.getByText("Automatic", { exact: true }).click();
   await expect(save).toBeDisabled();
 
   // Uploaded (the S3 fake, processed inline), it's offered, drawn, and picked.
   await team.getByLabel("Cover background", { exact: true }).setInputFiles({ name: "background.png", mimeType: "image/png", buffer: png(1600, 840) });
   await expect(design("Your background")).toBeChecked();
-  await expect(cover.getByRole("button", { name: "Upload cover background" })).toHaveCount(0);
+  // Focus goes from Upload, gone, to the picture it made.
+  await expect(design("Your background")).toBeFocused();
+  await expect(cover.getByRole("button", { name: "Upload Your background" })).toHaveCount(0);
   const drawn = cover.locator(`img[src^="/app/${slug}/settings/changelog/cover/background?background="]`);
   await expect(drawn).toHaveJSProperty("complete", true);
   expect(await drawn.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(800);
@@ -416,7 +419,7 @@ test("an admin picks the cover drawn first from the designs drawn with the porta
   // Removed, the background takes its design with it: Automatic again, saved as both.
   await cover.getByRole("button", { name: "Remove cover background" }).click();
   await expect(design("Your background")).toHaveCount(0);
-  await expect(cover.getByRole("button", { name: "Upload cover background" })).toBeFocused();
+  await expect(cover.getByRole("button", { name: "Upload Your background" })).toBeFocused();
   await expect(design("Automatic")).toBeChecked();
   await save.click();
   await expect(team.getByText("Changelog saved")).toBeVisible();
