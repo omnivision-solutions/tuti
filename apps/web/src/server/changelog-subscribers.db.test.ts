@@ -1614,6 +1614,18 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     expect(await told()).toHaveLength(1);
   });
 
+  test("a burst of one-click unsubscribes, more than the database pool's connections (10): each holds one only, so all go through", async () => {
+    const tokens = await Promise.all(
+      Array.from({ length: 15 }, async () => {
+        const { token } = await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: newAddress(), confirmedAt: new Date() } });
+        return token;
+      }),
+    );
+    const answers = await Promise.all(tokens.map((token) => unsubscribe(token, true)));
+    expect(answers.map((answer) => answer.status)).toEqual(tokens.map(() => 200));
+    expect(await told()).toHaveLength(15);
+  });
+
   test("from the Account's Stop emails (account), once", async () => {
     const ada = await signUp("Ada");
     await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });

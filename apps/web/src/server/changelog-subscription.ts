@@ -120,12 +120,13 @@ async function recordUnsubscribe(
 /**
  * Whether the changelog is emailed to `email` now (a confirmed subscriber that changelogReach reaches), with its row
  * locked till `tx` ends: every way out at an address takes it first, so they take turns, each sees what the one before
- * did, and only the one that stops it tells webhooks.
+ * did, and only the one that stops it tells webhooks. Read in `tx` too: a second connection, waited for while holding
+ * the lock, would run the pool dry under a burst of one-click unsubscribes.
  */
 async function emailedNow(tx: Prisma.TransactionClient, projectId: string, email: string) {
   const [row] = await tx.$queryRaw<{ confirmed: boolean }[]>`
     SELECT "confirmedAt" IS NOT NULL AS confirmed FROM "changelog_subscriber" WHERE "projectId" = ${projectId} AND "email" = ${email} FOR UPDATE`;
-  return !!row?.confirmed && reached(await changelogReach(projectId, { email, confirmed: true }));
+  return !!row?.confirmed && reached(await changelogReach(projectId, { email, confirmed: true }, tx));
 }
 
 /**
