@@ -1539,7 +1539,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, retryAt: true, retries: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -1561,7 +1561,10 @@ export const analyseCodeChange = defineOperation({
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
     }
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
+      // Past the gate for nothing to do ("Analyse anyway"), and for a run that was to go past it (the team's pick, failed
+      // or stopped), as its retry would.
+      const pastGate = change.state === "NOTHING_TO_DO" || ((change.state === "FAILED" || change.state === "ANALYSING") && change.retryPastGate);
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate, resume: false });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
       // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.

@@ -390,13 +390,18 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
     // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
     const still = { id: change.id, state: change.state, retryAt: change.retryAt };
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges || !planIncludes(change.project.plan, "codeChanges")) {
-      // A stranded claim isn't left analysing: put back as the claim found it (as the job does), else ready with its
-      // updates, else failed, for the team to analyse again once it's back.
+      // A stranded claim isn't left analysing, and says why, as the job would: no AI on the server, failed; Autopilot
+      // off, put back as the claim found it (else ready with its updates, else failed); off the plan, paused for Resume
+      // all, still past the gate if it was asked so.
       const updates = change.state === "ANALYSING" && !change.claimedFrom ? await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } }) : 0;
       const stopped =
-        change.state === "ANALYSING"
-          ? { state: change.claimedFrom ?? (updates > 0 ? ("READY" as const) : ("FAILED" as const)), reason: "Autopilot was turned off before it was analysed again.", claimedFrom: null }
-          : {};
+        change.state !== "ANALYSING"
+          ? {}
+          : !codeChangesEnabled()
+            ? { state: "FAILED" as const, reason: "AI isn't set up on this server.", claimedFrom: null }
+            : !change.project.analyseCodeChanges
+              ? { state: change.claimedFrom ?? (updates > 0 ? ("READY" as const) : ("FAILED" as const)), reason: "Autopilot was turned off before it was analysed again.", claimedFrom: null }
+              : { state: "PAUSED" as const, reason: planNeeded("codeChanges"), claimedFrom: null };
       dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null, ...stopped } })).count;
       continue;
     }

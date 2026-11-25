@@ -100,6 +100,26 @@ test("a pick stranded by a restart, then Autopilot turned off: the sweep puts it
   expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "READY", claimedFrom: null, reason: "Autopilot was turned off before it was analysed again." });
 });
 
+test("Analyse again on the team's pick whose run past the gate failed: past the gate again, as its retry would be", async () => {
+  const change = await pullRequest(11);
+  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The AI provider didn't answer.", retryPastGate: true } });
+
+  await call(analyseCodeChange, team(), { id: change.id });
+
+  expect(jobs.enqueue).toHaveBeenLastCalledWith("codeChange", { codeChangeId: change.id, force: true, pastGate: true, resume: false });
+});
+
+test("a pick stranded by a restart on a server that no longer has AI: failed, saying so", async () => {
+  const change = await pullRequest(12, "NOTHING_TO_DO");
+  await claimCodeChange(project.id, { repoId: 1, repo: "acme/app", number: 12, url: change.url, title: change.title, author: "octo", mergedAt: change.mergedAt.toISOString() }, { pastGate: true });
+  await prisma.codeChange.updateMany({ where: { id: { not: change.id } }, data: { retryAt: null } });
+  vi.stubEnv("OPENAI_API_KEY", "");
+
+  await retryCodeChanges(new Date(Date.now() + 7 * 60 * 60_000));
+
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "FAILED", reason: "AI isn't set up on this server." });
+});
+
 test("queueing that fails on Hatchet puts the pull request back as it was, its reason too", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   const change = await pullRequest(3, "NOTHING_TO_DO", "Users don't see it: it changes the build.");
