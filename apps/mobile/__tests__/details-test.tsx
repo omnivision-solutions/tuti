@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { BackHandler } from "react-native";
 
 import Details from "@/app/conversation/[number]/details";
 import { type Assignee, getTriage, type Person, screenKey, showTriage, type Triage } from "@/lib/details";
@@ -8,9 +9,10 @@ const mockBack = jest.fn();
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
   router: { back: () => mockBack(), push: (href: string) => mockPush(href) },
-  useLocalSearchParams: () => ({ number: "12" }),
+  useLocalSearchParams: () => ({ number: mockNumber }),
 }));
 
+let mockNumber = "12";
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
 const mockApi = jest.fn<(path: string, init?: { method?: string; body?: unknown }) => Promise<unknown>>();
 jest.mock("@/lib/session", () => ({
@@ -90,6 +92,7 @@ const patches = () => mockApi.mock.calls.filter(([, init]) => init?.method === "
 
 beforeEach(() => {
   jest.useFakeTimers({ now: new Date("2026-11-25T14:00:00") });
+  mockNumber = "12";
 });
 afterEach(() => {
   jest.useRealTimers();
@@ -212,5 +215,71 @@ describe("the details sheet", () => {
     expect(await screen.findByText("A closed conversation isn't snoozed")).toBeTruthy();
     expect(getTriage(KEY)?.status).toBe("open");
     await act(() => jest.advanceTimersByTimeAsync(0));
+  });
+
+  it("says when the team didn't load, and Try again loads it", async () => {
+    serve(SAM);
+    const answer = mockApi.getMockImplementation()!;
+    let down = true;
+    mockApi.mockImplementation((path, init) => (path === "/inbox/assignees" && down ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : answer(path, init)));
+    await render(<Details />);
+
+    expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
+    // No team to choose from: Assignee opens nothing.
+    expect(screen.queryByRole("button", { name: /^Assignee/ })).toBeNull();
+    down = false;
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: "Assignee, Unassigned" })).toBeTruthy();
+    expect(screen.queryByText("Couldn't reach tuti.example.com.")).toBeNull();
+  });
+
+  it("says when who it's with didn't load, and Try again loads them", async () => {
+    serve(SAM);
+    const answer = mockApi.getMockImplementation()!;
+    let down = true;
+    mockApi.mockImplementation((path, init) => (path === "/conversations/12/person" && down ? Promise.reject(new Error("Conversation not found")) : answer(path, init)));
+    await render(<Details />);
+
+    expect(await screen.findByText("Conversation not found")).toBeTruthy();
+    down = false;
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Sam Lee")).toBeTruthy();
+  });
+
+  it("opened by a link, fetches the conversation's status, and says when it can't", async () => {
+    mockNumber = "13";
+    let down = true;
+    mockApi.mockImplementation((path) => {
+      if (path === "/conversations/13") {
+        return down ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : Promise.resolve({ ...OPEN, status: "closed", number: 13 });
+      }
+      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY);
+    });
+    await render(<Details />);
+
+    expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reopen" })).toBeNull();
+    down = false;
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+    expect(getTriage(screenKey(mockSession, 13))?.status).toBe("closed");
+  });
+
+  it("goes back from a list to the details on Android's back", async () => {
+    type Handler = Parameters<typeof BackHandler.addEventListener>[1];
+    const handlers: Handler[] = [];
+    jest.spyOn(BackHandler, "addEventListener").mockImplementation((_event, handler) => {
+      handlers.push(handler);
+      return { remove: () => void handlers.splice(handlers.indexOf(handler), 1) };
+    });
+    serve(SAM);
+    await render(<Details />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Assignee, Unassigned" }));
+    expect(screen.getByText("Assign")).toBeTruthy();
+    let handled = false;
+    await act(async () => void (handled = !!handlers.at(-1)?.({} as Parameters<Handler>[0])));
+    expect(handled).toBe(true);
+    expect(await screen.findByRole("button", { name: "Assignee, Unassigned" })).toBeTruthy();
   });
 });

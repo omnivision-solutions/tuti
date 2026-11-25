@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getConversation } from "@/lib/conversation";
 import {
@@ -41,7 +41,10 @@ export default function Details() {
   const triage = useSyncExternalStore(subscribeTriage, () => getTriage(key));
   const [person, setPerson] = useState<Person | null>(null);
   const [assignees, setAssignees] = useState<Assignee[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Why something didn't load (who it's with, its status, the team), in the server's words: Try again loads it all.
+  const [failures, setFailures] = useState<{ person?: string; conversation?: string; team?: string }>({});
+  const failure = (part: "person" | "conversation" | "team", why: string | null) => setFailures((now) => ({ ...now, [part]: why ?? undefined }));
+  const error = failures.person ?? failures.conversation ?? failures.team ?? null;
   const [pane, setPane] = useState<Pane>("details");
   const [busy, setBusy] = useState(false);
   // Why the latest change didn't happen, in the server's words.
@@ -51,25 +54,50 @@ export default function Details() {
     getPerson(api, number).then(
       (loaded) => {
         setPerson(loaded);
-        setError(null);
+        failure("person", null);
       },
-      (e: Error) => setError(e.message),
+      (e: Error) => failure("person", e.message),
     );
-    getAssignees(api).then(setAssignees, () => setAssignees([]));
-  }, [api, number]);
-  useEffect(load, [load]);
-  // Opened by a link, with no conversation under it to say its status: fetched here.
-  useEffect(() => {
+    getAssignees(api).then(
+      (loaded) => {
+        setAssignees(loaded);
+        failure("team", null);
+      },
+      (e: Error) => failure("team", e.message),
+    );
+    // Opened by a link, with no conversation under it to say its status: fetched here.
     if (!getTriage(key)) {
-      getConversation(api, number).then((loaded) => !getTriage(key) && showTriage(key, loaded), () => {});
+      getConversation(api, number).then(
+        (loaded) => {
+          if (!getTriage(key)) {
+            showTriage(key, loaded);
+          }
+          failure("conversation", null);
+        },
+        (e: Error) => failure("conversation", e.message),
+      );
     }
   }, [api, number, key]);
+  useEffect(load, [load]);
 
+  // A list in place of the details: Android's back returns to them, rather than closing the sheet.
   useEffect(() => {
-    if (failed) {
-      AccessibilityInfo.announceForAccessibility(failed);
+    if (pane === "details") {
+      return;
     }
-  }, [failed]);
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setPane("details");
+      return true;
+    });
+    return () => subscription.remove();
+  }, [pane]);
+
+  // VoiceOver has no live regions: said when it changes (TalkBack reads the live region).
+  useEffect(() => {
+    if (IOS && (failed || error)) {
+      AccessibilityInfo.announceForAccessibility((failed ?? error)!);
+    }
+  }, [failed, error]);
 
   const change = async (body: Change, done: string) => {
     if (busy) {
@@ -147,11 +175,18 @@ export default function Details() {
           </View>
         </View>
       ) : (
-        <View style={styles.loading}>
-          <Text style={[styles.detail, { color: error ? colors.error : colors.muted }]} accessibilityLiveRegion="polite">
-            {error ?? "Loading…"}
+        !error && (
+          <Text style={[styles.detail, styles.loading, { color: colors.muted }]} accessibilityLiveRegion="polite">
+            Loading…
           </Text>
-          {error && <TextButton label="Try again" colors={colors} onPress={load} />}
+        )
+      )}
+      {error && (
+        <View style={styles.loading}>
+          <Text style={[styles.detail, { color: colors.error, textAlign: "center" }]} accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+          <TextButton label="Try again" colors={colors} onPress={load} />
         </View>
       )}
       {person && (
@@ -275,7 +310,7 @@ export default function Details() {
 /** A part of the sheet: iOS's grouped rows on a card, Android's under a heading in the primary colour. */
 function Group({ title, count, colors, children }: { title: string; count?: number; colors: Colors; children: ReactNode }) {
   return (
-    <View accessibilityLabel={title}>
+    <View>
       <Text style={[styles.heading, IOS ? { color: colors.muted } : { color: colors.primary, fontWeight: "500" }]} accessibilityRole="header">
         {title}
         {count ? ` · ${count}` : ""}
