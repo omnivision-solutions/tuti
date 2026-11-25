@@ -1440,6 +1440,18 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   await team.goto(`/app/${slug}/changelog/3`);
   await featured.getByLabel("Featured image", { exact: true }).setInputFiles({ name: "mine.png", mimeType: "image/png", buffer: await team.screenshot() });
   await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeVisible();
+  const mine = await featured.getByRole("img").getAttribute("src");
+  // Tuti not reached: it says so, the dialog stays to try again, and the form keeps its own image.
+  await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  await making.getByRole("button", { name: "Use this cover" }).click();
+  await expect(team.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(making).toBeVisible();
+  await team.unroute("**/*");
+  await making.getByRole("button", { name: "Cancel" }).click();
+  await expect(making).toBeHidden();
+  await expect(featured.getByRole("img")).toHaveAttribute("src", mine!);
+  expect((await saved(3)).cover).toBeNull();
   await featured.getByRole("button", { name: "Make a cover" }).click();
   await making.getByRole("button", { name: "Use this cover" }).click();
   await expect(team.getByText("Cover added")).toBeVisible();
