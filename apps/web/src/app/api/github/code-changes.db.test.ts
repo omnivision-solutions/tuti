@@ -1,6 +1,6 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, claimCodeChange, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log, roleDefaultModel } from "@tuti/shared";
 import { billingFile, creditsOn, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -617,6 +617,27 @@ describe("deciding", () => {
     expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" }, select: { status: true, payload: true } })).toEqual([
       { status: "APPLIED", payload: expect.objectContaining({ line: "A dark theme" }) },
     ]);
+  });
+
+  test("picked, and the web server stops before its turn: the retry sweep analyses it later, past the gate", async () => {
+    github.pullRequest(repo, pullRequest(34));
+    // Claimed as changelog.addPullRequests does; its run, waiting in the server's memory, is lost.
+    const claimed = await claimCodeChange(project.id, { repoId: installationId, repo, number: 34, url: `https://github.com/${repo}/pull/34`, title: "Dark mode 34", author: "octo", mergedAt: new Date().toISOString() }, { pastGate: true });
+    expect(claimed?.run).toBeDefined();
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 34 } });
+    // The sweep is the whole server's: other tests' retries in this file's database aren't this test's.
+    await prisma.codeChange.updateMany({ where: { id: { not: id } }, data: { retryAt: null } });
+    // Not due while a batch could still be working through it.
+    expect(await retryCodeChanges(new Date(Date.now() + 60 * 60_000))).toMatchObject({ queued: 0 });
+    // Later, the sweep runs it past the gate: no gate decision is asked for.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await retryCodeChanges(new Date(Date.now() + 7 * 60 * 60_000))).toMatchObject({ queued: 1 });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, retryAt: true } })).toEqual({ state: "READY", retryAt: null });
   });
 
   test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
@@ -1450,6 +1471,21 @@ describe("out of AI credits", () => {
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
     expect(await changes()).toEqual([expect.objectContaining({ number: 45, state: "READY" })]);
+  });
+
+  test("already paused, then picked for the changelog: resumed past the gate once there are credits", async () => {
+    github.pullRequest(repo, pullRequest(46));
+    await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: installationId, repo, number: 46, url: `https://github.com/${repo}/pull/46`, title: "Dark mode 46", author: "octo", mergedAt: new Date(), state: "PAUSED", reason: "The project ran out of AI credits." },
+    });
+    await call(addChangelogPullRequests, team(), { pullRequests: [{ repo, number: 46 }] });
+    await addedPullRequestsAnalysed();
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    model.reply("You can now switch the app to a dark theme in Settings.");
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect(await changes()).toEqual([expect.objectContaining({ number: 46, state: "READY" })]);
   });
 
   test("“Resume all” that can't queue them leaves them paused, to try again (nothing stuck as analysing)", async () => {

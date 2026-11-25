@@ -82,7 +82,7 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   // insert itself, so of two claims at once only the one that made it counts.
   let made = true;
   const change = await prisma.codeChange
-    .create({ data: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) }, select })
+    .create({ data: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt), ...stranded(pastGate) }, select })
     .catch((error: unknown) => {
       if (!isUniqueViolation(error)) {
         throw error;
@@ -90,6 +90,10 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
       made = false;
       return prisma.codeChange.findUniqueOrThrow({ where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } }, select });
     });
+  // Paused (out of credits): the team's pick is resumed past the gate, as asked.
+  if (change.state === "PAUSED" && pastGate) {
+    await prisma.codeChange.updateMany({ where: { id: change.id, state: "PAUSED" }, data: { retryPastGate: true } });
+  }
   if (change.state === "ANALYSING" || change.state === "FAILED") {
     return {
       run: { codeChangeId: change.id, force: false, pastGate, resume: false },
@@ -115,7 +119,7 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     // Claimed at this moment: its run may start long after (one after another, in-process), and by then "Analyse
     // anyway" may have analysed it already (once the claim looked stopped). A forced run would do it all again.
     const claimedAt = new Date();
-    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, updatedAt: claimedAt } });
+    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retries: 0, updatedAt: claimedAt, ...stranded(true) } });
     if (count > 0) {
       return {
         run: { codeChangeId: change.id, force: true, pastGate: true, resume: false, was: was.state },
@@ -127,6 +131,16 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   }
   return {};
 }
+
+/**
+ * Inline, a claim's run waits in the web server's memory, one after another (changelog.addPullRequests): if the
+ * server stops first, nothing would run it. It's due for the retry sweep after this, as a run past the gate if asked;
+ * the run, when it starts, clears it, and the loop then skips a claim the sweep took. Long enough for a batch of 50 to
+ * get through, so the sweep doesn't take ones still waiting their turn. On Hatchet the run is queued at once: no need.
+ */
+const STRANDED_CLAIM_MS = 6 * 60 * 60_000;
+const stranded = (pastGate: boolean) =>
+  process.env.JOBS_DRIVER === "inline" ? { retryAt: new Date(Date.now() + STRANDED_CLAIM_MS), retryPastGate: pastGate } : { retryAt: null };
 
 /** How long a code change whose run couldn't be queued waits for the retry sweep. */
 const QUEUE_RETRY_MS = 5 * 60_000;
@@ -211,7 +225,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   }
   // On a plan without code changes since it merged: kept, paused until the plan is back and the team resumes it.
   if (!planIncludes(change.project.plan, "codeChanges")) {
-    await prisma.codeChange.updateMany({ where: waiting, data: { state: "PAUSED", reason: planNeeded("codeChanges"), retryAt: null } });
+    await prisma.codeChange.updateMany({ where: waiting, data: { state: "PAUSED", reason: planNeeded("codeChanges"), retryAt: null, retryPastGate: input.pastGate } });
     return { skipped: true, paused: true };
   }
   // Still one of the project's repositories, on the installation it's connected to now.
@@ -360,10 +374,11 @@ const CREDITS_WAIT_MINUTES = 60;
 export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
   // The oldest due first; each one looked at leaves the due ones (queued, dropped or put off), so the next sweep gets the next.
   const due = await prisma.codeChange.findMany({
-    where: { state: "FAILED", retryAt: { lte: now } },
+    // Analysing with a retry due: a claim whose run was lost with the web server (STRANDED_CLAIM_MS).
+    where: { state: { in: ["FAILED", "ANALYSING"] }, retryAt: { lte: now } },
     orderBy: { retryAt: "asc" },
     take: RETRIES_PER_SWEEP,
-    select: { id: true, projectId: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true, plan: true } } },
+    select: { id: true, projectId: true, state: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true, plan: true } } },
   });
   let queued = 0;
   let dropped = 0;
@@ -371,9 +386,11 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
   const paused = new Map<string, boolean>();
   for (const change of due) {
     // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
-    const still = { id: change.id, state: "FAILED" as const, retryAt: change.retryAt };
+    const still = { id: change.id, state: change.state, retryAt: change.retryAt };
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges || !planIncludes(change.project.plan, "codeChanges")) {
-      dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null } })).count;
+      // A stranded claim isn't left analysing: failed, for the team to analyse again once it's back.
+      const stopped = change.state === "ANALYSING" ? { state: "FAILED" as const, reason: "Its analysis stopped before it ran. Analyse it again." } : {};
+      dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null, ...stopped } })).count;
       continue;
     }
     if (!paused.has(change.projectId)) {
@@ -397,7 +414,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
         queued--;
         await prisma.codeChange.updateMany({
           where: { id: change.id, state: "ANALYSING" },
-          data: { state: "FAILED", reason: change.reason, retryAt: change.retryAt, retries: change.retries },
+          data: { state: change.state, reason: change.reason, retryAt: change.retryAt, retries: change.retries },
         });
         log.error("Queueing a code change's retry failed", { error, codeChangeId: change.id });
         break;
