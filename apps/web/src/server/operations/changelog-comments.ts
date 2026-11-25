@@ -2,9 +2,11 @@ import { isEmptyDoc } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
+import { claimsOf, groupClaims } from "@/lib/reader-groups";
+
 import { attachMedia, displayDoc, readContent } from "../content";
 import { signedInAsReader } from "../session";
-import { isTeam } from "./changelog";
+import { isTeam, mayReadEntry } from "./changelog";
 import { authorId, describedAuthor, MAX_TEXT_LENGTH, saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { commentShape } from "./read";
@@ -53,10 +55,10 @@ const view = (row: Row, team: Set<string>) => ({
 const teamIds = async (projectId: string) =>
   new Set((await prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } })).map((m) => m.userId));
 
-/** The entry, as changelog.get finds it: a draft is as good as missing to everyone but the team. */
+/** The entry, as changelog.get finds it: a draft is as good as missing to everyone but the team, and one for some groups to everyone outside them. */
 async function visibleEntry(actor: Actor, projectId: string, number: number) {
-  const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, publishedAt: true } });
-  if (!entry || (!entry.publishedAt && !(await isTeam(actor, projectId)))) {
+  const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, publishedAt: true, groups: groupClaims } });
+  if (!entry || (!entry.publishedAt && !(await isTeam(actor, projectId))) || !(await mayReadEntry(actor, projectId, claimsOf(entry)))) {
     throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
   }
   return entry;

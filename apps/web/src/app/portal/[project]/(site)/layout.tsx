@@ -22,7 +22,7 @@ import { withBase } from "@/lib/portal-base";
 import { hidesLauncher } from "@/lib/widget-launcher";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
-import { mayRead } from "@/server/portal-access";
+import { currentReader, mayRead } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
 import { TeamHtml } from "@/components/team-html";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
@@ -92,7 +92,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // signed in here, or the reader of Customize's preview or the widget (mayRead), with no session here.
   const canRead = await mayRead(project.id);
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
-  const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
+  const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id, await currentReader(project.id)));
 
   const base = await portalBase();
   // The team's own origin, where their HTML may run: their domain, or the site the portal is under (not

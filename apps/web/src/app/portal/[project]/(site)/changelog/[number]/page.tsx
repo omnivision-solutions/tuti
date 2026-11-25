@@ -19,23 +19,35 @@ import { canActIn } from "@/server/membership";
 import { ChangelogMenu, changelogByEmail } from "@/components/changelog-pages";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
+import { slugReader } from "@/server/portal-access";
+import { visibleEntry } from "@/lib/reader-groups";
 import { portalBase, portalLinks } from "@/server/portal-base";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
 import { COMMENTS_HEADING } from "@/lib/comment-threads";
 
-/** A published entry's search listing, once per request (its metadata and its page's JSON-LD). */
+/** A published entry's search listing, once per request (its metadata and its page's JSON-LD), if it's for whoever's reading. */
 const listedEntry = cache(async (project: string, number: string) =>
   /^\d{1,9}$/.test(number)
     ? prisma.changelogEntry.findFirst({
-        where: { project: { slug: project }, number: Number(number), publishedAt: { not: null } },
-        select: { title: true, body: true, publishedAt: true, sample: true, cover: { select: { id: true, status: true, width: true, height: true } } },
+        where: { project: { slug: project }, number: Number(number), publishedAt: { not: null }, ...visibleEntry(await slugReader(project)) },
+        select: {
+          title: true,
+          body: true,
+          publishedAt: true,
+          sample: true,
+          cover: { select: { id: true, status: true, width: true, height: true } },
+          groups: { select: { groupId: true }, take: 1 },
+        },
       })
     : null,
 );
 
-/** An entry's search listing and link card; sample content (server/sample-content.ts) is kept from search engines. */
+/**
+ * An entry's search listing and link card; sample content (server/sample-content.ts) and an entry for some groups only are
+ * kept from search engines.
+ */
 export async function generateMetadata(props: PageProps<"/portal/[project]/changelog/[number]">): Promise<Metadata> {
   const { project, number } = await props.params;
   const entry = await listedEntry(project, number);
@@ -47,8 +59,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/chang
     description: summary(entry.body),
     path: `/changelog/${Number(number)}`,
     article: { publishedTime: entry.publishedAt },
-    noindex: entry.sample,
-    markdown: true,
+    noindex: entry.sample || entry.groups.length > 0,
+    // Its Markdown copy is for everyone only (it's kept in shared caches).
+    markdown: entry.groups.length === 0,
     // Its featured image, once processed, is its link card.
     image: shareImage(entry.cover),
   });
@@ -60,9 +73,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   if (!Number.isInteger(number) || number < 1) {
     notFound();
   }
-  const session = await getSession();
+  const [session, reader] = await Promise.all([getSession(), slugReader(slug)]);
   const [[entry], project] = await Promise.all([
-    publishedEntries(slug, { number, take: 1, userId: session?.user.id }),
+    publishedEntries(slug, reader, { number, take: 1, userId: session?.user.id }),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
   if (!entry || !project) {
@@ -81,11 +94,12 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   const commentMedia = await mediaUrls(...comments.map(displayDoc));
   // Images only once signed in: uploads are someone's. Those already in a comment show in its editor.
   const uploads = commenter && mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
-  // For search engines (every entry is for signed-out readers too); sample content isn't for them, as in generateMetadata.
+  // For search engines; sample content and an entry for some groups only aren't for them, as in generateMetadata.
   const listed = await listedEntry(slug, param);
   const jsonLd =
     listed &&
     !listed.sample &&
+    listed.groups.length === 0 &&
     (await portalArticleJsonLd(slug, {
       type: "BlogPosting",
       title: listed.title,

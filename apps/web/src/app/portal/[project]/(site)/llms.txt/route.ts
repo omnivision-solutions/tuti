@@ -1,6 +1,7 @@
 import { toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
+import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
 import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
@@ -36,8 +37,9 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       name: true,
       // The newest published entries; sample content (server/sample-content.ts) is left out, as search engines leave it.
       // ponytail: the latest 50; the changelog's pages list the rest, should an agent want older ones.
+      // For everyone only (an entry for some groups is on its page alone).
       changelogEntries: {
-        where: { publishedAt: { not: null }, sample: false },
+        where: { publishedAt: { not: null }, sample: false, ...visibleEntry(SIGNED_OUT) },
         orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
         take: LLMS_ENTRIES,
         select: { number: true, title: true, publishedAt: true },

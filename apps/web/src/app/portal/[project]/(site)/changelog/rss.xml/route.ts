@@ -1,6 +1,7 @@
 import { toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
+import { SIGNED_OUT } from "@/lib/read-access";
 import { portalAddress } from "@/server/custom-domains";
 import { publishedEntries } from "@/server/changelog-queries";
 
@@ -20,8 +21,9 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     return new Response("Not found", { status: 404 });
   }
   const portal = await portalAddress(slug);
-  // Not sample content (Home's "Add sample content"): feed readers keep what they're sent.
-  const entries = await publishedEntries(slug, { withSample: false });
+  // Not sample content (Home's "Add sample content"): feed readers keep what they're sent. For everyone only: no feed
+  // reader signs in, and it's kept in shared caches.
+  const entries = await publishedEntries(slug, SIGNED_OUT, { withSample: false });
   const items = entries.map((entry) => {
     const url = `${portal}/changelog/${entry.number}`;
     return [

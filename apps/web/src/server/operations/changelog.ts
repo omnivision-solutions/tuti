@@ -34,6 +34,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { costPerUse } from "@/lib/model-tiers";
 import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
+import { claimsOf, groupClaims, visibleEntry } from "@/lib/reader-groups";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
@@ -59,6 +60,7 @@ import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
 import { onTeam } from "../session";
+import { actorReader } from "../portal-access";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
@@ -132,6 +134,11 @@ const entryOutput = z
     announced: z.boolean().describe("Published with an announcement (shown as new in the widget), not quietly").meta({ examples: [true] }),
     collecting: z.boolean().describe("The running draft: merged pull requests are being added to it").meta({ examples: [false] }),
     tags: z.array(z.enum(TAGS)).describe("What kind of change it is").meta({ examples: [["new"]] }),
+    groups: z
+      .array(z.string())
+      .optional()
+      .describe("The keys of the reader groups it's for: only their readers (and the team) see it. None: everyone. Only for the team")
+      .meta({ examples: [[]] }),
     body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
     content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
     markdown: z
@@ -186,6 +193,7 @@ const entrySelect = {
   body: true,
   content: true,
   tags: true,
+  groups: groupClaims,
   publishedAt: true,
   announced: true,
   collecting: true,
@@ -199,8 +207,11 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-/** An entry for the API; `counts` when its reactions were read already; `listed`: one of a list's, which go without their Markdown. */
-async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts, { listed = false } = {}) {
+/**
+ * An entry for the API; `counts` when its reactions were read already; `listed`: one of a list's, which go without their
+ * Markdown; `team`: for the team, the only ones told its groups (a reader in one isn't told the others).
+ */
+async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts, { listed = false, team = true } = {}) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   const text = displayDoc(entry);
   return {
@@ -213,6 +224,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     /** The running draft: merged pull requests are being added to it. */
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
+    ...(team && { groups: claimsOf(entry) }),
     body: entry.body,
     content: text,
     /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
@@ -241,6 +253,15 @@ const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry
 
 const findEntry = (projectId: string, number: number) =>
   prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: entrySelect });
+
+/** Whether `actor` may read an entry for these groups' keys (as visibleEntry): one for some groups only is the team's and theirs. */
+export async function mayReadEntry(actor: Actor, projectId: string, groups: string[]): Promise<boolean> {
+  if (groups.length === 0) {
+    return true;
+  }
+  const reader = await actorReader(actor, projectId);
+  return reader === null || groups.some((group) => reader.groups.includes(group));
+}
 
 async function teamEntry(projectId: string, number: number) {
   const entry = await findEntry(projectId, number);
@@ -479,7 +500,7 @@ export const listChangelog = defineOperation({
     }
     const published = input.status === "published";
     const entries = await prisma.changelogEntry.findMany({
-      where: { projectId, publishedAt: published ? { not: null } : null },
+      where: { projectId, publishedAt: published ? { not: null } : null, ...visibleEntry(team ? null : await actorReader(actor, projectId)) },
       orderBy: published ? [{ publishedAt: "desc" }, { number: "desc" }] : [{ updatedAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
       take: input.limit + 1,
@@ -488,7 +509,7 @@ export const listChangelog = defineOperation({
     const shown = entries.slice(0, input.limit);
     const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts, { listed: true }))),
+      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts, { listed: true, team }))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -507,11 +528,11 @@ export const getChangelogEntry = defineOperation({
   run: async ({ actor, projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     const [entry, team] = await Promise.all([findEntry(projectId, number), isTeam(actor, projectId)]);
-    // A draft is as good as missing to everyone but the team.
-    if (!entry || (!entry.publishedAt && !team)) {
+    // A draft is as good as missing to everyone but the team, and an entry for some groups to everyone outside them.
+    if (!entry || (!entry.publishedAt && !team) || !(team || (await mayReadEntry(actor, projectId, claimsOf(entry))))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
-    return entryView(asReaderSees(entry, team), portal);
+    return entryView(asReaderSees(entry, team), portal, undefined, { team });
   },
 });
 
@@ -544,9 +565,9 @@ export const reactToChangelogEntry = defineOperation({
     const { projectId } = context;
     const entry = await prisma.changelogEntry.findUnique({
       where: { projectId_number: { projectId, number: input.number } },
-      select: { id: true, publishedAt: true },
+      select: { id: true, publishedAt: true, groups: groupClaims },
     });
-    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId)))) {
+    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId))) || !(await mayReadEntry(context.actor, projectId, claimsOf(entry)))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${input.number}`);
     }
     if (!entry.publishedAt) {

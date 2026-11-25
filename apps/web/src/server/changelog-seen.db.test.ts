@@ -120,19 +120,19 @@ test("on the portal, a signed-in user who views the changelog has seen it: the n
       data: { projectId: project.id, number, title: `Entry ${number}`, announced, publishedAt: new Date(Date.now() - daysAgo * 86_400_000) },
     });
   // Nothing announced, or only a long time ago, or quietly: nothing new.
-  expect(await hasUnseenAnnouncement(project.id, ada.id)).toBe(false);
+  expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(false);
   await announce(40, 1);
   await announce(1, 2, false);
-  expect(await hasUnseenAnnouncement(project.id, ada.id)).toBe(false);
+  expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(false);
 
   const entry = await announce(5, 3);
-  expect(await hasUnseenAnnouncement(project.id, ada.id)).toBe(true);
+  expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(true);
   actAs(ada);
   expect(await markChangelogSeen(project.slug, entry.publishedAt!.toISOString())).toEqual({});
-  expect(await hasUnseenAnnouncement(project.id, ada.id)).toBe(false);
+  expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(false);
   // A newer announcement is new again.
   await announce(0, 4);
-  expect(await hasUnseenAnnouncement(project.id, ada.id)).toBe(true);
+  expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(true);
 
   // Signed out, nothing is kept.
   actAs(null);

@@ -5,7 +5,7 @@ import { verifySsoToken } from "@/lib/sso";
 import { changelogSeenAt, latestAnnouncedAt, markChangelogSeen } from "@/server/operations/changelog-seen";
 import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
-import { canReadPortal } from "@/server/portal-access";
+import { canReadPortal, readerOf } from "@/server/portal-access";
 import { unseenRepliesOf } from "@/server/widget-person";
 
 /**
@@ -57,7 +57,9 @@ export async function GET(request: Request) {
     // As the panel's Messages counts them (with those by email from their address).
     context.inbox ? unseenRepliesOf(context.projectId, context.actor.userId) : 0,
     context.private &&
-      canReadPortal({ id: context.projectId }, context.actor.userId).then((reader) => (reader ? latestAnnouncedAt({ id: context.projectId }) : null)),
+      canReadPortal({ id: context.projectId }, context.actor.userId).then(async (may) =>
+        may ? latestAnnouncedAt({ id: context.projectId }, await readerOf(context.projectId, context.actor.userId)) : null,
+      ),
   ]);
   return Response.json(
     { seen: seen?.toISOString() ?? null, messages, ...(context.private && { latest: latest ? latest.toISOString() : null }) },

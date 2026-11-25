@@ -280,14 +280,14 @@ test("the changelog lists only an entry's public posts to readers; boards that a
   const entry = await prisma.changelogEntry.create({
     data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date(), posts: { create: [{ postId: open.id }, { postId: mine.id }] } },
   });
-  expect((await publishedEntries(project.slug, { number: entry.number }))[0]!.posts.map((post) => post.number)).toEqual([1]);
+  expect((await publishedEntries(project.slug, null, { number: entry.number }))[0]!.posts.map((post) => post.number)).toEqual([1]);
   expect((await call(getChangelogEntry, as(bob), { number: 1 })).posts.map((post) => post.number)).toEqual([1]);
   expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
   expect((await call(listChangelog, as(bob), {})).entries[0]!.posts.map((post) => post.number)).toEqual([1]);
   expect((await call(listChangelog, key, {})).entries[0]!.posts.map((post) => post.number).sort()).toEqual([1, 2]);
   // Its public post on a board turned off: gone from what readers see of the entry, there for the team.
   await prisma.board.update({ where: { id: open.boardId }, data: { off: true } });
-  expect((await publishedEntries(project.slug, { number: entry.number }))[0]!.posts).toEqual([]);
+  expect((await publishedEntries(project.slug, null, { number: entry.number }))[0]!.posts).toEqual([]);
   expect((await call(getChangelogEntry, as(bob), { number: 1 })).posts).toEqual([]);
   expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
   await prisma.board.update({ where: { id: open.boardId }, data: { off: false } });
