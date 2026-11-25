@@ -71,6 +71,11 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   const number = randomInt(1_000, 1_000_000);
   const pr = `Add a dark theme ${id}`;
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
+  // Its line is in the running draft; the changelog's list leads to its notes with Write it, not Draft with AI.
+  await owner.goto(`/app/${slug}/changelog`);
+  const running = owner.getByRole("region", { name: "Drafts" }).getByRole("listitem").filter({ hasText: "Collecting pull requests" });
+  await expect(running.getByRole("link", { name: "Write it" })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/autopilot`);
   // Every project page says so.
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toBeVisible();
