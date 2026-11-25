@@ -178,7 +178,11 @@ export async function addChangelogPullRequests(
 ): Promise<{ error?: string; number?: number | null; added?: number }> {
   let added: { number: number | null; added: number } | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    // The dialog can tick more than one request takes: in batches, into the same running draft.
+    // The dialog can tick more than one request takes: in batches, into the same running draft. Still a request's worth
+    // of work at most: none is refused as the operation refuses it, and no more than the dialog could list.
+    if (pullRequests.length === 0 || pullRequests.length > MAX_PICKED) {
+      throw new OperationError(400, "invalid_input", pullRequests.length === 0 ? "Pick a pull request to add" : `Add up to ${MAX_PICKED} pull requests at a time`);
+    }
     for (let i = 0; i < pullRequests.length; i += MAX_ADDED_PULL_REQUESTS) {
       const done = await call(addPullRequestsOperation, context, { pullRequests: pullRequests.slice(i, i + MAX_ADDED_PULL_REQUESTS) });
       added = { number: done.number ?? added?.number ?? null, added: (added?.added ?? 0) + done.added.length };
@@ -187,6 +191,9 @@ export async function addChangelogPullRequests(
   // A later batch refused: said, with what the ones before it added (they stay).
   return result.error ? { ...result, ...(added && { number: added.number, added: added.added }) } : (added ?? result);
 }
+
+/** The most one Add changes adds: more than a busy release has, in batches of the operation's own limit. */
+const MAX_PICKED = 500;
 
 /** Takes a merged pull request out of a draft, with its line (see changelog.removePullRequest). */
 export async function removeChangelogPullRequest(projectSlug: string, number: number, url: string): Promise<FormState> {

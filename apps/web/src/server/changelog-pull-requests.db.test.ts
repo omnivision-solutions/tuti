@@ -513,3 +513,9 @@ test("in the app, a later batch refused is an error, saying so though the batche
 
   expect(result).toMatchObject({ error: expect.any(String), number: 1, added: 50 });
 });
+
+test("in the app, Add changes takes one pull request at least and 500 at most", async () => {
+  actAs(owner);
+  expect(await addAction(project.slug, [])).toEqual({ error: "Pick a pull request to add" });
+  expect(await addAction(project.slug, Array.from({ length: 501 }, (_, i) => ({ repo, number: i + 1 })))).toEqual({ error: "Add up to 500 pull requests at a time" });
+});
