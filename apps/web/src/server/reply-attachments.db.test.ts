@@ -160,6 +160,20 @@ test("a reply with files sent again with its requestId gets the one already sent
   expect(await prisma.conversationAttachment.count({ where: { id: other, messageId: null } })).toBe(1);
 });
 
+test("a retry with files that looked before the first was written still gets it, not its files gone", async () => {
+  const { owner, project } = await setup();
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const file = await upload(project.slug, "a.pdf", Buffer.from("a"));
+  const first = await call(replyToConversation, team, { number: 1, body: "Here it is.", attachments: [file], requestId: "raced" });
+
+  // The retry's first look found nothing (the first wasn't written yet); its files were then claimed by the first.
+  const look = vi.spyOn(prisma.conversationMessage, "findFirst").mockResolvedValueOnce(null);
+  expect(await call(replyToConversation, team, { number: 1, body: "Here it is.", attachments: [file], requestId: "raced" })).toMatchObject({ id: first.id });
+  expect(look).toHaveBeenCalledTimes(2);
+  look.mockRestore();
+  expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(1);
+});
+
 test("uploads never sent are removed after a day, files and all; sent ones stay", async () => {
   const { project } = await setup();
   const unsent = await upload(project.slug, "draft.pdf", Buffer.from("draft"));

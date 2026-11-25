@@ -1200,9 +1200,9 @@ export const replyToConversation = defineOperation({
     if (repeat) {
       return messageView(repeat);
     }
-    const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
     const outcome: { closed?: boolean; keptOpen?: boolean } = {};
     try {
+      const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
       message =
         writer.author === "USER"
           ? await addMessage(conversation.id, projectId, { ...writer, channel: "API", body: input.body, requestId })
@@ -1215,8 +1215,10 @@ export const replyToConversation = defineOperation({
               { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
             );
     } catch (error) {
-      // The same id sent twice at once: the unique index lets one write it, and the other answers with that one.
-      const sent = requestId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && (await sentBefore(conversation.id, writer, { ...input, requestId }));
+      // The same id sent twice at once: the unique index lets one write it, and the other answers with that one. Or the
+      // first was written since this one looked, and claimed the uploads this one then found gone (400).
+      const raced = (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") || (error instanceof OperationError && error.status === 400);
+      const sent = requestId && raced && (await sentBefore(conversation.id, writer, { ...input, requestId }));
       if (sent) {
         return messageView(sent);
       }
