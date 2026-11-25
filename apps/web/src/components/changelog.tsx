@@ -51,6 +51,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { plural } from "@/lib/autopilot-words";
+import { untickedByDefault } from "@/lib/added-pull-requests";
 import { formatDate } from "@/lib/format";
 import { credits } from "@/lib/usage-format";
 import {
@@ -1026,9 +1027,6 @@ function EntryPullRequests({
 }
 
 /** "Add changes…": the merged pull requests no entry has, those Autopilot found nothing for users in unticked, added to the running draft. */
-/** The most one Add changes takes: addChangelogPullRequests' own limit (server/changelog.ts). */
-const MAX_PICKED_PULL_REQUESTS = 500;
-
 function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsTo: string | null; saved: () => boolean }) {
   const [open, setOpen] = useState(false);
   const [found, setFound] = useState<{ error?: string; missing?: MissingChanges } | null>(null);
@@ -1044,9 +1042,7 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
     startTransition(async () => {
       const result = await findMissingChanges(projectSlug);
       setFound(result);
-      // Ticked: what Autopilot didn't find nothing for users in, up to what one Add takes (the action's limit).
-      let ticked = 0;
-      setUnticked(new Set(result.missing?.pullRequests.filter((pr) => pr.forUsers === false || ++ticked > MAX_PICKED_PULL_REQUESTS).map(key)));
+      setUnticked(untickedByDefault(result.missing?.pullRequests ?? []));
     });
   const add = () =>
     // Into this draft's text: what isn't saved would be lost (adding to another draft leaves this one alone).
@@ -1062,8 +1058,12 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
         focusPullRequests.next = false;
       }
       if (result.error) {
-        // Some were added before a later batch was refused: said, so the list isn't taken for what's missing still.
-        setFound({ ...found, error: result.added ? `Added ${plural(result.added, "pull request")}, then: ${result.error}` : result.error });
+        // Some were added before a later batch was refused: the page reloads with them, which remounts this dialog
+        // closed in the draft they went into, so it's said in a toast, which stays.
+        if (result.added) {
+          toast.error(`Added ${plural(result.added, "pull request")}, then: ${result.error}`);
+        }
+        setFound({ ...found, error: result.error });
         return;
       }
       setOpen(false);
