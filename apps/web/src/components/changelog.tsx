@@ -140,6 +140,9 @@ const ChangelogSavingContext = createContext<{
   /** The form's featured image isn't the saved one (one uploaded or removed, not saved yet): Publish offers no cover of its own over it. */
   coverChanged: boolean;
   setCoverChanged: (changed: boolean) => void;
+  /** "Who sees it" changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
+  groupsChanged: boolean;
+  setGroupsChanged: (changed: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -152,9 +155,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [drafting, setDrafting] = useState(false);
   const [locked, setLocked] = useState(false);
   const [coverChanged, setCoverChanged] = useState(false);
+  const [groupsChanged, setGroupsChanged] = useState(false);
   return (
     <ChangelogSavingContext
-      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged }}
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged, groupsChanged, setGroupsChanged }}
     >
       {children}
     </ChangelogSavingContext>
@@ -561,6 +565,7 @@ export function ChangelogForm({
     if (!result.error) {
       setDirty(false);
       setSaves((n) => n + 1);
+      saving?.setGroupsChanged(false);
       toast.success("Saved");
     }
     return result;
@@ -678,7 +683,10 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => setDirty(true)} />}
+        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => {
+          setDirty(true);
+          saving?.setGroupsChanged(true);
+        }} />}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
@@ -732,14 +740,14 @@ export function WhoSeesIt({
               aria-describedby={upgrade ? needsId : undefined}
               onClick={(event) => {
                 // Picking one needs the plan: the prompt opens and it stays unpicked.
-                if (upgrade && event.currentTarget.checked) {
+                if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
                   event.preventDefault();
                   setUpgrading(true);
                 }
               }}
               onChange={(event) => {
                 // The pick the prompt refused (onClick put it back) isn't a change.
-                if (upgrade && event.currentTarget.checked) {
+                if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
                   return;
                 }
                 setChanged(true);
@@ -1939,6 +1947,8 @@ export function ChangelogEntryActions({
   // Pull requests' titles aren't release notes: writing them is the next step, not publishing them.
   // Text this release's editor can't show isn't rewritten by AI either (ChangelogForm's onUnreadable).
   const locked = saving?.locked ?? false;
+  // Who it's for changed and isn't saved: Publish would send it to whoever the saved groups say.
+  const groupsUnsaved = saving?.groupsChanged ?? false;
   const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused && !locked;
   // Sample and imported entries go out without announcing (changelog.publish): no subscriber is emailed.
   const summary = publishSummary({
@@ -2045,13 +2055,21 @@ export function ChangelogEntryActions({
       <AlertDialogContent className={cn("max-h-[calc(100dvh-2rem)] overflow-y-auto", covers && "sm:max-w-md")}>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {markers.length > 0 ? (markers.length === 1 ? "Replace a line before publishing" : `Replace ${markers.length} lines before publishing`) : `Publish “${title}”?`}
+            {markers.length > 0
+              ? markers.length === 1
+                ? "Replace a line before publishing"
+                : `Replace ${markers.length} lines before publishing`
+              : groupsUnsaved
+                ? "Save who sees it before publishing"
+                : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
           {/* A div, so the note on text not written yet is in it too: all of it is read out as the dialog opens. */}
           <AlertDialogDescription render={<div />} className={cn("flex flex-col gap-3", markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
-            {markers.length > 0 ? (
+            {markers.length === 0 && groupsUnsaved ? (
+              <p>{`You changed who sees “${title}” and haven't saved it. Save, then publish.`}</p>
+            ) : markers.length > 0 ? (
               <p>{`“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`}</p>
             ) : (
               <p>
@@ -2096,7 +2114,7 @@ export function ChangelogEntryActions({
           {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
           <AlertDialogAction
             // Off while lines are left to fill in, but in the keyboard's reach: the description says why.
-            disabled={busy || markers.length > 0}
+            disabled={busy || markers.length > 0 || groupsUnsaved}
             focusableWhenDisabled
             onClick={() =>
               sample || importedOn

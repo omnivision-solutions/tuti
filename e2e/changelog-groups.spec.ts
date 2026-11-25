@@ -112,6 +112,20 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect.poll(async () => (await saved()).tags).toEqual(["fixed"]);
   expect((await saved()).groups).toEqual(["enterprise"]);
   await api("/changelog/1", { groups: [] }, "PATCH");
+  // A draft: picking who sees it holds Publish until it's saved (Publish sends what's saved, to whoever that's for).
+  await api("/changelog", { title: "Roles", body: "Give teammates roles." });
+  await owner.goto(`/app/${slug}/changelog/3`);
+  await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).check();
+  await owner.getByRole("button", { name: "Publish" }).click();
+  const publish = owner.getByRole("alertdialog");
+  await expect(publish.getByRole("heading", { name: "Save who sees it before publishing" })).toBeVisible();
+  await expect(publish.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await publish.getByRole("button", { name: "Cancel" }).click();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => ((await api("/changelog/3", undefined, "GET")) as unknown as { groups: string[] }).groups).toEqual(["enterprise"]);
+  await owner.getByRole("button", { name: "Publish" }).click();
+  await expect(publish.getByRole("heading", { name: "Publish “Roles”?" })).toBeVisible();
+  await publish.getByRole("button", { name: "Cancel" }).click();
 
   // Her What's new has nothing announced for her, so it marks nothing seen (not the time of the one she can't read).
   await bea.goto("/widget?tab=whats-new");

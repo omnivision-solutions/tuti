@@ -32,7 +32,7 @@ test("on a plan without reader groups, picking one opens the upgrade prompt and 
   const { box, sent, onChange } = await picker();
   await act(async () => box("beta").click());
   expect(box("beta").checked).toBe(false);
-  expect(document.body.textContent).toContain("Reader groups need the Business plan");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Reader groups need the Business plan");
   expect(sent()).toBe(false);
   expect(onChange).not.toHaveBeenCalled();
 });
@@ -43,4 +43,13 @@ test("unpicking one works on such a plan, and is sent", async () => {
   expect(box("enterprise").checked).toBe(false);
   expect(sent()).toBe(true);
   expect(onChange).toHaveBeenCalled();
+});
+
+test("on such a plan, a group the entry is saved with can be ticked again after unticking it", async () => {
+  const { box, onChange } = await picker();
+  await act(async () => box("enterprise").click());
+  await act(async () => box("enterprise").click());
+  expect(box("enterprise").checked).toBe(true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(onChange).toHaveBeenCalledTimes(2);
 });
