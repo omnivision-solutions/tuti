@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * What a project's app tells Tuti about one of its users (e.g. { plan: "pro", seats: 12, beta: true,
  * features: ["sso", "audit"] }), by SSO sign-ins (the token's `properties`) and the API. Kept on their
- * SSO identity, for groups' conditions to match (lib/group-conditions.ts). Each change names the
+ * SSO identity, for groups' conditions to match (@tuti/shared/group-conditions). Each change names the
  * properties it sets and removes (null); the rest stay.
  */
 

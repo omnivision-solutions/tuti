@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { Properties } from "@tuti/shared/user-properties";
+import type { Properties } from "./user-properties";
 
 /**
  * Reader groups from conditions (Phase 10): the project's app tells Tuti properties of its users

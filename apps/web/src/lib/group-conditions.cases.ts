@@ -1,9 +1,9 @@
-import type { GroupCondition, GroupRule } from "./group-conditions";
+import type { GroupCondition, GroupRule } from "@tuti/shared/group-conditions";
 import type { Properties } from "@tuti/shared/user-properties";
 
 /**
  * How conditions match, as cases: group-conditions.test.ts checks conditionsMatch with them, and
- * server/group-conditions-sql.db.test.ts the same in SQL, so the two can't drift apart.
+ * server/group-conditions-sql.db.test.ts (packages/jobs/src/group-conditions-sql.ts) the same in SQL, so the two can't drift apart.
  */
 export type ConditionCase = { name: string; rule: GroupRule; properties: Properties; matches: boolean };
 

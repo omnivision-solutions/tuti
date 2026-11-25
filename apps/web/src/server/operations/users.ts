@@ -2,11 +2,11 @@ import { Prisma, prisma } from "@tuti/db";
 import { historySince, visibleConversationsSql } from "@tuti/jobs";
 import { z } from "zod";
 
-import { inGroup, storedRule } from "@/lib/group-conditions";
+import { inGroup, storedRule } from "@tuti/shared/group-conditions";
 import { readerGroup } from "@/lib/reader-groups";
 import { MAX_PROPERTIES, mergeProperties, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
 
-import { inGroupSql } from "../group-conditions-sql";
+import { inGroupSql } from "@tuti/jobs";
 import { withLockRetries } from "../lock-retries";
 import { syncUsers } from "../project-users";
 import { subscribe, unsubscribe } from "./changelog-subscribers";

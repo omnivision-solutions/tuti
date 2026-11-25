@@ -1,6 +1,6 @@
 import { Prisma } from "@tuti/db";
 
-import type { GroupRule } from "@/lib/group-conditions";
+import type { GroupRule } from "@tuti/shared/group-conditions";
 
 /**
  * conditionsMatch in SQL, on the properties (jsonb) at `column`. Numbers compare as Postgres writes

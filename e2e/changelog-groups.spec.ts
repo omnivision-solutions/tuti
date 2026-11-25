@@ -26,26 +26,13 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
 
-  // The team's app: two users, a group for enterprise customers, and two entries, one for them only (set in the database:
-  // the API sets an entry's groups in a later release), which completes a post.
+  // The team's app: two users, a group for enterprise customers, and two entries, one for them only, which completes a post.
   const api = await apiFor(owner, slug);
   await api("/users", { users: [{ id: "user-1", properties: { plan: "enterprise" } }, { id: "user-2", properties: { plan: "free" } }] });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
   await api("/posts", { board: "feature-requests", title: "Audit logs" });
   await api("/changelog", { title: "Dark mode", body: "Switch themes from your profile menu." });
-  await api("/changelog", { title: "Audit log export", body: "Download your audit log as CSV.", posts: [1] });
-  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
-  await db.connect();
-  try {
-    await db.query(
-      `INSERT INTO changelog_entry_group ("entryId", "groupId")
-       SELECT e.id, g.id FROM changelog_entry e JOIN project p ON p.id = e."projectId" JOIN reader_group g ON g."projectId" = p.id
-       WHERE p.slug = $1 AND e.number = 2 AND g.key = 'enterprise'`,
-      [slug],
-    );
-  } finally {
-    await db.end();
-  }
+  await api("/changelog", { title: "Audit log export", body: "Download your audit log as CSV.", posts: [1], groups: ["enterprise"] });
   // Everyone's quietly, the enterprise one announced: only enterprise customers have something new.
   await api("/changelog/1/publish", { announce: false });
   await api("/changelog/2/publish", {});

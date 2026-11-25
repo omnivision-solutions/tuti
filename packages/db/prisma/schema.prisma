@@ -1995,7 +1995,7 @@ model ReaderGroup {
   /// collections name it (`/groups/{key}`, `groups` on collections.*).
   key         String
   name        String
-  /// Matched against the project's users' properties, all of them or (`match` any) one (lib/group-conditions.ts GroupCondition[]).
+  /// Matched against the project's users' properties, all of them or (`match` any) one (@tuti/shared/group-conditions GroupCondition[]).
   conditions  Json       @default("[]")
   match       GroupMatch @default(all)
   /// The name a token's `groups` gave it before groups came only from conditions; cleared when its

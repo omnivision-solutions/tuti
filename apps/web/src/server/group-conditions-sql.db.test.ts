@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 
 import { CONDITION_CASES } from "@/lib/group-conditions.cases";
 
-import { conditionsSql } from "./group-conditions-sql";
+import { conditionsSql } from "@tuti/jobs";
 
 /** conditionsSql matches what conditionsMatch does (lib/group-conditions.test.ts runs the same cases). */
 test.each(CONDITION_CASES)("$name", async ({ rule, properties, matches }) => {

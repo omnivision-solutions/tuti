@@ -3,9 +3,9 @@ import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { pictureUrl } from "@tuti/shared/media-links";
 
-import type { GroupRule } from "@/lib/group-conditions";
+import type { GroupRule } from "@tuti/shared/group-conditions";
 import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
-import { inGroupSql } from "@/server/group-conditions-sql";
+import { inGroupSql } from "@tuti/jobs";
 import { canActIn } from "@/server/membership";
 import { type PostViewer, shownBoards, visiblePosts, visiblePostsSql } from "@/server/post-visibility";
 

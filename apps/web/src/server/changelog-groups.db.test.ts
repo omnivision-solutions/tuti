@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
 
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 
@@ -21,7 +21,7 @@ import { actAs, createProject, inGroupNamed, signUp, type TestUser, untilWaiting
 import { mailbox } from "@/test/mailbox";
 
 import { changelogContents, changelogDates, publishedEntries } from "./changelog-queries";
-import { createChangelogEntry, getChangelogEntry, listChangelog, publishChangelogEntry, reactToChangelogEntry } from "./operations/changelog";
+import { createChangelogEntry, getChangelogEntry, listChangelog, publishChangelogEntry, reactToChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { createPost } from "./operations/create";
 import { listChangelogComments } from "./operations/changelog-comments";
 import { addChangelogSubscribers } from "./operations/changelog-subscribers";
@@ -32,9 +32,8 @@ import { readerOf } from "./portal-access";
 import { whatsNewSeen } from "./widget-home";
 
 /**
- * An entry for some reader groups only (docs/plan.md S4): their readers and the team see it; everyone else doesn't, anywhere
- * it's listed, and (for now) no subscriber is emailed it. Nothing sets its groups yet (a later release's API will), so the
- * tests set them in the database.
+ * An entry for some reader groups only (docs/plan.md S4), set by changelog.create and changelog.update: their readers and
+ * the team see it; everyone else doesn't, anywhere it's listed, and it's emailed only to subscribers in them.
  */
 
 let owner: TestUser;
@@ -51,25 +50,19 @@ const log = { info: () => {}, warn: () => {} };
 const as = (user: TestUser) => ({ actor: { kind: "user" as const, userId: user.id }, projectId: project.id });
 const params = (extra: Record<string, string> = {}) => ({ params: Promise.resolve({ project: project.slug, ...extra }) }) as never;
 
-async function reader(groups: string[]) {
+/** One of the project's users, in these groups, at `email` as the project's app gave it. */
+async function reader(groups: string[], email?: string) {
   const user = await signUp("Reader");
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${user.id}`, userId: user.id, properties: { groups } } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${user.id}`, userId: user.id, email, properties: { groups } } });
   return user;
 }
 
-/** Entry `number` for these groups only (the API sets them in a later release). */
-async function forGroups(number: number, keys: string[]) {
-  const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
-  const groups = await prisma.readerGroup.findMany({ where: { projectId: project.id, key: { in: keys } } });
-  await prisma.changelogEntryGroup.deleteMany({ where: { entryId: entry.id } });
-  await prisma.changelogEntryGroup.createMany({ data: groups.map((group) => ({ entryId: entry.id, groupId: group.id })) });
-  return entry.id;
-}
+/** Entry `number` for these groups only (none: everyone), as the team sets it. */
+const forGroups = (number: number, groups: string[]) => call(updateChangelogEntry, as(owner), { number, groups });
 
 /** A published, announced entry, `groups` its groups, completing `posts`. */
 async function published(title: string, groups: string[] = [], posts: number[] = []) {
-  const entry = await call(createChangelogEntry, as(owner), { title, body: `${title}.`, posts });
-  await forGroups(entry.number, groups);
+  const entry = await call(createChangelogEntry, as(owner), { title, body: `${title}.`, posts, groups });
   await call(publishChangelogEntry, as(owner), { number: entry.number, announce: true });
   return entry.number;
 }
@@ -112,6 +105,9 @@ test("the API: only the group's readers and the team list, get, react to and rea
   await forGroups(enterprise, []);
   expect((await call(getChangelogEntry, as(owner), { number: enterprise })).groups).toEqual([]);
   expect(await numbers(bob)).toEqual([enterprise, everyone]);
+  // Only the project's groups, each once.
+  await expect(forGroups(enterprise, ["nope"])).rejects.toMatchObject({ status: 400, message: expect.stringContaining("nope") });
+  expect((await forGroups(enterprise, ["beta", "enterprise", "beta"])).groups).toEqual(["beta", "enterprise"]);
 });
 
 test("the portal and the widget: the list, its menu and month index, the newest announcement and What's new leave it out for anyone outside its groups", async () => {
@@ -209,22 +205,57 @@ describe("email", () => {
   const address = () => `e2e-${randomUUID()}@example.com`;
   const entryEmailsTo = (to: string) => mailbox.emails.filter((email) => email.to.includes(to) && email.subject.startsWith(`${project.name}: `));
 
-  test("an entry for some groups isn't emailed to subscribers; made for everyone, it is", async () => {
-    const kim = address();
-    await call(addChangelogSubscribers, as(owner), { emails: [kim] });
-    const entry = await call(createChangelogEntry, as(owner), { title: "Enterprise news", body: "Hi." });
-    const id = await forGroups(entry.number, ["enterprise"]);
-    await call(publishChangelogEntry, as(owner), { number: entry.number, emailSubscribers: true });
+  test("an entry for some groups is emailed only to subscribers in them: not to others, nor to an address the team's app never named", async () => {
+    const [kim, lee, anon] = [address(), address(), address()];
+    await reader(["enterprise"], kim);
+    await reader(["beta"], lee);
+    await call(addChangelogSubscribers, as(owner), { emails: [kim, lee, anon] });
+    const entry = await call(createChangelogEntry, as(owner), { title: "Enterprise news", body: "Hi.", groups: ["enterprise"] });
+    const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+    // Published with Email subscribers but not sent yet (the job runs inline on publishing): the editor's count, then the job.
+    await prisma.changelogEntry.update({ where: { id }, data: { publishedAt: new Date(), subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
 
-    expect(await handlers.changelogEmailed({ entryId: id }, log)).toEqual({ waiting: "the entry is for some reader groups only" });
-    expect(entryEmailsTo(kim)).toEqual([]);
-    // Still due: made for everyone, it goes.
-    await forGroups(entry.number, []);
-    expect(await handlers.changelogEmailed({ entryId: id }, log)).toMatchObject({ emailed: 1 });
+    expect(await subscribersLeft(id)).toBe(1);
+    expect(await handlers.changelogEmailed({ entryId: id }, log)).toEqual({ emailed: 1 });
     expect(entryEmailsTo(kim)).toHaveLength(1);
+    expect([...entryEmailsTo(lee), ...entryEmailsTo(anon)]).toEqual([]);
+    // Done: all it's for have it.
+    expect(await prisma.changelogEntry.findUniqueOrThrow({ where: { id }, select: { subscribersEmailDueAt: true } })).toEqual({ subscribersEmailDueAt: null });
   });
 
-  test("made for some groups while its emails are going out, the rest aren't sent", async () => {
+  test("an entry for everyone is emailed to every subscriber, whatever their groups", async () => {
+    const [kim, anon] = [address(), address()];
+    await reader([], kim);
+    await call(addChangelogSubscribers, as(owner), { emails: [kim, anon] });
+    const entry = await call(createChangelogEntry, as(owner), { title: "News", body: "Hi." });
+    await call(publishChangelogEntry, as(owner), { number: entry.number, emailSubscribers: true });
+    expect(entryEmailsTo(kim)).toHaveLength(1);
+    expect(entryEmailsTo(anon)).toHaveLength(1);
+  });
+
+  test("changing its groups waits for a claim on the project (as publishing does), so an edit checked against its time can't deadlock with one", async () => {
+    const entry = await call(createChangelogEntry, as(owner), { title: "News", body: "Hi." });
+    const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+    // A claim or a publish: the project's row, then the entry's.
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const held = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR SHARE`;
+      locked();
+      await released;
+      await tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${id} FOR SHARE`;
+    });
+    await holding;
+    const update = call(updateChangelogEntry, as(owner), { number: entry.number, groups: ["enterprise"], expectedUpdatedAt: entry.updatedAt });
+    await untilWaitingOnLock();
+    release();
+    await held;
+    expect((await update).groups).toEqual(["enterprise"]);
+  });
+
+  test("made for some groups while its emails are going out, the rest go only to those in them", async () => {
     const kim = address();
     await call(addChangelogSubscribers, as(owner), { emails: [kim] });
     const entry = await call(createChangelogEntry, as(owner), { title: "News", body: "Hi." });
@@ -232,7 +263,8 @@ describe("email", () => {
     // Published with Email subscribers but not sent yet: the job below runs it.
     await prisma.changelogEntry.update({ where: { id }, data: { publishedAt: new Date(), subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
 
-    // The project's row held while the job reads who to email; the groups land before its first claim (which waits for the row).
+    // The project's row held while the job reads who to email (everyone); the groups land before its first claim
+    // (which waits for the row), as changelog.update sets them holding it.
     let locked!: () => void;
     const holding = new Promise<void>((resolve) => (locked = resolve));
     let release!: () => void;
