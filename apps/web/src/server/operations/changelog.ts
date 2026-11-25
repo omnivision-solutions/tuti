@@ -806,6 +806,8 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
             ...(input.title !== undefined && { title: input.title }),
             ...(text && { body: text.text, content: text.doc }),
             ...(input.tags && { tags: input.tags.map(toTag) }),
+            // ponytail: an email-only entry's email, sent by the previous release's worker while a deploy runs both, links
+            // to its page (a 404 for readers); its text is all there. A release apart if that matters.
             ...(input.emailOnly !== undefined && { emailOnly: input.emailOnly }),
             ...(cover !== undefined && { coverId: cover }),
           },

@@ -923,7 +923,7 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 ? `Being emailed to subscribers: ${entry.subscribersLeft} still to go.`
                 : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
           </p>
-          <p>{entry.announced ? "Marked new in your widget." : "Not marked new."}</p>
+          <p>{entry.emailOnly ? "Not in your widget: it's email only." : entry.announced ? "Marked new in your widget." : "Not marked new."}</p>
           {/* The subscribers are the line above: here only the people who asked for its posts. */}
           {entry.told !== null && entry.told.asked > 0 && <p>{toldText({ asked: entry.told.asked, subscribers: 0 })}</p>}
         </>
@@ -963,10 +963,15 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
               { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}
-          {choice("Mark it new", "A dot in your widget until readers see it.", {
-            checked: announce.markNew,
-            onChange: (event) => pick({ markNew: event.target.checked }),
-          })}
+          {/* An email-only entry is in no widget: nothing to mark (publishing doesn't announce it). */}
+          {entry.emailOnly ? (
+            <p>Not in your widget: it&apos;s email only.</p>
+          ) : (
+            choice("Mark it new", "A dot in your widget until readers see it.", {
+              checked: announce.markNew,
+              onChange: (event) => pick({ markNew: event.target.checked }),
+            })
+          )}
         </>
       )}
     </fieldset>
@@ -2182,7 +2187,8 @@ export function ChangelogEntryActions({
             onClick={() =>
               sample || importedOn
                 ? run((slug, n) => publishChangelogEntry(slug, n, false, false, withCover), "Published without announcing")
-                : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing, withCover), "Published")
+                : // An email-only entry is in no widget: never announced (marked new), whatever the box said before.
+                  run((slug, n) => publishChangelogEntry(slug, n, announce.markNew && !emailOnly, emailing, withCover), "Published")
             }
           >
             Publish

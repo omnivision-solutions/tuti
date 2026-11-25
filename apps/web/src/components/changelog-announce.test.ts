@@ -153,6 +153,16 @@ describe("the Publish dialog's line", () => {
   });
 });
 
+test("an email-only entry offers no Mark it new (it's in no widget), before publishing or after", () => {
+  const entry = { number: 1, title: "Pricing", content: { type: "doc" as const, content: [] }, tags: [], groups: [], emailOnly: true, posts: [], cover: null, told: null, announced: true, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 };
+  for (const published of [false, true]) {
+    const html = renderToStaticMarkup(createElement(HowAnnounced, { entry: { ...entry, published }, subscribers: 1 }));
+    expect(html).toContain("Not in your widget: it&#x27;s email only.");
+    expect(html).not.toContain("Mark it new");
+    expect(html).not.toContain("Marked new");
+  }
+});
+
 test("an email-only entry's Publish line says it's listed nowhere", () => {
   const { start, count } = publishSummary({ email: true, subscribers: 3, emailedSubscribers: false, subscribersLeft: 0, posts: 0, asked: 0, emailOnly: true });
   expect(`${start}${count}.`).toBe("It's listed nowhere, and sends 3 emails.");

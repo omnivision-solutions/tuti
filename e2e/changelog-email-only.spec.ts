@@ -33,10 +33,13 @@ test("an email-only entry: the team marks it in the editor, it's emailed to subs
   await checkpoint(team, "editor-email-only");
   await team.reload();
   await expect(team.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Email only" })).toBeChecked();
+  await expect(team.getByRole("group", { name: "How it's announced" })).toContainText("Not in your widget: it's email only.");
   await team.getByRole("button", { name: "Publish" }).click();
   await expect(dialog).toContainText("It's listed nowhere, and sends 1 email.");
   await dialog.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  // In no widget, so not announced (marked new), though the box was on by default.
+  expect(((await api("/changelog/1", undefined, "GET")) as unknown as { announced: boolean }).announced).toBe(false);
 
   // Kim gets it in full, with no link to a page.
   const email = await latestEmailTo(kim, { subject: /^Acme: Pricing change$/ });
