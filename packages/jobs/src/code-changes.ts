@@ -169,13 +169,14 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } };
   // Turned off since it merged: nothing is sent, and it isn't kept waiting. Never one with updates (their history, Undo,
   // those waiting elsewhere go with it). Asked for again by the team (`force`: analysing since they asked), it's put
-  // back, saying why it wasn't: as it was past the gate, or ready with its updates, else failed.
+  // back, saying why it wasn't: ready with its updates (also one the team added past the gate), else as it was past the gate,
+  // else failed.
   if (!change.project.analyseCodeChanges) {
     if (input.force) {
       const updates = await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } });
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
-        data: { state: input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
+        data: { state: updates > 0 ? "READY" : input.pastGate ? "NOTHING_TO_DO" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
       await prisma.codeChange.deleteMany({ where: { ...waiting, actions: { none: {} } } });
