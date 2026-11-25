@@ -724,6 +724,27 @@ describe("deciding", () => {
     expect(await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })).toBe(1);
   });
 
+  test("picked just as its run starts (after the run's first look): the run reads the pick again and goes past the gate", async () => {
+    github.pullRequest(repo, pullRequest(38));
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: installationId, repo, number: 38, url: `https://github.com/${repo}/pull/38`, title: "Dark mode 38", author: "octo", mergedAt: new Date(), state: "FAILED" },
+    });
+    await prisma.changelogDecision.create({
+      data: { projectId: project.id, repoId: installationId, number: 38, repo, url: change.url, title: change.title, author: "octo", mergedAt: new Date(), takenOut: false },
+    });
+    // The run's first look finds no pick (it lands just after).
+    const look = vi.spyOn(prisma.changelogDecision, "count").mockResolvedValueOnce(0);
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false, resume: false });
+    look.mockRestore();
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { state: true } })).toEqual({ state: "READY" });
+  });
+
   test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
     github.pullRequest(repo, pullRequest(32));
     // The provider stops answering after the gate: the analysis failed, to be tried again; the pull request is in the draft since the merge.

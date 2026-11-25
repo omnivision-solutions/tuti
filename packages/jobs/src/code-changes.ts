@@ -211,7 +211,8 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   }
   // The team picked it for the changelog (changelog.addPullRequests, not taken out since): every run of it goes past the
   // gate, however it was queued (the merge's own, a retry, Resume all, Analyse again), so no run's flags can lose a pick.
-  const picked = (await prisma.changelogDecision.count({ where: { projectId: change.projectId, repoId: change.repoId, number: change.number, takenOut: false } })) > 0;
+  const isPicked = async () => (await prisma.changelogDecision.count({ where: { projectId: change.projectId, repoId: change.repoId, number: change.number, takenOut: false } })) > 0;
+  const picked = await isPicked();
   input = { ...input, pastGate: input.pastGate || picked };
   // Analysed once: a redelivery or a second run finds it done. Not where it's picked and was ruled out with no
   // changelog line (by a run with the gate that was under way when the team picked it): that's the pick's run to do.
@@ -293,6 +294,9 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     // Any analysis that starts is the one a retry waited for: none is left waiting.
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, claimedFrom: null } });
   }
+  // Read again now that it's this run's: a pick made since the first read (whose retry the line above cleared) is this
+  // run's to honour.
+  input = { ...input, pastGate: input.pastGate || (await isPicked()) };
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
   // its level gives Autopilot's roles (roleModel; Decides and Checks here, Writes is `ai`): every step below
   // reads them (codeChangesSettings()).
