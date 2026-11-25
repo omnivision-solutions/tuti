@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appConfig } from "../app.config";
+import packageJson from "../package.json";
 
 describe("the app's Expo config", () => {
   it("names no Expo account or project unless the environment does", () => {
@@ -34,5 +35,9 @@ describe("the app's Expo config", () => {
   it("takes Android's Firebase config from the environment only", () => {
     expect(appConfig({}).android?.googleServicesFile).toBeUndefined();
     expect(appConfig({ GOOGLE_SERVICES_JSON: "/builds/google-services.json" }).android?.googleServicesFile).toBe("/builds/google-services.json");
+  });
+
+  it("builds expo-notifications from its source, which the repository's patch changes (Android's prebuilt copy has no unlock requirement)", () => {
+    expect(packageJson.expo.autolinking.android.buildFromSource).toContain("expo-notifications");
   });
 });

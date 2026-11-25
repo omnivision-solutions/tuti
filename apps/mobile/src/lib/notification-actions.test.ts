@@ -83,10 +83,15 @@ vi.mock("expo-notifications", () => ({
 type Call = { url: string; method: string; project?: string; body?: unknown };
 const calls: Call[] = [];
 let answer: (call: Call) => Response = () => Response.json({});
+/** A request the network leaves hanging: answered only by its abort. */
+let hang = false;
 vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
   const headers = init.headers as Record<string, string>;
   const call = { url, method: init.method ?? "GET", project: headers["tuti-project"], ...(init.body ? { body: JSON.parse(init.body as string) } : {}) };
   calls.push(call);
+  if (hang) {
+    return new Promise<Response>((_, reject) => init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))));
+  }
   return answer(call);
 });
 
@@ -110,6 +115,7 @@ beforeEach(() => {
   phone.files.clear();
   calls.length = 0;
   answer = () => Response.json({});
+  hang = false;
   signIn();
 });
 
@@ -218,6 +224,21 @@ describe("Reply", () => {
     expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: Couldn't reach tuti.example. Check the address and your connection."]);
     const { screenKey } = await import("./details");
     expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
+  });
+
+  it("whose answer never comes is given up on, kept and said not to have gone", async () => {
+    vi.useFakeTimers();
+    try {
+      hang = true;
+      const acting = (await load()).act(response("reply", { userText: "On it!" }));
+      await vi.advanceTimersByTimeAsync(15_000);
+      await acting;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual([
+      "Ada · Acme: Couldn't reach tuti.example. Check the address and your connection. It's kept in the conversation, with Retry.",
+    ]);
   });
 
   it("signed out, sends nothing and says so", async () => {

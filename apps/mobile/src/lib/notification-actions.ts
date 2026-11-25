@@ -38,6 +38,18 @@ export const setCategory = () =>
 /** Responses acted on in this JavaScript: the listener and the last response can both tell of one. */
 const done = new Set<string>();
 
+/**
+ * How long a request from a notification waits for its answer: a phone can leave one hanging for minutes (a network
+ * that went and came back), which would say nothing at all. A reply whose answer this gave up on may have been saved:
+ * its `requestId` makes Retry give back the one saved, not a second.
+ */
+export const ACTION_TIMEOUT_MS = 15_000;
+const timedFetch: typeof fetch = (input, init) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACTION_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
 /** What the failure notification says, in the server's words where it gave them. */
 const reasonOf = (error: unknown) => (error instanceof ApiError || error instanceof Error ? error.message : "Something went wrong.");
 
@@ -74,7 +86,7 @@ export async function act(response: Notifications.NotificationResponse) {
       refused = SIGNED_OUT;
     } else {
       const projects = () =>
-        createApi({ server: session.server, token: session.token }, () => {})<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
+        createApi({ server: session.server, token: session.token }, () => {}, timedFetch)<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
       if (action === REPLY) {
         const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
         unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(data) };
@@ -82,7 +94,7 @@ export async function act(response: Notifications.NotificationResponse) {
       if (!(await isTheirs(target, session, projects))) {
         refused = NOT_YOURS;
       } else {
-        const api = createApi({ ...session, project: target.project }, () => {});
+        const api = createApi({ ...session, project: target.project }, () => {}, timedFetch);
         await (unsent ? sendReply(api, target.number, unsent) : updateConversation(api, target.number, { status: "closed" }));
         await remove(response);
         return;
