@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "./api";
 import {
-  arrived,
   composerInset,
   type Conversation,
   delivery,
@@ -15,6 +14,7 @@ import {
   forgetDrafts,
   getDraft,
   isSending,
+  leavesAfter,
   linkParts,
   markReadIfLooking,
   type Message,
@@ -206,6 +206,7 @@ describe("replying", () => {
   it("finds a reply in the conversation that was saved though its answer was lost: yours, the same text, after what was seen", () => {
     const unsent = { id: "u1", body: "Fixed now", note: false, close: false, files: [], seen: "2026-11-25T09:00:00.000Z" };
     const mine = message({ author: "team", fromYou: true, body: "Fixed now", createdAt: "2026-11-25T09:05:00.000Z" });
+    const arrived = (one: Unsent, messages: Message[]) => withoutArrived({ ...EMPTY_DRAFT, unsent: [one] }, messages).unsent.length === 0;
     expect(arrived(unsent, [mine])).toBe(true);
     expect(arrived(unsent, [{ ...mine, createdAt: "2026-11-25T09:00:00.000Z" }])).toBe(false);
     expect(arrived(unsent, [{ ...mine, fromYou: false }])).toBe(false);
@@ -298,7 +299,7 @@ describe("a reply that hasn't arrived", () => {
     const file = (id: string, at: number) => ({ id, name: `${id}.pdf`, contentType: "application/pdf", size: 10, at });
     const note = { ...unsent, note: true, body: "Ravi knows", files: [file("old", now - FILES_LAST_MS), file("new", now)] };
     const edited = editUnsent({ ...EMPTY_DRAFT, note: "Also:", unsent: [note] }, note, now);
-    expect(edited).toEqual({ reply: "", note: "Also:\n\nRavi knows", files: [file("new", now)], unsent: [] });
+    expect(edited).toEqual({ reply: "", note: "Also:\n\nRavi knows", files: [file("new", now)], unsent: [], taken: [] });
   });
 
   it("is kept in the draft's file as it changes, and tells whoever shows it", () => {
@@ -316,7 +317,10 @@ describe("a reply that hasn't arrived", () => {
     let answer!: (value: unknown) => void;
     const { api, calls } = fakeApi({ "/conversations/12/messages": () => new Promise((resolve) => (answer = resolve)) });
     const order: string[] = [];
-    const saved = async () => void order.push(`fetched with ${getDraft(key).unsent.length} unsent`);
+    const saved = async () => {
+      order.push(`fetched with ${getDraft(key).unsent.length} unsent`);
+      return [];
+    };
     const first = sendUnsent(api, key, 12, unsent, saved);
     const again = sendUnsent(api, key, 12, unsent, saved);
     expect(again).toBe(first);
@@ -339,7 +343,7 @@ describe("a reply that hasn't arrived", () => {
     });
     let sendingWhenShown: boolean | undefined;
     const stop = subscribeDraft(key, () => (sendingWhenShown = isSending("u1")));
-    expect(await sendUnsent(api, key, 12, unsent, async () => {})).toBeNull();
+    expect(await sendUnsent(api, key, 12, unsent, async () => [])).toBeNull();
     stop();
     expect(sendingWhenShown).toBe(false);
     expect(readDraft(key).unsent).toEqual([{ ...unsent, error: "Couldn't reach tuti.example.com" }]);
@@ -369,7 +373,10 @@ describe("a send whose answer was lost", () => {
   const unsent: Unsent = { id: "u1", body: "Fixed now", note: false, close: false, files: [], seen: "2026-11-25T09:00:00.000Z" };
   const saved = [message({ author: "team", fromYou: true, body: "Fixed now", createdAt: "2026-11-25T09:05:00.000Z" })];
   // The screen's fetch: what the server has, and the draft without what arrived.
-  const fetchShows = (messages: Message[]) => async () => updateDraft(key, (draft) => withoutArrived(draft, messages));
+  const fetchShows = (messages: Message[]) => async () => {
+    updateDraft(key, (draft) => withoutArrived(draft, messages));
+    return messages;
+  };
 
   it("is found by the fetch after the failure, and isn't offered again", async () => {
     updateDraft(key, (draft) => ({ ...draft, unsent: [unsent] }));
@@ -442,4 +449,64 @@ describe("reading", () => {
 it("keeps no space under the composer for the home indicator while the keyboard covers it", () => {
   expect(composerInset(34, false)).toBe(34);
   expect(composerInset(34, true)).toBe(0);
+});
+
+describe("telling which reply arrived", () => {
+  const key = "https://tuti.example.com|acme|12";
+  const seen = "2026-11-25T09:00:00.000Z";
+  const thanks: Unsent = { id: "u1", body: "Thanks!", note: false, close: false, files: [], seen };
+  const mine = (id: string, fields: Partial<Message> = {}) => message({ id, author: "team", fromYou: true, body: "Thanks!", createdAt: "2026-11-25T09:05:00.000Z", ...fields });
+  const file = (id: string) => ({ id, name: `${id}.png`, contentType: "image/png", size: 1, at: Date.now() });
+  const attachment = (id: string) => ({ id, filename: `${id}.png`, contentType: "image/png", size: 1 });
+
+  it("counts each of the server's messages once: of two replies saying the same, one arriving leaves the other", () => {
+    const draft = { ...EMPTY_DRAFT, unsent: [thanks, { ...thanks, id: "u2" }] };
+    const left = withoutArrived(draft, [mine("m1")]);
+    expect(left.unsent.map((one) => one.id)).toEqual(["u2"]);
+    expect(left.taken).toEqual(["m1"]);
+    // The next fetch still has m1: it's taken, so u2 stays till its own message is there.
+    expect(withoutArrived(left, [mine("m1")])).toBe(left);
+    expect(withoutArrived(left, [mine("m1"), mine("m2")]).unsent).toEqual([]);
+  });
+
+  it("matches the files too: the same text with other files, or none, isn't this reply", () => {
+    const withFile = { ...thanks, files: [file("up1")] };
+    const draft = { ...EMPTY_DRAFT, unsent: [withFile] };
+    expect(withoutArrived(draft, [mine("m1")])).toBe(draft);
+    expect(withoutArrived(draft, [mine("m1", { attachments: [attachment("up2")] })])).toBe(draft);
+    expect(withoutArrived(draft, [mine("m1", { attachments: [attachment("up1"), attachment("up2")] })])).toBe(draft);
+    expect(withoutArrived(draft, [mine("m1", { attachments: [attachment("up1")] })]).unsent).toEqual([]);
+  });
+
+  it("never takes another send's message for this one: a second reply saying the same, still sending, stays", async () => {
+    const second = { ...thanks, id: "u2" };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [thanks, second] }));
+    const { api } = fakeApi({ "/conversations/12/messages": () => ({ id: "m1" }) });
+    // The first one's fetch answered before its message showed; the first leaves the draft all the same.
+    expect(await sendUnsent(api, key, 12, thanks, async () => [])).toEqual({ id: "m1" });
+    expect(getDraft(key).unsent).toEqual([second]);
+    // The next fetch (the live stream's) has the first one's message, and the second's isn't there yet.
+    updateDraft(key, (draft) => withoutArrived(draft, [mine("m1")]));
+    expect(getDraft(key).unsent).toEqual([second]);
+  });
+
+  it("isn't posted again by Retry after a check that failed: it stays unsent with why", async () => {
+    const failed = { ...thanks, error: "Couldn't reach tuti.example.com" };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [failed] }));
+    const { api, calls } = fakeApi({ "/conversations/12/messages": () => ({ id: "m1" }) });
+    const check = async (): Promise<Message[]> => {
+      throw new Error("Couldn't reach tuti.example.com. Check the address and your connection.");
+    };
+    expect(await sendUnsent(api, key, 12, failed, check, true)).toBeNull();
+    expect(calls).toEqual([]);
+    expect(isSending("u1")).toBe(false);
+    expect(getDraft(key).unsent).toEqual([{ ...thanks, error: "Couldn't reach tuti.example.com. Check the address and your connection." }]);
+  });
+});
+
+it("goes back after Send and close only from the conversation still looked at", () => {
+  expect(leavesAfter({ closed: true }, true)).toBe(true);
+  expect(leavesAfter({ closed: true }, false)).toBe(false);
+  expect(leavesAfter({ closed: false }, true)).toBe(false);
+  expect(leavesAfter(null, true)).toBe(false);
 });

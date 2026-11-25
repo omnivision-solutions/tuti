@@ -40,6 +40,7 @@ import {
   isOnline,
   composerInset,
   isSending,
+  leavesAfter,
   linkParts,
   markReadIfLooking,
   type Message,
@@ -89,19 +90,13 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     () => getDraft(draftKey),
   );
   const setDraft = useCallback((change: (draft: Draft) => Draft, since?: number) => updateDraft(draftKey, change, since), [draftKey]);
-  const open = useRef(true);
-  useEffect(
-    () => () => {
-      open.current = false;
-    },
-    [],
-  );
   // On screen (not under another one pushed over it): it's read only while it's looked at.
   const focused = useRef(false);
   // The newest fetch wins: an older one answering late doesn't put back what it had. Its messages are still answered
   // (a send drops what arrived from them), and a reply that arrived is dropped from any fetch: that's never stale.
   const asked = useRef(0);
-  const load = useCallback((): Promise<Message[] | void> => {
+  // Answers the messages, or rejects when it can't (a send's check needs to know): the screen's own calls go through `refresh`.
+  const load = useCallback((): Promise<Message[]> => {
     const ask = ++asked.current;
     return getConversation(api, number).then(
       (loaded) => {
@@ -117,9 +112,11 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         if (ask === asked.current) {
           setError(e.message);
         }
+        throw e;
       },
     );
   }, [api, number, setDraft]);
+  const refresh = useCallback(() => void load().catch(() => {}), [load]);
   // VoiceOver has no live regions: a failed fetch is announced (TalkBack reads the live region).
   useEffect(() => {
     if (error && IOS) {
@@ -139,20 +136,20 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     }
     return watchLive(session, (changed) => {
       if (changed === null || changed === number) {
-        void load();
+        refresh();
       }
     });
-  }, [active, session, number, load]);
+  }, [active, session, number, refresh]);
   // Fetched as it comes on screen, the first time and when a screen over it closes (the stream may have said nothing
   // since): what's unread then is read, as it's looked at.
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
-      void load();
+      refresh();
       return () => {
         focused.current = false;
       };
-    }, [load]),
+    }, [refresh]),
   );
   // The keyboard covers the home indicator: no space kept for it under the composer then.
   const [keyboard, setKeyboard] = useState(false);
@@ -182,7 +179,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       if (IOS) {
         AccessibilityInfo.announceForAccessibility("Not sent");
       }
-    } else if (sent.closed && open.current && router.canGoBack()) {
+    } else if (leavesAfter(sent, focused.current) && router.canGoBack()) {
       // Answered and closed: done with, back to the Inbox.
       router.back();
     }
@@ -286,7 +283,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
           <Text style={[styles.body, { color: error ? colors.error : colors.muted, textAlign: "center" }]} accessibilityLiveRegion="polite">
             {error ?? "Loading…"}
           </Text>
-          {error && <TextButton colors={colors} label="Try again" onPress={() => void load()} />}
+          {error && <TextButton colors={colors} label="Try again" onPress={refresh} />}
         </View>
       ) : (
         <FlatList
