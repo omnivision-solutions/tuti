@@ -74,17 +74,18 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     (e) => formatMonth(e.publishedAt!),
   );
   // Draft with AI is the way into the draft whose notes wait while AI can run and its text is still its pull requests'
-  // titles or Autopilot's lines (as its editor decides, where Draft with AI then leads); Write it otherwise.
+  // titles or Autopilot's lines (as its editor decides, where Draft with AI then leads); Write it otherwise (and if it
+  // was deleted since draftToWrite read it).
   const draftWithAi =
     ready &&
     aiEnabled() &&
     !(await aiPaused(projectId)) &&
     (await prisma.changelogEntry
-      .findUniqueOrThrow({
+      .findUnique({
         where: { projectId_number: { projectId, number: ready.number } },
         select: { content: true, pullRequests: { select: { repo: true, number: true, title: true, url: true } } },
       })
-      .then(async (draft) => onlyPullRequestTitles(draft.content, draft.pullRequests, await autopilotLines(projectId, draft.pullRequests.map((pr) => pr.url)))));
+      .then(async (draft) => draft !== null && onlyPullRequestTitles(draft.content, draft.pullRequests, await autopilotLines(projectId, draft.pullRequests.map((pr) => pr.url)))));
   const base = `/app/${slug}/changelog`;
   const view = (t: typeof tag, search: string | undefined) => {
     const query = new URLSearchParams({ ...(search && { q: search }), ...(t && { tag: t.toLowerCase() }) }).toString();
