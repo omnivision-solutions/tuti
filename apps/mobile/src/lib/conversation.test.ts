@@ -792,6 +792,33 @@ describe("a reply's requestId", () => {
     expect(withoutSent({ ...EMPTY_DRAFT, unsent: [closing] }, { messages: arrived, status: "closed" }, () => false).unsent).toEqual([]);
   });
 
+  it("keeps a close-only reply close-only when its Retry fails, and a later Retry still only closes", async () => {
+    const { api, saved, fetch, loseAnswer, closes } = server();
+    // A plain Send, its answer lost (waiting); Edit, the same words, Send and close failing offline; a fetch: close only.
+    updateDraft(key, (draft) => ({ ...draft, unsent: [thanks] }));
+    loseAnswer();
+    await sendUnsent(api, key, 12, thanks, nothing);
+    const closing: Unsent = { ...thanks, close: true, error: "Couldn't reach tuti.example.com. Check the address and your connection." };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
+    afterFetch(key, await fetch(), draftsGeneration());
+    expect(getDraft(key).unsent[0]).toMatchObject({ closeOnly: true, error: CLOSE_LEFT });
+    // Retry, offline: still sent, still only the close left, with why.
+    const offline = fakeApi({
+      "/conversations/12/messages": () => {
+        throw new ApiError(0, "unreachable", "Couldn't reach tuti.example.com. Check the address and your connection.");
+      },
+    });
+    expect(await sendUnsent(offline.api, key, 12, getDraft(key).unsent[0]!, nothing)).toBeNull();
+    expect(getDraft(key).unsent).toEqual([
+      { ...closing, closeOnly: true, error: "Sent, but not closed: Couldn't reach tuti.example.com. Check the address and your connection." },
+    ]);
+    // Back online, Retry: the repeat brings no second message, and the close is done.
+    expect(afterSend(await sendUnsent(api, key, 12, getDraft(key).unsent[0]!, fetch), true)).toEqual({ leave: true, notice: null });
+    expect(saved.size).toBe(1);
+    expect(closes()).toBe(1);
+    expect(getDraft(key).unsent).toEqual([]);
+  });
+
   it("says why when closing a repeated Send and close fails", async () => {
     const { api, fetch, loseAnswer, closeFails } = server();
     // A plain Send first, its answer lost; then the same words with Send and close.

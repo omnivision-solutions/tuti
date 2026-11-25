@@ -4,7 +4,7 @@ import { AccessibilityInfo } from "react-native";
 
 import ConversationRoute from "@/app/conversation/[number]";
 import { ApiError } from "@/lib/api";
-import { type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
+import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
 
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
 jest.mock("expo-router", () => {
@@ -63,10 +63,10 @@ const message = (fields: Partial<Message>): Message => ({
   requestId: null,
   ...fields,
 });
-const conversation = (messages: Message[]): Conversation => ({
+const conversation = (messages: Message[], status: Conversation["status"] = "open"): Conversation => ({
   number: 12,
   subject: "CSV export stops at 500 rows",
-  status: "open",
+  status,
   user: { id: null, name: "Maya Chen", email: "e2e-maya@example.com", verified: true },
   company: null,
   unread: false,
@@ -130,5 +130,18 @@ describe("an edit kept as its first version had already gone out", () => {
     expect(announce).not.toHaveBeenCalledWith("Not sent");
     // The same bubble: its Retry is the one a screen reader was on.
     expect(screen.getByRole("button", { name: "Retry" })).toBe(retry);
+  });
+});
+
+describe("a Send and close whose reply arrived, the conversation still waiting on the user", () => {
+  it("shows that only the close is left, never as Not sent", async () => {
+    const closing: Unsent = { id: "u1", body: "Thanks!", note: false, close: true, files: [], seen: "2026-11-25T09:00:00.000Z", error: NETWORK };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
+    mockApi.mockImplementation((path) => (path === "/conversations/12" ? Promise.resolve(conversation([message({}), first], "waiting")) : Promise.resolve({})));
+    await render(<ConversationRoute />);
+
+    expect(await screen.findByText(CLOSE_LEFT)).toBeTruthy();
+    expect(screen.queryByText(/^Not sent/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 });

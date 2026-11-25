@@ -538,9 +538,14 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
   }
   const since = generation;
   // Sending again, it's no longer "only the close left" till a fetch says so.
+  // Only the close left (a Send and close whose reply arrived): cleared while it sends, and kept if it fails, as its reply
+  // went all the same.
+  const closeOnly = getDraft(key).unsent.find((one) => one.id === unsent.id)?.closeOnly ?? unsent.closeOnly;
   const mark = (error: string | undefined) => (draft: Draft) => ({
     ...draft,
-    unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error, closeOnly: undefined } : one)),
+    unsent: draft.unsent.map((one) =>
+      one.id !== unsent.id ? one : error && closeOnly ? { ...one, error: `Sent, but not closed: ${error}`, closeOnly: true } : { ...one, error, closeOnly: undefined },
+    ),
   });
   const drop = (draft: Draft) => ({ ...draft, unsent: draft.unsent.filter((one) => one.id !== unsent.id) });
   // Out of `sends` before the draft changes, so what's shown then says it isn't sending any more.
