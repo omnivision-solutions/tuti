@@ -101,7 +101,8 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline") {
     await prisma.codeChange.updateMany({
       where: { id: change.id, state: "ANALYSING" },
-      data: { retryPastGate: pastGate, retryAt: new Date(Date.now() + PICK_AFTER_RUN_MS) },
+      // A pick's "past the gate" stays (a merge delivered again doesn't take it back).
+      data: { ...(pastGate && { retryPastGate: true }), retryAt: new Date(Date.now() + PICK_AFTER_RUN_MS) },
     });
     return {};
   }
@@ -440,9 +441,14 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
     if (change.state === "READY" || change.state === "NOTHING_TO_DO") {
       if ((await prisma.codeChange.updateMany({ where: still, data: { retryAt: null } })).count > 0) {
         queued++;
-        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: change.retryPastGate, resume: false }).catch((error: unknown) =>
-          log.error("Queueing a pick's run failed", { error, codeChangeId: change.id }),
-        );
+        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: change.retryPastGate, resume: false }).catch(async (error: unknown) => {
+          // On Hatchet, queueing failed: due again, for the next sweep (inline, the analysis itself failed, and says so).
+          if (process.env.JOBS_DRIVER !== "inline") {
+            queued--;
+            await prisma.codeChange.updateMany({ where: { id: change.id, retryAt: null }, data: { retryAt: change.retryAt } });
+          }
+          log.error("Queueing a pick's run failed", { error, codeChangeId: change.id });
+        });
       }
       continue;
     }
