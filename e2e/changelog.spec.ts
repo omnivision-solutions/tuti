@@ -575,6 +575,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
   await expect(team.getByRole("status").filter({ hasText: "Search for" })).toHaveText("Search for “post titles” found 1 entry");
+  // And by its title alone.
+  await search.fill("is here");
+  await search.press("Enter");
+  await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Faster search" })).toHaveCount(0);
   // Its characters are words, not patterns: % finds nothing here.
   await search.fill("%");
   await search.press("Enter");
