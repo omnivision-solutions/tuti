@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Pressable, Text } from "react-native";
 
-import { cached, cacheGeneration, keep } from "@/lib/offline";
+import { cached, cacheGeneration, keep, startCache } from "@/lib/offline";
 import { SessionProvider, useSession } from "@/lib/session";
 
 // Secure storage in memory, each write held until the test lets it land.
@@ -100,7 +100,7 @@ describe("choosing a project", () => {
 describe("signing in", () => {
   it("starts with nothing kept, however the last session went (a restored phone, a lost keystore)", async () => {
     // Kept by an earlier session that never signed out here.
-    keep("kept", { rows: [] }, cacheGeneration());
+    keep("kept", { rows: [] }, cacheGeneration(), startCache("owner-0"));
     await render(
       <SessionProvider>
         <Harness />
@@ -110,13 +110,18 @@ describe("signing in", () => {
 
     await fireEvent.press(screen.getByText("Sign in"));
     await landWrites();
-    expect(cached("kept")).toBeNull();
+    expect(cached("kept", "owner-0")).toBeNull();
+    // The new session owns the cache from now on: kept with its owner, it reads back.
+    const owner = (JSON.parse(mockStored.get("session")!) as { owner?: string }).owner;
+    expect(owner).toBeTruthy();
+    keep("mine", { rows: [] }, cacheGeneration(), owner);
+    expect(cached("mine", owner)).not.toBeNull();
   });
 });
 
 describe("signing out", () => {
   // Something kept to read offline, from this account.
-  beforeEach(() => keep("kept", { rows: [] }, cacheGeneration()));
+  beforeEach(() => keep("kept", { rows: [] }, cacheGeneration(), startCache("owner-0")));
 
   it("removes the phone's registration first, without waiting for it", async () => {
     mockStored.set("session", JSON.stringify(session));
@@ -143,7 +148,7 @@ describe("signing out", () => {
     expect(removal).toBeLessThan(asked.indexOf("POST https://tuti.example.com/api/auth/sign-out"));
     // The notifications shown go too, and what was kept to read offline.
     expect(mockDismissed).toHaveBeenCalled();
-    expect(cached("kept")).toBeNull();
+    expect(cached("kept", "owner-0")).toBeNull();
   });
 
   it("takes the notifications shown off when the server ends the session too", async () => {
@@ -162,6 +167,6 @@ describe("signing out", () => {
 
     expect(await screen.findByText("signed out")).toBeTruthy();
     expect(mockDismissed).toHaveBeenCalled();
-    expect(cached("kept")).toBeNull();
+    expect(cached("kept", "owner-0")).toBeNull();
   });
 });

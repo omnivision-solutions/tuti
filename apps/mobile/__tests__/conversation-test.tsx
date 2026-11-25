@@ -4,7 +4,7 @@ import { AccessibilityInfo } from "react-native";
 
 import ConversationRoute from "@/app/conversation/[number]";
 import { ApiError } from "@/lib/api";
-import { cached, cacheGeneration, conversationKey, forgetCached, keep } from "@/lib/offline";
+import { cached, cacheGeneration, conversationKey, forgetCached, keep, startCache } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
 
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
@@ -41,7 +41,7 @@ jest.mock("expo-file-system", () => {
   return { File: Entry, Directory: Entry, Paths: { document: "documents" } };
 });
 
-const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
+const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme", owner: "owner-1" };
 const mockApi = jest.fn<(path: string, init?: { method?: string; body?: unknown }) => Promise<unknown>>();
 jest.mock("@/lib/session", () => ({ useApi: () => mockApi, useSession: () => ({ session: mockSession }) }));
 // The live stream is tested on its own (src/lib/conversation.test.ts).
@@ -178,7 +178,8 @@ describe("a Send and close whose reply arrived, the conversation still waiting o
 describe("reading offline", () => {
   beforeEach(() => {
     forgetDrafts();
-    forgetCached();
+    // A signed-in session's own cache, empty.
+    startCache(mockSession.owner);
   });
   afterEach(() => void jest.useRealTimers());
 
@@ -203,7 +204,7 @@ describe("reading offline", () => {
     await render(<ConversationRoute />);
     await screen.findByText("The newest.");
     // What was kept is older (a change the sheet made since, say).
-    keep(conversationKey(mockSession, 12), conversation([message({ body: "An older copy." })]), cacheGeneration());
+    keep(conversationKey(mockSession, 12), conversation([message({ body: "An older copy." })]), cacheGeneration(), mockSession.owner);
 
     mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
     announce.mockClear();
@@ -237,7 +238,7 @@ describe("reading offline", () => {
     await render(<ConversationRoute />);
     forgetCached();
     await act(async () => answer(conversation([message({ body: "Another account's customer." })])));
-    expect(cached(conversationKey(mockSession, 12))).toBeNull();
+    expect(cached(conversationKey(mockSession, 12), mockSession.owner)).toBeNull();
   });
 
   it("says why when it was never opened", async () => {

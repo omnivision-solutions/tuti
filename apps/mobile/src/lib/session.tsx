@@ -5,7 +5,7 @@ import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
 import { dismissDelivered, removeDevice } from "./notifications";
-import { forgetCached } from "./offline";
+import { forgetCached, startCache } from "./offline";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
@@ -113,11 +113,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContext>(
     () => ({
       session,
-      // Every sign-in starts with nothing kept, however the last session went (a restored phone, a lost keystore).
-      signIn: (signedIn) => {
-        forgetCached();
-        return save(signedIn);
-      },
+      // Every sign-in starts with nothing kept, however the last session went (a restored phone, a lost keystore), and
+      // owns what it keeps from then on.
+      signIn: (signedIn) => save({ ...signedIn, owner: startCache() }),
       signOut,
       // Shown once saved, and only if it's still the session in use (signed out meanwhile stays signed out).
       setProject: (project) => (session ? choose(session, project) : Promise.resolve()),

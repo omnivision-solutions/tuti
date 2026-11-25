@@ -120,7 +120,7 @@ export default function Inbox() {
     return api<{ projects: Project[] }>("/projects").then(
         (answer) => {
           setProjects(answer.projects);
-          remember(projectsKey(session!), answer.projects, since);
+          remember(projectsKey(session!), answer.projects, since, session!.owner);
           const first = answer.projects[0];
           if (first && !answer.projects.some((p) => p.slug === project)) {
             void setProject(first.slug).catch((e: Error) => setError(`Couldn't open ${first.name}: ${e.message}`));
@@ -129,7 +129,7 @@ export default function Inbox() {
         (e: Error) => {
           // No connection: the projects last loaded, for the switcher. Nothing said when the switcher has them already,
           // or the list shows what was kept (its note says it's offline).
-          const saved = isOffline(e) ? cached<Project[]>(projectsKey(session!)) : null;
+          const saved = isOffline(e) ? cached<Project[]>(projectsKey(session!), session!.owner) : null;
           if (saved) {
             setProjects((now) => now ?? saved.data);
           } else if (!(isOffline(e) && (projectsShown.current || shown.current?.savedAt !== undefined))) {
@@ -149,7 +149,7 @@ export default function Inbox() {
       return api<{ views: InboxView[] }>("/inbox/views").then((answer) => {
         if (loads.isLatest(mine)) {
           setCounts({ for: session!.project, views: answer.views });
-          remember(viewsKey(session!), answer.views, since);
+          remember(viewsKey(session!), answer.views, since, session!.owner);
         }
       });
     },
@@ -175,7 +175,7 @@ export default function Inbox() {
           return;
         }
         // The chips as they were last kept.
-        const kept = cached<InboxView[]>(viewsKey(session!))?.data;
+        const kept = cached<InboxView[]>(viewsKey(session!), session!.owner)?.data;
         setCounts((now) => (now?.for === session!.project || !kept ? now : { for: session!.project, views: kept }));
       });
       const rows = firstRows(api, view, q, keep).then((page) => {
@@ -207,7 +207,7 @@ export default function Inbox() {
           // No connection: what's shown of the view stays (however many pages), or it's as it was last kept (a search
           // never is), saying so rather than the error.
           const showing = shown.current?.for === key;
-          const saved = !q && isOffline(e) ? cached<Saved>(inboxKey(session!, view)) : null;
+          const saved = !q && isOffline(e) ? cached<Saved>(inboxKey(session!, view), session!.owner) : null;
           if (!q && isOffline(e) && (showing || saved)) {
             setList((now) =>
               now?.for === key
@@ -479,7 +479,7 @@ export default function Inbox() {
   // refused.
   useEffect(() => {
     if (list?.since !== undefined && !q && session && swipes.size === 0) {
-      remember(inboxKey(session, view), { rows: list.rows.slice(0, 100), total: list.total } satisfies Saved, list.since);
+      remember(inboxKey(session, view), { rows: list.rows.slice(0, 100), total: list.total } satisfies Saved, list.since, session.owner);
     }
   }, [list, swipes, q, view, session]);
   const searching = !!q;

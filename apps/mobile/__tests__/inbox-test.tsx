@@ -5,7 +5,7 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, AppState } from "react-native
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
-import { cached, cacheGeneration, forgetCached, inboxKey, keep, projectsKey } from "@/lib/offline";
+import { cached, cacheGeneration, forgetCached, inboxKey, keep, projectsKey, startCache } from "@/lib/offline";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
 jest.mock("expo-router", () => {
@@ -33,7 +33,7 @@ const mockOffer = jest.fn(async () => {});
 jest.mock("@/components/notifications", () => ({ offerNotifications: () => mockOffer() }));
 let mockFocus: (() => void) | null = null;
 
-const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
+const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme", owner: "owner-1" };
 const mockSessions = new Map<string, typeof mockSession>();
 const mockApi = jest.fn<(path: string, init?: unknown) => Promise<unknown>>();
 const mockSetProject = jest.fn<(slug: string) => Promise<void>>(() => Promise.resolve());
@@ -957,7 +957,8 @@ describe("swiping a row", () => {
 
   describe("and reading offline", () => {
     const offline = () => Object.assign(new Error("Couldn't reach tuti.example.com. Check the address and your connection."), { code: "unreachable" });
-    beforeEach(() => forgetCached());
+    // A signed-in session's own cache, empty.
+    beforeEach(() => void startCache(mockSession.owner));
 
     it("keeps the list as its reload after a swipe shows it", async () => {
       const closing = row("Invite link expired");
@@ -1053,7 +1054,8 @@ describe("swiping a row", () => {
 
 describe("reading offline", () => {
   const offline = () => Object.assign(new Error("Couldn't reach tuti.example.com. Check the address and your connection."), { code: "unreachable" });
-  beforeEach(() => forgetCached());
+  // A signed-in session's own cache, empty.
+  beforeEach(() => void startCache(mockSession.owner));
 
   it("shows a view as it was last loaded, saying it's offline and when, with no connection", async () => {
     serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
@@ -1124,7 +1126,7 @@ describe("reading offline", () => {
     await render(<Inbox />);
     forgetCached();
     await act(async () => answer({ projects: PROJECTS }));
-    expect(cached(projectsKey(mockSession))).toBeNull();
+    expect(cached(projectsKey(mockSession), mockSession.owner)).toBeNull();
   });
 
   const slowProjectsOffline = (path: string) =>
@@ -1150,7 +1152,7 @@ describe("reading offline", () => {
 
   it("says nothing of the projects offline when the list shows what was kept", async () => {
     // Only the list was kept, not the projects.
-    keep(inboxKey(mockSession, "open"), { rows: [row("CSV export stops at 500 rows")], total: 1 }, cacheGeneration());
+    keep(inboxKey(mockSession, "open"), { rows: [row("CSV export stops at 500 rows")], total: 1 }, cacheGeneration(), mockSession.owner);
     // The projects' request fails after the list's has.
     mockApi.mockImplementation(slowProjectsOffline);
     await render(<Inbox />);
@@ -1165,7 +1167,7 @@ describe("reading offline", () => {
     await render(<Inbox />);
     await screen.findByRole("tab", { name: "Needs reply, 4" });
     // Kite Labs' list was kept once, its counts weren't.
-    keep(inboxKey({ server: mockSession.server, project: "kite" }, "open"), { rows: [row("Kite's own")], total: 1 }, cacheGeneration());
+    keep(inboxKey({ server: mockSession.server, project: "kite" }, "open"), { rows: [row("Kite's own")], total: 1 }, cacheGeneration(), mockSession.owner);
 
     mockApi.mockImplementation(() => Promise.reject(offline()));
     try {

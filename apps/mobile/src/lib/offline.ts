@@ -1,3 +1,4 @@
+import { randomUUID } from "expo-crypto";
 import { SQLiteStorage } from "expo-sqlite/kv-store";
 import { useEffect, useState } from "react";
 
@@ -7,7 +8,9 @@ import { spokenAgeOf } from "./inbox";
  * What was last loaded, kept on the phone to be read with no connection: the Inbox's views and lists (per project and
  * view) and the conversations opened. Expo's SQLite key-value store, a database of its own. One account's at a time:
  * signing out, or a session the server ended, forgets it all (`forgetCached`), so whoever signs in next never sees the
- * last one's customers.
+ * last one's customers. And it belongs to one session: a sign-in clears it and writes a new owner into it, kept in the
+ * session too; nothing is read or written unless the two match, so a clear that failed (or a session from before) reads
+ * nothing, however often the app restarts.
  */
 
 type Saved<T> = { at: number; data: T };
@@ -22,8 +25,6 @@ let storage: SQLiteStorage | null = null;
 const store = () => (storage ??= new SQLiteStorage("offline.db"));
 // Bumped when it's all forgotten: a load that started before then isn't written after.
 let generation = 0;
-// A clear that failed: nothing is read till one succeeds, so a failed clear never hands one account's rows to the next.
-let unreadable = false;
 
 /** The keys: the server and project, then what it is. */
 export const inboxKey = (session: { server: string; project?: string }, view: string) => `${session.server}|${session.project ?? ""}|inbox|${view}`;
@@ -33,11 +34,35 @@ export const projectsKey = (session: { server: string }) => `${PINNED}${session.
 export const viewsKey = (session: { server: string; project?: string }) => `${PINNED}${session.server}|${session.project ?? ""}|views`;
 export const conversationKey = (session: { server: string; project?: string }, number: number) => `${session.server}|${session.project ?? ""}|conversation|${number}`;
 
+/** Who the cache is for: written at sign-in, once it's cleared, and outside what's pushed out. */
+const OWNER = `${PINNED}owner`;
+const owns = (owner: string | undefined) => {
+  try {
+    return !!owner && store().getItemSync(OWNER) === owner;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * At sign-in: the cache cleared and made this session's, its owner given back for the session to keep. A clear that
+ * fails writes no owner, so the session reads nothing kept.
+ */
+export function startCache(owner: string = randomUUID()) {
+  generation++;
+  try {
+    store().clearSync();
+    store().setItemSync(OWNER, owner);
+  } catch {}
+  return owner;
+}
+
 /** Read as a load starts, and given to `keep` with its answer. */
 export const cacheGeneration = () => generation;
 
-export function cached<T>(key: string): Cached<T> | null {
-  if (unreadable) {
+/** What's kept under `key`, for the session that owns the cache (`owner`, from the session). */
+export function cached<T>(key: string, owner: string | undefined): Cached<T> | null {
+  if (!owns(owner)) {
     return null;
   }
   try {
@@ -48,9 +73,9 @@ export function cached<T>(key: string): Cached<T> | null {
   }
 }
 
-/** Keeps a load's answer, unless everything was forgotten since it started (`since`). */
-export function keep(key: string, data: unknown, since: number, now = Date.now()) {
-  if (since !== generation) {
+/** Keeps a load's answer, unless everything was forgotten since it started (`since`), or the cache isn't the session's. */
+export function keep(key: string, data: unknown, since: number, owner: string | undefined, now = Date.now()) {
+  if (since !== generation || !owns(owner)) {
     return;
   }
   try {
@@ -77,10 +102,7 @@ export function forgetCached() {
   generation++;
   try {
     store().clearSync();
-    unreadable = false;
-  } catch {
-    unreadable = true;
-  }
+  } catch {}
 }
 
 /** Whether a load failed for want of a connection (the API's words for it), rather than the server's answer. */

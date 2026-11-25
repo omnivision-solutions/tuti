@@ -142,7 +142,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
           showTriage(draftKey, loaded, triageSince);
           setError(null);
           setSavedAt(null);
-          keepCached(cacheKey, loaded, cacheSince);
+          keepCached(cacheKey, loaded, cacheSince, session!.owner);
           markReadIfLooking(api, loaded, focused.current && AppState.currentState === "active");
         }
         return loaded;
@@ -150,7 +150,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       (e: Error) => {
         if (ask === asked.current) {
           // No connection: what's shown stays, or it's as it was last kept, if it was, saying so.
-          const saved = isOffline(e) ? cached<Conversation>(cacheKey) : null;
+          const saved = isOffline(e) ? cached<Conversation>(cacheKey, session!.owner) : null;
           if (isOffline(e) && loadedAt.current !== null) {
             setSavedAt(loadedAt.current);
             setError(null);
