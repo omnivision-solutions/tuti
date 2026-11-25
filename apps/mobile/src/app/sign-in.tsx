@@ -48,18 +48,17 @@ export default function SignIn() {
   useEffect(() => {
     let live = true;
     finishSignIn(JSON.parse(link))
-      .then(
-        (signedIn) => {
-          if (live && signedIn) {
-            return signIn(signedIn);
-          }
-        },
-        (e: Error) => {
-          if (live) {
-            setError(e.message);
-          }
-        },
-      )
+      .then((signedIn) => {
+        if (live && signedIn) {
+          return signIn(signedIn);
+        }
+      })
+      // Saving the session can fail too, not only the exchange: either is shown.
+      .catch((e: unknown) => {
+        if (live) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      })
       .finally(() => {
         if (live) {
           setSettledLink(link);
