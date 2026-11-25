@@ -671,6 +671,32 @@ describe("deciding", () => {
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: true, resume: false });
   });
 
+  test("picked while another run with the gate was under way, which then ruled it out: the sweep runs the pick past the gate", async () => {
+    github.pullRequest(repo, pullRequest(36));
+    // A run with the gate is under way in this server when the team picks it.
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: installationId, repo, number: 36, url: `https://github.com/${repo}/pull/36`, title: "Dark mode 36", author: "octo", mergedAt: new Date(), state: "ANALYSING" },
+    });
+    await prisma.changelogDecision.create({
+      data: { projectId: project.id, repoId: installationId, number: 36, repo, url: change.url, title: change.title, author: "octo", mergedAt: new Date(), takenOut: false },
+    });
+    expect(await claimCodeChange(project.id, { repoId: installationId, repo, number: 36, url: change.url, title: change.title, author: "octo", mergedAt: new Date().toISOString() }, { pastGate: true })).toEqual({});
+    // That run ends: the gate found nothing for users.
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "NOTHING_TO_DO", reason: "Users don't see it." } });
+    await prisma.codeChange.updateMany({ where: { id: { not: change.id } }, data: { retryAt: null } });
+    // Not before any run would be over; then the pick's run, past the gate.
+    expect(await retryCodeChanges(new Date(Date.now() + 30 * 60_000))).toMatchObject({ queued: 0 });
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await retryCodeChanges(new Date(Date.now() + 71 * 60_000))).toMatchObject({ queued: 1 });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { state: true, retryAt: true } })).toEqual({ state: "READY", retryAt: null });
+    expect(await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })).toBe(1);
+  });
+
   test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
     github.pullRequest(repo, pullRequest(32));
     // The provider stops answering after the gate: the analysis failed, to be tried again; the pull request is in the draft since the merge.
@@ -704,7 +730,7 @@ describe("deciding", () => {
     expect((await draftOf(url))?.body).toBe("A dark theme");
   });
 
-  test("added by the team while its analysis is still to run: the gate finds nothing for users, but the team's pick wins and it gets its line", async () => {
+  test("added by the team, a pull request stays in the draft though the gate then finds nothing for users", async () => {
     github.pullRequest(repo, pullRequest(33));
     model.decide(USERS);
     model.fail(503);
@@ -712,18 +738,12 @@ describe("deciding", () => {
     const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     // The team says it belongs in the changelog while its analysis is still to run: it's where it is, and theirs now.
     expect(await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 33 }] })).toMatchObject({ added: [], alreadyIn: [{ repo, number: 33 }] });
-    // The run the merge started asks the gate, which finds nothing for users: the team's pick is read, and it's
-    // analysed for the changelog all the same, in that one run. The gate's word is saved as it said.
+    // The run the merge started asks the gate, which finds nothing for users: the changelog keeps it all the same.
     model.decide(INTERNAL);
     noDocs();
-    model.reply(SUMMARY);
-    for (let i = 0; i < 5; i++) {
-      model.decide(unrelated, '"post"');
-    }
-    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, forUsers: true } })).toEqual({ state: "READY", forUsers: false });
-    expect((await draftOf(url))?.body).toBe("A dark theme");
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
+    expect(await draftOf(url)).not.toBeNull();
   });
 
   test("taken out of one draft and added to the next, a pull request keeps the line written for it", async () => {

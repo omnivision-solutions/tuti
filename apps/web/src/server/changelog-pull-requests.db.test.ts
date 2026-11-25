@@ -300,7 +300,7 @@ test("on a queue that refuses it, one a run started on meanwhile isn't failed", 
   expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 6 }, select: { state: true, retryAt: true } })).toEqual({ state: "ANALYSING", retryAt: null });
 });
 
-test("in-process, one whose analysis is already under way gets no second, parallel run: that run reads the pick", async () => {
+test("in-process, one whose analysis is already under way gets no second, parallel run: the pick waits for the retry sweep", async () => {
   github.pullRequest(repo, { number: 9, title: "Add a dark theme", mergedAt: days(2) });
   // The merge's analysis is running in this server.
   await prisma.codeChange.create({ data: { projectId: project.id, repoId, repo, number: 9, url: url(9), title: "t", author: "a", mergedAt: new Date(days(2)), state: "ANALYSING" } });
@@ -310,16 +310,11 @@ test("in-process, one whose analysis is already under way gets no second, parall
 
   expect(queue.enqueue).not.toHaveBeenCalled();
   expect(await decisions()).toEqual([{ number: 9, takenOut: false }]);
-});
-
-test("in-process, one analysing for over half an hour (its run died with the server) gets a run from the pick", async () => {
-  github.pullRequest(repo, { number: 10, title: "Add a dark theme", mergedAt: days(2) });
-  await prisma.codeChange.create({ data: { projectId: project.id, repoId, repo, number: 10, url: url(10), title: "t", author: "a", mergedAt: new Date(days(2)), state: "ANALYSING", updatedAt: new Date(Date.now() - 31 * 60_000) } });
-
-  await add(10);
-  await addedPullRequestsAnalysed();
-
-  expect(queue.enqueue).toHaveBeenCalledWith("codeChange", expect.objectContaining({ pastGate: true }));
+  // Left to the retry sweep once any run would be over: the pick's own run, past the gate.
+  expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 9 }, select: { retryAt: true, retryPastGate: true } })).toEqual({
+    retryAt: expect.any(Date),
+    retryPastGate: true,
+  });
 });
 
 test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {

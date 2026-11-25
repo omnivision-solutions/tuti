@@ -39,7 +39,6 @@ import { seenAs } from "./post-audience";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
 import { type Repository, readRepository } from "./repository";
 import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
-import { RUN_STALE_MS } from "./verify";
 import { verifyAfterEdit } from "./verify-decision";
 
 /**
@@ -96,12 +95,14 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     // Only if it isn't already: a second pick doesn't touch the row (and so the first one's claim) for nothing.
     await prisma.codeChange.updateMany({ where: { id: change.id, state: change.state, retryPastGate: false }, data: { retryPastGate: true } });
   }
-  // Inline, one analysing is a run under way in this server (the merge's): it honours the pick itself (it reads the
-  // team's decision), so a second, parallel run isn't started. A stranded one is the retry sweep's.
-  if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline" && change.updatedAt.getTime() > Date.now() - RUN_STALE_MS) {
-    if (pastGate) {
-      await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", retryPastGate: false }, data: { retryPastGate: true } });
-    }
+  // Inline, one analysing may be a run under way in this server (the merge's): no second, parallel run. The pick is
+  // left to the retry sweep once any run would be over (PICK_AFTER_RUN_MS): it runs the pick's run past the gate, which
+  // only analyses it if it's still picked and has no line by then (codeChange), and takes up a run that died.
+  if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline") {
+    await prisma.codeChange.updateMany({
+      where: { id: change.id, state: "ANALYSING" },
+      data: { retryPastGate: pastGate, retryAt: new Date(Date.now() + PICK_AFTER_RUN_MS) },
+    });
     return {};
   }
   if (change.state === "ANALYSING" || change.state === "FAILED") {
@@ -154,6 +155,9 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
 const STRANDED_CLAIM_MS = 6 * 60 * 60_000;
 const stranded = (pastGate: boolean) =>
   process.env.JOBS_DRIVER === "inline" ? { retryAt: new Date(Date.now() + STRANDED_CLAIM_MS), retryPastGate: pastGate } : { retryAt: null, retryPastGate: pastGate };
+
+/** Past the longest an analysis can run (its time limit, up to an hour), with room to spare. */
+const PICK_AFTER_RUN_MS = 70 * 60_000;
 
 /** How long a code change whose run couldn't be queued waits for the retry sweep. */
 const QUEUE_RETRY_MS = 5 * 60_000;
@@ -395,8 +399,9 @@ const CREDITS_WAIT_MINUTES = 60;
 export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
   // The oldest due first; each one looked at leaves the due ones (queued, dropped or put off), so the next sweep gets the next.
   const due = await prisma.codeChange.findMany({
-    // Analysing with a retry due: a claim whose run was lost with the web server (STRANDED_CLAIM_MS).
-    where: { state: { in: ["FAILED", "ANALYSING"] }, retryAt: { lte: now } },
+    // Analysing with a retry due: a claim whose run was lost with the web server (STRANDED_CLAIM_MS). Ready or nothing to
+    // do with one: a pick made while another run was under way (PICK_AFTER_RUN_MS), for the pick's own run.
+    where: { state: { in: ["FAILED", "ANALYSING", "READY", "NOTHING_TO_DO"] }, retryAt: { lte: now } },
     orderBy: { retryAt: "asc" },
     take: RETRIES_PER_SWEEP,
     select: { id: true, projectId: true, state: true, reason: true, retryAt: true, retries: true, retryPastGate: true, claimedFrom: true, project: { select: { analyseCodeChanges: true, plan: true } } },
@@ -429,6 +434,16 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
     }
     if (paused.get(change.projectId)) {
       waiting += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: new Date(now.getTime() + CREDITS_WAIT_MINUTES * 60_000) } })).count;
+      continue;
+    }
+    // Analysed meanwhile: the pick's run, which goes past the gate only if it's still picked and has no line (codeChange).
+    if (change.state === "READY" || change.state === "NOTHING_TO_DO") {
+      if ((await prisma.codeChange.updateMany({ where: still, data: { retryAt: null } })).count > 0) {
+        queued++;
+        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: change.retryPastGate, resume: false }).catch((error: unknown) =>
+          log.error("Queueing a pick's run failed", { error, codeChangeId: change.id }),
+        );
+      }
       continue;
     }
     const { count } = await prisma.codeChange.updateMany({ where: still, data: { state: "ANALYSING", reason: "", retryAt: null, retries: { increment: 1 } } });
@@ -497,14 +512,9 @@ async function analyse(
   // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
   const versions: Versions = { decider: decisionModel(), model: use.model, settings: ranWith };
   const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr, DECISION_DIFF_CHARS), GATE, { meter: use.meter }));
-  // Users see it: the changelog hears about it, and its posts are decided. So too where the team picked it for the
-  // changelog (changelog.addPullRequests), also while this ran: their word over the gate's, which is still saved as said.
-  const gateSays = !gate || gate.users >= thresholds().gate;
-  const picked = async () => {
-    const { repoId, number } = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { repoId: true, number: true } });
-    return (await prisma.changelogDecision.count({ where: { projectId: change.projectId, repoId, number, takenOut: false } })) > 0;
-  };
-  let seen = gateSays || (await picked());
+  // Users see it: the changelog hears about it, and its posts are decided. (A team's pick made while this runs is the
+  // pick's own run's, past the gate, once this one is done: see claimCodeChange.)
+  const seen = !gate || gate.users >= thresholds().gate;
   const tools: ToolContext = { projectId: change.projectId, repository };
   try {
     const docs = await decideDocs(pr, tools, use.meter, { codeChangeId: change.id, signal });
@@ -520,7 +530,6 @@ async function analyse(
         .slice(0, 1)
         .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason, place: article.place } })),
     ];
-    seen ||= await picked();
     if (!seen && proposals.length === 0) {
       return nothingToDo(change, gate!.reason, versions);
     }
@@ -566,7 +575,7 @@ async function analyse(
     for (let tries = 1; !saved; tries++) {
       try {
         // The gate's word only where it was asked: a run past it (the team's pick, Analyse anyway) keeps the one before.
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? gateSays : undefined, ...versions }, kept, {
+        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? seen : undefined, ...versions }, kept, {
           projectId: change.projectId,
           pullRequest: change.pullRequest,
           data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
@@ -582,12 +591,9 @@ async function analyse(
       }
     }
     const { waiting, linked, scheduled, landed } = saved;
-    // Picked while the docs were written (after the last look): its line is written now, not left as the title.
-    const late = !seen && (await picked());
-    if (seen || late) {
+    if (seen) {
       // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
-      const written = late ? (await writeProposals(pr, summary, [], [], use)).line : line;
-      await writeChangelogLine(change.projectId, change.id, change.pullRequest, written || change.pullRequest.title);
+      await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
     } else {
       // Docs to fix, though the gate says users don't see it: the changelog doesn't hear about it.
       await leaveChangelog(change);
