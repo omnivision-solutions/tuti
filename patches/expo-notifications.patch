@@ -22,7 +22,7 @@ index 769b5522b9e20caba4b4bebd50a7817759be1eff..2bf85d8e0e89b85c444d3039c2435ba3
  
    override suspend fun build(): Notification {
 diff --git a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
-index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..17f6e438d8e357e5c73387b54af85f924ff20391 100644
+index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..4fa881d82c824a35b0f4647c4b204ffb9418fd4e 100644
 --- a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
 +++ b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
 @@ -2,6 +2,7 @@
@@ -41,7 +41,7 @@ index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..17f6e438d8e357e5c73387b54af85f92
      var handled = false
      for delegate in delegates {
        handled = delegate.didReceive(response, completionHandler: completionHandler) || handled
-@@ -238,6 +240,31 @@ public class NotificationCenterManager: NSObject,
+@@ -238,6 +240,37 @@ public class NotificationCenterManager: NSObject,
      completionHandler()
    }
  
@@ -57,7 +57,8 @@ index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..17f6e438d8e357e5c73387b54af85f92
 +          response.actionIdentifier != UNNotificationDismissActionIdentifier else {
 +      return
 +    }
-+    DispatchQueue.main.async {
++    // Begun before this returns, so before the completion handler: begun later, iOS could suspend the app first.
++    let begin = {
 +      var task = UIBackgroundTaskIdentifier.invalid
 +      let end = {
 +        if task != .invalid {
@@ -67,6 +68,11 @@ index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..17f6e438d8e357e5c73387b54af85f92
 +      }
 +      task = UIApplication.shared.beginBackgroundTask(withName: "notification-action", expirationHandler: end)
 +      DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: end)
++    }
++    if Thread.isMainThread {
++      begin()
++    } else {
++      DispatchQueue.main.sync(execute: begin)
 +    }
 +  }
 +

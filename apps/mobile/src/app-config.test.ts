@@ -50,5 +50,7 @@ describe("the app's Expo config", () => {
     expect(patch).toContain("setAuthenticationRequired(true)");
     // iOS: a background task while the JavaScript acts, or iOS suspends the app before its request goes out.
     expect(patch).toContain("beginBackgroundTask");
+    // Begun before the action's completion handler is called, not later on the main queue: iOS could suspend the app first.
+    expect(patch).toMatch(/\+\s+if Thread\.isMainThread \{\n\+\s+begin\(\)/);
   });
 });
