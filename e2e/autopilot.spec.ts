@@ -522,8 +522,8 @@ test("a merged pull request becomes a code change; the team completes the post i
 
   // The changelog's draft has both lines Autopilot wrote, and not the pull requests' own titles.
   await owner.goto(`/app/${slug}/changelog/1`);
-  // A fact under its title (no sentence): what the draft is doing.
-  await expect(owner.getByText("Draft · collecting merged pull requests until a release or you publish it")).toBeVisible();
+  // Its status, first in the sidebar: what the draft is doing.
+  await expect(owner.getByText("Draft, collecting merged pull requests until you publish it")).toBeVisible();
   await expect(owner.getByText("Dark theme", { exact: true })).toBeVisible();
   await expect(owner.getByText("A tidier theme store")).toBeVisible();
   // Not its title in the text (the sidebar lists the draft's pull requests by title).

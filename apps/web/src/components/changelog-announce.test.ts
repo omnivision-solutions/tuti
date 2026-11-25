@@ -63,7 +63,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
 
   test("all sent: publishing again emails nobody, and says so", () => {
     expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 3 })).toContain(
-      "Emailed to 3 subscribers when it was first published: it isn't sent again.",
+      "Emailed to 3 subscribers when first published: not sent again.",
     );
     expect(line({ email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget.");
     expect(line({ email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget, and sends 2 emails.");
@@ -71,7 +71,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
 
   test("on a portal gone private (nobody's left to email: subscribersLeft is 0 there), the draft says the rest won't get it", () => {
     expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0 }, null)).toContain(
-      "Your portal is private now: it isn't emailed to anyone else.",
+      "Your portal is private now: nobody else gets it.",
     );
   });
 
@@ -89,7 +89,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     );
     expect(html).toMatch(/<input type="checkbox"[^>]*disabled=""[^>]*\/>[\s\S]*Email subscribers/);
     expect(html).not.toMatch(/<input type="checkbox"[^>]*checked=""[^>]*disabled=""/);
-    expect(html).toContain("Your portal is private: its changelog isn&#x27;t emailed.");
+    expect(html).toContain("Your portal is private, so it isn&#x27;t emailed.");
     expect(line({ email: true, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget.");
   });
 });
@@ -98,32 +98,32 @@ describe("published, who it told", () => {
   const told = (asked: number, subscribers: number) =>
     sidebar({ published: true, emailedSubscribers: subscribers > 0, subscribersLeft: 0, subscribersSent: subscribers, told: { asked, subscribers } });
 
-  test("the people who asked and the subscribers, each counted as what they are", () => {
-    expect(told(2, 48)).toContain("Told 2 people who asked and 48 subscribers.");
+  test("the people who asked, under the line on the subscribers: the subscribers aren't said twice", () => {
+    expect(told(2, 48)).toContain("Emailed to 48 subscribers. Marked new in your widget. Told 2 people who asked.");
+    expect(told(2, 48).split("48 subscribers").length - 1).toBe(1);
     expect(told(1, 0)).toContain("Told 1 person who asked.");
-    expect(told(0, 1)).toContain("Told 1 subscriber.");
-    expect(told(0, 1)).not.toContain("who asked");
+    expect(told(0, 1)).toContain("Emailed to 1 subscriber.");
+    expect(told(0, 1)).not.toContain("Told");
     // Nobody told yet (being emailed, nothing sent): no "Told" line, not "Told 0 people who asked".
     expect(told(0, 0)).not.toContain("Told");
   });
 });
 
-test("a draft's Mark it new says what each place shows: the widget a dot, the portal's Changelog tab New", () => {
-  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 })).toContain(
-    "Marked new, the widget shows a dot and your portal's Changelog tab says New to signed-in readers, until they see it.",
-  );
+test("a draft's choices each say one short line (docs/design.md: at most one under a label)", () => {
+  const text = sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 3);
+  expect(text).toBe("How it's announced Email subscribers 3 people subscribed. Mark it new A dot in your widget until readers see it.");
 });
 
 test("while the project's email is paused, a draft says subscribers aren't emailed, not that nobody subscribed", () => {
   expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, emailPaused: true }, 0)).toContain(
-    "Your project's email is paused, so subscribers aren't emailed.",
+    "Your project's email is paused.",
   );
 });
 
 test("an entry emailed from the tool it was imported from says so, not that it went to 0 subscribers", () => {
   const imported = { emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 0, emailedFrom: "Featurebase" };
   expect(sidebar({ ...imported, published: true })).toContain("Emailed to your subscribers from Featurebase.");
-  expect(sidebar({ ...imported, published: false })).toContain("Emailed to your subscribers from Featurebase: it isn't sent again.");
+  expect(sidebar({ ...imported, published: false })).toContain("Emailed from Featurebase before: not sent again.");
   expect(sidebar({ ...imported, published: true })).not.toContain("0 subscribers");
 });
 

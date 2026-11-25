@@ -11,7 +11,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDate, timeAgo } from "@/lib/format";
 
-type PullRequest = { id: string; repo: string; number: number; url: string; title: string; author: string; mergedAt: string };
+/** `id`, `author` and `mergedAt`: what Autopilot read of it (its activity page); a pull request it never read (a changelog entry's, with Autopilot off) has none. */
+type PullRequest = { id?: string; repo: string; number: number; url: string; title: string; author?: string; mergedAt?: string };
 
 /** The chip row's id: focus goes back to it once what a chip's popover did took the chip away. */
 export const CHIPS_ID = "pull-requests";
@@ -90,12 +91,13 @@ const links = "flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium";
  * when, what `part` adds (a review's actions for it), a link to it on GitHub and one to its activity page.
  */
 export function PullRequestChip({ projectSlug, pr, byline = false, part }: { projectSlug: string; pr: PullRequest; byline?: boolean; part?: ChipPart }) {
-  const merged = new Date(pr.mergedAt);
+  const merged = pr.mergedAt ? new Date(pr.mergedAt) : null;
+  const author = pr.author && merged ? { login: pr.author, merged } : null;
   return (
     <Chip
       // Its name starts with what it shows ("PR #130 octo merged 1 month ago"), then its title: said as one (a visually
       // hidden title would be read after a pause).
-      label={`PR #${pr.number}${byline ? ` ${pr.author} merged ${timeAgo(merged)}` : ""}${part?.outOfDate ? ", out of date" : ""}: ${pr.title}`}
+      label={`PR #${pr.number}${byline && author ? ` ${author.login} merged ${timeAgo(author.merged)}` : ""}${part?.outOfDate ? ", out of date" : ""}: ${pr.title}`}
       pill={
         <>
           <GithubMark className="size-3.5" />
@@ -103,12 +105,13 @@ export function PullRequestChip({ projectSlug, pr, byline = false, part }: { pro
         </>
       }
       after={
-        byline && (
+        byline &&
+        author && (
           <>
-            <GithubAvatar login={pr.author} />
-            <span className="truncate text-foreground">{pr.author}</span>
+            <GithubAvatar login={author.login} />
+            <span className="truncate text-foreground">{author.login}</span>
             <span className="shrink-0 text-muted-foreground" suppressHydrationWarning>
-              merged {timeAgo(merged)}
+              merged {timeAgo(author.merged)}
             </span>
           </>
         )
@@ -118,9 +121,14 @@ export function PullRequestChip({ projectSlug, pr, byline = false, part }: { pro
         <>
           <p className="font-medium break-words">{pr.title}</p>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <GithubAvatar login={pr.author} />
+            {author && <GithubAvatar login={author.login} />}
             <span className="min-w-0 truncate">
-              {pr.author} · <span title={formatDate(merged)}>merged {timeAgo(merged)}</span> · {pr.repo}#{pr.number}
+              {author && (
+                <>
+                  {author.login} · <span title={formatDate(author.merged)}>merged {timeAgo(author.merged)}</span> ·{" "}
+                </>
+              )}
+              {pr.repo}#{pr.number}
             </span>
           </p>
           {/* After the part's actions. */}
@@ -129,9 +137,11 @@ export function PullRequestChip({ projectSlug, pr, byline = false, part }: { pro
               Open on GitHub
               <ExternalLinkIcon className="size-3" />
             </a>
-            <Link href={`/app/${projectSlug}/autopilot/activity/${pr.id}`} className="hover:underline">
-              Its activity
-            </Link>
+            {pr.id && (
+              <Link href={`/app/${projectSlug}/autopilot/activity/${pr.id}`} className="hover:underline">
+                Its activity
+              </Link>
+            )}
           </div>
         </>
       }

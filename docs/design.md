@@ -260,17 +260,19 @@ the list picks none to approve at once.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
-  beside the text (under it on phones): its tags as chips, the posts it completes
-  ("Link post…"), its merged pull requests (each opening on GitHub, `repo#number` under it; a draft's taken out with ×,
+  beside the text with a line on its left, as a post's has (under it on phones, after a line; no card), its groups
+  under group labels: its status first (Draft, or Published and the date), its tags as chips, the posts it completes
+  ("Link post…"), its merged pull requests (each a `PR #41` chip as Autopilot shows them, its title beside it; a draft's taken out with ×,
   their line with them, and "Add changes…" listing the ones no entry has, ticked unless Autopilot found nothing for
   users in them, with what their analyses cost where AI credits are on; a published entry's listed as they shipped),
-  how it's announced (Email subscribers, Mark it new: picked
-  there, so Publish only confirms; published, what happened and how many people were told),
-  "View as reader". Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
+  how it's announced (Email subscribers, Mark it new, one short line each: picked
+  there, so Publish only confirms; published, what happened, said once, and how many people who asked were told).
+  Once it's published, "View on portal" is in the header's More actions, as on a post's page. Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
   each, Edit under the team's own while it's published). Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The featured image (its cover, and its link
   preview) shows under the title across the text's column, as readers see it, with Replace and Remove over it on
-  hover, focus and touch screens; without one, a dashed band there adds one (picked or dropped). One way into AI: while the text is still the pull requests'
+  hover, focus and touch screens; without one, a dashed row there (one line high, not pushing the text down) adds one
+  (picked or dropped). One way into AI: while the text is still the pull requests'
   titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
   toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.
