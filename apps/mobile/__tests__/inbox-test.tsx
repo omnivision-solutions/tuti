@@ -1044,6 +1044,20 @@ describe("reading offline", () => {
     expect(screen.queryByText(/Couldn't reach/)).toBeNull();
   });
 
+  it("dates a list on screen from its last load when a refresh finds no connection, kept or not", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    // Nothing kept of it (too big, or forgotten), and two hours pass.
+    forgetCached();
+    await act(() => jest.advanceTimersByTimeAsync(2 * 3_600_000));
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText("Offline · updated 2 hours ago")).toBeTruthy();
+  });
+
   it("keeps a project's chips when an older load's counts fail offline after a switch", async () => {
     serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
     await render(<Inbox />);

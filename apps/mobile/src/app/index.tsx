@@ -22,9 +22,10 @@ type List = { for: string; rows: Row[]; next: string | null; total: number; move
 
 /**
  * Where a list came from: the server, with the cache's generation as its load started (`since`, kept for reading
- * offline unless everything was forgotten since), or the cache when there was no connection (`savedAt`: when it was).
+ * offline unless everything was forgotten since) and when it landed (`loadedAt`); or, with no connection, the cache or
+ * the list already shown (`savedAt`: when it was last loaded).
  */
-type Kept = { since: number; savedAt?: undefined } | { since?: undefined; savedAt: number };
+type Kept = { since: number; loadedAt: number; savedAt?: undefined } | { since?: undefined; loadedAt?: undefined; savedAt: number };
 
 /** A view's list as it's kept to read offline: its first rows, up to the server's most for a page. */
 type Saved = { rows: Row[]; total: number };
@@ -174,7 +175,7 @@ export default function Inbox() {
       });
       const rows = firstRows(api, view, q, keep).then((page) => {
         if (loads.isLatest(mine)) {
-          const fresh = { for: key, since, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
+          const fresh = { for: key, since, loadedAt: Date.now(), rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
           setList(fresh);
           // Swipes it has: those answered before it started.
           if ([...swipesNow.current.values()].some((reload) => reload && reload <= mine)) {
@@ -207,7 +208,7 @@ export default function Inbox() {
               now?.for === key
                 ? now.savedAt !== undefined
                   ? now
-                  : { ...now, since: undefined, savedAt: saved?.at ?? Date.now() }
+                  : { ...now, since: undefined, loadedAt: undefined, savedAt: now.loadedAt }
                 : saved
                   ? { for: key, savedAt: saved.at, rows: saved.data.rows, next: null, total: saved.data.total, moved: 0 }
                   : now,
