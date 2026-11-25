@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo, BackHandler } from "react-native";
 
 import Details from "@/app/conversation/[number]/details";
+import { behaviourFor } from "@/lib/notifications";
 import { type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage, triageChanges } from "@/lib/details";
 
 const mockBack = jest.fn();
@@ -111,6 +112,16 @@ afterEach(() => {
 });
 
 describe("the details sheet", () => {
+  it("shows no banner for its conversation's notifications while it's open", async () => {
+    serve(SAM);
+    const banner = () => behaviourFor({ request: { content: { data: { project: "acme", conversation: 12 } } } } as never).shouldShowBanner;
+    await render(<Details />);
+    expect(await screen.findByText("Sam Lee")).toBeTruthy();
+    expect(banner()).toBe(false);
+    await screen.unmount();
+    expect(banner()).toBe(true);
+  });
+
   it("shows one of the project's users as the web's panel does, and opens another of their conversations", async () => {
     serve(SAM);
     await render(<Details />);

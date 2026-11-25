@@ -24,6 +24,7 @@ import {
   triageChanges,
   updateConversation,
 } from "@/lib/details";
+import { lookAt } from "@/lib/notifications";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -40,6 +41,9 @@ export default function Details() {
   const api = useApi();
   const { session } = useSession();
   const key = screenKey(session!, number);
+  // The conversation's still what's on screen: its notifications don't show over its details either.
+  const project = session?.project;
+  useEffect(() => (project ? lookAt({ project, number }) : undefined), [project, number]);
   const triage = useSyncExternalStore(subscribeTriage, () => getTriage(key));
   const [person, setPerson] = useState<Person | null>(null);
   const [assignees, setAssignees] = useState<Assignee[] | null>(null);
