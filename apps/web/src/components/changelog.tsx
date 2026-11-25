@@ -1025,8 +1025,9 @@ function EntryPullRequests({
         </ul>
       )}
       {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
-      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <AlertDialogContent>
+      {/* Not closed while it's taking it out: Cancel then would undo nothing. */}
+      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && !pending && setConfirming(null)}>
+        <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>Take out {confirming?.ref}?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -1034,7 +1035,7 @@ function EntryPullRequests({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" disabled={pending} focusableWhenDisabled onClick={() => confirming && takeOut(confirming.url)}>
               Take out
             </AlertDialogAction>
