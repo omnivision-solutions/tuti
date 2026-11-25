@@ -5,6 +5,7 @@ import { Alert, AppState, Platform } from "react-native";
 
 import type { Api } from "@/lib/api";
 import { askPermission, behaviourFor, onRegisterAgain, openTarget, registerAgain, registerDevice, registeredFor, shouldOffer, type Target, tapped } from "@/lib/notifications";
+import { forgetChosen } from "@/lib/layout";
 import { type Session, useSession } from "@/lib/session";
 
 const platform = Platform.OS === "ios" ? "ios" : "android";
@@ -69,7 +70,11 @@ export function useNotifications() {
     // A launch that reads the last tap again doesn't open it again.
     Notifications.clearLastNotificationResponse();
     openTarget(next, session, setProject, {
-      leave: () => router.canDismiss() && router.dismissAll(),
+      // A conversation chosen beside the list is forgotten first, so going back to the Inbox never pushes it.
+      leave: () => {
+        forgetChosen();
+        return router.canDismiss() && router.dismissAll();
+      },
       open: (path) => router.push(path),
       projects: () => (api ? api<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug)) : Promise.resolve([])),
     }).catch((e: Error) => Alert.alert("Couldn't switch project", e.message));

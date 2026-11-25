@@ -15,3 +15,15 @@ export const useWide = () => {
 
 /** The list's column, beside the conversation: about two fifths of the window, between a phone's width and a little more. */
 export const listWidth = (width: number) => Math.round(Math.min(400, Math.max(320, width * 0.38)));
+
+/**
+ * The conversation chosen beside the Inbox's list, forgotten: when a conversation is opened on its own (a narrow window)
+ * or something is about to open one (a notification's tap), so a choice left over from a wide window, of whatever
+ * project, is never pushed later. The Inbox listens.
+ */
+const forgetting = new Set<() => void>();
+export function onForgetChosen(listener: () => void) {
+  forgetting.add(listener);
+  return () => void forgetting.delete(listener);
+}
+export const forgetChosen = () => forgetting.forEach((listener) => listener());

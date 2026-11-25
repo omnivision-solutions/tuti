@@ -72,7 +72,7 @@ import {
 import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { lookAt } from "@/lib/notifications";
 import { cached, cacheGeneration, conversationKey, isOffline, keep as keepCached, offlineNote, useMinutes } from "@/lib/offline";
-import { useWide } from "@/lib/layout";
+import { forgetChosen, useWide } from "@/lib/layout";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -88,11 +88,20 @@ export default function ConversationRoute() {
   const { number } = useLocalSearchParams<{ number: string }>();
   const { session } = useSession();
   const wide = useWide();
+  // Only while it's in front: with the details sheet over it, once the sheet has closed.
+  useFocusEffect(
+    useCallback(() => {
+      if (wide) {
+        router.dismissTo({ pathname: "/", params: { c: number, p: session?.project } });
+      }
+    }, [wide, number, session?.project]),
+  );
+  // Opened on its own: a choice left over from a wide window is forgotten.
   useEffect(() => {
-    if (wide) {
-      router.dismissTo({ pathname: "/", params: { c: number, p: session?.project } });
+    if (!wide) {
+      forgetChosen();
     }
-  }, [wide, number, session?.project]);
+  }, [wide]);
   if (wide) {
     return null;
   }

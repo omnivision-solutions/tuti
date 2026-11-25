@@ -5,6 +5,7 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, AppState, BackHandler } from 
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
+import { forgetChosen } from "@/lib/layout";
 import { cached, cacheGeneration, forgetCached, inboxKey, keep, projectsKey, startCache } from "@/lib/offline";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
@@ -25,7 +26,7 @@ jest.mock("expo-router", () => {
   const useFocusEffect = (effect: () => void) => {
     mockFocus = effect;
     // Not run while something is over the screen (`mockCovered`: a sheet).
-    React.useEffect(() => (mockCovered ? undefined : effect()), [effect]);
+    React.useEffect(() => (mockCovered ? undefined : effect()), [effect, mockCovered]);
   };
   // The route's search params (the conversation chosen beside the list), which `setParams` changes as the router does
   // (the test draws the screen again).
@@ -42,6 +43,8 @@ jest.mock("expo-router", () => {
   };
 });
 let mockParams: Record<string, string | undefined> = {};
+// The Inbox's header, its height (iOS draws it over the screen).
+jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 120 }));
 // The conversation beside the list is the conversation screen's own (tested there): here, which one and how it leaves.
 jest.mock("@/app/conversation/[number]", () => {
   const React = require("react");
@@ -1407,6 +1410,63 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     } finally {
       mockCovered = false;
     }
+  });
+
+  it("forgets the one chosen, never pushing it later, once a conversation opens on its own or a notification is tapped", async () => {
+    mockParams = { c: "1", p: "acme" };
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const view = await render(<Inbox />);
+    await screen.findByText("Conversation #1");
+
+    // Narrowed under a sheet: it waits. Then another conversation opens (or a tap of a notification is on its way).
+    mockCovered = true;
+    try {
+      setWindow(390, 844);
+      await view.rerender(<Inbox />);
+      await act(async () => forgetChosen());
+      expect(router().setParams).toHaveBeenCalledWith({ c: undefined, p: undefined });
+    } finally {
+      mockCovered = false;
+    }
+    // Back in front: nothing left to push.
+    await view.rerender(<Inbox />);
+    expect(router().push).not.toHaveBeenCalled();
+  });
+
+  it("moves a screen reader to the conversation's row, or to the empty pane once the row's gone, when the pane empties", async () => {
+    // (React Native's own Jest setup mocks it already: cleared of earlier tests' calls.)
+    const send = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    send.mockClear();
+    try {
+      mockParams = { c: "1", p: "acme" };
+      serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+      const view = await render(<Inbox />);
+      await fireEvent.press(await screen.findByText("Conversation #1"));
+      await view.rerender(<Inbox />);
+      const focused = () => (send.mock.calls[0]![0] as unknown as { props: { accessibilityLabel?: string; children?: unknown } }).props;
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0]![1]).toBe("focus");
+      expect(focused().accessibilityLabel).toMatch(/: CSV export stops at 500 rows \(#1\)/);
+
+      // One whose row has left the list (closed, say): the empty pane's note.
+      send.mockClear();
+      mockParams = { c: "99", p: "acme" };
+      await view.rerender(<Inbox />);
+      await fireEvent.press(screen.getByText("Conversation #99"));
+      await view.rerender(<Inbox />);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0]![1]).toBe("focus");
+      expect(focused().children).toBe("Choose a conversation to read it here.");
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it("starts the pane below iOS's header, which is drawn over the screen", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    expect(screen.getByTestId("conversation-pane")).toHaveStyle({ paddingTop: 120 });
   });
 
   it("keeps one pane on a phone turned sideways: wide, but too short for two", async () => {

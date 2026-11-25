@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo } from "react-native";
 
 import ConversationRoute, { ConversationPane } from "@/app/conversation/[number]";
+import { onForgetChosen } from "@/lib/layout";
 import { ApiError } from "@/lib/api";
 import { cached, cacheGeneration, conversationKey, forgetCached, keep, startCache } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
@@ -17,11 +18,13 @@ jest.mock("expo-router", () => {
     // Focused once it's on screen, and again when the test says it came back (`mockFocus`).
     useFocusEffect: (effect: () => void) => {
       mockFocus = effect;
-      React.useEffect(() => effect(), [effect]);
+      // Not run while something is over the screen (`mockCovered`: the details sheet).
+      React.useEffect(() => (mockCovered ? undefined : effect()), [effect, mockCovered]);
     },
   };
 });
 let mockFocus: (() => void) | null = null;
+let mockCovered = false;
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("expo-symbols", () => ({ SymbolView: () => null }));
 jest.mock("expo-image-picker", () => ({ UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" } }));
@@ -304,6 +307,33 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     await act(async () => {});
     expect(leave).toHaveBeenCalled();
     expect(back).not.toHaveBeenCalled();
+  });
+
+  it("waits, when the window widens with the details sheet over it, till the sheet has closed to hand it over", async () => {
+    const view = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    mockCovered = true;
+    try {
+      window.mockWindow = { ...narrow, width: 1280, height: 800 };
+      await view.rerender(<ConversationRoute />);
+      expect(dismissTo()).not.toHaveBeenCalled();
+    } finally {
+      mockCovered = false;
+    }
+    await view.rerender(<ConversationRoute />);
+    expect(dismissTo()).toHaveBeenCalledWith({ pathname: "/", params: { c: "12", p: "acme" } });
+  });
+
+  it("forgets a conversation chosen beside the Inbox when it opens on its own (a narrow window)", async () => {
+    const forgotten = jest.fn();
+    const stop = onForgetChosen(forgotten);
+    try {
+      await render(<ConversationRoute />);
+      await screen.findByText("Hi! The export stops at 500 rows.");
+      expect(forgotten).toHaveBeenCalled();
+    } finally {
+      stop();
+    }
   });
 
   it("draws its own header beside the list: who it's with and where it stands, each opening the details", async () => {

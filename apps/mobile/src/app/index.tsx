@@ -1,6 +1,7 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Alert, AppState, BackHandler, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Alert, AppState, BackHandler, FlatList, type HostInstance, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
 import { ConversationPane } from "@/app/conversation/[number]";
@@ -10,7 +11,7 @@ import { offerNotifications } from "@/components/notifications";
 import { onRead } from "@/lib/conversation";
 import { type Change, snoozeTime, updateConversation } from "@/lib/details";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
-import { listWidth, useWide } from "@/lib/layout";
+import { listWidth, onForgetChosen, useWide } from "@/lib/layout";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { cached, cacheGeneration, inboxKey, isOffline, keep as remember, offlineNote, projectsKey, useMinutes, viewsKey } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
@@ -458,6 +459,36 @@ export default function Inbox() {
   // This screen's own params, whatever is over it (a sheet): the router's `setParams` sets the screen in front's.
   const navigation = useNavigation();
   const unchoose = useCallback(() => navigation.setParams({ c: undefined, p: undefined } as never), [navigation]);
+  // A conversation opened on its own, or a notification about to open one: the choice is forgotten (`forgetChosen`).
+  useEffect(() => onForgetChosen(unchoose), [unchoose]);
+  // The pane emptied by its conversation (a Send and close): a screen reader's focus, on the control that's gone, goes
+  // to that conversation's row, or to the empty pane's note once the row has left the list.
+  const rowNodes = useRef(new Map<number, HostInstance>());
+  const onRowNode = useCallback((number: number, node: HostInstance | null) => {
+    if (node) {
+      rowNodes.current.set(number, node);
+    } else {
+      rowNodes.current.delete(number);
+    }
+  }, []);
+  const emptyNote = useRef<HostInstance>(null);
+  const leftFrom = useRef<number | null>(null);
+  const leave = useCallback(() => {
+    leftFrom.current = chosen;
+    unchoose();
+  }, [chosen, unchoose]);
+  useEffect(() => {
+    if (chosen !== null || leftFrom.current === null) {
+      return;
+    }
+    const target = rowNodes.current.get(leftFrom.current) ?? emptyNote.current;
+    leftFrom.current = null;
+    if (target) {
+      AccessibilityInfo.sendAccessibilityEvent(target, "focus");
+    }
+  }, [chosen]);
+  // iOS's large title is drawn over the screen: the pane starts below it (the list has its own inset). Android's isn't.
+  const headerHeight = useHeaderHeight();
   // Only while the Inbox is in front: with a sheet or settings over it, once it's back.
   useFocusEffect(
     useCallback(() => {
@@ -549,6 +580,7 @@ export default function Inbox() {
           now={now}
           onPress={open}
           selected={wide && item.number === chosen}
+          onNode={onRowNode}
           // Not for one that's closed; nor snoozed in Spam, as the details sheet.
           onClose={item.status === "closed" ? undefined : close}
           onSnooze={item.status === "closed" || (view === "spam" && !q) ? undefined : snooze}
@@ -696,12 +728,14 @@ export default function Inbox() {
       {wide ? (
         <View style={styles.panes}>
           <View style={[styles.listPane, { width: listWidth(width), borderRightColor: colors.border }]}>{listView}</View>
-          <View style={[styles.conversationPane, { backgroundColor: colors.card }]} testID="conversation-pane">
+          <View style={[styles.conversationPane, { backgroundColor: colors.card, paddingTop: Platform.OS === "ios" ? headerHeight : 0 }]} testID="conversation-pane">
             {chosen !== null ? (
-              <ConversationPane number={chosen} onLeave={unchoose} />
+              <ConversationPane number={chosen} onLeave={leave} />
             ) : (
               <View style={[styles.emptyBox, styles.emptyPane]}>
-                <Text style={[styles.empty, { color: colors.muted }]}>Choose a conversation to read it here.</Text>
+                <Text ref={emptyNote} style={[styles.empty, { color: colors.muted }]}>
+                  Choose a conversation to read it here.
+                </Text>
               </View>
             )}
           </View>
