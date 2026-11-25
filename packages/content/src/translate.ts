@@ -31,7 +31,8 @@ const key = (mark: Mark) => JSON.stringify([mark.type, mark.attrs ?? {}]);
 /** Whether text has anything to translate: a letter outside tags and placeholders. */
 const hasWords = (tagged: string) => /\p{L}/u.test(tagged.replace(/<[^>]*>/g, "").replace(/&\w+;/g, ""));
 
-type Slot = { id: string; source: string; apply: (text: string) => string | null };
+/** A segment in the document: `check` says why a translation can't go back in (null: it can), `apply` puts it there. */
+type Slot = { id: string; source: string; check: (text: string) => string | null; apply: (text: string) => void };
 
 /** A text block's inline content as tagged text, and how to read a translation of it back into inline content. */
 function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: string) => JSONContent[] | string } {
@@ -129,7 +130,11 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
  * The segments to translate in `doc`, and `apply`, which returns a copy of it with each translated segment in place
  * (a segment missing from `translations`, or failing its checks, keeps its source text and is in `problems`).
  */
-export function segmentsOf(doc: Doc): { segments: Segment[]; apply: (translations: Record<string, string>) => { doc: Doc; problems: Problem[] } } {
+export function segmentsOf(doc: Doc): {
+  segments: Segment[];
+  check: (id: string, text: string) => string | null;
+  apply: (translations: Record<string, string>) => { doc: Doc; problems: Problem[] };
+} {
   const copy = structuredClone(doc);
   const slots: Slot[] = [];
   const visit = (node: JSONContent) => {
@@ -140,11 +145,12 @@ export function segmentsOf(doc: Doc): { segments: Segment[]; apply: (translation
         slots.push({
           id,
           source: text,
-          apply: (translated) => {
+          check: (translated) => {
             const content = decode(translated);
-            if (typeof content === "string") return content;
-            node.content = content;
-            return null;
+            return typeof content === "string" ? content : null;
+          },
+          apply: (translated) => {
+            node.content = decode(translated) as JSONContent[];
           },
         });
       }
@@ -155,10 +161,9 @@ export function segmentsOf(doc: Doc): { segments: Segment[]; apply: (translation
       slots.push({
         id,
         source: escape(node.attrs.alt),
+        check: (translated) => (/<[^>]*>/.test(translated) ? "an image's description can't have tags" : null),
         apply: (translated) => {
-          if (/<[^>]*>/.test(translated)) return "an image's description can't have tags";
           node.attrs!.alt = unescape(translated).trim();
-          return null;
         },
       });
       return;
@@ -168,16 +173,19 @@ export function segmentsOf(doc: Doc): { segments: Segment[]; apply: (translation
   };
   visit(copy);
   let applied = false;
+  const byId = new Map(slots.map((slot) => [slot.id, slot]));
   return {
     segments: slots.map(({ id, source }) => ({ id, text: source })),
+    check: (id, text) => byId.get(id)?.check(text) ?? null,
     apply: (translations) => {
       if (applied) throw new Error("apply runs once: segmentsOf again for another language");
       applied = true;
       const problems: Problem[] = [];
       for (const slot of slots) {
         const translated = translations[slot.id];
-        const reason = translated === undefined ? "no translation" : slot.apply(translated);
+        const reason = translated === undefined ? "no translation" : slot.check(translated);
         if (reason) problems.push({ id: slot.id, reason });
+        else slot.apply(translated!);
       }
       return { doc: copy, problems };
     },
@@ -185,7 +193,7 @@ export function segmentsOf(doc: Doc): { segments: Segment[]; apply: (translation
 }
 
 /** Plain text (an Inbox message) as one segment: line breaks, URLs, email addresses and `code` kept as they are. */
-export function segmentOfText(text: string): { segment: Segment; apply: (translated: string) => string | Problem } {
+export function segmentOfText(text: string): { segment: Segment; apply: (translated: string) => string | Problem; check: (id: string, translated: string) => string | null } {
   const kept: string[] = [];
   const tagged = text
     .split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)/)
@@ -195,9 +203,7 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
       return `<x${kept.length}/>`;
     })
     .join("");
-  return {
-    segment: { id: "1", text: tagged },
-    apply: (translated) => {
+  const apply = (translated: string): string | Problem => {
       const seen = new Set<number>();
       let bad: string | null = null;
       const out = translated
@@ -212,6 +218,13 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
       if (!bad && seen.size !== kept.length) bad = "a placeholder is missing";
       if (!bad && /<\/?[a-z]+\d*\/?>/i.test(translated.replace(/<x(\d+)\/>|<br\s*\/?>/g, ""))) bad = "it has a tag that isn't in the source";
       return bad ? { id: "1", reason: bad } : out;
+  };
+  return {
+    segment: { id: "1", text: tagged },
+    apply,
+    check: (_, translated) => {
+      const out = apply(translated);
+      return typeof out === "string" ? null : out.reason;
     },
   };
 }
@@ -275,8 +288,11 @@ export function translationPrompt({ from, to, glossary = [], instructions, about
     .join("\n\n");
 }
 
-/** Translates segments: in batches, each translation checked, and failed ones asked again once with the reasons. */
-export async function translateSegments(segments: Segment[], options: TranslateOptions): Promise<Translated> {
+/**
+ * Translates segments: in batches, each translation checked (`fits`: whether it can go back into its document), and
+ * failed ones asked again once with the reasons. Only translations that passed every check are returned and remembered.
+ */
+export async function translateSegments(segments: Segment[], options: TranslateOptions, fits?: (id: string, text: string) => string | null): Promise<Translated> {
   const { ask, glossary = [], memory = {}, batchChars = 6000 } = options;
   const translations: Record<string, string> = {};
   const todo = segments.filter((segment) => {
@@ -297,6 +313,8 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     if (typeof text !== "string" || text.trim() === "") return "no translation";
     const tagged = (value: string) => [...value.matchAll(/<\/?[a-z]\d+>|<x\d+\/>/g)].map((m) => m[0]).sort().join();
     if (tagged(segment.text) !== tagged(text)) return "its tags and placeholders don't match the source's";
+    const misfit = fits?.(segment.id, text);
+    if (misfit) return misfit;
     // Left in the source language: only when the source's is known (a message may already be in the target's).
     if (options.from && text.trim() === segment.text.trim() && (segment.text.match(/\p{L}{2,}/gu) ?? []).length >= 4) return "it isn't translated";
     return glossaryProblems(segment.text, text, glossary).join("; ") || null;
@@ -315,7 +333,10 @@ export async function translateSegments(segments: Segment[], options: TranslateO
   const problems: Problem[] = [];
   if (failed.size > 0) {
     const again = todo.filter((segment) => failed.has(segment.id));
-    const retried = await request(again, failed).catch(() => ({}) as Record<string, string>);
+    const retried = Object.assign(
+      {},
+      ...(await Promise.all(batches(again, batchChars).map((batch) => request(batch, new Map(batch.map((segment) => [segment.id, failed.get(segment.id)!]))).catch(() => ({}))))),
+    ) as Record<string, string>;
     for (const segment of again) {
       const reason = check(segment, retried[segment.id]);
       if (reason) problems.push({ id: segment.id, reason });
@@ -361,8 +382,8 @@ function parseReply(reply: string): { language?: string; segments: Record<string
 
 /** A document in another language: the same blocks, marks and attributes, its text translated. */
 export async function translateDoc(doc: Doc, options: TranslateOptions): Promise<{ doc: Doc; problems: Problem[]; memory: Record<string, string> }> {
-  const { segments, apply } = segmentsOf(doc);
-  const result = await translateSegments(segments, options);
+  const { segments, check, apply } = segmentsOf(doc);
+  const result = await translateSegments(segments, options, check);
   const applied = apply(result.translations);
   const problems = [...result.problems, ...applied.problems.filter((p) => !result.problems.some((q) => q.id === p.id))];
   return { doc: applied.doc, problems, memory: result.memory };
@@ -370,8 +391,8 @@ export async function translateDoc(doc: Doc, options: TranslateOptions): Promise
 
 /** Plain text (an Inbox message) in another language, and the language it was in when `from` isn't given. */
 export async function translateText(text: string, options: TranslateOptions): Promise<{ text: string; detected?: string; problem?: Problem }> {
-  const { segment, apply } = segmentOfText(text);
-  const result = await translateSegments([segment], { ...options, batchChars: Infinity });
+  const { segment, apply, check } = segmentOfText(text);
+  const result = await translateSegments([segment], { ...options, batchChars: Infinity }, check);
   const translated = result.translations["1"];
   if (translated === undefined) return { text, detected: result.detected, problem: result.problems[0] ?? { id: "1", reason: "no translation" } };
   const out = apply(translated);

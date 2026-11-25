@@ -136,3 +136,37 @@ test("a segment left in the source language is asked again", async () => {
   expect(asked[1]).toContain("- 1: it isn't translated");
   expect(out.doc.content![0]!.content![0]!.text).toBe("Leser stimmen für Beiträge ab.");
 });
+
+test("crossed tags are asked again, and a translation that can't go back in is never remembered", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Click " }, { type: "text", text: "Save", marks: [{ type: "bold" }] }, { type: "text", text: " to keep " }, { type: "text", text: "it", marks: [{ type: "italic" }] }] }] };
+  const crossed = '{"segments": {"1": "Klicke <b1>Speichern <i2>es</b1></i2>"}}';
+  const asked: string[] = [];
+  const out = await translateDoc(one, { from: "English", to: "German", ask: async (_, user) => (asked.push(user), crossed) });
+  expect(asked).toHaveLength(2);
+  expect(asked[1]).toContain("closes a tag that isn't the innermost open one");
+  expect(out.problems).toHaveLength(1);
+  expect(out.memory).toEqual({});
+  expect(out.doc).toEqual(one);
+});
+
+test("segments go in order, in batches of at most batchChars, and so do their retries", async () => {
+  const many: Doc = { type: "doc", content: ["Alpha one two three", "Bravo one two three", "Charlie one two three", "Delta one two three"].map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) };
+  const asked: string[][] = [];
+  await translateDoc(many, {
+    from: "English",
+    to: "German",
+    batchChars: 40,
+    ask: async (_, user) => {
+      const ids = Object.keys(JSON.parse(user.split("\n\n")[0]!) as object);
+      asked.push(ids);
+      // The first pass leaves every segment untranslated, so all are asked again.
+      return JSON.stringify({ segments: Object.fromEntries(ids.map((id) => [id, asked.length <= 2 ? ["Alpha one two three", "Bravo one two three", "Charlie one two three", "Delta one two three"][Number(id) - 1] : `Übersetzt ${id}`])) });
+    },
+  });
+  expect(asked).toEqual([
+    ["1", "2"],
+    ["3", "4"],
+    ["1", "2"],
+    ["3", "4"],
+  ]);
+});
