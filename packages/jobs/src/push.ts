@@ -152,6 +152,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     priority: "high",
     // Android: the app's own channel ("Messages", apps/mobile src/lib/notifications.ts); unnamed, Expo's "Miscellaneous".
     channelId: "default",
+    // The app's Reply and Close on the notification (apps/mobile src/lib/notification-actions.ts).
+    categoryId: "conversation",
     data: { project: conversation.project.slug, conversation: conversation.number },
   }));
   let sent = 0;

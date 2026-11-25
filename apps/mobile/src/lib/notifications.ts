@@ -24,7 +24,7 @@ const DEVICE_ID = "device-id";
  */
 const asked = () => new File(Paths.cache, "notifications-asked");
 /** The channel the server's pushes name (packages/jobs push.ts): unnamed, they'd go to Expo's own "Miscellaneous". */
-const CHANNEL = "default";
+export const CHANNEL = "default";
 
 /**
  * This install's id, kept on the phone, so registering again replaces its row rather than adding one. A new one with
@@ -204,6 +204,13 @@ export function behaviourFor(notification: Notifications.Notification, signedOut
 }
 
 /**
+ * Whether a notification's project is one of the signed-in teammate's: the session's own, or one of `projects` (their
+ * slugs). A notification left from another account, or posted by something else, is for none of theirs.
+ */
+export const isTheirs = async (target: Target, session: Session, projects: () => Promise<string[]>) =>
+  session.project === target.project || (await projects()).includes(target.project);
+
+/**
  * Opens a tapped notification's conversation, in its project, over the Inbox: the screens open go first (`leave`), so
  * it never opens over a sheet, and a conversation open can't show another project's of its number. Another project: only
  * one of the teammate's (`projects`, their slugs; a notification left from another account, or posted by something else,
@@ -219,7 +226,7 @@ export async function openTarget(
     return;
   }
   const other = session.project !== target.project;
-  if (other && !(await projects().catch(() => [] as string[])).includes(target.project)) {
+  if (!(await isTheirs(target, session, () => projects().catch(() => [] as string[])))) {
     return;
   }
   // Back to the Inbox first, also in the same project: never over a sheet (the details, Android's projects).

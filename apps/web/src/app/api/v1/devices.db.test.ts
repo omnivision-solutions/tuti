@@ -262,6 +262,7 @@ test("a user's message notifies the phones of exactly those its email goes to", 
     sound: "default",
     priority: "high",
     channelId: "default",
+    categoryId: "conversation",
     data: { project: project.slug, conversation: number },
   });
   // No access token unless one is set.

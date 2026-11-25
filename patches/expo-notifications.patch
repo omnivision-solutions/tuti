@@ -1,0 +1,23 @@
+diff --git a/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+index 769b5522b9e20caba4b4bebd50a7817759be1eff..2bf85d8e0e89b85c444d3039c2435ba31338715d 100644
+--- a/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
++++ b/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+@@ -76,7 +76,8 @@ open class ExpoNotificationBuilder(
+ 
+   protected fun buildButtonAction(action: NotificationAction): NotificationCompat.Action {
+     val intent = createNotificationResponseIntent(context, notification, action)
+-    return NotificationCompat.Action.Builder(icon, action.title, intent).build()
++    // Tuti: an action needs the phone unlocked, as iOS's isAuthenticationRequired (apps/mobile src/lib/notification-actions.ts).
++    return NotificationCompat.Action.Builder(icon, action.title, intent).setAuthenticationRequired(true).build()
+   }
+ 
+   protected fun buildTextInputAction(action: TextInputNotificationAction): NotificationCompat.Action {
+@@ -86,7 +87,7 @@ open class ExpoNotificationBuilder(
+       .build()
+ 
+     return NotificationCompat.Action.Builder(icon, action.title, intent)
+-      .addRemoteInput(remoteInput).build()
++      .addRemoteInput(remoteInput).setAuthenticationRequired(true).build()
+   }
+ 
+   override suspend fun build(): Notification {

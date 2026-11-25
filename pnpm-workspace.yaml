@@ -40,3 +40,6 @@ minimumReleaseAgeExclude:
   - eslint-config-next@16.3.8
   - next@16.3.8
   - turbo@2.11.6
+
+patchedDependencies:
+  expo-notifications: patches/expo-notifications.patch
