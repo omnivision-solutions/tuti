@@ -38,6 +38,8 @@ export function RemoveSubscriberButton({ projectSlug, email }: { projectSlug: st
           <Button
             variant="destructive"
             disabled={pending}
+            // Focus stays on it while it works, and if it fails.
+            focusableWhenDisabled
             onClick={() =>
               startTransition(async () => {
                 const result = await removeChangelogSubscriber(projectSlug, email);
