@@ -72,6 +72,17 @@ export default function Projects() {
         );
       })}
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <Pressable
+        onPress={() => {
+          router.back();
+          router.push("/notifications");
+        }}
+        accessibilityRole="button"
+        android_ripple={{ color: colors.border }}
+        style={styles.row}
+      >
+        <Text style={[styles.name, { color: colors.text }]}>Notifications</Text>
+      </Pressable>
       <Pressable onPress={() => confirmSignOut(signOut)} accessibilityRole="button" android_ripple={{ color: colors.border }} style={styles.row}>
         <Text style={[styles.name, { color: colors.error }]}>Sign out</Text>
       </Pressable>

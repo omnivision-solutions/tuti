@@ -18,12 +18,16 @@ export function appConfig(env: Env): ExpoConfig {
     ios: { bundleIdentifier: appId, supportsTablet: true },
     android: {
       package: appId,
+      // Firebase's config for this app id, which Android's push tokens need: a file EAS keeps with the build (M10), never this directory.
+      ...(env.GOOGLE_SERVICES_JSON ? { googleServicesFile: env.GOOGLE_SERVICES_JSON } : {}),
       adaptiveIcon: { foregroundImage: "./assets/android-icon-foreground.png", backgroundColor: "#fbf9f3" },
     },
     plugins: [
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
+      // The server's pushes name the `default` channel, which the app makes (src/lib/notifications.ts); also Firebase's own.
+      ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#12804a", defaultChannel: "default" }],
       // Photos for replies come from the system's picker: no camera or microphone, so the app never asks for them.
       ["expo-image-picker", { photosPermission: "Tuti attaches the photos you choose to your replies.", cameraPermission: false, microphonePermission: false }],
       [

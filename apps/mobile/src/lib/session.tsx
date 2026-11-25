@@ -4,6 +4,7 @@ import { AppState } from "react-native";
 import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
+import { dismissDelivered, removeDevice } from "./notifications";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
@@ -31,10 +32,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const save = useCallback((next: Session | null) => inTurn(() => keepSession(next, setSession, writeSession)), [inTurn]);
 
   const signOut = useCallback(async () => {
+    // The phone stops getting this teammate's notifications: sent before the session ends, its answer never waited for.
+    // A 401 to it signs nothing out.
+    const removed = session?.project ? removeDevice(createApi(session, () => {})) : null;
+    // What's on the lock screen goes too: the last account's customers' messages. Best effort, never waited for.
+    void dismissDelivered();
     setSession(null);
     forgetDrafts();
-    await inTurn(() => forgetSession());
-  }, [inTurn]);
+    await inTurn(async () => {
+      await removed;
+      await forgetSession();
+    });
+  }, [inTurn, session]);
 
   // The project chosen last wins: a choice still waiting its turn when a newer one comes is dropped, and one is saved
   // only into the session still stored (signed out, or into another account, meanwhile: nothing is written).
@@ -61,6 +70,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await inTurn(async () => {
       if (draftsGoWith(await readSession(), which)) {
         forgetDrafts();
+        // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too.
+        void dismissDelivered();
       }
       await forgetSession(which);
     });

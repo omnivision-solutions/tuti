@@ -261,6 +261,7 @@ test("a user's message notifies the phones of exactly those its email goes to", 
     body: "The export button does nothing",
     sound: "default",
     priority: "high",
+    channelId: "default",
     data: { project: project.slug, conversation: number },
   });
   // No access token unless one is set.

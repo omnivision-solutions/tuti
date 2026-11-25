@@ -5,7 +5,8 @@ import { Alert } from "react-native";
 import Projects from "@/app/inbox/projects";
 
 const mockBack = jest.fn();
-jest.mock("expo-router", () => ({ router: { back: () => mockBack() } }));
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({ router: { back: () => mockBack(), push: (path: string) => mockPush(path) } }));
 
 const mockSetProject = jest.fn<(slug: string) => Promise<void>>(() => Promise.resolve());
 const mockSignOut = jest.fn<() => Promise<void>>(() => Promise.resolve());
@@ -39,5 +40,12 @@ describe("the project switcher's sheet (Android)", () => {
     expect(mockSignOut).not.toHaveBeenCalled();
     await act(async () => alert.mock.calls[0]![2]!.find((button) => button.text === "Sign out")!.onPress!());
     expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  it("opens the notifications' settings", async () => {
+    await render(<Projects />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Notifications" }));
+    expect(mockBack).toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith("/notifications");
   });
 });

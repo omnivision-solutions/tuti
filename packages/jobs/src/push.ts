@@ -150,6 +150,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     ...(device.user.pushShowsText && text && { body: text }),
     sound: "default",
     priority: "high",
+    // Android: the app's own channel ("Messages", apps/mobile src/lib/notifications.ts); unnamed, Expo's "Miscellaneous".
+    channelId: "default",
     data: { project: conversation.project.slug, conversation: conversation.number },
   }));
   let sent = 0;
