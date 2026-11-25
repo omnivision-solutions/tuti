@@ -26,6 +26,7 @@ import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { aiPaused, OutOfCredits } from "./credits";
+import { isUniqueViolation } from "./project-users";
 import { type ArticlePlace, type Ask, writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { askingWithTools, decideDocs } from "./docs-agent";
 import { checkedEdit, type Review } from "./edit-review";
@@ -76,15 +77,19 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   if (!(await analysisOn(projectId))) {
     return null;
   }
-  const key = { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } };
-  // Made here (no merge or earlier pick made it): if its run can't be queued, nothing else ever will.
-  const made = (await prisma.codeChange.count({ where: key.projectId_repoId_number })) === 0;
-  const change = await prisma.codeChange.upsert({
-    where: key,
-    create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) },
-    update: {},
-    select: { id: true, state: true, reason: true, updatedAt: true },
-  });
+  const select = { id: true, state: true, reason: true, updatedAt: true } as const;
+  // Made here (no merge or earlier pick made it): if its run can't be queued, nothing else ever will. Decided by the
+  // insert itself, so of two claims at once only the one that made it counts.
+  let made = true;
+  const change = await prisma.codeChange
+    .create({ data: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) }, select })
+    .catch((error: unknown) => {
+      if (!isUniqueViolation(error)) {
+        throw error;
+      }
+      made = false;
+      return prisma.codeChange.findUniqueOrThrow({ where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } }, select });
+    });
   if (change.state === "ANALYSING" || change.state === "FAILED") {
     return {
       run: { codeChangeId: change.id, force: false, pastGate, resume: false },
