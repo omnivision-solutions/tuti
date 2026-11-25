@@ -306,7 +306,9 @@ describe("Reply", () => {
     expect(drafts()).toEqual([]);
   });
 
-  it("that's saved after a sign-out writes nothing back", async () => {
+  it("that's saved after a sign-out writes nothing back, not even what was typed in the conversation", async () => {
+    const { screenKey } = await import("./details");
+    phone.files.set(`documents/drafts/${encodeURIComponent(screenKey({ server: SERVER, project: "acme" }, 7))}.json`, JSON.stringify({ reply: "half-written" }));
     answer = () => {
       signOutElsewhere();
       return Response.json({});
