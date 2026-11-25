@@ -1031,7 +1031,9 @@ function EntryPullRequests({
           <AlertDialogHeader>
             <AlertDialogTitle>Take out {confirming?.ref}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Its line leaves the text, with any changes you made to it. Add changes… puts it back with Autopilot&apos;s line or its title.
+              Its line leaves the text, with any changes you made to it.
+              {/* Only where it can (GitHub connected): Add changes… is the way back. */}
+              {canAdd && " Add changes… puts it back with Autopilot's line or its title."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
