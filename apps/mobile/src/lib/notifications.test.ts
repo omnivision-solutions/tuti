@@ -3,10 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "./api";
 
 const stored = new Map<string, string>();
+/** Writes to secure storage that fail (a keystore that won't take them). */
+const writes = vi.hoisted(() => ({ fail: false }));
 vi.mock("expo-secure-store", () => ({
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 0,
   getItemAsync: async (key: string) => stored.get(key) ?? null,
-  setItemAsync: async (key: string, value: string) => void stored.set(key, value),
+  setItemAsync: async (key: string, value: string) => {
+    if (writes.fail) {
+      throw new Error("Keystore unavailable");
+    }
+    stored.set(key, value);
+  },
 }));
 vi.mock("expo-web-browser", () => ({}));
 const files = new Map<string, string>();
@@ -68,6 +75,7 @@ const api = (async (path: string, init?: { method?: string; body?: unknown }) =>
 
 beforeEach(() => {
   vi.resetModules();
+  writes.fail = false;
   stored.clear();
   files.clear();
   calls.length = 0;
@@ -272,6 +280,16 @@ describe("a notification's conversation", () => {
 });
 
 describe("a notification while the app is in front", () => {
+  it("shows a reply's silent update in the list only, whatever is on screen, so Android's reply spinner goes", async () => {
+    const { behaviourFor, lookAt } = await load();
+    const update = { project: "acme", conversation: 12, sent: true };
+    const quiet = { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+    expect(behaviourFor(notification(update))).toEqual(quiet);
+    const away = lookAt({ project: "acme", number: 12 });
+    expect(behaviourFor(notification(update))).toEqual(quiet);
+    away();
+  });
+
   it("shows no banner over its own conversation, and one anywhere else", async () => {
     const { behaviourFor, lookAt } = await load();
     const shown = (data: unknown) => behaviourFor(notification(data)).shouldShowBanner;
@@ -324,6 +342,26 @@ describe("whether a notification is for this sign-in", () => {
     stored.set("device-id", "id-from-the-other-javascript");
     expect(await deviceId()).toBe(old);
     expect(await forThisSignIn({ project: "acme", number: 7, device: old })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: "id-from-the-other-javascript" })).toBe(true);
+  });
+
+  it("goes by this JavaScript's own sign-out while its new id isn't stored (the write not landed, or failed)", async () => {
+    const { deviceId, forThisSignIn, removeDevice } = await load();
+    const old = await deviceId();
+    writes.fail = true;
+    try {
+      await removeDevice(api);
+    } finally {
+      writes.fail = false;
+    }
+    // Storage still has the old id: the session signed out of isn't this one's any more, the new one is.
+    expect(stored.get("device-id")).toBe(old);
+    const now = await deviceId();
+    expect(await forThisSignIn({ project: "acme", number: 7, device: old })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: now })).toBe(true);
+    // Then the other JavaScript signs out and in again: its id, stored, wins over this one's.
+    stored.set("device-id", "id-from-the-other-javascript");
+    expect(await forThisSignIn({ project: "acme", number: 7, device: now })).toBe(false);
     expect(await forThisSignIn({ project: "acme", number: 7, device: "id-from-the-other-javascript" })).toBe(true);
   });
 });
