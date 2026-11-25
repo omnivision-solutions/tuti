@@ -52,6 +52,10 @@ export default function Inbox() {
   const project = session?.project;
 
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const projectsShown = useRef(false);
+  useEffect(() => {
+    projectsShown.current = !!projects;
+  }, [projects]);
   // The views' counts, for the project they're of: another project's never show under this one's (offline, its own kept
   // counts or none).
   const [counts, setCounts] = useState<{ for: string | undefined; views: InboxView[] } | null>(null);
@@ -123,11 +127,12 @@ export default function Inbox() {
           }
         },
         (e: Error) => {
-          // No connection: the projects last loaded, for the switcher.
+          // No connection: the projects last loaded, for the switcher. Nothing said when the switcher has them already,
+          // or the list shows what was kept (its note says it's offline).
           const saved = isOffline(e) ? cached<Project[]>(projectsKey(session!)) : null;
           if (saved) {
             setProjects((now) => now ?? saved.data);
-          } else {
+          } else if (!(isOffline(e) && (projectsShown.current || shown.current?.savedAt !== undefined))) {
             setError(e.message);
           }
         },

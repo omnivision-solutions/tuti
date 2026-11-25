@@ -33,7 +33,7 @@ async function landWrites() {
 }
 
 function Harness() {
-  const { session, setProject, signOut, api } = useSession();
+  const { session, setProject, signOut, signIn, api } = useSession();
   return (
     <>
       <Text testID="project">{session === null ? "signed out" : (session?.project ?? "")}</Text>
@@ -45,6 +45,9 @@ function Harness() {
       </Pressable>
       <Pressable onPress={() => void signOut()}>
         <Text>Sign out</Text>
+      </Pressable>
+      <Pressable onPress={() => void signIn({ server: "https://tuti.example.com", token: "token-2", cookie: "c2" })}>
+        <Text>Sign in</Text>
       </Pressable>
       <Pressable onPress={() => void api?.("/projects").catch(() => {})}>
         <Text>Call</Text>
@@ -91,6 +94,23 @@ describe("choosing a project", () => {
 
     expect(screen.getByTestId("project")).toHaveTextContent("signed out");
     expect(mockStored.has("session")).toBe(false);
+  });
+});
+
+describe("signing in", () => {
+  it("starts with nothing kept, however the last session went (a restored phone, a lost keystore)", async () => {
+    // Kept by an earlier session that never signed out here.
+    keep("kept", { rows: [] }, cacheGeneration());
+    await render(
+      <SessionProvider>
+        <Harness />
+      </SessionProvider>,
+    );
+    expect(await screen.findByText("signed out")).toBeTruthy();
+
+    await fireEvent.press(screen.getByText("Sign in"));
+    await landWrites();
+    expect(cached("kept")).toBeNull();
   });
 });
 

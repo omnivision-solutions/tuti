@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { cached, cacheGeneration, conversationKey, forgetCached, inboxKey, keep, MOST_BYTES, MOST_KEPT, offlineNote } from "./offline";
+import { cached, cacheGeneration, conversationKey, forgetCached, inboxKey, keep, MOST_BYTES, MOST_KEPT, offlineNote, projectsKey, viewsKey } from "./offline";
 
 vi.mock("expo-sqlite/kv-store", () => {
   const items = new Map<string, string>();
@@ -38,6 +38,17 @@ describe("what's kept to read offline", () => {
 
     keep(conversationKey(session, 999), { body: "x".repeat(MOST_BYTES) }, cacheGeneration());
     expect(cached(conversationKey(session, 999))).toBeNull();
+  });
+
+  it("never pushes the projects or a project's counts out for lists and conversations", () => {
+    keep(projectsKey(session), [{ slug: "acme" }], cacheGeneration());
+    keep(viewsKey(session), [{ view: "open", count: 4 }], cacheGeneration());
+    for (let n = 0; n <= MOST_KEPT; n++) {
+      keep(conversationKey(session, n), { n }, cacheGeneration());
+    }
+    expect(cached(projectsKey(session))).not.toBeNull();
+    expect(cached(viewsKey(session))).not.toBeNull();
+    expect(cached(conversationKey(session, 0))).toBeNull();
   });
 
   it("forgets everything, and drops what a load that started before then brings", () => {

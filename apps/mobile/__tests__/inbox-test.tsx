@@ -1097,6 +1097,39 @@ describe("reading offline", () => {
     expect(cached(projectsKey(mockSession))).toBeNull();
   });
 
+  const slowProjectsOffline = (path: string) =>
+    path === "/projects" ? new Promise((_, reject) => setTimeout(() => reject(offline()), 1_000)) : Promise.reject(offline());
+
+  it("says nothing of the projects offline when the switcher has them already", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    expect(screen.getByTestId("switcher-label")).toHaveTextContent("Acme");
+    // The projects weren't kept (forgotten since), but they're shown.
+    forgetCached();
+
+    // Only the projects' request finds no connection, after the list has loaded.
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (path === "/projects" ? slowProjectsOffline(path) : served(path, init)));
+    await fireEvent(screen.getByTestId("inbox-list"), "refresh");
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+    expect(screen.getByText("CSV export stops at 500 rows")).toBeTruthy();
+    expect(screen.getByTestId("switcher-label")).toHaveTextContent("Acme");
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+  });
+
+  it("says nothing of the projects offline when the list shows what was kept", async () => {
+    // Only the list was kept, not the projects.
+    keep(inboxKey(mockSession, "open"), { rows: [row("CSV export stops at 500 rows")], total: 1 }, cacheGeneration());
+    // The projects' request fails after the list's has.
+    mockApi.mockImplementation(slowProjectsOffline);
+    await render(<Inbox />);
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+    await screen.findByText(/^Offline · updated/);
+    expect(screen.getByText("CSV export stops at 500 rows")).toBeTruthy();
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+  });
+
   it("never shows another project's counts over a project's kept rows", async () => {
     serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
     await render(<Inbox />);

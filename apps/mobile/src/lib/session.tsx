@@ -113,7 +113,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContext>(
     () => ({
       session,
-      signIn: (signedIn) => save(signedIn),
+      // Every sign-in starts with nothing kept, however the last session went (a restored phone, a lost keystore).
+      signIn: (signedIn) => {
+        forgetCached();
+        return save(signedIn);
+      },
       signOut,
       // Shown once saved, and only if it's still the session in use (signed out meanwhile stays signed out).
       setProject: (project) => (session ? choose(session, project) : Promise.resolve()),

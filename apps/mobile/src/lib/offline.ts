@@ -25,8 +25,10 @@ let generation = 0;
 
 /** The keys: the server and project, then what it is. */
 export const inboxKey = (session: { server: string; project?: string }, view: string) => `${session.server}|${session.project ?? ""}|inbox|${view}`;
-export const projectsKey = (session: { server: string }) => `${session.server}|projects`;
-export const viewsKey = (session: { server: string; project?: string }) => `${session.server}|${session.project ?? ""}|views`;
+/** Small and one per account (or project): kept apart from the most kept, never pushed out by lists and conversations. */
+const PINNED = "pinned|";
+export const projectsKey = (session: { server: string }) => `${PINNED}${session.server}|projects`;
+export const viewsKey = (session: { server: string; project?: string }) => `${PINNED}${session.server}|${session.project ?? ""}|views`;
 export const conversationKey = (session: { server: string; project?: string }, number: number) => `${session.server}|${session.project ?? ""}|conversation|${number}`;
 
 /** Read as a load starts, and given to `keep` with its answer. */
@@ -52,6 +54,10 @@ export function keep(key: string, data: unknown, since: number, now = Date.now()
       return;
     }
     const kv = store();
+    if (key.startsWith(PINNED)) {
+      kv.setItemSync(key, value);
+      return;
+    }
     const order = [key, ...(JSON.parse(kv.getItemSync(ORDER) ?? "[]") as string[]).filter((k) => k !== key)];
     order.slice(MOST_KEPT).forEach((old) => kv.removeItemSync(old));
     kv.setItemSync(key, value);
