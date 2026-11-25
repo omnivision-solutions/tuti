@@ -4,6 +4,7 @@ import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pre
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
 import { InboxRow } from "@/components/inbox-row";
+import { offerNotifications } from "@/components/notifications";
 import { onRead } from "@/lib/conversation";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
@@ -50,6 +51,11 @@ export default function Inbox() {
   // A new project, view or search starts from nothing shown.
   const key = `${project}\n${view}\n${q}`;
   const list = loaded?.for === key ? loaded : null;
+
+  // Notifications are offered here, where they make sense, rather than at launch: once on this phone.
+  useEffect(() => {
+    void offerNotifications();
+  }, []);
 
   // The rows' ages move on while nothing else changes.
   useEffect(() => {
@@ -307,6 +313,7 @@ export default function Inbox() {
               </Stack.Toolbar.MenuAction>
             ))}
             <Stack.Toolbar.Menu inline>
+              <Stack.Toolbar.MenuAction onPress={() => router.push("/notifications")}>Notifications</Stack.Toolbar.MenuAction>
               <Stack.Toolbar.MenuAction destructive onPress={() => confirmSignOut(signOut)}>
                 Sign out
               </Stack.Toolbar.MenuAction>

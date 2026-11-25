@@ -25,4 +25,9 @@ describe("the app's Expo config", () => {
     expect(config.ios?.bundleIdentifier).toBe("com.acme.inbox");
     expect(config.android?.package).toBe("com.acme.inbox");
   });
+
+  it("takes Android's Firebase config from the environment only", () => {
+    expect(appConfig({}).android?.googleServicesFile).toBeUndefined();
+    expect(appConfig({ GOOGLE_SERVICES_JSON: "/builds/google-services.json" }).android?.googleServicesFile).toBe("/builds/google-services.json");
+  });
 });

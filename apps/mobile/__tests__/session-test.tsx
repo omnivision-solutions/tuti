@@ -13,6 +13,8 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: (key: string, value: string) => new Promise<void>((resolve) => mockWrites.push(() => (mockStored.set(key, value), resolve()))),
   deleteItemAsync: async (key: string) => void mockStored.delete(key),
 }));
+// The phone's id for its notifications, as the first sign-out makes it up.
+jest.mock("expo-crypto", () => ({ randomUUID: () => "phone-1" }));
 // The server says the session holds, and takes the sign-out.
 globalThis.fetch = jest.fn(async () => new Response("{}")) as unknown as typeof fetch;
 
@@ -82,5 +84,32 @@ describe("choosing a project", () => {
 
     expect(screen.getByTestId("project")).toHaveTextContent("signed out");
     expect(mockStored.has("session")).toBe(false);
+  });
+});
+
+describe("signing out", () => {
+  it("removes the phone's registration first, without waiting for it", async () => {
+    mockStored.set("session", JSON.stringify(session));
+    const asked: string[] = [];
+    // The server never answers the removal.
+    jest.mocked(globalThis.fetch).mockImplementation(async (url, init) => {
+      asked.push(`${init?.method} ${String(url)}`);
+      return String(url).includes("/devices/") ? new Promise<never>(() => {}) : new Response("{}");
+    });
+    await render(
+      <SessionProvider>
+        <Harness />
+      </SessionProvider>,
+    );
+    await screen.findByText("acme");
+
+    await fireEvent.press(screen.getByText("Sign out"));
+    await landWrites();
+
+    expect(screen.getByTestId("project")).toHaveTextContent("signed out");
+    expect(mockStored.has("session")).toBe(false);
+    const removal = asked.indexOf("DELETE https://tuti.example.com/api/v1/devices/phone-1");
+    expect(removal).toBeGreaterThan(-1);
+    expect(removal).toBeLessThan(asked.indexOf("POST https://tuti.example.com/api/auth/sign-out"));
   });
 });

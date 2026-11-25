@@ -70,6 +70,7 @@ import {
   writtenAt,
 } from "@/lib/conversation";
 import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
+import { lookAt } from "@/lib/notifications";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -168,14 +169,18 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   }, [active, session, number, refresh]);
   // Fetched as it comes on screen, the first time and when a screen over it closes (the stream may have said nothing
   // since): what's unread then is read, as it's looked at.
+  const project = session?.project;
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
       refresh();
+      // Its notifications don't show over it.
+      const away = project ? lookAt({ project, number }) : () => {};
       return () => {
         focused.current = false;
+        away();
       };
-    }, [refresh]),
+    }, [refresh, project, number]),
   );
   // The keyboard covers the home indicator: no space kept for it under the composer then.
   const [keyboard, setKeyboard] = useState(false);

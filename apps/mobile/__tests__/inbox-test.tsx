@@ -27,6 +27,9 @@ jest.mock("expo-router", () => {
   };
   return { Stack: { Toolbar, SearchBar }, router: { push: jest.fn() }, useFocusEffect };
 });
+// Notifications are tested on their own (__tests__/notifications-test.tsx): here, only when the Inbox offers them.
+const mockOffer = jest.fn(async () => {});
+jest.mock("@/components/notifications", () => ({ offerNotifications: () => mockOffer() }));
 let mockFocus: (() => void) | null = null;
 
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
@@ -541,5 +544,15 @@ describe("the Inbox", () => {
     const buttons = alert.mock.calls[0]![2]!;
     await act(async () => buttons.find((button) => button.text === "Sign out")!.onPress!());
     expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  it("offers notifications as it first shows, and opens their settings from the switcher", async () => {
+    serve({ "/conversations?view=open": page([]) });
+    mockOffer.mockClear();
+    await render(<Inbox />);
+    expect(mockOffer).toHaveBeenCalledTimes(1);
+
+    await fireEvent.press(screen.getByRole("menuitem", { name: "Notifications" }));
+    expect(jest.requireMock<{ router: { push: jest.Mock } }>("expo-router").router.push).toHaveBeenCalledWith("/notifications");
   });
 });
