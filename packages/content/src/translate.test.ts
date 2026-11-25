@@ -316,3 +316,9 @@ test("whitespace around a model's newline collapses; a whitespace entity isn't a
   expect(await translateText("https://acme.example/export 👍 42", { to: "English", ask: async () => (asked++, "{}") })).toEqual({ text: "https://acme.example/export 👍 42" });
   expect(asked).toBe(0);
 });
+
+test("a segment with no words may come back with no words", async () => {
+  const { translateSegments } = await import("./translate");
+  const out = await translateSegments([{ id: "1", text: "<x1/> 👍" }], { to: "German", ask: async () => '{"segments": {"1": "<x1/> 👍"}}' });
+  expect(out.translations).toEqual({ "1": "<x1/> 👍" });
+});

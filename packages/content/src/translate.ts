@@ -374,7 +374,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
   // `firstTry`: text left as it was is asked about once; asked again, it's taken as meant (names, lists of products).
   const check = (segment: Segment, text: string | undefined, firstTry = false) => {
     // A reply with no words (blank, or only entities like &nbsp;) isn't a translation of text that had some.
-    if (typeof text !== "string" || !hasWords(text)) return "no translation";
+    if (typeof text !== "string" || text.trim() === "" || (hasWords(segment.text) && !hasWords(text))) return "no translation";
     const tagged = (value: string) => [...value.matchAll(/<\/?[a-z]\d+>|<x\d+\/>|<br\s*\/?>/g)].map((m) => (m[0].startsWith("<br") ? "<br/>" : m[0])).sort().join();
     if (tagged(segment.text) !== tagged(text)) return "its tags, placeholders and line breaks don't match the source's";
     const misfit = fits?.(segment.id, text);
