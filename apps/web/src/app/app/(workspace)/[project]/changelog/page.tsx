@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { ImageIcon, PlusIcon } from "lucide-react";
+import { aiEnabled } from "@tuti/shared";
+import { PlusIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { TagBadge } from "@/components/changelog-tag";
+import { changelogTag } from "@/components/changelog-pages";
+import { TAG_LABELS, TagBadge } from "@/components/changelog-tag";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPills } from "@/components/filter-pills";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
+import { PaneSearch } from "@/components/pane-search";
 import { SampleBadge } from "@/components/sample-badge";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { formatDate, timeAgo } from "@/lib/format";
+import { formatDay, formatMonth, formatShortDate } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
 import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
 import { lastingImage } from "@/server/media-urls";
@@ -21,47 +23,135 @@ import { getMembership } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Changelog" };
 
+const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+
 /**
- * The team's changelog, in two tabs: Drafts (latest edited first) and Published (newest first). It opens
- * on Drafts, or on Published when there are none.
+ * The team's changelog, one list: the drafts (the one whose release notes wait first, then the running draft, then the
+ * latest edited), then the published entries by month, newest first. `?q=` searches titles and text, `?tag=` picks a
+ * tag (pills with their counts). Old `?tab=` links land here too: the param is ignored.
  */
 export default async function TeamChangelogPage(props: PageProps<"/app/[project]/changelog">) {
   const { project: slug } = await props.params;
-  const { tab: param } = await props.searchParams;
+  const params = await props.searchParams;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const entries = await prisma.changelogEntry.findMany({
-    where: { projectId: membership.project.id },
-    orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
-    select: {
-      id: true,
-      number: true,
-      title: true,
-      tags: true,
-      publishedAt: true,
-      collecting: true,
-      sample: true,
-      updatedAt: true,
-      cover: { select: { id: true, status: true, width: true, height: true } },
-      _count: { select: { posts: true, pullRequests: true } },
-    },
-  });
-  const reactions = await reactionCounts(entries.map((e) => e.id));
-  const drafts = entries.filter((e) => !e.publishedAt);
-  const published = entries.filter((e) => e.publishedAt);
-  // Release notes waiting to be written: the draft the newest release closed, else the running one with merged pull requests.
-  const ready = await draftToWrite(membership.project.id);
-  const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
-  const listed = tab === "drafts" ? drafts : published;
+  const q = (typeof params.q === "string" ? params.q : undefined)?.trim().slice(0, 255) || undefined;
+  const tag = changelogTag(params.tag);
+  const projectId = membership.project.id;
+  const [found, total, ready] = await Promise.all([
+    prisma.changelogEntry.findMany({
+      where: { projectId, ...(q && { OR: [{ title: { contains: q, mode: "insensitive" } }, { body: { contains: q, mode: "insensitive" } }] }) },
+      orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        tags: true,
+        publishedAt: true,
+        collecting: true,
+        releasedAt: true,
+        sample: true,
+        updatedAt: true,
+        cover: { select: { id: true, status: true, width: true, height: true } },
+        _count: { select: { posts: true, pullRequests: true, comments: true } },
+      },
+    }),
+    q ? prisma.changelogEntry.count({ where: { projectId } }) : null,
+    // Release notes waiting to be written: the draft the newest release closed, else the running one with merged pull requests.
+    draftToWrite(projectId),
+  ]);
+  // The tags the search's entries have, as pills with their counts; the list, those with the tag picked.
+  const tags = (Object.keys(TAG_LABELS) as (keyof typeof TAG_LABELS)[]).filter((t) => found.some((e) => e.tags.includes(t)));
+  const listed = tag ? found.filter((e) => e.tags.includes(tag)) : found;
+  const reactions = await reactionCounts(listed.filter((e) => e.publishedAt).map((e) => e.id));
+  const first = (e: (typeof listed)[number]) => (e.number === ready?.number ? 2 : e.collecting ? 1 : 0);
+  const drafts = listed.filter((e) => !e.publishedAt).sort((a, b) => first(b) - first(a));
+  const months = Map.groupBy(
+    listed.filter((e) => e.publishedAt),
+    (e) => formatMonth(e.publishedAt!),
+  );
   const base = `/app/${slug}/changelog`;
+  const ai = aiEnabled();
+  const view = (t: typeof tag, search = q) => {
+    const query = new URLSearchParams({ ...(search && { q: search }), ...(t && { tag: t.toLowerCase() }) }).toString();
+    return query ? `${base}?${query}` : base;
+  };
   const newEntry = (
     // A round + on phones.
-    <Link href={`/app/${slug}/changelog/new`} className={buttonVariants({ size: "sm", className: "@max-[48rem]/app:size-9 @max-[48rem]/app:px-0" })}>
+    <Link href={`${base}/new`} className={buttonVariants({ size: "sm", className: "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" })}>
       <PlusIcon aria-hidden />
       <span className="@max-[48rem]/app:sr-only">New entry</span>
     </Link>
+  );
+
+  const row = (entry: (typeof listed)[number]) => {
+    const href = `${base}/${entry.number}`;
+    const cover = lastingImage(entry.cover)?.url;
+    const writeIt = entry.number === ready?.number;
+    const date = entry.publishedAt ?? entry.updatedAt;
+    return (
+      <ItemRow
+        key={entry.number}
+        // A date column, as the portal's timeline: when it went out, or for a draft when it was last edited.
+        leading={
+          <time dateTime={date.toISOString()} className="w-14 shrink-0 self-start pt-0.5 text-xs text-muted-foreground tabular-nums">
+            <span className="sr-only">{entry.publishedAt ? "Published " : "Edited "}</span>
+            {entry.publishedAt ? formatDay(date) : formatShortDate(date)}
+          </time>
+        }
+        title={
+          <Link href={href} className="hover:underline">
+            {entry.title}
+          </Link>
+        }
+        badges={[
+          ...(entry.sample ? [<SampleBadge key="sample" />] : []),
+          ...(entry.collecting ? [<Badge key="collecting" variant="outline">Collecting pull requests</Badge>] : []),
+          ...(!entry.publishedAt && entry.releasedAt ? [<Badge key="released" variant="outline">Released</Badge>] : []),
+          ...entry.tags.map((t) => <TagBadge key={t} tag={t} />),
+        ]}
+        // What it holds (a draft) or what readers did with it (published); nothing said when there's none.
+        meta={
+          [
+            !entry.publishedAt && entry._count.pullRequests > 0 && plural(entry._count.pullRequests, "merged pull request"),
+            entry._count.posts > 0 && (entry.publishedAt ? `${plural(entry._count.posts, "post")} completed` : `Completes ${plural(entry._count.posts, "post")}`),
+            entry.publishedAt && reactionSummary(reactions(entry.id)),
+            entry._count.comments > 0 && plural(entry._count.comments, "comment"),
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+        actions={
+          (writeIt || cover) && (
+            <>
+              {cover && (
+                // Its featured image, small (the 480px size: sharp at 2×); decorative, the title names the entry.
+                // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+                <img src={cover} alt="" loading="lazy" className="aspect-[1200/630] w-19 shrink-0 rounded-md border object-cover @max-[48rem]/app:w-15" />
+              )}
+              {writeIt && (
+                // Its release notes wait: the editor, where Draft with AI leads while it's still the pull requests' titles. Round on phones.
+                <Link href={href} className={buttonVariants({ variant: "outline", size: "sm", className: "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" })}>
+                  {ai && <SparklesIcon aria-hidden />}
+                  <span className={ai ? "@max-[48rem]/app:sr-only" : undefined}>{ai ? "Draft with AI" : "Write it"}</span>
+                </Link>
+              )}
+            </>
+          )
+        }
+      />
+    );
+  };
+  const group = (title: string, entries: typeof listed) => (
+    <section key={title} aria-label={title} className="flex flex-col gap-2">
+      <h2 className="group-label flex items-center gap-2">
+        {title}
+        <Badge variant="secondary">{entries.length}</Badge>
+      </h2>
+      <ItemList>{entries.map(row)}</ItemList>
+    </section>
   );
 
   return (
@@ -71,108 +161,66 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
           title="Changelog"
           description="What you shipped, for your users to read."
           filters={
-            <FilterPills
-              label="Entries"
-              current={`${base}?tab=${tab}`}
-              // The count in the title: its space keeps the link's name "Drafts 2".
-              items={[
-                { href: `${base}?tab=drafts`, title: <>Drafts <span className="text-muted-foreground tabular-nums">{drafts.length}</span></> },
-                { href: `${base}?tab=published`, title: <>Published <span className="text-muted-foreground tabular-nums">{published.length}</span></> },
-              ]}
-            />
+            tags.length > 0 && (
+              <FilterPills
+                label="Tags"
+                current={view(tag)}
+                items={[undefined, ...tags].map((t) => ({
+                  href: view(t),
+                  title: t ? TAG_LABELS[t] : "All",
+                  count: t ? found.filter((e) => e.tags.includes(t)).length : found.length,
+                }))}
+              />
+            )
           }
-          actions={newEntry}
+          actions={
+            <>
+              <PaneSearch action={base} q={q} label="Search the changelog">
+                {tag && <input type="hidden" name="tag" value={tag.toLowerCase()} />}
+              </PaneSearch>
+              {/* Searching doesn't load a new page, so a screen reader hears what it found here (polite, there from the start). */}
+              <p role="status" className="sr-only">
+                {q ? `Search for “${q}” found ${listed.length === 0 ? "no entries" : plural(listed.length, "entry", "entries")}` : ""}
+              </p>
+              {newEntry}
+            </>
+          }
         />
-        <PaneBody className="flex flex-col gap-4 p-4 @min-[48rem]/app:px-5">
-          {ready && (
-            <Alert role="status">
-              {/* The running draft isn't a release yet: it collects until the next one. */}
-              <AlertTitle>
-                {!ready.collecting
-                  ? "Next release is ready to write"
-                  : ready._count.pullRequests === 1
-                    ? "A merged pull request is waiting for release notes"
-                    : "Merged pull requests are waiting for release notes"}
-              </AlertTitle>
-              <AlertDescription className="break-words">
-                {ready._count.pullRequests} merged pull {ready._count.pullRequests === 1 ? "request is" : "requests are"} in “{ready.title}”
-                {ready.collecting ? ", collecting until the next release." : "."}
-              </AlertDescription>
-              <AlertAction>
-                <Link href={`/app/${slug}/changelog/${ready.number}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  Write it
-                </Link>
-              </AlertAction>
-            </Alert>
-          )}
+        <PaneBody resetOnNavigate className="flex flex-col gap-6 p-4 @min-[48rem]/app:px-5">
           {listed.length === 0 ? (
-            <EmptyState
-              title={entries.length === 0 ? "No entries yet" : tab === "drafts" ? "No drafts" : "Nothing published yet"}
-              description={
-                entries.length === 0
-                  ? "Write what shipped and pick the posts it completes."
-                  : tab === "drafts"
-                    ? "With GitHub connected, merged pull requests gather in a draft until the next release."
-                    : "Published entries show on your portal."
-              }
-              action={
-                entries.length === 0 && (
+            (total ?? found.length) === 0 ? (
+              <EmptyState
+                title="No entries yet"
+                description="Write what shipped and pick the posts it completes."
+                action={
                   // Outline: the header's New entry is the page's primary.
-                  <Link href={`/app/${slug}/changelog/new`} className={buttonVariants({ variant: "outline" })}>
+                  <Link href={`${base}/new`} className={buttonVariants({ variant: "outline" })}>
                     Write the first entry
                   </Link>
-                )
-              }
-            />
-          ) : (
-            <ItemList>
-              {listed.map((entry) => (
-                <ItemRow
-                  key={entry.number}
-                  leading={<Thumbnail url={lastingImage(entry.cover)?.url} />}
-                  title={
-                    <Link href={`/app/${slug}/changelog/${entry.number}`} className="hover:underline">
-                      {entry.title}
+                }
+              />
+            ) : (
+              <EmptyState
+                title={q ? "No entries match your search" : "No entries match"}
+                description="Try other words, or another tag."
+                // The search taken off, the tag kept.
+                action={
+                  q && (
+                    <Link href={view(tag, undefined)} className={buttonVariants({ variant: "outline" })}>
+                      Clear search
                     </Link>
-                  }
-                  badges={[
-                    ...(entry.sample ? [<SampleBadge key="sample" />] : []),
-                    ...(entry.collecting ? [<Badge key="collecting" variant="outline">Collecting pull requests</Badge>] : []),
-                    ...entry.tags.map((tag) => <TagBadge key={tag} tag={tag} />),
-                  ]}
-                  // A draft says when it was last touched and what it holds so far (none: nothing); a published entry, when it went out.
-                  meta={[
-                    entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : `Edited ${timeAgo(entry.updatedAt)}`,
-                    (entry.publishedAt || entry._count.posts > 0) && `${entry._count.posts} ${entry._count.posts === 1 ? "post" : "posts"}`,
-                    !entry.publishedAt &&
-                      entry._count.pullRequests > 0 &&
-                      `${entry._count.pullRequests} merged pull ${entry._count.pullRequests === 1 ? "request" : "requests"}`,
-                    reactionSummary(reactions(entry.id)),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                />
-              ))}
-            </ItemList>
+                  )
+                }
+              />
+            )
+          ) : (
+            <>
+              {drafts.length > 0 && group("Drafts", drafts)}
+              {[...months].map(([month, entries]) => group(month, entries))}
+            </>
           )}
         </PaneBody>
       </Pane>
     </PaneLayout>
-  );
-}
-
-/**
- * The entry's featured image, small (the 480px size: sharp at 2×), or a placeholder of the same size so titles line
- * up. Decorative: the title beside it names the entry.
- */
-function Thumbnail({ url }: { url: string | undefined }) {
-  const tile = "aspect-[1200/630] w-19 shrink-0 rounded-md border @max-[48rem]/app:w-15";
-  return url ? (
-    // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-    <img src={url} alt="" loading="lazy" className={`${tile} object-cover`} />
-  ) : (
-    <div aria-hidden className={`${tile} flex items-center justify-center bg-muted`}>
-      <ImageIcon className="size-4 text-muted-foreground/50" />
-    </div>
   );
 }

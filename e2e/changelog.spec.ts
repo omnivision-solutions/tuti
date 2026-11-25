@@ -34,10 +34,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 
   // A draft: title, tag, text with a heading, and the post it completes.
   await team.getByRole("link", { name: "Changelog" }).click();
-  // Nothing written yet: both tabs, empty.
-  // Its views are pills in its pane's header.
-  await expect(team.locator('[data-slot="pane-header"]').getByRole("navigation", { name: "Entries" })).toContainText("Drafts 0Published 0");
+  // Nothing written yet: one empty list, no tags to pick.
   await expect(team.getByText("No entries yet")).toBeVisible();
+  await expect(team.getByRole("navigation", { name: "Tags" })).toHaveCount(0);
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Dark mode is here");
   await team.getByRole("checkbox", { name: "New", exact: true }).check();
@@ -291,7 +290,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect.poll(() => emoji(tada)).not.toContain("grayscale");
   await checkpoint(ada, "portal-changelog-reacted");
   await team.goto(`/app/${slug}/changelog`);
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).filter({ hasText: "Published" })).toContainText("🎉 1");
+  // Its row says what readers did with it: the post it completed and their reactions; no draft's "Edited".
+  const published = team.getByRole("listitem").filter({ hasText: "Dark mode is here" });
+  await expect(published).toContainText("1 post completed · 🎉 1");
+  await expect(published.locator("time")).toHaveText(/^Published \d{1,2} [A-Z][a-z]{2}$/);
   // Signed out: the counts, and a nudge to sign in.
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/changelog/1");
@@ -334,12 +336,12 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
 
-  // The list opens on Published while there are no drafts; nothing but the new entry in its header.
-  await team.goto(`/app/${slug}/changelog`);
-  const tabs = team.getByRole("navigation", { name: "Entries" });
-  await expect(tabs.getByRole("link", { name: "Published 1" })).toHaveAttribute("aria-current", "page");
-  await tabs.getByRole("link", { name: "Drafts 0" }).click();
-  await expect(team.getByText("No drafts")).toBeVisible();
+  // One list, by month: no drafts, so no Drafts group (an old link to its tab lands on the same list); nothing but the
+  // search and the new entry in its header.
+  await team.goto(`/app/${slug}/changelog?tab=drafts`);
+  const thisMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  await expect(team.getByRole("region", { name: thisMonth }).getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  await expect(team.getByRole("region", { name: "Drafts" })).toHaveCount(0);
   await expect(team.getByRole("button", { name: "Writing style" })).toHaveCount(0);
 
   // The changelog's AI settings (Settings → Portal → Changelog): instructions, and the published entry as an example.
@@ -534,15 +536,42 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(text).toContainText("Search looks at post titles and comments.");
   await expect(text).not.toContainText("Plain words only.");
 
-  // With a draft and a published entry, the list opens on Drafts; each tab lists its own.
+  // With a draft and a published entry, one list: the drafts above, then the published ones by month.
   await team.goto(`/app/${slug}/changelog`);
-  const entryTabs = team.getByRole("navigation", { name: "Entries" });
-  await expect(entryTabs.getByRole("link", { name: "Drafts 1" })).toHaveAttribute("aria-current", "page");
+  const draftsGroup = team.getByRole("region", { name: "Drafts" });
+  await expect(draftsGroup.getByRole("link", { name: "Faster search" })).toBeVisible();
+  await expect(draftsGroup.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
+  const monthGroup = team.getByRole("region", { name: thisMonth });
+  await expect(monthGroup.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  expect((await draftsGroup.boundingBox())!.y).toBeLessThan((await monthGroup.boundingBox())!.y);
+  // A draft says when it was last edited, in the date column.
+  await expect(draftsGroup.getByRole("listitem").locator("time")).toHaveText(/^Edited \d{1,2} [A-Z][a-z]{2}( \d{4})?$/);
+  await checkpoint(team, "team-changelog-list");
+  // The tags its entries have, as pills with their counts: one picked lists its entries.
+  const tagPills = team.locator('[data-slot="pane-header"]').getByRole("navigation", { name: "Tags" });
+  await expect(tagPills.getByRole("link")).toHaveText(["All 2", "New 1", "Breaking 1"]);
+  await tagPills.getByRole("link", { name: "New 1" }).click();
+  await expect(team).toHaveURL(/\?tag=new$/);
+  await expect(team.getByRole("link", { name: "Faster search" })).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  // A search keeps the tag; one that finds nothing says so, and Clear search goes back to the tag.
+  const search = team.getByRole("searchbox", { name: "Search the changelog" });
+  await search.fill("invoices");
+  await search.press("Enter");
+  await expect(team).toHaveURL(/\?tag=new&q=invoices$/);
+  await expect(team.getByText("No entries match your search")).toBeVisible();
+  await team.getByRole("link", { name: "Clear search" }).click();
+  await expect(team).toHaveURL(/\?tag=new$/);
+  await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  // Across every tag, it finds the draft by its title or its text.
+  await tagPills.getByRole("link", { name: "All 2" }).click();
+  await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
+  await search.fill("post titles");
+  await search.press("Enter");
   await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
-  await entryTabs.getByRole("link", { name: "Published 1" }).click();
-  await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
-  await expect(team.getByRole("link", { name: "Faster search" })).toHaveCount(0);
+  await expect(team.getByRole("status").filter({ hasText: "Search for" })).toHaveText("Search for “post titles” found 1 entry");
+  await checkpoint(team, "team-changelog-search");
 
   // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
   await ada.goto("/changelog/1");
@@ -908,39 +937,50 @@ test("the next release waits to be written; its entry gets a featured image read
   await team.getByRole("switch", { name: "Analyse merged pull requests" }).click();
   await expect(team.getByText("Autopilot off")).toBeVisible();
   await team.goto(`/app/${slug}/changelog`);
-  await expect(team.getByRole("status").filter({ hasText: "release notes" })).toHaveCount(0);
+  const drafts = team.getByRole("region", { name: "Drafts" });
+  await expect(drafts).toHaveCount(0);
   await mergePullRequest(installationId, { number: 41, title: "Add a dark theme" });
   // One: said in the singular.
   await team.reload();
-  const one = team.getByRole("status").filter({ hasText: "release notes" });
-  await expect(one).toContainText("A merged pull request is waiting for release notes");
-  await expect(one).toContainText("1 merged pull request is in “Next release”, collecting until the next release.");
+  const running = drafts.getByRole("listitem").filter({ hasText: "Next release" });
+  await expect(running).toContainText("1 merged pull request");
   await mergePullRequest(installationId, { number: 42, title: "Remember the theme" });
+  // A draft written by hand after them.
+  await api("/changelog", { title: "Billing tweaks", body: "Invoices are clearer." });
 
-  // The list says they wait for release notes (the draft is still collecting: not ready yet), and opens it.
+  // The running draft leads the list, above the draft edited since, with what it holds (the pull requests, no "0
+  // posts") and a way to write its notes; no notice above the list repeating it.
   await team.reload();
-  const ready = team.getByRole("status").filter({ hasText: /Merged pull requests are waiting for release notes|Next release is ready to write/ });
-  await expect(ready).toContainText("Merged pull requests are waiting for release notes");
-  await expect(ready).toContainText("2 merged pull requests are in “Next release”, collecting until the next release.");
-  // Its row says when it was last edited and what it holds: the pull requests, no "0 posts".
-  await expect(team.getByRole("listitem").filter({ hasText: "Next release" })).toContainText(/Edited (just now|\d+ minutes? ago) · 2 merged pull requests$/);
+  await expect(drafts.getByRole("listitem")).toHaveCount(2);
+  await expect(drafts.getByRole("listitem").first()).toContainText("Next release");
+  await expect(running).toContainText("2 merged pull requests");
+  await expect(running).not.toContainText("posts");
+  await expect(team.getByText("release notes")).toHaveCount(0);
   // The running draft is marked neutral, not in a status's colour.
   await expect(team.getByText("Collecting pull requests")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await checkpoint(team, "team-changelog-ready-to-write");
+  const draftWithAi = running.getByRole("link", { name: "Draft with AI" });
+  await expect(draftWithAi).toHaveAttribute("href", `/app/${slug}/changelog/1`);
+  await expect(drafts.getByRole("listitem").filter({ hasText: "Billing tweaks" }).getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
+  await checkpoint(team, "team-changelog-running-draft");
+  // On phones: a round button, in view, its row's title not squeezed.
   await team.setViewportSize({ width: 390, height: 844 });
-  await expect(ready.getByRole("link", { name: "Write it" })).toBeInViewport();
-  await checkpoint(team, "team-changelog-ready-to-write-phone");
+  await expect(draftWithAi).toBeInViewport();
+  expect((await running.getByRole("link", { name: "Next release" }).boundingBox())!.width).toBeGreaterThan(80);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(team, "team-changelog-running-draft-phone");
   await team.emulateMedia({ colorScheme: "dark" });
-  await checkpoint(team, "team-changelog-ready-to-write-phone-dark");
+  await checkpoint(team, "team-changelog-running-draft-phone-dark");
   await team.emulateMedia({ colorScheme: "light" });
   await team.setViewportSize({ width: 1280, height: 720 });
-  // A release closes the draft (named after it) before anyone writes it: the notice stays, naming it.
+  // A release closes the draft (named after it) before anyone writes it: it stays first, marked Released, its notes to write.
   await publishRelease(installationId, { tag: "v1.4", name: "v1.4" });
   await team.reload();
-  // Now it's a release: ready to write.
-  await expect(ready).toContainText("Next release is ready to write");
-  await expect(ready).toContainText("2 merged pull requests are in “v1.4”.");
-  await ready.getByRole("link", { name: "Write it" }).click();
+  const released = drafts.getByRole("listitem").first();
+  await expect(released).toContainText("v1.4");
+  await expect(released).toContainText("Released");
+  await expect(released).toContainText("2 merged pull requests");
+  await expect(released).not.toContainText("Collecting pull requests");
+  await released.getByRole("link", { name: "Draft with AI" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
 
   // A featured image, under the title (two pictures drawn here: one replaces the other), with the post it completes.
@@ -1223,7 +1263,7 @@ test("the next release waits to be written; its entry gets a featured image read
   // Published, the draft no longer collects: nothing waits to be written.
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
-  await expect(ready).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
 
   // On the portal: the cover, named for the entry, on the list and on the entry's page.
   await ada.goto("/changelog");
@@ -1259,8 +1299,8 @@ test("the next release waits to be written; its entry gets a featured image read
   const listCover = (await cover.boundingBox())!;
   expect(listCover.y).toBeGreaterThan((await older.getByRole("heading").boundingBox())!.y);
   expect(listCover.y + listCover.height).toBeLessThanOrEqual((await older.getByRole("link", { name: /Built from an idea/ }).boundingBox())!.y);
-  // The team's list shows each entry's featured image small, beside its title (decorative: the title names it), loaded;
-  // an entry without one gets a placeholder tile the same size, so titles line up.
+  // The team's list shows an entry's featured image small at the row's end (decorative: the title names it), loaded;
+  // an entry without one shows none, and the date column keeps the titles lined up. (An old link to a tab lands here too.)
   await team.goto(`/app/${slug}/changelog?tab=published`);
   const thumbnail = team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).locator("img");
   await expect(thumbnail).toHaveAttribute("alt", "");
@@ -1268,8 +1308,10 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect.poll(() => thumbnail.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
   const noCover = team.getByRole("listitem").filter({ hasText: "Faster exports" });
   await expect(noCover.locator("img")).toHaveCount(0);
-  const placeholder = noCover.locator("[aria-hidden]").filter({ has: team.locator("svg.lucide-image") });
-  expect((await placeholder.boundingBox())!.width).toBe((await thumbnail.boundingBox())!.width);
+  await expect(noCover.locator("svg.lucide-image")).toHaveCount(0);
+  const titleX = async (title: string) => (await team.getByRole("link", { name: title, exact: true }).boundingBox())!.x;
+  expect(await titleX("Faster exports")).toBe(await titleX("Dark mode is here"));
+  expect((await thumbnail.boundingBox())!.x).toBeGreaterThan(await titleX("Dark mode is here"));
   await checkpoint(team, "team-changelog-thumbnails");
   await team.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(70);
