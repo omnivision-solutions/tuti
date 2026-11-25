@@ -704,7 +704,7 @@ describe("deciding", () => {
     expect((await draftOf(url))?.body).toBe("A dark theme");
   });
 
-  test("added by the team, a pull request stays in the draft though the gate then finds nothing for users", async () => {
+  test("added by the team while its analysis is still to run: the gate finds nothing for users, but the team's pick wins and it gets its line", async () => {
     github.pullRequest(repo, pullRequest(33));
     model.decide(USERS);
     model.fail(503);
@@ -712,12 +712,18 @@ describe("deciding", () => {
     const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     // The team says it belongs in the changelog while its analysis is still to run: it's where it is, and theirs now.
     expect(await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 33 }] })).toMatchObject({ added: [], alreadyIn: [{ repo, number: 33 }] });
-    // The run the merge started asks the gate, which finds nothing for users: the changelog keeps it all the same.
+    // The run the merge started asks the gate, which finds nothing for users: the team's pick is read, and it's
+    // analysed for the changelog all the same, in that one run. The gate's word is saved as it said.
     model.decide(INTERNAL);
     noDocs();
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
-    expect(await draftOf(url)).not.toBeNull();
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, forUsers: true } })).toEqual({ state: "READY", forUsers: false });
+    expect((await draftOf(url))?.body).toBe("A dark theme");
   });
 
   test("taken out of one draft and added to the next, a pull request keeps the line written for it", async () => {

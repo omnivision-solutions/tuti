@@ -94,6 +94,14 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   if ((change.state === "PAUSED" || change.state === "FAILED") && pastGate) {
     await prisma.codeChange.updateMany({ where: { id: change.id, state: change.state }, data: { retryPastGate: true } });
   }
+  // Inline, one analysing is a run under way in this server (the merge's): it honours the pick itself (it reads the
+  // team's decision), so a second, parallel run isn't started. A stranded one is the retry sweep's.
+  if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline") {
+    if (pastGate) {
+      await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: { retryPastGate: true } });
+    }
+    return {};
+  }
   if (change.state === "ANALYSING" || change.state === "FAILED") {
     return {
       run: { codeChangeId: change.id, force: false, pastGate, resume: false },
@@ -487,8 +495,14 @@ async function analyse(
   // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
   const versions: Versions = { decider: decisionModel(), model: use.model, settings: ranWith };
   const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr, DECISION_DIFF_CHARS), GATE, { meter: use.meter }));
-  // Users see it: the changelog hears about it, and its posts are decided.
-  const seen = !gate || gate.users >= thresholds().gate;
+  // Users see it: the changelog hears about it, and its posts are decided. So too where the team picked it for the
+  // changelog (changelog.addPullRequests), also while this ran: their word over the gate's, which is still saved as said.
+  const gateSays = !gate || gate.users >= thresholds().gate;
+  const picked = async () => {
+    const { repoId, number } = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { repoId: true, number: true } });
+    return (await prisma.changelogDecision.count({ where: { projectId: change.projectId, repoId, number, takenOut: false } })) > 0;
+  };
+  let seen = gateSays || (await picked());
   const tools: ToolContext = { projectId: change.projectId, repository };
   try {
     const docs = await decideDocs(pr, tools, use.meter, { codeChangeId: change.id, signal });
@@ -504,6 +518,7 @@ async function analyse(
         .slice(0, 1)
         .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason, place: article.place } })),
     ];
+    seen ||= await picked();
     if (!seen && proposals.length === 0) {
       return nothingToDo(change, gate!.reason, versions);
     }
@@ -549,7 +564,7 @@ async function analyse(
     for (let tries = 1; !saved; tries++) {
       try {
         // The gate's word only where it was asked: a run past it (the team's pick, Analyse anyway) keeps the one before.
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? seen : undefined, ...versions }, kept, {
+        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? gateSays : undefined, ...versions }, kept, {
           projectId: change.projectId,
           pullRequest: change.pullRequest,
           data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
@@ -565,7 +580,7 @@ async function analyse(
       }
     }
     const { waiting, linked, scheduled, landed } = saved;
-    if (seen) {
+    if (seen || (await picked())) {
       // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
       await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
     } else {

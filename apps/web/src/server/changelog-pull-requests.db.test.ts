@@ -300,6 +300,18 @@ test("on a queue that refuses it, one a run started on meanwhile isn't failed", 
   expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 6 }, select: { state: true, retryAt: true } })).toEqual({ state: "ANALYSING", retryAt: null });
 });
 
+test("in-process, one whose analysis is already under way gets no second, parallel run: that run reads the pick", async () => {
+  github.pullRequest(repo, { number: 9, title: "Add a dark theme", mergedAt: days(2) });
+  // The merge's analysis is running in this server.
+  await prisma.codeChange.create({ data: { projectId: project.id, repoId, repo, number: 9, url: url(9), title: "t", author: "a", mergedAt: new Date(days(2)), state: "ANALYSING" } });
+
+  await add(9);
+  await addedPullRequestsAnalysed();
+
+  expect(queue.enqueue).not.toHaveBeenCalled();
+  expect(await decisions()).toEqual([{ number: 9, takenOut: false }]);
+});
+
 test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   github.pullRequest(repo, { number: 3, title: "Bump dependencies", mergedAt: days(2) });
