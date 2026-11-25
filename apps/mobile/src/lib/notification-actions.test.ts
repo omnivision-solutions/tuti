@@ -461,6 +461,24 @@ describe("on Android", () => {
     expect(phone.dismissed).toEqual(["push-1"]);
   });
 
+  it("after a reply, waits for the update even when the original is already gone", async () => {
+    phone.os = "android";
+    // Swiped away meanwhile: nothing shown, and the update posted late.
+    phone.presented = [];
+    phone.postMs = 2500;
+    vi.useFakeTimers();
+    try {
+      const acting = (await load()).act(response("reply", { userText: "On it!" }));
+      await vi.advanceTimersByTimeAsync(2400);
+      expect(phone.dismissed).toEqual([]);
+      await vi.advanceTimersByTimeAsync(2500);
+      await acting;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(phone.dismissed).toEqual(["push-1"]);
+  });
+
   it("acts from the background task when the app isn't in front, and not from the listener as well", async () => {
     phone.os = "android";
     phone.appState = "background";

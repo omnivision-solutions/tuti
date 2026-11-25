@@ -239,7 +239,8 @@ async function remove({ actionIdentifier, notification }: Notifications.Notifica
     for (let tries = 0; tries < 20; tries++) {
       await wait(150);
       const shown = (await Notifications.getPresentedNotificationsAsync().catch(() => [])).find((one) => one.request.identifier === identifier);
-      if (!shown || dataOf(shown.request.content)?.sent) {
+      // The update itself, not the original's absence: one already swiped away says nothing of the update posted.
+      if (shown && dataOf(shown.request.content)?.sent) {
         break;
       }
     }
