@@ -1395,6 +1395,40 @@ function AiHelpers({
   );
 }
 
+/**
+ * What's saved, as Settings → Changelog's form holds it, in its fields' order (useCustomizeForm's `saved`): without AI
+ * (`drafting` false) the form has the cover's fields only, and a field listed that it doesn't have would make the page
+ * look changed as it opens.
+ */
+export function changelogStyleSaved({
+  drafting,
+  tone,
+  examples,
+  screenshotMarkers,
+  coverDesign,
+  coverBackground,
+}: {
+  drafting: boolean;
+  tone: string;
+  examples: number[];
+  screenshotMarkers: boolean;
+  coverDesign: CoverDesign | null;
+  coverBackground: { id: string; url: string } | null;
+}): [name: string, value: string][] {
+  return [
+    ...(drafting
+      ? [
+          ["tone", tone] as [string, string],
+          ...examples.map((number): [string, string] => ["examples", String(number)]),
+          ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : []),
+        ]
+      : []),
+    ["coverDesign", coverDesign ?? ""],
+    ["coverBackground", coverBackground?.id ?? ""],
+    ["coverBackgroundUrl", coverBackground?.url ?? ""],
+  ];
+}
+
 /** The most examples a style takes (changelog.updateStyle's MAX_STYLE_EXAMPLES, which checks it). */
 const MAX_EXAMPLES = 3;
 
@@ -1489,9 +1523,10 @@ export function ChangelogStyleForm({
       setUploads(uploads + 1);
     }
   }
-  // Uploaded, Upload's tile is gone: focus goes to the picture it made.
+  // Uploaded, Upload's tile is gone: focus that was on it (left on the page's body) goes to the picture it made. Focus
+  // moved elsewhere meanwhile (typing in Instructions while it uploads) stays there.
   useEffect(() => {
-    if (uploads > 0) {
+    if (uploads > 0 && (!document.activeElement || document.activeElement === document.body)) {
       backgroundOption.current?.focus();
     }
   }, [uploads]);
@@ -1501,19 +1536,7 @@ export function ChangelogStyleForm({
   // The dialog, opened, has had its pick.
   const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
-    saved: [
-      // Without AI, the form has the cover only.
-      ...(model
-        ? [
-            ["tone", tone] as [string, string],
-            ...examples.map((number): [string, string] => ["examples", String(number)]),
-            ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : []),
-          ]
-        : []),
-      ["coverDesign", coverDesign ?? ""],
-      ["coverBackground", coverBackground?.id ?? ""],
-      ["coverBackgroundUrl", coverBackground?.url ?? ""],
-    ],
+    saved: changelogStyleSaved({ drafting: Boolean(model), tone, examples, screenshotMarkers, coverDesign, coverBackground }),
     busy: background.uploading,
     save: async (prev, formData) => {
       const result = await saveChangelogStyle(projectSlug, prev, formData);

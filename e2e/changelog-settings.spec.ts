@@ -404,10 +404,17 @@ test("an admin picks the cover drawn first from the designs drawn with the porta
   await cover.getByText("Automatic", { exact: true }).click();
   await expect(save).toBeDisabled();
 
-  // Uploaded (the S3 fake, processed inline), it's offered, drawn, and picked.
-  await team.getByLabel("Cover background", { exact: true }).setInputFiles({ name: "background.png", mimeType: "image/png", buffer: png(1600, 840) });
+  // Uploaded (the S3 fake, processed inline), it's offered, drawn, and picked. Focus elsewhere meanwhile stays there.
+  const upload = () => team.getByLabel("Cover background", { exact: true }).setInputFiles({ name: "background.png", mimeType: "image/png", buffer: png(1600, 840) });
+  await team.getByLabel("Instructions").focus();
+  await upload();
   await expect(design("Your background")).toBeChecked();
-  // Focus goes from Upload, gone, to the picture it made.
+  await expect(team.getByLabel("Instructions")).toBeFocused();
+  // From Upload, gone once it's done, focus goes to the picture it made.
+  await cover.getByRole("button", { name: "Remove cover background" }).click();
+  await expect(cover.getByRole("button", { name: "Upload Your background" })).toBeFocused();
+  await upload();
+  await expect(design("Your background")).toBeChecked();
   await expect(design("Your background")).toBeFocused();
   await expect(cover.getByRole("button", { name: "Upload Your background" })).toHaveCount(0);
   const drawn = cover.locator(`img[src^="/app/${slug}/settings/changelog/cover/background?background="]`);
