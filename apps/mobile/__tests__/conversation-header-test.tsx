@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import ConversationRoute from "@/app/conversation/[number]";
 import Details from "@/app/conversation/[number]/details";
 import type { Conversation } from "@/lib/conversation";
-import { getTriage, screenKey, showTriage } from "@/lib/details";
+import { getTriage, holdTriage, screenKey, showTriage } from "@/lib/details";
 
 // The native header as plain views: its title and right side drawn where the screen sets them.
 jest.mock("expo-router", () => {
@@ -68,8 +68,10 @@ describe("the conversation's header", () => {
   });
 
   it("shows its status only once this visit's fetch has answered, never one kept from an earlier visit", async () => {
-    // Kept from an earlier visit: closed, and Olive's.
+    // Kept by an earlier visit's screen, still open under this one: closed, and Olive's.
+    const earlier = holdTriage(screenKey(mockSession, 12));
     showTriage(screenKey(mockSession, 12), { status: "closed", assignee: { name: "Olive Owner", email: "e2e-olive@example.com" }, spam: false, snoozedUntil: null });
+    expect(getTriage(screenKey(mockSession, 12))?.status).toBe("closed");
     let answer: (value: unknown) => void = () => {};
     mockApi.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
     await render(<ConversationRoute />);
@@ -77,6 +79,7 @@ describe("the conversation's header", () => {
     expect(screen.queryByRole("button", { name: /details$/ })).toBeNull();
     await act(async () => answer(CONVERSATION));
     expect(await screen.findByRole("button", { name: "Open, unassigned, details" })).toBeTruthy();
+    earlier();
   });
 
   it("forgets its status on leaving, so a sheet opened later by a link fetches the status as it is then", async () => {

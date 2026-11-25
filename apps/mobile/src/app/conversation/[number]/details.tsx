@@ -46,7 +46,8 @@ export default function Details() {
   // Why something didn't load (who it's with, its status, the team), in the server's words: Try again loads it all.
   const [failures, setFailures] = useState<{ person?: string; conversation?: string; team?: string }>({});
   const failure = (part: "person" | "conversation" | "team", why: string | null) => setFailures((now) => ({ ...now, [part]: why ?? undefined }));
-  const error = failures.person ?? failures.conversation ?? failures.team ?? null;
+  // The status's failure only while there's none: it may come from the screen under it since.
+  const error = failures.person ?? (triage ? undefined : failures.conversation) ?? failures.team ?? null;
   const [pane, setPane] = useState<Pane>("details");
   const [busy, setBusy] = useState(false);
   // Why the latest change didn't happen, in the server's words.

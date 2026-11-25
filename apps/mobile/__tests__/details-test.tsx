@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo, BackHandler } from "react-native";
 
 import Details from "@/app/conversation/[number]/details";
-import { type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage } from "@/lib/details";
+import { type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage, triageChanges } from "@/lib/details";
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -386,5 +386,25 @@ describe("the details sheet", () => {
     expect(gets).toHaveLength(2);
     await act(async () => gets[1]!({ ...OPEN, status: "waiting", number: 14 }));
     expect(await screen.findByLabelText("Status, Waiting on user")).toBeTruthy();
+  });
+
+  it("drops its own fetch's failure once the status comes from the screen under it", async () => {
+    mockNumber = "15";
+    const key = screenKey(mockSession, 15);
+    // The screen under it, its fetch still out: nothing stored yet, so the sheet fetches too.
+    const under = holdTriage(key);
+    const since = triageChanges(key);
+    mockApi.mockImplementation((path) =>
+      path === "/conversations/15" ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY),
+    );
+    await render(<Details />);
+    expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
+
+    // The screen's fetch answers.
+    await act(async () => showTriage(key, OPEN, since));
+    expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
+    expect(screen.queryByText("Couldn't reach tuti.example.com.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    under();
   });
 });
