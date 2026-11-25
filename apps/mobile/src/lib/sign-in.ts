@@ -69,16 +69,28 @@ export async function continueWith(provider: "google" | "github", server: string
   return result.type === "success" ? finishSignIn(queryOf(result.url)) : null;
 }
 
-/** States already taken: on Android the way back arrives twice (the browser sheet's result and the router's link). */
-const taken = new Set<string>();
+/**
+ * Ways back already taken, by state. On Android one arrives twice (the browser sheet's result and the router's link):
+ * the second gets the first's exchange while it runs, so both wait for the same session and the sign-in screen stays
+ * busy until it's in; once it's settled, the same way back again does nothing.
+ */
+const taken = new Map<string, Promise<SignedIn | null> | null>();
 
 /** The way back's params → the session, an Error in words, or null when there's nothing (new) to do. */
-export async function finishSignIn(params: Params): Promise<SignedIn | null> {
+export function finishSignIn(params: Params): Promise<SignedIn | null> {
   const state = one(params.state);
-  if (!state || taken.has(state)) {
-    return null;
+  if (!state) {
+    return Promise.resolve(null);
   }
-  taken.add(state);
+  if (taken.has(state)) {
+    return taken.get(state) ?? Promise.resolve(null);
+  }
+  const exchange = exchangeCode(params, state).finally(() => taken.set(state, null));
+  taken.set(state, exchange);
+  return exchange;
+}
+
+async function exchangeCode(params: Params, state: string): Promise<SignedIn | null> {
   const pending = JSON.parse((await SecureStore.getItemAsync(PENDING, STORE_OPTIONS)) ?? "null") as Pending | null;
   const result = readReturn(params, pending?.state);
   if (pending?.state === state) {

@@ -72,7 +72,8 @@ describe("finishing a sign-in", () => {
       finishSignIn({ state: "state-1234567890ab", code: "code-1" }),
     ]);
     expect(first).toEqual({ server: "https://tuti.example.com", token: "token-1", cookie: "tuti.session_token=s" });
-    expect(second).toBeNull();
+    // The second waits for the first's exchange rather than answering at once, so the screen stays busy until it's in.
+    expect(second).toEqual(first);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch.mock.calls[0]![0]).toBe("https://tuti.example.com/api/auth/app/session");
     expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({ code: "code-1", verifier: "v".repeat(43) });

@@ -8,7 +8,7 @@ pnpm --filter @tuti/mobile build    # bundle for both platforms, as a store buil
 ```
 
 The app runs as a development build, not in Expo Go: Google's and GitHub's sign-in come back to the app through its
-own `tuti://` scheme, which Expo Go doesn't have. Build one on Expo's servers with
+own `tuti://` scheme, which Expo Go doesn't have. Build one on Expo's servers, from `apps/mobile` (where `eas.json` is), with
 `npx eas-cli build --profile development --platform ios` (a simulator build) or `--platform android` (an APK),
 install it, start Metro, and open the app. Point "Self-hosted server" at a local server (`http://localhost:3100`;
 on an Android emulator, forward the port with `adb reverse tcp:3100 tcp:3100`).
