@@ -32,6 +32,7 @@ beforeEach(async () => {
   vi.stubEnv("EXPO_PUSH_URL", expo.env.EXPO_PUSH_URL);
   expo.sent = [];
   expo.unregistered.clear();
+  expo.rateExceeded.clear();
   expo.projects.clear();
   expo.failing.clear();
   expo.failSends.clear();
@@ -383,6 +384,18 @@ test("a request that fails after another went through doesn't fail the job, and 
   expo.sends = 0;
   expo.failSends = new Set([1, 2, 3]);
   await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("500");
+});
+
+test("when Expo turns every push away for now (MessageRateExceeded), the job fails, to be tried again", async () => {
+  await phone(owner, "owner");
+  const { number } = await userWrites();
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversation: { projectId: project.id, number } } });
+  expo.rateExceeded.add("ExponentPushToken[owner]");
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("refused every push");
+  // One that went through is enough not to: the rest aren't pushed twice by a retry.
+  const other = await addMember(project.id, "MEMBER");
+  await phone(other, "other");
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).resolves.toMatchObject({ pushed: 1 });
 });
 
 test("pushes go 100 a request, and receipts are read 1,000 at a time", async () => {

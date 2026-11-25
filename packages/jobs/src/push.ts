@@ -157,6 +157,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   // A request that fails doesn't fail the job once another went through (as a project's within one: sendBatch): a retry
   // would push those phones again. The rest still go; only when nothing went through does the job fail, to try again.
   let failure: unknown;
+  // Pushes Expo answered with an error other than DeviceNotRegistered (MessageRateExceeded, which is to be tried later).
+  let refused = 0;
   for (let i = 0; i < messages.length; i += MESSAGES_PER_REQUEST) {
     const batch = messages.slice(i, i + MESSAGES_PER_REQUEST);
     // Before the send: what Expo answers is about the registrations as they were then, so a phone that registers again
@@ -173,6 +175,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     const tickets = batch.flatMap((m, j) => (data[j]?.status === "ok" ? [{ id: (data[j] as { id: string }).id, token: m.to, createdAt: sentAt }] : []));
     const unregistered = batch.filter((_, j) => isGone(data[j])).map((m) => m.to);
     const failed = batch.length - tickets.length - unregistered.length;
+    refused += failed;
     if (failed > 0) {
       log.warn(`Expo refused ${failed} of ${batch.length} pushes about conversation #${conversation.number}: ${JSON.stringify(data.find((d) => d.status === "error")).slice(0, 300)}`);
     }
@@ -188,8 +191,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   // Tickets past a day are pruned here too, not only by the receipts' cron: with jobs inline the cron never runs.
   await prisma.pushTicket.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RECEIPTS_KEPT_MS) } } }).catch(() => undefined);
-  if (failure && sent === 0 && gone === 0) {
-    throw failure;
+  if (sent === 0 && gone === 0 && (failure || refused > 0)) {
+    throw failure ?? new Error(`Expo refused every push about conversation #${conversation.number}`);
   }
   return { pushed: sent, ...(gone > 0 && { unregistered: gone }) };
 }

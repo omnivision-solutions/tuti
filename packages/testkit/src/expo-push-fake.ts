@@ -12,6 +12,8 @@ export type ExpoPushFake = {
   sent: (ExpoPushMessage & { ticket: string | null; headers: IncomingHttpHeaders })[];
   /** Tokens Expo answers DeviceNotRegistered for when they're sent to. */
   unregistered: Set<string>;
+  /** Tokens Expo answers MessageRateExceeded for (to be tried later). */
+  rateExceeded: Set<string>;
   /** Receipts by ticket id, for getReceipts (a ticket left out has none yet). */
   receipts: Record<string, Outcome>;
   /** The ids each getReceipts asked about. */
@@ -42,7 +44,7 @@ export const deviceNotRegistered = (token: string): Outcome => ({
  */
 export async function startExpoPushFake(): Promise<ExpoPushFake> {
   let tickets = 0;
-  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), failSends: new Set(), sends: 0, status: 200, close: async () => {} };
+  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), rateExceeded: new Set(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), failSends: new Set(), sends: 0, status: 200, close: async () => {} };
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -74,8 +76,12 @@ export async function startExpoPushFake(): Promise<ExpoPushFake> {
           return answer(500, { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "The fake was told to fail this project" }] });
         }
         const data = messages.map((message): Outcome => {
-          const ticket = fake.unregistered.has(message.to) ? null : `ticket-${++tickets}`;
+          const limited = fake.rateExceeded.has(message.to);
+          const ticket = fake.unregistered.has(message.to) || limited ? null : `ticket-${++tickets}`;
           fake.sent.push({ ...message, ticket, headers: req.headers });
+          if (limited) {
+            return { status: "error", message: "Too many messages to this device: try again later", details: { error: "MessageRateExceeded" } };
+          }
           return ticket ? { status: "ok", id: ticket } : deviceNotRegistered(message.to);
         });
         return answer(200, { data });
