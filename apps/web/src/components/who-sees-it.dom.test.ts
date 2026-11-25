@@ -101,3 +101,14 @@ test("Email only is sent only once it changes, and holds Publish until saved; wi
   expect(box.querySelector('input[name="emailOnlyEditable"]')).not.toBeNull();
   expect(box.querySelector("output")?.textContent).toBe("true");
 });
+
+test("Email only says what happens where no email can go (published without it, or a private portal): listed nowhere, the team's only", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  const root = createRoot(box);
+  await act(async () => root.render(h(WhoSeesIt, { groups: [], picked: [], emailable: false, upgrade: null, onChange: () => {} })));
+  expect(box.textContent).toContain("Listed nowhere: only your team sees it.");
+  expect(box.textContent).not.toContain("Emailed to subscribers");
+  await act(async () => root.render(h(WhoSeesIt, { groups: [], picked: [], upgrade: null, onChange: () => {} })));
+  expect(box.textContent).toContain("Emailed to subscribers and listed nowhere.");
+});

@@ -689,6 +689,7 @@ export function ChangelogForm({
           groups={groups}
           picked={entry?.groups ?? []}
           emailOnly={entry?.emailOnly ?? false}
+          emailable={subscribers !== null && !(entry?.published && !entry.emailedSubscribers)}
           upgrade={groupsUpgrade}
           saving={pending}
           onChange={() => setDirty(true)}
@@ -718,6 +719,7 @@ export function WhoSeesIt({
   groups,
   picked,
   emailOnly = false,
+  emailable = true,
   upgrade,
   saving: pending = false,
   onChange,
@@ -726,6 +728,8 @@ export function WhoSeesIt({
   picked: string[];
   /** Saved as email-only: emailed to subscribers, listed nowhere. */
   emailOnly?: boolean;
+  /** Publishing can still email it: not published without email already, nor on a private portal (which emails nobody). */
+  emailable?: boolean;
   upgrade: UpgradePrompt | null;
   /** A save is running: the picks wait for it (one made now would be dropped as the picker starts afresh after it). */
   saving?: boolean;
@@ -813,7 +817,8 @@ export function WhoSeesIt({
         <div className="flex flex-col gap-0.5">
           <label htmlFor={onlyId}>Email only</label>
           <p id={`${onlyId}-hint`} className="text-xs text-muted-foreground">
-            Emailed to subscribers and listed nowhere. Its page is your team&apos;s only.
+            {/* Only what happens: with no email to go, it's simply the team's. */}
+            {emailable ? "Emailed to subscribers and listed nowhere. Its page is your team's only." : "Listed nowhere: only your team sees it."}
           </p>
         </div>
       </div>

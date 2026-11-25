@@ -83,12 +83,14 @@ test("an email-only entry is the team's: no reader lists, reads, reacts to or co
   expect((await entryMarkdown(new Request("http://x/"), params({ number: String(quiet) }))).status).toBe(404);
   const latest = (await (await widgetLatest(new Request(`http://x/api/widget/latest?project=${project.slug}`))).json()) as { latest: string | null };
   expect(latest.latest).toBe(before.latest);
-  // Nor does one for some groups light the launcher for anyone (`groups` is for announcements someone may read).
+  // An announced entry for some groups sets `groups`; made email-only afterwards, it no longer does (nobody may read it).
   await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", conditions: [{ property: "plan", op: "is", value: "beta" }] } });
-  const group = await prisma.readerGroup.findFirstOrThrow({ where: { projectId: project.id, key: "beta" } });
-  const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: quiet } });
-  await prisma.changelogEntryGroup.create({ data: { entryId: id, groupId: group.id } });
-  expect(await (await widgetLatest(new Request(`http://x/api/widget/latest?project=${project.slug}`))).json()).not.toHaveProperty("groups");
+  const forBeta = await published("Beta news");
+  await call(updateChangelogEntry, as(owner), { number: forBeta, groups: ["beta"] });
+  const ask = async () => (await widgetLatest(new Request(`http://x/api/widget/latest?project=${project.slug}`))).json();
+  expect(await ask()).toMatchObject({ groups: true });
+  await call(updateChangelogEntry, as(owner), { number: forBeta, emailOnly: true });
+  expect(await ask()).not.toHaveProperty("groups");
 });
 
 test("published with Email subscribers, it's emailed in full, linking to no page (readers have none)", async () => {
