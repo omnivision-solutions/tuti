@@ -109,6 +109,24 @@ describe("the conversation's header", () => {
     expect(getTriage(screenKey(mockSession, 12))).not.toBeNull();
   });
 
+  it("keeps its status when a sheet opened before its fetch answered closes", async () => {
+    const asked: ((value: unknown) => void)[] = [];
+    mockApi.mockImplementation((path) =>
+      path === "/conversations/12"
+        ? new Promise((resolve) => asked.push(resolve))
+        : Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+    );
+    const opened = await render(<ConversationRoute />);
+    // The sheet opens over it (a link) while the screen's fetch is out, so it fetches too; both answer.
+    const sheet = await render(<Details />);
+    expect(asked).toHaveLength(2);
+    await act(async () => asked.forEach((answer) => answer(CONVERSATION)));
+    await sheet.unmount();
+
+    expect(getTriage(screenKey(mockSession, 12))).not.toBeNull();
+    expect(opened.getByRole("button", { name: "Open, unassigned, details" })).toBeTruthy();
+  });
+
   it("doesn't put back what the details sheet changed while its fetch was on its way", async () => {
     let answer: (value: unknown) => void = () => {};
     mockApi.mockImplementation(() => new Promise((resolve) => (answer = resolve)));

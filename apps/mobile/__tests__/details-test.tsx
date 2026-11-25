@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo, BackHandler } from "react-native";
 
 import Details from "@/app/conversation/[number]/details";
-import { type Assignee, getTriage, type Person, screenKey, showTriage, type Triage } from "@/lib/details";
+import { type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage } from "@/lib/details";
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -88,6 +88,8 @@ function serve(person: Person, triage: Triage = OPEN) {
     }
     return new Promise(() => {});
   });
+  // The conversation screen under the sheet, which holds its status and has fetched it.
+  screenUnder = holdTriage(KEY);
   showTriage(KEY, triage);
 }
 
@@ -97,7 +99,11 @@ beforeEach(() => {
   jest.useFakeTimers({ now: new Date("2026-11-25T14:00:00") });
   mockNumber = "12";
 });
+let screenUnder: (() => void) | null = null;
+
 afterEach(() => {
+  screenUnder?.();
+  screenUnder = null;
   jest.useRealTimers();
   mockApi.mockReset();
   mockBack.mockReset();
@@ -355,5 +361,30 @@ describe("the details sheet", () => {
     expect(asked).toHaveLength(2);
     await act(async () => asked[1]!({ ...OPEN, status: "closed", number: 13 }));
     expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+  });
+
+  it("drops a change that answers after the sheet closed, so a sheet opened later by a link fetches", async () => {
+    mockNumber = "14";
+    const gets: ((value: unknown) => void)[] = [];
+    let patched: (value: unknown) => void = () => {};
+    mockApi.mockImplementation((path, init) => {
+      if (path === "/conversations/14") {
+        return init?.method === "PATCH" ? new Promise((resolve) => (patched = resolve)) : new Promise((resolve) => gets.push(resolve));
+      }
+      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY);
+    });
+    const first = await render(<Details />);
+    await act(async () => gets[0]!({ ...OPEN, number: 14 }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Close" }));
+    await first.unmount();
+    // The close answers after the sheet (and anything under it) has gone.
+    await act(async () => patched({ ...OPEN, status: "closed", number: 14 }));
+    expect(getTriage(screenKey(mockSession, 14))).toBeNull();
+
+    // Reopened on the web meanwhile: opened again by a link, it fetches.
+    await render(<Details />);
+    expect(gets).toHaveLength(2);
+    await act(async () => gets[1]!({ ...OPEN, status: "waiting", number: 14 }));
+    expect(await screen.findByLabelText("Status, Waiting on user")).toBeTruthy();
   });
 });

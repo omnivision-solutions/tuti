@@ -48,39 +48,60 @@ export const screenKey = (session: { server: string; project?: string }, number:
 
 /**
  * What the conversation screen and its sheet show of its status and assignee, by screen key: the screen's fetches put it
- * here, and the sheet's changes too, so each shows the other's at once. Kept only while what fetched it is open (the
- * screen, or a sheet opened by a link), so an entry is never one from an earlier visit.
+ * here, and the sheet's changes too, so each shows the other's at once. Kept only while a screen or sheet for it is open
+ * (`holdTriage`), so an entry is never one from an earlier visit.
  */
 const shown = new Map<string, Triage>();
 const changes = new Map<string, number>();
+const holders = new Map<string, number>();
 const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((listener) => listener());
+
+/**
+ * Held while a screen or sheet for the key is open; the returned function lets go. When the last one does, the entry
+ * goes, counted as a change, so a fetch still on its way is dropped rather than putting it back.
+ */
+export function holdTriage(key: string) {
+  holders.set(key, (holders.get(key) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) {
+      return;
+    }
+    held = false;
+    const left = holders.get(key)! - 1;
+    if (left > 0) {
+      holders.set(key, left);
+      return;
+    }
+    holders.delete(key);
+    changes.set(key, triageChanges(key) + 1);
+    shown.delete(key);
+    notify();
+  };
+}
 
 /** How many changes have answered for this key: read as a fetch starts, and given to `showTriage` with its answer. */
 export const triageChanges = (key: string) => changes.get(key) ?? 0;
 
 /**
  * Shows a change's answer, or (with `since`, `triageChanges` as it started) a fetch's: dropped when a change answered
- * after the fetch started, so it doesn't put back what the change replaced.
+ * after the fetch started, so it doesn't put back what the change replaced. Nothing is kept for a key nobody holds: an
+ * answer after its screen and sheet closed.
  */
 export function showTriage(key: string, { status, assignee, spam, snoozedUntil }: Triage, since?: number) {
+  if (!holders.has(key)) {
+    return;
+  }
   if (since === undefined) {
     changes.set(key, triageChanges(key) + 1);
   } else if (since !== triageChanges(key)) {
     return;
   }
   shown.set(key, { status, assignee, spam, snoozedUntil });
-  listeners.forEach((listener) => listener());
+  notify();
 }
 export const getTriage = (key: string) => shown.get(key) ?? null;
-/**
- * Gone with what fetched it. Counted as a change, so a fetch still on its way (its screen or sheet closed before it
- * answered) is dropped rather than putting back an entry nothing open would forget.
- */
-export function forgetTriage(key: string) {
-  changes.set(key, triageChanges(key) + 1);
-  shown.delete(key);
-  listeners.forEach((listener) => listener());
-}
 export function subscribeTriage(listener: () => void) {
   listeners.add(listener);
   return () => void listeners.delete(listener);

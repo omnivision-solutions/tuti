@@ -8,10 +8,10 @@ import {
   type Assignee,
   type Change,
   dayOf,
-  forgetTriage,
   getAssignees,
   getPerson,
   getTriage,
+  holdTriage,
   isSnoozed,
   type Person,
   POST_STATUS,
@@ -52,8 +52,7 @@ export default function Details() {
   // Why the latest change didn't happen, in the server's words.
   const [failed, setFailed] = useState<string | null>(null);
 
-  const fetchedHere = useRef(false);
-  useEffect(() => () => void (fetchedHere.current && forgetTriage(key)), [key]);
+  useEffect(() => holdTriage(key), [key]);
   const load = useCallback(() => {
     getPerson(api, number).then(
       (loaded) => {
@@ -69,10 +68,9 @@ export default function Details() {
       },
       (e: Error) => failure("team", e.message),
     );
-    // Its status: the screen under it keeps that current (its fetches, the live stream). Opened by a link, with no
-    // screen under it, the sheet fetches it, and forgets it on closing.
+    // Its status: the screen under it keeps that current (its fetches, the live stream). Opened by a link, or before the
+    // screen's fetch has answered, the sheet fetches it.
     if (!getTriage(key)) {
-      fetchedHere.current = true;
       const since = triageChanges(key);
       getConversation(api, number).then(
         (loaded) => {

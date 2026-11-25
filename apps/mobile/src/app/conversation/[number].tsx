@@ -61,7 +61,7 @@ import {
   writer,
   writtenAt,
 } from "@/lib/conversation";
-import { forgetTriage, getTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
+import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -171,7 +171,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
 
   // Its status and assignee, as the details sheet over it changes them too.
   const triage = useSyncExternalStore(subscribeTriage, () => getTriage(draftKey));
-  useEffect(() => () => forgetTriage(draftKey), [draftKey]);
+  useEffect(() => holdTriage(draftKey), [draftKey]);
   const details = () => router.push(`/conversation/${number}/details`);
 
   const [kind, setKind] = useState<Kind>("reply");
