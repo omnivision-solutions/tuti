@@ -84,13 +84,19 @@ test("the plan limits the languages, the default counted; past it (after a downg
   await expect(update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es" }] })).rejects.toThrow("Projects on the Pro plan have up to 3 languages, the default included. Upgrade to Business");
   expect((await get()).languages.map(({ code }) => code)).toEqual(["de", "fr"]);
 
-  // Over Pro's limit (added without one): the oldest two can go live, the newest can't, and a live one stays live.
+  // Over Pro's limit (added without one): the oldest two can go live; the newest, live before, reads as offline and can't go live.
   vi.stubEnv("BILLING_CONFIG", "");
   await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: true }] });
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  await update({ languages: [{ code: "de", live: true }, { code: "fr", live: true }, { code: "es", live: true }] });
-  await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: false }] });
+  expect((await get()).languages.find(({ code }) => code === "es")?.live).toBe(false);
+  await update({ languages: [{ code: "de", live: true }, { code: "fr", live: true }, { code: "es" }] });
+  expect((await get()).languages.map(({ live }) => live)).toEqual([true, true, false]);
   await expect(update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: true }] })).rejects.toMatchObject({ status: 402 });
+  // Back on a plan with room, it's live again.
+  vi.stubEnv("BILLING_CONFIG", "");
+  expect((await get()).languages.map(({ live }) => live)).toEqual([true, true, true]);
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: false }] });
   // Removing an older one in the same save makes room.
   vi.stubEnv("BILLING_CONFIG", "");
   await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es" }, { code: "it" }] });

@@ -34,15 +34,18 @@ const languageSelect = { code: true, automatic: true, instructions: true, produc
 async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { language: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+    select: { plan: true, language: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
   });
+  // Past the plan's limit (after a downgrade) only the oldest within it are live; the rest are kept, offline until an upgrade.
+  const limit = languageLimit(project.plan);
   const named = (code: string) => (isLanguage(code) ? { code, name: LANGUAGES[code].name } : null);
   return {
     default: named(project.language) ?? { code: "en", name: LANGUAGES.en.name },
     // A code no longer offered isn't one this server can serve.
-    languages: project.languages.flatMap(({ code, automatic, ...rest }) => {
+    languages: project.languages.flatMap(({ code, automatic, live, ...rest }, index) => {
       const language = named(code);
-      return language ? [{ ...language, newPages: automatic ? ("automatic" as const) : ("manual" as const), ...rest }] : [];
+      const withinLimit = limit === null || index < limit - 1;
+      return language ? [{ ...language, newPages: automatic ? ("automatic" as const) : ("manual" as const), ...rest, live: live && withinLimit }] : [];
     }),
   };
 }
@@ -125,13 +128,12 @@ export const updateLanguages = defineOperation({
         throw new OperationError(400, "invalid_input", `${LANGUAGES[clash.code].name} is the default language`);
       }
       // Past the limit (after a downgrade) a project keeps its languages and can change or remove them, but add none,
-      // and only its oldest within the limit can go live.
+      // and only its oldest within the limit can go live (the rest read as offline: see projectLanguages).
       const limit = languageLimit(project.plan);
       if (limit !== null && 1 + input.languages.length > limit) {
         // The oldest of those it keeps.
         const within = current.filter((code) => input.languages!.some((language) => language.code === code)).slice(0, limit - 1);
-        const wasLive = (code: string) => project.languages.some((language) => language.code === code && language.live);
-        if (input.languages.some(({ code, live }) => !current.includes(code) || (live && !wasLive(code) && !within.includes(code)))) {
+        if (input.languages.some(({ code, live }) => !current.includes(code) || (live && !within.includes(code)))) {
           throw new OperationError(402, "plan_required", languagesFull(project.plan, limit));
         }
       }
