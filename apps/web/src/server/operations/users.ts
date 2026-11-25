@@ -292,7 +292,7 @@ const userInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "After the users are saved, `true` subscribes their address to the changelog's emails at once, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, as changelogSubscribers.remove",
+      "Applied after the users are saved, apart from them: if this part fails, the users are saved anyway, and sending the same call again is safe. `true` subscribes their address to the changelog's emails at once, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, as changelogSubscribers.remove",
     ),
 });
 
