@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
+import { draftsGoWith, forgetDrafts } from "./conversation";
 import { afterChanged, afterEnded, forgetSession, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
@@ -26,6 +27,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setSession(null);
+    forgetDrafts();
     await forgetSession();
   }, []);
 
@@ -33,6 +35,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // teammate who signed out and back in meanwhile stays signed in.
   const ended = useCallback(async (which: Session) => {
     setSession((now) => afterEnded(now, which));
+    // What was being written goes with the session, so whoever signs in next never sees or sends it.
+    if (draftsGoWith(await readSession(), which)) {
+      forgetDrafts();
+    }
     await forgetSession(which);
   }, []);
 

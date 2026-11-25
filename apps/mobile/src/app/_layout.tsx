@@ -30,6 +30,7 @@ function Navigator() {
         </Stack.Protected>
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="index" options={{ title: "Projects" }} />
+          <Stack.Screen name="conversation/[number]" options={{ title: "" }} />
         </Stack.Protected>
       </Stack>
       <StatusBar style="auto" />
