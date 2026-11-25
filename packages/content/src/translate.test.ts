@@ -170,3 +170,34 @@ test("segments go in order, in batches of at most batchChars, and so do their re
     ["3", "4"],
   ]);
 });
+
+test("what a placeholder stands for goes back exactly, escaped characters and all", () => {
+  const { segment, apply } = segmentOfText("See https://x.com/?a=1&amp;b=2 and `&lt;br&gt;` & more");
+  expect(segment.text).toBe("See <x1/> and <x2/> &amp; more");
+  expect(apply("Siehe <x1/> und <x2/> &amp; mehr")).toBe("Siehe https://x.com/?a=1&amp;b=2 und `&lt;br&gt;` & mehr");
+});
+
+test("a word that only starts with a glossary term doesn't use it", () => {
+  expect(glossaryProblems("Postpone the release", "Verschiebe die Veröffentlichung", [{ term: "Post", translation: "Beitrag" }])).toEqual([]);
+  expect(glossaryProblems("Merge two posts", "Zwei Einträge zusammenführen", [{ term: "Post", translation: "Beitrag" }])).toEqual(['"Post" must be translated as "Beitrag"']);
+});
+
+test("a remembered translation that breaks a glossary term added since is sent again", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Open the board" }] }] };
+  const asked: string[] = [];
+  const out = await translateDoc(one, {
+    from: "English",
+    to: "German",
+    glossary: [{ term: "board", translation: "Board" }],
+    memory: { "Open the board": "Öffne das Brett" },
+    ask: async (_, user) => (asked.push(user), '{"segments": {"1": "Öffne das Board"}}'),
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.memory["Open the board"]).toBe("Öffne das Board");
+});
+
+test("an image's description translated past the length limit is asked again", () => {
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "image", attrs: { mediaId: "m", alt: "A long description", w: 1, h: 1 } }] });
+  expect(check("1", "x".repeat(301))).toBe("an image's description must be at most 300 characters");
+  expect(check("1", "Eine lange Beschreibung")).toBeNull();
+});

@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 
 import type { Doc } from "./document";
+import { MAX_ALT_LENGTH } from "./profiles";
 
 /*
  * Translating a document without letting the model touch its structure (docs/plan.md, Languages). The model only
@@ -161,7 +162,12 @@ export function segmentsOf(doc: Doc): {
       slots.push({
         id,
         source: escape(node.attrs.alt),
-        check: (translated) => (/<[^>]*>/.test(translated) ? "an image's description can't have tags" : null),
+        check: (translated) =>
+          /<[^>]*>/.test(translated)
+            ? "an image's description can't have tags"
+            : unescape(translated).trim().length > MAX_ALT_LENGTH
+              ? `an image's description must be at most ${MAX_ALT_LENGTH} characters`
+              : null,
         apply: (translated) => {
           node.attrs!.alt = unescape(translated).trim();
         },
@@ -204,20 +210,24 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
     })
     .join("");
   const apply = (translated: string): string | Problem => {
-      const seen = new Set<number>();
-      let bad: string | null = null;
-      const out = translated
-        .replace(/<x(\d+)\/>|<br\s*\/?>/g, (match, id?: string) => {
-          if (!id) return "\n";
-          const n = Number(id);
-          if (!kept[n - 1] || seen.has(n)) bad = `placeholder <x${n}/> is unknown or repeated`;
-          seen.add(n);
-          return kept[n - 1] ?? "";
-        })
-        .replace(/&lt;|&gt;|&amp;/g, (entity) => unescape(entity));
-      if (!bad && seen.size !== kept.length) bad = "a placeholder is missing";
-      if (!bad && /<\/?[a-z]+\d*\/?>/i.test(translated.replace(/<x(\d+)\/>|<br\s*\/?>/g, ""))) bad = "it has a tag that isn't in the source";
-      return bad ? { id: "1", reason: bad } : out;
+    const seen = new Set<number>();
+    let bad: string | null = null;
+    // Only the translated text is unescaped: what a placeholder stands for goes back exactly as it was.
+    const out = translated
+      .split(/(<x\d+\/>|<br\s*\/?>)/)
+      .map((part, i) => {
+        if (i % 2 === 0) return unescape(part);
+        const id = /^<x(\d+)\/>$/.exec(part)?.[1];
+        if (!id) return "\n";
+        const n = Number(id);
+        if (!kept[n - 1] || seen.has(n)) bad = `placeholder <x${n}/> is unknown or repeated`;
+        seen.add(n);
+        return kept[n - 1] ?? "";
+      })
+      .join("");
+    if (!bad && seen.size !== kept.length) bad = "a placeholder is missing";
+    if (!bad && /<\/?[a-z]+\d*\/?>/i.test(translated.replace(/<x(\d+)\/>|<br\s*\/?>/g, ""))) bad = "it has a tag that isn't in the source";
+    return bad ? { id: "1", reason: bad } : out;
   };
   return {
     segment: { id: "1", text: tagged },
@@ -234,9 +244,16 @@ export function glossaryProblems(source: string, translated: string, glossary: G
   const plain = (text: string) => unescape(text.replace(/<[^>]*>/g, " ")).toLowerCase();
   const [from, to] = [plain(source), plain(translated)];
   return glossary
-    .filter(({ term }) => contains(from, term.toLowerCase()))
+    .filter(({ term }) => uses(from, term.toLowerCase()))
     .filter(({ term, translation }) => !contains(to, stem((translation ?? term).toLowerCase())))
     .map(({ term, translation }) => (translation ? `"${term}" must be translated as "${translation}"` : `"${term}" must stay "${term}"`));
+}
+
+/** Whether the source uses `term`: as a word, or its plural or possessive ("boards", "Tuti's"; not "Postpone" for "Post"). */
+function uses(text: string, term: string): boolean {
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(term)) return text.includes(term);
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?:s|es|'s|’s)?(?![\\p{L}\\p{N}])`, "u").test(text);
 }
 
 /** Whether `text` has a word starting with `term` (so "boards", "Tuti's"), or has it anywhere for scripts without spaces. */
@@ -295,20 +312,6 @@ export function translationPrompt({ from, to, glossary = [], instructions, about
 export async function translateSegments(segments: Segment[], options: TranslateOptions, fits?: (id: string, text: string) => string | null): Promise<Translated> {
   const { ask, glossary = [], memory = {}, batchChars = 6000 } = options;
   const translations: Record<string, string> = {};
-  const todo = segments.filter((segment) => {
-    const known = memory[segment.text];
-    if (known !== undefined) translations[segment.id] = known;
-    return known === undefined;
-  });
-  let detected: string | undefined;
-  const system = translationPrompt(options);
-  const request = async (batch: Segment[], notes?: Map<string, string>) => {
-    const user = JSON.stringify(Object.fromEntries(batch.map(({ id, text }) => [id, text])));
-    const extra = notes ? `\n\nYour last translations of these broke a rule; fix them:\n${[...notes].map(([id, why]) => `- ${id}: ${why}`).join("\n")}` : "";
-    const reply = parseReply(await ask(system, user + extra));
-    detected ??= reply.language;
-    return reply.segments;
-  };
   const check = (segment: Segment, text: string | undefined) => {
     if (typeof text !== "string" || text.trim() === "") return "no translation";
     const tagged = (value: string) => [...value.matchAll(/<\/?[a-z]\d+>|<x\d+\/>/g)].map((m) => m[0]).sort().join();
@@ -318,6 +321,21 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     // Left in the source language: only when the source's is known (a message may already be in the target's).
     if (options.from && text.trim() === segment.text.trim() && (segment.text.match(/\p{L}{2,}/gu) ?? []).length >= 4) return "it isn't translated";
     return glossaryProblems(segment.text, text, glossary).join("; ") || null;
+  };
+  // A remembered translation is reused only while it still passes the checks (a glossary term added since, say).
+  const todo = segments.filter((segment) => {
+    const known = memory[segment.text];
+    if (known !== undefined && !check(segment, known)) translations[segment.id] = known;
+    return translations[segment.id] === undefined;
+  });
+  let detected: string | undefined;
+  const system = translationPrompt(options);
+  const request = async (batch: Segment[], notes?: Map<string, string>) => {
+    const user = JSON.stringify(Object.fromEntries(batch.map(({ id, text }) => [id, text])));
+    const extra = notes ? `\n\nYour last translations of these broke a rule; fix them:\n${[...notes].map(([id, why]) => `- ${id}: ${why}`).join("\n")}` : "";
+    const reply = parseReply(await ask(system, user + extra));
+    detected ??= reply.language;
+    return reply.segments;
   };
   const runs = batches(todo, batchChars);
   const results = await Promise.all(runs.map((batch) => request(batch).catch(() => ({}) as Record<string, string>)));
