@@ -280,3 +280,9 @@ test("a provider error a retry made up for isn't reported; a line break keeps it
   expect(out.providerError).toBeUndefined();
   expect(out.doc.content![0]!.content![1]).toEqual({ type: "hardBreak", attrs: { soft: true } });
 });
+
+test("a newline the model adds itself is a space, in documents and plain text", () => {
+  expect(segmentOfText("Hi there").apply("Hallo\nzusammen")).toBe("Hallo zusammen");
+  const { apply } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hi there friend" }] }] });
+  expect(apply({ "1": "Hallo\n zusammen" }).doc.content![0]!.content).toEqual([{ type: "text", text: "Hallo zusammen" }]);
+});

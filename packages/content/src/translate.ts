@@ -25,6 +25,8 @@ const TEXT_BLOCKS = new Set(["paragraph", "heading", "stepTitle", "detailsSummar
 const TAG_LETTER: Record<string, string> = { link: "a", bold: "b", italic: "i", strike: "s", underline: "u" };
 const MARK_ORDER = Object.keys(TAG_LETTER);
 
+/** A newline the model wrote itself is a space: only the source's own breaks (<br/>) become line breaks. */
+const flat = (text: string) => text.replace(/[ \t]*\r?\n[ \t]*/g, " ");
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** Back to text: our three escapes, and the other entities models write by imitation (&quot;, &#39;, &nbsp;); &amp; last. */
 const ENTITIES: Record<string, string> = { lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
@@ -95,7 +97,7 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
     // A tag is empty unless something comes inside it (two bold words joined may share one text node).
     const fill = () => stack.forEach((tag) => (tag.filled = true));
     const pushText = (raw: string) => {
-      const value = unescape(raw);
+      const value = unescape(flat(raw));
       if (!value) return;
       fill();
       const marks = stack.map((tag) => tags.get(tag.id)!);
@@ -245,7 +247,7 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
     const out = translated
       .split(/(<x\d+\/>|<br\s*\/?>)/)
       .map((part, i) => {
-        if (i % 2 === 0) return unescape(part);
+        if (i % 2 === 0) return unescape(flat(part));
         const id = /^<x(\d+)\/>$/.exec(part)?.[1];
         if (!id) return "\n";
         const n = Number(id);
