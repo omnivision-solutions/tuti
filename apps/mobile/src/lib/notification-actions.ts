@@ -74,10 +74,15 @@ export async function act(response: Notifications.NotificationResponse) {
   const target = targetOf(data);
   const text = response.userText?.trim() ?? "";
   const key = `${identifier}\n${action}\n${text}`;
-  if ((action !== REPLY && action !== CLOSE) || !target || (action === REPLY && !text) || done.has(key)) {
+  if ((action !== REPLY && action !== CLOSE) || !target || done.has(key)) {
     return;
   }
   done.add(key);
+  // A reply of only spaces: nothing to send, but the notification goes, or Android shows it sending for good.
+  if (action === REPLY && !text) {
+    await remove(response);
+    return;
+  }
   // Drafts kept only in this sign-in's generation: a sign-out while the send is on its way keeps nothing of it.
   const since = draftsGeneration();
   const session = await readSession();

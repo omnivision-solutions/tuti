@@ -254,6 +254,13 @@ describe("Reply", () => {
     ]);
   });
 
+  it("of only spaces sends nothing, and the notification goes", async () => {
+    await (await load()).act(response("reply", { userText: "   " }));
+    expect(calls).toEqual([]);
+    expect(phone.dismissed).toEqual(["push-1"]);
+    expect(phone.shown).toEqual([]);
+  });
+
   it("signed out, sends nothing and says so", async () => {
     phone.stored.clear();
     await (await load()).act(response("reply", { userText: "On it!" }));
