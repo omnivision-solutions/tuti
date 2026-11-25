@@ -18,8 +18,8 @@ const saves = vi.mocked(saveWidgetSettings);
 beforeEach(() => saves.mockReset());
 afterEach(() => document.body.replaceChildren());
 
-/** The settings as the page has them, with `icon` stored; rendered again with each refresh's icon. */
-async function page(icon: WidgetIcon) {
+/** The settings as the page has them, with `icon` stored (and `iconImage`, the team's upload); rendered again with each refresh's icon. */
+async function page(icon: WidgetIcon, iconImage: { id: string; url: string } | null = null) {
   const box = document.createElement("div");
   document.body.append(box);
   const root = createRoot(box);
@@ -35,7 +35,7 @@ async function page(icon: WidgetIcon) {
           position: "bottom-right",
           links: [],
           icon: stored,
-          iconImage: null,
+          iconImage,
           upgrade: null,
           title: "",
           greeting: "",
@@ -51,6 +51,7 @@ async function page(icon: WidgetIcon) {
   return {
     refresh,
     pick: (value: WidgetIcon) => act(async () => radio(value).click()),
+    remove: () => act(async () => box.querySelector<HTMLButtonElement>('button[aria-label="Remove your icon"]')!.click()),
     // "Save changes" submits the form. As an event: happy-dom's requestSubmit finds the colour's "#0f766e" a pattern
     // mismatch, and gives a submitter FormData refuses.
     save: () => act(async () => void box.querySelector("form")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }))),
@@ -67,6 +68,19 @@ test("a save's own refresh, landing after a pick made since, keeps that pick", a
   await pick("megaphone");
   await refresh("help");
   expect(picked()).toBe("megaphone");
+});
+
+test("the uploaded icon, saved and removed before the save's own refresh, stays removed", async () => {
+  saves.mockResolvedValue({});
+  const { refresh, pick, remove, save, picked } = await page("chat", { id: "m1", url: "https://tuti.example/i.png" });
+  await pick("image");
+  await save();
+  expect(saves).toHaveBeenCalledOnce();
+  // Remove picks the chat bubble again: a pick since the save.
+  await remove();
+  expect(picked()).toBe("chat");
+  await refresh("image");
+  expect(picked()).toBe("chat");
 });
 
 test("a teammate's icon, refreshed in while a save is waiting for its own, is followed; then the save's own, stored last", async () => {
