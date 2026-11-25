@@ -1612,14 +1612,14 @@ export const resumeCodeChanges = defineOperation({
     const paused = await prisma.codeChange.findMany({
       where: { projectId, state: "PAUSED" },
       orderBy: { mergedAt: "asc" },
-      select: { id: true },
+      select: { id: true, retryPastGate: true },
     });
     let resumed = 0;
     let failed = 0;
     for (const change of paused) {
       try {
         // Inline, the analysis runs here and says whether it went ahead; on Hatchet, queued is resumed.
-        const result = await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: true });
+        const result = await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: change.retryPastGate, resume: true });
         if (!result?.skipped) {
           resumed++;
         }

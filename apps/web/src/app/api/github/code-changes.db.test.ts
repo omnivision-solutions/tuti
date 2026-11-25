@@ -1435,6 +1435,23 @@ describe("out of AI credits", () => {
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 0 });
   });
 
+  test("ruled out, then picked for the changelog while out of credits: paused, and resumed past the gate once there are credits", async () => {
+    github.pullRequest(repo, pullRequest(45));
+    await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: installationId, repo, number: 45, url: `https://github.com/${repo}/pull/45`, title: "Dark mode 45", author: "octo", mergedAt: new Date(), state: "NOTHING_TO_DO", reason: "Users don't see it." },
+    });
+    await call(addChangelogPullRequests, team(), { pullRequests: [{ repo, number: 45 }] });
+    await addedPullRequestsAnalysed();
+    expect(await changes()).toEqual([expect.objectContaining({ number: 45, state: "PAUSED" })]);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    // Resumed as it was asked: past the gate, which isn't asked again (no gate decision is queued for the model).
+    model.reply("You can now switch the app to a dark theme in Settings.");
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect(await changes()).toEqual([expect.objectContaining({ number: 45, state: "READY" })]);
+  });
+
   test("“Resume all” that can't queue them leaves them paused, to try again (nothing stuck as analysing)", async () => {
     github.pullRequest(repo, pullRequest(47));
     expect(await merge(47)).toBe(200);

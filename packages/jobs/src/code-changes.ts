@@ -229,7 +229,8 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     ai = await aiFor(change.projectId, "code_changes");
   } catch (error) {
     if (error instanceof OutOfCredits) {
-      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of AI credits.", retryAt: null } });
+      // Past the gate if it was asked so (the team's pick, Analyse anyway): resumed the same way.
+      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of AI credits.", retryAt: null, retryPastGate: input.pastGate } });
       log.info(`Code change ${change.id}: paused, out of AI credits`);
       return { skipped: true, paused: true };
     }
