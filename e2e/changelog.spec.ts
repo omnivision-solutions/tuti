@@ -734,9 +734,14 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   // Published before publishing recorded what it completed: its completed posts are counted.
   const first = `(SELECT e.id FROM changelog_entry e JOIN project p ON p.id = e."projectId" WHERE p.slug = $1 AND e.number = 1)`;
   await query(`UPDATE post_event SET "changelogEntryId" = NULL WHERE "changelogEntryId" = ${first}`, [slug]);
-  await query(`UPDATE changelog_entry SET "publishedAt" = '2026-10-15' WHERE id = ${first}`, [slug]);
+  await query(`UPDATE changelog_entry SET "publishedAt" = '2026-10-15', "createdAt" = '2026-10-14' WHERE id = ${first}`, [slug]);
   await team.reload();
   await expect(team.getByRole("region", { name: "October 2026" }).getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
+  // Published again (today, completing nothing new: its post is Completed already), it still counts it.
+  await api("/changelog/1/unpublish", {});
+  await api("/changelog/1/publish", {});
+  await team.reload();
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
 });
 
 test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {
