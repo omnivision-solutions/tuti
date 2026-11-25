@@ -128,7 +128,8 @@ export const updateLanguages = defineOperation({
       // and only its oldest within the limit can go live.
       const limit = languageLimit(project.plan);
       if (limit !== null && 1 + input.languages.length > limit) {
-        const within = current.slice(0, limit - 1);
+        // The oldest of those it keeps.
+        const within = current.filter((code) => input.languages!.some((language) => language.code === code)).slice(0, limit - 1);
         const wasLive = (code: string) => project.languages.some((language) => language.code === code && language.live);
         if (input.languages.some(({ code, live }) => !current.includes(code) || (live && !wasLive(code) && !within.includes(code)))) {
           throw new OperationError(402, "plan_required", languagesFull(project.plan, limit));

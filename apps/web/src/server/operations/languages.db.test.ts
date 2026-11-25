@@ -86,4 +86,9 @@ test("the plan limits the languages, the default counted; past it (after a downg
   await update({ languages: [{ code: "de", live: true }, { code: "fr", live: true }, { code: "es", live: true }] });
   await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: false }] });
   await expect(update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: true }] })).rejects.toMatchObject({ status: 402 });
+  // Removing an older one in the same save makes room.
+  vi.stubEnv("BILLING_CONFIG", "");
+  await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es" }, { code: "it" }] });
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await update({ languages: [{ code: "fr" }, { code: "es", live: true }, { code: "it" }] });
 });
