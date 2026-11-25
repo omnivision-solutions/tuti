@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getConversation } from "@/lib/conversation";
@@ -50,6 +50,8 @@ export default function Details() {
   // Why the latest change didn't happen, in the server's words.
   const [failed, setFailed] = useState<string | null>(null);
 
+  // Changes made here so far: a fetch that started before one doesn't put back what it replaced.
+  const changes = useRef(0);
   const load = useCallback(() => {
     getPerson(api, number).then(
       (loaded) => {
@@ -65,18 +67,18 @@ export default function Details() {
       },
       (e: Error) => failure("team", e.message),
     );
-    // Opened by a link, with no conversation under it to say its status: fetched here.
-    if (!getTriage(key)) {
-      getConversation(api, number).then(
-        (loaded) => {
-          if (!getTriage(key)) {
-            showTriage(key, loaded);
-          }
-          failure("conversation", null);
-        },
-        (e: Error) => failure("conversation", e.message),
-      );
-    }
+    // Its status as it is now (opened by a link, nothing under it has fetched it lately), unless a change here
+    // answered meanwhile.
+    const since = changes.current;
+    getConversation(api, number).then(
+      (loaded) => {
+        if (changes.current === since) {
+          showTriage(key, loaded);
+        }
+        failure("conversation", null);
+      },
+      (e: Error) => failure("conversation", e.message),
+    );
   }, [api, number, key]);
   useEffect(load, [load]);
 
@@ -106,7 +108,9 @@ export default function Details() {
     setBusy(true);
     setFailed(null);
     try {
-      showTriage(key, await updateConversation(api, number, body));
+      const updated = await updateConversation(api, number, body);
+      changes.current++;
+      showTriage(key, updated);
       setPane("details");
       AccessibilityInfo.announceForAccessibility(done);
     } catch (e) {

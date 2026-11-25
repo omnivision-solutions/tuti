@@ -59,5 +59,9 @@ describe("the conversation's header", () => {
 
     await fireEvent.press(standing);
     expect(mockPush).toHaveBeenCalledWith("/conversation/12/details");
+    mockPush.mockClear();
+    // Their name opens it too.
+    await fireEvent.press(screen.getByRole("header", { name: "Maya Chen, Northwind" }));
+    expect(mockPush).toHaveBeenCalledWith("/conversation/12/details");
   });
 });

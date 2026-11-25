@@ -77,6 +77,9 @@ function serve(person: Person, triage: Triage = OPEN) {
     if (path === "/inbox/assignees") {
       return Promise.resolve({ assignees: TEAM });
     }
+    if (path === "/conversations/12" && !init) {
+      return Promise.resolve(now);
+    }
     if (path === "/conversations/12" && init?.method === "PATCH") {
       const body = init.body as Record<string, unknown>;
       const assignee = "assignee" in body ? (TEAM.find((a) => a.email === body.assignee) ?? null) : now.assignee;
@@ -281,5 +284,15 @@ describe("the details sheet", () => {
     await act(async () => void (handled = !!handlers.at(-1)?.({} as Parameters<Handler>[0])));
     expect(handled).toBe(true);
     expect(await screen.findByRole("button", { name: "Assignee, Unassigned" })).toBeTruthy();
+  });
+
+  it("shows the status as it is now, not one kept from an earlier visit", async () => {
+    serve(SAM, { status: "closed", assignee: { name: "Olive Owner", email: "e2e-olive@example.com" }, spam: false, snoozedUntil: null });
+    // Kept from an earlier visit: open and nobody's.
+    showTriage(KEY, OPEN);
+    await render(<Details />);
+
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Assignee, Olive Owner" })).toBeTruthy();
   });
 });
