@@ -57,7 +57,7 @@ export async function SubscribersTable({
           <input type="hidden" name="view" value="subscribers" />
           {status && <input type="hidden" name="status" value={status} />}
           <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input type="search" name="q" defaultValue={q} placeholder="Email" aria-label="Search subscribers" className="h-8 pl-8" />
+          <Input id="subscribers-search" type="search" name="q" defaultValue={q} placeholder="Email" aria-label="Search subscribers" className="h-8 pl-8" />
         </form>
         <ListFilters
           filters={[
@@ -88,7 +88,7 @@ export async function SubscribersTable({
                 <th scope="col">Email</th>
                 <th scope="col">Status</th>
                 <th scope="col" className="text-right">
-                  Since
+                  Added
                 </th>
                 {admin && (
                   <th scope="col">
@@ -115,10 +115,11 @@ export async function SubscribersTable({
                   <td>
                     <Badge variant={STATUS[subscriber.status].variant}>{STATUS[subscriber.status].label}</Badge>
                   </td>
-                  <td className="text-right whitespace-nowrap text-muted-foreground max-md:hidden">{timeAgo(new Date(subscriber.subscribedAt ?? subscriber.createdAt))}</td>
+                  <td className="text-right whitespace-nowrap text-muted-foreground max-md:hidden">{timeAgo(new Date(subscriber.createdAt))}</td>
                   {admin && (
                     <td className="w-0 text-right">
-                      {(subscriber.status === "subscribed" || subscriber.status === "pending") && <RemoveSubscriberButton projectSlug={slug} email={subscriber.email} />}
+                      {/* Still confirmed (all emails off too: turned back on, they'd get it) or a link out. */}
+                      {(subscriber.subscribedAt !== null || subscriber.status === "pending") && <RemoveSubscriberButton projectSlug={slug} email={subscriber.email} />}
                     </td>
                   )}
                 </tr>

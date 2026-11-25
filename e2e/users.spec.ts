@@ -553,6 +553,7 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   const ada = rows.filter({ hasText: "e2e-ada@example.com" });
   await expect(ada).toContainText("Subscribed");
   await expect(ada.getByRole("link", { name: "User user-1" })).toHaveAttribute("href", `/app/${slug}/users/user-1`);
+  await expect(owner.getByText("isn't emailed to anyone")).toHaveCount(0);
   await checkpoint(owner, "subscribers");
 
   // Remove asks first; then they're removed, and Subscribed no longer lists them.
@@ -566,4 +567,12 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   await owner.getByRole("option", { name: "Subscribed", exact: true }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("e2e-ada@example.com");
+
+  // A private portal emails nobody its changelog: the view says so.
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  await owner.goto(`/app/${slug}/users?view=subscribers`);
+  await expect(owner.getByText("Your portal is private, so its changelog isn't emailed to anyone.")).toBeVisible();
 });

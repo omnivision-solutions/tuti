@@ -1929,7 +1929,10 @@ describe("the list (changelogSubscribers.list, Users → Subscribers)", () => {
     await optOut(sam.id);
     await call(addChangelogSubscribers, team(), { emails: [at("removed")] });
     await call(removeChangelogSubscribers, team(), { emails: [at("removed")] });
-    // Created in this order a millisecond apart at least: newest first.
+    // Newest first: created a minute apart, in this order.
+    for (const [i, name] of ["added", "pending", "left", "sam", "removed"].entries()) {
+      await prisma.changelogSubscriber.update({ where: { projectId_email: { projectId: project.id, email: at(name) } }, data: { createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)) } });
+    }
     const list = (input: { q?: string; status?: "subscribed" | "pending" | "unsubscribed" | "opted_out" | "removed"; limit?: number; cursor?: number }) =>
       call(listChangelogSubscribers, team(), { q: tag, limit: 50, cursor: 0, ...input });
     expect(await list({})).toEqual({

@@ -187,7 +187,6 @@ export const listChangelogSubscribers = defineOperation({
     const like = input.q ? `%${input.q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
     const matching = Prisma.sql`(
       SELECT s."email", s."confirmedAt", s."createdAt", s."id",
-        (SELECT i."externalId" FROM "sso_identity" i WHERE i."projectId" = s."projectId" AND lower(i."email") = s."email" ORDER BY i."externalId" LIMIT 1) AS "user",
         CASE
           WHEN s."unsubscribedAt" IS NOT NULL THEN 'unsubscribed'
           WHEN ${optedOutSql(projectId, Prisma.raw(`s."email"`))} THEN 'opted_out'
@@ -200,8 +199,14 @@ export const listChangelogSubscribers = defineOperation({
     ) t ${input.status ? Prisma.sql`WHERE t."status" = ${input.status}` : Prisma.empty}`;
     // ponytail: offset cursors and a count over every match, like users.list; keyset pagination if lists get very large.
     const rows = await prisma.$queryRaw<{ email: string; user: string | null; status: (typeof SUBSCRIBER_STATUSES)[number]; confirmedAt: Date | null; createdAt: Date; total: number }[]>`
-      SELECT t.*, count(*) OVER ()::int AS total FROM ${matching}
-      ORDER BY t."createdAt" DESC, t."id" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+      SELECT page.*,
+        -- The user at each address, for the page's rows only.
+        (SELECT i."externalId" FROM "sso_identity" i WHERE i."projectId" = ${projectId} AND lower(i."email") = page."email" ORDER BY i."externalId" LIMIT 1) AS "user"
+      FROM (
+        SELECT t.*, count(*) OVER ()::int AS total FROM ${matching}
+        ORDER BY t."createdAt" DESC, t."id" OFFSET ${input.cursor} LIMIT ${input.limit + 1}
+      ) page
+      ORDER BY page."createdAt" DESC, page."id"`;
     // Past the last page there's no row to count on: counted on its own.
     const total = rows[0]?.total ?? (input.cursor === 0 ? 0 : (await prisma.$queryRaw<[{ total: number }]>`SELECT count(*)::int AS total FROM ${matching}`)[0].total);
     return {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -19,12 +19,14 @@ import { removeChangelogSubscriber } from "@/server/groups";
 export function RemoveSubscriberButton({ projectSlug, email }: { projectSlug: string; email: string }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Removed, the row has no Remove to return to: the search box takes focus instead of the page's top.
+  const removed = useRef(false);
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label={`Remove ${email}`}>
         Remove
       </Button>
-      <AlertDialogContent>
+      <AlertDialogContent finalFocus={() => (removed.current ? document.getElementById("subscribers-search") : true)}>
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-anywhere">Remove {email}?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -43,6 +45,7 @@ export function RemoveSubscriberButton({ projectSlug, email }: { projectSlug: st
                   toast.error(result.error);
                   return;
                 }
+                removed.current = true;
                 setOpen(false);
                 toast.success(`${email} removed`);
               })
