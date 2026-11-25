@@ -408,15 +408,29 @@ const setUploading = (key: string, change: (now: Uploading[]) => Uploading[]) =>
   tell(key);
 };
 
-/** Uploads a picked file into the draft at `key`; `failed` hears why it didn't (from the screen that picked it, if it's still there). */
-export function attach(api: Api, key: string, picked: Picked, failed: (why: string) => void): Promise<void> {
+/** Why the latest upload for a draft failed, kept here too: the screen open then says it, whichever screen picked the file. */
+const uploadFailures = new Map<string, string>();
+export const getUploadFailure = (key: string) => uploadFailures.get(key) ?? null;
+export function clearUploadFailure(key: string) {
+  if (uploadFailures.delete(key)) {
+    tell(key);
+  }
+}
+
+/** Uploads a picked file into the draft at `key`; why it didn't is `getUploadFailure(key)`, till the next pick or a send. */
+export function attach(api: Api, key: string, picked: Picked): Promise<void> {
   const since = generation;
   const pick = { id: ++picks, name: picked.name };
+  uploadFailures.delete(key);
   setUploading(key, (now) => [...now, pick]);
   return upload(api, picked)
     .then(
       (attached) => updateDraft(key, (draft) => ({ ...draft, files: [...draft.files, attached] }), since),
-      (error: unknown) => failed(error instanceof Error ? error.message : String(error)),
+      (error: unknown) => {
+        if (since === generation) {
+          uploadFailures.set(key, error instanceof Error ? error.message : String(error));
+        }
+      },
     )
     .finally(() => setUploading(key, (now) => now.filter((one) => one.id !== pick.id)));
 }
@@ -501,6 +515,7 @@ export function forgetDrafts() {
   generation++;
   cache.clear();
   uploads.clear();
+  uploadFailures.clear();
   try {
     const directory = drafts();
     if (directory.exists) {

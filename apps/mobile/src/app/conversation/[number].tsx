@@ -33,7 +33,9 @@ import {
   draftWithAi,
   editUnsent,
   attach as attachFile,
+  clearUploadFailure,
   getDraft,
+  getUploadFailure,
   getUploading,
   droppedLine,
   fileSize,
@@ -170,7 +172,14 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     () => getUploading(draftKey),
   );
   const [drafting, setDrafting] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [aiNotice, setNotice] = useState<string | null>(null);
+  // Why the latest upload failed, whichever screen picked the file: said here till the next pick or a send.
+  const uploadFailure = useSyncExternalStore(
+    useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey]),
+    () => getUploadFailure(draftKey),
+  );
+  // Both said, each on its line: neither hides the other.
+  const notice = [uploadFailure, aiNotice].filter(Boolean).join("\n") || null;
   useEffect(() => {
     if (notice && IOS) {
       AccessibilityInfo.announceForAccessibility(notice);
@@ -205,6 +214,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       seen: conversation!.messages.at(-1)?.createdAt ?? null,
     };
     setNotice(null);
+    clearUploadFailure(draftKey);
     setDraft((now) => ({ ...now, [kind]: "", files: [], unsent: [...now.unsent, unsent] }));
     void deliver(unsent);
   };
@@ -220,7 +230,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       return;
     }
     setNotice(null);
-    void attachFile(api, draftKey, picked, setNotice);
+    void attachFile(api, draftKey, picked);
   };
   const pickPhoto = async () => {
     const picked = await ImagePicker.launchImageLibraryAsync({

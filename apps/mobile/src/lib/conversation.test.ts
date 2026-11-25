@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "./api";
 import {
   attach,
+  clearUploadFailure,
   composerInset,
   type Conversation,
   delivery,
@@ -13,6 +14,7 @@ import {
   EMPTY_DRAFT,
   FILES_LAST_MS,
   forgetDrafts,
+  getUploadFailure,
   getUploading,
   getDraft,
   isSending,
@@ -586,8 +588,7 @@ describe("a file uploading", () => {
   it("is there for a screen opened again before it's done, and joins the draft once it is", async () => {
     let started!: (value: unknown) => void;
     const { api } = fakeApi({ "/inbox/uploads": () => new Promise((resolve) => (started = resolve)) });
-    const failures: string[] = [];
-    const uploading = attach(api, key, { uri: "file:///cache/photo.jpg", name: "photo.jpg", contentType: "image/jpeg", size: 2048 }, (why) => failures.push(why));
+    const uploading = attach(api, key, { uri: "file:///cache/photo.jpg", name: "photo.jpg", contentType: "image/jpeg", size: 2048 });
     // The screen that picked it is gone; a fresh one subscribes and reads what's uploading.
     let told = 0;
     const stop = subscribeDraft(key, () => told++);
@@ -599,16 +600,29 @@ describe("a file uploading", () => {
     expect(getUploading(key)).toEqual([]);
     expect(getDraft(key).files.map((file) => file.id)).toEqual(["up1"]);
     expect(told).toBeGreaterThan(0);
-    expect(failures).toEqual([]);
+    expect(getUploadFailure(key)).toBeNull();
   });
 
-  it("says why it failed, and leaves nothing uploading", async () => {
+  it("says why it failed to a screen opened again, till the next pick or a send, and leaves nothing uploading", async () => {
     files.uploadStatus = 403;
     const { api } = fakeApi({ "/inbox/uploads": () => ({ id: "up1", contentType: "image/png", uploadUrl: "https://media.example.com/up1" }) });
-    const failures: string[] = [];
-    await attach(api, key, { uri: "file:///a.png", name: "a.png", contentType: "image/png", size: 1 }, (why) => failures.push(why));
-    expect(failures).toEqual(["Couldn't upload a.png. Try again."]);
+    await attach(api, key, { uri: "file:///a.png", name: "a.png", contentType: "image/png", size: 1 });
+    // The screen that picked it is gone; a fresh one subscribes and reads why.
+    let told = 0;
+    const stop = subscribeDraft(key, () => told++);
+    expect(getUploadFailure(key)).toBe("Couldn't upload a.png. Try again.");
     expect(getUploading(key)).toEqual([]);
     expect(getDraft(key).files).toEqual([]);
+    // A send clears it, and tells the screen.
+    clearUploadFailure(key);
+    expect(getUploadFailure(key)).toBeNull();
+    expect(told).toBe(1);
+    // The next pick clears it too.
+    await attach(api, key, { uri: "file:///b.png", name: "b.png", contentType: "image/png", size: 1 });
+    files.uploadStatus = 200;
+    const pick = attach(api, key, { uri: "file:///c.png", name: "c.png", contentType: "image/png", size: 1 });
+    expect(getUploadFailure(key)).toBeNull();
+    await pick;
+    stop();
   });
 });
