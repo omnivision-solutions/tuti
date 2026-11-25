@@ -1778,6 +1778,23 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     expect(await told()).toHaveLength(3);
   });
 
+  test("a removal names the user that named the address, nobody where several did", async () => {
+    const [shared, alone] = [newAddress(), newAddress()];
+    for (const [id, email] of [["app-a", shared], ["app-b", shared], ["app-c", alone]]) {
+      await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: id!, userId: (await signUp("Shared")).id, email } });
+    }
+    await call(addChangelogSubscribers, key(), { emails: [shared, alone] });
+    await call(removeChangelogSubscribers, key(), { users: ["app-a", "app-b"] });
+    await call(addChangelogSubscribers, key(), { emails: [shared] });
+    await call(removeChangelogSubscribers, key(), { emails: [shared], users: ["app-a"] });
+    await call(removeChangelogSubscribers, key(), { emails: [alone] });
+    expect(await told()).toEqual([
+      { email: shared, userId: null, source: "api", allEmails: false },
+      { email: shared, userId: "app-a", source: "api", allEmails: false },
+      { email: alone, userId: "app-c", source: "api", allEmails: false },
+    ]);
+  });
+
   test("users.sync's subscribedToChangelog: true adds their address (the one just synced), false removes it", async () => {
     const [kim, lee] = [newAddress(), newAddress()];
     await unsubscribe(await confirmed(lee));
@@ -1812,6 +1829,11 @@ test("S2's migration marks again the rows the release before S1 unsubscribed mea
     prisma.changelogSubscriber.create({ data: { projectId: project.id, email: newAddress(), ...data }, select: { id: true } });
   const noLink = await row({});
   const waiting = await row({ confirmTokenHash: randomUUID() });
+  // Emailed an entry, unsubscribed by the release before S1, then asked again on the portal.
+  const askedAgain = await row({ confirmTokenHash: randomUUID() });
+  const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "For everyone." });
+  const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+  await prisma.changelogEmail.create({ data: { entryId, subscriberId: askedAgain.id, sentAt: new Date() } });
   const confirmedAgain = await row({ confirmedAt: new Date(), unsubscribedAt: new Date() });
   const confirmedOne = await row({ confirmedAt: new Date() });
   await prisma.$executeRawUnsafe(
@@ -1822,6 +1844,7 @@ test("S2's migration marks again the rows the release before S1 unsubscribed mea
   expect(Object.fromEntries(marked.map(({ id, unsubscribedAt }) => [id, unsubscribedAt !== null]))).toEqual({
     [noLink.id]: true,
     [waiting.id]: false,
+    [askedAgain.id]: true,
     [confirmedAgain.id]: false,
     [confirmedOne.id]: false,
   });
