@@ -73,7 +73,9 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
   }
   close(0);
 
+  const breaks = (value: string) => (value.match(/<br\s*\/?>/g) ?? []).length;
   const decode = (text: string): JSONContent[] | string => {
+    if (breaks(text) !== breaks(out)) return "its line breaks don't match the source's";
     const result: JSONContent[] = [];
     const stack: { id: number; letter: string; filled: boolean }[] = [];
     const seenTags = new Set<number>();
@@ -231,6 +233,7 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
       })
       .join("");
     if (!bad && seen.size !== kept.length) bad = "a placeholder is missing";
+    if (!bad && (translated.match(/<br\s*\/?>/g) ?? []).length !== (tagged.match(/<br\/>/g) ?? []).length) bad = "its line breaks don't match the source's";
     if (!bad && /<\/?[a-z]+\d*\/?>/i.test(translated.replace(/<x(\d+)\/>|<br\s*\/?>/g, ""))) bad = "it has a tag that isn't in the source";
     return bad ? { id: "1", reason: bad } : out;
   };
@@ -246,11 +249,13 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
 
 /** Where a glossary term must come out in a translated segment: as its translation, or unchanged when it has none. */
 export function glossaryProblems(source: string, translated: string, glossary: GlossaryTerm[]): string[] {
-  const plain = (text: string) => unescape(text.replace(/<[^>]*>/g, " ")).toLowerCase();
+  // Formatting tags go without a trace ("<b1>billing</b1> guide" is "billing guide"); placeholders and breaks split words.
+  const plain = (text: string) => unescape(text.replace(/<\/?[a-z]\d+>/g, "").replace(/<[^>]*>/g, " ")).toLowerCase();
   const [from, to] = [plain(source), plain(translated)];
   return glossary
     .filter(({ term }) => uses(from, term.toLowerCase()))
-    .filter(({ term, translation }) => !contains(to, stem((translation ?? term).toLowerCase())))
+    // A name kept as it is must come out whole (inflected endings allowed, "Autopilots"); only a translation may be stemmed.
+    .filter(({ term, translation }) => !contains(to, translation ? stem(translation.toLowerCase()) : term.toLowerCase()))
     .map(({ term, translation }) => (translation ? `"${term}" must be translated as "${translation}"` : `"${term}" must stay "${term}"`));
 }
 

@@ -219,3 +219,14 @@ test("a dropped line break is asked again; text left as it was is taken the seco
   expect(out.problems).toEqual([]);
   expect(out.memory["Slack, GitHub, Linear and Jira"]).toBe("Slack, GitHub, Linear and Jira");
 });
+
+test("a name kept as it is must come out whole, and formatting doesn't split a glossary phrase", () => {
+  expect(glossaryProblems("Autopilot ships it", "Autopista lo publica", [{ term: "Autopilot" }])).toEqual(['"Autopilot" must stay "Autopilot"']);
+  expect(glossaryProblems("Open the <b1>billing</b1> guide", "Öffne die Anleitung", [{ term: "billing guide", translation: "Abrechnungsanleitung" }])).toEqual(['"billing guide" must be translated as "Abrechnungsanleitung"']);
+});
+
+test("line breaks are checked by the document and plain text checks themselves", () => {
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "One line here" }, { type: "hardBreak" }, { type: "text", text: "Another line" }] }] });
+  expect(check("1", "Eine Zeile, noch eine")).toBe("its line breaks don't match the source's");
+  expect(segmentOfText("Hi\nthere").apply("Hallo")).toEqual({ id: "1", reason: "its line breaks don't match the source's" });
+});
