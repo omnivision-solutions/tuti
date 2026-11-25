@@ -1,8 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { convert } from "html-to-text";
-import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 // Continue with Google is set up when the auth config is read, so its fake starts before anything imports it.
@@ -14,22 +12,20 @@ const google = await vi.hoisted(async () => {
   return fake;
 });
 
-import AppSignInLinkPage from "@/app/app/(account-pages)/auth/app-link/page";
+import { GET as listConversations } from "@/app/api/v1/[...path]/route";
 import { GET as listProjects } from "@/app/api/v1/projects/route";
 import { auth } from "@/lib/auth";
 import { appUrl } from "@/lib/hosts";
-import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
-import { POST as openAppLink } from "@/app/app/(account-pages)/auth/app-link/open/route";
-import { confirmSignInLink, emailSignInLink } from "@/server/sign-in-link";
 import { actAs, createProject, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 /**
- * Signing in from the mobile app (lib/app-sign-in.ts): Google and the emailed link end in the device's browser with a
- * redirect to the app's link scheme that carries a code and nothing of the session; the app that started the sign-in
- * exchanges the code, with the verifier of the challenge it started with, for a session that works on the API. Only
- * that scheme, on the app's host; no account is made from the app; and the web's own sign-in is as before.
+ * Signing in from the mobile app (lib/app-sign-in.ts): Google and GitHub end in the device's browser with a redirect to
+ * the app's link scheme that carries a code and nothing of the session; the app that started the sign-in exchanges the
+ * code, with the verifier of the challenge it started with, for a session that works on the API. A password is the web's
+ * own sign-in, answered with the session. Only that scheme, on the app's host; no account is made from the app; and the
+ * web's own sign-in is as before.
  */
 
 const APP = appUrl();
@@ -375,174 +371,152 @@ test("the browser's first stop takes the sign-in's state and goes on to the prov
   expect((await proxy("not an address")).status).toBe(400);
 });
 
-/** Asks for the app's sign-in link as the app does. */
-const ask = (email: string, { state = STATE as unknown, challenge = newProof().challenge as unknown, host = undefined as string | undefined } = {}) =>
-  fromApp("/app/sign-in-link", { host, body: { email, state, challenge } });
+const PASSWORD = "correct horse battery staple";
 
-/** The link in the latest "Sign in to Tuti" email to `email`. */
-async function linkTo(email: string) {
-  const message = await mailbox.latestTo(email);
-  expect(message.subject).toBe("Sign in to Tuti");
-  return new URL(message.text.split(/\s+/).find((word) => word.includes("/app/auth/app-link?"))!);
+type Answer = { status: number; body: Record<string, unknown>; setCookie: string[] };
+
+/** The app's password sign-in (or the web's, at `/sign-in/email` with a page's origin), as an answer to compare. */
+async function withPassword(email: string, password = PASSWORD, sent: Sent & { path?: string } = {}): Promise<Answer> {
+  const response = await fromApp(sent.path ?? "/app/sign-in/email", { ...sent, body: { email, password } });
+  return { status: response.status, body: (await response.json()) as Record<string, unknown>, setCookie: response.headers.getSetCookie() };
 }
 
-/** The page the link opens, as text. */
-async function view(link: URL) {
-  const page = await AppSignInLinkPage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(link.searchParams)) } as PageProps<"/app/auth/app-link">);
-  const text = convert(renderToStaticMarkup(page), { wordwrap: false, selectors: [1, 2, 3].map((level) => ({ selector: `h${level}`, options: { uppercase: false } })) });
-  return text.replace(/\s+/g, " ").trim();
-}
+/** The web's own password sign-in, from the app's sign-in page. */
+const onTheWeb = (email: string, password = PASSWORD, headers: Record<string, string> = {}) =>
+  withPassword(email, password, { path: "/sign-in/email", origin: null, headers: { origin: APP.origin, ...headers } });
 
-/** "Open the app" on that page, on `host`: where its form's post sends the browser. */
-async function open(link: URL, { host = APP.host, more = {} as Record<string, string>, cookie = "" } = {}) {
-  const form = new URLSearchParams({ token: link.searchParams.get("token") ?? "", ...more });
-  const headers: Record<string, string> = { host, ...(cookie && { cookie }) };
-  const response = await openAppLink(new Request(`http://${host}/app/auth/app-link/open`, { method: "POST", headers, body: form }));
-  expect(response.status).toBe(303);
-  return { location: response.headers.get("location"), setCookie: response.headers.getSetCookie() };
-}
+const WRONG = { status: 401, body: { code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" }, setCookie: [] };
 
-/** Back on the page, which says the link doesn't work: nothing for the app. */
-const NOTHING = { location: "/app/auth/app-link", setCookie: [] };
-
-const sentTo = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).length;
-
-test("the emailed link opens a page that sends the app a code, once, and leaves the browser signed out", async () => {
-  const { verifier, challenge } = newProof();
-  const asked = await ask(owner.email, { challenge });
-  expect({ status: asked.status, body: await asked.json() }).toEqual({ status: 200, body: { status: true } });
-  const link = await linkTo(owner.email);
-  expect(link.origin + link.pathname).toBe(`${APP.origin}/app/auth/app-link`);
-  // Nothing of what the app asked with is in the link: it's kept with it.
-  expect([...link.searchParams.keys()]).toEqual(["token"]);
-  expect(link.href).not.toContain(challenge);
-
-  // Opening it uses nothing up: it says whose account, and waits for the tap.
-  expect(await view(link)).toBe(`Sign in to the Tuti app as ${owner.email} Open the app It opens the Tuti app, so use the phone or tablet the app is on.`);
-  expect(await view(link)).toContain("Open the app");
-
+test("the app signs in with a password: the session comes back in the answer, bound to the app, and no cookie is set", async () => {
   const before = await sessionsOf(owner.id);
-  const redirect = handedOver((await open(link)).location);
-  expect(redirect).toMatchObject({ to: "tuti://sign-in", state: STATE, error: null });
-  // The browser that opened it (maybe a desk's) gets no cookie: the session is the app's alone.
+  const answer = await withPassword(owner.email.toUpperCase());
+  expect(answer.status).toBe(200);
+  // What the code's exchange answers, and nothing else: no cookie, no user.
+  expect(Object.keys(answer.body).sort()).toEqual(["cookie", "token"]);
+  expect(answer.setCookie).toEqual([]);
   expect(request.written).toEqual([]);
-  const { status, body } = await exchange(redirect.code, verifier);
-  expect(status).toBe(200);
-  expect(await projectsOf(body.token)).toMatchObject({ status: 200, body: { projects: [{ slug: project.slug, role: "OWNER" }] } });
-  expect(await prisma.session.findFirstOrThrow({ where: { userId: owner.id }, orderBy: { createdAt: "desc" } })).toMatchObject({ boundTo: "app" });
-
-  // Used once: again, the app is told so and gets no code, and the page says to ask for a new one.
-  expect(handedOver((await open(link)).location)).toMatchObject({ to: "tuti://sign-in", state: STATE, error: "INVALID_TOKEN", code: null });
-  expect(await view(link)).toBe("This link doesn't work any more It was used already, or it has expired. Ask for a new one in the Tuti app.");
+  const { token, cookie } = answer.body as { token: string; cookie: string };
+  expect(cookie).toBe(`tuti.session_token=${token}`);
   expect(await sessionsOf(owner.id)).toBe(before + 1);
 
-  // Someone who asked for a link to this address and isn't the app that opens it: their code is no use without the
-  // verifier, and the try ends the session.
-  await ask(owner.email, { challenge });
-  const taken = handedOver((await open(await linkTo(owner.email))).location);
-  expect(await exchange(taken.code, newProof().verifier)).toMatchObject(REFUSED);
-  expect(await sessionsOf(owner.id)).toBe(before + 1);
+  expect(await projectsOf(token)).toEqual({ status: 200, body: { projects: [{ slug: project.slug, name: project.name, role: "OWNER", openConversations: 0 }] } });
+  expect(await (await fromApp("/get-session", { cookie })).json()).toMatchObject({ user: { id: owner.id }, session: { boundTo: "app" } });
+  expect((await fromApp("/sign-out", { body: {}, cookie })).status).toBe(200);
+  expect(await projectsOf(token)).toMatchObject({ status: 401 });
 });
 
-test("a link signs in an account only: no address is told apart, and none signs up", async () => {
+test("a wrong password, an unknown address and an account without a password answer alike, and nothing is made", async () => {
+  const before = await sessionsOf(owner.id);
   const stranger = newAddress();
-  const asked = await ask(stranger);
-  expect({ status: asked.status, body: await asked.json() }).toEqual({ status: 200, body: { status: true } });
-  expect(sentTo(stranger)).toBe(0);
+  const google = await signUp("Gus Google");
+  await prisma.account.deleteMany({ where: { userId: google.id, providerId: "credential" } });
+  for (const [email, password] of [
+    [owner.email, "not the password"],
+    [stranger, PASSWORD],
+    [google.email, PASSWORD],
+  ] as const) {
+    expect(await withPassword(email, password), email).toEqual(WRONG);
+    // As the web answers.
+    expect(await onTheWeb(email, password), email).toEqual(WRONG);
+  }
+  expect(await sessionsOf(owner.id)).toBe(before);
   expect(await prisma.user.count({ where: { email: stranger } })).toBe(0);
-
-  // Malformed asks, one without a challenge, and a portal's host are refused; so is a server that sends no email.
-  expect((await ask("not-an-address")).status).toBe(400);
-  expect((await ask(owner.email, { state: "short" })).status).toBe(400);
-  expect((await ask(owner.email, { state: "tuti://evil?state=0123456789" })).status).toBe(400);
-  for (const challenge of [null, "", "short", newProof().verifier + "="]) {
-    expect((await ask(owner.email, { challenge })).status, String(challenge)).toBe(400);
-  }
-  expect((await ask(owner.email, { host: `${project.slug}.localhost:3100` })).status).toBe(400);
-  expect((await withoutEmail(() => ask(owner.email))).status).toBe(400);
-  expect(sentTo(owner.email)).toBe(0);
-
-  // An unverified account gets nothing either, with the same answer: opening a link verifies the address, and its
-  // password may be someone else's, who signed up with the address first.
-  const unverified = await signUp("Una Unverified", undefined, { verified: false });
-  const before = sentTo(unverified.email);
-  const unverifiedAsk = await ask(unverified.email);
-  expect({ status: unverifiedAsk.status, body: await unverifiedAsk.json() }).toEqual({ status: 200, body: { status: true } });
-  expect(sentTo(unverified.email)).toBe(before);
-  // And a link sent while verified that's opened once the account isn't (an address changed back) neither verifies it nor signs the app in.
-  const changed = await signUp("Cal Changed");
-  await ask(changed.email);
-  const changedLink = await linkTo(changed.email);
-  await prisma.user.update({ where: { id: changed.id }, data: { emailVerified: false } });
-  expect(handedOver((await open(changedLink)).location)).toMatchObject({ error: "INVALID_TOKEN", code: null });
-  expect(await prisma.user.findUniqueOrThrow({ where: { id: changed.id }, select: { emailVerified: true } })).toEqual({ emailVerified: false });
-
-  // An account deleted since the link was sent isn't made again by it.
-  const gone = await signUp("Greta Gone");
-  await ask(gone.email);
-  const link = await linkTo(gone.email);
-  await prisma.user.delete({ where: { id: gone.id } });
-  expect(handedOver((await open(link)).location)).toMatchObject({ error: "INVALID_TOKEN", code: null });
-  expect(await prisma.user.count({ where: { email: gone.email } })).toBe(0);
-
-  // Under the limits every emailed link shares.
-  for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR; i++) {
-    expect((await ask(owner.email)).status).toBe(200);
-  }
-  expect((await ask(owner.email)).status).toBe(429);
-  expect(sentTo(owner.email)).toBe(SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
+  // Not an address at all, or nothing: refused before anything is looked up.
+  expect((await withPassword("not-an-address")).status).toBe(400);
+  expect((await fromApp("/app/sign-in/email", { body: { email: owner.email } })).status).toBe(400);
 });
 
-test("the app's link and a portal's are never each other's, and where it goes back to isn't the form's to say", async () => {
-  const { verifier, challenge } = newProof();
-  await ask(owner.email, { challenge });
-  const appLink = await linkTo(owner.email);
-  // On the portal's own confirm, the app's token is a dead link.
-  request.host = `${project.slug}.localhost:3100`;
-  const onPortal = new FormData();
-  onPortal.set("token", appLink.searchParams.get("token")!);
-  onPortal.set("next", "/");
-  expect(await confirmSignInLink(onPortal)).toEqual({ location: "/sign-in?link=failed" });
-  // And the app's own does nothing from a portal's host.
-  expect(await open(appLink, { host: `${project.slug}.localhost:3100` })).toEqual(NOTHING);
-  request.host = APP.host;
+test("an unverified address is refused on a server that sends email, and signed in on one that doesn't, as on the web", async () => {
+  const una = await signUp("Una Unverified", undefined, { verified: false });
+  const before = await sessionsOf(una.id);
+  const sent = () => mailbox.emails.filter((email) => email.to.includes(una.email) && /verify/i.test(email.subject)).length;
+  const verifications = sent();
+  const refused = { status: 403, body: { code: "EMAIL_NOT_VERIFIED", message: "Email not verified" }, setCookie: [] };
+  expect(await withPassword(una.email)).toEqual(refused);
+  // The web refuses it too, and each sends the verification link again, as signing in before verifying does.
+  expect(await onTheWeb(una.email)).toEqual(refused);
+  expect(sent()).toBe(verifications + 2);
+  expect(await sessionsOf(una.id)).toBe(before);
+  // Its owner verifies (the link): the app signs them in.
+  await prisma.user.update({ where: { id: una.id }, data: { emailVerified: true } });
+  expect((await withPassword(una.email)).status).toBe(200);
 
-  // A portal's link, opened as if it were the app's: nothing for the app, and no account from it.
-  const reader = newAddress();
-  const form = new FormData();
-  form.set("email", reader);
-  await emailSignInLink(project.slug, "/", form);
-  const portalLink = new URL((await mailbox.latestTo(reader)).text.split(/\s+/).find((word) => word.includes("/sign-in/link?"))!);
-  expect(await view(portalLink)).toContain("This link doesn't work any more");
-  expect(await open(portalLink)).toEqual(NOTHING);
-  expect(await prisma.user.count({ where: { email: reader } })).toBe(0);
-  expect(await open(new URL(`${APP.origin}/app/auth/app-link?token=${"x".repeat(200)}`))).toEqual(NOTHING);
-
-  // The app's link still works after all of that, and goes back with the state it was asked with whatever the form adds.
-  const redirect = handedOver((await open(appLink, { more: { state: "another-state-0123456789", callbackURL: "tuti://elsewhere", challenge: newProof().challenge } })).location);
-  expect(redirect).toMatchObject({ to: "tuti://sign-in", state: STATE, error: null });
-  expect((await exchange(redirect.code, verifier)).status).toBe(200);
+  // A server without email (as lib/auth.ts sets it up there): signed in, unverified, on the web and from the app.
+  await prisma.user.update({ where: { id: una.id }, data: { emailVerified: false } });
+  const options = (await auth.$context).options.emailAndPassword!;
+  options.requireEmailVerification = false;
+  onTestFinished(() => void (options.requireEmailVerification = true));
+  await withoutEmail(async () => {
+    expect((await onTheWeb(una.email)).status).toBe(200);
+    const answer = await withPassword(una.email);
+    expect(answer.status).toBe(200);
+    expect(await projectsOf(answer.body.token as string)).toEqual({ status: 200, body: { projects: [] } });
+  });
 });
 
-test("a browser signed in to the web app stays signed in as it was when it opens the app's link", async () => {
-  const other = await signUp("Wes Web");
-  const { verifier, challenge } = newProof();
-  await ask(owner.email, { challenge });
-  // Wes's browser opens Olive's link (a shared desk): the app gets Olive's session, the browser keeps Wes's.
-  actAs(other);
-  const sessionsBefore = await sessionsOf(other.id);
-  const opened = await open(await linkTo(owner.email), { cookie: other.cookie });
-  // No cookie for the browser at all: not Olive's, not a new one of Wes's.
-  expect(opened.setCookie).toEqual([]);
-  const redirect = handedOver(opened.location);
-  const { body } = await exchange(redirect.code, verifier);
-  expect(await projectsOf(body.token)).toMatchObject({ status: 200, body: { projects: [{ slug: project.slug }] } });
-  // Its own cookie isn't touched, and isn't the app's.
-  expect(request.written).toEqual([]);
-  expect(/session_token=([^;]+)/.exec(other.cookie)![1]).not.toBe(body.token);
-  expect(await sessionsOf(other.id)).toBe(sessionsBefore);
-  // And Wes's cookie is still Wes's.
-  expect((await auth.api.getSession({ headers: new Headers({ cookie: other.cookie }) }))?.user.id).toBe(other.id);
+test("a password sign-in from the app counts against the web's limit, per visitor", async () => {
+  const context = await auth.$context;
+  context.rateLimit.enabled = true;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => {
+    context.rateLimit.enabled = false;
+    vi.useRealTimers();
+  });
+  const from = (ip: string) => withPassword(owner.email, "not the password", { headers: { "x-forwarded-for": ip } });
+  // Two on the web, one from the app: the web's three tries in ten seconds are used.
+  for (let i = 0; i < 2; i++) {
+    expect((await onTheWeb(owner.email, "not the password", { "x-forwarded-for": "203.0.113.20" })).status).toBe(401);
+  }
+  expect((await from("203.0.113.20")).status).toBe(401);
+  const limited = await fromApp("/app/sign-in/email", { body: { email: owner.email, password: PASSWORD }, headers: { "x-forwarded-for": "203.0.113.20" } });
+  expect(limited.status).toBe(429);
+  expect(limited.headers.get("x-retry-after")).toMatch(/^\d+$/);
+  expect(limited.headers.getSetCookie()).toEqual([]);
+  expect((await onTheWeb(owner.email, PASSWORD, { "x-forwarded-for": "203.0.113.20" })).status).toBe(429);
+  // Another visitor isn't, and the right password still works for them.
+  expect((await withPassword(owner.email, PASSWORD, { headers: { "x-forwarded-for": "203.0.113.21" } })).status).toBe(200);
+  // Ten seconds on, the visitor tries again.
+  vi.setSystemTime(Date.now() + 11_000);
+  expect((await from("203.0.113.20")).status).toBe(401);
+});
+
+test("only the app gets a token: a page's request, one without the app's scheme, and a portal's host are refused", async () => {
+  const before = await sessionsOf(owner.id);
+  // No `expo-origin`, or a page's Origin beside it (a browser always sends one with a post): the app's own host's, another site's, a sandboxed frame's.
+  expect((await withPassword(owner.email, PASSWORD, { origin: null })).status).toBe(403);
+  for (const origin of [APP.origin, "https://evil.example", "null"]) {
+    expect((await withPassword(owner.email, PASSWORD, { headers: { origin } })).status, origin).toBe(403);
+  }
+  // Passwords are typed on Tuti's own host only, never on a portal's, which its team may run.
+  expect((await withPassword(owner.email, PASSWORD, { host: `${project.slug}.localhost:3100` })).status).toBe(403);
+  expect(await sessionsOf(owner.id)).toBe(before);
+
+  // Signed in on the device's browser or not, the answer is a new session of its own: a cookie sent along is no part of it.
+  const signedIn = await withPassword(owner.email, PASSWORD, { cookie: owner.cookie });
+  expect(signedIn.status).toBe(200);
+  expect(decodeURIComponent(signedIn.body.token as string)).not.toBe(decodeURIComponent(/session_token=([^;]+)/.exec(owner.cookie)![1]!));
+});
+
+test("a reader's password gives the app no project, and a person their project's app deleted no session at all", async () => {
+  // A reader: an account, on no team. Signed in as on the web, and the API lists nothing and lets them into nothing.
+  const reader = await signUp("Rita Reader");
+  const answer = await withPassword(reader.email);
+  expect(answer.status).toBe(200);
+  const token = answer.body.token as string;
+  expect(await projectsOf(token)).toEqual({ status: 200, body: { projects: [] } });
+  const inbox = await listConversations(new Request(`${APP.origin}/api/v1/conversations`, { headers: { host: APP.host, authorization: `Bearer ${token}`, "tuti-project": project.slug } }), {
+    params: Promise.resolve({ path: ["conversations"] }),
+  });
+  expect(inbox.status).toBe(403);
+  // Deleted by their project's app (users.delete): the web's session for them is refused, and so is the app's.
+  await prisma.user.update({ where: { id: reader.id }, data: { deletedAt: new Date() } });
+  expect(await projectsOf((await withPassword(reader.email)).body.token as string)).toMatchObject({ status: 401 });
+});
+
+test("the emailed link for the app is gone", async () => {
+  const { challenge } = newProof();
+  expect((await fromApp("/app/sign-in-link", { body: { email: owner.email, state: STATE, challenge } })).status).toBe(404);
+  expect(mailbox.emails.filter((email) => email.to.includes(owner.email) && email.subject === "Sign in to Tuti")).toEqual([]);
 });
 
 test("a verification link never opens the app: anyone can have one sent, and it signs in whoever opens it", async () => {
