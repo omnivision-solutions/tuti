@@ -66,3 +66,6 @@ export async function keepSession<T>(next: T, show: (next: T) => void, write: (n
   await write(next);
   show(next);
 }
+
+/** The session in use once a change to `next` is saved (the project chosen): only if it's still that session in use. */
+export const afterChanged = <T extends { token: string }>(now: T | null | undefined, next: T) => (now?.token === next.token ? next : now);

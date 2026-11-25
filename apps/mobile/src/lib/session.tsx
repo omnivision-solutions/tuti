@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
-import { afterEnded, forgetSession, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
+import { afterChanged, afterEnded, forgetSession, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
 export type { Session };
@@ -70,7 +70,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       session,
       signIn: (signedIn) => save(signedIn),
       signOut,
-      setProject: (project) => save(session ? { ...session, project } : null),
+      // Shown once saved, and only if it's still the session in use (signed out meanwhile stays signed out).
+      setProject: (project) =>
+        session ? keepSession({ ...session, project }, (next) => setSession((now) => afterChanged(now, next)), writeSession) : Promise.resolve(),
       api: session ? createApi(session, () => void ended(session)) : null,
     }),
     [session, save, signOut, ended],

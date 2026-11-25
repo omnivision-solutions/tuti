@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { afterEnded, dueForRecheck, forgetSession, keepSession, readSession, RECHECK_MS, recheckOnForeground, sessionHolds, writeSession } from "./session-store";
+import { afterChanged, afterEnded, dueForRecheck, forgetSession, keepSession, readSession, RECHECK_MS, recheckOnForeground, sessionHolds, writeSession } from "./session-store";
 
 const stored = new Map<string, string>();
 const store = vi.hoisted(() => ({ failReads: false }));
@@ -82,6 +82,14 @@ describe("keeping a session", () => {
     await keepSession(session, (next) => shown.push(next), writeSession);
     expect(shown).toEqual([session]);
     expect(await readSession()).toEqual(session);
+  });
+  it("shows a change saved late only if it's still the session in use", () => {
+    const chosen = { ...session, project: "northwind" };
+    expect(afterChanged(session, chosen)).toBe(chosen);
+    // Signed out, or signed in as someone else, while it was saving: left as it is.
+    expect(afterChanged(null, chosen)).toBeNull();
+    const other = { ...session, token: "token-2" };
+    expect(afterChanged(other, chosen)).toBe(other);
   });
 });
 
