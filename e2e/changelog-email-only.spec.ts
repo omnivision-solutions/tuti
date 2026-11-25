@@ -52,4 +52,9 @@ test("an email-only entry: the team marks it in the editor, it's emailed to subs
   await expect(visitor.getByText("Nothing here yet")).toBeVisible();
   await visitor.goto("/changelog/1");
   await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
+
+  // On a private portal (which emails nobody its changelog), a new entry's Email only promises no email.
+  await api("/portal", { access: "private" }, "PATCH");
+  await team.goto(`/app/${slug}/changelog/new`);
+  await expect(team.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Email only" })).toHaveAccessibleDescription("Listed nowhere: only your team sees it.");
 });
