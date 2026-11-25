@@ -15,8 +15,9 @@ import {
   removeChangelogPullRequest,
   updateChangelogEntry,
 } from "@/server/operations/changelog";
+import { addChangelogPullRequests as addAction } from "@/server/changelog";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** The changelog's pull requests by hand: the merged ones no entry has, adding them to the running draft, taking one out of a draft. */
 
@@ -486,4 +487,16 @@ test("what adding costs, said before it's added: with AI credits on, each one's 
   } finally {
     await model.close();
   }
+});
+
+test("in the app, more ticked than one request takes are added in batches, into the one running draft", async () => {
+  const numbers = Array.from({ length: 55 }, (_, i) => 200 + i);
+  for (const number of numbers) {
+    github.pullRequest(repo, { number, title: `Change ${number}`, mergedAt: days(2) });
+  }
+  actAs(owner);
+
+  expect(await addAction(project.slug, numbers.map((number) => ({ repo, number })))).toEqual({ number: 1, added: 55 });
+
+  expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id, number: 1 } } })).toBe(55);
 });

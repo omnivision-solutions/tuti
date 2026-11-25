@@ -14,6 +14,7 @@ import {
   composeCover,
   addChangelogPullRequests as addPullRequestsOperation,
   addedAnalysisCost,
+  MAX_ADDED_PULL_REQUESTS,
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
@@ -177,8 +178,11 @@ export async function addChangelogPullRequests(
 ): Promise<{ error?: string; number?: number | null; added?: number }> {
   let added: { number: number | null; added: number } | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    const done = await call(addPullRequestsOperation, context, { pullRequests });
-    added = { number: done.number, added: done.added.length };
+    // The dialog can tick more than one request takes: in batches, into the same running draft.
+    for (let i = 0; i < pullRequests.length; i += MAX_ADDED_PULL_REQUESTS) {
+      const done = await call(addPullRequestsOperation, context, { pullRequests: pullRequests.slice(i, i + MAX_ADDED_PULL_REQUESTS) });
+      added = { number: done.number ?? added?.number ?? null, added: (added?.added ?? 0) + done.added.length };
+    }
   });
   return added ?? result;
 }
