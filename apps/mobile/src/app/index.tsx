@@ -461,6 +461,12 @@ export default function Inbox() {
   const unchoose = useCallback(() => navigation.setParams({ c: undefined, p: undefined } as never), [navigation]);
   // A conversation opened on its own, or a notification about to open one: the choice is forgotten (`forgetChosen`).
   useEffect(() => onForgetChosen(unchoose), [unchoose]);
+  // One chosen in another project (switched since): forgotten, so switching back never brings it back unasked.
+  useEffect(() => {
+    if (params.c && params.p !== project) {
+      unchoose();
+    }
+  }, [params.c, params.p, project, unchoose]);
   // The pane emptied by its conversation (a Send and close): a screen reader's focus, on the control that's gone, goes
   // to that conversation's row, or to the empty pane's note once the row has left the list.
   const rowNodes = useRef(new Map<number, HostInstance>());
@@ -725,9 +731,10 @@ export default function Inbox() {
         onCancelButtonPress={() => setTyped("")}
         onClose={() => setTyped("")}
       />
-      {wide ? (
-        <View style={styles.panes}>
-          <View style={[styles.listPane, { width: listWidth(width), borderRightColor: colors.border }]}>{listView}</View>
+      {/* The list under the same parent in both, so a fold or a resize keeps it (and where it's scrolled to). */}
+      <View style={styles.panes}>
+        <View style={wide ? [styles.listPane, { width: listWidth(width), borderRightColor: colors.border }] : styles.wholeList}>{listView}</View>
+        {wide && (
           <View style={[styles.conversationPane, { backgroundColor: colors.card, paddingTop: Platform.OS === "ios" ? headerHeight : 0 }]} testID="conversation-pane">
             {chosen !== null ? (
               <ConversationPane number={chosen} onLeave={leave} />
@@ -739,10 +746,8 @@ export default function Inbox() {
               </View>
             )}
           </View>
-        </View>
-      ) : (
-        listView
-      )}
+        )}
+      </View>
     </>
   );
 }
@@ -798,5 +803,6 @@ const styles = StyleSheet.create({
   panes: { flex: 1, flexDirection: "row" },
   listPane: { borderRightWidth: StyleSheet.hairlineWidth },
   conversationPane: { flex: 1 },
+  wholeList: { flex: 1 },
   emptyPane: { flex: 1, justifyContent: "center" },
 });

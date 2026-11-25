@@ -1469,6 +1469,39 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     expect(screen.getByTestId("conversation-pane")).toHaveStyle({ paddingTop: 120 });
   });
 
+  it("forgets one chosen in a project switched away from: back in it, narrowed, nothing is pushed unasked", async () => {
+    mockParams = { c: "1", p: "acme" };
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const view = await render(<Inbox />);
+    await screen.findByText("Conversation #1");
+    try {
+      mockSession.project = "kite";
+      await view.rerender(<Inbox />);
+      expect(router().setParams).toHaveBeenCalledWith({ c: undefined, p: undefined });
+      setWindow(390, 844);
+      await view.rerender(<Inbox />);
+      mockSession.project = "acme";
+      await view.rerender(<Inbox />);
+      expect(router().push).not.toHaveBeenCalled();
+    } finally {
+      mockSession.project = "acme";
+    }
+  });
+
+  it("keeps the list itself, and where it's scrolled to, when the window narrows or widens", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const view = await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    const list = screen.getByTestId("inbox-list");
+
+    setWindow(390, 844);
+    await view.rerender(<Inbox />);
+    expect(screen.getByTestId("inbox-list")).toBe(list);
+    setWindow(1280, 800);
+    await view.rerender(<Inbox />);
+    expect(screen.getByTestId("inbox-list")).toBe(list);
+  });
+
   it("keeps one pane on a phone turned sideways: wide, but too short for two", async () => {
     setWindow(932, 430);
     serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
