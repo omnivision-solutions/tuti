@@ -37,6 +37,7 @@ const system = vi.hoisted(() => ({
   channels: [] as string[],
   asked: 0,
   unregistered: 0,
+  gate: undefined as Promise<void> | undefined,
 }));
 vi.mock("expo-notifications", () => ({
   AndroidImportance: { HIGH: 4 },
@@ -50,7 +51,10 @@ vi.mock("expo-notifications", () => ({
     system.permissions = { granted: true, status: "granted", canAskAgain: true };
   },
   setNotificationChannelAsync: async (id: string) => void system.channels.push(id),
-  getExpoPushTokenAsync: async ({ devicePushToken }: { devicePushToken?: { data: string } }) => ({ data: devicePushToken ? `ExponentPushToken[${devicePushToken.data}]` : system.token }),
+  getExpoPushTokenAsync: async ({ devicePushToken }: { devicePushToken?: { data: string } }) => {
+    await system.gate;
+    return { data: devicePushToken ? `ExponentPushToken[${devicePushToken.data}]` : system.token };
+  },
 }));
 
 // Each test gets the module afresh: what it keeps in memory (the id read, the token registered) starts empty.
@@ -74,6 +78,7 @@ beforeEach(() => {
   system.channels = [];
   system.asked = 0;
   system.unregistered = 0;
+  system.gate = undefined;
 });
 
 describe("the device's id", () => {
@@ -220,6 +225,18 @@ describe("registering the device", () => {
     // And it's the one kept on the phone for the next launch.
     vi.resetModules();
     expect(await (await load()).deviceId()).toBe(fresh);
+  });
+
+  it("doesn't register a session signed out while its token was still being read", async () => {
+    const { registerDevice, removeDevice } = await load();
+    let release: () => void = () => {};
+    system.gate = new Promise((resolve) => (release = resolve));
+    const registering = registerDevice(api, session, "ios");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await removeDevice(api);
+    release();
+    await registering;
+    expect(calls.filter((call) => call.init?.method === "POST")).toEqual([]);
   });
 
   it("keeps the token of a sign-in that registered while the removal before it was still failing", async () => {

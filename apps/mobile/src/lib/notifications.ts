@@ -97,20 +97,25 @@ let turn = 0;
  * the new one the system just gave (fetching it again would fire its listener again).
  */
 export async function registerDevice(api: Api, session: { token: string }, platform: Platform, devicePushToken?: Notifications.DevicePushToken) {
-  turn++;
+  const mine = ++turn;
   const project = projectId();
   if (!project || !(await permission()).allowed) {
     return;
   }
   await ensureChannel(platform);
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: project, devicePushToken });
+  const id = await deviceId();
+  // Signed out meanwhile (or a newer registration took over): this one would outlive the removal, under the new id.
+  if (turn !== mine) {
+    return;
+  }
   const key = `${session.token}\n${token}`;
   if (registered === key) {
     return;
   }
   registered = key;
   try {
-    await api("/devices", { method: "POST", body: { deviceId: await deviceId(), token, platform } });
+    await api("/devices", { method: "POST", body: { deviceId: id, token, platform } });
   } catch (error) {
     registered = null;
     throw error;
