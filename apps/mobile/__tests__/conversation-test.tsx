@@ -4,7 +4,7 @@ import { AccessibilityInfo } from "react-native";
 
 import ConversationRoute from "@/app/conversation/[number]";
 import { ApiError } from "@/lib/api";
-import { cacheGeneration, conversationKey, forgetCached, keep } from "@/lib/offline";
+import { cached, cacheGeneration, conversationKey, forgetCached, keep } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
 
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
@@ -213,6 +213,31 @@ describe("reading offline", () => {
     expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
     // Said to VoiceOver too.
     expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Offline · updated/));
+  });
+
+  it("dates the note from the last load that landed, and moves it on with the clock", async () => {
+    jest.useFakeTimers({ now: new Date("2026-11-25T10:00:00Z") });
+    mockApi.mockImplementation(async (path) => (path === "/conversations/12" ? conversation([message({})]) : {}));
+    await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    // Nothing kept (signed out elsewhere meanwhile, say): the note still dates from that load.
+    forgetCached();
+
+    await act(() => jest.advanceTimersByTimeAsync(15 * 60_000));
+    mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
+    await act(async () => mockFocus!());
+    expect(screen.getByText("Offline · updated 15 minutes ago")).toBeTruthy();
+    await act(() => jest.advanceTimersByTimeAsync(5 * 60_000));
+    expect(screen.getByText("Offline · updated 20 minutes ago")).toBeTruthy();
+  });
+
+  it("keeps nothing from a load that answers after everything was forgotten (signed out)", async () => {
+    let answer!: (conversation: Conversation) => void;
+    mockApi.mockImplementation((path) => (path === "/conversations/12" ? new Promise((resolve) => (answer = resolve as never)) : Promise.resolve({})));
+    await render(<ConversationRoute />);
+    forgetCached();
+    await act(async () => answer(conversation([message({ body: "Another account's customer." })])));
+    expect(cached(conversationKey(mockSession, 12))).toBeNull();
   });
 
   it("says why when it was never opened", async () => {

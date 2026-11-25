@@ -71,7 +71,7 @@ import {
 } from "@/lib/conversation";
 import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { lookAt } from "@/lib/notifications";
-import { cached, cacheGeneration, conversationKey, isOffline, keep as keepCached, offlineNote } from "@/lib/offline";
+import { cached, cacheGeneration, conversationKey, isOffline, keep as keepCached, offlineNote, useMinutes } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -120,8 +120,10 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   // The newest fetch wins: an older one answering late doesn't put back what it had. Rejects when it can't (the screen's
   // own calls go through `refresh`).
   const asked = useRef(0);
-  // What's shown came from the server: offline, it stays (what was kept may be older), only said to be offline.
-  const fromServer = useRef(false);
+  // When what's shown last came from the server (null: it didn't): offline, it stays (what was kept may be older), said
+  // to be offline since then.
+  const loadedAt = useRef<number | null>(null);
+  const [now] = useMinutes();
   const load = useCallback((): Promise<Conversation> => {
     const ask = ++asked.current;
     const since = draftsGeneration();
@@ -135,7 +137,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         afterFetch(draftKey, loaded, since);
         if (ask === asked.current) {
           setConversation(loaded);
-          fromServer.current = true;
+          loadedAt.current = Date.now();
           // Not over a change the details sheet made while this was on its way.
           showTriage(draftKey, loaded, triageSince);
           setError(null);
@@ -149,8 +151,8 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         if (ask === asked.current) {
           // No connection: what's shown stays, or it's as it was last kept, if it was, saying so.
           const saved = isOffline(e) ? cached<Conversation>(cacheKey) : null;
-          if (isOffline(e) && fromServer.current) {
-            setSavedAt((now) => now ?? saved?.at ?? Date.now());
+          if (isOffline(e) && loadedAt.current !== null) {
+            setSavedAt(loadedAt.current);
             setError(null);
           } else if (saved) {
             setConversation(saved.data);
@@ -394,7 +396,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
             ) : savedAt !== null ? (
               // Kept from when it was last loaded: said quietly, with when.
               <Text style={[styles.meta, styles.stale, { color: colors.muted }]} accessibilityLiveRegion="polite">
-                {offlineNote(savedAt)}
+                {offlineNote(savedAt, now)}
               </Text>
             ) : undefined
           }

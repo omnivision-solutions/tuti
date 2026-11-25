@@ -1,4 +1,5 @@
 import { SQLiteStorage } from "expo-sqlite/kv-store";
+import { useEffect, useState } from "react";
 
 import { spokenAgeOf } from "./inbox";
 
@@ -70,6 +71,16 @@ export function forgetCached() {
 
 /** Whether a load failed for want of a connection (the API's words for it), rather than the server's answer. */
 export const isOffline = (error: unknown) => (error as { code?: string } | null)?.code === "unreachable";
+
+/** The time now, moved on every minute: the Inbox's ages and the offline note move on while nothing else changes. */
+export function useMinutes() {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
+  return [now, setNow] as const;
+}
 
 /** The quiet note over what was kept: "Offline · updated 5 minutes ago". */
 export const offlineNote = (at: number, now = Date.now()) => `Offline · updated ${spokenAgeOf(new Date(at).toISOString(), now)}`;

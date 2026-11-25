@@ -5,7 +5,7 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, AppState } from "react-native
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
-import { cacheGeneration, forgetCached, inboxKey, keep } from "@/lib/offline";
+import { cached, cacheGeneration, forgetCached, inboxKey, keep, projectsKey } from "@/lib/offline";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
 jest.mock("expo-router", () => {
@@ -34,12 +34,20 @@ jest.mock("@/components/notifications", () => ({ offerNotifications: () => mockO
 let mockFocus: (() => void) | null = null;
 
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
+const mockSessions = new Map<string, typeof mockSession>();
 const mockApi = jest.fn<(path: string, init?: unknown) => Promise<unknown>>();
 const mockSetProject = jest.fn<(slug: string) => Promise<void>>(() => Promise.resolve());
 const mockSignOut = jest.fn<() => Promise<void>>(() => Promise.resolve());
 jest.mock("@/lib/session", () => ({
   useApi: () => mockApi,
-  useSession: () => ({ session: mockSession, setProject: mockSetProject, signOut: mockSignOut }),
+  // A session object per project, as the app has one when the project changes: what a load started for one keeps.
+  useSession: () => {
+    const key = String(mockSession.project);
+    if (!mockSessions.has(key)) {
+      mockSessions.set(key, { ...mockSession });
+    }
+    return { session: mockSessions.get(key)!, setProject: mockSetProject, signOut: mockSignOut };
+  },
 }));
 // The stream is tested on its own (src/lib/live.test.ts): here the test sends its updates.
 let mockLive: ((update: { kind: "all" } | { kind: "conversation"; number: number }) => void) | null = null;
@@ -1034,6 +1042,45 @@ describe("reading offline", () => {
     expect(screen.getByRole("tab", { name: "Needs reply, 4" })).toBeTruthy();
     expect(screen.getByTestId("switcher-label")).toHaveTextContent("Acme");
     expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+  });
+
+  it("keeps a project's chips when an older load's counts fail offline after a switch", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByRole("tab", { name: "Needs reply, 4" });
+
+    // Acme's counts are asked for again, and hang; Kite Labs is chosen, and its own answer.
+    const served = mockApi.getMockImplementation()!;
+    let failAcme!: () => void;
+    mockApi.mockImplementation((path, init) =>
+      path === "/inbox/views"
+        ? mockSession.project === "acme"
+          ? new Promise((_, reject) => (failAcme = () => reject(offline())))
+          : Promise.resolve({ views: VIEWS.map((v) => (v.view === "open" ? { ...v, count: 1 } : v)) })
+        : served(path, init),
+    );
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    try {
+      mockSession.project = "kite";
+      await screen.rerender(<Inbox />);
+      expect(await screen.findByRole("tab", { name: "Needs reply, 1" })).toBeTruthy();
+      await act(async () => failAcme());
+      expect(screen.getByRole("tab", { name: "Needs reply, 1" })).toBeTruthy();
+    } finally {
+      mockSession.project = "acme";
+    }
+  });
+
+  it("keeps no projects from a load that answers after everything was forgotten (signed out)", async () => {
+    let answer!: (value: unknown) => void;
+    serve({});
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (path === "/projects" ? new Promise((resolve) => (answer = resolve)) : served(path, init)));
+    await render(<Inbox />);
+    forgetCached();
+    await act(async () => answer({ projects: PROJECTS }));
+    expect(cached(projectsKey(mockSession))).toBeNull();
   });
 
   it("never shows another project's counts over a project's kept rows", async () => {

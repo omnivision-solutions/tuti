@@ -10,7 +10,7 @@ import { onRead } from "@/lib/conversation";
 import { type Change, snoozeTime, updateConversation } from "@/lib/details";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
-import { cached, cacheGeneration, inboxKey, isOffline, keep as remember, offlineNote, projectsKey, viewsKey } from "@/lib/offline";
+import { cached, cacheGeneration, inboxKey, isOffline, keep as remember, offlineNote, projectsKey, useMinutes, viewsKey } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -61,7 +61,7 @@ export default function Inbox() {
   const [loaded, setList] = useState<List | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [now, setNow] = useState(Date.now);
+  const [now, setNow] = useMinutes();
   const [loads] = useState(latestOnly);
   /**
    * Swiped rows, hidden from the list: while the server hasn't answered (null), then until a load of the list that
@@ -95,12 +95,6 @@ export default function Inbox() {
   // Notifications are offered here, where they make sense, rather than at launch: once on this phone.
   useEffect(() => {
     void offerNotifications();
-  }, []);
-
-  // The rows' ages move on while nothing else changes.
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(tick);
   }, []);
 
   // The search waits for typing to pause. A search's error isn't the next one's; the same search keeps it.
@@ -170,6 +164,10 @@ export default function Inbox() {
         if (!isOffline(e)) {
           throw e;
         }
+        // Not once a newer load (another project's, say) has started.
+        if (!loads.isLatest(mine)) {
+          return;
+        }
         // The chips as they were last kept.
         const kept = cached<InboxView[]>(viewsKey(session!))?.data;
         setCounts((now) => (now?.for === session!.project || !kept ? now : { for: session!.project, views: kept }));
@@ -222,7 +220,7 @@ export default function Inbox() {
         },
       );
     },
-    [api, project, view, q, key, loads, loadCounts, changeSwipes, session],
+    [api, project, view, q, key, loads, loadCounts, changeSwipes, session, setNow],
   );
   useEffect(() => {
     void loadAll();
@@ -328,7 +326,7 @@ export default function Inbox() {
         // The next change, or the stream's next opening, fetches it again.
       }
     },
-    [api, project, view, loads, rowLoads],
+    [api, project, view, loads, rowLoads, setNow],
   );
 
   // A swipe's change: the row is hidden at once. When the server answers, either way, the list shown then is loaded again
