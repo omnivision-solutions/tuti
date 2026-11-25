@@ -1778,8 +1778,24 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await expect(dialog.getByRole("button", { name: "Add 0 pull requests" })).toBeDisabled();
   await row("Add a dark theme").check();
   await row("Export to CSV").check();
+  // While it adds (its answer held here), the dialog stays: what's typed meanwhile would be lost when the page reloads.
+  let releaseAdd!: () => void;
+  const addHeld = new Promise<void>((resolve) => (releaseAdd = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await addHeld;
+    await route.fulfill({ response });
+  });
   await dialog.getByRole("button", { name: "Add 2 pull requests" }).click();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await team.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  releaseAdd();
   await expect(team.getByText("Added 2 pull requests")).toBeVisible();
+  await team.unroute("**/*");
   await expect(dialog).toBeHidden();
 
   // In the sidebar's list and in the text, a line each.

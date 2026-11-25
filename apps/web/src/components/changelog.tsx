@@ -1055,6 +1055,9 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
   const [found, setFound] = useState<{ error?: string; missing?: MissingChanges } | null>(null);
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
+  // Adding (not reading GitHub, which can be left): the dialog stays until it's done, or what's typed meanwhile would be
+  // lost when the page reloads with the added lines.
+  const [adding, startAdding] = useTransition();
   const missing = found?.missing;
   const key = (pr: { repo: string; number: number }) => `${pr.repo}#${pr.number}`;
   const picked = missing?.pullRequests.filter((pr) => !unticked.has(key(pr))) ?? [];
@@ -1070,7 +1073,7 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
   const add = () =>
     // Into this draft's text: what isn't saved would be lost (adding to another draft leaves this one alone).
     (addsTo !== null || saved()) &&
-    startTransition(async () => {
+    startAdding(async () => {
       focusPullRequests.next = addsTo === null;
       const result = await addChangelogPullRequests(
         projectSlug,
@@ -1096,6 +1099,9 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (adding) {
+          return;
+        }
         setOpen(next);
         if (next) {
           setFound(null);
@@ -1107,7 +1113,7 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
         <PlusIcon />
         Add changes…
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-lg">
+      <DialogContent showCloseButton={!adding} className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add changes</DialogTitle>
           <DialogDescription>
@@ -1171,12 +1177,12 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
           </>
         )}
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+          <Button type="button" variant="outline" disabled={adding} onClick={() => setOpen(false)}>
             Cancel
           </Button>
           {missing && missing.pullRequests.length > 0 && (
-            <Button type="button" disabled={pending || picked.length === 0} focusableWhenDisabled onClick={add}>
-              {pending ? "Adding…" : `Add ${plural(picked.length, "pull request")}`}
+            <Button type="button" disabled={pending || adding || picked.length === 0} focusableWhenDisabled onClick={add}>
+              {adding ? "Adding…" : `Add ${plural(picked.length, "pull request")}`}
             </Button>
           )}
         </DialogFooter>
