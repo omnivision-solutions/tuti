@@ -565,6 +565,9 @@ test("only the link and the token-like parts of it are taken out, not ordinary w
   // A token of letters only in the path: a long one, or one in both cases; a page's name beside it stays.
   expect(withoutLink("On dashboard with qwertyuiopasdfgh", "https://app.example.com/dashboard/qwertyuiopasdfgh")).toBe("On dashboard with [sign-in link]");
   expect(withoutLink("Used AbcdEfghIjkl", "https://app.example.com/magic/AbcdEfghIjkl")).toBe("Used [sign-in link]");
+  // Page names with - or _ stay; the tokens beside them don't.
+  expect(withoutLink("On accept-invite with Zk3mQ9xLp2", "https://app.example.com/accept-invite/Zk3mQ9xLp2")).toBe("On accept-invite with [sign-in link]");
+  expect(withoutLink("On magic_link with abc123def456", "https://app.example.com/users/magic_link?token=abc123def456")).toBe("On magic_link with [sign-in link]"); // gitleaks:allow
   // And one in a fragment of key=value pairs.
   expect(withoutLink("Used qwertyuiopas", "https://site.example.com/#recovery_token=qwertyuiopas&type=recovery")).toBe("Used [sign-in link]");
 });

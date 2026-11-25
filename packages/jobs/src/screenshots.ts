@@ -545,10 +545,10 @@ function tokensIn(address: string, depth: number): string[] {
 }
 
 /**
- * A path segment that looks like a token, not a page: 16 characters or more, or 8 or more with a digit, a `-` or `_`, or
- * both cases (`qwertyuiopasdfgh`, `AbcdEfgh`, `a1b2c3d4`; not `dashboard` or `settings`).
+ * A path segment that looks like a token, not a page: 16 characters or more, or 8 or more with a digit or both cases
+ * (`qwertyuiopasdfgh`, `AbcdEfgh`, `a1b2c3d4`; not `dashboard`, `accept-invite` or `magic_link`).
  */
-const tokenLike = (part: string) => part.length >= 16 || (part.length >= 8 && (/[\d_-]/.test(part) || (/[a-z]/.test(part) && /[A-Z]/.test(part))));
+const tokenLike = (part: string) => part.length >= 16 || (part.length >= 8 && (/\d/.test(part) || (/[a-z]/.test(part) && /[A-Z]/.test(part))));
 
 /** The agent's answer, from its output (by the schema) or its text, the sign-in link taken out; null when there's none to read. */
 function readAnswer(summary: RunSummary, link: string | null): Omit<Answer, "files"> | null {
