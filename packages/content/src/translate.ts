@@ -99,7 +99,8 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
     const pushText = (raw: string) => {
       const value = unescape(flat(raw));
       if (!value) return;
-      fill();
+      // Only words fill a tag: a link around a space is a link no one can see.
+      if (value.trim()) fill();
       const marks = stack.map((tag) => tags.get(tag.id)!);
       const prev = result.at(-1);
       if (prev?.type === "text" && !prev.marks?.some((m) => !(m.type! in TAG_LETTER)) && JSON.stringify(prev.marks ?? []) === JSON.stringify(marks)) {
@@ -114,7 +115,10 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
       if (match[0].startsWith("<br")) {
         fill();
         // The source's own break, in order (the counts match: checked above), attributes and all.
-        result.push(structuredClone(sourceBreaks[result.filter((node) => node.type === "hardBreak").length] ?? { type: "hardBreak" }));
+        // Its marks are the open tags', like the text around it (the model may have moved it out of one).
+        const source = sourceBreaks[result.filter((node) => node.type === "hardBreak").length];
+        const marks = stack.map((tag) => tags.get(tag.id)!);
+        result.push({ type: "hardBreak", ...(source?.attrs && { attrs: structuredClone(source.attrs) }), ...(marks.length > 0 && { marks }) });
       } else if (match[4]) {
         const id = Number(match[4]);
         if (!kept.has(id) || seenKept.has(id)) return `placeholder x${id} is unknown or repeated`;
@@ -227,9 +231,8 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
   const parts = text.split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8})/);
   // A URL's closing parenthesis is left out unless the URL opened one (".../Function_(mathematics)"): take it back.
   for (let i = 1; i < parts.length; i += 2) {
-    const url = parts[i]!;
-    if (/^https?:/.test(url) && (url.match(/\(/g) ?? []).length > (url.match(/\)/g) ?? []).length && parts[i + 1]!.startsWith(")")) {
-      parts[i] = `${url})`;
+    while (/^https?:/.test(parts[i]!) && (parts[i]!.match(/\(/g) ?? []).length > (parts[i]!.match(/\)/g) ?? []).length && parts[i + 1]!.startsWith(")")) {
+      parts[i] = `${parts[i]})`;
       parts[i + 1] = parts[i + 1]!.slice(1);
     }
   }

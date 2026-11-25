@@ -286,3 +286,11 @@ test("a newline the model adds itself is a space, in documents and plain text", 
   const { apply } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hi there friend" }] }] });
   expect(apply({ "1": "Hallo\n zusammen" }).doc.content![0]!.content).toEqual([{ type: "text", text: "Hallo zusammen" }]);
 });
+
+test("a moved break takes the open tags' marks, a tag around a space is empty, nested parentheses stay in the URL", () => {
+  const bold = { type: "bold" };
+  const { apply, check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Bold words", marks: [bold] }, { type: "hardBreak", marks: [bold] }, { type: "text", text: "plain words here" }] }] });
+  expect(check("1", "<b1> </b1>Fette Wörter<br/>normale Wörter")).toBe("<b1> is empty");
+  expect(apply({ "1": "<b1>Fette Wörter</b1><br/>normale Wörter" }).doc.content![0]!.content![1]).toEqual({ type: "hardBreak" });
+  expect(segmentOfText("See https://example.com/Foo_(bar_(baz)) now").segment.text).toBe("See <x1/> now");
+});
