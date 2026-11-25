@@ -394,3 +394,11 @@ test("a reply's translation for an id it wasn't asked for is ignored", async () 
   });
   expect(out.memory).toEqual({ "Alpha one two three": "Alfa eins zwei drei", "Bravo one two three": "Bravo eins zwei drei" });
 });
+
+test("a real <br/> stays a break when the source also has <br/> as text; unchanged text after a missing reply is still untranslated", async () => {
+  const out = await translateText("Use <br/> to break\nthe line here", { from: "English", to: "German", ask: async () => '{"segments": {"1": "Nutze &lt;br/&gt; für einen Umbruch<br/>der Zeile hier"}}' });
+  expect(out.text).toBe("Nutze <br/> für einen Umbruch\nder Zeile hier");
+  const replies = ["{}", '{"segments": {"1": "Readers vote on posts they like."}}'];
+  const doc = await translateDoc({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readers vote on posts they like." }] }] }, { from: "English", to: "German", ask: async () => replies.shift()! });
+  expect(doc.problems).toEqual([{ id: "1", reason: "it isn't translated" }]);
+});

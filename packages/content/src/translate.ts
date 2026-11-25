@@ -387,7 +387,9 @@ function asText(segment: Segment, reply: string | undefined): string | undefined
   // Compared as the source has it, whatever the case or spacing ("<H1>", "<br />" for "&lt;h1&gt;", "&lt;br/&gt;").
   const norm = (tag: string) => tag.toLowerCase().replace(/\s/g, "");
   const asTextInSource = new Set([...segment.text.matchAll(/&lt;\/?[a-z][\w-]{0,30}\s?\/?&gt;/gi)].map((m) => norm(unescape(m[0]))));
-  return reply?.replace(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi, (tag) => (!segment.text.includes(tag) && asTextInSource.has(norm(tag)) ? escape(tag) : tag));
+  // A tag shaped like the source's own markup ("<br/>" for a real break) is markup, whatever the text also has.
+  const markupInSource = new Set([...segment.text.matchAll(MARKUP)].map((m) => norm(m[0])));
+  return reply?.replace(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi, (tag) => (!markupInSource.has(norm(tag)) && asTextInSource.has(norm(tag)) ? escape(tag) : tag));
 }
 
 /**
@@ -450,7 +452,8 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     ) as Record<string, string>;
     for (const segment of again) {
       retried[segment.id] = asText(segment, retried[segment.id])!;
-      const reason = check(segment, retried[segment.id]);
+      // Unchanged text is taken as meant only when the model kept it twice, not after a reply that failed otherwise.
+      const reason = check(segment, retried[segment.id], failed.get(segment.id) !== "it isn't translated");
       if (reason) problems.push({ id: segment.id, reason });
       else translations[segment.id] = retried[segment.id]!;
     }
