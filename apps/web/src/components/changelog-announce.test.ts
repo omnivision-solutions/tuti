@@ -51,9 +51,9 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
       "Publishing sends it to the subscriber who hasn't had it yet.",
     );
     expect(publishSummary({ email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 300, posts: 0, asked: 0 })).toEqual({
-      start: "It goes on your portal and in your widget, and emails ",
-      count: "300 people",
-      who: "The 300 subscribers who haven't had it yet.",
+      start: "It goes on your portal and in your widget, and sends ",
+      count: "300 emails",
+      who: "300 to subscribers who haven't had it yet.",
     });
   });
 
@@ -66,7 +66,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
       "Emailed to 3 subscribers when it was first published: it isn't sent again.",
     );
     expect(line({ email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget.");
-    expect(line({ email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget, and emails 2 people.");
+    expect(line({ email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget, and sends 2 emails.");
   });
 
   test("on a portal gone private (nobody's left to email: subscribersLeft is 0 there), the draft says the rest won't get it", () => {
@@ -128,16 +128,23 @@ test("an entry emailed from the tool it was imported from says so, not that it w
 });
 
 describe("the Publish dialog's line", () => {
-  test("one line: where it goes, the posts it completes, and how many people it emails, who they are in the count's popover", () => {
+  test("one line: where it goes, the posts it completes, and how many emails it sends, who to in the count's popover", () => {
     const summary = publishSummary({ email: true, subscribers: 1, emailedSubscribers: false, subscribersLeft: 0, posts: 1, asked: 3 });
-    expect(`${summary.start}${summary.count}.`).toBe("It goes on your portal and in your widget, completes 1 post and emails 4 people.");
-    expect(summary.who).toBe("Your subscriber, and the 3 people who asked for the post it completes.");
+    expect(`${summary.start}${summary.count}.`).toBe("It goes on your portal and in your widget, completes 1 post and sends 4 emails.");
+    expect(summary.who).toBe("1 to your subscriber, and 3 to the people who asked for the post it completes.");
+  });
+
+  test("emails, not people: a subscriber who asked too, or someone who asked for two of its posts, gets each email", () => {
+    // Ada subscribes and voted on both posts: the changelog's email, and each post's Completed one (emailedOnCompletion's 1 + 1).
+    const summary = publishSummary({ email: true, subscribers: 1, emailedSubscribers: false, subscribersLeft: 0, posts: 2, asked: 2 });
+    expect(summary.count).toBe("3 emails");
+    expect(summary.who).toBe("1 to your subscriber, and 2 to the people who asked for the posts it completes.");
   });
 
   test("with Email subscribers off, only the people who asked are emailed", () => {
     const summary = publishSummary({ email: false, subscribers: 40, emailedSubscribers: false, subscribersLeft: 0, posts: 2, asked: 1 });
-    expect(`${summary.start}${summary.count}.`).toBe("It goes on your portal and in your widget, completes 2 posts and emails 1 person.");
-    expect(summary.who).toBe("The person who asked for the posts it completes.");
+    expect(`${summary.start}${summary.count}.`).toBe("It goes on your portal and in your widget, completes 2 posts and sends 1 email.");
+    expect(summary.who).toBe("1 to the people who asked for the posts it completes.");
   });
 
   test("nobody to email: no count", () => {

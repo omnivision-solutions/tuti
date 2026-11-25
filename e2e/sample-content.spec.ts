@@ -106,7 +106,7 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const publishOwn = owner.getByRole("alertdialog", { name: "Publish “Dark mode is here”?" });
   await expect(publishOwn).toContainText("It goes on your portal and in your widget, completes 1 post.");
-  await expect(publishOwn).not.toContainText("emails");
+  await expect(publishOwn).not.toContainText("email");
   await checkpoint(owner, "changelog-sample-post-publish");
   await publishOwn.getByRole("button", { name: "Cancel" }).click();
   await owner.goto(`/app/${slug}/inbox`);

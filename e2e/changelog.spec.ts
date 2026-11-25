@@ -1546,12 +1546,12 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await checkpoint(team, "team-changelog-how-announced");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
-  await expect(dialog).toContainText("It goes on your portal and in your widget, and emails 1 person.");
-  // Who that is, behind the count.
-  await dialog.getByRole("button", { name: "1 person" }).click();
-  await expect(team.getByText("Your subscriber.", { exact: true })).toBeVisible();
+  await expect(dialog).toContainText("It goes on your portal and in your widget, and sends 1 email.");
+  // Who to, behind the count.
+  await dialog.getByRole("button", { name: "1 email" }).click();
+  await expect(team.getByText("1 to your subscriber.", { exact: true })).toBeVisible();
   await team.keyboard.press("Escape");
-  await expect(team.getByText("Your subscriber.", { exact: true })).toBeHidden();
+  await expect(team.getByText("1 to your subscriber.", { exact: true })).toBeHidden();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();

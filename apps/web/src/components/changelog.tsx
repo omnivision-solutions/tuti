@@ -702,8 +702,9 @@ const stillToEmail = (n: number) => (n === 1 ? "the subscriber who hasn't had it
 
 /**
  * What the Publish dialog says happens, in one line: on the portal and in the widget, the posts it completes, and how
- * many people it emails (`emails`, said as `count`), named in `who` for the count's popover: the subscribers (the first
- * time; publishing again, those it's still to go to) and the people who asked for its posts.
+ * many emails it sends (said as `count`), split in `who` for the count's popover: to the subscribers (the first time;
+ * publishing again, those it's still to go to) and to the people who asked for its posts. Emails, not people: nobody is
+ * left out of one for being in the other, and each post it completes sends its own (postShipped).
  */
 export function publishSummary({
   email,
@@ -719,21 +720,19 @@ export function publishSummary({
   subscribersLeft: number;
   /** How many posts it completes. */
   posts: number;
-  /** How many people who asked for them it emails. */
+  /** How many emails the posts' Completed sends (emailedOnCompletion, summed over the posts). */
   asked: number;
 }): { start: string; count: string | null; who: string } {
   const toSubscribers = emailedSubscribers ? subscribersLeft : email ? subscribers : 0;
   const emails = toSubscribers + asked;
   const where = `It goes on your portal and in your widget${posts > 0 ? `, completes ${plural(posts, "post")}` : ""}`;
   const who = [
-    toSubscribers > 0 && (emailedSubscribers ? stillToEmail(toSubscribers) : `your ${toSubscribers === 1 ? "subscriber" : `${toSubscribers} subscribers`}`),
-    asked > 0 && `${asked === 1 ? "the person" : `the ${asked} people`} who asked for ${posts === 1 ? "the post" : "the posts"} it completes`,
+    toSubscribers > 0 && `${toSubscribers} to ${emailedSubscribers ? "subscribers who haven't had it yet" : `your ${toSubscribers === 1 ? "subscriber" : "subscribers"}`}`,
+    asked > 0 && `${asked} to the people who asked for ${posts === 1 ? "the post" : "the posts"} it completes`,
   ]
     .filter(Boolean)
     .join(", and ");
-  return emails > 0
-    ? { start: `${where}${posts > 0 ? "" : ","} and emails `, count: plural(emails, "person", "people"), who: `${who[0]!.toUpperCase()}${who.slice(1)}.` }
-    : { start: where, count: null, who: "" };
+  return emails > 0 ? { start: `${where}${posts > 0 ? "" : ","} and sends `, count: plural(emails, "email"), who: `${who}.` } : { start: where, count: null, who: "" };
 }
 
 /**
