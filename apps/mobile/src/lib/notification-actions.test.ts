@@ -200,6 +200,18 @@ describe("Reply", () => {
     expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
   });
 
+  it("that fails as a sign-out forgets the drafts, before the session goes, isn't said to be kept", async () => {
+    const { forgetDrafts, getDraft } = await import("./conversation");
+    answer = () => {
+      forgetDrafts();
+      throw new TypeError("Network request failed");
+    };
+    await (await load()).act(response("reply", { userText: "On it!" }));
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: Couldn't reach tuti.example. Check the address and your connection."]);
+    const { screenKey } = await import("./details");
+    expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
+  });
+
   it("signed out, sends nothing and says so", async () => {
     phone.stored.clear();
     await (await load()).act(response("reply", { userText: "On it!" }));

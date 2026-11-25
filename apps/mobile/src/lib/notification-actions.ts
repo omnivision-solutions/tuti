@@ -61,7 +61,7 @@ export async function act(response: Notifications.NotificationResponse) {
     return;
   }
   done.add(key);
-  // Drafts written only in this sign-in's generation: a sign-out while the send is on its way keeps nothing of it.
+  // Drafts kept only in this sign-in's generation: a sign-out while the send is on its way keeps nothing of it.
   const since = draftsGeneration();
   const session = await readSession();
   // The reply, made before anything that can fail, so a failure keeps it. Its id is made from the notification and the
@@ -95,12 +95,11 @@ export async function act(response: Notifications.NotificationResponse) {
     }
     // Kept only while it's still this session: one signed out of meanwhile (here, or in the app's other JavaScript) is
     // no one's to send, and the next teammate to sign in mustn't get it.
-    const kept = session && unsent && (await readSession())?.token === session.token ? unsent : undefined;
+    // A sign-out forgets drafts first and the session after: both are checked.
+    const kept = session && unsent && (await readSession())?.token === session.token && since === draftsGeneration() ? unsent : undefined;
     if (session && kept) {
-      updateDraft(
-        screenKey({ server: session.server, project: target.project }, target.number),
-        (draft) => (draft.unsent.some((one) => one.id === kept.id) ? draft : { ...draft, unsent: [...draft.unsent, { ...kept, error: reasonOf(error) }] }),
-        since,
+      updateDraft(screenKey({ server: session.server, project: target.project }, target.number), (draft) =>
+        draft.unsent.some((one) => one.id === kept.id) ? draft : { ...draft, unsent: [...draft.unsent, { ...kept, error: reasonOf(error) }] },
       );
     }
     await tell(identifier, action, content.title, target, reasonOf(error), !!kept);
