@@ -561,6 +561,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await search.press("Enter");
   await expect(team).toHaveURL(/\?(tag=new&q=invoices|q=invoices&tag=new)$/);
   await expect(team.getByText("No entries match your search")).toBeVisible();
+  // The tag picked still shows as picked, with nothing in it; All is a pill away.
+  await expect(tagPills.getByRole("link", { name: "New 0" })).toHaveAttribute("aria-current", "page");
+  await expect(tagPills.getByRole("link", { name: "All 0" })).toBeVisible();
   await team.getByRole("link", { name: "Clear search" }).click();
   await expect(team).toHaveURL(/\?tag=new$/);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();

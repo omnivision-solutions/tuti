@@ -70,8 +70,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     // Release notes waiting to be written: the draft the newest release closed, else the running one with merged pull requests.
     draftToWrite(projectId),
   ]);
-  // The tags the search's entries have, as pills with their counts; the list, those with the tag picked.
-  const tags = (Object.keys(TAG_LABELS) as (keyof typeof TAG_LABELS)[]).filter((t) => found.some((e) => e.tags.includes(t)));
+  // The tags the search's entries have (and the one picked, even with none), as pills with their counts; the list, those with the tag picked.
+  const tags = (Object.keys(TAG_LABELS) as (keyof typeof TAG_LABELS)[]).filter((t) => t === tag || found.some((e) => e.tags.includes(t)));
   const listed = tag ? found.filter((e) => e.tags.includes(tag)) : found;
   const reactions = await reactionCounts(listed.filter((e) => e.publishedAt).map((e) => e.id));
   const first = (e: (typeof listed)[number]) => (e.number === ready?.number ? 2 : e.collecting ? 1 : 0);
