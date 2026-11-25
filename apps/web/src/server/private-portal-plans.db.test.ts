@@ -55,9 +55,18 @@ test("a private portal, groups, readers by email and content for groups need Bus
   const entry = await call(createChangelogEntry, as(), { title: "News", body: "Soon" });
   await expect(call(updateChangelogEntry, as(), { number: entry.number, groups: ["beta"] })).rejects.toMatchObject(refused);
   expect((await call(updateChangelogEntry, as(), { number: entry.number, groups: [] })).groups).toEqual([]);
+  // Set on Business, they can be taken off one at a time on a lower plan; not swapped for another.
+  await onPlan("business");
+  await call(createGroup, as(), { name: "Gamma", conditions: BETA });
+  await call(updateChangelogEntry, as(), { number: entry.number, groups: ["beta", "gamma"] });
+  await onPlan("pro");
+  expect((await call(updateChangelogEntry, as(), { number: entry.number, groups: ["beta"] })).groups).toEqual(["beta"]);
+  await expect(call(updateChangelogEntry, as(), { number: entry.number, groups: ["gamma"] })).rejects.toMatchObject(refused);
+  await call(updateChangelogEntry, as(), { number: entry.number, groups: [] });
   // Taking things back to public always works.
   await call(updatePortal, as(), { access: "public" });
   await call(deleteGroup, as(), { group: "beta" });
+  await call(deleteGroup, as(), { group: "gamma" });
   expect(await prisma.readerGroup.count({ where: { projectId: project.id } })).toBe(0);
 });
 
