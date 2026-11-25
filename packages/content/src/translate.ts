@@ -136,7 +136,8 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
         const id = Number(match[4]);
         if (!kept.has(id) || seenKept.has(id)) return `placeholder x${id} is unknown or repeated`;
         seenKept.add(id);
-        fill();
+        // Inline code drops the tags' marks (below), so it can't be what fills them.
+        if (!(kept.get(id)!.marks ?? []).some((mark) => mark.type === "code")) fill();
         // Its own marks (code) stay; bold, italic and links are the open tags', like the text around it.
         const node = structuredClone(kept.get(id)!);
         // Inline code takes no other mark (the schema's code excludes them all), so it keeps only its own.
@@ -383,7 +384,10 @@ export function translationPrompt({ from, to, glossary = [], instructions, about
  * forgot to escape it isn't taken for changing the markup.
  */
 function asText(segment: Segment, reply: string | undefined): string | undefined {
-  return reply?.replace(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi, (tag) => (!segment.text.includes(tag) && segment.text.includes(escape(tag)) ? escape(tag) : tag));
+  // Compared as the source has it, whatever the case or spacing ("<H1>", "<br />" for "&lt;h1&gt;", "&lt;br/&gt;").
+  const norm = (tag: string) => tag.toLowerCase().replace(/\s/g, "");
+  const asTextInSource = new Set([...segment.text.matchAll(/&lt;\/?[a-z][\w-]{0,30}\s?\/?&gt;/gi)].map((m) => norm(unescape(m[0]))));
+  return reply?.replace(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi, (tag) => (!segment.text.includes(tag) && asTextInSource.has(norm(tag)) ? escape(tag) : tag));
 }
 
 /**

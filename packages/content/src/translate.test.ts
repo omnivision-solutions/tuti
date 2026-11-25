@@ -375,3 +375,10 @@ test("a made-up tag with attributes is caught too", () => {
   const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Open the settings page now" }] }] });
   expect(check("1", 'Öffne <span lang="de">die Einstellungen</span>')).toBe("it has a tag that isn't in the source");
 });
+
+test("tags the source has as text are recognised whatever their case or spacing; code alone doesn't fill a bold tag", async () => {
+  const out = await translateText("My <h1> heading is too big today", { from: "English", to: "German", ask: async () => '{"segments": {"1": "Meine <H1> Überschrift ist heute zu groß"}}' });
+  expect(out.text).toBe("Meine <H1> Überschrift ist heute zu groß");
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Save", marks: [{ type: "bold" }] }, { type: "text", text: " then run " }, { type: "text", text: "sync", marks: [{ type: "code" }] }] }] });
+  expect(check("1", "Speichern, dann <b1><x2/></b1>")).toBe("<b1> is empty");
+});
