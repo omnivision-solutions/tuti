@@ -490,6 +490,40 @@ describe("telling which reply arrived", () => {
     expect(getDraft(key).unsent).toEqual([second]);
   });
 
+  it("keeps a failed reply when the same text, sent again, shows before its answer: the message may be the new one's", async () => {
+    const failed = { ...thanks, error: "Couldn't reach tuti.example.com" };
+    const again = { ...thanks, id: "u2" };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [failed, again] }));
+    let answer!: (value: unknown) => void;
+    const { api, calls } = fakeApi({ "/conversations/12/messages": () => new Promise((resolve) => (answer = resolve)) });
+    const sending = sendUnsent(api, key, 12, again, async () => [mine("m2")]);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    // The live stream's fetch has the new one's message before its answer is in.
+    updateDraft(key, (draft) => withoutArrived(draft, [mine("m2")]));
+    expect(getDraft(key).unsent.map((one) => one.id)).toEqual(["u1", "u2"]);
+    answer({ id: "m2" });
+    await sending;
+    expect(getDraft(key).unsent).toEqual([failed]);
+  });
+
+  it("sends replies saying the same one at a time, so each answer says which message is its own", async () => {
+    const again = { ...thanks, id: "u2" };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [thanks, again] }));
+    const answers: ((value: unknown) => void)[] = [];
+    const { api, calls } = fakeApi({ "/conversations/12/messages": () => new Promise((resolve) => answers.push(resolve)) });
+    const first = sendUnsent(api, key, 12, thanks, async () => []);
+    const second = sendUnsent(api, key, 12, again, async () => []);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toHaveLength(1);
+    answers[0]!({ id: "m1" });
+    await first;
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    answers[1]!({ id: "m2" });
+    await second;
+    expect(getDraft(key).unsent).toEqual([]);
+  });
+
   it("isn't posted again by Retry after a check that failed: it stays unsent with why", async () => {
     const failed = { ...thanks, error: "Couldn't reach tuti.example.com" };
     updateDraft(key, (draft) => ({ ...draft, unsent: [failed] }));

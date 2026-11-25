@@ -195,21 +195,36 @@ const isSent = (message: Message, unsent: Unsent) =>
   message.attachments.length === unsent.files.length &&
   unsent.files.every((file) => message.attachments.some((attachment) => attachment.id === file.id));
 
+/** Replies the server can't tell apart (the same kind, text and files): which of them a message is, only its send's answer says. */
+const sameAs = (unsent: Unsent) => JSON.stringify([unsent.note, unsent.body, unsent.files.map((file) => file.id).sort()]);
+
 /**
  * The draft once a fetch shows what arrived: an unsent reply or note the server saved though its answer was lost (the
  * app closed, the screen left, the connection dropped) is gone. Each of the server's messages accounts for one unsent
  * one, and never for one already accounted for (`taken`: those matched before, and those a send got back), so of two
- * replies saying the same, the one that didn't arrive stays. The same draft when none arrived.
+ * replies saying the same, the one that didn't arrive stays. One still `waiting` on its send's answer is left to it,
+ * and a message that may be its own isn't given to another saying the same; `done`: a send whose answer took its
+ * message, left for it to remove. The same draft when none arrived.
  * ponytail: matched by text and files; an idempotency key on conversations.reply would make it exact.
  */
-export function withoutArrived(draft: Draft, messages: Message[]): Draft {
+export function withoutArrived(draft: Draft, messages: Message[], waiting: (id: string) => boolean = isSending, done?: string): Draft {
   const taken = new Set(draft.taken);
-  const left = draft.unsent.filter((unsent) => {
-    const match = messages.find((message) => !taken.has(message.id) && isSent(message, unsent));
-    if (match) {
-      taken.add(match.id);
+  const kept = new Map<string, number>();
+  for (const unsent of draft.unsent) {
+    if (unsent.id !== done && waiting(unsent.id)) {
+      kept.set(sameAs(unsent), (kept.get(sameAs(unsent)) ?? 0) + 1);
     }
-    return !match;
+  }
+  const left = draft.unsent.filter((unsent) => {
+    if (unsent.id === done || waiting(unsent.id)) {
+      return true;
+    }
+    const free = messages.filter((message) => !taken.has(message.id) && isSent(message, unsent));
+    if (free.length <= (kept.get(sameAs(unsent)) ?? 0)) {
+      return true;
+    }
+    taken.add(free[0]!.id);
+    return false;
   });
   return left.length === draft.unsent.length ? draft : withUnsent(draft, left, [...taken]);
 }
@@ -367,7 +382,7 @@ export function subscribeDraft(key: string, listener: () => void) {
 }
 
 /** Sends going on, by the unsent's id: one opened again shows "Sending…" and waits on the same request, never a second. */
-const sends = new Map<string, Promise<{ closed?: boolean } | null>>();
+const sends = new Map<string, { same: string; send: Promise<{ closed?: boolean } | null> }>();
 export const isSending = (id: string) => sends.has(id);
 
 /**
@@ -381,14 +396,18 @@ export const isSending = (id: string) => sends.has(id);
 export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent, saved: () => Promise<Message[]>, retry = false) {
   const going = sends.get(unsent.id);
   if (going) {
-    return going;
+    return going.send;
   }
+  // Replies saying the same are sent one at a time: each answer says which message is its own.
+  const same = sameAs(unsent);
+  const before = [...sends.values()].filter((other) => other.same === same).map((other) => other.send);
   const since = generation;
   // What arrived, from the fetch's own answer; its error when it failed.
-  const fetched = () =>
+  // `sent`: this one's answer took its message. Otherwise this one is looked for too, as it may have arrived.
+  const fetched = (sent = false) =>
     saved().then(
       (messages) => {
-        updateDraft(key, (draft) => withoutArrived(draft, messages), since);
+        updateDraft(key, (draft) => withoutArrived(draft, messages, (id) => id !== unsent.id && isSending(id), sent ? unsent.id : undefined), since);
         return null;
       },
       (error: unknown) => (error instanceof Error ? error.message : String(error)),
@@ -397,6 +416,7 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
   const mark = (error: string | undefined) => (draft: Draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error } : one)) });
   // Out of `sends` before the draft changes, so what's shown then says it isn't sending any more.
   const send = (async (): Promise<{ closed?: boolean } | null> => {
+    await Promise.all(before);
     if (retry) {
       const failed = await fetched();
       if (failed !== null) {
@@ -420,12 +440,12 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
     }
     // The message it made is this one's: no other unsent one is matched to it.
     updateDraft(key, (draft) => ({ ...draft, taken: [...draft.taken, sent.id] }), since);
-    await fetched();
+    await fetched(true);
     sends.delete(unsent.id);
     updateDraft(key, (draft) => withUnsent(draft, draft.unsent.filter((one) => one.id !== unsent.id)), since);
     return sent;
   })();
-  sends.set(unsent.id, send);
+  sends.set(unsent.id, { same, send });
   updateDraft(key, mark(undefined), since);
   return send;
 }
