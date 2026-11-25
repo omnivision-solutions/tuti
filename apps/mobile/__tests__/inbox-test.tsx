@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
-import { Alert, AppState } from "react-native";
+import { AccessibilityInfo, ActionSheetIOS, Alert, AppState } from "react-native";
 
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
@@ -33,7 +33,7 @@ jest.mock("@/components/notifications", () => ({ offerNotifications: () => mockO
 let mockFocus: (() => void) | null = null;
 
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
-const mockApi = jest.fn<(path: string) => Promise<unknown>>();
+const mockApi = jest.fn<(path: string, init?: unknown) => Promise<unknown>>();
 const mockSetProject = jest.fn<(slug: string) => Promise<void>>(() => Promise.resolve());
 const mockSignOut = jest.fn<() => Promise<void>>(() => Promise.resolve());
 jest.mock("@/lib/session", () => ({
@@ -554,5 +554,412 @@ describe("the Inbox", () => {
 
     await fireEvent.press(screen.getByRole("menuitem", { name: "Notifications" }));
     expect(jest.requireMock<{ router: { push: jest.Mock } }>("expo-router").router.push).toHaveBeenCalledWith("/notifications");
+  });
+});
+
+describe("swiping a row", () => {
+  afterEach(() => void jest.restoreAllMocks());
+
+  type Held = { path: string; body: unknown; answer: (ok: boolean, why?: string) => void };
+  /**
+   * A small server for one or more projects: each conversation's status and snooze, the views and searches listed from
+   * them as the server does, by offset. A change (PATCH) waits till the test answers it, and is made only if taken. A
+   * request `hold` matches is answered as the server had it when asked, but only once the test lets it go.
+   */
+  function fakeServer(byProject: Record<string, Row[]>, { snoozed = [] as number[], spam = [] as number[] } = {}) {
+    const state = new Map(Object.entries(byProject).map(([slug, rows]) => [slug, rows.map((r) => ({ row: r, snoozed: snoozed.includes(r.number), spam: spam.includes(r.number) }))]));
+    const changes: Held[] = [];
+    const held: { path: string; release: () => void }[] = [];
+    let hold: (path: string) => boolean = () => false;
+    let fail: (path: string) => boolean = () => false;
+    const inView = (c: { row: Row; snoozed: boolean; spam: boolean }, view: string) =>
+      view === "spam"
+        ? c.spam
+        : !c.spam &&
+          (view === "closed" ? c.row.status === "closed" : view === "snoozed" ? c.snoozed && c.row.status !== "closed" : c.row.status !== "closed" && !c.snoozed);
+    const list = (path: string): Page => {
+      const url = new URL(path, "https://tuti.example.com");
+      const q = url.searchParams.get("q");
+      const view = url.searchParams.get("view");
+      const all = state.get(mockSession.project!) ?? [];
+      const found = all.filter((c) =>
+        q?.startsWith("#") ? c.row.number === Number(q.slice(1)) && inView(c, view!) : q ? !c.spam && c.row.subject.toLowerCase().includes(q.toLowerCase()) : inView(c, view!),
+      );
+      const cursor = Number(url.searchParams.get("cursor") ?? 0);
+      const limit = Number(url.searchParams.get("limit"));
+      const rows = found.slice(cursor, cursor + limit).map((c) => c.row);
+      return { conversations: rows, nextCursor: found.length > cursor + limit ? String(cursor + limit) : null, total: found.length };
+    };
+    mockApi.mockImplementation((path, init) => {
+      const { method, body } = (init ?? {}) as { method?: string; body?: Record<string, unknown> };
+      if (method === "PATCH") {
+        const one = state.get(mockSession.project!)!.find((c) => c.row.number === Number(path.split("/").pop()));
+        return new Promise((resolve, reject) =>
+          changes.push({
+            path,
+            body,
+            answer: (ok, why) => {
+              if (!ok) {
+                return reject(new Error(why));
+              }
+              if (one && body && "status" in body) {
+                one.row = { ...one.row, status: body.status as Row["status"] };
+              }
+              if (one && body && "snoozedUntil" in body) {
+                one.snoozed = body.snoozedUntil !== null;
+              }
+              resolve({});
+            },
+          }),
+        );
+      }
+      if (fail(path)) {
+        return Promise.reject(new Error("Something went wrong on the server."));
+      }
+      if (path === "/projects") {
+        return Promise.resolve({ projects: PROJECTS });
+      }
+      if (path === "/inbox/views") {
+        return Promise.resolve({ views: VIEWS });
+      }
+      const answer = list(path);
+      return hold(path) ? new Promise((resolve) => held.push({ path, release: () => resolve(answer) })) : Promise.resolve(answer);
+    });
+    /** A change made elsewhere (the web, a customer's message). */
+    const change = (number: number, status: Row["status"]) => {
+      const one = state.get(mockSession.project!)!.find((c) => c.row.number === number)!;
+      one.row = { ...one.row, status };
+    };
+    return { changes, held, change, holdWhen: (when: (path: string) => boolean) => (hold = when), failWhen: (when: (path: string) => boolean) => (fail = when) };
+  }
+  const subjects = () => (screen.getByTestId("inbox-list").props.data as Row[]).map((r) => r.subject);
+  const rowNamed = (subject: string) => screen.getByRole("button", { name: new RegExp(`: ${subject} \\(#`) });
+  // The actions behind a row (drawn beside it under Jest), hidden from screen readers: the row has them as its actions.
+  const pressAction = (label: string, i = 0) => fireEvent.press(screen.getAllByText(label, { includeHiddenElements: true })[i]!);
+  const chooseView = async (name: RegExp) => fireEvent.press(screen.getByRole("tab", { name }));
+  // What's said to a screen reader when a change is made, in the details sheet's words.
+  // (React Native's own Jest setup mocks it already: cleared of earlier tests' calls.)
+  const announced = () => jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => {}).mockClear();
+
+  it("hides it at once, and once the server has it loads the list and the counts again", async () => {
+    const closing = row("Invite link expired");
+    const { changes } = fakeServer({ acme: [row("CSV export stops at 500 rows"), closing] });
+    const announce = announced();
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Close", 1);
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+    expect(changes.map(({ path, body }) => ({ path, body }))).toEqual([{ path: `/conversations/${closing.number}`, body: { status: "closed" } }]);
+
+    const counted = mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length;
+    await act(async () => changes[0]!.answer(true));
+    expect(announce).toHaveBeenCalledWith("Closed");
+    expect(mockApi).toHaveBeenLastCalledWith("/conversations?view=open&limit=25&cursor=0");
+    expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+    expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(counted + 1);
+  });
+
+  it("puts it back, saying why in an alert (it may be far down the list), when the server refuses", async () => {
+    const { changes } = fakeServer({ acme: [row("Invite link expired")] });
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const announce = announced();
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Close");
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+    await act(async () => changes[0]!.answer(false, "You can't change this conversation."));
+    expect(screen.getByText("Invite link expired")).toBeTruthy();
+    expect(alert).toHaveBeenCalledWith(`Couldn't close "Invite link expired"`, "You can't change this conversation.");
+    // Said by the alert, never as done.
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it("ignores the row's own live changes while its swipe waits: the reload after the answer brings it", async () => {
+    const closing = row("Invite link expired");
+    const { changes } = fakeServer({ acme: [closing] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    await act(async () => mockLive!({ kind: "conversation", number: closing.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(mockApi.mock.calls.some(([path]) => path.includes("q=%23"))).toBe(false);
+    await act(async () => changes[0]!.answer(true));
+    expect(subjects()).toEqual([]);
+  });
+
+  it("loads the list again for a swiped row's live change once its reload has started: that reload may not have it", async () => {
+    const closing = row("Invite link expired");
+    const server = fakeServer({ acme: [closing, row("CSV export stops at 500 rows")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // The reload after the answer is slow; meanwhile the customer writes, and the server opens it again.
+    server.holdWhen((path) => path.startsWith("/conversations?view=open&limit"));
+    await act(async () => server.changes[0]!.answer(true));
+    server.change(closing.number, "open");
+    await act(async () => mockLive!({ kind: "conversation", number: closing.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(server.held).toHaveLength(2);
+
+    server.holdWhen(() => false);
+    await act(async () => server.held.forEach((one) => one.release()));
+    expect(subjects()).toEqual(["Invite link expired", "CSV export stops at 500 rows"]);
+  });
+
+  it("reloads from Try again when the reload after a swipe failed, with no next page", async () => {
+    const rows = [row("Invite link expired"), row("CSV export stops at 500 rows")];
+    const server = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+    expect(screen.queryByText("Something went wrong on the server.")).toBeNull();
+  });
+
+  it("offers no Try again at the end while a swipe still waits: it would do nothing", async () => {
+    const server = fakeServer({ acme: [row("Invite link expired"), row("CSV export stops at 500 rows")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // The counts fail meanwhile: the error shows, but the swipe's own reload is still to come.
+    server.failWhen((path) => path === "/inbox/views");
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("leaves Try again to the empty view when the failed reload left no rows", async () => {
+    const server = fakeServer({ acme: [row("Invite link expired")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(1);
+    // Said once, by the empty view: there are no rows for the line above them.
+    expect(screen.getAllByText("Something went wrong on the server.")).toHaveLength(1);
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(await screen.findByText("No replies waiting. You're up to date.")).toBeTruthy();
+  });
+
+  it("reloads from the view's chip, tapped again, when the reload after a swipe failed, then pages on", async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => row(`Conversation ${i + 1}`));
+    const server = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+    await pressAction("Close", 2);
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    // The same search typed again changes nothing, and keeps the error.
+    await fireEvent.changeText(screen.getByPlaceholderText("Search"), " ");
+    await act(() => jest.advanceTimersByTimeAsync(300));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("tab", { name: /^Needs reply/ }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByText("Something went wrong on the server.")).toBeNull();
+    await fireEvent(screen.getByTestId("inbox-list"), "endReached");
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(rows.filter((_, i) => i !== 2).map((r) => r.subject));
+  });
+
+  it("reloads from the end's Try again when the reload after a swipe failed, then pages on", async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => row(`Conversation ${i + 1}`));
+    const server = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+    await pressAction("Close", 2);
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(rows.filter((_, i) => i !== 2).map((r) => r.subject));
+  });
+
+  it("drops a fetch of the row from before the server had it, answering after its reload (another view's too)", async () => {
+    const closing = row("Invite link expired");
+    const server = fakeServer({ acme: [closing, row("CSV export stops at 500 rows")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    // A live change's fetch of the row starts, and is slow; the row is closed meanwhile.
+    server.holdWhen((path) => path.includes("q=%23"));
+    await act(async () => mockLive!({ kind: "conversation", number: closing.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    await pressAction("Close");
+    await act(async () => server.changes[0]!.answer(true));
+    expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+
+    // It answers now, with the row as it was: open.
+    await act(async () => server.held.forEach((one) => one.release()));
+    expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+  });
+
+  it("shows a row closed from another view in Closed, chosen before the server answered, and pages Closed from its reload", async () => {
+    // Closed has 30; the one closed now is the latest.
+    const closing = row("Invite link expired");
+    const older = Array.from({ length: 30 }, (_, i) => row(`Closed ${i + 1}`, { status: "closed" }));
+    const { changes } = fakeServer({ acme: [closing, ...older] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // Closed loads before the server has the close: 25 of its 30, the next page from 25.
+    await chooseView(/^Closed/);
+    await screen.findByText("Closed 1");
+    await act(async () => changes[0]!.answer(true));
+    expect(subjects()).toEqual(["Invite link expired", ...older.slice(0, 24).map((r) => r.subject)]);
+
+    // Its next page starts where the reload says: no row skipped.
+    await fireEvent(screen.getByTestId("inbox-list"), "endReached");
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(["Invite link expired", ...older.map((r) => r.subject)]);
+  });
+
+  it("asks for no next page while a swipe waits, then pages from the reload, so no row is skipped", async () => {
+    // Needs reply has 30: 25 shown, and the third is closed, still on its way.
+    const rows = Array.from({ length: 30 }, (_, i) => row(`Conversation ${i + 1}`));
+    const { changes } = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+    await pressAction("Close", 2);
+
+    await fireEvent(screen.getByTestId("inbox-list"), "endReached");
+    expect(mockApi.mock.calls.some(([path]) => path.includes("cursor=25"))).toBe(false);
+
+    await act(async () => changes[0]!.answer(true));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(rows.filter((_, i) => i !== 2).map((r) => r.subject));
+  });
+
+  it("snoozes it till the time chosen from the details sheet's choices", async () => {
+    // A Wednesday afternoon, in the teammate's own time.
+    jest.setSystemTime(new Date("2026-11-25T14:00:00"));
+    const { changes } = fakeServer({ acme: [row("Invite link expired")] });
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    const announce = announced();
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Snooze");
+    const [options, choose] = sheet.mock.calls[0]!;
+    expect(options.options).toEqual(["In 3 hours", "Tomorrow, 9:00", "Monday, 9:00", "Cancel"]);
+    // Cancelled: nothing changes.
+    await act(async () => choose(3));
+    expect(changes).toHaveLength(0);
+
+    await act(async () => choose(1));
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+    expect(changes[0]!.body).toEqual({ snoozedUntil: new Date("2026-11-26T09:00:00").toISOString() });
+    await act(async () => changes[0]!.answer(true));
+    expect(announce).toHaveBeenCalledWith("Snoozed till Thu 26 Nov, 09:00");
+    expect(subjects()).toEqual([]);
+  });
+
+  it("offers Wake now in Snoozed, and wakes one: the server's told, and it leaves the list", async () => {
+    const waking = row("Invite link expired");
+    const { changes } = fakeServer({ acme: [waking, row("Still asleep"), row("Old one", { status: "closed" })] }, { snoozed: [1, 2] });
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    const announce = announced();
+    await render(<Inbox />);
+    await chooseView(/^Snoozed/);
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Snooze");
+    const [options, choose] = sheet.mock.calls[0]!;
+    expect(options.options).toEqual(["In 3 hours", "Tomorrow, 9:00", "Monday, 9:00", "Wake now", "Cancel"]);
+    await act(async () => choose(3));
+    expect(changes.map(({ path, body }) => ({ path, body }))).toEqual([{ path: `/conversations/${waking.number}`, body: { snoozedUntil: null } }]);
+    await act(async () => changes[0]!.answer(true));
+    expect(subjects()).toEqual(["Still asleep"]);
+    expect(announce).toHaveBeenCalledWith("Back in the inbox");
+  });
+
+  it("says why a wake was refused", async () => {
+    const { changes } = fakeServer({ acme: [row("Invite link expired")] }, { snoozed: [1] });
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    await render(<Inbox />);
+    await chooseView(/^Snoozed/);
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Snooze");
+    await act(async () => sheet.mock.calls[0]![1](3));
+    await act(async () => changes[0]!.answer(false, "Spam isn't snoozed."));
+    expect(alert).toHaveBeenCalledWith(`Couldn't wake "Invite link expired"`, "Spam isn't snoozed.");
+    expect(screen.getByText("Invite link expired")).toBeTruthy();
+  });
+
+  it("has nothing for a closed one, and Close but not Snooze in Spam, as the details sheet", async () => {
+    fakeServer({ acme: [row("Old one", { status: "closed" }), row("Win a prize")] }, { spam: [2] });
+    await render(<Inbox />);
+    await chooseView(/^Closed/);
+    await screen.findByText("Old one");
+    expect(rowNamed("Old one").props.accessibilityActions).toEqual([]);
+
+    await chooseView(/^Spam/);
+    await screen.findByText("Win a prize");
+    expect(screen.queryAllByText("Snooze", { includeHiddenElements: true })).toHaveLength(0);
+    expect(rowNamed("Win a prize").props.accessibilityActions).toEqual([{ name: "close", label: "Close" }]);
+  });
+
+  it("hides only its own project's row: another project's conversation with the same number stays", async () => {
+    const closing = row("Invite link expired");
+    const { changes } = fakeServer({ acme: [closing], kite: [{ ...closing, subject: "Kite's own" }] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+    try {
+      mockSession.project = "kite";
+      await screen.rerender(<Inbox />);
+      expect(await screen.findByText("Kite's own")).toBeTruthy();
+      await act(async () => changes[0]!.answer(true));
+      expect(subjects()).toEqual(["Kite's own"]);
+    } finally {
+      mockSession.project = "acme";
+    }
+  });
+
+  it("gives a screen reader the same actions on the row", async () => {
+    const { changes } = fakeServer({ acme: [row("Invite link expired")] });
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    const target = rowNamed("Invite link expired");
+    expect(target.props.accessibilityActions).toEqual([
+      { name: "snooze", label: "Snooze" },
+      { name: "close", label: "Close" },
+    ]);
+    await fireEvent(target, "accessibilityAction", { nativeEvent: { actionName: "snooze" } });
+    expect(sheet).toHaveBeenCalled();
+    await fireEvent(target, "accessibilityAction", { nativeEvent: { actionName: "close" } });
+    expect(changes[0]!.body).toEqual({ status: "closed" });
   });
 });

@@ -17,7 +17,8 @@ Where things are: routes in `src/app` (signed out: `sign-in`; signed in: everyth
 the API client in `src/lib/api.ts`, the session in `src/lib/session.tsx` (`useSession()`, and `useApi()` for a
 signed-in screen: `await api<{ conversations: … }>("/conversations?view=mine")` calls the operation as the teammate,
 in their chosen project), signing in in `src/lib/sign-in.ts`, the colours in `src/lib/theme.ts` (`useColors()`), the Inbox's
-list in `src/lib/inbox.ts` (`src/app/index.tsx` is the Inbox, `src/app/inbox/projects.tsx` its project sheet on Android),
+list in `src/lib/inbox.ts` (`src/app/index.tsx` is the Inbox, `src/app/inbox/projects.tsx` its project sheet on Android,
+`src/app/inbox/snooze.tsx` a swiped row's snooze choices: iOS's action sheet, Android's bottom sheet),
 a conversation in `src/app/conversation/[number].tsx` (the Inbox opens it; `tuti://conversation/12` too) with its calls,
 drafts and live updates in `src/lib/conversation.ts`, its details sheet (who it's with, assign, snooze, close, spam) in `src/app/conversation/[number]/details.tsx` with its calls in `src/lib/details.ts`, the Inbox's live stream in `src/lib/live.ts`, and notifications (permission, the device's registration, a tap's
 conversation) in `src/lib/notifications.ts`, with their settings in `src/app/notifications.tsx`. Components that
@@ -25,7 +26,8 @@ aren't routes go in `src/components`.
 
 Tests: `src/lib` with Vitest (`*.test.ts`, the repository's `pnpm test`); screens with React Native Testing Library
 under Jest and `jest-expo` (`__tests__/*-test.tsx`, `pnpm --filter @tuti/mobile test`, which `pnpm test` also runs). A
-screen test mocks the native header (`expo-router`'s `Stack`) and the session as `__tests__/inbox-test.tsx` does.
+screen test mocks the native header (`expo-router`'s `Stack`) and the session as `__tests__/inbox-test.tsx` does;
+`jest.setup.js` draws a swipeable row with its actions showing (Reanimated, which moves it, doesn't run under Jest).
 
 React, React Native and the Expo packages stay on the versions the app's Expo release supports: `pnpm lint` fails
 when one drifts, and `pnpm --filter @tuti/mobile exec expo install --fix` puts them back.
