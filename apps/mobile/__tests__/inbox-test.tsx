@@ -571,6 +571,7 @@ describe("swiping a row", () => {
     const changes: Held[] = [];
     const held: { path: string; release: () => void }[] = [];
     let hold: (path: string) => boolean = () => false;
+    let fail: (path: string) => boolean = () => false;
     const inView = (c: { row: Row; snoozed: boolean; spam: boolean }, view: string) =>
       view === "spam"
         ? c.spam
@@ -618,10 +619,18 @@ describe("swiping a row", () => {
       if (path === "/inbox/views") {
         return Promise.resolve({ views: VIEWS });
       }
+      if (fail(path)) {
+        return Promise.reject(new Error("Something went wrong on the server."));
+      }
       const answer = list(path);
       return hold(path) ? new Promise((resolve) => held.push({ path, release: () => resolve(answer) })) : Promise.resolve(answer);
     });
-    return { changes, held, holdWhen: (when: (path: string) => boolean) => (hold = when) };
+    /** A change made elsewhere (the web, a customer's message). */
+    const change = (number: number, status: Row["status"]) => {
+      const one = state.get(mockSession.project!)!.find((c) => c.row.number === number)!;
+      one.row = { ...one.row, status };
+    };
+    return { changes, held, change, holdWhen: (when: (path: string) => boolean) => (hold = when), failWhen: (when: (path: string) => boolean) => (fail = when) };
   }
   const subjects = () => (screen.getByTestId("inbox-list").props.data as Row[]).map((r) => r.subject);
   const rowNamed = (subject: string) => screen.getByRole("button", { name: new RegExp(`: ${subject} \\(#`) });
@@ -671,6 +680,43 @@ describe("swiping a row", () => {
     expect(mockApi.mock.calls.some(([path]) => path.includes("q=%23"))).toBe(false);
     await act(async () => changes[0]!.answer(true));
     expect(subjects()).toEqual([]);
+  });
+
+  it("loads the list again for a swiped row's live change once its reload has started: that reload may not have it", async () => {
+    const closing = row("Invite link expired");
+    const server = fakeServer({ acme: [closing, row("CSV export stops at 500 rows")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // The reload after the answer is slow; meanwhile the customer writes, and the server opens it again.
+    server.holdWhen((path) => path.startsWith("/conversations?view=open&limit"));
+    await act(async () => server.changes[0]!.answer(true));
+    server.change(closing.number, "open");
+    await act(async () => mockLive!({ kind: "conversation", number: closing.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(server.held).toHaveLength(2);
+
+    server.holdWhen(() => false);
+    await act(async () => server.held.forEach((one) => one.release()));
+    expect(subjects()).toEqual(["Invite link expired", "CSV export stops at 500 rows"]);
+  });
+
+  it("reloads from the end's Try again when the reload after a swipe failed, then pages on", async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => row(`Conversation ${i + 1}`));
+    const server = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+    await pressAction("Close", 2);
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(rows.filter((_, i) => i !== 2).map((r) => r.subject));
   });
 
   it("drops a fetch of the row from before the server had it, answering after its reload (another view's too)", async () => {

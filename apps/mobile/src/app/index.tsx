@@ -180,8 +180,12 @@ export default function Inbox() {
   // The next page after `from` (the list shown, unless a reload's).
   const loadMore = async (from = list): Promise<void> => {
     // Pages start at an offset, which a swipe the server has may have moved: the next page waits for the list's reload.
+    // That reload failed (the error says so): asked for again here, as Try again or scrolling to the end asks for more.
     if (from?.next && swipesNow.current.size > 0) {
       pagingAfterSwipes.current = true;
+      if (error && [...swipesNow.current.values()].every((reload) => reload)) {
+        void loadAll(from.rows.length);
+      }
       return;
     }
     if (!from?.next || paging.current) {
@@ -304,8 +308,11 @@ export default function Inbox() {
   const onLive = useEffectEvent((all: boolean, numbers: number[]) => {
     if (all || q) {
       void loadAll(list?.rows.length);
+    } else if (numbers.some((number) => swipesNow.current.get(swipeKey(project, number)))) {
+      // A swiped row changed once its reload had started, which may not have it: loaded again.
+      void loadAll(list?.rows.length);
     } else {
-      // A row with a swipe waiting comes with the list's reload after the answer.
+      // A row with a swipe waiting for its answer comes with the list's reload after it.
       numbers.filter((number) => !swipesNow.current.has(swipeKey(project, number))).forEach((number) => void loadRow(number));
       void loadCounts().catch(() => {});
     }
