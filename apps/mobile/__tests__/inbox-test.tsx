@@ -613,14 +613,14 @@ describe("swiping a row", () => {
           }),
         );
       }
+      if (fail(path)) {
+        return Promise.reject(new Error("Something went wrong on the server."));
+      }
       if (path === "/projects") {
         return Promise.resolve({ projects: PROJECTS });
       }
       if (path === "/inbox/views") {
         return Promise.resolve({ views: VIEWS });
-      }
-      if (fail(path)) {
-        return Promise.reject(new Error("Something went wrong on the server."));
       }
       const answer = list(path);
       return hold(path) ? new Promise((resolve) => held.push({ path, release: () => resolve(answer) })) : Promise.resolve(answer);
@@ -726,6 +726,36 @@ describe("swiping a row", () => {
     await act(() => jest.advanceTimersByTimeAsync(0));
     expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
     expect(screen.queryByText("Something went wrong on the server.")).toBeNull();
+  });
+
+  it("offers no Try again at the end while a swipe still waits: it would do nothing", async () => {
+    const server = fakeServer({ acme: [row("Invite link expired"), row("CSV export stops at 500 rows")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // The counts fail meanwhile: the error shows, but the swipe's own reload is still to come.
+    server.failWhen((path) => path === "/inbox/views");
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("leaves Try again to the empty view when the failed reload left no rows", async () => {
+    const server = fakeServer({ acme: [row("Invite link expired")] });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(1);
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(await screen.findByText("No replies waiting. You're up to date.")).toBeTruthy();
   });
 
   it("reloads from the end's Try again when the reload after a swipe failed, then pages on", async () => {

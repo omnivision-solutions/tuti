@@ -178,6 +178,9 @@ export default function Inbox() {
   };
 
   // The next page after `from` (the list shown, unless a reload's).
+  // A failed reload after swipes, asked for again by Try again or scrolling to the end: once every swipe's reload has
+  // started (a swipe still waiting brings its own).
+  const retriesReload = (tracked: ReadonlyMap<string, number | null>) => !!error && tracked.size > 0 && [...tracked.values()].every((reload) => reload);
   const loadMore = async (from = list): Promise<void> => {
     // Pages start at an offset, which a swipe the server has may have moved: the next page waits for the list's reload.
     // That reload failed (the error says so): asked for again here, as Try again or scrolling to the end asks for more,
@@ -186,7 +189,7 @@ export default function Inbox() {
       if (from?.next) {
         pagingAfterSwipes.current = true;
       }
-      if (error && [...swipesNow.current.values()].every((reload) => reload)) {
+      if (retriesReload(swipesNow.current)) {
         void loadAll(from?.rows.length);
       }
       return;
@@ -390,6 +393,8 @@ export default function Inbox() {
   useEffect(() => onRead((number) => onLive(false, [number])), []);
 
   const current = projects?.find((p) => p.slug === project);
+  // The list without the rows swiped.
+  const rows = (list?.rows ?? []).filter((row) => !swipes.has(swipeKey(project, row.number)));
   const searching = !!q;
   const noProjects = projects?.length === 0;
 
@@ -454,7 +459,7 @@ export default function Inbox() {
       />
       <FlatList
         testID="inbox-list"
-        data={(list?.rows ?? []).filter((row) => !swipes.has(swipeKey(project, row.number)))}
+        data={rows}
         keyExtractor={(row) => String(row.number)}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
@@ -534,14 +539,15 @@ export default function Inbox() {
           </View>
         }
         ListFooterComponent={
-          !list?.next && !(error && swipes.size > 0) ? undefined : error ? (
+          // Nothing under no rows: the empty view has its own Try again.
+          rows.length === 0 ? undefined : (swipes.size > 0 ? retriesReload(swipes) : !!list?.next && !!error) ? (
             // A page, or the reload after a swipe, that failed: tried again here (the error is at the top).
             <Pressable onPress={() => void loadMore()} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.6 : 1 }]}>
               <Text style={[styles.retry, { color: colors.primary, textAlign: "center" }]}>Try again</Text>
             </Pressable>
-          ) : (
+          ) : list?.next ? (
             <ActivityIndicator style={styles.more} color={colors.muted} />
-          )
+          ) : undefined
         }
       />
     </>
