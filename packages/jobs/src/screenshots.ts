@@ -494,7 +494,8 @@ export function screenshotTask(settings: Pick<Settings, "appUrl" | "signIn" | "u
     ...(settings.about.trim() ? [`What the team says about their app (follow it):\n${settings.about.trim()}`] : []),
     [
       "Rules:",
-      "- Never delete, submit, send, buy, invite, save or change anything, and never sign out or log out: only look around, open pages, tabs and menus.",
+      "- Signing in is the one exception to the next rule: you may enter the sign-in details given above (or open the sign-in link) and submit the sign-in form, only to sign in.",
+      "- Apart from signing in, never delete, submit, send, buy, invite, save or change anything, and never sign out or log out: only look around, open pages, tabs and menus.",
       "- Close a tour, a cookie banner or a pop-up that covers the page when closing it changes nothing.",
       `- The browser's screen is ${width}×${height}. Take each screenshot of the browser viewport only, as a PNG file in the workspace, named as below.`,
       "- Do not resize the window or set a custom clip: save exactly what the browser viewport shows.",

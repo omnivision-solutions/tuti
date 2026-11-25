@@ -175,7 +175,8 @@ test("a run signs in once, takes every screenshot as an upload, stops its browse
   expect(sent.task).toContain('the username "e2e-demo@example.com" and the password app_password');
   expect(sent.task).not.toContain(PASSWORD);
   expect(sent.task).toContain("Close the welcome tour.");
-  expect(sent.task).toContain("Never delete, submit, send");
+  expect(sent.task).toContain("you may enter the sign-in details given above (or open the sign-in link) and submit the sign-in form, only to sign in");
+  expect(sent.task).toContain("Apart from signing in, never delete, submit, send");
   expect(sent.task).toContain("fully loaded");
   expect(sent.task).toContain("Do not resize the window or set a custom clip");
   expect(sent.task).toContain("shot-1.png: The billing page\nshot-2.png: Settings → Team");
