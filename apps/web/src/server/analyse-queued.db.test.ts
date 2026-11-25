@@ -68,16 +68,22 @@ test("analysed again, then Autopilot turned off before the queued job runs: the 
   expect(await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } })).toBe(2);
 });
 
-test("run past the gate (added to the changelog by the team), then Autopilot turned off before it runs: one with updates stays ready", async () => {
+test("run past the gate (added to the changelog by the team), then Autopilot turned off before it runs: put back as the claim found it", async () => {
   // Ruled out for users, with a docs update and no changelog line: the team's pick claims it for a run past the gate.
   const change = await pullRequest(8);
   await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
   await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING" } });
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
 
-  await handlers.codeChange({ codeChangeId: change.id, force: true, pastGate: true, resume: false }, quiet);
+  await handlers.codeChange({ codeChangeId: change.id, force: true, pastGate: true, resume: false, was: "READY" }, quiet);
 
   expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "READY", reason: "Autopilot was turned off before it was analysed again." });
+  // One the gate had found nothing to do for, though it keeps updates from before: nothing to do again, not ready.
+  const nothing = await pullRequest(9, "NOTHING_TO_DO");
+  await prisma.codeChangeAction.create({ data: { codeChangeId: nothing.id, kind: "LINKS", probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
+  await prisma.codeChange.update({ where: { id: nothing.id }, data: { state: "ANALYSING" } });
+  await handlers.codeChange({ codeChangeId: nothing.id, force: true, pastGate: true, resume: false, was: "NOTHING_TO_DO" }, quiet);
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: nothing.id } })).toMatchObject({ state: "NOTHING_TO_DO" });
 });
 
 test("queueing that fails on Hatchet puts the pull request back as it was, its reason too", async () => {

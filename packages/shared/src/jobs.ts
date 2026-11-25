@@ -95,7 +95,14 @@ export const jobs = {
    */
   codeChange: {
     name: "code-change",
-    input: z.object({ codeChangeId: z.string(), force: z.boolean().default(false), pastGate: z.boolean().default(false), resume: z.boolean().default(false) }),
+    // `was`: what a claim moved it from (changelog.addPullRequests), to put it back as if the run doesn't happen.
+    input: z.object({
+      codeChangeId: z.string(),
+      force: z.boolean().default(false),
+      pastGate: z.boolean().default(false),
+      resume: z.boolean().default(false),
+      was: z.enum(["READY", "NOTHING_TO_DO"]).optional(),
+    }),
     concurrencyKey: "input.codeChangeId",
     retries: 4,
     // 5s, 25s, 2m, 10m: rides out GitHub's or the AI provider's hiccups.

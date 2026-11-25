@@ -195,7 +195,7 @@ test("picked ones go into the running draft as a merge does, analysed past Autop
   expect(queue.enqueue).toHaveBeenCalledTimes(2);
   expect(queue.enqueue.mock.calls).toEqual([
     ["codeChange", { codeChangeId: changes[0]!.id, force: false, pastGate: true, resume: false }],
-    ["codeChange", { codeChangeId: ruledOut.id, force: true, pastGate: true, resume: false }],
+    ["codeChange", { codeChangeId: ruledOut.id, force: true, pastGate: true, resume: false, was: "NOTHING_TO_DO" }],
   ]);
   // Again: they're where they are, and nothing is queued twice.
   queue.enqueue.mockClear();
@@ -230,7 +230,7 @@ test("ready with only docs to fix (the gate found nothing for users), a pull req
   await add(2, 3);
   await addedPullRequestsAnalysed();
 
-  expect(queue.enqueue.mock.calls).toEqual([["codeChange", { codeChangeId: docsOnly.id, force: true, pastGate: true, resume: false }]]);
+  expect(queue.enqueue.mock.calls).toEqual([["codeChange", { codeChangeId: docsOnly.id, force: true, pastGate: true, resume: false, was: "READY" }]]);
   expect(await prisma.codeChange.findMany({ where: { id: { in: [written.id, docsOnly.id] } }, orderBy: { number: "asc" }, select: { number: true, state: true } })).toEqual([
     { number: 2, state: "READY" },
     { number: 3, state: "ANALYSING" },

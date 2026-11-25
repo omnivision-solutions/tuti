@@ -99,7 +99,7 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, updatedAt: claimedAt } });
     if (count > 0) {
       return {
-        run: { codeChangeId: change.id, force: true, pastGate: true, resume: false },
+        run: { codeChangeId: change.id, force: true, pastGate: true, resume: false, was: was.state },
         // Only this claim: one made since (and still running) isn't put back.
         unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt }, data: was }),
         current: async () => (await prisma.codeChange.count({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt } })) > 0,
@@ -169,14 +169,14 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } };
   // Turned off since it merged: nothing is sent, and it isn't kept waiting. Never one with updates (their history, Undo,
   // those waiting elsewhere go with it). Asked for again by the team (`force`: analysing since they asked), it's put
-  // back, saying why it wasn't: ready with its updates (also one the team added past the gate), else as it was past the gate,
-  // else failed.
+  // back, saying why it wasn't: as its claim found it (`was`, the team's pick), as it was past the gate (Analyse anyway on
+  // nothing to do), ready with its updates, else failed.
   if (!change.project.analyseCodeChanges) {
     if (input.force) {
       const updates = await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } });
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
-        data: { state: updates > 0 ? "READY" : input.pastGate ? "NOTHING_TO_DO" : "FAILED", reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
+        data: { state: input.was ?? (input.pastGate ? "NOTHING_TO_DO" : updates > 0 ? "READY" : "FAILED"), reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
       await prisma.codeChange.deleteMany({ where: { ...waiting, actions: { none: {} } } });
