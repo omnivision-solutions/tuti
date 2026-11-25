@@ -2701,6 +2701,9 @@ model CodeChange {
   /// The gate's word, as the analysis saved it: users see what it changes (true), or not (false); null before an
   /// analysis saved one. The team's own say on the changelog is ChangelogDecision's.
   forUsers      Boolean?
+  /// What a claim for a run past the gate moved it from (changelog.addPullRequests), to put it back if that run never
+  /// happens (Autopilot turned off before it did).
+  claimedFrom   CodeChangeState?
   /// Unused: the marker and the queued job's claim of a one-off rewrite of waiting edits, since removed. Kept while the
   /// previous release reads them; dropped in a later one.
   rewriteDocsOnly Boolean       @default(false)

@@ -77,7 +77,7 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   if (!(await analysisOn(projectId))) {
     return null;
   }
-  const select = { id: true, state: true, reason: true, updatedAt: true } as const;
+  const select = { id: true, state: true, reason: true, updatedAt: true, retryAt: true } as const;
   // Made here (no merge or earlier pick made it): if its run can't be queued, nothing else ever will. Decided by the
   // insert itself, so of two claims at once only the one that made it counts.
   let made = true;
@@ -100,6 +100,8 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
       // Failed, to be tried again by the retry sweep in a few minutes (past the gate, as asked), rather than analysing
       // with no run. One that was there already is left to the run it has, and so is one a run started on meanwhile.
       ...(made && {
+        // Inline, its turn may come after the retry sweep took it (STRANDED_CLAIM_MS): then the loop leaves it.
+        current: async () => (await prisma.codeChange.count({ where: { id: change.id, state: "ANALYSING", retryAt: change.retryAt } })) > 0,
         unclaim: () =>
           prisma.codeChange.updateMany({
             where: { id: change.id, state: "ANALYSING", updatedAt: change.updatedAt },
@@ -119,12 +121,12 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     // Claimed at this moment: its run may start long after (one after another, in-process), and by then "Analyse
     // anyway" may have analysed it already (once the claim looked stopped). A forced run would do it all again.
     const claimedAt = new Date();
-    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retries: 0, updatedAt: claimedAt, ...stranded(true) } });
+    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retries: 0, updatedAt: claimedAt, claimedFrom: was.state, ...stranded(true) } });
     if (count > 0) {
       return {
         run: { codeChangeId: change.id, force: true, pastGate: true, resume: false, was: was.state },
         // Only this claim: one made since (and still running) isn't put back.
-        unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt }, data: was }),
+        unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt }, data: { ...was, claimedFrom: null } }),
         current: async () => (await prisma.codeChange.count({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt } })) > 0,
       };
     }
@@ -267,7 +269,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     }
   } else {
     // Any analysis that starts is the one a retry waited for: none is left waiting.
-    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null } });
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull, retryAt: null, claimedFrom: null } });
   }
   // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the models
   // its level gives Autopilot's roles (roleModel; Decides and Checks here, Writes is `ai`): every step below
@@ -378,7 +380,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
     where: { state: { in: ["FAILED", "ANALYSING"] }, retryAt: { lte: now } },
     orderBy: { retryAt: "asc" },
     take: RETRIES_PER_SWEEP,
-    select: { id: true, projectId: true, state: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true, plan: true } } },
+    select: { id: true, projectId: true, state: true, reason: true, retryAt: true, retries: true, retryPastGate: true, claimedFrom: true, project: { select: { analyseCodeChanges: true, plan: true } } },
   });
   let queued = 0;
   let dropped = 0;
@@ -388,8 +390,13 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
     // Only while it's still the retry found here (not one a person started meanwhile, which drops it).
     const still = { id: change.id, state: change.state, retryAt: change.retryAt };
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges || !planIncludes(change.project.plan, "codeChanges")) {
-      // A stranded claim isn't left analysing: failed, for the team to analyse again once it's back.
-      const stopped = change.state === "ANALYSING" ? { state: "FAILED" as const, reason: "Its analysis stopped before it ran. Analyse it again." } : {};
+      // A stranded claim isn't left analysing: put back as the claim found it (as the job does), else ready with its
+      // updates, else failed, for the team to analyse again once it's back.
+      const updates = change.state === "ANALYSING" && !change.claimedFrom ? await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } }) : 0;
+      const stopped =
+        change.state === "ANALYSING"
+          ? { state: change.claimedFrom ?? (updates > 0 ? ("READY" as const) : ("FAILED" as const)), reason: "Autopilot was turned off before it was analysed again.", claimedFrom: null }
+          : {};
       dropped += (await prisma.codeChange.updateMany({ where: still, data: { retryAt: null, ...stopped } })).count;
       continue;
     }

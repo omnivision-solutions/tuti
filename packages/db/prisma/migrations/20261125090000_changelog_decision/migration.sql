@@ -3,6 +3,7 @@
 -- release reads neither.
 -- AlterTable
 ALTER TABLE "code_change" ADD COLUMN     "forUsers" BOOLEAN;
+ALTER TABLE "code_change" ADD COLUMN     "claimedFrom" "CodeChangeState";
 
 -- Ones analysed before it was saved: for users where a changelog line was written for it (ready with none, only docs to
 -- fix, is no more for users than nothing to do).

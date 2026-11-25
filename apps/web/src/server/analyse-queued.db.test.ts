@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { claimCodeChange, handlers, retryCodeChanges } from "@tuti/jobs";
 import { FAKE_MODEL_KEY } from "@tuti/testkit";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -84,6 +84,20 @@ test("run past the gate (added to the changelog by the team), then Autopilot tur
   await prisma.codeChange.update({ where: { id: nothing.id }, data: { state: "ANALYSING" } });
   await handlers.codeChange({ codeChangeId: nothing.id, force: true, pastGate: true, resume: false, was: "NOTHING_TO_DO" }, quiet);
   expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: nothing.id } })).toMatchObject({ state: "NOTHING_TO_DO" });
+});
+
+test("a pick stranded by a restart, then Autopilot turned off: the sweep puts it back as the claim found it", async () => {
+  // Ready with a docs update and no line: the team's pick claims it for a run past the gate, which never comes.
+  const change = await pullRequest(10);
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
+  await claimCodeChange(project.id, { repoId: 1, repo: "acme/app", number: 10, url: change.url, title: change.title, author: "octo", mergedAt: change.mergedAt.toISOString() }, { pastGate: true });
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "ANALYSING", claimedFrom: "READY" });
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+  await prisma.codeChange.updateMany({ where: { id: { not: change.id } }, data: { retryAt: null } });
+
+  await retryCodeChanges(new Date(Date.now() + 7 * 60 * 60_000));
+
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "READY", claimedFrom: null, reason: "Autopilot was turned off before it was analysed again." });
 });
 
 test("queueing that fails on Hatchet puts the pull request back as it was, its reason too", async () => {

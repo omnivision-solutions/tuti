@@ -1,6 +1,6 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, claimCodeChange, codeChange, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
+import { addToRunningDraft, claimCodeChange, codeChange, queueClaimed, creditBalance, enqueue, GAVE_UP, grantCredits, handlers, retryCodeChanges, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log, roleDefaultModel } from "@tuti/shared";
 import { billingFile, creditsOn, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -638,6 +638,10 @@ describe("deciding", () => {
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     expect(await retryCodeChanges(new Date(Date.now() + 7 * 60 * 60_000))).toMatchObject({ queued: 1 });
     expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, retryAt: true } })).toEqual({ state: "READY", retryAt: null });
+    // Had the loop still been going, it leaves the claim the sweep took: analysed once.
+    const queue = vi.fn(async () => undefined);
+    await queueClaimed(claimed!, queue);
+    expect(queue).not.toHaveBeenCalled();
   });
 
   test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
