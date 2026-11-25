@@ -184,7 +184,8 @@ export async function addChangelogPullRequests(
       added = { number: done.number ?? added?.number ?? null, added: (added?.added ?? 0) + done.added.length };
     }
   });
-  return added ?? result;
+  // A later batch refused: said, with what the ones before it added (they stay).
+  return result.error ? { ...result, ...(added && { number: added.number, added: added.added }) } : (added ?? result);
 }
 
 /** Takes a merged pull request out of a draft, with its line (see changelog.removePullRequest). */

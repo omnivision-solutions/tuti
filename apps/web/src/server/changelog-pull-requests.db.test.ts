@@ -500,3 +500,16 @@ test("in the app, more ticked than one request takes are added in batches, into 
 
   expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id, number: 1 } } })).toBe(55);
 });
+
+test("in the app, a later batch refused is an error, saying so though the batches before it were added", async () => {
+  const numbers = Array.from({ length: 50 }, (_, i) => 300 + i);
+  for (const number of numbers) {
+    github.pullRequest(repo, { number, title: `Change ${number}`, mergedAt: days(2) });
+  }
+  actAs(owner);
+
+  // The 51st isn't a merged pull request of the project's: its batch is refused.
+  const result = await addAction(project.slug, [...numbers, 999].map((number) => ({ repo, number })));
+
+  expect(result).toMatchObject({ error: expect.any(String), number: 1, added: 50 });
+});
