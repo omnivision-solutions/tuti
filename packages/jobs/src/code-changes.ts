@@ -99,11 +99,9 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   // left to the retry sweep once any run would be over (PICK_AFTER_RUN_MS): it runs the pick's run past the gate, which
   // only analyses it if it's still picked and has no line by then (codeChange), and takes up a run that died.
   if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline") {
-    await prisma.codeChange.updateMany({
-      where: { id: change.id, state: "ANALYSING" },
-      // A pick's "past the gate" stays (a merge delivered again doesn't take it back).
-      data: { ...(pastGate && { retryPastGate: true }), retryAt: new Date(Date.now() + PICK_AFTER_RUN_MS) },
-    });
+    // Only where none is due yet: one already set is an earlier claim's, still waiting its turn here (its `current`
+    // reads it), or the sweep's already. Past the gate is read from the team's decision when it runs.
+    await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", retryAt: null }, data: { retryAt: new Date(Date.now() + PICK_AFTER_RUN_MS) } });
     return {};
   }
   if (change.state === "ANALYSING" || change.state === "FAILED") {

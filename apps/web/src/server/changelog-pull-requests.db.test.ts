@@ -310,11 +310,8 @@ test("in-process, one whose analysis is already under way gets no second, parall
 
   expect(queue.enqueue).not.toHaveBeenCalled();
   expect(await decisions()).toEqual([{ number: 9, takenOut: false }]);
-  // Left to the retry sweep once any run would be over: the pick's own run, past the gate.
-  expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 9 }, select: { retryAt: true, retryPastGate: true } })).toEqual({
-    retryAt: expect.any(Date),
-    retryPastGate: true,
-  });
+  // Left to the retry sweep once any run would be over: the pick's own run (past the gate, as the team's decision says).
+  expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 9 }, select: { retryAt: true } })).toEqual({ retryAt: expect.any(Date) });
 });
 
 test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {
