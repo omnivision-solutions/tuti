@@ -12,7 +12,7 @@ import { createArticle, publishArticle, unpublishArticle } from "@/server/operat
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-/** Out of AI credits (docs/plan.md, AI usage per project): each feature pauses its own way, without asking the AI. */
+/** Out of credits (docs/plan.md, AI usage per project): each feature pauses its own way, without asking the AI. */
 
 let openai: OpenAIFake;
 let model: ModelFake;
@@ -104,7 +104,7 @@ test("a credit check that fails otherwise (the database) is a failed answer, wit
 
 test("Draft with AI and Edit with AI are refused (402) with the reason, without asking the AI", async () => {
   const entry = await call(createChangelogEntry, team(), { title: "Next release", body: "Dark mode is here." });
-  const refused = { status: 402, code: "no_credits", message: "This project is out of AI credits. See Settings → Billing." };
+  const refused = { status: 402, code: "no_credits", message: "This project is out of credits. See Settings → Billing." };
   await expect(call(draftChangelogEntry, team(), { number: entry.number })).rejects.toMatchObject(refused);
   await expect(call(rewriteChangelogEntry, team(), { number: entry.number, mode: "shorten" })).rejects.toMatchObject(refused);
   expect(model.requests).toEqual([]);

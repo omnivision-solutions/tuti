@@ -545,7 +545,7 @@ export function ChangelogForm({
   mediaUrls: MediaUrls | null;
   /** AI is set up on this server and the text is written (not still pull-request titles): the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
-  /** The project is out of AI credits: the helpers show, disabled. */
+  /** The project is out of credits: the helpers show, disabled. */
   aiPaused?: boolean;
 }) {
   const editor = useRef<Editor | null>(null);
@@ -1330,10 +1330,10 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
             {cost && (
               <p className="text-sm">
                 {cost.each === null ? (
-                  <>Autopilot analyses each one, which costs AI credits. You have {credits(cost.balance)}.</>
+                  <>Autopilot analyses each one, which costs credits. You have {credits(cost.balance)}.</>
                 ) : (
                   <>
-                    Autopilot analyses each one: about <strong>{credits(cost.each * picked.length)} AI credits</strong>, about {credits(cost.each)} a pull request, what a
+                    Autopilot analyses each one: about <strong>{credits(cost.each * picked.length)} credits</strong>, about {credits(cost.each)} a pull request, what a
                     typical one costs. You have {credits(cost.balance)}.
                   </>
                 )}
@@ -1383,7 +1383,7 @@ function AiHelpers({
   editor: RefObject<Editor | null>;
   /** The form has changes that aren't saved. */
   dirty: boolean;
-  /** Out of AI credits. */
+  /** Out of credits. */
   paused: boolean;
   /** A draft: Draft with AI is in the menu. */
   canDraft: boolean;
@@ -1453,7 +1453,7 @@ function AiHelpers({
               size="sm"
               disabled={pending || paused}
               focusableWhenDisabled
-              title={paused ? "This project is out of AI credits" : undefined}
+              title={paused ? "This project is out of credits" : undefined}
             />
           }
         >
@@ -1992,7 +1992,7 @@ export function ChangelogEntryActions({
   importedOn?: string | null;
   /** AI is set up on this server and the entry is a draft: Draft with AI's dialog (its button here only while `unwritten`, in Edit with AI's menu otherwise). */
   canDraftWithAi: boolean;
-  /** The project is out of AI credits: Draft with AI shows, disabled. */
+  /** The project is out of credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
   /** Not written yet (onlyPullRequestTitles): its text is still the pull requests' titles, Autopilot's line for each, or empty. Draft with AI leads, and Publish asks first. */
   unwritten?: "titles" | "lines" | "empty";

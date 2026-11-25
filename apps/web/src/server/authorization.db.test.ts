@@ -857,7 +857,7 @@ beforeAll(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   model = await startModelFake();
   githubFake = await startGithubFake();
-  // Buying AI credits and plans opens the local Stripe fake's pages (with AI credits or plans on just for that call).
+  // Buying credits and plans opens the local Stripe fake's pages (with credits or plans on just for that call).
   stripe = await startStripeFake();
   featurebaseFake = await startFeaturebaseFake();
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env, ...stripe.env, ...featurebaseFake.env })) {

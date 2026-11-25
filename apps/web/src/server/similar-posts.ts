@@ -27,7 +27,7 @@ const MIN_EMBED_LENGTH = 10;
  * near-identical wording; with OPENAI_API_KEY set, embeddings also catch the
  * same idea in other words. Posts found both ways rank first. Then the decision model (the config file's `duplicates.typing.model`) keeps
  * those it calls duplicates, likeliest first; without one, past the project's hourly checks, or when it fails or takes
- * over a second, the project is out of AI credits, or whoever's typing isn't signed in (it's charged to the project), they're
+ * over a second, the project is out of credits, or whoever's typing isn't signed in (it's charged to the project), they're
  * shown as found. With whether whoever's asking voted for
  * each: the widget's person, by its token (`widgetToken`), or the portal's signed-in user.
  */
@@ -81,10 +81,10 @@ async function duplicatesOnly(projectId: string, title: string, found: Candidate
   }
   // The slot is taken before anything is awaited, so searches at once can't all read the same count.
   checks.set(projectId, { hour, count: count + 1 });
-  // Charged in AI credits like any AI feature: out of them, or when the balance can't be read, the posts are shown as
+  // Charged in credits like any AI feature: out of them, or when the balance can't be read, the posts are shown as
   // found (and the slot given back).
   const meter = await duplicatesMeter(projectId).catch((error: unknown) => {
-    log.warn("Reading AI credits for a duplicates check failed; showing similar posts as found", { error });
+    log.warn("Reading credits for a duplicates check failed; showing similar posts as found", { error });
     return null;
   });
   if (!meter) {

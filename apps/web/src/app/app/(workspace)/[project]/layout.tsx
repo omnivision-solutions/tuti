@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: LayoutProps<"/app/[project]">
   return membership ? { title: { template: `%s · ${templateText(membership.project.name)}`, default: pageTitle(membership.project.name) } } : {};
 }
 
-/** Project pages are for the project's team only (the shell comes from /app); out of AI credits, or on a free trial, every page says so. */
+/** Project pages are for the project's team only (the shell comes from /app); out of credits, or on a free trial, every page says so. */
 export default async function ProjectLayout({ children, params }: LayoutProps<"/app/[project]">) {
   const { project } = await params;
   const membership = await getMembership(project);

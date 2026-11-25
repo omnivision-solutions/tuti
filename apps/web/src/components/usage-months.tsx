@@ -9,7 +9,7 @@ const monthName = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleD
 /** What the project's AI use cost each month (UTC), a row a feature: on Settings → Billing. */
 export async function UsageMonths({ projectId }: { projectId: string }) {
   const months = await aiUsageByMonth(projectId, 12);
-  // With AI credits on, the team sees what it was charged, not what the models cost the server.
+  // With credits on, the team sees what it was charged, not what the models cost the server.
   const inCredits = creditsEnabled();
 
   return (

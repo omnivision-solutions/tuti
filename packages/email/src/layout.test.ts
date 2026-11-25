@@ -266,13 +266,13 @@ test("Tuti's emails to teams open with a line in green saying what it's about, t
   expect(await heads(conversationEmail({ projectName: "Acme", from: "Jo", isNew: false, subject: "Export", body: "Hi", url, assigned: true }))).toMatchObject({ eyebrow: "New reply · Acme", title: "Export" });
   expect(await heads(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url }))).toMatchObject({ eyebrow: "You&#x27;re invited", title: "Join Acme on Tuti" });
   expect(await heads(verifyEmail({ name: "Ada", url }))).toMatchObject({ title: "Confirm your email, Ada" });
-  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "120", url }))).toMatchObject({ eyebrow: "Acme · Billing", title: "120 AI credits left" });
-  expect(await heads(creditsEmail({ projectName: "Acme", out: true, left: "0", url }))).toMatchObject({ title: "Out of AI credits" });
+  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "120", url }))).toMatchObject({ eyebrow: "Acme · Billing", title: "120 credits left" });
+  expect(await heads(creditsEmail({ projectName: "Acme", out: true, left: "0", url }))).toMatchObject({ title: "Out of credits" });
   // One credit is singular, in the title and the text; a fraction of one isn't.
   const one = await heads(creditsEmail({ projectName: "Acme", out: false, left: "1", url }));
-  expect(one).toMatchObject({ title: "1 AI credit left" });
-  expect(one.text).toContain("Acme has 1 AI credit left.");
-  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "0.5", url }))).toMatchObject({ title: "0.5 AI credits left" });
+  expect(one).toMatchObject({ title: "1 credit left" });
+  expect(one.text).toContain("Acme has 1 credit left.");
+  expect(await heads(creditsEmail({ projectName: "Acme", out: false, left: "0.5", url }))).toMatchObject({ title: "0.5 credits left" });
   const limit = await heads(emailLimitEmail({ projectName: "Acme", planName: "Starter", limit: 1000, resets: "December 1", upgrade: "Upgrade to Pro for more.", url }));
   expect(limit).toMatchObject({ eyebrow: "Acme · Billing", title: "You&#x27;ve sent all 1,000 emails this month" });
   expect(limit.text).toContain("has sent the 1,000 emails its Starter plan includes this month");

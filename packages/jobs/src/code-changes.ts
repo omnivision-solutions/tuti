@@ -189,7 +189,7 @@ export async function analysisOn(projectId: string, db: Prisma.TransactionClient
 /**
  * Reads the pull request with the installation's token, then analyses it. Logs keep ids and counts,
  * never its text. `force` analyses it again (a team asked), `pastGate` past the gate ("Analyse
- * anyway"), and `resume` one paused for want of AI credits ("Resume all").
+ * anyway"), and `resume` one paused for want of credits ("Resume all").
  */
 export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, { lastTry }: JobRun = { lastTry: true }): Promise<JobResult> {
   const change = await prisma.codeChange.findUnique({
@@ -222,7 +222,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       return { skipped: true };
     }
   }
-  // Paused for want of AI credits: only the team resumes it (`force` or `resume`), never a run queued
+  // Paused for want of credits: only the team resumes it (`force` or `resume`), never a run queued
   // before it paused (a redelivered merge), even once there are credits again.
   if (!input.force && !input.resume && change.state === "PAUSED") {
     return { skipped: true };
@@ -262,15 +262,15 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The repository isn't in this project any more.", retryAt: null } });
     return { skipped: true };
   }
-  // Out of AI credits: nothing is read or asked, and it waits for the team to resume it (not retried).
+  // Out of credits: nothing is read or asked, and it waits for the team to resume it (not retried).
   let ai: Ai;
   try {
     ai = await aiFor(change.projectId, "code_changes");
   } catch (error) {
     if (error instanceof OutOfCredits) {
       // Past the gate if it was asked so (the team's pick, Analyse anyway): resumed the same way.
-      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of AI credits.", retryAt: null, retryPastGate: input.pastGate } });
-      log.info(`Code change ${change.id}: paused, out of AI credits`);
+      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of credits.", retryAt: null, retryPastGate: input.pastGate } });
+      log.info(`Code change ${change.id}: paused, out of credits`);
       return { skipped: true, paused: true };
     }
     throw error;
@@ -388,14 +388,14 @@ async function nextRetry(id: string): Promise<Date | null> {
 /** How many due code changes one sweep looks at, so a long outage's backlog goes out over a few sweeps. */
 const RETRIES_PER_SWEEP = 50;
 
-/** How long a retry waiting for AI credits waits before a sweep looks at it again. */
+/** How long a retry waiting for credits waits before a sweep looks at it again. */
 const CREDITS_WAIT_MINUTES = 60;
 
 /**
  * Queues the analyses whose retry is due (the `code-change-retries` job), each as "Analyse again" would: claimed as
  * analysing first, so a sweep and a person (or two sweeps) start it once, and the retry counted. Where Autopilot is off
  * now, or the plan doesn't include it, the retry is dropped (the team analyses it again once it's back); where the
- * project is out of AI credits, it waits until there are some, looked at again an hour later (so it isn't loaded every
+ * project is out of credits, it waits until there are some, looked at again an hour later (so it isn't loaded every
  * sweep), and is counted then. The run itself checks the rest (the repository) as for any analysis. The worker runs it
  * every 10 minutes; jobs inline, the web server does (instrumentation.ts).
  */

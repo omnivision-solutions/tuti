@@ -124,7 +124,7 @@ export function DocsAnswer({
               <p className="text-sm text-muted-foreground">Nothing in the docs answers that yet. Post it as feedback so the team sees it.</p>
             </>
           ) : answer.status === "unavailable" ? (
-            // The project's AI is paused (out of AI credits): the AI wasn't asked; the closest articles instead.
+            // The project's AI is paused (out of credits): the AI wasn't asked; the closest articles instead.
             <>
               <p className="font-semibold">AI answers aren&apos;t available right now.</p>
               <p className="text-sm text-muted-foreground">These articles may help. Or post it as feedback so the team sees it.</p>

@@ -55,7 +55,7 @@ export async function embedPosts(posts: PostText[]): Promise<number> {
 
 /**
  * Suggests older posts in the same project that this post may duplicate: the 8 most similar by embedding, those the
- * decision model (the config file's `duplicates.posted.model`) calls duplicates. Without one, out of AI credits, or when it fails, the 3 most similar at
+ * decision model (the config file's `duplicates.posted.model`) calls duplicates. Without one, out of credits, or when it fails, the 3 most similar at
  * DUPLICATE_MIN_SIMILARITY or above. Existing suggestions (including dismissed ones) are left as they are. With `among`,
  * only those posts are candidates (the backfill, checking a post again against posts it has just checked). Once done,
  * the post is marked checked (`duplicatesCheckedAt`); a post without an embedding yet isn't checked, or marked.
@@ -69,7 +69,7 @@ export async function detectDuplicates(postId: string, among?: string[]): Promis
   if (!project || !embedding) {
     return 0;
   }
-  // The model only while the project has AI credits (with credits on): out of them, similarity alone.
+  // The model only while the project has credits (with credits on): out of them, similarity alone.
   const configured = duplicatesModel("posted");
   const meter = configured ? await duplicatesMeter(project.projectId) : null;
   const model = meter ? configured : null;

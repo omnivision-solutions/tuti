@@ -70,7 +70,7 @@ async function change(userId: string, licenseId: string, run: (tx: Prisma.Transa
 
 /**
  * "Assign" a license on the account to a project its holder owns or administers: the project's plan is the license's
- * from now on, and it gets the plan's AI credits for the month. Refused while the license is on another project or
+ * from now on, and it gets the plan's credits for the month. Refused while the license is on another project or
  * revoked, while the project has a license, and while it pays for a plan through Stripe (cancel that first, so nobody
  * pays twice) or has a plan set by hand.
  */

@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 /**
- * AI credits (docs/plan.md, AI usage per project): projects pay for AI with prepaid credits, and each feature pauses
+ * Credits (docs/plan.md, AI usage per project): projects pay for AI with prepaid credits, and each feature pauses
  * without them. Off by default, so a self-hosted server's AI is as unlimited as its own keys. Here, not in the billing
  * file: credits work without plans (top-ups need only Stripe's keys). Rates are read when credits are bought or spent.
  */
 export const credits = z
   .strictObject({
-    enabled: z.boolean().describe("AI credits on: projects pay for AI with prepaid credits (Tuti's cloud)").default(false),
+    enabled: z.boolean().describe("Credits on: projects pay for AI with prepaid credits (Tuti's cloud)").default(false),
     perTopupDollar: z.number().positive().describe("Credits a dollar paid buys").default(100),
     perUsageDollar: z.number().positive().describe("Credits a dollar of model cost spends (with perTopupDollar's default, no margin)").default(100),
     topupExpiryDays: z.number().int().min(0).describe("Whole days a top-up's credits last; 0: for good").default(365),

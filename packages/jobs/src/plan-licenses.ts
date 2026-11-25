@@ -9,7 +9,7 @@ import type { JobResult } from "./index";
  * Plan licenses (docs/plan.md, Plan licenses): a plan an account holds, not paid through Stripe (an AppSumo lifetime
  * deal), assigned to one of its projects. The project's stored plan is the license's while it's assigned and not revoked,
  * so everything that reads a project's plan reads it; Stripe's webhook leaves a licensed project's plan alone
- * (syncSubscription). Each month a licensed project gets its plan's AI credits, as a paid month would.
+ * (syncSubscription). Each month a licensed project gets its plan's credits, as a paid month would.
  */
 
 const HOUR_MS = 3_600_000;
@@ -18,7 +18,7 @@ const HOUR_MS = 3_600_000;
  * Puts the project license `id` is assigned to on the plan it gives, or back on its own plan once it's revoked: none
  * stored, which is the default plan (or its trial's while that runs). In `tx`, holding the license's row. A project
  * paying through Stripe is never given a license (assignment refuses it), so its plan is never touched here.
- * Revoked (a refund), the AI credits it gave that are left go too, on whichever project has them; spent ones stay spent.
+ * Revoked (a refund), the credits it gave that are left go too, on whichever project has them; spent ones stay spent.
  */
 export async function applyPlanLicense(tx: Prisma.TransactionClient, id: string): Promise<void> {
   const license = await tx.planLicense.findUniqueOrThrow({ where: { id }, select: { plan: true, projectId: true, revokedAt: true } });
@@ -63,7 +63,7 @@ export async function lockPlanLicense(tx: Prisma.TransactionClient, id: string):
 }
 
 /**
- * Gives license `id`'s project a month of its plan's AI credits (monthlyCredits), lasting the month, when the last month
+ * Gives license `id`'s project a month of its plan's credits (monthlyCredits), lasting the month, when the last month
  * it gave is over or ends within the hour (license-credits checks hourly): once per month per license, so moving it to
  * another project doesn't give another month early. A month follows on from the last unless the license gave none for
  * a day (unassigned meanwhile): then it starts now. Returns the credits given.

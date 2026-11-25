@@ -1812,7 +1812,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.goto("/feedback/feature-requests");
   await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
 
-  // What the AI cost the project this month, in AI credits (Usage, on Settings → Billing; its old address lands there)…
+  // What the AI cost the project this month, in credits (Usage, on Settings → Billing; its old address lands there)…
   await team.goto(`/app/${slug}/settings/usage`);
   await team.waitForURL(`**/app/${slug}/settings/billing#usage`);
   const spent = team.getByRole("table", { name: /^AI use in / });
@@ -1824,7 +1824,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await checkpoint(team, "team-settings-usage");
   // …taken from the free credits every project starts with, on the same page.
   await expect(team.getByRole("group", { name: "Balance" }).getByText(/^[\d,.]+ of 1,000 left$/)).toBeVisible();
-  await expect(team.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Free credits/ })).toBeVisible();
+  await expect(team.getByRole("table", { name: "Credits left" }).getByRole("row", { name: /Free credits/ })).toBeVisible();
   await checkpoint(team, "team-settings-billing");
 
   // The conversation is the reader's: signed out, the assistant starts afresh (a follow-up only continues their own).

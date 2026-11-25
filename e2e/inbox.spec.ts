@@ -633,7 +633,7 @@ test("composer tools keep accessible names and tooltips, AI draft is labelled on
   await expect(detailsSheet.getByRole("button", { name: "Not snoozed", exact: true })).toContainText("Not snoozed");
   await owner.keyboard.press("Escape");
   // What the tooltips add, screen readers hear too: Insert article's shortcut, and why Draft with AI is off once the
-  // project is out of AI credits.
+  // project is out of credits.
   await owner.setViewportSize({ width: 1440, height: 900 });
   await expect.soft(owner.getByRole("button", { name: "Insert article" })).toHaveAccessibleDescription(/^(⌘K|Ctrl K)$/);
   await expect(owner.getByRole("button", { name: "Draft with AI" })).toHaveAccessibleDescription("");
@@ -641,10 +641,10 @@ test("composer tools keep accessible names and tooltips, AI draft is labelled on
   await owner.reload();
   const draft = owner.getByRole("button", { name: "Draft with AI" });
   await expect(draft).toBeDisabled();
-  await expect.soft(draft).toHaveAccessibleDescription("This project is out of AI credits");
+  await expect.soft(draft).toHaveAccessibleDescription("This project is out of credits");
   await owner.keyboard.press("Shift");
   await draft.focus();
-  await expect(tooltip).toHaveText("Draft with AI: this project is out of AI credits");
+  await expect(tooltip).toHaveText("Draft with AI: this project is out of credits");
 });
 
 test("on a phone the title keeps Close and details, and the sheet's assignment menu wraps a long teammate name", async ({ browser }, testInfo) => {

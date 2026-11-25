@@ -449,7 +449,7 @@ function AssistantReply({
               ? "These articles may help. Or post it as feedback so the team sees it."
               : "Post it as feedback so the team sees it."}
         </p>
-        {/* The project's AI is paused (out of AI credits): the closest articles instead. */}
+        {/* The project's AI is paused (out of credits): the closest articles instead. */}
         {answer.status === "unavailable" && answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
         <div className="flex flex-wrap items-center gap-2">
           {feedbackHref && (

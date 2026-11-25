@@ -162,7 +162,7 @@ test("This month counts down the month's email to the project's users from its p
   expect(await billing()).not.toContain("This month");
 });
 
-test("on a license, This month has what's left of its month's emails and AI credits and when they reset; the credits under it are the others", async () => {
+test("on a license, This month has what's left of its month's emails and credits and when they reset; the credits under it are the others", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("TUTI_CONFIG", creditsOn());
   // A trial's, from before the license: not the month's.
@@ -184,9 +184,9 @@ test("on a license, This month has what's left of its month's emails and AI cred
   expect(page).toContain('aria-label="License options"');
   expect(page).not.toContain("doesn't renew or bill");
   expect(page).toMatch(meter("Emails", "10,000 of 10,000 left"));
-  expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
+  expect(page).toMatch(meter("Credits", `${monthly} of ${monthly} left`));
   // The rest, without the month's: the trial's alone.
-  expect(page).toContain(">Extra AI credits</h2>");
+  expect(page).toContain(">Extra credits</h2>");
   const table = page.slice(page.indexOf("<table"), page.indexOf("</table>"));
   expect(table.match(/<tr/g)).toHaveLength(2);
   expect(table).toContain(">500</td>");
@@ -197,13 +197,13 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 1 } });
   page = await billing();
   expect(page).toMatch(meter("Emails", "9,999 of 10,000 left"));
-  expect(page).toMatch(meter("AI credits", `1 of ${monthly} left`));
+  expect(page).toMatch(meter("Credits", `1 of ${monthly} left`));
   // Spent, the month's credits still have their meter; what the project owes is said, as no balance is.
   await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 0 } });
   await prisma.project.update({ where: { id: projectId }, data: { aiCreditDebt: 700 } });
   page = await billing();
-  expect(page).toMatch(meter("AI credits", `0 of ${monthly} left`));
-  expect(page).toContain(">Extra AI credits</h2>");
+  expect(page).toMatch(meter("Credits", `0 of ${monthly} left`));
+  expect(page).toContain(">Extra credits</h2>");
   // More owed than is left (the trial's 500): AI is paused, and the page says so.
   expect(page).toContain("AI is paused: this project owes 700 credits.");
   // Less owed than is left: it comes out of what's shown at the next AI use.
@@ -231,11 +231,11 @@ test("on a license, This month has what's left of its month's emails and AI cred
   await prisma.creditGrant.deleteMany({ where: { projectId, planLicenseId: null } });
   await prisma.project.update({ where: { id: projectId }, data: { freeCreditsGrantedAt: new Date() } });
   page = await billing();
-  expect(page).not.toContain("Extra AI credits");
+  expect(page).not.toContain("Extra credits");
   expect(page).not.toContain("<table");
 });
 
-test("a license on a plan with no email limit still has its month: the AI credits' meter and the reset day, beside the emails sent", async () => {
+test("a license on a plan with no email limit still has its month: the credits' meter and the reset day, beside the emails sent", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("TUTI_CONFIG", creditsOn());
   // Mid-month, so the month counted and the one the page names are the same.
@@ -253,10 +253,10 @@ test("a license on a plan with no email limit still has its month: the AI credit
   const page = await billing();
   // The emails are counted by calendar month, not the license's: said, beside a reset day that isn't theirs.
   expect(page).toMatch(meter("Emails", "0 sent since 1 Nov"));
-  expect(page).toMatch(meter("AI credits", `${monthly} of ${monthly} left`));
+  expect(page).toMatch(meter("Credits", `${monthly} of ${monthly} left`));
   expect(creditsThrough).toEqual(new Date("2026-12-19T12:00:00Z"));
   expect(page).toContain(">Resets 19 Dec</span>");
-  // With AI credits off too, nothing on the card follows the license's month: no reset day.
+  // With credits off too, nothing on the card follows the license's month: no reset day.
   vi.stubEnv("TUTI_CONFIG", "");
   const emailsOnly = await billing();
   expect(emailsOnly).toMatch(meter("Emails", "0 sent since 1 Nov"));
@@ -266,9 +266,9 @@ test("a license on a plan with no email limit still has its month: the AI credit
   vi.stubEnv("BILLING_CONFIG", "");
   const without = await billing();
   expect(without).not.toContain("This month");
-  expect(without).toContain(">AI credits</h2>");
+  expect(without).toContain(">Credits</h2>");
   expect(without).toMatch(meter("Balance", `${monthly} of ${monthly} left`));
-  expect(without).not.toContain("Extra AI credits");
+  expect(without).not.toContain("Extra credits");
   expect(without).toContain(`>${monthly}</td>`);
 });
 

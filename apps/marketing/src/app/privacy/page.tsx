@@ -44,7 +44,7 @@ export default function PrivacyPage() {
       <ul>
         <li>to provide the Service: sign you in, show your projects, send the emails you ask for (sign-in links, invites, notifications, &quot;it shipped&quot; emails);</li>
         <li>to run AI features you use, such as duplicate detection, AI answers and Autopilot;</li>
-        <li>to bill paid plans and AI credits;</li>
+        <li>to bill paid plans and credits;</li>
         <li>to keep the Service secure, prevent abuse and fix problems;</li>
         <li>to count which pages of tuti.so and the app are visited, so we know what to improve;</li>
         <li>to tell you about important changes to the Service or these policies.</li>

@@ -14,9 +14,9 @@ import { unseenRepliesOf } from "@/server/widget-person";
  * announcements, on any device; POST `{ at }` records that they've seen them up to `at`
  * (it never moves back). The script only calls it when this browser hasn't seen the
  * latest announcement, or after the panel showed it. GET also says how many of the team's
- * messages to them in the support inbox they haven't seen (`messages`; 0 with the inbox off), and on a
- * private portal, when its latest announcement was (`latest`, as /api/widget/latest says it for a public
- * one), if they may read the portal.
+ * messages to them in the support inbox they haven't seen (`messages`; 0 with the inbox off), and when the
+ * latest announcement they may read was (`latest`: with entries for their reader groups, which
+ * /api/widget/latest, everyone's, leaves out; null on a private portal they may not read).
  *
  * Signed in with a fresh SSO token from the customer's app as a bearer token (checked like
  * /sso: signature, lifetime, single use), never cookies, so any site may call it; the
@@ -30,7 +30,7 @@ async function signedIn(request: Request) {
   if (!SLUG_PATTERN.test(slug) || !token) {
     return null;
   }
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ssoSecret: true, supportInbox: true, portalAccess: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ssoSecret: true, supportInbox: true } });
   if (!project?.ssoSecret) {
     return null;
   }
@@ -41,7 +41,6 @@ async function signedIn(request: Request) {
         actor: { kind: "user" as const, userId: verified.userId },
         projectId: project.id,
         inbox: project.supportInbox,
-        private: project.portalAccess !== "PUBLIC",
       };
 }
 
@@ -56,13 +55,12 @@ export async function GET(request: Request) {
     changelogSeenAt(context.projectId, context.actor.userId),
     // As the panel's Messages counts them (with those by email from their address).
     context.inbox ? unseenRepliesOf(context.projectId, context.actor.userId) : 0,
-    context.private &&
-      canReadPortal({ id: context.projectId }, context.actor.userId).then(async (may) =>
-        may ? latestAnnouncedAt({ id: context.projectId }, await readerOf(context.projectId, context.actor.userId)) : null,
-      ),
+    canReadPortal({ id: context.projectId }, context.actor.userId).then(async (may) =>
+      may ? latestAnnouncedAt({ id: context.projectId }, await readerOf(context.projectId, context.actor.userId)) : null,
+    ),
   ]);
   return Response.json(
-    { seen: seen?.toISOString() ?? null, messages, ...(context.private && { latest: latest ? latest.toISOString() : null }) },
+    { seen: seen?.toISOString() ?? null, messages, latest: latest ? latest.toISOString() : null },
     { headers },
   );
 }

@@ -9,7 +9,7 @@ type VerifyAllProps = {
   total: number;
   /** The articles whose fix waits, by title. */
   fixed: string[];
-  /** Why it stopped before the end (out of AI credits), or empty. */
+  /** Why it stopped before the end (out of credits), or empty. */
   stopped: string;
   /** Autopilot, where the fixes wait. */
   url: string;

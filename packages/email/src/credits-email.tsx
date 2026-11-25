@@ -13,10 +13,10 @@ type CreditsProps = {
   url: string;
 };
 
-/** "120 AI credits left", "1 AI credit left" (`left` as the app shows it: "0.5" stays plural). */
-const creditsLeft = (left: string) => `${left} AI ${left === "1" ? "credit" : "credits"} left`;
+/** "120 credits left", "1 credit left" (`left` as the app shows it: "0.5" stays plural). */
+const creditsLeft = (left: string) => `${left} ${left === "1" ? "credit" : "credits"} left`;
 
-/** To a project's owners and admins: its AI credits are running low, or out (docs/plan.md, AI usage per project). */
+/** To a project's owners and admins: its credits are running low, or out (docs/plan.md, AI usage per project). */
 export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
   return (
     <Layout
@@ -29,11 +29,11 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
       }
     >
       <Eyebrow>{projectName} · Billing</Eyebrow>
-      <Title>{out ? "Out of AI credits" : creditsLeft(left)}</Title>
+      <Title>{out ? "Out of credits" : creditsLeft(left)}</Title>
       <Text style={textStyle}>
         {out ? (
           <>
-            <strong>{projectName}</strong> is out of AI credits, so {CREDIT_FEATURES} are paused until it has
+            <strong>{projectName}</strong> is out of credits, so {CREDIT_FEATURES} are paused until it has
             more. Nothing is lost: merged pull requests wait as Paused for you to resume them.
           </>
         ) : (
@@ -49,6 +49,6 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
 }
 
 export const creditsEmail = (props: CreditsProps) => ({
-  subject: props.out ? `${props.projectName} is out of AI credits` : `${props.projectName} is running low on AI credits`,
+  subject: props.out ? `${props.projectName} is out of credits` : `${props.projectName} is running low on credits`,
   body: <CreditsEmail {...props} />,
 });

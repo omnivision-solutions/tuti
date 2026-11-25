@@ -59,7 +59,7 @@ export default function TermsPage() {
         publish or send. We don&apos;t use your content to train AI models, and our AI providers may not either.
       </p>
 
-      <h2>Plans, licences, payments and AI credits</h2>
+      <h2>Plans, licences, payments and credits</h2>
       <ul>
         <li>
           Paid plans, add-ons and licences are billed in advance, monthly or yearly, through Stripe, and renew until you cancel. When
@@ -67,7 +67,7 @@ export default function TermsPage() {
         </li>
         <li>Prices are shown before you buy and exclude taxes unless stated. We&apos;ll give you at least 30 days&apos; notice of a price change, which applies from your next renewal.</li>
         <li>
-          AI credits are prepaid units for AI features. Bought credits expire after the period shown when you buy them;
+          Credits are prepaid units for AI features. Bought credits expire after the period shown when you buy them;
           credits that come with a plan last until the end of the billing period they come with. Credits have no cash value and aren&apos;t refundable
           or transferable.
         </li>

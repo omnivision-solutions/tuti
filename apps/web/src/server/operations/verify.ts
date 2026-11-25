@@ -78,7 +78,7 @@ const verifyAllOutput = z
     id: z.string().describe("Its id").meta({ examples: ["cm3a1l2l3v4e5r6i7f8y9a0b1"] }),
     state: z
       .enum(["running", "done", "stopped"])
-      .describe("`running`, `done`, or `stopped` (`reason` says why: out of AI credits, or the next article couldn't start)")
+      .describe("`running`, `done`, or `stopped` (`reason` says why: out of credits, or the next article couldn't start)")
       .meta({ examples: ["running"] }),
     reason: z.string().describe("Why it stopped, saying how far it got; empty otherwise").meta({ examples: [""] }),
     total: z.number().int().describe("The published articles when it started").meta({ examples: [24] }),
@@ -191,7 +191,7 @@ export const verifyArticle = defineOperation({
   name: "articles.verify",
   title: "Verify an article",
   summary:
-    "Verify a published docs article against the project's GitHub repository, and write an Autopilot update fixing what's out of date. Sends repository files (secrets left out) to the AI provider; costs AI credits where used. One runs per article at a time: starting it again returns the one running",
+    "Verify a published docs article against the project's GitHub repository, and write an Autopilot update fixing what's out of date. Sends repository files (secrets left out) to the AI provider; costs credits where used. One runs per article at a time: starting it again returns the one running",
   method: "POST",
   path: "/articles/{slug}/verify",
   scope: "write",
@@ -288,7 +288,7 @@ const VERIFY_DOLLARS = 0.05;
 const ESTIMATE_RUNS = 20;
 
 /**
- * What Verify all would check, and with AI credits on, what it would cost: `each` per article (the average of the
+ * What Verify all would check, and with credits on, what it would cost: `each` per article (the average of the
  * project's latest finished runs, `measured`, else VERIFY_DOLLARS), `total` for all of them (an article verified at the
  * same commit and unchanged since is skipped, costing nothing, so it's at most this), and the balance.
  */
@@ -332,7 +332,7 @@ function verifyAllView(all: Prisma.VerifyAllGetPayload<{ select: typeof verifyAl
   const running = all.runs.some((run) => run.state === "RUNNING");
   return {
     id: all.id,
-    /** running, done, or stopped (`reason` says why: out of AI credits, or the next article couldn't start). */
+    /** running, done, or stopped (`reason` says why: out of credits, or the next article couldn't start). */
     state: all.state.toLowerCase() as "running" | "done" | "stopped",
     reason: all.reason,
     /** The published articles when it started. */
@@ -391,7 +391,7 @@ export const verifyAll = defineOperation({
   access: "team",
   input: z.object({}),
   output: verifyAllOutput.describe(
-    "The run, with its progress. One runs per project at a time: starting it again while one runs returns that one. Articles verified at the same commit and unchanged since are skipped. With AI credits, running out stops it (402 when there are none to start with)",
+    "The run, with its progress. One runs per project at a time: starting it again while one runs returns that one. Articles verified at the same commit and unchanged since are skipped. With credits, running out stops it (402 when there are none to start with)",
   ),
   run: async ({ actor, projectId }) => {
     // It costs AI for every article: a person starts it, having seen what it costs (the app's confirmation).
