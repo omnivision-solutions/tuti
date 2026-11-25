@@ -402,8 +402,9 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
   if (going) {
     return going.send;
   }
-  // Replies saying the same are sent one at a time: each answer says which message is its own.
-  const same = sameAs(unsent);
+  // Replies saying the same in one conversation are sent one at a time: each answer says which message is its own.
+  // Another conversation's never wait on them.
+  const same = `${key}\u0000${sameAs(unsent)}`;
   const before = [...sends.values()].filter((other) => other.same === same).map((other) => other.send);
   const since = generation;
   // What arrived, from the fetch's own answer; its error when it failed.

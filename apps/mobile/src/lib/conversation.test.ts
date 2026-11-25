@@ -525,6 +525,21 @@ describe("telling which reply arrived", () => {
     expect(getDraft(key).unsent).toEqual([]);
   });
 
+  it("doesn't hold a reply back for one saying the same in another conversation", async () => {
+    const other = "draft-other-conversation";
+    updateDraft(key, (draft) => ({ ...draft, unsent: [thanks] }));
+    updateDraft(other, (draft) => ({ ...draft, unsent: [{ ...thanks, id: "u9" }] }));
+    let answer!: (value: unknown) => void;
+    const { api, calls } = fakeApi({ "/conversations/12/messages": () => new Promise((resolve) => (answer = resolve)), "/conversations/13/messages": () => ({ id: "m9" }) });
+    const first = sendUnsent(api, key, 12, thanks, async () => []);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    // The first hasn't answered; the other conversation's goes anyway.
+    expect(await sendUnsent(api, other, 13, { ...thanks, id: "u9" }, async () => [])).toEqual({ id: "m9" });
+    expect(calls).toHaveLength(2);
+    answer({ id: "m1" });
+    await first;
+  });
+
   it("remembers a send's message after the last unsent one leaves: a failed reply saying the same, sent next, stays", async () => {
     updateDraft(key, (draft) => ({ ...draft, unsent: [thanks] }));
     // Sent; the fetch after it hadn't shown its message yet.
