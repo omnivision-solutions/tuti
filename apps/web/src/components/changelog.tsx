@@ -1879,12 +1879,13 @@ export function ChangelogEntryActions({
             {markers.length > 0 ? (markers.length === 1 ? "Replace a line before publishing" : `Replace ${markers.length} lines before publishing`) : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
-          <AlertDialogDescription className={cn(markers.length > 0 && "wrap-anywhere")}>
+          {/* A div, so the note on text not written yet is in it too: all of it is read out as the dialog opens. */}
+          <AlertDialogDescription render={<div />} className={cn("flex flex-col gap-3", markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
             {markers.length > 0 ? (
-              `“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`
+              <p>{`“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`}</p>
             ) : (
-              <>
+              <p>
                 {summary.start}
                 {summary.count && (
                   <Popover>
@@ -1896,27 +1897,27 @@ export function ChangelogEntryActions({
                 )}
                 .{sample && " Sample updates are published without announcing."}
                 {importedOn && ` Published before you imported it, it keeps that date (${importedOn}) and isn't announced.`}
-              </>
+              </p>
+            )}
+            {/* Not written yet: said in one tinted line, with Draft with AI beside it (it closes this dialog and opens its own, which says what it replaces). */}
+            {unwritten && markers.length === 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-highlight px-3 py-2 text-sm text-highlight-foreground">
+                <p className="flex-1">
+                  {unwritten === "titles"
+                    ? "Its text is still the pull requests' titles."
+                    : unwritten === "lines"
+                      ? "Its text is still Autopilot's lines, one per pull request."
+                      : "It has no text yet, only its pull requests."}
+                </p>
+                {aiFirst && (
+                  <AlertDialogCancel variant="link" className="h-auto p-0 font-medium text-highlight-foreground underline" onClick={() => setDrafting(true)}>
+                    Draft with AI first
+                  </AlertDialogCancel>
+                )}
+              </div>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {/* Not written yet: said in one tinted line, with Draft with AI beside it (it closes this dialog and opens its own, which says what it replaces). */}
-        {unwritten && markers.length === 0 && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-highlight px-3 py-2 text-sm text-highlight-foreground">
-            <p className="flex-1">
-              {unwritten === "titles"
-                ? "Its text is still the pull requests' titles."
-                : unwritten === "lines"
-                  ? "Its text is still Autopilot's lines, one per pull request."
-                  : "It has no text yet, only its pull requests."}
-            </p>
-            {aiFirst && (
-              <AlertDialogCancel variant="link" className="h-auto p-0 font-medium text-highlight-foreground underline" onClick={() => setDrafting(true)}>
-                Draft with AI first
-              </AlertDialogCancel>
-            )}
-          </div>
-        )}
         {/* No cover yet: its designs, drawn for this entry, with one picked already (not while lines are left to fill in: it can't be published). */}
         {covers && cover && markers.length === 0 && (
           <CoverDesigns projectSlug={projectSlug} number={number} covers={covers} value={cover} onChange={setPickedCover} none className="grid-cols-3 sm:grid-cols-4" />

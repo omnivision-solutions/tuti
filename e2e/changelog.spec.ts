@@ -1149,7 +1149,8 @@ test("the next release waits to be written; its entry gets a featured image read
   expect(await left("Publish")).toBeLessThan(await left("Draft with AI"));
   await team.getByRole("button", { name: "Publish" }).click();
   const titles = team.getByRole("alertdialog", { name: "Publish “Dark mode is here”?" });
-  await expect(titles).toContainText("Its text is still the pull requests' titles.");
+  // Said in the description, so it's read out as the dialog opens.
+  await expect(titles).toHaveAccessibleDescription(/Its text is still the pull requests' titles\./);
   // Publish is still the dialog's main action; Draft with AI is offered beside what it's about.
   await expect(titles.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
   await checkpoint(team, "team-changelog-publish-titles");
