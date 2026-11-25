@@ -315,6 +315,19 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     expect(back).not.toHaveBeenCalled();
   });
 
+  it("shows the conversation again when the window narrows before the hand-off has taken it", async () => {
+    const view = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    window.mockWindow = { ...narrow, width: 900, height: 1280 };
+    await view.rerender(<ConversationRoute />);
+    expect(dismissTo()).toHaveBeenCalled();
+
+    // Folded back before the Inbox came to the front (dismissTo hasn't popped it here).
+    window.mockWindow = narrow;
+    await view.rerender(<ConversationRoute />);
+    expect(await screen.findByText("Hi! The export stops at 500 rows.")).toBeTruthy();
+  });
+
   it("waits, when the window widens with the details sheet over it, till the sheet has closed to hand it over", async () => {
     const view = await render(<ConversationRoute />);
     await screen.findByText("Hi! The export stops at 500 rows.");

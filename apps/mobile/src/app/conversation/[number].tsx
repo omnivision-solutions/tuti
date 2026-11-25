@@ -105,7 +105,8 @@ export default function ConversationRoute() {
       forgetChosen();
     }
   }, [wide]);
-  if (handingOff) {
+  // Folded back before the Inbox took it: still its own screen.
+  if (handingOff && wide) {
     return null;
   }
   // One screen per conversation: its draft is read once, and goes with it.
