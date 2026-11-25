@@ -7,34 +7,20 @@ import { pickSnooze } from "@/app/inbox/snooze";
 import { InboxRow } from "@/components/inbox-row";
 import { offerNotifications } from "@/components/notifications";
 import { onRead } from "@/lib/conversation";
-import { snoozeTime, updateConversation } from "@/lib/details";
-import { afterChange, appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type SwipeChange, type ViewName, withRow } from "@/lib/inbox";
+import { type Change, snoozeTime, updateConversation } from "@/lib/details";
+import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
 /**
- * The list shown, and what it lists (`for`: the project, view and search it was loaded for; `load`: the load of
- * everything that brought it). `moved`: rows live changes have added (or, below zero, removed) since, which move where
- * the next page starts.
+ * The list shown, and what it lists (`for`: the project, view and search it was loaded for). `moved`: rows live changes
+ * have added (or, below zero, removed) since, which move where the next page starts.
  */
-type List = { for: string; load: number; rows: Row[]; next: string | null; total: number; moved: number };
+type List = { for: string; rows: Row[]; next: string | null; total: number; moved: number };
 
-/**
- * A swipe's change, shown over the list: while the server has it (`settled` null), and once it has, over a list loaded
- * by a load of everything that started before (`settled`: the latest load then), which may not have it yet.
- */
-type Swiped = { change: SwipeChange; settled: number | null; turn: number };
 /** Swipes are by project and number: numbers start again in each project. */
 const swipeKey = (project: string | undefined, number: number) => `${project}#${number}`;
-
-/** The list with one conversation's row in place, moved, or gone (`found` null). */
-function placed(list: List, number: number, found: Row | null): List {
-  // The server pages by position: a row in or out of those shown moves where the next page starts.
-  const rows = withRow(list.rows, number, found, list.next === null);
-  const moved = rows.length - list.rows.length;
-  return { ...list, rows, next: list.next && String(Number(list.next) + moved), moved: list.moved + moved };
-}
 
 /** What each view says when it has nothing, as the web's Inbox. */
 const EMPTY: Record<ViewName, string> = {
@@ -61,16 +47,26 @@ export default function Inbox() {
   const [q, setQ] = useState("");
   const [loaded, setList] = useState<List | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Swipes by conversation, shown over the list at once, whatever fetches answer meanwhile.
-  const [swiped, setSwiped] = useState<ReadonlyMap<string, Swiped>>(new Map());
-  const unswipe = (keep: (key: string, swipe: Swiped) => boolean) =>
-    setSwiped((now) => {
-      const left = new Map([...now].filter(([at, swipe]) => keep(at, swipe)));
-      return left.size === now.size ? now : left;
-    });
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [loads] = useState(latestOnly);
+  /**
+   * Swiped rows, hidden from the list: while the server hasn't answered (null), then until a load of the list that
+   * started after the answer has come in (0 till that load starts, then its number). That load has the row as the server
+   * has it now, wherever it went; meanwhile the row's own fetches are ignored, and no next page is asked for.
+   */
+  const [swipes, setSwipes] = useState<ReadonlyMap<string, number | null>>(new Map());
+  // The same, for callbacks to read as they run.
+  const swipesNow = useRef(swipes);
+  const changeSwipes = useCallback((change: (swipes: Map<string, number | null>) => void) => {
+    const next = new Map(swipesNow.current);
+    change(next);
+    swipesNow.current = next;
+    setSwipes(next);
+  }, []);
+  const [swipesAnswered, setSwipesAnswered] = useState(0);
+  const pagingAfterSwipes = useRef(false);
+  const [pageAfterSwipes, setPageAfterSwipes] = useState(0);
   const paging = useRef(false);
   // The latest load of everything: the list it shows once it's in (null if a newer one replaced it, or it failed).
   const reload = useRef<Promise<List | null>>(Promise.resolve(null));
@@ -132,10 +128,17 @@ export default function Inbox() {
       const counts = loadCounts(mine);
       const rows = firstRows(api, view, q, keep).then((page) => {
         if (loads.isLatest(mine)) {
-          const fresh = { for: key, load: mine, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
+          const fresh = { for: key, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
           setList(fresh);
-          // Swipes it has: those the server had before it started.
-          unswipe((_, swipe) => swipe.settled === null || swipe.settled >= mine);
+          // Swipes it has: those answered before it started.
+          if ([...swipesNow.current.values()].some((reload) => reload && reload <= mine)) {
+            changeSwipes((now) => now.forEach((reload, at) => reload && reload <= mine && now.delete(at)));
+          }
+          // A next page asked for while they were waiting: asked now, from where this list starts it.
+          if (pagingAfterSwipes.current && swipesNow.current.size === 0) {
+            pagingAfterSwipes.current = false;
+            setPageAfterSwipes((n) => n + 1);
+          }
           setError(null);
           setNow(Date.now());
           return fresh;
@@ -152,7 +155,7 @@ export default function Inbox() {
         },
       );
     },
-    [api, project, view, q, key, loads, loadCounts],
+    [api, project, view, q, key, loads, loadCounts, changeSwipes],
   );
   useEffect(() => {
     void loadAll();
@@ -175,14 +178,9 @@ export default function Inbox() {
   };
 
   // The next page after `from` (the list shown, unless a reload's).
-  // Swipes the server hasn't answered yet. Pages start at an offset, and one the server has already taken out of the
-  // view moves every later row up one: the next page waits for their answers, which put their rows in place and the
-  // next page's start with them (`pagingAfterSwipes`), so none is skipped.
-  const swiping = useRef(0);
-  const pagingAfterSwipes = useRef(false);
-  const [swipesAnswered, setSwipesAnswered] = useState(0);
   const loadMore = async (from = list): Promise<void> => {
-    if (from?.next && swiping.current > 0) {
+    // Pages start at an offset, which a swipe the server has may have moved: the next page waits for the list's reload.
+    if (from?.next && swipesNow.current.size > 0) {
       pagingAfterSwipes.current = true;
       return;
     }
@@ -226,23 +224,26 @@ export default function Inbox() {
 
   // One conversation changed: its row (in place, moved up, or gone from the view). Of two fetches of one row, only the
   // later one's answer is taken. The counts are the caller's, once for several rows.
-  // By view, project and number: a swipe's answer puts its row in place in its own view only, so it drops only that
-  // view's fetches.
-  const [rowLoads] = useState(() => new Map<string, number>());
-  const rowLoadKey = (inView: ViewName, at: string) => `${inView}|${at}`;
+  const [rowLoads] = useState(() => new Map<number, number>());
   const loadRow = useCallback(
     async (number: number) => {
       const mine = loads.current();
-      const at = rowLoadKey(view, swipeKey(project, number));
-      const turn = (rowLoads.get(at) ?? 0) + 1;
-      rowLoads.set(at, turn);
+      const turn = (rowLoads.get(number) ?? 0) + 1;
+      rowLoads.set(number, turn);
       try {
         const page = await api<Page>(rowPath(view, number));
-        if (loads.isLatest(mine) && rowLoads.get(at) === turn) {
+        // A row with a swipe waiting comes with the list's reload after the answer.
+        if (loads.isLatest(mine) && rowLoads.get(number) === turn && !swipesNow.current.has(swipeKey(project, number))) {
           const found = page.conversations.find((row) => row.number === number);
-          setList((now) => now && placed(now, number, found ? { ...found, match: null } : null));
-          // Fetched since the server had its swipe (one fetched before is dropped): the row is as the server has it.
-          unswipe((at, swipe) => at !== swipeKey(project, number) || swipe.settled === null);
+          setList((now) => {
+            if (!now) {
+              return now;
+            }
+            // The server pages by position: a row in or out of those shown moves where the next page starts.
+            const rows = withRow(now.rows, number, found ? { ...found, match: null } : null, now.next === null);
+            const moved = rows.length - now.rows.length;
+            return { ...now, rows, next: now.next && String(Number(now.next) + moved), moved: now.moved + moved };
+          });
           setNow(Date.now());
         }
       } catch {
@@ -252,40 +253,25 @@ export default function Inbox() {
     [api, project, view, loads, rowLoads],
   );
 
-  // A swipe's change: the row changes (or goes) at once, and comes back as it was, with why, if the server refuses.
-  // Each swipe's turn: of two on one row (a search keeps a snoozed one), only the later one's answer settles or clears it.
-  const turns = useRef(0);
+  // A swipe's change: the row is hidden at once. When the server answers, either way, the list shown then is loaded again
+  // from its start, as many rows as it shows (the only list kept: another view loads fresh when chosen). Refused, the row
+  // comes back at once, with why.
   const triage = useCallback(
-    async (row: Row, change: SwipeChange, done: string, verb: string) => {
-      const number = row.number;
-      const at = swipeKey(project, number);
-      const turn = ++turns.current;
-      swiping.current++;
-      setSwiped((now) => new Map(now).set(at, { change, settled: null, turn }));
+    async (row: Row, change: Change, done: string, verb: string) => {
+      const at = swipeKey(project, row.number);
+      changeSwipes((now) => now.set(at, null));
       try {
-        await updateConversation(api, number, change);
-        setSwiped((now) => (now.get(at)?.turn === turn ? new Map(now).set(at, { change, settled: loads.current(), turn }) : now));
-        // In the list too, as the server has it now: a fetch of its row in this view, from before, is dropped (another
-        // view's is taken: this doesn't put the row there).
-        const fetched = rowLoadKey(view, at);
-        rowLoads.set(fetched, (rowLoads.get(fetched) ?? 0) + 1);
-        setList((now) => {
-          const shown = now?.for === key ? now.rows.find((r) => r.number === number) : undefined;
-          return shown ? placed(now!, number, afterChange(shown, change, view, q)) : now;
-        });
+        await updateConversation(api, row.number, change);
+        changeSwipes((now) => now.set(at, 0));
         AccessibilityInfo.announceForAccessibility(done);
-        void loadCounts().catch(() => {});
       } catch (e) {
-        unswipe((swipeAt, swipe) => swipeAt !== at || swipe.turn !== turn);
+        changeSwipes((now) => now.delete(at));
         // An alert: the row may be far down the list, out of sight.
         Alert.alert(`Couldn't ${verb} "${row.subject}"`, e instanceof Error ? e.message : String(e));
-      } finally {
-        if (--swiping.current === 0) {
-          setSwipesAnswered((n) => n + 1);
-        }
       }
+      setSwipesAnswered((n) => n + 1);
     },
-    [api, project, key, view, q, loads, rowLoads, loadCounts],
+    [api, project, changeSwipes],
   );
   const close = useCallback((row: Row) => void triage(row, { status: "closed" }, "Closed", "close"), [triage]);
   const snooze = useCallback(
@@ -295,23 +281,32 @@ export default function Inbox() {
       ),
     [triage, view, q],
   );
+  // The reload after an answer, of whatever list is shown now; answered swipes wait for it.
+  const reloadAfterSwipes = useEffectEvent(() => {
+    void loadAll(list?.rows.length);
+    const started = loads.current();
+    changeSwipes((now) => now.forEach((reload, at) => reload === 0 && now.set(at, started)));
+  });
+  useEffect(() => {
+    if (swipesAnswered) {
+      reloadAfterSwipes();
+    }
+  }, [swipesAnswered]);
+  const pageNow = useEffectEvent(() => void loadMore());
+  useEffect(() => {
+    if (pageAfterSwipes) {
+      pageNow();
+    }
+  }, [pageAfterSwipes]);
 
   // Live while it's open, and opened again on coming back to the foreground (a phone drops it in the background). Several
   // changes at once make one fetch; a search is fetched whole.
-  // A next page asked for while swipes were on their way: asked now, from where the list they've settled starts it.
-  const pageNow = useEffectEvent(() => void loadMore());
-  useEffect(() => {
-    if (pagingAfterSwipes.current && swiping.current === 0) {
-      pagingAfterSwipes.current = false;
-      pageNow();
-    }
-  }, [swipesAnswered]);
-
   const onLive = useEffectEvent((all: boolean, numbers: number[]) => {
     if (all || q) {
       void loadAll(list?.rows.length);
     } else {
-      numbers.forEach((number) => void loadRow(number));
+      // A row with a swipe waiting comes with the list's reload after the answer.
+      numbers.filter((number) => !swipesNow.current.has(swipeKey(project, number))).forEach((number) => void loadRow(number));
       void loadCounts().catch(() => {});
     }
   });
@@ -354,7 +349,6 @@ export default function Inbox() {
     }
   }, [error]);
 
-
   const choose = (slug: string) => {
     if (slug !== project) {
       void setProject(slug).catch((e: Error) => setError(`Couldn't keep that choice: ${e.message}`));
@@ -386,12 +380,6 @@ export default function Inbox() {
   useEffect(() => onRead((number) => onLive(false, [number])), []);
 
   const current = projects?.find((p) => p.slug === project);
-  // The rows as the swipes it may not have yet leave them.
-  const rows = (list?.rows ?? []).flatMap((row) => {
-    const swipe = swiped.get(swipeKey(project, row.number));
-    const shown = swipe && (swipe.settled === null || list!.load <= swipe.settled) ? afterChange(row, swipe.change, view, q) : row;
-    return shown ? [shown] : [];
-  });
   const searching = !!q;
   const noProjects = projects?.length === 0;
 
@@ -456,7 +444,7 @@ export default function Inbox() {
       />
       <FlatList
         testID="inbox-list"
-        data={rows}
+        data={(list?.rows ?? []).filter((row) => !swipes.has(swipeKey(project, row.number)))}
         keyExtractor={(row) => String(row.number)}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"

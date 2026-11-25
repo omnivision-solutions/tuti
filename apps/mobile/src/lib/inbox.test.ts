@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { afterChange, ageOf, appendPage, firstRows, initialsOf, latestOnly, lineOf, listPath, type Page, type Row, rowPath, searchAgeOf, spokenAgeOf, withRow } from "./inbox";
+import { ageOf, appendPage, firstRows, initialsOf, latestOnly, lineOf, listPath, type Page, type Row, rowPath, searchAgeOf, spokenAgeOf, withRow } from "./inbox";
 
 const NOW = Date.parse("2026-11-25T12:00:00Z");
 const row = (number: number, minutesAgo: number, more: Partial<Row> = {}): Row => ({
@@ -112,30 +112,5 @@ describe("latestOnly", () => {
     expect(loads.isLatest(first)).toBe(false);
     expect(loads.isLatest(second)).toBe(true);
     expect(loads.current()).toBe(second);
-  });
-});
-
-describe("afterChange", () => {
-  const open = row(1, 5);
-  const close = { status: "closed" } as const;
-  const snooze = { snoozedUntil: "2026-11-26T09:00:00Z" };
-  const wake = { snoozedUntil: null };
-
-  it("takes a closed one out of every view but Closed and Spam, and keeps it in a search, closed", () => {
-    for (const view of ["open", "mine", "unassigned", "waiting", "snoozed"] as const) {
-      expect(afterChange(open, close, view, "")).toBeNull();
-    }
-    expect(afterChange(open, close, "spam", "")).toEqual({ ...open, status: "closed" });
-    expect(afterChange(open, close, "closed", "")).toEqual({ ...open, status: "closed" });
-    expect(afterChange(open, close, "open", "csv")).toEqual({ ...open, status: "closed" });
-  });
-
-  it("takes a snoozed one out of the views of what's awake, and a woken one out of Snoozed", () => {
-    for (const view of ["open", "mine", "unassigned", "waiting"] as const) {
-      expect(afterChange(open, snooze, view, "")).toBeNull();
-    }
-    expect(afterChange(open, snooze, "snoozed", "")).toBe(open);
-    expect(afterChange(open, snooze, "open", "csv")).toBe(open);
-    expect(afterChange(open, wake, "snoozed", "")).toBeNull();
   });
 });
