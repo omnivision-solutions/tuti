@@ -19,7 +19,9 @@ import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
+import { addChangelogSubscribers, removeChangelogSubscribers } from "@/server/operations/changelog-subscribers";
 import { emailPreferences, updateEmailPreferences } from "@/server/operations/email-preferences";
+import { syncUsersOperation } from "@/server/operations/users";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -47,6 +49,21 @@ vi.mock("@tuti/email", async (importOriginal) => {
 });
 afterEach(() => {
   sending.hook = null;
+});
+// A removal of the team's to fail once, when it names this address (a lost connection, say).
+const removing = vi.hoisted(() => ({ failFor: null as string | null }));
+vi.mock("./changelog-subscription", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./changelog-subscription")>();
+  return {
+    ...real,
+    removeSubscribers: async (...args: Parameters<typeof real.removeSubscribers>) => {
+      if (removing.failFor && args[1].some((person) => person.email === removing.failFor)) {
+        removing.failFor = null;
+        throw new Error("The database went away");
+      }
+      return real.removeSubscribers(...args);
+    },
+  };
 });
 // The Account page's forms' router.
 vi.mock("next/navigation", async (original) => ({
@@ -136,14 +153,15 @@ async function page(query: { token: string; sent?: string } | { confirm: string 
 
 /**
  * Until a claim (in another connection) waits on its lock of the project's row, by asking Postgres: in this file's own
- * database only (other test files share the server), and only the claim's statement (it reads "portalAccess" FOR SHARE).
+ * database only (other test files share the server), and only the claim's statement (it reads "portalAccess" FOR SHARE),
+ * or another `statement` (an ILIKE pattern).
  */
-async function waitingOnALock() {
+async function waitingOnALock(statement = '%"portalAccess"%FOR SHARE%') {
   for (let tries = 0; tries < 300; tries++) {
     const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
       SELECT count(*)::int AS waiting FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()
-        AND query ILIKE '%"portalAccess"%FOR SHARE%'`;
+        AND query ILIKE ${statement}`;
     if (waiting > 0) {
       return;
     }
@@ -1487,7 +1505,8 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     ]);
     expect(receiver.received.filter((r) => r.headers["tuti-event-type"] === "changelog.unsubscribed")).toHaveLength(2);
     expect(await unsubscribedAt(kim)).toEqual(expect.any(Date));
-    expect(await unsubscribedAt(asked)).toBeNull();
+    // Theirs too, though never confirmed: only the address's owner has its token.
+    expect(await unsubscribedAt(asked)).toEqual(expect.any(Date));
 
     await confirmed(kim);
     expect(await unsubscribedAt(kim)).toBeNull();
@@ -1660,6 +1679,239 @@ test("the migration marks the rows that unsubscribed before it: unconfirmed with
     [noLink.id]: true,
     [emailedOnce.id]: true,
     [waiting.id]: false,
+    [confirmedOne.id]: false,
+  });
+});
+
+describe("the team's own subscribers: changelogSubscribers.add and .remove, users.sync's subscribedToChangelog", () => {
+  let receiver: Awaited<ReturnType<typeof startWebhookReceiver>>;
+  beforeAll(async () => {
+    receiver = await startWebhookReceiver();
+  });
+  afterAll(() => receiver.close());
+  beforeEach(async () => {
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"); // the receiver is local
+    await prisma.webhook.create({
+      data: { projectId: project.id, url: receiver.url, secret: "whsec_x", events: ["changelog.unsubscribed"], createdById: owner.id },
+    });
+  });
+  const key = () => ({ actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id });
+  const told = async () =>
+    (await prisma.webhookDelivery.findMany({ where: { webhook: { projectId: project.id } }, orderBy: { createdAt: "asc" }, select: { payload: true } })).map(
+      ({ payload }) => {
+        const { email, userId, source, allEmails } = (payload as { data: Record<string, unknown> }).data;
+        return { email, userId, source, allEmails };
+      },
+    );
+  const row = (email: string) => prisma.changelogSubscriber.findFirst({ where: { projectId: project.id, email } });
+
+  test("added by address or by user: confirmed at once, no email asks, and only entries published from then on arrive", async () => {
+    await publishEntry("Before");
+    const [kim, lee] = [newAddress(), newAddress()];
+    await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-lee", userId: (await signUp("Lee")).id, email: lee } });
+    await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-none", userId: (await signUp("None")).id } });
+    expect(await call(addChangelogSubscribers, key(), { emails: [kim.toUpperCase()], users: ["app-lee", "app-none", "app-unknown"] })).toEqual({
+      subscribed: [kim, lee],
+      skipped: [
+        { email: null, user: "app-none", reason: "no_email" },
+        { email: null, user: "app-unknown", reason: "no_email" },
+      ],
+    });
+    expect(emailsTo(kim)).toEqual([]);
+    await publishEntry("After");
+    expect(entryEmailsTo(kim).map((email) => email.subject)).toEqual([`${project.name}: After`]);
+    expect(entryEmailsTo(lee).map((email) => email.subject)).toEqual([`${project.name}: After`]);
+    // Again: still subscribed, as it was.
+    const { confirmedAt } = (await row(kim))!;
+    expect((await call(addChangelogSubscribers, key(), { emails: [kim] })).subscribed).toEqual([kim]);
+    expect((await row(kim))!.confirmedAt).toEqual(confirmedAt);
+  });
+
+  test("never one that unsubscribed or turned the project's emails off: named, and not added", async () => {
+    const left = newAddress();
+    await unsubscribe(await confirmed(left));
+    const quiet = newAddress();
+    await optOut((await ssoUser(quiet)).id);
+    // A request still waiting to be confirmed is the team's to confirm.
+    const asked = newAddress();
+    await subscribe(asked);
+    // Two of the app's users at one address: each is named.
+    for (const id of ["app-left-1", "app-left-2"]) {
+      await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: id, userId: (await signUp("Left")).id, email: left } });
+    }
+    expect(await call(addChangelogSubscribers, key(), { emails: [left, quiet, asked], users: ["app-left-1", "app-left-2"] })).toEqual({
+      subscribed: [asked],
+      skipped: [
+        { email: left, user: null, reason: "unsubscribed" },
+        { email: left, user: "app-left-1", reason: "unsubscribed" },
+        { email: left, user: "app-left-2", reason: "unsubscribed" },
+        { email: quiet, user: null, reason: "opted_out" },
+      ],
+    });
+    expect((await row(left))!.confirmedAt).toBeNull();
+    expect(await row(quiet)).toBeNull();
+    // The link emailed to the address still signs it up again.
+    await confirmed(left);
+    expect((await row(left))!.unsubscribedAt).toBeNull();
+  });
+
+  test("asking on a paused project's form leaves no row, so it isn't read as an unsubscribe: the team can add them", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    const asked = newAddress();
+    expect(await subscribe(asked)).toEqual({ sentTo: asked });
+    expect(await row(asked)).toBeNull();
+    expect((await call(addChangelogSubscribers, key(), { emails: [asked] })).subscribed).toEqual([asked]);
+  });
+
+  test("removed by the team: webhooks hear it (api, with their id in the app where named), and the team can add them back", async () => {
+    const [kim, lee, never] = [newAddress(), newAddress(), newAddress()];
+    const sam = await ssoUser(lee);
+    await prisma.ssoIdentity.update({ where: { userId: sam.id }, data: { externalId: "app-sam" } });
+    await call(addChangelogSubscribers, key(), { emails: [kim, lee] });
+    const asked = newAddress();
+    await subscribe(asked);
+    expect(await call(removeChangelogSubscribers, key(), { emails: [kim, never, asked], users: ["app-sam"] })).toEqual({ removed: [kim, lee] });
+    // Told in one transaction: in no order.
+    expect(await told()).toEqual(
+      expect.arrayContaining([
+        { email: kim, userId: null, source: "api", allEmails: false },
+        { email: lee, userId: "app-sam", source: "api", allEmails: false },
+      ]),
+    );
+    // The waiting request's link is gone too.
+    expect((await row(asked))!.confirmTokenHash).toBeNull();
+    await publishEntry("Gone");
+    expect(entryEmailsTo(kim)).toEqual([]);
+    expect((await row(kim))!.unsubscribedAt).toBeNull();
+    expect((await call(addChangelogSubscribers, key(), { emails: [kim] })).subscribed).toEqual([kim]);
+    // Removed by the team, then their own unsubscribe from an email they kept (its entry deleted since, say): theirs,
+    // the team can't undo it.
+    await call(removeChangelogSubscribers, key(), { emails: [kim] });
+    await unsubscribe(await tokenOf(kim));
+    expect((await call(addChangelogSubscribers, key(), { emails: [kim] })).skipped).toEqual([{ email: kim, user: null, reason: "unsubscribed" }]);
+    // Removing again: nobody was subscribed, nothing told.
+    await call(removeChangelogSubscribers, key(), { emails: [lee] });
+    expect(await told()).toHaveLength(3);
+  });
+
+  test("a removal names the user that named the address, nobody where several did", async () => {
+    const [shared, alone] = [newAddress(), newAddress()];
+    for (const [id, email] of [["app-a", shared], ["app-b", shared], ["app-c", alone]]) {
+      await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: id!, userId: (await signUp("Shared")).id, email } });
+    }
+    await call(addChangelogSubscribers, key(), { emails: [shared, alone] });
+    await call(removeChangelogSubscribers, key(), { users: ["app-a", "app-b"] });
+    await call(addChangelogSubscribers, key(), { emails: [shared] });
+    await call(removeChangelogSubscribers, key(), { emails: [shared], users: ["app-a"] });
+    await call(removeChangelogSubscribers, key(), { emails: [alone] });
+    expect(await told()).toEqual([
+      { email: shared, userId: null, source: "api", allEmails: false },
+      { email: shared, userId: "app-a", source: "api", allEmails: false },
+      { email: alone, userId: "app-c", source: "api", allEmails: false },
+    ]);
+  });
+
+  test("an opt-out made while an add waits for the address's row is seen: not added", async () => {
+    const email = newAddress();
+    const sam = await ssoUser(email);
+    await subscribe(email); // a row to hold
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+    const held = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "projectId" = ${project.id} AND "email" = ${email} FOR UPDATE`;
+        locked();
+        await gate;
+        await tx.emailOptOut.create({ data: { userId: sam.id, projectId: project.id } });
+      },
+      { timeout: 30_000 },
+    );
+    await holding;
+    const adding = call(addChangelogSubscribers, key(), { emails: [email] });
+    await waitingOnALock('%changelog_subscriber%FOR UPDATE%');
+    release();
+    await held;
+    expect(await adding).toEqual({ subscribed: [], skipped: [{ email, user: null, reason: "opted_out" }] });
+  });
+
+  test("users.sync's false with a new address, failing after the users are saved: sending it again stops the old address", async () => {
+    const [old, next] = [newAddress(), newAddress()];
+    await call(syncUsersOperation, key(), { users: [{ id: "app-moving", email: old, subscribedToChangelog: true }] });
+    const moving = { users: [{ id: "app-moving", email: next, subscribedToChangelog: false }] };
+    removing.failFor = next;
+    await expect(call(syncUsersOperation, key(), moving)).rejects.toThrow("The database went away");
+    await call(syncUsersOperation, key(), moving);
+    expect((await row(old))!.confirmedAt).toBeNull();
+    expect(await told()).toEqual([{ email: old, userId: "app-moving", source: "api", allEmails: false }]);
+  });
+
+  test("users.sync's subscribedToChangelog: true adds their address (the one just synced), false removes it", async () => {
+    const [kim, lee] = [newAddress(), newAddress()];
+    await unsubscribe(await confirmed(lee));
+    expect(
+      await call(syncUsersOperation, key(), {
+        users: [
+          { id: "app-kim", email: kim, subscribedToChangelog: true },
+          { id: "app-lee", email: lee, subscribedToChangelog: true },
+          { id: "app-none", subscribedToChangelog: true },
+        ],
+      }),
+    ).toEqual({
+      created: 3,
+      updated: 0,
+      changelogSkipped: [
+        { user: "app-lee", reason: "unsubscribed" },
+        { user: "app-none", reason: "no_email" },
+      ],
+    });
+    expect((await row(kim))!.confirmedAt).toEqual(expect.any(Date));
+    expect((await call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: false }] })).changelogSkipped).toEqual([]);
+    expect((await row(kim))!.confirmedAt).toBeNull();
+    // A sync refused (past 50 properties) changes nothing, the subscription neither.
+    await call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: true }] });
+    const fifty = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, i]));
+    await call(syncUsersOperation, key(), { users: [{ id: "app-full", properties: fifty }] });
+    await expect(
+      call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: false }, { id: "app-full", properties: { extra: 1 } }] }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect((await row(kim))!.confirmedAt).toEqual(expect.any(Date));
+    // Their address cleared and false in one sync: the old address stops too.
+    await call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: true }] });
+    await call(syncUsersOperation, key(), { users: [{ id: "app-kim", email: null, subscribedToChangelog: false }] });
+    expect((await row(kim))!.confirmedAt).toBeNull();
+    expect(await told()).toEqual([
+      { email: lee, userId: null, source: "email", allEmails: false },
+      { email: kim, userId: "app-kim", source: "api", allEmails: false },
+      { email: kim, userId: "app-kim", source: "api", allEmails: false },
+    ]);
+  });
+});
+
+test("S2's migration marks again the rows the release before S1 unsubscribed meanwhile, and clears the mark on rows confirmed again", async () => {
+  const row = (data: { confirmTokenHash?: string; confirmedAt?: Date; unsubscribedAt?: Date }) =>
+    prisma.changelogSubscriber.create({ data: { projectId: project.id, email: newAddress(), ...data }, select: { id: true } });
+  const noLink = await row({});
+  const waiting = await row({ confirmTokenHash: randomUUID() });
+  // Emailed an entry, unsubscribed by the release before S1, then asked again on the portal.
+  const askedAgain = await row({ confirmTokenHash: randomUUID() });
+  const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "For everyone." });
+  const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+  await prisma.changelogEmail.create({ data: { entryId, subscriberId: askedAgain.id, sentAt: new Date() } });
+  const confirmedAgain = await row({ confirmedAt: new Date(), unsubscribedAt: new Date() });
+  const confirmedOne = await row({ confirmedAt: new Date() });
+  await prisma.$executeRawUnsafe(
+    readFileSync(new URL("../../../../packages/db/prisma/migrations/20261125180000_changelog_subscriber_unsubscribed_again/migration.sql", import.meta.url), "utf8"),
+  );
+
+  const marked = await prisma.changelogSubscriber.findMany({ where: { projectId: project.id }, select: { id: true, unsubscribedAt: true } });
+  expect(Object.fromEntries(marked.map(({ id, unsubscribedAt }) => [id, unsubscribedAt !== null]))).toEqual({
+    [noLink.id]: true,
+    [waiting.id]: false,
+    [askedAgain.id]: true,
+    [confirmedAgain.id]: false,
     [confirmedOne.id]: false,
   });
 });

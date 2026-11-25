@@ -73,6 +73,7 @@ import { createApiReference, deleteApiReference, getApiReference, listApiReferen
 import { listGithubRepositories } from "./github";
 import { markChangelogSeen } from "./changelog-seen";
 import { updateEmailPreferences } from "./email-preferences";
+import { addChangelogSubscribers, removeChangelogSubscribers } from "./changelog-subscribers";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
 import { askDocs } from "./docs-ask";
 import { escalateDocs } from "./docs-escalate";
@@ -226,6 +227,8 @@ const all = [
   likeComment,
   setSubscription,
   updateEmailPreferences,
+  addChangelogSubscribers,
+  removeChangelogSubscribers,
   listDuplicates,
   dismissDuplicate,
   getWidgetSettings,

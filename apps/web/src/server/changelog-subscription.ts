@@ -6,17 +6,19 @@ import {
   changelogReach,
   type ChangelogReach,
   emailBrand,
+  emailedOf,
+  optedOutOf,
   projectEmailWaits,
   projectSender,
   provenAddress,
   queueDeliveries,
-  reached,
   recordEvent,
 } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { hashSecret } from "@/lib/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
+import { withLockRetries } from "@/server/lock-retries";
 
 
 /**
@@ -118,15 +120,88 @@ async function recordUnsubscribe(
 }
 
 /**
- * Whether the changelog is emailed to `email` now (a confirmed subscriber that changelogReach reaches), with its row
- * locked till `tx` ends: every way out at an address takes it first, so they take turns, each sees what the one before
- * did, and only the one that stops it tells webhooks. Read in `tx` too: a second connection, waited for while holding
- * the lock, would run the pool dry under a burst of one-click unsubscribes.
+ * Of these addresses (lowercase), the subscribers that are confirmed, and those the changelog is emailed to now
+ * (emailedOf: confirmed ones changelogReach reaches), with their rows locked till `tx` ends, in one order: every way
+ * out at an address takes its row first, so they take turns, each sees what the one before did, and only the one that
+ * stops it tells webhooks. Read in `tx` too: a second connection, waited for while holding the lock, would run the
+ * pool dry under a burst of one-click unsubscribes.
  */
-async function emailedNow(tx: Prisma.TransactionClient, projectId: string, email: string) {
-  const [row] = await tx.$queryRaw<{ confirmed: boolean }[]>`
-    SELECT "confirmedAt" IS NOT NULL AS confirmed FROM "changelog_subscriber" WHERE "projectId" = ${projectId} AND "email" = ${email} FOR UPDATE`;
-  return !!row?.confirmed && reached(await changelogReach(projectId, { email, confirmed: true }, tx));
+async function lockSubscribers(tx: Prisma.TransactionClient, projectId: string, emails: string[]) {
+  const rows = await tx.$queryRaw<{ email: string; confirmed: boolean }[]>`
+    SELECT "email", "confirmedAt" IS NOT NULL AS confirmed FROM "changelog_subscriber"
+    WHERE "projectId" = ${projectId} AND "email" = ANY(${emails}::text[]) ORDER BY "email" FOR UPDATE`;
+  return { confirmed: new Set(rows.filter((row) => row.confirmed).map((row) => row.email)), emailed: await emailedOf(tx, projectId, emails) };
+}
+
+/** lockSubscribers for one address: whether the changelog is emailed to it now. */
+const emailedNow = async (tx: Prisma.TransactionClient, projectId: string, email: string) =>
+  (await lockSubscribers(tx, projectId, [email])).emailed.has(email);
+
+/**
+ * The team adds subscribers (lowercase addresses): confirmed at once, on the team's word, from now on (entries
+ * published before aren't sent). Never an address that unsubscribed (only a link emailed to it can sign it up again)
+ * or where all of the project's emails are off: those are returned, not added. One already subscribed stays as it was.
+ */
+export async function addSubscribers(projectId: string, emails: string[]) {
+  return withLockRetries(() =>
+    prisma.$transaction(
+    async (tx) => {
+      const optedOutBefore = await optedOutOf(tx, projectId, emails);
+      let rest = emails.filter((email) => !optedOutBefore.has(email));
+      // Made and then locked in lockSubscribers' order, so adds, removals and unsubscribes at once queue, not deadlock;
+      // an unsubscribe meanwhile is waited for and seen: it's left.
+      await tx.changelogSubscriber.createMany({ data: [...rest].sort().map((email) => ({ projectId, email })), skipDuplicates: true });
+      await lockSubscribers(tx, projectId, rest);
+      // Read again with the rows held: an opt-out made meanwhile (which takes them too, where there's one) is seen.
+      const optedOut = new Set([...optedOutBefore, ...(await optedOutOf(tx, projectId, rest))]);
+      rest = rest.filter((email) => !optedOut.has(email));
+      await tx.changelogSubscriber.updateMany({
+        where: { projectId, email: { in: rest }, confirmedAt: null, unsubscribedAt: null },
+        data: { confirmedAt: new Date() },
+      });
+      const left = new Set(
+        (await tx.changelogSubscriber.findMany({ where: { projectId, email: { in: rest }, confirmedAt: null }, select: { email: true } })).map((row) => row.email),
+      );
+      return {
+        subscribed: rest.filter((email) => !left.has(email)),
+        unsubscribed: rest.filter((email) => left.has(email)),
+        optedOut: emails.filter((email) => optedOut.has(email)),
+      };
+    },
+    { timeout: 60_000 },
+    ),
+  );
+}
+
+/**
+ * The team removes subscribers (`email` lowercase; `by`: the account of the person in its app, where it named them),
+ * as their own unsubscribe does, without marking them unsubscribed: the team can add them back. Any confirmation link
+ * still out goes too. Webhooks hear changelog.unsubscribed (`source` api) for each it stops emailing. Returns the
+ * addresses that were subscribed.
+ */
+export async function removeSubscribers(projectId: string, people: { email: string; by?: string }[]) {
+  const emails = people.map((person) => person.email);
+  const { removed, deliveries } = await withLockRetries(() =>
+    prisma.$transaction(
+    async (tx) => {
+      const { confirmed, emailed } = await lockSubscribers(tx, projectId, emails);
+      await tx.changelogSubscriber.updateMany({
+        where: { projectId, email: { in: emails } },
+        data: { confirmedAt: null, confirmTokenHash: null, confirmExpiresAt: null, confirmUsedAt: null },
+      });
+      const deliveries: string[] = [];
+      for (const { email, by } of people) {
+        if (emailed.has(email)) {
+          deliveries.push(...(await recordUnsubscribe(tx, projectId, email, { source: "api", allEmails: false, by })));
+        }
+      }
+      return { removed: emails.filter((email) => confirmed.has(email)), deliveries };
+    },
+    { timeout: 60_000 },
+    ),
+  );
+  await queueDeliveries(deliveries);
+  return removed;
 }
 
 /**
@@ -198,7 +273,7 @@ export async function findSubscription(projectSlug: string, token: string) {
     paused: await projectEmailWaits(subscriber.projectId),
     /**
      * Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can). A confirmed
-     * one is marked unsubscribed (the team can't add it back), and webhooks hear changelog.unsubscribed if it was being
+     * one is marked unsubscribed (the team can't add it back), so is one the team removed, and webhooks hear changelog.unsubscribed if it was being
      * emailed (changelogReach): not again for one already ended, nor where all of the project's emails were off already.
      * `by`: the account that did it, where one did (the Account switch), named in the event.
      */
@@ -206,7 +281,9 @@ export async function findSubscription(projectSlug: string, token: string) {
       const deliveries = await prisma.$transaction(async (tx) => {
         const stops = await emailedNow(tx, subscriber.projectId, subscriber.email);
         const { count } = await tx.changelogSubscriber.updateMany({
-          where: { id: subscriber.id, token, confirmedAt: { not: null } },
+          // Confirmed or not (removed by the team since, say): the token is only ever given to the address's owner
+          // (its emails, its confirmed page, their Account), so it's their own choice either way.
+          where: { id: subscriber.id, token, unsubscribedAt: null },
           data: { unsubscribedAt: new Date() },
         });
         await tx.changelogSubscriber.updateMany({

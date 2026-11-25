@@ -226,8 +226,8 @@ export const groups = [
   },
   {
     name: "Changelog",
-    description: "Release notes the team writes (or has AI draft) and publishes on the portal, where readers react to them.",
-    prefixes: ["changelog", "changelogComments", "changelogStyle"],
+    description: "Release notes the team writes (or has AI draft), publishes on the portal for readers to react to, and emails to subscribers.",
+    prefixes: ["changelog", "changelogComments", "changelogStyle", "changelogSubscribers"],
   },
   {
     name: "Docs",

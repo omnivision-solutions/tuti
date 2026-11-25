@@ -41,15 +41,16 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     // Over the per-visitor limit: nothing is sent, but the answer is the same, so it tells them nothing.
     return { sentTo: email };
   }
+  // No row for nothing sent: one with no link out reads as unsubscribed (S2's migration), which the team can't add.
+  if (!sends) {
+    return { sentTo: email };
+  }
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email },
     update: {},
     select: { id: true, email: true, confirmedAt: true },
   });
-  if (!sends) {
-    return { sentTo: email };
-  }
   // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's
   // emails off (their link offers to turn them back on): a link of this request's own (emailConfirmation).
   const sent = await emailConfirmation({ ...project, slug: projectSlug }, subscriber);

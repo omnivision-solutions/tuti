@@ -89,6 +89,22 @@ async function audience(projectId: string, emailedAt: Date, { only, unsentOf }: 
     ORDER BY s."createdAt", s."id"`;
 }
 
+/**
+ * Of these addresses (lowercase), the ones the changelog is emailed to now: confirmed subscribers changelogReach
+ * reaches (audienceSql, as of now), read in `db` (a transaction holding their rows' locks).
+ */
+export async function emailedOf(db: Db, projectId: string, emails: string[]): Promise<Set<string>> {
+  const rows = await db.$queryRaw<{ email: string }[]>`SELECT s."email" ${audienceSql(projectId, new Date())} AND s."email" = ANY(${emails}::text[])`;
+  return new Set(rows.map((row) => row.email));
+}
+
+/** Of these addresses, the ones where someone turned all of the project's emails off (changelogReach's "opted-out"). */
+export async function optedOutOf(db: Db, projectId: string, emails: string[]): Promise<Set<string>> {
+  const rows = await db.$queryRaw<{ email: string }[]>`
+    SELECT a."email" FROM unnest(${emails}::text[]) AS a("email") WHERE ${optedOutSql(projectId, Prisma.raw(`a."email"`))}`;
+  return new Set(rows.map((row) => row.email));
+}
+
 /** How many audienceSql has, counted in the database (a big list's rows never leave it). */
 async function audienceSize(...args: Parameters<typeof audienceSql>) {
   const [row] = await prisma.$queryRaw<{ count: number }[]>`SELECT count(*)::int AS "count" ${audienceSql(...args)}`;
