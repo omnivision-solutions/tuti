@@ -723,6 +723,34 @@ describe("swiping a row", () => {
     expect(screen.getByText("Invite link expired")).toBeTruthy();
   });
 
+  it("takes a live fetch of the row in another view chosen before the server answered", async () => {
+    const closing = row("Invite link expired");
+    const changes = serveChanges([closing]);
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // Closed loads before the server has the close, so it isn't there yet.
+    const served = mockApi.getMockImplementation()!;
+    let answerRow!: (page: Page) => void;
+    mockApi.mockImplementation((path, init) =>
+      path === rowPath("closed", closing.number)
+        ? new Promise((resolve) => (answerRow = resolve))
+        : path.startsWith("/conversations?view=closed")
+          ? Promise.resolve(page([]))
+          : served(path, init),
+    );
+    await fireEvent.press(screen.getByRole("tab", { name: "Closed, 9" }));
+    expect(await screen.findByText("No closed conversations yet.")).toBeTruthy();
+
+    // The stream says it changed; its fetch in Closed answers after the close's answer, and is taken.
+    await act(async () => mockLive!({ kind: "conversation", number: closing.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    await act(async () => changes[0]!.answer(true));
+    await act(async () => answerRow(page([{ ...closing, status: "closed" }])));
+    expect(screen.getByText("Invite link expired")).toBeTruthy();
+  });
+
   it("lets only a row's latest swipe settle or undo it: a snooze refused after a close was sent leaves the close", async () => {
     const both = row("Invite link expired", { match: { note: false, snippet: "invite link" } });
     serve({ "/conversations?view=open": page([]), "/conversations?q=invite": page([both]) });

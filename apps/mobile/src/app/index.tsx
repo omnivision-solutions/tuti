@@ -216,12 +216,14 @@ export default function Inbox() {
 
   // One conversation changed: its row (in place, moved up, or gone from the view). Of two fetches of one row, only the
   // later one's answer is taken. The counts are the caller's, once for several rows.
-  // By project and number, as swipes.
+  // By view, project and number: a swipe's answer puts its row in place in its own view only, so it drops only that
+  // view's fetches.
   const [rowLoads] = useState(() => new Map<string, number>());
+  const rowLoadKey = (inView: ViewName, at: string) => `${inView}|${at}`;
   const loadRow = useCallback(
     async (number: number) => {
       const mine = loads.current();
-      const at = swipeKey(project, number);
+      const at = rowLoadKey(view, swipeKey(project, number));
       const turn = (rowLoads.get(at) ?? 0) + 1;
       rowLoads.set(at, turn);
       try {
@@ -252,8 +254,10 @@ export default function Inbox() {
       try {
         await updateConversation(api, number, change);
         setSwiped((now) => (now.get(at)?.turn === turn ? new Map(now).set(at, { change, settled: loads.current(), turn }) : now));
-        // In the list too, as the server has it now: a row fetch already on its way, from before, is dropped.
-        rowLoads.set(at, (rowLoads.get(at) ?? 0) + 1);
+        // In the list too, as the server has it now: a fetch of its row in this view, from before, is dropped (another
+        // view's is taken: this doesn't put the row there).
+        const fetched = rowLoadKey(view, at);
+        rowLoads.set(fetched, (rowLoads.get(fetched) ?? 0) + 1);
         setList((now) => {
           const shown = now?.for === key ? now.rows.find((r) => r.number === number) : undefined;
           return shown ? placed(now!, number, afterChange(shown, change, view, q)) : now;
