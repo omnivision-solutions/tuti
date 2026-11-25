@@ -207,7 +207,9 @@ async function WidgetArticle({
   const moved = byId ?? ((await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked));
   const slug = moved ?? asked;
   // One locked for this reader: its title, and what to do.
-  const article = (await publishedArticle(projectSlug, slug)) ?? (await lockedForReader(projectSlug, slug));
+  const found = (await publishedArticle(projectSlug, slug)) ?? (await lockedForReader(projectSlug, slug));
+  // Opened by ID: the one read at its slug must still be it (renamed and its slug reused in between: not found).
+  const article = byId && found?.publicId !== asked ? null : found;
   if (!article) {
     return (
       <EmptyState

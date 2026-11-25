@@ -485,6 +485,7 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
     where: { project: { slug: projectSlug }, slug, ...servedArticle },
     select: {
       projectId: true,
+      publicId: true,
       ...levelSelect,
       title: true,
       body: true,
@@ -533,7 +534,7 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       tab: shown(above.slice(0, 1)) ? where.tab : null,
     };
     // Picked field by field: nothing of what it says.
-    return { kind: "locked" as const, locked: { slug, title: article.title, ...locked, signedIn: reader?.signedIn ?? false } };
+    return { kind: "locked" as const, locked: { slug, publicId: article.publicId, title: article.title, ...locked, signedIn: reader?.signedIn ?? false } };
   }
   // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
   const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;
