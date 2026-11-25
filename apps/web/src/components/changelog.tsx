@@ -316,6 +316,8 @@ function FeaturedImage({
           number={entry.number}
           title={entry.title}
           covers={covers}
+          replacing={savedCover !== null}
+          published={entry.published}
           open={making}
           onOpenChange={setMaking}
           // Marked as asked for before it's made: the page refreshed with it can land before the action's answer does.
@@ -396,6 +398,8 @@ function MakeCover({
   number,
   title,
   covers,
+  replacing,
+  published,
   open,
   onOpenChange: setOpen,
   onAsking,
@@ -405,6 +409,9 @@ function MakeCover({
   number: number;
   title: string;
   covers: CoverChoices;
+  /** The entry has a saved cover, which this one replaces. */
+  replacing: boolean;
+  published: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Its cover is being made (true), or couldn't be (false): the form takes the entry's next cover as its own. */
@@ -428,7 +435,11 @@ function MakeCover({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Make a cover</DialogTitle>
-          <DialogDescription>Drawn from this entry as it&apos;s saved and your portal&apos;s branding.</DialogDescription>
+          {/* Unlike an upload, it doesn't wait for Save: said before it's used, with what readers see. */}
+          <DialogDescription>
+            Drawn from this entry as it&apos;s saved and your portal&apos;s branding. {replacing ? "It replaces the featured image" : "It becomes the featured image"}{" "}
+            as soon as you use it, without Save.{published && " Readers see it right away."}
+          </DialogDescription>
         </DialogHeader>
         <CoverDesigns projectSlug={projectSlug} number={number} covers={covers} value={design} onChange={(value) => value !== "none" && setPicked(value)} headline={shown} />
         <Field>

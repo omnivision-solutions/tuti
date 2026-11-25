@@ -1348,6 +1348,8 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   await team.getByLabel("Title").fill("Dark mode is here, at last");
   await featured.getByRole("button", { name: "Make a cover" }).click();
   const making = team.getByRole("dialog", { name: "Make a cover" });
+  // It doesn't wait for Save, and says so.
+  await expect(making).toHaveAccessibleDescription("Drawn from this entry as it's saved and your portal's branding. It becomes the featured image as soon as you use it, without Save.");
   const designs = making.getByRole("group", { name: "Cover" });
   await expect(designs.getByRole("radio")).toHaveCount(3);
   for (const name of ["Title", "Sections", "Pattern"]) {
@@ -1437,6 +1439,11 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
 
   // An image uploaded and not saved, then "Use this cover": the composed one is the form's, and Save keeps it.
   await api("/changelog", { title: "Faster search", body: "It's quicker." });
+  // On a published entry with a cover, it says what readers see.
+  await team.goto(`/app/${slug}/changelog/2`);
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  await expect(making).toHaveAccessibleDescription("Drawn from this entry as it's saved and your portal's branding. It replaces the featured image as soon as you use it, without Save. Readers see it right away.");
+  await making.getByRole("button", { name: "Cancel" }).click();
   await team.goto(`/app/${slug}/changelog/3`);
   await featured.getByLabel("Featured image", { exact: true }).setInputFiles({ name: "mine.png", mimeType: "image/png", buffer: await team.screenshot() });
   await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeVisible();
