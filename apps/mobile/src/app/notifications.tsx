@@ -119,6 +119,8 @@ export default function NotificationSettings() {
             onValueChange={setShowText}
             accessibilityLabel="Show message text"
             trackColor={{ true: colors.primary }}
+            // Android's thumb is the system's accent otherwise, not Tuti's: on, it sits on the green track as Material's does.
+            thumbColor={Platform.OS === "android" && settings?.showMessageText ? colors.onPrimary : undefined}
           />
         </View>
       </View>

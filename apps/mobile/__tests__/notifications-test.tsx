@@ -330,6 +330,20 @@ describe("the notifications' settings", () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
+  it("draws Android's switch in Tuti's colours, not the system's accent", async () => {
+    const os = Platform.OS;
+    Platform.OS = "android";
+    try {
+      mockApi.mockImplementation(async () => ({ showMessageText: true }));
+      await render(<NotificationSettings />);
+      // Android's host switch: found by its label, its thumb's colour a prop of its own.
+      await waitFor(() => expect(screen.getByLabelText("Show message text")).toHaveProp("on", true));
+      expect(screen.getByLabelText("Show message text")).toHaveProp("thumbTintColor", "#ffffff");
+    } finally {
+      Platform.OS = os;
+    }
+  });
+
   it("announces a failed change to VoiceOver, which has no live regions", async () => {
     const os = Platform.OS;
     Platform.OS = "ios";
