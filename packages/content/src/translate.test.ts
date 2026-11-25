@@ -87,11 +87,11 @@ test("glossary terms must come out as set, as whole words, and in scripts withou
 });
 
 test("plain text keeps its line breaks, links, addresses and code exactly", () => {
-  const text = "Hi, the export at https://acme.com/export?id=4 fails.\nRun `tuti sync` or mail ops@acme.com.";
+  const text = "Hi, the export at https://acme.com/export?id=4 fails.\nRun `tuti sync` or mail e2e-ops@example.com.";
   const { segment, apply } = segmentOfText(text);
   expect(segment.text).toBe("Hi, the export at <x1/> fails.<br/>Run <x2/> or mail <x3/>.");
   expect(apply("Hallo, der Export unter <x1/> schlägt fehl.<br/>Führe <x2/> aus oder schreib an <x3/>.")).toBe(
-    "Hallo, der Export unter https://acme.com/export?id=4 schlägt fehl.\nFühre `tuti sync` aus oder schreib an ops@acme.com.",
+    "Hallo, der Export unter https://acme.com/export?id=4 schlägt fehl.\nFühre `tuti sync` aus oder schreib an e2e-ops@example.com.",
   );
   expect(apply("Hallo <x1/>.")).toEqual({ id: "1", reason: "a placeholder is missing" });
 });
@@ -229,4 +229,35 @@ test("line breaks are checked by the document and plain text checks themselves",
   const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "One line here" }, { type: "hardBreak" }, { type: "text", text: "Another line" }] }] });
   expect(check("1", "Eine Zeile, noch eine")).toBe("its line breaks don't match the source's");
   expect(segmentOfText("Hi\nthere").apply("Hallo")).toEqual({ id: "1", reason: "its line breaks don't match the source's" });
+});
+
+test("entities a model writes by imitation come back as characters", () => {
+  const { apply } = segmentOfText("Say hi");
+  expect(apply("Sag &quot;Hallo&quot; &amp; l&#39;ami&nbsp;&#x263A;")).toBe('Sag "Hallo" & l\'ami ☺');
+});
+
+test("a provider that doesn't answer is reported, not taken for a bad translation", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readers vote on posts they like." }] }] };
+  const out = await translateDoc(one, { from: "English", to: "German", ask: async () => Promise.reject(new Error("429 rate limited")) });
+  expect(out.providerError).toBe("429 rate limited");
+  expect(out.doc).toEqual(one);
+});
+
+test("at most 4 requests run at once", async () => {
+  const many: Doc = { type: "doc", content: Array.from({ length: 12 }, (_, i) => ({ type: "paragraph", content: [{ type: "text", text: `Paragraph number ${i} has words` }] })) };
+  let running = 0;
+  let most = 0;
+  await translateDoc(many, {
+    from: "English",
+    to: "German",
+    batchChars: 10,
+    ask: async (_, user) => {
+      most = Math.max(most, ++running);
+      await new Promise((r) => setTimeout(r, 5));
+      running--;
+      const ids = Object.keys(JSON.parse(user.split("\n\n")[0]!) as object);
+      return JSON.stringify({ segments: Object.fromEntries(ids.map((id) => [id, `Absatz ${id} hat Wörter`])) });
+    },
+  });
+  expect(most).toBe(4);
 });

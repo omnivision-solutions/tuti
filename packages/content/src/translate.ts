@@ -26,11 +26,21 @@ const TAG_LETTER: Record<string, string> = { link: "a", bold: "b", italic: "i", 
 const MARK_ORDER = Object.keys(TAG_LETTER);
 
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const unescape = (text: string) => text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+/** Back to text: our three escapes, and the other entities models write by imitation (&quot;, &#39;, &nbsp;); &amp; last. */
+const ENTITIES: Record<string, string> = { lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
+const unescape = (text: string) =>
+  text
+    .replace(/&(lt|gt|quot|apos|nbsp|#\d{1,7}|#x[\da-f]{1,6});/gi, (_, name: string) => {
+      const code = name.startsWith("#") ? Number.parseInt(name.slice(name[1] === "x" || name[1] === "X" ? 2 : 1), name[1] === "x" || name[1] === "X" ? 16 : 10) : NaN;
+      return Number.isNaN(code) ? ENTITIES[name.toLowerCase()]! : code <= 0x10ffff ? String.fromCodePoint(code) : "";
+    })
+    .replace(/&amp;/g, "&");
+/** Our tags, placeholders and line breaks: the only markup segments have (never a generic `<…>`, which a reply may fake). */
+const MARKUP = /<\/?[a-z]\d{1,4}>|<x\d{1,4}\/>|<br\s?\/?>/g;
 type Mark = NonNullable<JSONContent["marks"]>[number];
 const key = (mark: Mark) => JSON.stringify([mark.type, mark.attrs ?? {}]);
 /** Whether text has anything to translate: a letter outside tags and placeholders. */
-const hasWords = (tagged: string) => /\p{L}/u.test(tagged.replace(/<[^>]*>/g, "").replace(/&\w+;/g, ""));
+const hasWords = (tagged: string) => /\p{L}/u.test(tagged.replace(MARKUP, "").replace(/&\w{1,8};/g, ""));
 
 /** A segment in the document: `check` says why a translation can't go back in (null: it can), `apply` puts it there. */
 type Slot = { id: string; source: string; check: (text: string) => string | null; apply: (text: string) => void };
@@ -170,7 +180,7 @@ export function segmentsOf(doc: Doc): {
         id,
         source: escape(node.attrs.alt),
         check: (translated) =>
-          /<[^>]*>/.test(translated)
+          /[<>]/.test(translated)
             ? "an image's description can't have tags"
             : unescape(translated).trim().length > MAX_ALT_LENGTH
               ? `an image's description must be at most ${MAX_ALT_LENGTH} characters`
@@ -209,7 +219,7 @@ export function segmentsOf(doc: Doc): {
 export function segmentOfText(text: string): { segment: Segment; apply: (translated: string) => string | Problem; check: (id: string, translated: string) => string | null } {
   const kept: string[] = [];
   const tagged = text
-    .split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)/)
+    .split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8})/)
     .map((part, i) => {
       if (i % 2 === 0) return escape(part).replace(/\r?\n/g, "<br/>");
       kept.push(part);
@@ -250,7 +260,7 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
 /** Where a glossary term must come out in a translated segment: as its translation, or unchanged when it has none. */
 export function glossaryProblems(source: string, translated: string, glossary: GlossaryTerm[]): string[] {
   // Formatting tags go without a trace ("<b1>billing</b1> guide" is "billing guide"); placeholders and breaks split words.
-  const plain = (text: string) => unescape(text.replace(/<\/?[a-z]\d+>/g, "").replace(/<[^>]*>/g, " ")).toLowerCase();
+  const plain = (text: string) => unescape(text.replace(/<\/?[a-z]\d{1,4}>/g, "").replace(MARKUP, " ")).toLowerCase();
   const [from, to] = [plain(source), plain(translated)];
   return glossary
     .filter(({ term }) => uses(from, term.toLowerCase()))
@@ -296,7 +306,24 @@ export type TranslateOptions = {
   batchChars?: number;
 };
 
-export type Translated = { translations: Record<string, string>; problems: Problem[]; detected?: string; memory: Record<string, string> };
+/** `providerError`: why the provider didn't answer a request (an outage, a bad key, a timeout), so the caller can say so and try again. */
+export type Translated = { translations: Record<string, string>; problems: Problem[]; detected?: string; memory: Record<string, string>; providerError?: string };
+
+/** At most this many requests at once, so a long article doesn't burst the provider. */
+const PARALLEL = 4;
+async function inTurn<T, R>(items: T[], run: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(PARALLEL, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await run(items[i]!);
+      }
+    }),
+  );
+  return out;
+}
 
 export function translationPrompt({ from, to, glossary = [], instructions, about }: Omit<TranslateOptions, "ask" | "memory" | "batchChars">): string {
   return [
@@ -349,7 +376,12 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     return reply.segments;
   };
   const runs = batches(todo, batchChars);
-  const results = await Promise.all(runs.map((batch) => request(batch).catch(() => ({}) as Record<string, string>)));
+  let providerError: string | undefined;
+  const unanswered = (error: unknown): Record<string, string> => {
+    providerError ??= error instanceof Error ? error.message : String(error);
+    return {};
+  };
+  const results = await inTurn(runs, (batch) => request(batch).catch(unanswered));
   const failed = new Map<string, string>();
   for (const [i, batch] of runs.entries()) {
     for (const segment of batch) {
@@ -364,7 +396,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     const again = todo.filter((segment) => failed.has(segment.id));
     const retried = Object.assign(
       {},
-      ...(await Promise.all(batches(again, batchChars).map((batch) => request(batch, new Map(batch.map((segment) => [segment.id, failed.get(segment.id)!]))).catch(() => ({}))))),
+      ...(await inTurn(batches(again, batchChars), (batch) => request(batch, new Map(batch.map((segment) => [segment.id, failed.get(segment.id)!]))).catch(unanswered))),
     ) as Record<string, string>;
     for (const segment of again) {
       const reason = check(segment, retried[segment.id]);
@@ -376,7 +408,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
   for (const segment of segments) {
     if (translations[segment.id] !== undefined) learned[segment.text] = translations[segment.id]!;
   }
-  return { translations, problems, detected, memory: learned };
+  return { translations, problems, detected, memory: learned, providerError };
 }
 
 /** Segments in order, cut into runs of at most `max` characters (a longer segment goes alone). */
@@ -410,20 +442,20 @@ function parseReply(reply: string): { language?: string; segments: Record<string
 }
 
 /** A document in another language: the same blocks, marks and attributes, its text translated. */
-export async function translateDoc(doc: Doc, options: TranslateOptions): Promise<{ doc: Doc; problems: Problem[]; memory: Record<string, string> }> {
+export async function translateDoc(doc: Doc, options: TranslateOptions): Promise<{ doc: Doc; problems: Problem[]; memory: Record<string, string>; providerError?: string }> {
   const { segments, check, apply } = segmentsOf(doc);
   const result = await translateSegments(segments, options, check);
   const applied = apply(result.translations);
   const problems = [...result.problems, ...applied.problems.filter((p) => !result.problems.some((q) => q.id === p.id))];
-  return { doc: applied.doc, problems, memory: result.memory };
+  return { doc: applied.doc, problems, memory: result.memory, providerError: result.providerError };
 }
 
 /** Plain text (an Inbox message) in another language, and the language it was in when `from` isn't given. */
-export async function translateText(text: string, options: TranslateOptions): Promise<{ text: string; detected?: string; problem?: Problem }> {
+export async function translateText(text: string, options: TranslateOptions): Promise<{ text: string; detected?: string; problem?: Problem; providerError?: string }> {
   const { segment, apply, check } = segmentOfText(text);
   const result = await translateSegments([segment], { ...options, batchChars: Infinity }, check);
   const translated = result.translations["1"];
-  if (translated === undefined) return { text, detected: result.detected, problem: result.problems[0] ?? { id: "1", reason: "no translation" } };
+  if (translated === undefined) return { text, detected: result.detected, problem: result.problems[0] ?? { id: "1", reason: "no translation" }, providerError: result.providerError };
   const out = apply(translated);
   return typeof out === "string" ? { text: out, detected: result.detected } : { text, detected: result.detected, problem: out };
 }
