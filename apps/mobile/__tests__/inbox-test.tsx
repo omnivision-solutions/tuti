@@ -1370,6 +1370,8 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     const view = await render(<Inbox />);
     await screen.findByText("Conversation #1");
 
+    const send = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    send.mockClear();
     let handled = false;
     await act(async () => void (handled = handlers.at(-1)!()));
     expect(handled).toBe(true);
@@ -1377,6 +1379,10 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     expect(router().setParams).toHaveBeenCalledWith({ c: undefined, p: undefined });
     expect(screen.getByText("Choose a conversation to read it here.")).toBeTruthy();
     expect(handlers).toHaveLength(0);
+    // As a Send and close: a screen reader's focus goes to the conversation's row.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((send.mock.calls[0]![0] as unknown as { props: { accessibilityLabel?: string } }).props.accessibilityLabel).toMatch(/: CSV export stops at 500 rows \(#1\)/);
+    send.mockRestore();
     listen.mockRestore();
   });
 

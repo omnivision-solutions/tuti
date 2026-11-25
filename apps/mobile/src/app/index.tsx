@@ -512,11 +512,12 @@ export default function Inbox() {
         return;
       }
       const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-        unchoose();
+        // As a Send and close: a screen reader's focus goes to the row (`leave`).
+        leave();
         return true;
       });
       return () => subscription.remove();
-    }, [wide, chosen, unchoose]),
+    }, [wide, chosen, leave]),
   );
 
   // Back from a conversation: its row and the counts again, as its stream would after a change. Reading it there sends no
