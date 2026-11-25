@@ -62,9 +62,18 @@ export async function translationSettings(projectId: string) {
 export async function translateMessage({ messageId }: JobInput<"translateMessage">, log: JobLogger, { lastTry }: JobRun = { lastTry: true }): Promise<JobResult> {
   const message = await prisma.conversationMessage.findUnique({
     where: { id: messageId },
-    select: { author: true, note: true, body: true, teamText: true, projectId: true, conversation: { select: { id: true, number: true, language: true, userId: true, visitorHash: true, email: true } } },
+    select: {
+      author: true,
+      note: true,
+      body: true,
+      teamText: true,
+      projectId: true,
+      createdAt: true,
+      conversation: { select: { id: true, number: true, language: true, spam: true, userId: true, visitorHash: true, email: true } },
+    },
   });
-  if (!message || message.author !== "USER" || message.note || message.teamText !== null) {
+  // Spam isn't worth credits, as nobody's told about it either.
+  if (!message || message.author !== "USER" || message.note || message.teamText !== null || message.conversation.spam) {
     return { skipped: "nothing to translate" };
   }
   const { teamLanguage, translate } = await translationSettings(message.projectId);
@@ -83,7 +92,15 @@ export async function translateMessage({ messageId }: JobInput<"translateMessage
   const settle = async (data: { teamText?: string | null; language?: string | null; translationError?: string | null }, language?: string) => {
     await prisma.$transaction([
       prisma.conversationMessage.update({ where: { id: messageId }, data }),
-      ...(language ? [prisma.conversation.update({ where: { id: conversation.id }, data: { language } })] : []),
+      // The customer's language is their newest message's: a retry of an older one finishing late doesn't take it back.
+      ...(language
+        ? [
+            prisma.conversation.updateMany({
+              where: { id: conversation.id, messages: { none: { author: "USER", createdAt: { gt: message.createdAt }, language: { not: null } } } },
+              data: { language },
+            }),
+          ]
+        : []),
       // Open Inbox pages show it as it is now (apps/web/src/server/live.ts).
       prisma.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({ projectId: message.projectId, conversationId: conversation.id, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email })})`,
     ]);
@@ -102,7 +119,7 @@ export async function translateMessage({ messageId }: JobInput<"translateMessage
   const language = from ?? (result.detected ? languageCode(result.detected) : null);
   if (language && sameLanguage(language, teamLanguage)) {
     // Already the team's: nothing to show, but the conversation now knows its customer's language.
-    await settle({ translationError: null }, language);
+    await settle({ language, translationError: null }, language);
     return { skipped: "in the team's language" };
   }
   if (result.providerError && !lastTry) {
@@ -112,7 +129,7 @@ export async function translateMessage({ messageId }: JobInput<"translateMessage
   if (result.problem || result.providerError) {
     const why = result.providerError ? "The translation provider didn't answer" : `The translation failed its checks: ${result.problem!.reason}`;
     log.warn(`Translating message ${messageId}: ${why}`);
-    await settle({ translationError: why.slice(0, 500) }, language ?? undefined);
+    await settle({ language, translationError: why.slice(0, 500) }, language ?? undefined);
     return { failed: why };
   }
   // A message that was only links, code or numbers comes back as it was: nothing to translate.

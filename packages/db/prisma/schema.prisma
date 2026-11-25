@@ -1430,7 +1430,8 @@ model ConversationMessage {
   requestId          String?
   /// Translated (docs/plan.md L22): `body` is always the customer's side (what they wrote, or the translation they got),
   /// `teamText` the team's (a customer's message translated into the team's language, or a reply as the team wrote it),
-  /// and `language` the language `body` is in. Null when it wasn't translated.
+  /// and `language` the language `body` is in (also on a customer's message in the team's language, or one that failed).
+  /// Null when it wasn't translated or isn't known.
   teamText           String?
   language           String?
   /// Why a customer's message couldn't be translated (the checks failed, the provider didn't answer, no credits).

@@ -165,7 +165,7 @@ const messageOutput = z
         "Translated (Translate conversations): the text in the team's language, the user's message translated or the team's reply as it was written; `body` is then the user's side (what they wrote, or the translation they got). Null when it wasn't translated",
       )
       .meta({ examples: [null] }),
-    language: z.string().nullable().describe("Translated: the language `body` is in (a BCP 47 code); null when it wasn't translated").meta({ examples: [null] }),
+    language: z.string().nullable().describe("The language `body` is in (a BCP 47 code), where it was translated or the user's message was checked for it; null otherwise").meta({ examples: [null] }),
     translationError: z
       .string()
       .nullable()

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { translateMessage } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -8,6 +9,7 @@ import { addMessage, announceUserMessage, createConversation, getConversation, l
 import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { getSupportSettings, updateSupportSettings } from "./operations/support";
+import { summarizeConversation } from "./operations/support-ai";
 
 /** Inbox in the team's language (docs/plan.md L22): customers' messages into the team's, replies into the customer's. */
 
@@ -78,15 +80,39 @@ test("incoming, de → en: translated in the request that detects its language, 
   expect(shown.messages[0]).toMatchObject({ body: GERMAN, teamText: ENGLISH, language: "de", translationError: null });
   expect(await prisma.aiUsage.findMany({ where: { projectId: project.id }, select: { feature: true } })).toEqual([{ feature: "translation" }]);
   // Search reads the translation beside the original.
-  expect((await call(listConversations, team, { q: "export button" })).conversations.map((c) => c.number)).toEqual([1]);
-  expect((await call(listConversations, team, { q: "Berichtsseite" })).conversations.map((c) => c.number)).toEqual([1]);
+  // Found by either, the snippet from the text that has it.
+  expect((await call(listConversations, team, { q: "export button" })).conversations.map((c) => [c.number, c.match?.snippet])).toEqual([[1, ENGLISH]]);
+  expect((await call(listConversations, team, { q: "Berichtsseite" })).conversations.map((c) => [c.number, c.match?.snippet])).toEqual([[1, GERMAN]]);
+
+  // A summary reads the translation beside the original.
+  model.reply("They can't export reports.");
+  await call(summarizeConversation, team, { number: 1 });
+  const sent = JSON.parse(model.requests.at(-1)!.user.slice(model.requests.at(-1)!.user.indexOf("{"))) as { messages: { text: string; translation?: string }[] };
+  expect(sent.messages[0]).toMatchObject({ text: GERMAN, translation: ENGLISH });
+});
+
+test("spam isn't translated, and an older message translated late doesn't take back the customer's language", async () => {
+  const { project, conversation } = await german();
+  // A newer message in French, then the German one's retry finishing: the conversation stays French.
+  model.reply(translated("I'd like a refund for last month, please.", "fr"));
+  await customerWrites(project.id, conversation.id, "Je voudrais un remboursement pour le mois dernier, s'il vous plaît.");
+  const first = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" } });
+  await prisma.conversationMessage.update({ where: { id: first.id }, data: { teamText: null } });
+  model.reply(translated(ENGLISH, "de"));
+  await translateMessage({ messageId: first.id }, { info: () => {}, warn: () => {} });
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).language).toBe("fr");
+
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { spam: true } });
+  const spam = await customerWrites(project.id, conversation.id, "Buy cheap watches today from our wonderful shop!");
+  expect(model.requests).toHaveLength(3);
+  expect(spam).toMatchObject({ teamText: null, translationError: null });
 });
 
 test("a message in the team's language isn't translated, but the conversation knows its language", async () => {
   const { project, team } = await setup();
   model.reply(translated(ENGLISH, "en"));
   await call(createConversation, team, { email: "e2e-kai@example.com", body: ENGLISH });
-  expect((await call(getConversation, team, { number: 1 })).messages[0]).toMatchObject({ teamText: null, language: null });
+  expect((await call(getConversation, team, { number: 1 })).messages[0]).toMatchObject({ teamText: null, language: "en" });
   expect((await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).language).toBe("en");
   // Replies go as written: nothing asked.
   await call(replyToConversation, team, { number: 1, body: "Thanks!" });
@@ -113,10 +139,14 @@ test("reply, en → de: previewed, then sent with the preview; the customer gets
   expect(preview).toEqual({ status: "translated", text: "Danke! Eine Lösung ist unterwegs.", language: "de", error: null });
   expect(model.requests[1]!.system).toContain("from English into German");
 
-  const sent = await call(replyToConversation, team, { number: 1, body: "Thanks! A fix is on its way.", translation: preview.text! });
+  const reply = { number: 1, body: "Thanks! A fix is on its way.", translation: preview.text!, requestId: "reply-1" };
+  const sent = await call(replyToConversation, team, reply);
   // The preview is what's sent: not asked again.
   expect(model.requests).toHaveLength(2);
   expect(sent).toMatchObject({ body: "Danke! Eine Lösung ist unterwegs.", teamText: "Thanks! A fix is on its way.", language: "de" });
+  // Sent again (its answer lost): the reply already sent, by the team's own text, nothing translated or written again.
+  expect(await call(replyToConversation, team, { ...reply, translation: undefined })).toMatchObject({ id: sent.id });
+  expect(model.requests).toHaveLength(2);
 
   // Without a preview, it's translated as it's sent.
   model.reply(translated("Noch etwas?"));
