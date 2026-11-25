@@ -1,13 +1,15 @@
 import { type Doc, emailImageKey, fromPlainText } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
-import { type JobInput, plansEnabled } from "@tuti/shared";
+import { type JobInput, planIncludes, plansEnabled } from "@tuti/shared";
+import { type GroupRule, storedRule } from "@tuti/shared/group-conditions";
 
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
 import { emailBrand } from "./email-brand";
+import { inGroupSql } from "./group-conditions-sql";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due entry) this old belongs to a run that died or never started. */
@@ -69,22 +71,50 @@ export async function changelogReach(
 export const reached = (reach: ChangelogReach) => reach === "gets" || reach === "paused";
 
 /**
+ * Who an entry is for, as its reader groups' rules (entryGroups): null, everyone; else those of the project's users
+ * in one of them, by their properties, as readerOf has it (none on a plan without reader groups: nobody).
+ */
+type EntryGroups = GroupRule[] | null;
+
+/** EntryGroups for an entry, as they are now (read in `db`, a claim's transaction). */
+async function entryGroups(entryId: string, db: Prisma.TransactionClient = prisma): Promise<EntryGroups> {
+  const links = await db.changelogEntryGroup.findMany({ where: { entryId }, select: { group: { select: { conditions: true, match: true, projectId: true } } } });
+  if (links.length === 0) {
+    return null;
+  }
+  // The plan as @tuti/db reads it (a free trial's included).
+  const { plan } = await db.project.findUniqueOrThrow({ where: { id: links[0]!.group.projectId }, select: { plan: true } });
+  return planIncludes(plan, "privatePortal") ? links.map((link) => storedRule(link.group)) : [];
+}
+
+/**
+ * SQL: a subscriber (`s`) is in one of `groups`: the project's user the project's app (SSO, the API) gave their address
+ * is (kept lowercase, so its index finds them). One with no such user (subscribed with an address the app never named) is in none.
+ */
+const inGroupsSql = (projectId: string, groups: GroupRule[]) => Prisma.sql`EXISTS (
+  SELECT 1 FROM "sso_identity" si WHERE si."projectId" = ${projectId} AND si."email" = lower(s."email")
+    AND (${groups.length > 0 ? Prisma.join(groups.map((rule) => inGroupSql(rule, Prisma.raw("si"))), " OR ") : Prisma.sql`FALSE`})
+)`;
+
+/**
  * SQL: who an entry goes to, as `s`: the project's subscribers confirmed by the time it was published with Email
  * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts here:
  * the job waits while the project's email is paused, and the editor's counts are 0 then). `unsentOf`: of those, the ones with no email of that
- * entry sent yet. The sender reads its rows and the editor counts them, both from this.
+ * entry sent yet. `groups`: the entry's (entryGroups), whose subscribers only it goes to. The sender reads its rows and
+ * the editor counts them, both from this.
  */
-const audienceSql = (projectId: string, emailedAt: Date, unsentOf?: string) => Prisma.sql`
+const audienceSql = (projectId: string, emailedAt: Date, unsentOf?: string, groups: EntryGroups = null) => Prisma.sql`
   FROM "changelog_subscriber" s
   JOIN "project" p ON p."id" = s."projectId" AND p."portalAccess" = 'PUBLIC'
   WHERE s."projectId" = ${projectId} AND s."confirmedAt" IS NOT NULL AND s."confirmedAt" <= ${emailedAt}
     AND NOT ${optedOutSql(projectId, Prisma.raw(`s."email"`))}
-    ${unsentOf ? Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "changelog_email" e WHERE e."entryId" = ${unsentOf} AND e."subscriberId" = s."id" AND e."sentAt" IS NOT NULL)` : Prisma.empty}`;
+    ${unsentOf ? Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "changelog_email" e WHERE e."entryId" = ${unsentOf} AND e."subscriberId" = s."id" AND e."sentAt" IS NOT NULL)` : Prisma.empty}
+    ${groups ? Prisma.sql`AND ${inGroupsSql(projectId, groups)}` : Prisma.empty}`;
 
 /** audienceSql's people, oldest first. `only`: just this one (as they are now, in a claim's transaction). */
-async function audience(projectId: string, emailedAt: Date, { only, unsentOf }: { only?: string; unsentOf?: string } = {}, db: Db = prisma) {
+async function audience(projectId: string, emailedAt: Date, { only, unsentOf, groups }: { only?: string; unsentOf?: string; groups?: EntryGroups } = {}, db: Db = prisma) {
   return db.$queryRaw<{ id: string; email: string; token: string }[]>`
-    SELECT s."id", s."email", s."token" ${audienceSql(projectId, emailedAt, unsentOf)}
+    SELECT s."id", s."email", s."token" ${audienceSql(projectId, emailedAt, unsentOf, groups)}
       ${only ? Prisma.sql`AND s."id" = ${only}` : Prisma.empty}
     ORDER BY s."createdAt", s."id"`;
 }
@@ -113,12 +143,16 @@ async function audienceSize(...args: Parameters<typeof audienceSql>) {
 
 /**
  * How many people publishing an entry with Email subscribers would email now: the editor's count (audienceSql, so
- * changelogReach). Null on a private portal, which emails nobody its changelog.
+ * changelogReach), of `entryId`'s groups' subscribers when it's for some. Null on a private portal, which emails nobody its changelog.
  */
-export async function subscriberCount(projectId: string): Promise<number | null> {
+export async function subscriberCount(projectId: string, entryId?: string): Promise<number | null> {
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
   // While the project's email is paused nothing is: the resume lets what it held go.
-  return portalAccess !== "PUBLIC" ? null : (await projectEmailWaits(projectId)) ? 0 : audienceSize(projectId, new Date());
+  return portalAccess !== "PUBLIC"
+    ? null
+    : (await projectEmailWaits(projectId))
+      ? 0
+      : audienceSize(projectId, new Date(), undefined, entryId ? await entryGroups(entryId) : null);
 }
 
 /**
@@ -132,34 +166,34 @@ export async function subscribersLeft(entryId: string): Promise<number> {
   });
   // audienceSql (changelogReach) leaves out a private portal's: none are left there.
   return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && !(await projectEmailWaits(entry.projectId))
-    ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId)
+    ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId, await entryGroups(entryId))
     : 0;
 }
 
 /**
- * Takes on emailing one subscriber, while they still want it and the entry is still for everyone: their consent, the
- * entry's being published and its portal's being public, all read again now, with their rows locked (so
+ * Takes on emailing one subscriber, while they still want it and the entry is still for them: their consent, the
+ * entry's being published, its groups (they're in one, or it's for everyone) and its portal's being public, all read again now, with their rows locked (so
  * unsubscribing, unpublishing or making the portal private waits for this, or this sees it), not as the run began.
  * A new claim, or one a crashed run left unsent. Returns the claim's time, which the run then uses to mark it sent or
  * release it (never touching a claim another run took over); null when they don't want it any more, someone else has
- * it, or it's sent; "stop" when the entry is unpublished, for some reader groups only, its portal private or its emails let go now.
+ * it, or it's sent; "stop" when the entry is unpublished, its portal private or its emails let go now.
  */
 async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
     // The project's row first, then the entry's, as publishing takes them (lockProject, then the entry), so the two
     // can't each hold one the other waits for; the subscriber's last.
+    // Shared, so the entry's groups stay as read below till this commits: changelog.update changes them holding it.
     const [project] = await tx.$queryRaw<{ portalAccess: string }[]>`
       SELECT "portalAccess" FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
-    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null; forGroups: boolean }[]>`
-      SELECT "publishedAt", "subscribersEmailDueAt" AS due,
-        EXISTS (SELECT 1 FROM "changelog_entry_group" g WHERE g."entryId" = ${entry.id}) AS "forGroups"
-      FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
-    // Its emails let go meanwhile (a resume drops a pause's), or made for some groups only (not emailed yet): nobody else.
-    if (!current?.publishedAt || !current.due || current.forGroups || project?.portalAccess !== "PUBLIC") {
+    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null }[]>`
+      SELECT "publishedAt", "subscribersEmailDueAt" AS due FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
+    // Its emails let go meanwhile (a resume drops a pause's): nobody else.
+    if (!current?.publishedAt || !current.due || project?.portalAccess !== "PUBLIC") {
       return "stop";
     }
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
-    if ((await audience(entry.projectId, entry.emailedAt, { only: subscriberId }, tx)).length === 0) {
+    const groups = await entryGroups(entry.id, tx);
+    if ((await audience(entry.projectId, entry.emailedAt, { only: subscriberId, groups }, tx)).length === 0) {
       return null;
     }
     const entryId = entry.id;
@@ -237,7 +271,7 @@ function entryImages(doc: Doc, coverId: string | null, log: JobLogger) {
 
 /**
  * A changelog entry was published with Email subscribers: emails it to the project's subscribers who had confirmed
- * by then, each once, with the project's sender, daily cap and pause. Not to anyone who turned the project's emails
+ * by then, each once (an entry for some reader groups, to those in them), with the project's sender, daily cap and pause. Not to anyone who turned the project's emails
  * off (the unsubscribe link in its other emails), and never from a private portal (its subscribers may not be readers).
  */
 export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">, log: JobLogger): Promise<JobResult> {
@@ -256,7 +290,6 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       sample: true,
       projectId: true,
       project: { select: { name: true, slug: true, portalAccess: true, brandColor: true } },
-      groups: { select: { groupId: true }, take: 1 },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -274,12 +307,6 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (!entry.publishedAt) {
     return { waiting: "the entry isn't published" };
   }
-  // For some reader groups only: not emailed to anyone yet (it would reach subscribers outside them). Still due, so
-  // making it for everyone again sends it.
-  // ponytail: emailing a group entry to its groups' subscribers comes next (docs/plan.md S4).
-  if (entry.groups.length > 0) {
-    return { waiting: "the entry is for some reader groups only" };
-  }
   const { projectId, project, publishedAt } = entry;
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
@@ -287,7 +314,8 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   const emailedAt = entry.subscribersEmailedAt;
   // Not those it's sent to already (a retry after a failed few), so each run only works through the rest.
-  const people = await audience(projectId, emailedAt, { unsentOf: entryId });
+  // For some reader groups only: just their subscribers (each claim reads them again).
+  const people = await audience(projectId, emailedAt, { unsentOf: entryId, groups: await entryGroups(entryId) });
   // Claims a crashed try left unsent for people no longer to be emailed (unsubscribed since) are dropped,
   // so they don't keep the entry due. A run still sending keeps its claim (not stale yet).
   // (Those claims, few, are read and matched here: no list of the whole audience goes into a query.)
@@ -368,7 +396,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   // Done once everyone it's for (as they are now) has it. Not from the claims: one another run held (and so this run
   // skipped) may be let go since, past the cap; then its subscriber has none, and would be left out for good.
-  const left = await audienceSize(projectId, emailedAt, entryId);
+  const left = await audienceSize(projectId, emailedAt, entryId, await entryGroups(entryId));
   if (left > 0) {
     log.info(`changelog entry ${entryId}: emailed ${emailed} subscriber(s), ${left} left (another run has them, or let them go)`);
     return { emailed, left };

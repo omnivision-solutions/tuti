@@ -15,6 +15,7 @@
     "./signed": "./src/signed.ts",
     "./media-links": "./src/media-links.ts",
     "./user-properties": "./src/user-properties.ts",
+    "./group-conditions": "./src/group-conditions.ts",
     "./portal-redirects": "./src/portal-redirects.ts",
     "./log": "./src/log.ts",
     "./config": "./src/config/index.ts",

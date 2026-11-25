@@ -25,7 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import { count } from "@/lib/usage-format";
-import { LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS, ruleSummary } from "@/lib/group-conditions";
+import { LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS, ruleSummary } from "@tuti/shared/group-conditions";
 import type { FormState } from "@/server/form-state";
 import { deleteGroup, type GroupPreview, previewGroup, saveGroup, suggestValues } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";

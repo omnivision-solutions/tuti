@@ -4,6 +4,7 @@ import { getHatchet } from "@tuti/shared/hatchet";
 import { apiReferenceChanged } from "./api-references";
 import { articleChanged, purgeArticles } from "./articles";
 import { changelogEmailed, resubmitChangelogEmails } from "./changelog-email";
+export { conditionsSql, inGroupSql } from "./group-conditions-sql";
 export { changelogReach, type ChangelogReach, emailedOf, optedOutOf, optedOutSql, reached, subscriberCount, subscribersLeft } from "./changelog-email";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";

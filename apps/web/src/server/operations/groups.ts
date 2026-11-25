@@ -3,17 +3,17 @@ import { lockProject } from "@tuti/jobs";
 import { pictureUrl } from "@tuti/shared/media-links";
 import { z } from "zod";
 
-import { type GroupCondition, groupConditions, groupMatch, type GroupRule, type Match, OPERATORS, storedRule } from "@/lib/group-conditions";
+import { type GroupCondition, groupConditions, groupMatch, type GroupRule, type Match, OPERATORS, storedRule } from "@tuti/shared/group-conditions";
 import { titleSlug } from "@/lib/post-urls";
 import { readerGroup } from "@/lib/reader-groups";
 
-import { inGroupSql } from "../group-conditions-sql";
+import { inGroupSql } from "@tuti/jobs";
 import { defineOperation, OperationError } from "./define";
 import { requirePlan } from "./plan";
 
 /**
  * Reader groups (Settings → Groups): who's in one is worked out when they read: the project's users
- * whose properties (@tuti/shared/user-properties) match all of the group's conditions, or any one (its `match`) (lib/group-conditions.ts). Docs tabs, collections and articles can be for some groups only
+ * whose properties (@tuti/shared/user-properties) match all of the group's conditions, or any one (its `match`) (@tuti/shared/group-conditions). Docs tabs, collections and articles can be for some groups only
  * (tabs.*, collections.*, articles.*, see lib/read-access.ts), named by the group's `key`.
  */
 

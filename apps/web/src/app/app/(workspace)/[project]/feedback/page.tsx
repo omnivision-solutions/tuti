@@ -26,7 +26,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { asking, initial, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { cn } from "@/lib/utils";
-import { storedRule } from "@/lib/group-conditions";
+import { storedRule } from "@tuti/shared/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
 import { portalAddress } from "@/server/custom-domains";

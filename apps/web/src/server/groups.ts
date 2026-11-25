@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { groupConditions, groupMatch, type Match } from "@/lib/group-conditions";
+import { groupConditions, groupMatch, type Match } from "@tuti/shared/group-conditions";
 import type { PropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";

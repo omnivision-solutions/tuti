@@ -34,7 +34,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { costPerUse } from "@/lib/model-tiers";
 import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
-import { claimsOf, groupClaims, visibleEntry } from "@/lib/reader-groups";
+import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup, visibleEntry } from "@/lib/reader-groups";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
@@ -61,6 +61,8 @@ import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
 import { onTeam } from "../session";
 import { actorReader } from "../portal-access";
+import { groupLinks } from "./docs";
+import { requirePlan } from "./plan";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
@@ -99,6 +101,14 @@ const fields = {
     .describe("What kind of change it is: new, improved, fixed or breaking")
     .meta({ examples: [["new"]] }),
   posts: z.array(postNumber).max(50).describe("The posts it completes, by number: pick up to 50").meta({ examples: [[12]] }),
+  groups: z
+    .array(readerGroup)
+    .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
+    .transform((groups) => [...new Set(groups)])
+    .describe(
+      `The reader groups it's for, by key (see groups.list), up to ${MAX_READER_GROUPS}: only their readers (and the team) see it on the portal, in the widget and in the API, it's in no feed, sitemap or Markdown copy, and it's emailed only to subscribers in them. None (the default): everyone`,
+    )
+    .meta({ examples: [["customers"]] }),
   cover: z
     .string()
     .trim()
@@ -601,8 +611,8 @@ export const createChangelogEntry = defineOperation({
   path: "/changelog",
   scope: "write",
   access: "team",
-  errors: [409, 503],
-  input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]) }),
+  errors: [402, 409, 503],
+  input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]), groups: fields.groups.default([]) }),
   output: entryOutput.describe("The entry, a draft"),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
@@ -639,6 +649,11 @@ export const createChangelogEntry = defineOperation({
           select: { id: true },
         });
         await linkEntryPosts(tx, posts.map((postId) => ({ entryId: created.id, postId })));
+        // The project's row is locked (above), as groups.delete locks it: a group deleted meanwhile is refused here or there.
+        if (input.groups.length > 0) {
+          await requirePlan(projectId, "privatePortal", tx);
+          await tx.changelogEntryGroup.createMany({ data: (await groupLinks(tx, projectId, input.groups)).map((link) => ({ entryId: created.id, ...link })) });
+        }
         await attachMedia(tx, projectId, text.mediaIds);
         return tx.changelogEntry.findUniqueOrThrow({ where: { id: created.id }, select: entrySelect });
       }),
@@ -654,6 +669,11 @@ const updateInput = z.object({
     content: fields.content,
     markdown: fields.markdown,
     tags: fields.tags.optional(),
+    groups: fields.groups
+      .optional()
+      .describe(
+        `The reader groups it's for, by key (see groups.list), up to ${MAX_READER_GROUPS}: they replace the list; none, for everyone. Only their readers (and the team) see it, and its emails still to send go only to subscribers in them`,
+      ),
     posts: fields.posts
       .optional()
       .describe("The posts it completes, by number: they replace the list. Only while it's a draft (published, the same list or a 409)"),
@@ -668,12 +688,12 @@ const updateInput = z.object({
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
   title: "Update a changelog entry",
-  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
+  summary: "Change a changelog entry: its title, text, tags, the reader groups it's for, featured image or the posts it completes. What's left out stays as it is",
   method: "PATCH",
   path: "/changelog/{number}",
   scope: "write",
   access: "team",
-  errors: [409, 503],
+  errors: [402, 409, 503],
   input: updateInput,
   output: entryOutput.describe("The entry"),
   example: { tags: ["new", "improved"] },
@@ -721,10 +741,13 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
     }
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
-        if (posts) {
-          // Checked again after a publish that's committing: the posts it completed stay. The project's lock first, as
-          // publishing takes it before the entry's row (below, and in its update), so the two can't deadlock.
+        // The project's lock first, as publishing and the email job's claims take it before the entry's row (below, and
+        // in its update), so they can't deadlock. Groups need it too: groups.delete locks it (see changelog.create).
+        if (posts || input.groups) {
           await lockProject(tx, projectId);
+        }
+        if (posts) {
+          // Checked again after a publish that's committing: the posts it completed stay.
           keepsPublishedPosts(
             await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { publishedAt: true, posts: { select: { post: { select: { number: true } } } } } }),
             input.posts!,
@@ -737,6 +760,15 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
           if (now?.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
             throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
           }
+        }
+        if (input.groups) {
+          // Some groups need the plan; everyone never does.
+          const links = await groupLinks(tx, projectId, input.groups);
+          if (links.length > 0) {
+            await requirePlan(projectId, "privatePortal", tx);
+          }
+          await tx.changelogEntryGroup.deleteMany({ where: { entryId: entry.id } });
+          await tx.changelogEntryGroup.createMany({ data: links.map((link) => ({ entryId: entry.id, ...link })) });
         }
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });

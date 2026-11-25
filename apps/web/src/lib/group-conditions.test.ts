@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { CONDITION_CASES } from "./group-conditions.cases";
-import { conditionsMatch, type GroupCondition, groupConditions, inGroup, ruleSummary, storedConditions, storedRule } from "./group-conditions";
+import { conditionsMatch, type GroupCondition, groupConditions, inGroup, ruleSummary, storedConditions, storedRule } from "@tuti/shared/group-conditions";
 
 const is = (property: string, value: string): GroupCondition => ({ property, op: "is", value });
 const isNot = (property: string, value: string): GroupCondition => ({ property, op: "is_not", value });
