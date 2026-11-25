@@ -561,10 +561,17 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   await expect(owner.getByRole("alertdialog")).toContainText("They stop getting your changelog by email.");
   await owner.getByRole("button", { name: "Remove subscriber" }).click();
   await expect(owner.getByText("e2e-reader@example.com removed")).toBeVisible();
+  // Its row has no Remove now: focus goes to the search box, not the page's top.
+  await expect(owner.getByRole("searchbox", { name: "Search subscribers" })).toBeFocused();
   await expect(rows.filter({ hasText: "e2e-reader@example.com" })).toContainText("Removed");
   await expect(rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button")).toHaveCount(0);
+  // Ada turns all of the project's emails off: still confirmed, so still removable (turned back on, she'd get it).
+  await api("/email-preferences", { unsubscribed: true, author: { id: "user-1" } }, "PATCH");
+  await owner.reload();
+  await expect(ada).toContainText("All emails off");
+  await expect(ada.getByRole("button", { name: "Remove e2e-ada@example.com" })).toBeVisible();
   await owner.getByRole("combobox", { name: "Status" }).click();
-  await owner.getByRole("option", { name: "Subscribed", exact: true }).click();
+  await owner.getByRole("option", { name: "All emails off" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("e2e-ada@example.com");
 

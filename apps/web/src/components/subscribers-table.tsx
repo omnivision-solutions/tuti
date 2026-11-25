@@ -8,18 +8,19 @@ import { RemoveSubscriberButton } from "@/components/remove-subscriber-button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { listChangelogSubscribers, SUBSCRIBER_STATUSES } from "@/server/operations/changelog-subscribers";
 import { call } from "@/server/operations/run";
 
 const PER_PAGE = 50;
 
 type Status = (typeof SUBSCRIBER_STATUSES)[number];
-const STATUS: Record<Status, { label: string; variant: "soft" | "secondary" | "destructive" }> = {
-  subscribed: { label: "Subscribed", variant: "soft" },
-  pending: { label: "Not confirmed", variant: "secondary" },
-  unsubscribed: { label: "Unsubscribed", variant: "secondary" },
-  opted_out: { label: "All emails off", variant: "secondary" },
-  removed: { label: "Removed", variant: "secondary" },
+const STATUS: Record<Status, { label: string; dot: string; tint: string }> = {
+  subscribed: { label: "Subscribed", dot: "bg-primary", tint: "bg-soft" },
+  pending: { label: "Not confirmed", dot: "bg-status-under-review", tint: "bg-highlight" },
+  unsubscribed: { label: "Unsubscribed", dot: "bg-muted-foreground", tint: "bg-muted" },
+  opted_out: { label: "All emails off", dot: "bg-muted-foreground", tint: "bg-muted" },
+  removed: { label: "Removed", dot: "bg-muted-foreground", tint: "bg-muted" },
 };
 
 /**
@@ -113,13 +114,16 @@ export async function SubscribersTable({
                     </div>
                   </td>
                   <td>
-                    <Badge variant={STATUS[subscriber.status].variant}>{STATUS[subscriber.status].label}</Badge>
+                    {/* A tint, a dot, sentence case (docs/design.md), like an article's state. */}
+                    <Badge variant="outline" className={cn("border-transparent", subscriber.status === "pending" ? "text-highlight-foreground" : "text-foreground", STATUS[subscriber.status].tint)}>
+                      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATUS[subscriber.status].dot)} />
+                      {STATUS[subscriber.status].label}
+                    </Badge>
                   </td>
                   <td className="text-right whitespace-nowrap text-muted-foreground max-md:hidden">{timeAgo(new Date(subscriber.createdAt))}</td>
                   {admin && (
                     <td className="w-0 text-right">
-                      {/* Still confirmed (all emails off too: turned back on, they'd get it) or a link out. */}
-                      {(subscriber.subscribedAt !== null || subscriber.status === "pending") && <RemoveSubscriberButton projectSlug={slug} email={subscriber.email} />}
+                      {subscriber.removable && <RemoveSubscriberButton projectSlug={slug} email={subscriber.email} />}
                     </td>
                   )}
                 </tr>

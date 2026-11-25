@@ -1937,16 +1937,22 @@ describe("the list (changelogSubscribers.list, Users → Subscribers)", () => {
       call(listChangelogSubscribers, team(), { q: tag, limit: 50, cursor: 0, ...input });
     expect(await list({})).toEqual({
       subscribers: [
-        { email: at("removed"), user: null, status: "removed", subscribedAt: null, createdAt: expect.any(String) },
-        { email: at("sam"), user: sam.id, status: "opted_out", subscribedAt: expect.any(String), createdAt: expect.any(String) },
-        { email: at("left"), user: null, status: "unsubscribed", subscribedAt: null, createdAt: expect.any(String) },
-        { email: at("pending"), user: null, status: "pending", subscribedAt: null, createdAt: expect.any(String) },
-        { email: at("added"), user: null, status: "subscribed", subscribedAt: expect.any(String), createdAt: expect.any(String) },
+        { email: at("removed"), user: null, status: "removed", subscribedAt: null, createdAt: expect.any(String), removable: false },
+        { email: at("sam"), user: sam.id, status: "opted_out", subscribedAt: expect.any(String), createdAt: expect.any(String), removable: true },
+        { email: at("left"), user: null, status: "unsubscribed", subscribedAt: null, createdAt: expect.any(String), removable: false },
+        { email: at("pending"), user: null, status: "pending", subscribedAt: null, createdAt: expect.any(String), removable: true },
+        { email: at("added"), user: null, status: "subscribed", subscribedAt: expect.any(String), createdAt: expect.any(String), removable: true },
       ],
       nextCursor: null,
       total: 5,
     });
     expect((await list({ status: "subscribed" })).subscribers.map((s) => s.email)).toEqual([at("added")]);
+    // All emails off, then asking on the portal: the link they're sent can be called off.
+    const pat = await ssoUser(at("pat"));
+    await optOut(pat.id);
+    expect(await subscribe(at("pat"))).toEqual({ sentTo: at("pat") });
+    expect((await list({ q: `${tag}-pat` })).subscribers).toEqual([expect.objectContaining({ status: "opted_out", subscribedAt: null, removable: true })]);
+    await prisma.changelogSubscriber.delete({ where: { projectId_email: { projectId: project.id, email: at("pat") } } });
     expect((await list({ q: `${tag}-PEND` })).subscribers.map((s) => s.email)).toEqual([at("pending")]);
     // "_" is a character, not a wildcard.
     expect((await list({ q: `${tag}_pend` })).total).toBe(0);

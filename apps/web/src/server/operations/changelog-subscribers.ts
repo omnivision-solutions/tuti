@@ -175,6 +175,10 @@ export const listChangelogSubscribers = defineOperation({
               .meta({ examples: ["subscribed"] }),
             subscribedAt: z.string().nullable().describe("When they were confirmed, or null").meta({ examples: ["2026-11-18T16:05:00.000Z"] }),
             createdAt: z.string().describe("When the address first asked or was added").meta({ examples: ["2026-11-18T16:00:00.000Z"] }),
+            removable: z
+              .boolean()
+              .describe("Whether changelogSubscribers.remove would change anything: they're confirmed, or a confirmation link is out (all emails off too)")
+              .meta({ examples: [true] }),
           }),
         )
         .describe("A page of subscribers"),
@@ -187,6 +191,7 @@ export const listChangelogSubscribers = defineOperation({
     const like = input.q ? `%${input.q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
     const matching = Prisma.sql`(
       SELECT s."email", s."confirmedAt", s."createdAt", s."id",
+        (s."confirmedAt" IS NOT NULL OR s."confirmTokenHash" IS NOT NULL) AS "removable",
         CASE
           WHEN s."unsubscribedAt" IS NOT NULL THEN 'unsubscribed'
           WHEN ${optedOutSql(projectId, Prisma.raw(`s."email"`))} THEN 'opted_out'
@@ -198,7 +203,7 @@ export const listChangelogSubscribers = defineOperation({
       WHERE s."projectId" = ${projectId} ${like ? Prisma.sql`AND s."email" LIKE ${like}` : Prisma.empty}
     ) t ${input.status ? Prisma.sql`WHERE t."status" = ${input.status}` : Prisma.empty}`;
     // ponytail: offset cursors and a count over every match, like users.list; keyset pagination if lists get very large.
-    const rows = await prisma.$queryRaw<{ email: string; user: string | null; status: (typeof SUBSCRIBER_STATUSES)[number]; confirmedAt: Date | null; createdAt: Date; total: number }[]>`
+    const rows = await prisma.$queryRaw<{ email: string; user: string | null; status: (typeof SUBSCRIBER_STATUSES)[number]; confirmedAt: Date | null; createdAt: Date; removable: boolean; total: number }[]>`
       SELECT page.*,
         -- The user at each address, for the page's rows only.
         (SELECT i."externalId" FROM "sso_identity" i WHERE i."projectId" = ${projectId} AND lower(i."email") = page."email" ORDER BY i."externalId" LIMIT 1) AS "user"
@@ -216,6 +221,7 @@ export const listChangelogSubscribers = defineOperation({
         status: row.status,
         subscribedAt: row.confirmedAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),
+        removable: row.removable,
       })),
       nextCursor: rows.length > input.limit ? String(input.cursor + input.limit) : null,
       total,
