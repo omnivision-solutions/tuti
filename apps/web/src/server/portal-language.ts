@@ -1,0 +1,28 @@
+import { prisma } from "@tuti/db";
+import { DEFAULT_LANGUAGE, isLanguage } from "@tuti/shared";
+import { cookies } from "next/headers";
+import { cache } from "react";
+
+import { LANGUAGE_COOKIE, type PortalLanguages, readerLanguage } from "@/lib/reader-language";
+
+/** A project's default language and its live others, in the order added (the header's switcher lists them so). */
+export const portalLanguages = cache(async (projectId: string): Promise<PortalLanguages> => {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { language: true, languages: { where: { live: true }, select: { code: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+  });
+  return {
+    default: isLanguage(project.language) ? project.language : DEFAULT_LANGUAGE,
+    live: project.languages.map(({ code }) => code).filter(isLanguage),
+  };
+});
+
+/** The language this request's reader reads the portal in: this browser's choice, else their saved one if signed in (`userId`). */
+export async function currentLanguage(projectId: string, userId: string | null) {
+  const [languages, jar, user] = await Promise.all([
+    portalLanguages(projectId),
+    cookies(),
+    userId ? prisma.user.findUnique({ where: { id: userId }, select: { language: true } }) : null,
+  ]);
+  return { languages, language: readerLanguage(languages, [jar.get(LANGUAGE_COOKIE)?.value, user?.language]) };
+}
