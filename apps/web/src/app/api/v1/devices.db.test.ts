@@ -169,6 +169,19 @@ test("when one Expo project's send fails, the others' pushes stand: kept, and no
   expect(await prisma.device.count({ where: { userId: fork.id } })).toBe(1);
 });
 
+test("when every Expo project's send fails, the job fails, to be tried again", async () => {
+  const fork = await addMember(project.id, "MEMBER");
+  await phone(owner, "owner");
+  await phone(fork, "fork");
+  expo.projects.set("ExponentPushToken[fork]", "@a-fork/app");
+  const { number } = await userWrites();
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversation: { projectId: project.id, number } } });
+  await prisma.pushTicket.deleteMany();
+  expo.failing = new Set(["@tuti/app", "@a-fork/app"]);
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("500");
+  expect(await prisma.pushTicket.count()).toBe(0);
+});
+
 test("two accounts registering one phone at the same moment leave it registered once", async () => {
   const other = await addMember(project.id, "MEMBER");
   const token = "ExponentPushToken[raced]";
