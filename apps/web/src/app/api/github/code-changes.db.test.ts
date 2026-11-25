@@ -697,6 +697,33 @@ describe("deciding", () => {
     expect(await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })).toBe(1);
   });
 
+  test("picked while the merge's run is under way, which then fails: its retry goes past the gate and writes the line", async () => {
+    github.pullRequest(repo, pullRequest(37));
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: installationId, repo, number: 37, url: `https://github.com/${repo}/pull/37`, title: "Dark mode 37", author: "octo", mergedAt: new Date(), state: "ANALYSING" },
+    });
+    await prisma.changelogDecision.create({
+      data: { projectId: project.id, repoId: installationId, number: 37, repo, url: change.url, title: change.title, author: "octo", mergedAt: new Date(), takenOut: false },
+    });
+    // The merge's run (with the gate, as queued) fails: the provider doesn't answer. Picked, it didn't ask the gate.
+    model.fail(503);
+    await expect(enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false, resume: false })).rejects.toThrow();
+    const failed = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { state: true, retryAt: true } });
+    expect(failed.state).toBe("FAILED");
+    await prisma.codeChange.updateMany({ where: { id: { not: change.id } }, data: { retryAt: null } });
+    await prisma.codeChange.update({ where: { id: change.id }, data: { retryAt: new Date() } });
+    // Its retry: past the gate (no gate decision is scripted), and the line written.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await retryCodeChanges(new Date(Date.now() + 60_000))).toMatchObject({ queued: 1 });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: { state: true } })).toEqual({ state: "READY" });
+    expect(await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })).toBe(1);
+  });
+
   test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
     github.pullRequest(repo, pullRequest(32));
     // The provider stops answering after the gate: the analysis failed, to be tried again; the pull request is in the draft since the merge.
@@ -730,7 +757,7 @@ describe("deciding", () => {
     expect((await draftOf(url))?.body).toBe("A dark theme");
   });
 
-  test("added by the team, a pull request stays in the draft though the gate then finds nothing for users", async () => {
+  test("added by the team while its analysis is still to run: its run goes past the gate and writes the line", async () => {
     github.pullRequest(repo, pullRequest(33));
     model.decide(USERS);
     model.fail(503);
@@ -738,12 +765,16 @@ describe("deciding", () => {
     const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     // The team says it belongs in the changelog while its analysis is still to run: it's where it is, and theirs now.
     expect(await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 33 }] })).toMatchObject({ added: [], alreadyIn: [{ repo, number: 33 }] });
-    // The run the merge started asks the gate, which finds nothing for users: the changelog keeps it all the same.
-    model.decide(INTERNAL);
+    // The run the merge started is tried again: picked, it doesn't ask the gate (none is scripted), and writes the line.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
     noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
-    expect(await draftOf(url)).not.toBeNull();
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "READY" });
+    expect((await draftOf(url))?.body).toBe("A dark theme");
   });
 
   test("taken out of one draft and added to the next, a pull request keeps the line written for it", async () => {
