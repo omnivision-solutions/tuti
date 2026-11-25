@@ -1,0 +1,141 @@
+import { prisma } from "@tuti/db";
+import { lockProject } from "@tuti/jobs";
+import { isLanguage, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
+import { z } from "zod";
+
+import { defineOperation, OperationError } from "./define";
+
+/** Languages (docs/plan.md, Languages): the project's default language, and the others its portal is in. */
+
+export const MAX_LANGUAGE_INSTRUCTIONS = 2000;
+
+const code = z.enum(LANGUAGE_CODES);
+
+const languageOutput = z
+  .object({
+    code: code.describe("Its code").meta({ examples: ["de"] }),
+    name: z.string().describe("Its name in English").meta({ examples: ["German"] }),
+    newPages: z.enum(["automatic", "manual"]).describe("How new pages get this language: translated automatically, or written by the team").meta({ examples: ["automatic"] }),
+    instructions: z.string().describe("The team's instructions for translating into it").meta({ examples: ["Use du, not Sie."] }),
+    productAvailable: z.boolean().describe("“Our product is available in <language>”: the team's own product has its words in this language").meta({ examples: [false] }),
+    live: z.boolean().describe("Whether readers get it; until then only the team can open its pages").meta({ examples: [false] }),
+  })
+  .meta({ id: "Language", description: "A language the portal is in besides its default one" });
+
+const languagesOutput = z
+  .object({
+    default: z.object({ code: code.describe("Its code").meta({ examples: ["en"] }), name: z.string().describe("Its name in English").meta({ examples: ["English"] }) }).describe("The language the team writes in"),
+    languages: z.array(languageOutput).describe("The other languages, in the order they were added"),
+  })
+  .describe("The portal's languages");
+
+const languageSelect = { code: true, automatic: true, instructions: true, productAvailable: true, live: true } as const;
+
+async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { language: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+  });
+  const named = (code: string) => (isLanguage(code) ? { code, name: LANGUAGES[code].name } : null);
+  return {
+    default: named(project.language) ?? { code: "en", name: LANGUAGES.en.name },
+    // A code no longer offered isn't one this server can serve.
+    languages: project.languages.flatMap(({ code, automatic, ...rest }) => {
+      const language = named(code);
+      return language ? [{ ...language, newPages: automatic ? ("automatic" as const) : ("manual" as const), ...rest }] : [];
+    }),
+  };
+}
+
+const languagesFull = (plan: PlanKey, limit: number) =>
+  [
+    `Projects on the ${planDisplay(plan).name} plan have ${limit === 1 ? "1 language" : `up to ${limit} languages`}, the default included.`,
+    upgradeFor(plan, languageLimit, " in Settings → Billing to add more."),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+export const getLanguages = defineOperation({
+  name: "languages.get",
+  title: "Get the languages",
+  summary: "The portal's languages: the default one the team writes in, and the others with how each is translated and whether it's live.",
+  method: "GET",
+  path: "/languages",
+  scope: "read",
+  access: "team",
+  input: z.object({}),
+  output: languagesOutput,
+  run: async ({ projectId }) => projectLanguages(projectId),
+});
+
+export const updateLanguages = defineOperation({
+  name: "languages.update",
+  title: "Update the languages",
+  summary:
+    "Change the default language (only while it's the only one), or set the other languages: the list in full, a language left out is removed and a new one added (offline, automatic for new pages). Fields left out keep their value. The plan limits how many, the default included (402).",
+  method: "PATCH",
+  path: "/languages",
+  scope: "write",
+  access: "admin",
+  errors: [402, 409],
+  input: z
+    .object({
+      default: code.optional().describe("The language the team writes in (409 while the project has other languages)").meta({ examples: ["en"] }),
+      languages: z
+        .array(
+          z.object({
+            code: code.describe("Its code").meta({ examples: ["de"] }),
+            newPages: z.enum(["automatic", "manual"]).optional().describe("How new pages get it: translated automatically (a new language's default), or written by the team"),
+            instructions: z
+              .string()
+              .trim()
+              .max(MAX_LANGUAGE_INSTRUCTIONS, "Keep the instructions under 2,000 characters")
+              .optional()
+              .describe("Instructions for translating into it, up to 2,000 characters")
+              .meta({ examples: ["Use du, not Sie."] }),
+            productAvailable: z.boolean().optional().describe("“Our product is available in <language>” (off for a new language)"),
+            live: z.boolean().optional().describe("Readers get it (off for a new language, so the team can check it first)"),
+          }),
+        )
+        .max(LANGUAGE_CODES.length - 1)
+        .optional()
+        .describe("The other languages, in full"),
+    })
+    .refine((input) => input.default !== undefined || input.languages !== undefined, "Send default or languages")
+    .refine((input) => new Set(input.languages?.map(({ code }) => code)).size === (input.languages?.length ?? 0), "Each language once")
+    .meta({ anyOf: [{ required: ["default"] }, { required: ["languages"] }] }),
+  example: { languages: [{ code: "de", newPages: "automatic", instructions: "Use du, not Sie." }] },
+  output: languagesOutput,
+  run: async ({ projectId }, input) => {
+    await prisma.$transaction(async (tx) => {
+      // One change at a time per project: the limit and the default language's rule hold for what's saved.
+      await lockProject(tx, projectId);
+      const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true } } } });
+      const current = project.languages.map(({ code }) => code);
+      const language = input.default ?? project.language;
+      if (language !== project.language && current.length > 0) {
+        throw new OperationError(409, "conflict", "Remove the other languages first: the default language changes only while it's the only one");
+      }
+      if (!input.languages) {
+        await tx.project.update({ where: { id: projectId }, data: { language } });
+        return;
+      }
+      const clash = input.languages.find(({ code }) => code === language);
+      if (clash) {
+        throw new OperationError(400, "invalid_input", `${LANGUAGES[clash.code].name} is the default language`);
+      }
+      // Past the limit (after a downgrade) a project keeps its languages and can change or remove them, but add none.
+      const limit = languageLimit(project.plan);
+      if (limit !== null && 1 + input.languages.length > limit && input.languages.some(({ code }) => !current.includes(code))) {
+        throw new OperationError(402, "plan_required", languagesFull(project.plan, limit));
+      }
+      await tx.project.update({ where: { id: projectId }, data: { language } });
+      await tx.projectLanguage.deleteMany({ where: { projectId, code: { notIn: input.languages.map(({ code }) => code) } } });
+      for (const { code, newPages, ...rest } of input.languages) {
+        const data = { ...(newPages && { automatic: newPages === "automatic" }), ...rest };
+        await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, ...data }, update: data });
+      }
+    });
+    return projectLanguages(projectId);
+  },
+});

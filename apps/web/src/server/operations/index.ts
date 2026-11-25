@@ -85,6 +85,7 @@ import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, upd
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
+import { getLanguages, updateLanguages } from "./languages";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
@@ -264,6 +265,8 @@ const all = [
   listRedirects,
   createRedirect,
   deleteRedirect,
+  getLanguages,
+  updateLanguages,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */

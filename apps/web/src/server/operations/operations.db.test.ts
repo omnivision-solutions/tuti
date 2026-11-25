@@ -227,6 +227,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Like the rest of Customize: admins only in the app.
   "redirects.create": () => ({ from: "/hc/en-us/articles/1", to: "/docs" }),
   "redirects.delete": (f) => ({ id: f.redirectId }),
+  "languages.get": () => ({}),
+  "languages.update": () => ({ languages: [{ code: "de", instructions: "Use du." }] }),
 };
 
 let owner: TestUser;

@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleLimit, articleVersionsKept, articleVersionsNote, articleVersionsStored, badgeOffered, badgePerMonth, badgePrice, boardLimit, effectivePlan, emailsPerMonth, monthlyEmailLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, trialState, trialTerms, upgradeFor } from "./plans";
+import { articleLimit, articleVersionsKept, articleVersionsNote, articleVersionsStored, badgeOffered, badgePerMonth, badgePrice, boardLimit, effectivePlan, emailsPerMonth, monthlyEmailLimit, historyDays, historyKeptDays, isBadgePrice, languageLimit, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, trialState, trialTerms, upgradeFor } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -10,7 +10,7 @@ afterEach(() => {
 test("without a billing file (self-hosted), every project has everything, and nothing is sold", () => {
   vi.stubEnv("BILLING_CONFIG", "");
   expect(planIncludes("free", "privatePortal")).toBe(true);
-  expect([teamLimit("free"), boardLimit("free"), articleLimit("free"), historyDays("free"), reportingDays("free"), emailsPerMonth("free")]).toEqual([null, null, null, null, null, null]);
+  expect([teamLimit("free"), boardLimit("free"), articleLimit("free"), historyDays("free"), reportingDays("free"), emailsPerMonth("free"), languageLimit("free")]).toEqual([null, null, null, null, null, null, null]);
   expect([planPrice("pro", "month"), badgePrice("month"), planCredits("pro"), plansWith("customDomain")]).toEqual([null, null, 0, null]);
   expect([articleVersionsKept("free"), articleVersionsStored(), historyKeptDays()]).toEqual([50, 50, null]);
 });
@@ -78,6 +78,12 @@ test("monthly emails: by plan (null: no limit), a plan the file doesn't list get
   vi.stubEnv("BILLING_CONFIG", billingFile());
   expect([emailsPerMonth("free"), emailsPerMonth("pro"), emailsPerMonth("business"), emailsPerMonth(null), emailsPerMonth("gone")]).toEqual([1000, 10000, null, 1000, 1000]);
   expect([roomierPlan("free", emailsPerMonth)?.name, roomierPlan("pro", emailsPerMonth)?.name, roomierPlan("business", emailsPerMonth)]).toEqual(["Pro", "Business", null]);
+});
+
+test("languages: by plan, the default language counted (null: no limit), and upgrades name more room", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect([languageLimit("free"), languageLimit("pro"), languageLimit("business"), languageLimit(null)]).toEqual([1, 3, 10, 1]);
+  expect([roomierPlan("free", languageLimit)?.name, roomierPlan("business", languageLimit)]).toEqual(["Pro", null]);
 });
 
 test("history: by plan, kept for historyKeptDays, never less than the longest plan's", () => {
