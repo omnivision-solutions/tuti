@@ -3461,6 +3461,10 @@ test("on a public portal, an announcement for some reader groups lights the laun
   const asked = other.waitForResponse((response) => response.url().includes("/api/widget/seen") && response.request().method() === "GET");
   await other.goto(site);
   expect(((await (await asked).json()) as { latest: string | null }).latest).toBeNull();
+  // The status the script settles on (Tuti.on("unseen") tells it once it's known, which is after that answer is applied).
+  const unseen = await other.evaluate(
+    () => new Promise<boolean>((done) => (window as unknown as { Tuti: { on(event: "unseen", callback: (unseen: boolean) => void): void } }).Tuti.on("unseen", done)),
+  );
+  expect(unseen).toBe(false);
   await expect(other.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback");
-  expect(await other.evaluate(() => (window as unknown as { Tuti: { unseen(): boolean } }).Tuti.unseen())).toBe(false);
 });
