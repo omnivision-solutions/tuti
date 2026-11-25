@@ -375,8 +375,10 @@ export function updateDraft(key: string, change: (draft: Draft) => Draft, since 
   try {
     writeDraft(key, after);
   } catch {}
-  listeners.get(key)?.forEach((listener) => listener());
+  tell(key);
 }
+
+const tell = (key: string) => listeners.get(key)?.forEach((listener) => listener());
 
 export function subscribeDraft(key: string, listener: () => void) {
   const set = listeners.get(key) ?? new Set();
@@ -386,6 +388,39 @@ export function subscribeDraft(key: string, listener: () => void) {
 }
 
 /** Sends going on, by the unsent's id: one opened again shows "Sending…" and waits on the same request, never a second. */
+/**
+ * Files uploading for a draft, by its key, kept here rather than in a screen (as sends are): a screen opened again while
+ * one uploads shows it and keeps Send off till it's done, so a reply doesn't go without it and the file doesn't land in
+ * whatever is sent next. `subscribeDraft` tells of changes here too.
+ */
+export type Uploading = { id: number; name: string };
+const uploads = new Map<string, Uploading[]>();
+const NONE: Uploading[] = [];
+let picks = 0;
+export const getUploading = (key: string) => uploads.get(key) ?? NONE;
+const setUploading = (key: string, change: (now: Uploading[]) => Uploading[]) => {
+  const next = change(getUploading(key));
+  if (next.length > 0) {
+    uploads.set(key, next);
+  } else {
+    uploads.delete(key);
+  }
+  tell(key);
+};
+
+/** Uploads a picked file into the draft at `key`; `failed` hears why it didn't (from the screen that picked it, if it's still there). */
+export function attach(api: Api, key: string, picked: Picked, failed: (why: string) => void): Promise<void> {
+  const since = generation;
+  const pick = { id: ++picks, name: picked.name };
+  setUploading(key, (now) => [...now, pick]);
+  return upload(api, picked)
+    .then(
+      (attached) => updateDraft(key, (draft) => ({ ...draft, files: [...draft.files, attached] }), since),
+      (error: unknown) => failed(error instanceof Error ? error.message : String(error)),
+    )
+    .finally(() => setUploading(key, (now) => now.filter((one) => one.id !== pick.id)));
+}
+
 const sends = new Map<string, { same: string; send: Promise<{ closed?: boolean } | null> }>();
 export const isSending = (id: string) => sends.has(id);
 
@@ -465,6 +500,7 @@ export const draftsGoWith = (stored: { token: string } | null, ended: { token: s
 export function forgetDrafts() {
   generation++;
   cache.clear();
+  uploads.clear();
   try {
     const directory = drafts();
     if (directory.exists) {

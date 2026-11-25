@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "./api";
 import {
+  attach,
   composerInset,
   type Conversation,
   delivery,
@@ -12,6 +13,7 @@ import {
   EMPTY_DRAFT,
   FILES_LAST_MS,
   forgetDrafts,
+  getUploading,
   getDraft,
   isSending,
   leavesAfter,
@@ -576,4 +578,37 @@ it("goes back after Send and close only from the conversation still looked at", 
   expect(leavesAfter({ closed: true }, false)).toBe(false);
   expect(leavesAfter({ closed: false }, true)).toBe(false);
   expect(leavesAfter(null, true)).toBe(false);
+});
+
+describe("a file uploading", () => {
+  const key = "https://tuti.example.com|acme|12";
+
+  it("is there for a screen opened again before it's done, and joins the draft once it is", async () => {
+    let started!: (value: unknown) => void;
+    const { api } = fakeApi({ "/inbox/uploads": () => new Promise((resolve) => (started = resolve)) });
+    const failures: string[] = [];
+    const uploading = attach(api, key, { uri: "file:///cache/photo.jpg", name: "photo.jpg", contentType: "image/jpeg", size: 2048 }, (why) => failures.push(why));
+    // The screen that picked it is gone; a fresh one subscribes and reads what's uploading.
+    let told = 0;
+    const stop = subscribeDraft(key, () => told++);
+    expect(getUploading(key).map((one) => one.name)).toEqual(["photo.jpg"]);
+    expect(getDraft(key).files).toEqual([]);
+    started({ id: "up1", contentType: "image/jpeg", uploadUrl: "https://media.example.com/up1" });
+    await uploading;
+    stop();
+    expect(getUploading(key)).toEqual([]);
+    expect(getDraft(key).files.map((file) => file.id)).toEqual(["up1"]);
+    expect(told).toBeGreaterThan(0);
+    expect(failures).toEqual([]);
+  });
+
+  it("says why it failed, and leaves nothing uploading", async () => {
+    files.uploadStatus = 403;
+    const { api } = fakeApi({ "/inbox/uploads": () => ({ id: "up1", contentType: "image/png", uploadUrl: "https://media.example.com/up1" }) });
+    const failures: string[] = [];
+    await attach(api, key, { uri: "file:///a.png", name: "a.png", contentType: "image/png", size: 1 }, (why) => failures.push(why));
+    expect(failures).toEqual(["Couldn't upload a.png. Try again."]);
+    expect(getUploading(key)).toEqual([]);
+    expect(getDraft(key).files).toEqual([]);
+  });
 });

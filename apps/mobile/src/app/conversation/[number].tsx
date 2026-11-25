@@ -32,7 +32,9 @@ import {
   draftsGeneration,
   draftWithAi,
   editUnsent,
+  attach as attachFile,
   getDraft,
+  getUploading,
   droppedLine,
   fileSize,
   getConversation,
@@ -51,7 +53,6 @@ import {
   subscribeDraft,
   type Unsent,
   updateDraft,
-  upload,
   watchLive,
   withDraft,
   withoutArrived,
@@ -163,8 +164,11 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   }, []);
 
   const [kind, setKind] = useState<Kind>("reply");
-  const [uploading, setUploading] = useState<{ id: number; name: string }[]>([]);
-  const picks = useRef(0);
+  // Files uploading, also those started before the screen was opened again.
+  const uploading = useSyncExternalStore(
+    useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey]),
+    () => getUploading(draftKey),
+  );
   const [drafting, setDrafting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
@@ -211,20 +215,12 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     setKind(unsent.note ? "note" : "reply");
   };
 
-  const attach = (picked: Picked | null) => {
+  const attachPicked = (picked: Picked | null) => {
     if (!picked) {
       return;
     }
     setNotice(null);
-    const pick = { id: ++picks.current, name: picked.name };
-    const since = draftsGeneration();
-    setUploading((now) => [...now, pick]);
-    upload(api, picked)
-      .then(
-        (attached) => setDraft((now) => ({ ...now, files: [...now.files, attached] }), since),
-        (e: Error) => setNotice(e.message),
-      )
-      .finally(() => setUploading((now) => now.filter((one) => one.id !== pick.id)));
+    void attachFile(api, draftKey, picked, setNotice);
   };
   const pickPhoto = async () => {
     const picked = await ImagePicker.launchImageLibraryAsync({
@@ -233,7 +229,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
     });
     const asset = picked.assets?.[0];
-    attach(
+    attachPicked(
       asset
         ? { uri: asset.uri, name: asset.fileName ?? asset.uri.split("/").pop() ?? "photo.jpg", contentType: asset.mimeType ?? "image/jpeg", size: asset.fileSize ?? 0 }
         : null,
@@ -242,7 +238,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   const pickFile = async () => {
     const picked = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
     const asset = picked.assets?.[0];
-    attach(asset ? { uri: asset.uri, name: asset.name, contentType: asset.mimeType ?? "application/octet-stream", size: asset.size ?? 0 } : null);
+    attachPicked(asset ? { uri: asset.uri, name: asset.name, contentType: asset.mimeType ?? "application/octet-stream", size: asset.size ?? 0 } : null);
   };
 
   const suggest = async () => {
