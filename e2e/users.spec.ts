@@ -561,7 +561,8 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   await owner.setViewportSize({ width: 390, height: 844 });
   const scroller = owner.getByRole("main").getByRole("table").locator("..");
   const remove = ada.getByRole("button", { name: "Remove e2e-ada@example.com" });
-  await expect(ada).toContainText("Subscribed");
+  // The Status column is hidden here: the one shown is under the address.
+  await expect(ada.getByText("Subscribed", { exact: true }).filter({ visible: true })).toHaveCount(1);
   const [box, button] = [(await scroller.boundingBox())!, (await remove.boundingBox())!];
   expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
