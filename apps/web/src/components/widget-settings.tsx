@@ -118,9 +118,14 @@ export function WidgetSettings({
   const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
-    save: (prev, formData) => {
+    save: async (prev, formData) => {
       setSent(formData.get("icon"));
-      return saveWidgetSettings(projectSlug, prev, formData);
+      const result = await saveWidgetSettings(projectSlug, prev, formData);
+      // Not saved: no refresh of its own is coming, so the next one (a teammate's) is followed.
+      if (result.error) {
+        setSent(null);
+      }
+      return result;
     },
     onSaved: () => {
       toast.success("Widget saved");
