@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import { appConfig } from "../app.config";
 import packageJson from "../package.json";
@@ -40,5 +42,13 @@ describe("the app's Expo config", () => {
   it("builds expo-notifications from its source, which the repository's patch changes (Android's prebuilt copy has no unlock requirement, nor iOS's the background time for an action)", () => {
     expect(packageJson.expo.autolinking.android.buildFromSource).toContain("expo-notifications");
     expect(packageJson.expo.autolinking.ios.buildFromSource).toContain("expo-notifications");
+  });
+
+  it("keeps both platforms' changes in the expo-notifications patch: the unlock requirement and an action's background time", () => {
+    const patch = readFileSync(new URL("../../../patches/expo-notifications.patch", import.meta.url), "utf8");
+    // Android: an action only on an unlocked phone.
+    expect(patch).toContain("setAuthenticationRequired(true)");
+    // iOS: a background task while the JavaScript acts, or iOS suspends the app before its request goes out.
+    expect(patch).toContain("beginBackgroundTask");
   });
 });
