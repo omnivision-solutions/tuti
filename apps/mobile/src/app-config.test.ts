@@ -26,6 +26,11 @@ describe("the app's Expo config", () => {
     expect(config.android?.package).toBe("com.acme.inbox");
   });
 
+  it("refuses a build on Expo's builders without the project, which would get no push token", () => {
+    expect(() => appConfig({ EAS_BUILD: "true" })).toThrow(/EAS_PROJECT_ID/);
+    expect(appConfig({ EAS_BUILD: "true", EAS_PROJECT_ID: "project-1" }).extra).toEqual({ eas: { projectId: "project-1" } });
+  });
+
   it("takes Android's Firebase config from the environment only", () => {
     expect(appConfig({}).android?.googleServicesFile).toBeUndefined();
     expect(appConfig({ GOOGLE_SERVICES_JSON: "/builds/google-services.json" }).android?.googleServicesFile).toBe("/builds/google-services.json");
