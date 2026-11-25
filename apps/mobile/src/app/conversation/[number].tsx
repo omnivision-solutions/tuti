@@ -295,7 +295,8 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
           headerStyle: { backgroundColor: colors.card },
           headerShadowVisible: true,
           headerTitle: conversation ? () => <Person conversation={conversation} colors={colors} onPress={details} /> : "",
-          headerRight: triage ? () => <Standing triage={triage} colors={colors} onPress={details} /> : undefined,
+          // Once this screen's fetch has answered: what's kept from an earlier visit may be out of date.
+          headerRight: triage && conversation ? () => <Standing triage={triage} colors={colors} onPress={details} /> : undefined,
         }}
       />
       {!conversation ? (

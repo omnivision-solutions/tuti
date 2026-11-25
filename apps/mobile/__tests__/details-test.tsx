@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
-import { BackHandler } from "react-native";
+import { AccessibilityInfo, BackHandler } from "react-native";
 
 import Details from "@/app/conversation/[number]/details";
 import { type Assignee, getTriage, type Person, screenKey, showTriage, type Triage } from "@/lib/details";
@@ -148,8 +148,10 @@ describe("the details sheet", () => {
     expect(choices.map((choice) => choice.props.accessibilityLabel)).toEqual(["You, Ravi Kumar", "Olive Owner", "Unassigned"]);
     expect(screen.getByRole("button", { name: "Unassigned" })).toBeSelected();
 
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     await fireEvent.press(screen.getByRole("button", { name: "Olive Owner" }));
     expect(patches()).toEqual([{ assignee: "e2e-olive@example.com" }]);
+    expect(announce).toHaveBeenLastCalledWith("Assigned to Olive Owner");
     // Back on the details, and on the conversation's header (the same store).
     expect(await screen.findByRole("button", { name: "Assignee, Olive Owner" })).toBeTruthy();
     expect(getTriage(KEY)?.assignee?.name).toBe("Olive Owner");
@@ -182,19 +184,36 @@ describe("the details sheet", () => {
     expect(await screen.findByRole("button", { name: "Snooze, Not snoozed" })).toBeTruthy();
   });
 
-  it("closes and reopens", async () => {
+  it("closes and reopens, and says so to screen readers", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     serve(SAM);
     await render(<Details />);
 
     await fireEvent.press(await screen.findByRole("button", { name: "Close" }));
     expect(patches()).toEqual([{ status: "closed" }]);
     expect(await screen.findByLabelText("Status, Closed")).toBeTruthy();
+    expect(announce).toHaveBeenLastCalledWith("Closed");
     // Closed: nothing to snooze.
     expect(screen.queryByRole("button", { name: /^Snooze/ })).toBeNull();
 
     await fireEvent.press(screen.getByRole("button", { name: "Reopen" }));
     expect(patches().at(-1)).toEqual({ status: "open" });
     expect(await screen.findByLabelText("Status, Needs reply")).toBeTruthy();
+    expect(announce).toHaveBeenLastCalledWith("Reopened");
+  });
+
+  it("keeps a change made here when the status fetched on opening answers after it", async () => {
+    serve(SAM);
+    const answer = mockApi.getMockImplementation()!;
+    let opened: (value: unknown) => void = () => {};
+    mockApi.mockImplementation((path, init) => (path === "/conversations/12" && !init ? new Promise((resolve) => (opened = resolve)) : answer(path, init)));
+    await render(<Details />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Close" }));
+    expect(await screen.findByLabelText("Status, Closed")).toBeTruthy();
+    // The fetch from before the close answers: open, as it was then.
+    await act(async () => opened(OPEN));
+    expect(screen.getByLabelText("Status, Closed")).toBeTruthy();
   });
 
   it("marks it as spam and back", async () => {

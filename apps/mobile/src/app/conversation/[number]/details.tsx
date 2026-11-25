@@ -225,7 +225,7 @@ export default function Details() {
         <Row label="Status" value={triage ? STATUS_WORDS[triage.status] : ""} dot={triage && (triage.status === "open" ? colors.onNote : colors.muted)} colors={colors} />
         <Row
           label="Snooze"
-          value={snoozed ? `Snoozed till ${snoozeTime(new Date(triage!.snoozedUntil!))}` : "Not snoozed"}
+          value={!triage ? "" : snoozed ? `Snoozed till ${snoozeTime(new Date(triage.snoozedUntil!))}` : "Not snoozed"}
           colors={colors}
           onPress={canSnooze ? () => setPane("snooze") : undefined}
         />
