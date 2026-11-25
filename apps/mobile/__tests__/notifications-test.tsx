@@ -206,7 +206,7 @@ describe("a tapped notification", () => {
 
 describe("a notification while the app is in front", () => {
   it("shows a banner signed in, and nothing signed out", async () => {
-    const arriving = { request: { content: { data: { project: "acme", conversation: 12 } } } };
+    const arriving = { request: { content: { title: "Ada · Acme", data: { project: "acme", conversation: 12 } } } };
     await render(<Harness />);
     expect((await mockSystem.handler!.handleNotification(arriving)).shouldShowBanner).toBe(true);
 

@@ -3,10 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "./api";
 
 const stored = new Map<string, string>();
+/** Writes to secure storage that fail (a keystore that won't take them). */
+const writes = vi.hoisted(() => ({ fail: false }));
 vi.mock("expo-secure-store", () => ({
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 0,
   getItemAsync: async (key: string) => stored.get(key) ?? null,
-  setItemAsync: async (key: string, value: string) => void stored.set(key, value),
+  setItemAsync: async (key: string, value: string) => {
+    if (writes.fail) {
+      throw new Error("Keystore unavailable");
+    }
+    stored.set(key, value);
+  },
 }));
 vi.mock("expo-web-browser", () => ({}));
 const files = new Map<string, string>();
@@ -68,6 +75,7 @@ const api = (async (path: string, init?: { method?: string; body?: unknown }) =>
 
 beforeEach(() => {
   vi.resetModules();
+  writes.fail = false;
   stored.clear();
   files.clear();
   calls.length = 0;
@@ -254,13 +262,14 @@ describe("registering the device", () => {
   });
 });
 
-const notification = (data: unknown) => ({ request: { content: { data } } }) as never;
+const notification = (data: unknown) => ({ request: { content: { title: "Ada · Acme", data } } }) as never;
 const response = (data: unknown, actionIdentifier = "expo.modules.notifications.actions.DEFAULT") => ({ actionIdentifier, notification: notification(data) }) as never;
 
 describe("a notification's conversation", () => {
   it("is read from the server's data, checked", async () => {
     const { targetOf, tapped } = await load();
     expect(targetOf({ project: "acme", conversation: 12 })).toEqual({ project: "acme", number: 12 });
+    expect(targetOf({ project: "acme", conversation: 12, device: "phone-1" })).toEqual({ project: "acme", number: 12, device: "phone-1" });
     for (const bad of [null, {}, { project: "acme" }, { project: "Acme\nx", conversation: 1 }, { project: "acme", conversation: "12" }, { project: "acme", conversation: 0 }, { project: "acme", conversation: 1.5 }]) {
       expect(targetOf(bad)).toBeNull();
     }
@@ -271,6 +280,26 @@ describe("a notification's conversation", () => {
 });
 
 describe("a notification while the app is in front", () => {
+  it("shows a reply's silent update in the list only, whatever is on screen, so Android's reply spinner goes", async () => {
+    const { behaviourFor, lookAt } = await load();
+    const update = { project: "acme", conversation: 12, sent: true };
+    const quiet = { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+    expect(behaviourFor(notification(update))).toEqual(quiet);
+    const away = lookAt({ project: "acme", number: 12 });
+    expect(behaviourFor(notification(update))).toEqual(quiet);
+    away();
+  });
+
+  it("always shows that an action didn't go, also over its own conversation or signed out", async () => {
+    const { behaviourFor, lookAt } = await load();
+    const failed = { project: "acme", conversation: 12, failed: true };
+    const shown = { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
+    const away = lookAt({ project: "acme", number: 12 });
+    expect(behaviourFor(notification(failed))).toEqual(shown);
+    expect(behaviourFor(notification(failed), true)).toEqual(shown);
+    away();
+  });
+
   it("shows no banner over its own conversation, and one anywhere else", async () => {
     const { behaviourFor, lookAt } = await load();
     const shown = (data: unknown) => behaviourFor(notification(data)).shouldShowBanner;
@@ -282,6 +311,8 @@ describe("a notification while the app is in front", () => {
     expect(shown({ project: "acme", conversation: 13 })).toBe(true);
     expect(shown({ project: "kite", conversation: 12 })).toBe(true);
     expect(shown({})).toBe(true);
+    // Untitled (Android's pushes, data only, which the app shows itself), nothing.
+    expect(behaviourFor({ request: { content: { title: null, data: { project: "acme", conversation: 13 } } } } as never).shouldShowBanner).toBe(false);
     // Signed out, nothing shows in front.
     expect(behaviourFor(notification({ project: "acme", conversation: 13 }), true).shouldShowBanner).toBe(false);
 
@@ -299,6 +330,62 @@ describe("a notification while the app is in front", () => {
     expect(shown({ project: "acme", conversation: 13 })).toBe(false);
     other();
     expect(shown({ project: "acme", conversation: 13 })).toBe(true);
+  });
+});
+
+describe("whether a notification is for this sign-in", () => {
+  it("is when it names the id the phone registered under, which a sign-out changes", async () => {
+    const { deviceId, forThisSignIn, removeDevice } = await load();
+    const id = await deviceId();
+    expect(await forThisSignIn({ project: "acme", number: 7, device: id })).toBe(true);
+    // A push for a sign-in since left (on any server), or one that names no registration, isn't.
+    await removeDevice(api);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: id })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: await deviceId() })).toBe(true);
+    expect(await forThisSignIn({ project: "acme", number: 7 })).toBe(false);
+  });
+
+  it("reads the id as stored now: a sign-out in the app's other JavaScript changes it there, not in this one's memory", async () => {
+    const { deviceId, forThisSignIn } = await load();
+    const old = await deviceId();
+    // The other JavaScript signed out and in again: a new id stored, this one's cached id still the old one.
+    stored.set("device-id", "id-from-the-other-javascript");
+    expect(await deviceId()).toBe(old);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: old })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: "id-from-the-other-javascript" })).toBe(true);
+  });
+
+  it("goes by this JavaScript's own sign-out while its new id isn't stored (the write not landed, or failed)", async () => {
+    const { deviceId, forThisSignIn, removeDevice } = await load();
+    const old = await deviceId();
+    writes.fail = true;
+    try {
+      await removeDevice(api);
+    } finally {
+      writes.fail = false;
+    }
+    // Storage still has the old id: the session signed out of isn't this one's any more, the new one is.
+    expect(stored.get("device-id")).toBe(old);
+    const now = await deviceId();
+    expect(await forThisSignIn({ project: "acme", number: 7, device: old })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: now })).toBe(true);
+    // A second sign-out whose write fails too: the newest id still wins over every one replaced, the first one included.
+    writes.fail = true;
+    try {
+      await removeDevice(api);
+    } finally {
+      writes.fail = false;
+    }
+    const newest = await deviceId();
+    expect(newest).not.toBe(now);
+    for (const replaced of [old, now]) {
+      expect(await forThisSignIn({ project: "acme", number: 7, device: replaced })).toBe(false);
+    }
+    expect(await forThisSignIn({ project: "acme", number: 7, device: newest })).toBe(true);
+    // Then the other JavaScript signs out and in again: its id, stored, wins over this one's.
+    stored.set("device-id", "id-from-the-other-javascript");
+    expect(await forThisSignIn({ project: "acme", number: 7, device: newest })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: "id-from-the-other-javascript" })).toBe(true);
   });
 });
 
@@ -329,10 +416,18 @@ describe("opening a tapped notification", () => {
     expect(order).toEqual(["leave", "project kite", "/conversation/7"]);
   });
 
-  it("opens nothing signed out, and nothing when the project can't be switched", async () => {
-    const { openTarget } = await load();
+  it("opens nothing signed out, for a sign-in since left, or when the project can't be switched", async () => {
+    const { deviceId, openTarget } = await load();
     const open = vi.fn();
     await openTarget({ project: "acme", number: 7 }, null, async () => {}, { leave: () => {}, open, projects });
+    // For a sign-in since left (its registration's id isn't the phone's now): nothing.
+    await openTarget({ project: "acme", number: 7, device: "an-id-since-left" }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    expect(open).not.toHaveBeenCalled();
+    // For this one, or naming none (a tap only opens, in the teammate's own projects): opened.
+    await openTarget({ project: "acme", number: 7, device: await deviceId() }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    await openTarget({ project: "acme", number: 7 }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    expect(open).toHaveBeenCalledTimes(2);
+    open.mockClear();
     await expect(
       openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), { leave: () => {}, open, projects }),
     ).rejects.toThrow("Keychain unavailable");

@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
+import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
+
+import { prisma } from "@tuti/db";
 
 import { ChangelogForm, ChangelogSaveButton, ChangelogSaving } from "@/components/changelog";
 import { PageActions } from "@/components/page-actions";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
-import { getMembership } from "@/server/membership";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
+import { getMembership, isAdminRole } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 
 export const metadata: Metadata = { title: "New entry · Changelog" };
@@ -31,7 +35,7 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
             }
           />
           <PaneBody className="lg:[container-type:size] p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
-            <ChangelogForm projectSlug={slug} entry={null} posts={[]} mediaUrls={await mediaUrls()} />
+            <ChangelogForm projectSlug={slug} entry={null} posts={[]} mediaUrls={await mediaUrls()} groupsUpgrade={planIncludes(membership.project.plan, "privatePortal") ? null : upgradePrompt("privatePortal", slug, isAdminRole(membership.role))} groups={await prisma.readerGroup.findMany({ where: { projectId: membership.project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } })} />
           </PaneBody>
         </Pane>
       </PaneLayout>

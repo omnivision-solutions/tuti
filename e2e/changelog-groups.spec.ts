@@ -16,7 +16,7 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
   return `${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`;
 }
 
-test("an entry for some groups only: their readers see it on the changelog, everyone else doesn't, nor its page", async ({ browser }, testInfo) => {
+test("an entry for some groups only: their readers see it on the changelog, everyone else doesn't, nor its page; the editor picks them", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -88,6 +88,76 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(newDot(bea)).toHaveCount(0);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
+  // The team makes Dark mode for enterprise customers too, in the editor's "Who sees it": now Bea has none.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  const whoSees = owner.getByRole("group", { name: "Who sees it" });
+  await expect(whoSees.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
+  await whoSees.getByRole("checkbox", { name: "Enterprise" }).check();
+  await checkpoint(owner, "editor-who-sees-it");
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.reload();
+  await expect(owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
+  await bea.goto("/changelog");
+  await expect(titles(bea)).toHaveCount(0);
+  await owner.goto(`/app/${slug}/changelog/1`);
+  await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).uncheck();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  // Groups set meanwhile (by the API here; a teammate alike) stay when the open editor saves something else.
+  await api("/changelog/1", { groups: ["enterprise"] }, "PATCH");
+  await owner.getByRole("checkbox", { name: "Fixed" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  const saved = async () => (await api("/changelog/1", undefined, "GET")) as unknown as { groups: string[]; tags: string[] };
+  await expect.poll(async () => (await saved()).tags).toEqual(["fixed"]);
+  expect((await saved()).groups).toEqual(["enterprise"]);
+  await api("/changelog/1", { groups: [] }, "PATCH");
+  // Ticked and unticked again, then saved: nothing changed, so the next save (of its tags) still keeps groups set meanwhile.
+  await owner.reload();
+  const enterprise = owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" });
+  await enterprise.check();
+  await enterprise.uncheck();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await api("/changelog/1", { groups: ["enterprise"] }, "PATCH");
+  await owner.getByRole("checkbox", { name: "Improved" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => (await saved()).tags).toEqual(["improved", "fixed"]);
+  expect((await saved()).groups).toEqual(["enterprise"]);
+  await api("/changelog/1", { groups: [] }, "PATCH");
+  // While a save runs (its answer held here), the picks wait: one made then would be dropped as the picker starts afresh after it.
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
+  await owner.getByRole("checkbox", { name: "Breaking" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(enterprise).toBeDisabled();
+  releaseSave();
+  await expect(enterprise).toBeEnabled();
+  await owner.unroute("**/*");
+
+  // A draft: picking who sees it holds Publish until it's saved (Publish sends what's saved, to whoever that's for).
+  await api("/changelog", { title: "Roles", body: "Give teammates roles." });
+  await owner.goto(`/app/${slug}/changelog/3`);
+  await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).check();
+  await owner.getByRole("button", { name: "Publish" }).click();
+  const publish = owner.getByRole("alertdialog");
+  await expect(publish.getByRole("heading", { name: "Save who sees it before publishing" })).toBeVisible();
+  await expect(publish.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await publish.getByRole("button", { name: "Cancel" }).click();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => ((await api("/changelog/3", undefined, "GET")) as unknown as { groups: string[] }).groups).toEqual(["enterprise"]);
+  await owner.getByRole("button", { name: "Publish" }).click();
+  await expect(publish.getByRole("heading", { name: "Publish “Roles”?" })).toBeVisible();
+  await publish.getByRole("button", { name: "Cancel" }).click();
+
   // Her What's new has nothing announced for her, so it marks nothing seen (not the time of the one she can't read).
   await bea.goto("/widget?tab=whats-new");
   await expect(bea.getByRole("heading", { level: 2 })).toHaveText(["Dark mode"]);

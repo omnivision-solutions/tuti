@@ -762,9 +762,10 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
           }
         }
         if (input.groups) {
-          // Some groups need the plan; everyone never does.
+          // Adding a group needs the plan; taking some off (back to everyone, too) never does, so a lower plan can undo them.
           const links = await groupLinks(tx, projectId, input.groups);
-          if (links.length > 0) {
+          const had = new Set((await tx.changelogEntryGroup.findMany({ where: { entryId: entry.id }, select: { groupId: true } })).map((link) => link.groupId));
+          if (links.some((link) => !had.has(link.groupId))) {
             await requirePlan(projectId, "privatePortal", tx);
           }
           await tx.changelogEntryGroup.deleteMany({ where: { entryId: entry.id } });
