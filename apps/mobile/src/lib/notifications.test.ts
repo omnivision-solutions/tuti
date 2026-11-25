@@ -193,6 +193,21 @@ describe("registering the device", () => {
 
     await removeDevice(failing(new ApiError(0, "unreachable", "Couldn't reach tuti.example.com.")));
     await vi.waitFor(() => expect(system.unregistered).toBe(1));
+    // Something other than the server answered (a Wi-Fi login page).
+    await removeDevice(failing(new ApiError(200, "not_tuti", "wifi.example.com didn't answer like a Tuti server (200).")));
+    await vi.waitFor(() => expect(system.unregistered).toBe(2));
+  });
+
+  it("keeps the token of a sign-in that registered while the removal before it was still failing", async () => {
+    const { registerDevice, removeDevice } = await load();
+    const { ApiError } = await import("./api");
+    let fail: () => void = () => {};
+    const hanging = (() => new Promise((_, reject) => (fail = () => reject(new ApiError(0, "unreachable", "Offline"))))) as Api;
+    await removeDevice(hanging);
+    await registerDevice(api, { token: "token-2" }, "ios");
+    fail();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(system.unregistered).toBe(0);
   });
 });
 

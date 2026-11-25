@@ -84,12 +84,15 @@ const projectId = () => (Constants.expoConfig?.extra?.eas?.projectId as string |
 
 /** The session and Expo token last registered (or being registered): the same pair isn't sent twice. */
 let registered: string | null = null;
+/** Moves on with each registration and removal: a removal's late failure leaves a registration started since alone. */
+let turn = 0;
 
 /**
  * Registers this phone for the session's teammate (`devices.register`), if notifications are allowed. `devicePushToken`:
  * the new one the system just gave (fetching it again would fire its listener again).
  */
 export async function registerDevice(api: Api, session: { token: string }, platform: Platform, devicePushToken?: Notifications.DevicePushToken) {
+  turn++;
   const project = projectId();
   if (!project || !(await permission()).allowed) {
     return;
@@ -111,16 +114,18 @@ export async function registerDevice(api: Api, session: { token: string }, platf
 
 /**
  * Stops this phone's notifications for the session signing out (`devices.remove`). Done once the request is sent (the
- * id is read on the phone): its answer is never waited for. A server that answered at all ends the session, and with it
- * its rows, if this didn't; one that couldn't be reached (offline) may not have heard the sign-out either, so the phone
- * gives up its push token: Expo then calls it unregistered, and the server drops it. The next sign-in gets a new one.
+ * id is read on the phone): its answer is never waited for. A removal that failed other than with a 401 (the session's
+ * over, and its rows with it) may mean the sign-out didn't get there either (offline, a Wi-Fi login page), so the phone
+ * gives up its push token: Expo then calls it unregistered, and the server drops it. Not once a registration started
+ * since (signed in again meanwhile): that one's token is the one in use.
  */
 export async function removeDevice(api: Api) {
   registered = null;
+  const mine = ++turn;
   const id = await deviceId().catch(() => null);
   if (id) {
     void api(`/devices/${encodeURIComponent(id)}`, { method: "DELETE" }).catch((error: unknown) => {
-      if (error instanceof ApiError && error.status === 0) {
+      if (turn === mine && !(error instanceof ApiError && error.status === 401)) {
         return Notifications.unregisterForNotificationsAsync().catch(() => {});
       }
     });

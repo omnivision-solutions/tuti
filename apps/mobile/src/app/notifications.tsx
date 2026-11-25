@@ -88,7 +88,7 @@ export default function NotificationSettings() {
           <View style={styles.rowText}>
             <Text style={[styles.label, { color: colors.text }]}>Notifications</Text>
             <Text style={[styles.detail, { color: colors.muted }]}>
-              {allowed?.allowed ? "Tuti tells you when someone writes." : allowed?.canAsk ? "Tap to turn them on." : "Turn them on in your phone's settings."}
+              {allowed?.allowed ? "Tuti tells you when someone writes to a conversation you'd get an email about." : allowed?.canAsk ? "Tap to turn them on." : "Turn them on in your phone's settings."}
             </Text>
           </View>
           {allowed && <Text style={[styles.value, { color: allowed.allowed ? colors.text : colors.muted }]}>{allowed.allowed ? "On ›" : "Off ›"}</Text>}
