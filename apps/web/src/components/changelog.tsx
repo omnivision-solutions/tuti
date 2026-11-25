@@ -1010,6 +1010,7 @@ function EntryPullRequests({
                   aria-label={`Take out ${pr.repo}#${pr.number}`}
                   title="Take out"
                   disabled={pending}
+                  focusableWhenDisabled
                   onClick={() => takeOut(pr.url)}
                 >
                   <XIcon />
