@@ -123,7 +123,13 @@ export async function publishChangelogEntry(projectSlug: string, number: number,
       if (!input.success) {
         throw new OperationError(400, "invalid_input", input.error.issues[0]?.message ?? "Invalid input");
       }
-      await composeCover(context, input.data, { ifBare: true });
+      await composeCover(context, input.data, { ifBare: true }).catch((error: unknown) => {
+        // Picked for them unless they chose: say how to publish without it.
+        if (error instanceof OperationError && error.code === "no_room") {
+          throw new OperationError(409, "no_room", `${error.message}. Pick No cover to publish without one.`);
+        }
+        throw error;
+      });
     }
     await call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true });
   });

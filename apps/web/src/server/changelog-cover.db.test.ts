@@ -150,6 +150,11 @@ test("without uploads set up it's a 503, and past the member's hourly uploads a 
     data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),
   });
   await expect(compose({ number })).rejects.toMatchObject({ status: 409, code: "no_room" });
+  // Publishing with the design its dialog picked: nothing goes out, and the error says how it can.
+  actAs(owner);
+  const draft = await call(createChangelogEntry, team(), { title: "Search" });
+  expect(await publishAction(project.slug, draft.number, true, false, "title")).toEqual({ error: expect.stringMatching(/Pick No cover to publish without one\.$/) });
+  expect((await call(getChangelogEntry, team(), { number: draft.number })).status).toBe("draft");
 
   vi.stubEnv("MEDIA_S3_BUCKET", "");
   await expect(compose({ number })).rejects.toMatchObject({ status: 503, code: "uploads_unavailable", message: "Uploads aren't set up on this server" });

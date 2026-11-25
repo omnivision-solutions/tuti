@@ -1434,6 +1434,20 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   await publishing.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   expect(await saved(1)).toMatchObject({ status: "published", cover: null });
+
+  // An image uploaded and not saved, then "Use this cover": the composed one is the form's, and Save keeps it.
+  await api("/changelog", { title: "Faster search", body: "It's quicker." });
+  await team.goto(`/app/${slug}/changelog/3`);
+  await featured.getByLabel("Featured image", { exact: true }).setInputFiles({ name: "mine.png", mimeType: "image/png", buffer: await team.screenshot() });
+  await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeVisible();
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  await making.getByRole("button", { name: "Use this cover" }).click();
+  await expect(team.getByText("Cover added")).toBeVisible();
+  const composed = (await saved(3)).cover!.id;
+  await expect(featured.getByRole("img")).toHaveAttribute("src", new RegExp(composed));
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved")).toBeVisible();
+  expect((await saved(3)).cover!.id).toBe(composed);
 });
 
 test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {

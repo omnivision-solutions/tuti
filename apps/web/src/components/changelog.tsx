@@ -318,8 +318,9 @@ function FeaturedImage({
           covers={covers}
           open={making}
           onOpenChange={setMaking}
+          // Marked as asked for before it's made: the page refreshed with it can land before the action's answer does.
+          onAsking={setMade}
           onMade={() => {
-            setMade(true);
             focusReplace.current = true;
           }}
         />
@@ -397,6 +398,7 @@ function MakeCover({
   covers,
   open,
   onOpenChange: setOpen,
+  onAsking,
   onMade,
 }: {
   projectSlug: string;
@@ -405,7 +407,9 @@ function MakeCover({
   covers: CoverChoices;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Its cover is the entry's now: the form takes it as its own. */
+  /** Its cover is being made (true), or couldn't be (false): the form takes the entry's next cover as its own. */
+  onAsking: (asking: boolean) => void;
+  /** Its cover is the entry's now. */
   onMade: () => void;
 }) {
   const [picked, setPicked] = useState<CoverDesign>();
@@ -441,8 +445,10 @@ function MakeCover({
             focusableWhenDisabled
             onClick={() =>
               startTransition(async () => {
+                onAsking(true);
                 const result = await composeChangelogCover(projectSlug, number, design, headline);
                 if (result.error) {
+                  onAsking(false);
                   toast.error(result.error);
                 } else {
                   onMade();
