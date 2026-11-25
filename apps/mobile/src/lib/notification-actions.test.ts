@@ -234,6 +234,22 @@ describe("Reply", () => {
     expect(callsWhenCleared).toBe(0);
   });
 
+  it("clears a Reply's stored response on every other way out too, so a later start doesn't act on it again", async () => {
+    const cases: [string, () => void, NotificationResponse][] = [
+      ["only spaces", () => {}, response("reply", { userText: "   " })],
+      ["signed out", () => phone.stored.delete("session"), response("reply", { userText: "On it!" })],
+      ["another sign-in's", () => {}, response("reply", { userText: "On it!", device: "an-id-since-left" })],
+    ];
+    for (const [why, prepare, last] of cases) {
+      vi.resetModules();
+      signIn();
+      prepare();
+      phone.last = last;
+      await (await load()).startNotificationActions();
+      expect(phone.last, why).toBeNull();
+    }
+  });
+
   it("leaves a newer last response for its own start", async () => {
     phone.last = response("close", { id: "push-2" });
     await (await load()).act(response("close"));
