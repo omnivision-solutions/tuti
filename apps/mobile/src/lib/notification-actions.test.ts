@@ -60,6 +60,12 @@ vi.mock("expo-file-system", () => {
   }
   class Directory extends File {
     create() {}
+    override get exists() {
+      return [...phone.files.keys()].some((key) => key.startsWith(`${this.uri}/`));
+    }
+    delete() {
+      [...phone.files.keys()].filter((key) => key.startsWith(`${this.uri}/`)).forEach((key) => phone.files.delete(key));
+    }
   }
   return { File, Directory, Paths: { document: "documents", cache: "cache" } };
 });
@@ -75,6 +81,7 @@ vi.mock("expo-notifications", () => ({
     return { remove: () => {} };
   },
   getLastNotificationResponse: () => phone.last,
+  clearLastNotificationResponse: () => void (phone.last = null),
   dismissNotificationAsync: async (id: string) => void phone.dismissed.push(id),
   // What the system shows: the last one posted with each identifier, posted a little after it's asked for.
   getPresentedNotificationsAsync: async () => phone.presented,
@@ -105,12 +112,24 @@ const SERVER = "https://tuti.example";
 /** When the notification's message was sent. */
 const AT = "2026-11-25T10:00:00.000Z";
 const signIn = (project = "acme") => phone.stored.set("session", JSON.stringify({ server: SERVER, token: "token-1", cookie: "c", project }));
-const response = (actionIdentifier: string, { userText, project = "acme", id = "push-1" }: { userText?: string; project?: string; id?: string } = {}) =>
+const response = (
+  actionIdentifier: string,
+  { userText, project = "acme", id = "push-1", server }: { userText?: string; project?: string; id?: string; server?: string } = {},
+) =>
   ({
     actionIdentifier,
     ...(userText !== undefined && { userText }),
-    notification: { date: 0, request: { identifier: id, trigger: null, content: { title: "Ada · Acme", body: "Hi", data: { project, conversation: 7, at: AT } } } },
+    notification: {
+      date: 0,
+      request: { identifier: id, trigger: null, content: { title: "Ada · Acme", body: "Hi", data: { project, conversation: 7, at: AT, ...(server && { server }) } } },
+    },
   }) as unknown as NotificationResponse;
+/** The reply kept in the conversation's draft, by its body. */
+const kept = async (project = "acme") => {
+  const { getDraft } = await import("./conversation");
+  const { screenKey } = await import("./details");
+  return getDraft(screenKey({ server: SERVER, project }, 7)).unsent.map((one) => ({ body: one.body, error: one.error }));
+};
 
 const load = () => import("./notification-actions");
 
@@ -161,6 +180,8 @@ describe("Reply", () => {
     ]);
     expect(phone.dismissed).toEqual(["push-1"]);
     expect(phone.shown).toEqual([]);
+    // Saved: not left in the draft.
+    expect(await kept()).toEqual([]);
   });
 
   it("is sent once when the listener and the last response both tell of it", async () => {
@@ -168,6 +189,50 @@ describe("Reply", () => {
     await (await load()).startNotificationActions();
     await phone.listener!(response("reply", { userText: "On it!" }));
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  });
+
+  it("taken from the last response isn't acted on again by a later start (a reload, a launch)", async () => {
+    phone.last = response("close");
+    await (await load()).startNotificationActions();
+    expect(calls.map((call) => call.method)).toEqual(["PATCH"]);
+    expect(phone.last).toBeNull();
+    vi.resetModules();
+    await (await load()).startNotificationActions();
+    expect(calls.map((call) => call.method)).toEqual(["PATCH"]);
+  });
+
+  it("leaves a newer last response for its own start", async () => {
+    phone.last = response("close", { id: "push-2" });
+    await (await load()).act(response("close"));
+    expect(phone.last).not.toBeNull();
+  });
+
+  it("is in the conversation's draft while it's being sent, so a process ended meanwhile loses nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      hang = true;
+      const acting = (await load()).act(response("reply", { userText: "On it!" }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls.map((call) => call.method)).toEqual(["POST"]);
+      expect(await kept()).toEqual([{ body: "On it!", error: undefined }]);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await acting;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await kept()).toEqual([{ body: "On it!", error: expect.stringContaining("Couldn't reach") }]);
+  });
+
+  it("from another server, even one with a project of the same slug, sends nothing and says so", async () => {
+    await (await load()).act(response("reply", { userText: "On it!", server: "https://other.example" }));
+    expect(calls).toEqual([]);
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: It's from a Tuti server you're not signed in to."]);
+    expect(await kept()).toEqual([]);
+
+    // Its own server, however the address is written.
+    phone.shown = [];
+    await (await load()).act(response("reply", { userText: "On it!", server: "HTTPS://Tuti.Example", id: "push-2" }));
+    expect(calls.map((call) => call.method)).toEqual(["POST"]);
   });
 
   it("goes to another of the teammate's projects, never to one that isn't theirs", async () => {
@@ -323,17 +388,18 @@ describe("on Android", () => {
   it("shows a push itself, with Reply and Close, on the app's channel", async () => {
     phone.os = "android";
     (await load()).startNotificationActions();
-    await phone.task!({ data: push(pushed) });
+    await phone.task!({ data: push({ ...pushed, server: SERVER }) });
     expect(phone.shown).toEqual([
       {
         identifier: "0:fcm-1",
-        content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT }, categoryIdentifier: "conversation", sound: "default" },
+        // The server kept, for its actions to check.
+        content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, server: SERVER }, categoryIdentifier: "conversation", sound: "default" },
         trigger: { channelId: "default" },
       },
     ]);
   });
 
-  it("shows nothing signed out, or for a push that isn't the server's", async () => {
+  it("shows nothing signed out, from another server, or for a push that isn't a server's", async () => {
     phone.os = "android";
     const { present } = await load();
     phone.stored.clear();
@@ -341,6 +407,7 @@ describe("on Android", () => {
     signIn();
     await present(push({ ...pushed, project: "Not a slug" }));
     await present(push({ project: "acme", conversation: 7 }));
+    await present(push({ ...pushed, server: "https://other.example" }));
     await present({ data: { body: "not JSON" } });
     await present(null);
     expect(phone.shown).toEqual([]);

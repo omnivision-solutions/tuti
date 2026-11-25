@@ -145,9 +145,12 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   const title = `${whoWrote(message, conversation)} · ${conversation.project.name}`;
   const text = pushText(message.body);
-  // What opens the conversation, and `at`, the message's time, which a reply from the notification says it saw
-  // (conversations.reply's `seen`), so a message after it keeps the conversation waiting on the team.
-  const data = { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString() };
+  // What opens the conversation; `at`, the message's time, which a reply from the notification says it saw
+  // (conversations.reply's `seen`), so a message after it keeps the conversation waiting on the team; and `server`, this
+  // server's address (the conversation emails' links' origin), so the app acts only when it's signed in here: another
+  // server can have a project of the same slug.
+  const server = process.env.APP_URL ? new URL(process.env.APP_URL).origin : undefined;
+  const data = { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString(), ...(server && { server }) };
   const messages = devices.map((device) => {
     const shown = { title, ...(device.user.pushShowsText && text && { text }) };
     // Android: data only, which the app shows itself (apps/mobile src/lib/notification-actions.ts) with its Reply and

@@ -262,7 +262,8 @@ test("a user's message notifies the phones of exactly those its email goes to", 
     sound: "default",
     priority: "high",
     categoryId: "conversation",
-    data: { project: project.slug, conversation: number, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+    // `server`: this server's address (APP_URL's origin); the app acts on the push only when signed in to it.
+    data: { project: project.slug, conversation: number, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), server: "http://tuti.localhost:3100" },
   });
   // No access token unless one is set.
   expect(expo.sent[0]!.headers.authorization).toBeUndefined();
@@ -320,6 +321,7 @@ test("an Android phone gets data only, which its app shows with Reply and Close 
       project: project.slug,
       conversation: number,
       at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      server: "http://tuti.localhost:3100",
       title: "e2e-asker@example.com · " + project.name,
       text: "The export button does nothing",
     },

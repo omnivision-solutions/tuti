@@ -7,6 +7,7 @@ import { ApiError, createApi } from "./api";
 import { draftsGeneration, sendReply, type Unsent, updateDraft } from "./conversation";
 import { screenKey, updateConversation } from "./details";
 import { CHANNEL, isTheirs, type Target, targetOf } from "./notifications";
+import { normalizeServer } from "./server";
 import { readSession } from "./session-store";
 
 /**
@@ -60,12 +61,34 @@ const reasonOf = (error: unknown) => (error instanceof ApiError || error instanc
 /** Why an action wasn't taken, said in the notification left in its place. */
 export const SIGNED_OUT = "You're signed out of Tuti.";
 export const NOT_YOURS = "It's in a project you're not on.";
+export const OTHER_SERVER = "It's from a Tuti server you're not signed in to.";
 
 /**
- * Acts on a Reply or Close: as the signed-in teammate, in the notification's project when it's one of theirs. Done, the
- * notification goes. Not done, it goes too (Android would keep a reply's spinner), and one in its place says why and
- * opens the conversation, so nothing typed is lost unsaid: a reply that failed to send is kept there, as one that didn't
- * send, with Retry. Signed out, or in a project that isn't theirs, nothing is sent or kept: only why.
+ * Whether a push is from the server the session is on (its `server`, packages/jobs push.ts): another server can have a
+ * project of the same slug. A push without it (a server from before it was sent) is taken to be.
+ */
+export function fromServer(data: unknown, session: { server: string }) {
+  const server = (data as { server?: unknown } | null | undefined)?.server;
+  return server === undefined || (typeof server === "string" && normalizeServer(server) === session.server);
+}
+
+/**
+ * The response as the last one the system keeps, forgotten once it's taken: a later start of the app's JavaScript (a
+ * reload, a launch) would otherwise act on it again. Only if it's still this one: a newer one is left for its start.
+ */
+function forget({ actionIdentifier, userText, notification }: Notifications.NotificationResponse) {
+  const last = Notifications.getLastNotificationResponse();
+  if (last?.actionIdentifier === actionIdentifier && last.userText === userText && last.notification.request.identifier === notification.request.identifier) {
+    Notifications.clearLastNotificationResponse();
+  }
+}
+
+/**
+ * Acts on a Reply or Close: as the signed-in teammate, in the notification's project when it's one of theirs, on its
+ * server. Done, the notification goes. Not done, it goes too (Android would keep a reply's spinner), and one in its place
+ * says why and opens the conversation, so nothing typed is lost unsaid. A reply is in the conversation's draft, as one
+ * not sent, from before it's sent until it's saved (the app's process can end meanwhile), and stays there with Retry when
+ * it fails; signed out, in a project that isn't theirs, or from another server, nothing is sent or kept: only why.
  */
 export async function act(response: Notifications.NotificationResponse) {
   const { actionIdentifier: action } = response;
@@ -78,74 +101,80 @@ export async function act(response: Notifications.NotificationResponse) {
     return;
   }
   done.add(key);
+  forget(response);
   // A reply of only spaces: nothing to send, but the notification goes, or Android shows it sending for good.
   if (action === REPLY && !text) {
     await remove(response);
     return;
   }
-  // Drafts kept only in this sign-in's generation: a sign-out while the send is on its way keeps nothing of it.
+  // Drafts changed only in this sign-in's generation: a sign-out while the send is on its way keeps nothing of it.
   const since = draftsGeneration();
   const session = await readSession();
-  // The reply, made before anything that can fail, so a failure keeps it. Its id is made from the notification and the
-  // text: the same reply sent again is the one already saved, never a second.
-  let unsent: Unsent | undefined;
-  let refused: string | null = null;
-  try {
-    if (!session) {
-      refused = SIGNED_OUT;
-    } else {
-      const projects = () =>
-        createApi({ server: session.server, token: session.token }, () => {}, timedFetch)<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
-      if (action === REPLY) {
-        const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
-        unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(data) };
-      }
-      if (!(await isTheirs(target, session, projects))) {
-        refused = NOT_YOURS;
-      } else {
-        const api = createApi({ ...session, project: target.project }, () => {}, timedFetch);
-        await (unsent ? sendReply(api, target.number, unsent) : updateConversation(api, target.number, { status: "closed" }));
-        await remove(response);
-        return;
-      }
-    }
-  } catch (error) {
-    // The session's over (a 401): signed out, and the next launch forgets its drafts, so nothing is kept.
-    if (error instanceof ApiError && error.status === 401) {
-      await tell(response, target, SIGNED_OUT, false);
-      return;
-    }
-    // Kept only while it's still this session: one signed out of meanwhile (here, or in the app's other JavaScript) is
-    // no one's to send, and the next teammate to sign in mustn't get it.
-    // A sign-out forgets drafts first and the session after: both are checked.
-    const kept = session && unsent && (await readSession())?.token === session.token && since === draftsGeneration() ? unsent : undefined;
-    if (session && kept) {
-      updateDraft(screenKey({ server: session.server, project: target.project }, target.number), (draft) =>
-        draft.unsent.some((one) => one.id === kept.id) ? draft : { ...draft, unsent: [...draft.unsent, { ...kept, error: reasonOf(error) }] },
-      );
-    }
-    await tell(response, target, reasonOf(error), !!kept);
+  if (!session || !fromServer(data, session)) {
+    await tell(response, target, session ? OTHER_SERVER : SIGNED_OUT, false);
     return;
   }
-  await tell(response, target, refused, false);
+  const draftKey = screenKey({ server: session.server, project: target.project }, target.number);
+  const change = (unsent: Unsent, change: (all: Unsent[]) => Unsent[]) =>
+    updateDraft(draftKey, (draft) => {
+      const all = change(draft.unsent);
+      return all === draft.unsent ? draft : { ...draft, unsent: all };
+    }, since);
+  const drop = (unsent?: Unsent) => unsent && change(unsent, (all) => (all.some((one) => one.id === unsent.id) ? all.filter((one) => one.id !== unsent.id) : all));
+  const projects = () =>
+    createApi({ server: session.server, token: session.token }, () => {}, timedFetch)<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
+  // Its id is made from the notification and the text: the same reply sent again is the one already saved, never a second.
+  let unsent: Unsent | undefined;
+  try {
+    if (action === REPLY) {
+      const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
+      const made: Unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(data) };
+      unsent = made;
+      change(made, (all) => (all.some((one) => one.id === made.id) ? all : [...all, made]));
+    }
+    if (!(await isTheirs(target, session, projects))) {
+      drop(unsent);
+      await tell(response, target, NOT_YOURS, false);
+      return;
+    }
+    const api = createApi({ ...session, project: target.project }, () => {}, timedFetch);
+    await (unsent ? sendReply(api, target.number, unsent) : updateConversation(api, target.number, { status: "closed" }));
+    drop(unsent);
+    await remove(response);
+  } catch (error) {
+    // Kept only while it's still this session: after a 401 (the session's over; the next launch forgets its drafts), or
+    // one signed out of meanwhile (here, or in the app's other JavaScript; a sign-out forgets drafts first and the
+    // session after: both are checked), it's no one's to send, and the next teammate to sign in mustn't get it.
+    const ended = error instanceof ApiError && error.status === 401;
+    const kept = !ended && !!unsent && (await readSession())?.token === session.token && since === draftsGeneration();
+    if (kept) {
+      change(unsent!, (all) => all.map((one) => (one.id === unsent!.id ? { ...one, error: reasonOf(error) } : one)));
+    } else {
+      drop(unsent);
+    }
+    await tell(response, target, ended ? SIGNED_OUT : reasonOf(error), kept);
+  }
 }
 
 /**
  * A push received on Android, as the task is given it: the server's are data only (packages/jobs push.ts), its `data`
  * in `data.body` as JSON with the notification's `title` and `text`, and shown here with the category's Reply and Close
- * (Firebase shows a push with a title itself while the app isn't in front, without them). Only while signed in: a push a
- * sign-out that didn't reach the server left coming shows nothing.
+ * (Firebase shows a push with a title itself while the app isn't in front, without them). Only while signed in to its
+ * server: a push a sign-out that didn't reach the server left coming shows nothing.
  */
 export async function present(payload: unknown) {
   const { data: raw, messageId } = (payload ?? {}) as { data?: { body?: unknown } | null; messageId?: unknown };
-  let data: { title?: unknown; text?: unknown };
+  let data: { title?: unknown; text?: unknown; server?: unknown };
   try {
     data = JSON.parse(String(raw?.body)) as typeof data;
   } catch {
     return;
   }
   const target = targetOf(data);
-  if (!target || typeof data.title !== "string" || !(await readSession())) {
+  const title = typeof data.title === "string" ? data.title : null;
+  const session = title && target ? await readSession() : null;
+  // Only from the server signed in to, which the notification keeps saying for its actions.
+  if (!target || !title || !session || !fromServer(data, session)) {
     return;
   }
   const at = seenOf(data);
@@ -153,9 +182,9 @@ export async function present(payload: unknown) {
     // Firebase's id for the push: the same push shown again replaces it.
     ...(typeof messageId === "string" && { identifier: messageId }),
     content: {
-      title: data.title,
+      title,
       ...(typeof data.text === "string" && { body: data.text }),
-      data: { project: target.project, conversation: target.number, ...(at && { at }) },
+      data: { project: target.project, conversation: target.number, ...(at && { at }), ...(typeof data.server === "string" && { server: data.server }) },
       categoryIdentifier: CATEGORY,
       sound: "default",
     },
