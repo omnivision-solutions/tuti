@@ -18,6 +18,7 @@ import {
   unlinkConversationPost,
   updateConversation,
 } from "./conversations";
+import { getConversationPerson } from "./conversation-person";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
 import { suggestReply, summarizeConversation } from "./support-ai";
 import { removeLink } from "./links";
@@ -103,6 +104,7 @@ const all = [
   startReplyUpload,
   listArticlesToInsert,
   getConversation,
+  getConversationPerson,
   createConversation,
   replyToConversation,
   updateConversation,
