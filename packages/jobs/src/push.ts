@@ -58,14 +58,25 @@ async function sendBatch(batch: { to: string }[]): Promise<Outcome[]> {
     if (code !== "PUSH_TOO_MANY_EXPERIENCE_IDS" || !details || typeof details !== "object") {
       throw error;
     }
+    // A project's send that fails doesn't undo the others': theirs went out, so they're kept (and their tickets saved),
+    // and its tokens get an error outcome. Only when none went through does it fail, for the job to try them all again.
     const outcomes = new Map<number, Outcome>();
+    let failure: unknown;
     for (const tokens of Object.values(details as Record<string, unknown>)) {
       const group = batch.flatMap((message, i) => (Array.isArray(tokens) && tokens.includes(message.to) ? [i] : []));
       if (group.length === 0) {
         continue;
       }
-      const { data } = await expo<{ data: Outcome[] }>("send", group.map((i) => batch[i]));
-      group.forEach((i, j) => outcomes.set(i, data[j]!));
+      try {
+        const { data } = await expo<{ data: Outcome[] }>("send", group.map((i) => batch[i]));
+        group.forEach((i, j) => outcomes.set(i, data[j]!));
+      } catch (groupError) {
+        failure ??= groupError;
+        group.forEach((i) => outcomes.set(i, { status: "error", message: String(groupError).slice(0, 300) }));
+      }
+    }
+    if (failure && ![...outcomes.values()].some((outcome) => outcome.status === "ok")) {
+      throw failure;
     }
     return batch.map((_, i) => outcomes.get(i) ?? { status: "error", message: "Not in any of Expo's projects" });
   }

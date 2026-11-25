@@ -33,6 +33,7 @@ beforeEach(async () => {
   expo.sent = [];
   expo.unregistered.clear();
   expo.projects.clear();
+  expo.failing.clear();
   vi.stubEnv("EXPO_ACCESS_TOKEN", "");
   // Each test's own tickets and phones: the file shares one database.
   await prisma.pushTicket.deleteMany();
@@ -143,6 +144,30 @@ test("phones on different Expo projects' builds are all told: Expo takes one pro
   await userWrites();
   expect(pushedTo()).toEqual(["fork", "owner"]);
   expect(await prisma.pushTicket.count()).toBe(2);
+});
+
+test("when one Expo project's send fails, the others' pushes stand: kept, and not sent again", async () => {
+  const fork = await addMember(project.id, "MEMBER");
+  await phone(owner, "owner");
+  await phone(fork, "fork");
+  expo.projects.set("ExponentPushToken[fork]", "@a-fork/app");
+  expo.failing.add("@a-fork/app");
+  // The job doesn't fail (a retry would push Tuti's phones twice): the owner's push and its ticket are kept.
+  await userWrites();
+  expect(expo.sent.filter((message) => message.ticket).map((message) => message.to)).toEqual(["ExponentPushToken[owner]"]);
+  expect(await prisma.pushTicket.findMany({ select: { token: true } })).toEqual([{ token: "ExponentPushToken[owner]" }]);
+  // The failed phone is still registered, for the next message.
+  expect(await prisma.device.count({ where: { userId: fork.id } })).toBe(1);
+});
+
+test("two accounts registering one phone at the same moment leave it registered once", async () => {
+  const other = await addMember(project.id, "MEMBER");
+  const token = "ExponentPushToken[raced]";
+  await Promise.all([
+    api(owner, "POST", "/devices", { deviceId: "owner-id", token, platform: "ios" }),
+    api(other, "POST", "/devices", { deviceId: "other-id", token, platform: "ios" }),
+  ]);
+  expect(await prisma.device.count({ where: { token } })).toBe(1);
 });
 
 test("a token on two accounts' rows at once (two registrations racing) is told once, about the newer", async () => {

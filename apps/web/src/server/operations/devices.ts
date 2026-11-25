@@ -60,18 +60,20 @@ export const registerDevice = defineOperation({
     if (!sessionId) {
       throw new OperationError(403, "app_only", "Register a device from Tuti's app, with its session");
     }
-    await prisma.$transaction([
-      prisma.device.upsert({
+    await prisma.$transaction(async (tx) => {
+      // One registration of a token at a time: two at once would each miss the other's new row and both stay.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(13, hashtext(${token}))`;
+      await tx.device.upsert({
         where: { userId_deviceId: { userId, deviceId } },
         create: { userId, deviceId, token, platform, sessionId },
         update: { token, platform, sessionId, lastSeenAt: new Date() },
-      }),
+      });
       // A phone is one account's at a time: whoever's app registered it last. Every other row with this token goes,
       // their own (a reinstall whose id was lost) and another account's (signed out while offline, then someone else
       // signed in), so none is left to fall back to when this one's session ends. The other gets the phone back when
       // their app opens and registers again.
-      prisma.device.deleteMany({ where: { token, NOT: { userId, deviceId } } }),
-    ]);
+      await tx.device.deleteMany({ where: { token, NOT: { userId, deviceId } } });
+    });
     return { deviceId };
   },
 });

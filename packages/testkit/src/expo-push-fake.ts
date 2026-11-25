@@ -18,6 +18,8 @@ export type ExpoPushFake = {
   asked: string[][];
   /** The Expo project a token belongs to (`@owner/slug`); any not here are `@tuti/app`. A send mixing projects is refused. */
   projects: Map<string, string>;
+  /** Projects whose sends fail with a 500 (a request of one project's tokens only). */
+  failing: Set<string>;
   /** The status to answer every request with instead (e.g. 500), or 200. */
   status: number;
   close(): Promise<void>;
@@ -36,7 +38,7 @@ export const deviceNotRegistered = (token: string): Outcome => ({
  */
 export async function startExpoPushFake(): Promise<ExpoPushFake> {
   let tickets = 0;
-  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], projects: new Map(), status: 200, close: async () => {} };
+  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), status: 200, close: async () => {} };
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -60,6 +62,9 @@ export async function startExpoPushFake(): Promise<ExpoPushFake> {
           return answer(400, {
             errors: [{ code: "PUSH_TOO_MANY_EXPERIENCE_IDS", message: "All push notification messages in the same request must be for the same project", details: byProject }],
           });
+        }
+        if (fake.failing.has(Object.keys(byProject)[0] ?? "")) {
+          return answer(500, { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "The fake was told to fail this project" }] });
         }
         const data = messages.map((message): Outcome => {
           const ticket = fake.unregistered.has(message.to) ? null : `ticket-${++tickets}`;
