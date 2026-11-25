@@ -91,6 +91,8 @@ type Entry = {
   groups: string[];
   /** Email-only: emailed to subscribers, listed nowhere. */
   emailOnly?: boolean;
+  /** On a private portal: its count is of its readers (who may read it) only. */
+  privatePortal?: boolean;
   posts: number[];
   published: boolean;
   /** Its cover (the featured image): a link to its thumbnail size. */
@@ -536,8 +538,8 @@ export function ChangelogForm({
   covers?: CoverChoices | null;
   /** Its merged pull requests, in their section; null for none (GitHub isn't connected and it has none). */
   pullRequests?: EntryPullRequestsProps | null;
-  /** How many people confirmed they want the changelog by email (Email subscribers); null on a private portal (none are emailed). */
-  subscribers?: number | null;
+  /** How many people confirmed they want the changelog by email (Email subscribers; on a private portal, its readers). */
+  subscribers?: number;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
   posts: PostOption[];
   /** Where it stands ("Draft", "Published 25 November"), first in the sidebar, as a post's status is; none for a new one. */
@@ -899,7 +901,7 @@ export function publishSummary({
  * widget's What's new (it's listed there either way). A draft's are picked here, for Publish (ChangelogSaving); a
  * published one's say what happened, and how many people it told.
  */
-export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number | null }) {
+export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number }) {
   const saving = useContext(ChangelogSavingContext);
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
@@ -953,25 +955,25 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 ? `Emailed from ${entry.emailedFrom} before: not sent again.`
                 : entry.subscribersLeft > 0
                 ? `Emailed to ${subscriberCountText(entry.subscribersSent)}. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
-                : subscribers === null
-                  ? `Emailed to ${subscriberCountText(entry.subscribersSent)} before. Your portal is private now: nobody else gets it.`
-                  : `Emailed to ${subscriberCountText(entry.subscribersSent)} when first published: not sent again.`}
+                : `Emailed to ${subscriberCountText(entry.subscribersSent)} when first published: not sent again.`}
             </p>
           ) : (
             choice(
               "Email subscribers",
               entry.emailPaused
                 ? "Your project's email is paused."
-                : subscribers === null
-                ? "Your portal is private, so it isn't emailed."
                 : entry.groups.length > 0
                   ? // Counted in its groups only (changelogEmailed sends it to no one else).
                     subscribers === 0
                     ? "Nobody in its groups has subscribed."
                     : `${people(subscribers)} in its groups subscribed.`
-                  : subscribers === 0
-                    ? "Nobody has subscribed yet."
-                    : `${people(subscribers)} subscribed.`,
+                  : entry.privatePortal
+                    ? subscribers === 0
+                      ? "None of your portal's readers has subscribed."
+                      : `${people(subscribers)} who can read your portal subscribed.`
+                    : subscribers === 0
+                      ? "Nobody has subscribed yet."
+                      : `${people(subscribers)} subscribed.`,
               { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}

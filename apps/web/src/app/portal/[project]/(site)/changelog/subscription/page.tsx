@@ -37,7 +37,7 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
           <h1 className={heading}>This link doesn&apos;t work any more</h1>
           <p className={text}>
             A confirmation link works once, for {CONFIRM_LINK_HOURS} hours, and only the latest one you were sent.
-            {/* Only where there's a box to ask in: a private portal has none. */}
+            {/* Only where anyone may ask: a private portal's box is for its readers, signed in. */}
             {project?.portalAccess === "PUBLIC" && <> To get updates by email, ask again on the {changelogLink}.</>}
           </p>
         </Message>
@@ -168,7 +168,7 @@ function PrivatePortal({ name, email, unsubscribe }: { name: string; email?: str
     <Message>
       <h1 className={heading}>Updates by email aren&apos;t available here</h1>
       <p className={text}>
-        {name}&apos;s portal is private, so its changelog isn&apos;t emailed{email ? ` to ${email}` : ""}.
+        {name}&apos;s portal is private, and its changelog is emailed only to its readers{email ? `: ${email} isn't one of them` : ""}.
       </p>
       {unsubscribe}
     </Message>
