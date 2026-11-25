@@ -1787,7 +1787,7 @@ model ChangelogSubscriber {
   confirmTokenHash String?   @unique
   confirmExpiresAt DateTime?
   confirmUsedAt    DateTime?
-  /// When its address's owner last ended a confirmed subscription (cleared by confirming again): the team can't add it
+  /// When its address's owner ended their subscription (cleared by confirming again): the team can't add it
   /// back, only a link emailed to the address can. The team's own removals don't set it.
   unsubscribedAt   DateTime?
   createdAt        DateTime  @default(now())

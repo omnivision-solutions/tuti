@@ -333,16 +333,20 @@ export const syncUsersOperation = defineOperation({
     users: [{ id: "user-42", name: "Sam from Acme", email: "e2e-sam@example.com", properties: { plan: "enterprise", seats: 40, features: ["sso"], trial: null } }],
   },
   run: async ({ projectId }, input) => {
+    // The addresses `subscribedToChangelog: false` users have before the sync too: one it changes or clears stops as well.
+    const ids = (on: boolean) => input.users.filter((user) => user.subscribedToChangelog === on).map((user) => user.id);
+    const [on, off] = [ids(true), ids(false)];
+    const offBefore = off.length
+      ? await prisma.ssoIdentity.findMany({ where: { projectId, externalId: { in: off }, email: { not: null } }, select: { email: true } })
+      : [];
     const { created } = await syncUsers(
       projectId,
       input.users.map((user) => ({ externalId: user.id, name: user.name, image: user.avatar, email: user.email, properties: user.properties })),
       { strict: true },
     );
     // After the users, so their addresses are the ones just given.
-    const ids = (on: boolean) => input.users.filter((user) => user.subscribedToChangelog === on).map((user) => user.id);
-    const [on, off] = [ids(true), ids(false)];
     if (off.length > 0) {
-      await unsubscribe(projectId, { users: off });
+      await unsubscribe(projectId, { users: off, emails: offBefore.map((identity) => identity.email!) });
     }
     const changelogSkipped = on.length > 0 ? (await subscribe(projectId, { users: on })).skipped.map(({ user, reason }) => ({ user: user!, reason })) : [];
     return { created, updated: input.users.length - created, changelogSkipped };
