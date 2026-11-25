@@ -1,14 +1,17 @@
-import { router, Stack, useFocusEffect } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Alert, AppState, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Alert, AppState, BackHandler, FlatList, type HostInstance, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
+import { ConversationPane } from "@/app/conversation/[number]";
 import { pickSnooze } from "@/app/inbox/snooze";
 import { InboxRow } from "@/components/inbox-row";
 import { offerNotifications } from "@/components/notifications";
 import { onRead } from "@/lib/conversation";
 import { type Change, snoozeTime, updateConversation } from "@/lib/details";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
+import { listWidth, onForgetChosen, useWide } from "@/lib/layout";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { cached, cacheGeneration, inboxKey, isOffline, keep as remember, offlineNote, projectsKey, useMinutes, viewsKey } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
@@ -446,13 +449,92 @@ export default function Inbox() {
       void setProject(slug).catch((e: Error) => setError(`Couldn't keep that choice: ${e.message}`));
     }
   };
-  // Back from a conversation: its row and the counts again, as its stream would after a change. Reading it there sends no
-  // live change (unread is the teammate's own), so it would stay bold and counted till something else changed.
-  const opened = useRef<number | null>(null);
-  const open = useCallback((row: Row) => {
-    opened.current = row.number;
-    router.push(`/conversation/${row.number}`);
+  // A wide window: the conversation chosen beside the list, as the route's `c` (its number) and `p` (its project, so another
+  // project's of that number never shows). However it was opened: a row, a notification, a link, the details (the
+  // conversation's route hands it here). A narrow one has none: one chosen in a wide window is pushed when it narrows.
+  const wide = useWide();
+  const { width } = useWindowDimensions();
+  const params = useLocalSearchParams<{ c?: string; p?: string }>();
+  const chosen = params.c && params.p === project ? Number(params.c) : null;
+  // This screen's own params, whatever is over it (a sheet): the router's `setParams` sets the screen in front's.
+  const navigation = useNavigation();
+  const unchoose = useCallback(() => navigation.setParams({ c: undefined, p: undefined } as never), [navigation]);
+  // A conversation opened on its own, or a notification about to open one: the choice is forgotten (`forgetChosen`).
+  useEffect(() => onForgetChosen(unchoose), [unchoose]);
+  // One chosen in another project (switched since): forgotten, so switching back never brings it back unasked.
+  useEffect(() => {
+    if (params.c && params.p !== project) {
+      unchoose();
+    }
+  }, [params.c, params.p, project, unchoose]);
+  // The pane emptied by its conversation (a Send and close): a screen reader's focus, on the control that's gone, goes
+  // to that conversation's row, or to the empty pane's note once the row has left the list.
+  const rowNodes = useRef(new Map<number, HostInstance>());
+  const onRowNode = useCallback((number: number, node: HostInstance | null) => {
+    if (node) {
+      rowNodes.current.set(number, node);
+    } else {
+      rowNodes.current.delete(number);
+    }
   }, []);
+  const emptyNote = useRef<HostInstance>(null);
+  const leftFrom = useRef<number | null>(null);
+  const leave = useCallback(() => {
+    leftFrom.current = chosen;
+    unchoose();
+  }, [chosen, unchoose]);
+  useEffect(() => {
+    if (chosen !== null || leftFrom.current === null) {
+      return;
+    }
+    const target = rowNodes.current.get(leftFrom.current) ?? emptyNote.current;
+    leftFrom.current = null;
+    if (target) {
+      AccessibilityInfo.sendAccessibilityEvent(target, "focus");
+    }
+  }, [chosen]);
+  // iOS's large title is drawn over the screen: the pane starts below it (the list has its own inset). Android's isn't.
+  const headerHeight = useHeaderHeight();
+  // Only while the Inbox is in front: with a sheet or settings over it, once it's back.
+  useFocusEffect(
+    useCallback(() => {
+      if (!wide && chosen !== null) {
+        unchoose();
+        router.push(`/conversation/${chosen}`);
+      }
+    }, [wide, chosen, unchoose]),
+  );
+  // Android's back, with one chosen: the pane emptied first, as back from a conversation on a phone shows the list. Only
+  // while the Inbox is in front: with a sheet over it (the details), back closes the sheet.
+  useFocusEffect(
+    useCallback(() => {
+      if (!wide || chosen === null) {
+        return;
+      }
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        // As a Send and close: a screen reader's focus goes to the row (`leave`).
+        leave();
+        return true;
+      });
+      return () => subscription.remove();
+    }, [wide, chosen, leave]),
+  );
+
+  // Back from a conversation: its row and the counts again, as its stream would after a change. Reading it there sends no
+  // live change (unread is the teammate's own), so it would stay bold and counted till something else changed. (Beside
+  // the list, its read says so itself: `onRead` below.)
+  const opened = useRef<number | null>(null);
+  const open = useCallback(
+    (row: Row) => {
+      if (wide) {
+        navigation.setParams({ c: String(row.number), p: project } as never);
+        return;
+      }
+      opened.current = row.number;
+      router.push(`/conversation/${row.number}`);
+    },
+    [wide, project, navigation],
+  );
   const [returned, setReturned] = useState<{ number: number } | null>(null);
   useFocusEffect(
     useCallback(() => {
@@ -484,6 +566,115 @@ export default function Inbox() {
   }, [list, swipes, q, view, session]);
   const searching = !!q;
   const noProjects = projects?.length === 0;
+
+  // The list: the whole window when narrow, the left of it when wide.
+  const listView = (
+    <FlatList
+      testID="inbox-list"
+      data={rows}
+      keyExtractor={(row) => String(row.number)}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="on-drag"
+      refreshing={refreshing}
+      onRefresh={refresh}
+      onEndReached={() => void loadMore()}
+      onEndReachedThreshold={0.5}
+      renderItem={({ item }) => (
+        <InboxRow
+          row={item}
+          colors={colors}
+          q={q}
+          now={now}
+          onPress={open}
+          selected={wide && item.number === chosen}
+          onNode={onRowNode}
+          // Not for one that's closed; nor snoozed in Spam, as the details sheet.
+          onClose={item.status === "closed" ? undefined : close}
+          onSnooze={item.status === "closed" || (view === "spam" && !q) ? undefined : snooze}
+        />
+      )}
+      ListHeaderComponent={
+        <>
+          {searching ? (
+            list && (
+              <Text style={[styles.total, { color: colors.muted }]} accessibilityLiveRegion="polite">
+                {list.total === 1 ? "1 conversation" : `${list.total} conversations`}
+              </Text>
+            )
+          ) : (
+            views && (
+              <Chips
+                views={views}
+                view={view}
+                // A view's error isn't the next one's. The view shown, tapped again, is loaded again, as pulling it does.
+                onPress={(next) => {
+                  if (next === view) {
+                    refresh();
+                    return;
+                  }
+                  setError(null);
+                  setView(next);
+                }}
+                colors={colors}
+              />
+            )
+          )}
+          {/* Kept from when it was last loaded: said quietly, with when. */}
+          {list?.savedAt !== undefined && (
+            <Text style={[styles.total, { color: colors.muted }]} accessibilityLiveRegion="polite">
+              {offlineNote(list.savedAt, now)}
+            </Text>
+          )}
+          {/* A refresh that failed says so above the list it couldn't update. */}
+          {error && rows.length > 0 && (
+            <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+          )}
+        </>
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyBox}>
+          {!error && !noProjects && !list ? (
+            <ActivityIndicator color={colors.muted} accessibilityLabel="Loading" />
+          ) : (
+            <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]} accessibilityLiveRegion="polite">
+              {error ??
+                (noProjects
+                  ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web."
+                  : searching
+                    ? "No conversations match your search. Try other words, a name or an email address."
+                    : EMPTY[view])}
+            </Text>
+          )}
+          {error && (
+            // Pull to refresh isn't there for TalkBack or a keyboard.
+            <Pressable
+              // Not `disabled`, which would drop focus while it loads: a press is ignored then.
+              onPress={() => !refreshing && refresh()}
+              accessibilityRole="button"
+              accessibilityState={{ busy: refreshing }}
+              hitSlop={8}
+              style={({ pressed }) => ({ opacity: pressed || refreshing ? 0.6 : 1 })}
+            >
+              <Text style={[styles.retry, { color: colors.primary }]}>Try again</Text>
+            </Pressable>
+          )}
+        </View>
+      }
+      ListFooterComponent={
+        // Nothing under no rows: the empty view has its own Try again.
+        rows.length === 0 ? undefined : (swipes.size > 0 ? retriesReload(swipes) : !!list?.next && !!error) ? (
+          // A page, or the reload after a swipe, that failed: tried again here (the error is at the top).
+          <Pressable onPress={() => void loadMore()} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.6 : 1 }]}>
+            <Text style={[styles.retry, { color: colors.primary, textAlign: "center" }]}>Try again</Text>
+          </Pressable>
+        ) : list?.next && list.savedAt === undefined ? (
+          <ActivityIndicator style={styles.more} color={colors.muted} />
+        ) : undefined
+      }
+    />
+  );
 
   return (
     <>
@@ -541,112 +732,27 @@ export default function Inbox() {
         onCancelButtonPress={() => setTyped("")}
         onClose={() => setTyped("")}
       />
-      <FlatList
-        testID="inbox-list"
-        data={rows}
-        keyExtractor={(row) => String(row.number)}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardDismissMode="on-drag"
-        refreshing={refreshing}
-        onRefresh={refresh}
-        onEndReached={() => void loadMore()}
-        onEndReachedThreshold={0.5}
-        renderItem={({ item }) => (
-          <InboxRow
-            row={item}
-            colors={colors}
-            q={q}
-            now={now}
-            onPress={open}
-            // Not for one that's closed; nor snoozed in Spam, as the details sheet.
-            onClose={item.status === "closed" ? undefined : close}
-            onSnooze={item.status === "closed" || (view === "spam" && !q) ? undefined : snooze}
-          />
-        )}
-        ListHeaderComponent={
-          <>
-            {searching ? (
-              list && (
-                <Text style={[styles.total, { color: colors.muted }]} accessibilityLiveRegion="polite">
-                  {list.total === 1 ? "1 conversation" : `${list.total} conversations`}
+      {/* The list under the same parent in both, so a fold or a resize keeps it (and where it's scrolled to). */}
+      <View style={styles.panes}>
+        <View style={wide ? [styles.listPane, { width: listWidth(width), borderRightColor: colors.border }] : styles.wholeList}>{listView}</View>
+        {wide && (
+          <View style={[styles.conversationPane, { backgroundColor: colors.card, paddingTop: Platform.OS === "ios" ? headerHeight : 0 }]} testID="conversation-pane">
+            {chosen !== null ? (
+              <ConversationPane number={chosen} onLeave={leave} />
+            ) : (
+              <View style={[styles.emptyBox, styles.emptyPane]}>
+                <Text ref={emptyNote} style={[styles.empty, { color: colors.muted }]}>
+                  Choose a conversation to read it here.
                 </Text>
-              )
-            ) : (
-              views && (
-                <Chips
-                  views={views}
-                  view={view}
-                  // A view's error isn't the next one's. The view shown, tapped again, is loaded again, as pulling it does.
-                  onPress={(next) => {
-                    if (next === view) {
-                      refresh();
-                      return;
-                    }
-                    setError(null);
-                    setView(next);
-                  }}
-                  colors={colors}
-                />
-              )
-            )}
-            {/* Kept from when it was last loaded: said quietly, with when. */}
-            {list?.savedAt !== undefined && (
-              <Text style={[styles.total, { color: colors.muted }]} accessibilityLiveRegion="polite">
-                {offlineNote(list.savedAt, now)}
-              </Text>
-            )}
-            {/* A refresh that failed says so above the list it couldn't update. */}
-            {error && rows.length > 0 && (
-              <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
-                {error}
-              </Text>
-            )}
-          </>
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            {!error && !noProjects && !list ? (
-              <ActivityIndicator color={colors.muted} accessibilityLabel="Loading" />
-            ) : (
-              <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]} accessibilityLiveRegion="polite">
-                {error ??
-                  (noProjects
-                    ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web."
-                    : searching
-                      ? "No conversations match your search. Try other words, a name or an email address."
-                      : EMPTY[view])}
-              </Text>
-            )}
-            {error && (
-              // Pull to refresh isn't there for TalkBack or a keyboard.
-              <Pressable
-                // Not `disabled`, which would drop focus while it loads: a press is ignored then.
-                onPress={() => !refreshing && refresh()}
-                accessibilityRole="button"
-                accessibilityState={{ busy: refreshing }}
-                hitSlop={8}
-                style={({ pressed }) => ({ opacity: pressed || refreshing ? 0.6 : 1 })}
-              >
-                <Text style={[styles.retry, { color: colors.primary }]}>Try again</Text>
-              </Pressable>
+              </View>
             )}
           </View>
-        }
-        ListFooterComponent={
-          // Nothing under no rows: the empty view has its own Try again.
-          rows.length === 0 ? undefined : (swipes.size > 0 ? retriesReload(swipes) : !!list?.next && !!error) ? (
-            // A page, or the reload after a swipe, that failed: tried again here (the error is at the top).
-            <Pressable onPress={() => void loadMore()} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.6 : 1 }]}>
-              <Text style={[styles.retry, { color: colors.primary, textAlign: "center" }]}>Try again</Text>
-            </Pressable>
-          ) : list?.next && list.savedAt === undefined ? (
-            <ActivityIndicator style={styles.more} color={colors.muted} />
-          ) : undefined
-        }
-      />
+        )}
+      </View>
     </>
   );
 }
+
 
 
 /** The views as filter chips, in the server's order, each with its count when it has any. */
@@ -695,4 +801,9 @@ const styles = StyleSheet.create({
   empty: { fontSize: 15, lineHeight: 21, textAlign: "center" },
   retry: { fontSize: 17, fontWeight: "500" },
   more: { paddingVertical: 16 },
+  panes: { flex: 1, flexDirection: "row" },
+  listPane: { borderRightWidth: StyleSheet.hairlineWidth },
+  conversationPane: { flex: 1 },
+  wholeList: { flex: 1 },
+  emptyPane: { flex: 1, justifyContent: "center" },
 });

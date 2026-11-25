@@ -1,6 +1,6 @@
 import { SymbolView } from "expo-symbols";
 import { memo, useRef } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { type HostInstance, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { ageOf, initialsOf, lineOf, personOf, type Row, searchAgeOf, spokenAgeOf, STATUS } from "@/lib/inbox";
@@ -12,19 +12,31 @@ const faceOf = (name: string, faces: string[]) => faces[[...name].reduce((sum, c
 // The row swiped open, closed when another opens, as Mail's.
 let swiped: SwipeableMethods | null = null;
 
-type Props = { row: Row; colors: Colors; q: string; now: number; onPress: (row: Row) => void; onSnooze?: (row: Row) => void; onClose?: (row: Row) => void };
+type Props = {
+  row: Row;
+  colors: Colors;
+  q: string;
+  now: number;
+  onPress: (row: Row) => void;
+  onSnooze?: (row: Row) => void;
+  onClose?: (row: Row) => void;
+  /** Open beside the list (a wide window). */
+  selected?: boolean;
+  /** The row's own element, by its conversation's number (to move a screen reader's focus to it). */
+  onNode?: (number: number, node: HostInstance | null) => void;
+};
 
 /**
  * One conversation in the Inbox: who, their company and how long ago; the subject; the latest message (or the match);
  * unread in bold with a dot. Swiped left, Snooze and Close (each when given); a screen reader has them as its actions.
  */
-export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress, onSnooze, onClose }: Props) {
+export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress, onSnooze, onClose, selected = false, onNode }: Props) {
   const swipe = useRef<SwipeableMethods>(null);
   const actions = [
     onSnooze && { name: "snooze", label: "Snooze", icon: { ios: "clock", android: "schedule" } as const, ink: colors.onFace, background: colors.snooze, run: onSnooze },
     onClose && { name: "close", label: "Close", icon: { ios: "checkmark", android: "check" } as const, ink: colors.onPrimary, background: colors.primary, run: onClose },
   ].filter((action) => !!action);
-  const pressable = <RowBody row={row} colors={colors} q={q} now={now} onPress={onPress} actions={actions} />;
+  const pressable = <RowBody row={row} colors={colors} q={q} now={now} onPress={onPress} actions={actions} selected={selected} onNode={onNode} />;
   if (!actions.length) {
     return pressable;
   }
@@ -69,14 +81,16 @@ export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress, o
   );
 });
 
-function RowBody({ row, colors, q, now, onPress, actions }: Omit<Props, "onSnooze" | "onClose"> & { actions: { name: string; label: string; run: (row: Row) => void }[] }) {
+function RowBody({ row, colors, q, now, onPress, actions, selected, onNode }: Omit<Props, "onSnooze" | "onClose"> & { actions: { name: string; label: string; run: (row: Row) => void }[] }) {
   const person = personOf(row);
   const line = lineOf(row);
   const weight = row.unread ? "700" : "400";
   return (
     <Pressable
+      ref={(node) => onNode?.(row.number, node)}
       onPress={() => onPress(row)}
       accessibilityRole="button"
+      accessibilityState={{ selected }}
       accessibilityActions={actions.map(({ name, label }) => ({ name, label }))}
       onAccessibilityAction={(event) => actions.find((action) => action.name === event.nativeEvent.actionName)?.run(row)}
       // Read as the web's row: who, what and which, who has it, and (in words) how long ago; in a search, its status too.
@@ -84,7 +98,8 @@ function RowBody({ row, colors, q, now, onPress, actions }: Omit<Props, "onSnooz
       accessibilityHint={line ?? undefined}
       android_ripple={{ color: colors.border }}
       // Opaque, over the actions behind it.
-      style={({ pressed }) => [styles.row, { backgroundColor: Platform.OS === "ios" && pressed ? colors.secondary : colors.page }]}
+      // The one open beside the list in the soft colour, as the mockup's tablet.
+      style={({ pressed }) => [styles.row, { backgroundColor: selected ? colors.soft : Platform.OS === "ios" && pressed ? colors.secondary : colors.page }]}
     >
       <View style={[styles.dot, row.unread && { backgroundColor: colors.primary }]} />
       <View style={[styles.face, { backgroundColor: faceOf(person, colors.faces) }]}>
