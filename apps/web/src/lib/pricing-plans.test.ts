@@ -169,7 +169,7 @@ test("a plan without prices is free where it's the default, and otherwise by quo
   expect([business!.price, business!.byQuote, business!.cta.label]).toEqual([null, true, "Contact us"]);
   expect(business!.cta.href).toMatch(/^mailto:/);
   // Its credits would come with paid invoices, which it has none of.
-  expect(business!.highlights.some(({ text }) => text.includes("Credits"))).toBe(false);
+  expect(business!.highlights.some(({ text }) => text.includes("credits"))).toBe(false);
   // The comparison still shows it with AI answers: its credits are agreed with it.
   expect(planFacts()[2]).toMatchObject({ credits: null, aiAnswers: true });
 });
