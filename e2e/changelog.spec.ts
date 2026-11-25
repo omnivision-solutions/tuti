@@ -1804,8 +1804,24 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await expect(text).toContainText("Export to CSV");
   // Taken out: it leaves the list and the text, focus on the section's heading.
   await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
+  // While it's taking it out (its answer held here), the dialog stays: Cancel would undo nothing.
+  let releaseTakeOut!: () => void;
+  const takeOutHeld = new Promise<void>((resolve) => (releaseTakeOut = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await takeOutHeld;
+    await route.fulfill({ response });
+  });
   await takingOut.getByRole("button", { name: "Take out" }).click();
+  await expect(takingOut.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await team.keyboard.press("Escape");
+  await expect(takingOut).toBeVisible();
+  releaseTakeOut();
   await expect(team.getByText("Taken out")).toBeVisible();
+  await team.unroute("**/*");
   await expect(section.getByRole("link", { name: "Export to CSV" })).toHaveCount(0);
   await expect(text).not.toContainText("Export to CSV");
   await expect(text).toContainText("Add a dark theme");
@@ -1831,6 +1847,14 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await section.getByRole("button", { name: "Add changes…" }).click();
   await expect(dialog).toContainText("They go into “Next release”, which collects merged pull requests, not into this draft.");
   await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  // GitHub disconnected: still listed while it has them, and Take out doesn't offer Add changes… as the way back.
+  await query(`DELETE FROM github_installation WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(section.getByRole("button", { name: "Add changes…" })).toHaveCount(0);
+  await section.getByRole("button", { name: `Take out ${repo}#11` }).click();
+  await expect(team.getByRole("alertdialog", { name: `Take out ${repo}#11?` })).toHaveAccessibleDescription("Its line leaves the text, with any changes you made to it.");
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
 
   // Published, its pull requests are listed as they shipped: none taken out or added.
   await api("/changelog/1/publish", {});
