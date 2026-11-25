@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { prisma } from "@tuti/db";
 import { billingFile, configFile, type DnsFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
@@ -144,7 +146,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.person": () => ({ number: 1 }),
   "conversations.markRead": () => ({ number: 1, seen: new Date().toISOString() }),
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
-  "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
+  "conversations.reply": () => ({ number: 1, body: "From the matrix", requestId: `matrix-${randomUUID()}` }),
   "conversations.update": () => ({ number: 1, status: "closed" }),
   "conversations.linkPost": () => ({ number: 1, post: 1 }),
   "conversations.unlinkPost": () => ({ number: 1, post: 1 }),

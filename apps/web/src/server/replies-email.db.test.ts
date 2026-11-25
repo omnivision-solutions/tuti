@@ -78,6 +78,22 @@ test("a reply they haven't seen a minute on is emailed from the project's addres
   expect(emailsTo(kim)).toHaveLength(1);
 });
 
+test("a reply sent again with its requestId is emailed once, before its email and after", async () => {
+  const { project, team, kim } = await setup();
+  const reply = () => call(replyToConversation, team, { number: 1, body: "It's under Billing → Invoices.", requestId: "emailed-once" });
+  await reply();
+  await reply();
+  await aMinuteOn(project.id);
+  await run();
+  const [email] = emailsTo(kim);
+  expect(email!.text.split("It's under Billing → Invoices.")).toHaveLength(2);
+
+  await reply();
+  await aMinuteOn(project.id);
+  await run();
+  expect(emailsTo(kim)).toHaveLength(1);
+});
+
 test("one project's backlog doesn't hold up another's replies: each project gets a turn in every run", async () => {
   // A has more waiting replies than one run sends (100), all older than B's one.
   const a = await setup();

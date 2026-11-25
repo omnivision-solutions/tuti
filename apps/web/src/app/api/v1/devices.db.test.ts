@@ -286,6 +286,26 @@ test("a user's message notifies the phones of exactly those its email goes to", 
   expect(expo.sent).toEqual([]);
 });
 
+test("a user's message sent again with its requestId is pushed, and emailed, once", async () => {
+  await phone(owner, "owner");
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  const { number } = await call(createConversation, key, { user: { id: "user-42", email: "e2e-sam@example.com" }, body: "Help" });
+  expo.sent = [];
+  mailbox.emails.length = 0;
+  // Past the team's ten minutes between emails about a conversation, so another message would be emailed too.
+  const pastTenMinutes = () => prisma.conversation.update({ where: { projectId_number: { projectId: project.id, number } }, data: { notifiedAt: null } });
+  await pastTenMinutes();
+
+  const write = () => call(replyToConversation, key, { number, body: "Still broken", author: { id: "user-42" }, requestId: "user-retry" });
+  const first = await write();
+  expect(pushedTo()).toEqual(["owner"]);
+  await mailbox.latestTo(owner.email);
+  await pastTenMinutes();
+  expect((await write()).id).toBe(first.id);
+  expect(pushedTo()).toEqual(["owner"]);
+  expect(mailbox.emails).toHaveLength(1);
+});
+
 test("with \"Show message text\" off, a notification says who wrote, not what", async () => {
   await phone(owner, "owner");
   expect(await api(owner, "GET", "/notifications")).toEqual({ status: 200, body: { showMessageText: true } });
