@@ -158,6 +158,22 @@ test("in-process, picked again while its first claim waits its turn: the first c
   expect(await first!.current!()).toBe(true);
 });
 
+test("picked, ready with its line, analysed again, then Autopilot turned off before the run: still ready", async () => {
+  const change = await pullRequest(16);
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line: "A dark theme" } } });
+  await prisma.changelogDecision.create({
+    data: { projectId: project.id, repoId: 1, number: 16, repo: "acme/app", url: change.url, title: change.title, author: "octo", mergedAt: change.mergedAt, takenOut: false },
+  });
+  await call(analyseCodeChange, team(), { id: change.id });
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+  const [, input] = jobs.enqueue.mock.calls.at(-1)! as [string, Parameters<typeof handlers.codeChange>[0]];
+  expect(input).toMatchObject({ force: true, pastGate: false });
+
+  await handlers.codeChange(input, quiet);
+
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "READY", reason: "Autopilot was turned off before it was analysed again." });
+});
+
 test("queueing that fails on Hatchet puts the pull request back as it was, its reason too", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   const change = await pullRequest(3, "NOTHING_TO_DO", "Users don't see it: it changes the build.");
