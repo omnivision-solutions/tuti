@@ -50,14 +50,22 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { plural } from "@/lib/autopilot-words";
+import { untickedByDefault } from "@/lib/added-pull-requests";
+import { formatDate } from "@/lib/format";
+import { credits } from "@/lib/usage-format";
 import {
   acceptChangelogRewrite,
   composeChangelogCover,
+  addChangelogPullRequests,
   type ChangelogRewrite,
   deleteChangelogEntry,
   draftChangelogEntry,
+  findMissingChanges,
   findPostsToComplete,
+  type MissingChanges,
   publishChangelogEntry,
+  removeChangelogPullRequest,
   rewriteChangelogEntry,
   saveChangelogEntry,
   saveChangelogStyle,
@@ -495,11 +503,14 @@ export function ChangelogForm({
   canEditWithAi = false,
   aiPaused = false,
   subscribers = 0,
+  pullRequests = null,
 }: {
   projectSlug: string;
   entry: Entry | null;
   /** The cover designs "Make a cover" offers (a saved entry, where uploads are set up). */
   covers?: CoverChoices | null;
+  /** Its merged pull requests, in their section; null for none (GitHub isn't connected and it has none). */
+  pullRequests?: EntryPullRequestsProps | null;
   /** How many people confirmed they want the changelog by email (Email subscribers); null on a private portal (none are emailed). */
   subscribers?: number | null;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
@@ -644,6 +655,7 @@ export function ChangelogForm({
           sampleEntry={entry?.sample ?? false}
           onChange={link}
         />
+        {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
         {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
         <section aria-label="On your portal" className="flex flex-col gap-2">
           <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
@@ -904,6 +916,278 @@ function CompletedPosts({
         </Dialog>
       )}
     </section>
+  );
+}
+
+export type EntryPullRequestsProps = {
+  /** The pull requests it has. */
+  list: { repo: string; number: number; url: string; title: string }[];
+  /** GitHub is connected: a draft has "Add changes…". */
+  canAdd: boolean;
+  /** Where adding puts them: null for this entry (the running draft), else the running draft's title (one that would be started). */
+  addsTo: string | null;
+};
+
+/** The section's heading: Take out and Add change its rows (and a new text remounts the form), so focus goes here. */
+const PULL_REQUESTS_HEADING = "entry-pull-requests";
+const focusPullRequests = { next: false };
+
+/**
+ * The merged pull requests an entry has: each opens on GitHub; a draft's are taken out (with their line,
+ * changelog.removePullRequest) or added with "Add changes…" (changelog.missingChanges, changelog.addPullRequests), both
+ * saved at once, on the saved text. A published entry's are listed as they shipped.
+ */
+function EntryPullRequests({
+  projectSlug,
+  number,
+  published,
+  dirty,
+  pullRequests: { list, canAdd, addsTo },
+}: {
+  projectSlug: string;
+  number: number;
+  published: boolean;
+  /** The form has changes that aren't saved: taking one out or adding edits the saved text, and the form starts afresh with it. */
+  dirty: boolean;
+  pullRequests: EntryPullRequestsProps;
+}) {
+  const [pending, startTransition] = useTransition();
+  // Once the list has changed (or the form, given a new text, is made again with it): focus to the heading, if asked.
+  const shown = list.map((pr) => pr.url).join(" ");
+  useEffect(() => {
+    if (focusPullRequests.next) {
+      focusPullRequests.next = false;
+      document.getElementById(PULL_REQUESTS_HEADING)?.focus();
+    }
+  }, [shown]);
+  const saved = () => {
+    if (dirty) {
+      toast.error("Save your changes first: pull requests change the saved text.");
+    }
+    return !dirty;
+  };
+  // Asked first (docs/design.md): its line leaves the text, with whatever the team wrote in it, and adding it back
+  // brings Autopilot's line or its title.
+  const [confirming, setConfirming] = useState<{ url: string; ref: string } | null>(null);
+  const takeOut = (url: string) =>
+    startTransition(async () => {
+      // Its button goes (disabled meanwhile, then gone): focus goes to the section's heading.
+      focusPullRequests.next = true;
+      const result = await removeChangelogPullRequest(projectSlug, number, url);
+      if (result.error) {
+        // The dialog stays, to try again or cancel.
+        focusPullRequests.next = false;
+        toast.error(result.error);
+      } else {
+        setConfirming(null);
+        toast.success("Taken out");
+      }
+    });
+
+  return (
+    <section aria-labelledby={PULL_REQUESTS_HEADING} className="flex flex-col gap-2">
+      <h2
+        id={PULL_REQUESTS_HEADING}
+        tabIndex={-1}
+        className="text-xs font-medium text-muted-foreground outline-none"
+      >
+        Pull requests
+      </h2>
+      {list.length === 0 ? (
+        <p className="text-muted-foreground">None.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {list.map((pr) => (
+            <li key={pr.url} className="flex items-start gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <a href={pr.url} target="_blank" rel="noreferrer" className="break-words hover:underline">
+                  {pr.title}
+                </a>
+                <span className="text-xs break-all text-muted-foreground">
+                  {pr.repo}#{pr.number}
+                </span>
+              </div>
+              {!published && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Take out ${pr.repo}#${pr.number}`}
+                  title="Take out"
+                  disabled={pending}
+                  focusableWhenDisabled
+                  onClick={() => saved() && setConfirming({ url: pr.url, ref: `${pr.repo}#${pr.number}` })}
+                >
+                  <XIcon />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
+      {/* Not closed while it's taking it out: Cancel then would undo nothing. */}
+      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && !pending && setConfirming(null)}>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Take out {confirming?.ref}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its line leaves the text, with any changes you made to it.
+              {/* Only where it can (GitHub connected): Add changes… is the way back. */}
+              {canAdd && " Add changes… puts it back with Autopilot's line or its title."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={pending} focusableWhenDisabled onClick={() => confirming && takeOut(confirming.url)}>
+              Take out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
+  );
+}
+
+/** "Add changes…": the merged pull requests no entry has, those Autopilot found nothing for users in unticked, added to the running draft. */
+function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsTo: string | null; saved: () => boolean }) {
+  const [open, setOpen] = useState(false);
+  const [found, setFound] = useState<{ error?: string; missing?: MissingChanges } | null>(null);
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  const [pending, startTransition] = useTransition();
+  // Adding (not reading GitHub, which can be left): the dialog stays until it's done, or what's typed meanwhile would be
+  // lost when the page reloads with the added lines.
+  const [adding, startAdding] = useTransition();
+  const missing = found?.missing;
+  const key = (pr: { repo: string; number: number }) => `${pr.repo}#${pr.number}`;
+  const picked = missing?.pullRequests.filter((pr) => !unticked.has(key(pr))) ?? [];
+  const since = missing && formatDate(new Date(missing.since));
+  const cost = missing?.cost;
+
+  const read = () =>
+    startTransition(async () => {
+      const result = await findMissingChanges(projectSlug);
+      setFound(result);
+      setUnticked(untickedByDefault(result.missing?.pullRequests ?? []));
+    });
+  const add = () =>
+    // Into this draft's text: what isn't saved would be lost (adding to another draft leaves this one alone).
+    (addsTo !== null || saved()) &&
+    startAdding(async () => {
+      focusPullRequests.next = addsTo === null;
+      const result = await addChangelogPullRequests(
+        projectSlug,
+        picked.map(({ repo, number }) => ({ repo, number })),
+      );
+      // Nothing added (all in an entry by now, or refused): the list doesn't change, so nothing would clear the flag. Some
+      // added (a later batch refused): it does, and focus goes to the section's heading as after a success.
+      if (!result.added) {
+        focusPullRequests.next = false;
+      }
+      if (result.error) {
+        // In a toast too, which stays: the dialog may have been closed meanwhile, or (some added before a later batch
+        // was refused) the page reloads with them, which remounts it closed in the draft they went into.
+        toast.error(result.added ? `Added ${plural(result.added, "pull request")}, then: ${result.error}` : result.error);
+        setFound({ ...found, error: result.error });
+        return;
+      }
+      setOpen(false);
+      toast.success(`Added ${plural(result.added ?? 0, "pull request")}${addsTo === null ? "" : ` to “${addsTo}”`}`);
+    });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (adding) {
+          return;
+        }
+        setOpen(next);
+        if (next) {
+          setFound(null);
+          read();
+        }
+      }}
+    >
+      <DialogTrigger render={<Button type="button" variant="outline" size="sm" className="self-start" />}>
+        <PlusIcon />
+        Add changes…
+      </DialogTrigger>
+      <DialogContent showCloseButton={!adding} className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add changes</DialogTitle>
+          <DialogDescription>
+            {since ? `Pull requests merged since ${since} that no entry has. ` : "Merged pull requests that no entry has. "}
+            {addsTo === null ? "They're added to this draft, a line each." : `They go into “${addsTo}”, which collects merged pull requests, not into this draft.`}
+          </DialogDescription>
+        </DialogHeader>
+        {found?.error && (
+          <p role="alert" className="text-sm text-destructive">
+            {found.error}
+          </p>
+        )}
+        {!found && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Reading GitHub…
+          </p>
+        )}
+        {missing && missing.pullRequests.length === 0 && <p className="text-sm text-muted-foreground">Nothing&apos;s missing: every one is in an entry.</p>}
+        {missing && missing.pullRequests.length > 0 && (
+          <>
+            <ul aria-label="Missing pull requests" className="-mx-2 flex max-h-80 flex-col overflow-y-auto">
+              {missing.pullRequests.map((pr) => (
+                <li key={key(pr)}>
+                  <label className="flex items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 shrink-0 accent-primary"
+                      checked={!unticked.has(key(pr))}
+                      onChange={(event) => {
+                        const next = new Set(unticked);
+                        if (event.target.checked) {
+                          next.delete(key(pr));
+                        } else {
+                          next.add(key(pr));
+                        }
+                        setUnticked(next);
+                      }}
+                    />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="break-words">{pr.title}</span>
+                      <span className="text-xs break-all text-muted-foreground">
+                        {[`${pr.repo}#${pr.number}`, pr.author, formatDate(new Date(pr.mergedAt)), pr.forUsers === false && "Nothing for users"].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {cost && (
+              <p className="text-sm">
+                {cost.each === null ? (
+                  <>Autopilot analyses each one, which costs AI credits. You have {credits(cost.balance)}.</>
+                ) : (
+                  <>
+                    Autopilot analyses each one: about <strong>{credits(cost.each * picked.length)} AI credits</strong>, about {credits(cost.each)} a pull request, what a
+                    typical one costs. You have {credits(cost.balance)}.
+                  </>
+                )}
+              </p>
+            )}
+          </>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={adding} onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          {missing && missing.pullRequests.length > 0 && (
+            <Button type="button" disabled={pending || adding || picked.length === 0} focusableWhenDisabled onClick={add}>
+              {adding ? "Adding…" : `Add ${plural(picked.length, "pull request")}`}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

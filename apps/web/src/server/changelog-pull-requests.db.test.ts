@@ -1,11 +1,12 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { grantCredits, handlers } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { FAKE_MODEL_KEY, type GithubFake, startGithubFake } from "@tuti/testkit";
+import { creditsOn, FAKE_MODEL_KEY, type GithubFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import {
   addChangelogPullRequests,
+  addedAnalysisCost,
   addedPullRequestsAnalysed,
   createChangelogEntry,
   getChangelogEntry,
@@ -14,13 +15,17 @@ import {
   removeChangelogPullRequest,
   updateChangelogEntry,
 } from "@/server/operations/changelog";
+import { addChangelogPullRequests as addAction } from "@/server/changelog";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** The changelog's pull requests by hand: the merged ones no entry has, adding them to the running draft, taking one out of a draft. */
 
 // The analysis a pull request gets has its own tests (code-changes.db.test.ts, where it runs): here it's queued and never run.
 // `claimFails`: pull requests whose code change can't be saved (the database refusing it).
+// The page reloading after an action (refresh), watched.
+const page = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/cache", () => ({ refresh: page.refresh, revalidatePath: () => {} }));
 const queue = vi.hoisted(() => ({ enqueue: vi.fn<(name: string, input: unknown) => Promise<undefined>>(async () => undefined), claimFails: new Set<number>() }));
 vi.mock("@tuti/jobs", async (importOriginal) => {
   const jobs = await importOriginal<typeof import("@tuti/jobs")>();
@@ -464,4 +469,59 @@ test("in-process, a ruled-out pull request analysed some other way before its tu
 
   expect(queue.enqueue).toHaveBeenCalledTimes(1);
   expect(queue.enqueue.mock.calls[0]![1]).toMatchObject({ force: false });
+});
+
+test("what adding costs, said before it's added: with AI credits on, each one's analysis at the models' prices, and the balance; nothing with credits or Autopilot off", async () => {
+  const model = await startModelFake();
+  try {
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+    expect(await addedAnalysisCost(project.id)).toBeNull();
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
+    await grantCredits(project.id, "MANUAL", 100, { days: null });
+    const cost = await addedAnalysisCost(project.id);
+    expect(cost).toEqual({ each: expect.any(Number), balance: 100 });
+    expect(cost!.each).toBeGreaterThan(0);
+    // The endpoint not saying its prices: that it costs credits, not how many.
+    vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
+    expect(await addedAnalysisCost(project.id)).toEqual({ each: null, balance: 100 });
+    // Autopilot off: nothing is analysed, so nothing is spent.
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+    expect(await addedAnalysisCost(project.id)).toBeNull();
+  } finally {
+    await model.close();
+  }
+});
+
+test("in the app, more ticked than one request takes are added in batches, into the one running draft", async () => {
+  const numbers = Array.from({ length: 55 }, (_, i) => 200 + i);
+  for (const number of numbers) {
+    github.pullRequest(repo, { number, title: `Change ${number}`, mergedAt: days(2) });
+  }
+  actAs(owner);
+
+  expect(await addAction(project.slug, numbers.map((number) => ({ repo, number })))).toEqual({ number: 1, added: 55 });
+
+  expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id, number: 1 } } })).toBe(55);
+});
+
+test("in the app, a later batch refused is an error, saying so though the batches before it were added", async () => {
+  const numbers = Array.from({ length: 50 }, (_, i) => 300 + i);
+  for (const number of numbers) {
+    github.pullRequest(repo, { number, title: `Change ${number}`, mergedAt: days(2) });
+  }
+  actAs(owner);
+
+  page.refresh.mockClear();
+  // The 51st isn't a merged pull request of the project's: its batch is refused.
+  const result = await addAction(project.slug, [...numbers, 999].map((number) => ({ repo, number })));
+
+  expect(result).toMatchObject({ error: expect.any(String), number: 1, added: 50 });
+  // The 50 are in the draft: the page reloads with them, so its form doesn't save the text from before over them.
+  expect(page.refresh).toHaveBeenCalledTimes(1);
+});
+
+test("in the app, Add changes takes one pull request at least and 500 at most", async () => {
+  actAs(owner);
+  expect(await addAction(project.slug, [])).toEqual({ error: "Pick a pull request to add" });
+  expect(await addAction(project.slug, Array.from({ length: 501 }, (_, i) => ({ repo, number: i + 1 })))).toEqual({ error: "Add up to 500 pull requests at a time" });
 });

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
-import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
 import { aiEnabled } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -65,7 +65,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       importedPublishedAt: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
-      pullRequests: { select: { repo: true, number: true, title: true, url: true } },
+      pullRequests: { select: { repo: true, number: true, title: true, url: true }, orderBy: [{ createdAt: "asc" }, { url: "asc" }] },
     },
   });
   if (!entry) {
@@ -123,6 +123,16 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const coverOf = mediaStorage() ? await coverContent(membership.project.id, entry) : null;
   const covers = coverOf && { designs: coverDesigns(coverOf), automatic: automaticDesign(coverOf), version: entry.updatedAt.getTime() };
   const commentMedia = await mediaUrls(...comments.map(displayDoc));
+  // Its pull requests' section: with GitHub connected, or listing the ones it has. A draft's "Add changes…" adds to the
+  // running draft, this one or the one named (started as Next release if there's none).
+  const [github, runningDraft] = await Promise.all([
+    prisma.githubInstallation.findUnique({ where: { projectId: membership.project.id }, select: { id: true } }),
+    entry.collecting ? null : prisma.changelogEntry.findFirst({ where: { projectId: membership.project.id, collecting: true }, select: { title: true } }),
+  ]);
+  const pullRequests =
+    github || entry.pullRequests.length > 0
+      ? { list: entry.pullRequests, canAdd: github !== null, addsTo: entry.collecting ? null : (runningDraft?.title ?? RUNNING_DRAFT_TITLE) }
+      : null;
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
 
   return (
@@ -220,6 +230,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               covers={covers}
               canEditWithAi={aiEnabled() && !unwritten}
               aiPaused={paused}
+              pullRequests={pullRequests}
             />
             {/* Always there, so focus has its heading to go to once the last is deleted. */}
             <section className="flex max-w-3xl flex-col gap-4 border-t pt-6" aria-label="Comments">
