@@ -560,6 +560,7 @@ export function ChangelogForm({
   }
   // The featured image uploading (how many): Save waits, "Uploading…" showing on it.
   const [uploading, setUploading] = useState(0);
+  const saving = useContext(ChangelogSavingContext);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
@@ -571,7 +572,6 @@ export function ChangelogForm({
     return result;
   }, {});
   // The top bar's Save (ChangelogSaveButton) says when it's saving too.
-  const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   useEffect(() => saving?.setUploading(uploading > 0), [saving, uploading]);
   const link = (numbers: number[]) => {
