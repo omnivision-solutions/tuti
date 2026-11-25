@@ -279,7 +279,8 @@ test("Your background is offered once the team has a background, and draws on it
   await setStyle({ coverBackground: background.id });
   s3.objects.delete(imageKey(background.id, 1600));
   await expect(compose({ number: plain.number, design: "background" })).rejects.toMatchObject({ status: 503, message: "Couldn't read the cover background just now: try again in a moment" });
-});
+  // Seven covers drawn: 2.5–5 s on a busy machine, at the 5 s default.
+}, 20_000);
 
 test("the cover's design and background are saved and checked, each on its own: the writing style keeps them, and they keep it", async () => {
   expect(await call(getChangelogStyle, team(), {})).toMatchObject({ coverDesign: "", coverBackground: null });
