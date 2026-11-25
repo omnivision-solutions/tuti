@@ -9,6 +9,11 @@
         "buildFromSource": [
           "expo-notifications"
         ]
+      },
+      "ios": {
+        "buildFromSource": [
+          "expo-notifications"
+        ]
       }
     }
   },

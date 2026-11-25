@@ -37,7 +37,8 @@ describe("the app's Expo config", () => {
     expect(appConfig({ GOOGLE_SERVICES_JSON: "/builds/google-services.json" }).android?.googleServicesFile).toBe("/builds/google-services.json");
   });
 
-  it("builds expo-notifications from its source, which the repository's patch changes (Android's prebuilt copy has no unlock requirement)", () => {
+  it("builds expo-notifications from its source, which the repository's patch changes (Android's prebuilt copy has no unlock requirement, nor iOS's the background time for an action)", () => {
     expect(packageJson.expo.autolinking.android.buildFromSource).toContain("expo-notifications");
+    expect(packageJson.expo.autolinking.ios.buildFromSource).toContain("expo-notifications");
   });
 });

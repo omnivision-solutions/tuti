@@ -21,3 +21,55 @@ index 769b5522b9e20caba4b4bebd50a7817759be1eff..2bf85d8e0e89b85c444d3039c2435ba3
    }
  
    override suspend fun build(): Notification {
+diff --git a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
+index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..17f6e438d8e357e5c73387b54af85f924ff20391 100644
+--- a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
++++ b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
+@@ -2,6 +2,7 @@
+ 
+ import ExpoModulesCore
+ import Foundation
++import UIKit
+ import UserNotifications
+ 
+ /**
+@@ -227,6 +228,7 @@ public class NotificationCenterManager: NSObject,
+     didReceive response: UNNotificationResponse,
+     withCompletionHandler completionHandler: @escaping () -> Void
+   ) {
++    keepRunningForAction(response)
+     var handled = false
+     for delegate in delegates {
+       handled = delegate.didReceive(response, completionHandler: completionHandler) || handled
+@@ -238,6 +240,31 @@ public class NotificationCenterManager: NSObject,
+     completionHandler()
+   }
+ 
++  /**
++   Tuti: an action that doesn't open the app (Reply, Close) is acted on by the app's JavaScript, which sends a request
++   (apps/mobile src/lib/notification-actions.ts). iOS suspends a background app as soon as the completion handler below
++   is called, and a killed one is launched only to answer it, before the JavaScript has even started: a background task
++   keeps it running meanwhile, ended after 25 seconds (past the JavaScript's 15-second limit for its request) or when iOS
++   says its time is up.
++   */
++  private func keepRunningForAction(_ response: UNNotificationResponse) {
++    guard response.actionIdentifier != UNNotificationDefaultActionIdentifier,
++          response.actionIdentifier != UNNotificationDismissActionIdentifier else {
++      return
++    }
++    DispatchQueue.main.async {
++      var task = UIBackgroundTaskIdentifier.invalid
++      let end = {
++        if task != .invalid {
++          UIApplication.shared.endBackgroundTask(task)
++          task = .invalid
++        }
++      }
++      task = UIApplication.shared.beginBackgroundTask(withName: "notification-action", expirationHandler: end)
++      DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: end)
++    }
++  }
++
+   public func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?) {
+     for delegate in delegates {
+       delegate.openSettings(notification)
