@@ -316,7 +316,8 @@ function FeaturedImage({
           number={entry.number}
           title={entry.title}
           covers={covers}
-          replacing={savedCover !== null}
+          // Readers' image, or the one the form shows and hasn't saved: either way, one is replaced.
+          replacing={savedCover !== null || image !== null}
           published={entry.published}
           open={making}
           onOpenChange={setMaking}
