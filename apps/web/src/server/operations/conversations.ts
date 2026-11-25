@@ -1173,9 +1173,17 @@ export const replyToConversation = defineOperation({
       .max(MAX_MESSAGE_LENGTH * 2)
       .optional()
       .describe(
-        "Where the conversation is translated: the translation of `body` the team saw (conversations.translateReply), sent to the user as it is. Without it, the reply is translated as it's sent",
+        "Where the conversation is translated: the translation of `body` the team saw (conversations.translateReply), sent to the user as it is, with its `language`. Without it, the reply is translated as it's sent",
       )
       .meta({ examples: ["Danke, Sam! Eine Lösung ist unterwegs."] }),
+    language: z
+      .string()
+      .max(35)
+      .optional()
+      .describe(
+        "With `translation`: the language it's in (conversations.translateReply's `language`). The user's language having changed since, it isn't sent (409 translation_outdated): preview it again",
+      )
+      .meta({ examples: ["de"] }),
     untranslated: z
       .boolean()
       .optional()
@@ -1271,9 +1279,12 @@ export const replyToConversation = defineOperation({
     // Never untranslated unless the team chose it. Notes are the team's own: never translated.
     let translated: { body: string; teamText: string; language: string } | undefined;
     if (writer.author === "TEAM" && !input.note) {
-      const translation = await replyTranslation(projectId, conversation.id, input.body, input.translation);
-      if (!translation && input.translation) {
-        throw new OperationError(400, "invalid_input", "This conversation isn't translated: send the reply without a translation");
+      if ((input.translation === undefined) !== (input.language === undefined)) {
+        throw new OperationError(400, "invalid_input", "Send `translation` and `language` together");
+      }
+      const translation = await replyTranslation(projectId, conversation.id, input.body, input.translation ? { text: input.translation, language: input.language! } : undefined);
+      if (translation && "outdated" in translation) {
+        throw new OperationError(409, "translation_outdated", "The user's language changed since this translation: preview it again");
       }
       if (translation && "error" in translation && !input.untranslated) {
         throw new OperationError(502, "translation_failed", `${translation.error} Send it untranslated (untranslated: true), or try again.`);
@@ -1281,7 +1292,7 @@ export const replyToConversation = defineOperation({
       if (translation && "text" in translation) {
         translated = { body: translation.text, teamText: input.body, language: translation.language };
       }
-    } else if (input.translation || input.untranslated) {
+    } else if (input.translation || input.language || input.untranslated) {
       throw new OperationError(400, "invalid_input", "Only the team's replies are translated");
     }
     const outcome: { closed?: boolean; keptOpen?: boolean } = {};
@@ -1325,7 +1336,7 @@ export const translateReply = defineOperation({
   name: "conversations.translateReply",
   title: "Preview a reply's translation",
   summary:
-    "Where the project translates conversations and the user writes in another language: the reply translated into theirs, as they'd get it (nothing is sent). Send it with conversations.reply's `translation`.",
+    "Where the project translates conversations and the user writes in another language: the reply translated into theirs, as they'd get it (nothing is sent). Send it with conversations.reply's `translation` and `language`.",
   method: "POST",
   path: "/conversations/{number}/reply-translation",
   scope: "write",
@@ -1348,7 +1359,7 @@ export const translateReply = defineOperation({
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     const translation = await replyTranslation(projectId, conversation.id, input.body);
-    if (!translation) {
+    if (!translation || "outdated" in translation) {
       return { status: "not_translated" as const, text: null, language: null, error: null };
     }
     return "error" in translation

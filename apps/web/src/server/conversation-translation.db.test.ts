@@ -1,10 +1,12 @@
 import { prisma } from "@tuti/db";
-import { translateMessage } from "@tuti/jobs";
+import { handlers, translateMessage } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
 
+import { mailSubdomain } from "./inbound";
 import { addMessage, announceUserMessage, createConversation, getConversation, listConversations, replyToConversation, translateReply } from "./operations/conversations";
 import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
@@ -25,6 +27,7 @@ beforeEach(() => {
   vi.stubEnv("TUTI_CONFIG", "");
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   model.requests.length = 0;
   model.done();
 });
@@ -49,7 +52,7 @@ async function setup({ translate = true } = {}) {
 async function german() {
   const context = await setup();
   model.reply(translated(ENGLISH, "de"));
-  await call(createConversation, context.team, { email: "e2e-kai@example.com", body: GERMAN });
+  await call(createConversation, context.team, { email: `e2e-kai-${context.project.slug}@example.com`, body: GERMAN });
   const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.project.id } });
   return { ...context, conversation };
 }
@@ -139,19 +142,53 @@ test("reply, en → de: previewed, then sent with the preview; the customer gets
   expect(preview).toEqual({ status: "translated", text: "Danke! Eine Lösung ist unterwegs.", language: "de", error: null });
   expect(model.requests[1]!.system).toContain("from English into German");
 
-  const reply = { number: 1, body: "Thanks! A fix is on its way.", translation: preview.text!, requestId: "reply-1" };
+  const reply = { number: 1, body: "Thanks! A fix is on its way.", translation: preview.text!, language: preview.language!, requestId: "reply-1" };
   const sent = await call(replyToConversation, team, reply);
   // The preview is what's sent: not asked again.
   expect(model.requests).toHaveLength(2);
   expect(sent).toMatchObject({ body: "Danke! Eine Lösung ist unterwegs.", teamText: "Thanks! A fix is on its way.", language: "de" });
   // Sent again (its answer lost): the reply already sent, by the team's own text, nothing translated or written again.
-  expect(await call(replyToConversation, team, { ...reply, translation: undefined })).toMatchObject({ id: sent.id });
+  expect(await call(replyToConversation, team, { ...reply, translation: undefined, language: undefined })).toMatchObject({ id: sent.id });
   expect(model.requests).toHaveLength(2);
+
+  // Emailed: the German, with the team's English quoted below it.
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
+  await mailSubdomain(project.id);
+  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { emailVerified: true } });
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${project.id}`;
+  await handlers.sendConversationReplies({}, { info: () => {}, warn: () => {} });
+  const { text } = await mailbox.latestTo(`e2e-kai-${project.slug}@example.com`);
+  expect(text.indexOf("Danke! Eine Lösung ist unterwegs.")).toBeGreaterThan(-1);
+  expect(text.indexOf("Danke! Eine Lösung ist unterwegs.")).toBeLessThan(text.indexOf("Original: Thanks! A fix is on its way."));
 
   // Without a preview, it's translated as it's sent.
   model.reply(translated("Noch etwas?"));
   expect(await call(replyToConversation, team, { number: 1, body: "Anything else?" })).toMatchObject({ body: "Noch etwas?", teamText: "Anything else?" });
   expect(await prisma.aiUsage.count({ where: { projectId: project.id, feature: "translation" } })).toBe(3);
+});
+
+test("a preview is sent only while it's in the customer's language: changed since, it's previewed again", async () => {
+  const { project, team, conversation } = await german();
+  model.reply(translated("Danke!"));
+  const preview = await call(translateReply, team, { number: 1, body: "Thanks!" });
+  // The customer writes in French meanwhile.
+  model.reply(translated("I'd like a refund for last month, please.", "fr"));
+  await customerWrites(project.id, conversation.id, "Je voudrais un remboursement pour le mois dernier, s'il vous plaît.");
+  await expect(call(replyToConversation, team, { number: 1, body: "Thanks!", translation: preview.text!, language: preview.language! })).rejects.toMatchObject({
+    status: 409,
+    code: "translation_outdated",
+  });
+  expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(0);
+});
+
+test("without AI on the server, conversations can't be set to translate, and a project that was is left alone", async () => {
+  const { project, team } = await setup({ translate: false });
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await expect(call(updateSupportSettings, team, { translate: true })).rejects.toMatchObject({ status: 503, code: "ai_unavailable" });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  await call(createConversation, team, { email: "e2e-kai@example.com", body: GERMAN });
+  expect(model.requests).toHaveLength(0);
+  expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ teamText: null, translationError: null });
 });
 
 test("a failed translation: the message shows as written with why; a reply is never sent untranslated unless the team says so", async () => {

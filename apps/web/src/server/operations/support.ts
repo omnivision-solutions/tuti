@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { checkEmailDomain, DEFAULT_TEAM_LANGUAGE, dropEmailDomain, forgetIdentity, languageCode, withEmailDomainLocks } from "@tuti/jobs";
-import { planIncludes, plansEnabled } from "@tuti/shared";
+import { aiEnabled, planIncludes, plansEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import { z } from "zod";
 
@@ -249,7 +249,7 @@ export const updateSupportSettings = defineOperation({
   path: "/support",
   scope: "write",
   access: "admin",
-  errors: [409],
+  errors: [409, 503],
   input: z
     .object({
       inbox: z
@@ -288,6 +288,9 @@ export const updateSupportSettings = defineOperation({
   example: { inbox: true },
   output: settingsOutput,
   run: async ({ projectId }, input) => {
+    if (input.translate && !aiEnabled()) {
+      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
+    }
     if (input.email && !supportDomain()) {
       throw new OperationError(409, "email_off", "This server doesn't receive email (SUPPORT_EMAIL_DOMAIN isn't set)");
     }

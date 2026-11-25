@@ -1,6 +1,6 @@
 import { translateText } from "@tuti/content";
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
-import { complete, type JobInput } from "@tuti/shared";
+import { aiEnabled, complete, type JobInput } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
@@ -80,6 +80,10 @@ export async function translateMessage({ messageId }: JobInput<"translateMessage
   if (!translate) {
     return { skipped: "translation off" };
   }
+  // Turned off on the server since it was switched on: nothing to ask, and nothing a Try again would change.
+  if (!aiEnabled()) {
+    return { skipped: "AI isn't set up" };
+  }
   const { conversation } = message;
   // Too short to tell: the conversation's language, said to the model; unknown, it stays as it is.
   const from = isShort(message.body) ? conversation.language : null;
@@ -149,19 +153,26 @@ export async function replyTranslation(
   projectId: string,
   conversationId: string,
   text: string,
-  /** The translation the team already saw (conversations.translateReply): taken as it is, nothing asked again. */
-  seen?: string,
-): Promise<null | { text: string; language: string } | { error: string; language: string }> {
+  /**
+   * The translation the team already saw (conversations.translateReply) and the language it's in: taken as it is,
+   * nothing asked again, while that's still the customer's language (`outdated` otherwise: preview it again).
+   */
+  seen?: { text: string; language: string },
+): Promise<null | { text: string; language: string } | { error: string; language: string } | { outdated: true }> {
   const [{ teamLanguage, translate }, conversation] = await Promise.all([
     translationSettings(projectId),
     prisma.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { language: true } }),
   ]);
   const language = conversation.language;
-  if (!translate || !language || sameLanguage(language, teamLanguage)) {
+  const translated = translate && language && !sameLanguage(language, teamLanguage) ? language : null;
+  if (seen) {
+    return translated === seen.language ? { text: seen.text, language: translated } : { outdated: true };
+  }
+  if (!translated || !language) {
     return null;
   }
-  if (seen !== undefined) {
-    return { text: seen, language };
+  if (!aiEnabled()) {
+    return { error: "AI isn't set up on this server.", language };
   }
   let ask;
   try {
