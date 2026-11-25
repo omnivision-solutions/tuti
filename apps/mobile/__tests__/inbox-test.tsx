@@ -706,8 +706,16 @@ describe("swiping a row", () => {
       mockSession.project = "kite";
       await screen.rerender(<Inbox />);
       expect(await screen.findByText("Kite's own")).toBeTruthy();
+
+      // Kite's own changes meanwhile: its row's fetch answers after Acme's close, and is taken.
+      let answerRow!: (page: Page) => void;
+      const kite = mockApi.getMockImplementation()!;
+      mockApi.mockImplementation((path, init) => (path === rowPath("open", closing.number) ? new Promise((resolve) => (answerRow = resolve)) : kite(path, init)));
+      await act(async () => mockLive!({ kind: "conversation", number: closing.number }));
+      await act(() => jest.advanceTimersByTimeAsync(200));
       await act(async () => changes[0]!.answer(true));
-      expect(screen.getByText("Kite's own")).toBeTruthy();
+      await act(async () => answerRow(page([{ ...closing, subject: "Kite's own, replied to", unread: true }])));
+      expect(screen.getByText("Kite's own, replied to")).toBeTruthy();
     } finally {
       mockSession.project = "acme";
     }
