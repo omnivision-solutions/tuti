@@ -1851,8 +1851,7 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     expect(await told()).toEqual([
       { email: lee, userId: null, source: "email", allEmails: false },
       { email: kim, userId: "app-kim", source: "api", allEmails: false },
-      // No user has the address any more: nobody to name.
-      { email: kim, userId: null, source: "api", allEmails: false },
+      { email: kim, userId: "app-kim", source: "api", allEmails: false },
     ]);
   });
 });

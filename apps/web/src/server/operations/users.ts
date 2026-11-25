@@ -292,7 +292,7 @@ const userInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "Applied after the users are saved, apart from them: if this part fails, the users are saved anyway, and sending the same call again is safe. `true` subscribes their address to the changelog's emails at once, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, as changelogSubscribers.remove",
+      "Applied apart from the users (they're saved even if this part fails; sending the same call again is safe). `true` subscribes their address once saved, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, the one they had before this call too, as changelogSubscribers.remove",
     ),
 });
 
@@ -333,12 +333,13 @@ export const syncUsersOperation = defineOperation({
     users: [{ id: "user-42", name: "Sam from Acme", email: "e2e-sam@example.com", properties: { plan: "enterprise", seats: 40, features: ["sso"], trial: null } }],
   },
   run: async ({ projectId }, input) => {
-    // The addresses `subscribedToChangelog: false` users have before the sync too: one it changes or clears stops as well.
     const ids = (on: boolean) => input.users.filter((user) => user.subscribedToChangelog === on).map((user) => user.id);
     const [on, off] = [ids(true), ids(false)];
-    const offBefore = off.length
-      ? await prisma.ssoIdentity.findMany({ where: { projectId, externalId: { in: off }, email: { not: null } }, select: { email: true } })
-      : [];
+    // `false`: the address they have now stops first, so one the sync changes or clears stops too, and a failure later
+    // leaves it to a retry of the same call, which finds it again.
+    if (off.length > 0) {
+      await unsubscribe(projectId, { users: off });
+    }
     const { created } = await syncUsers(
       projectId,
       input.users.map((user) => ({ externalId: user.id, name: user.name, image: user.avatar, email: user.email, properties: user.properties })),
@@ -346,7 +347,7 @@ export const syncUsersOperation = defineOperation({
     );
     // After the users, so their addresses are the ones just given.
     if (off.length > 0) {
-      await unsubscribe(projectId, { users: off, emails: offBefore.map((identity) => identity.email!) });
+      await unsubscribe(projectId, { users: off });
     }
     const changelogSkipped = on.length > 0 ? (await subscribe(projectId, { users: on })).skipped.map(({ user, reason }) => ({ user: user!, reason })) : [];
     return { created, updated: input.users.length - created, changelogSkipped };
