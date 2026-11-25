@@ -446,7 +446,11 @@ function MakeCover({
             onClick={() =>
               startTransition(async () => {
                 onAsking(true);
-                const result = await composeChangelogCover(projectSlug, number, design, headline);
+                // Not made, however it failed (an answer with an error, or none at all): the form's own image stays.
+                const result = await composeChangelogCover(projectSlug, number, design, headline).catch((error: unknown) => {
+                  onAsking(false);
+                  throw error;
+                });
                 if (result.error) {
                   onAsking(false);
                   toast.error(result.error);
