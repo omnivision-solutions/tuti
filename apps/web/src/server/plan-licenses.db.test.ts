@@ -318,7 +318,7 @@ test("a month of credits from January 31 lasts until February's last day", async
   expect((await prisma.planLicense.findUniqueOrThrow({ where: { id: held.id } })).creditsThrough).toEqual(new Date("2027-02-28T12:00:00Z"));
 });
 
-test("a project on a license can still buy AI credits", async () => {
+test("a project on a license can still buy credits", async () => {
   const held = await license();
   expect(await assignPlanLicense(project.slug, held.id)).toEqual({});
   const { url } = await call(topUpCredits, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { dollars: 10 });

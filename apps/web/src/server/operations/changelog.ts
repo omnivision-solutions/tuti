@@ -1422,7 +1422,7 @@ export const addChangelogPullRequests = defineOperation({
 });
 
 /**
- * With AI credits on and Autopilot analysing, what "Add changes…" says each pull request added costs: `each`, its
+ * With credits on and Autopilot analysing, what "Add changes…" says each pull request added costs: `each`, its
  * deciding and writing as Settings → AI models prices them (typical sizes at the models' prices; null where the endpoint
  * didn't say them), and the balance. Null with credits off or nothing analysed (adding costs nothing then).
  */

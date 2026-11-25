@@ -1,5 +1,5 @@
 // The operator only (Tuti's cloud): plan licenses Tuti hands out itself (source "tuti"), as AppSumo's webhook makes
-// its own: a plan from the billing file for a project, with that plan's AI credits every month (the hourly
+// its own: a plan from the billing file for a project, with that plan's credits every month (the hourly
 // license-credits job), until revoked. For our own projects, partners or giveaways. Run against the server's
 // database (DATABASE_URL); issue checks the plan against the server's billing file (a copy of it at BILLING_CONFIG):
 //

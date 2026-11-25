@@ -155,7 +155,7 @@ export function PlanPicker({ projectSlug, plans, current, trial = false, pricing
               <dl className="flex flex-col gap-1 rounded-lg bg-muted px-2.5 py-2.5 text-[13px]">
                 {[
                   ...(credits
-                    ? [[facts.credits === null && facts.startCredits !== null ? "AI credits to start" : "AI credits a month", plan.byQuote ? "By quote" : compact(facts.credits ?? facts.startCredits ?? 0)]]
+                    ? [[facts.credits === null && facts.startCredits !== null ? "Credits to start" : "Credits a month", plan.byQuote ? "By quote" : compact(facts.credits ?? facts.startCredits ?? 0)]]
                     : []),
                   ["feedback boards", compact(facts.boards)],
                   ["emails a month", compact(facts.emails)],

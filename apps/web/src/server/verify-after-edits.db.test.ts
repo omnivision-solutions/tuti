@@ -427,7 +427,7 @@ test("a Verify fix isn't a pull request's edit: it neither asks the decision nor
   expect(await prisma.articleVerification.count({ where: { articleId: article.id } })).toBe(1);
 });
 
-test("not asked while Verify couldn't run: the analysis switch off, out of AI credits, or a run already going", async () => {
+test("not asked while Verify couldn't run: the analysis switch off, out of credits, or a run already going", async () => {
   await landArticleEdit(project.id, article.id, 31, setBlock(2, "Each plan has 8 seats."));
   await landArticleEdit(project.id, article.id, 32, setBlock(4, "Owners, admins or members."));
   const ai = await aiFor(project.id, "code_changes");

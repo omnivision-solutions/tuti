@@ -18,7 +18,7 @@ export async function analyseCodeChange(projectSlug: string, codeChangeId: strin
   return result.error ? result : { queued };
 }
 
-/** "Resume all" on Home: every code change paused for want of AI credits. */
+/** "Resume all" on Home: every code change paused for want of credits. */
 export async function resumeCodeChanges(projectSlug: string): Promise<FormState & { failed?: number }> {
   let failed = 0;
   const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {

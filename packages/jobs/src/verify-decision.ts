@@ -84,7 +84,7 @@ async function comingInVerifyAll(projectId: string, articleId: string, db: Prism
  * After a pull request's edit landed on the article: asks the decision model whether it needs Verify, and starts it if
  * so. Asked only with ASKED_FROM pull requests' edits waiting that its last check didn't see (one started before they
  * landed saw none of them), landed since Autopilot last tried, and told about all those its last check didn't see,
- * while Verify could run (the analysis switch on, a repository connected, AI credits left, none running on the
+ * while Verify could run (the analysis switch on, a repository connected, credits left, none running on the
  * article, nor a Verify all about to reach it). A run in a Verify all is a person's check: a person started it. A rerun
  * at the same commit on the same version is skipped by the run itself. Returns whether it started one.
  */

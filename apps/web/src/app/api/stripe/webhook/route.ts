@@ -15,7 +15,7 @@ type EventObject = TopUpSession & {
 };
 
 /**
- * Stripe's webhook: a paid Checkout Session for AI credits (credits.topUp) gives its project the credits
+ * Stripe's webhook: a paid Checkout Session for credits (credits.topUp) gives its project the credits
  * it was bought for, once per session however often Stripe delivers it; any event about a plan's
  * subscription brings the project's plan in step with it, and a paid invoice gives that period's plan
  * credits (server/subscriptions.ts); a refunded or disputed charge takes back what it paid for
@@ -23,7 +23,7 @@ type EventObject = TopUpSession & {
  * and ignored.
  */
 export async function POST(request: Request) {
-  // Only the signing secret: with buying turned off (no STRIPE_SECRET_KEY, or AI credits off), top-ups
+  // Only the signing secret: with buying turned off (no STRIPE_SECRET_KEY, or credits off), top-ups
   // already paid still get their credits. Plans read the subscription from Stripe, so they need the key:
   // without it they fail, and Stripe tries again.
   const secret = process.env.STRIPE_WEBHOOK_SECRET;

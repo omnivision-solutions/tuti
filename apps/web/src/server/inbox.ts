@@ -269,7 +269,7 @@ export async function sendEmailDomainTest(projectSlug: string): Promise<FormStat
 
 /**
  * A reply drafted from the docs for the reply box (conversations.suggestReply): the draft, or why there
- * isn't one (the docs don't cover it, the project is out of AI credits, the AI failed).
+ * isn't one (the docs don't cover it, the project is out of credits, the AI failed).
  */
 export async function draftReplyWithAi(
   projectSlug: string,
@@ -290,7 +290,7 @@ export async function draftReplyWithAi(
         suggested.status === "no_answer"
           ? "Your docs don't cover what they asked, so there's no draft"
           : suggested.status === "unavailable"
-            ? "This project is out of AI credits"
+            ? "This project is out of credits"
             : "The AI couldn't draft a reply: try again",
     };
   } catch (error) {

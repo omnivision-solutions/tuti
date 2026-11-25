@@ -5,16 +5,16 @@ import { creditsEnabled, freeCredits, log, lowCreditsAt, topupExpiryDays } from 
 import { lockProject } from "./running-draft";
 
 /**
- * A project's AI credits (docs/plan.md, AI usage per project): grants, spent soonest-expiring first
+ * A project's credits (docs/plan.md, AI usage per project): grants, spent soonest-expiring first
  * (those for good last), and the debt a request already running when they ran out left behind. The
  * balance is what's left of unexpired grants, less the debt; the next charge pays the debt first, so a
  * grant is only ever added.
  */
 
-/** The project has no AI credits left (a balance of 0 or below): its AI pauses until it has more. */
+/** The project has no credits left (a balance of 0 or below): its AI pauses until it has more. */
 export class OutOfCredits extends Error {
   constructor(readonly projectId: string) {
-    super("The project is out of AI credits");
+    super("The project is out of credits");
     this.name = "OutOfCredits";
   }
 }
@@ -140,7 +140,7 @@ export async function creditBalance(projectId: string): Promise<{ balance: numbe
   };
 }
 
-/** Whether the project's AI is paused: AI credits are on and its balance is 0 or below. */
+/** Whether the project's AI is paused: credits are on and its balance is 0 or below. */
 export async function aiPaused(projectId: string): Promise<boolean> {
   return creditsEnabled() && (await creditBalance(projectId)).balance <= 0;
 }
@@ -174,7 +174,7 @@ export async function emailIfCreditsLow(projectId: string): Promise<void> {
     return;
   }
   if (!process.env.APP_URL) {
-    log.warn("AI credits are low, but APP_URL isn't set, so nobody can be emailed a link to Billing", { projectId });
+    log.warn("Credits are low, but APP_URL isn't set, so nobody can be emailed a link to Billing", { projectId });
     return;
   }
   const claimed = await prisma.$transaction(async (tx) => {
@@ -213,7 +213,7 @@ export async function emailIfCreditsLow(projectId: string): Promise<void> {
   );
   for (const result of sent) {
     if (result.status === "rejected") {
-      log.error("Emailing that AI credits are low failed", { projectId, out, error: result.reason });
+      log.error("Emailing that credits are low failed", { projectId, out, error: result.reason });
     }
   }
 }

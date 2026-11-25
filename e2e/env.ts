@@ -46,7 +46,7 @@ const e2eConfig = {
   // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine. Certificates
   // from the Cloudflare fake (global-setup.ts), in its zone.
   customDomains: { target: "customers.example.com", cloudflareZoneId: FAKE_CLOUDFLARE_ZONE },
-  // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
+  // Credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
   credits: { enabled: true, free: 1000 },
 };
 
@@ -110,7 +110,7 @@ export const cloudEnv = {
   TUTI_CONFIG: configFile({ ...e2eConfig, ownPortal: { ...e2eConfig.ownPortal, widgetProject: APP_WIDGET_SLUG } }),
 };
 
-/** The cloud's server with a free trial: 7 days of Pro, with 500 AI credits. */
+/** The cloud's server with a free trial: 7 days of Pro, with 500 credits. */
 export const trialEnv = {
   PORT: String(TRIAL_PORT),
   APP_URL: TRIAL_URL,

@@ -316,7 +316,7 @@ export const getDocsInsights = defineOperation({
               .enum(["no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "no_credits", "unknown"])
               .nullable()
               .describe(
-                "Why the latest “I don't know” happened: nothing in the docs was close enough, the AI cited nothing, an article it cited was unpublished meanwhile, the question named an off-limits topic, out of AI credits, or unknown (asked before causes were kept); null when it only got thumbs-down",
+                "Why the latest “I don't know” happened: nothing in the docs was close enough, the AI cited nothing, an article it cited was unpublished meanwhile, the question named an off-limits topic, out of credits, or unknown (asked before causes were kept); null when it only got thumbs-down",
               )
               .meta({ examples: ["no_relevant_section"] }),
             notHelpful: z.number().int().describe("How often its answer got a thumbs-down").meta({ examples: [1] }),

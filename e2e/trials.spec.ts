@@ -78,8 +78,8 @@ test("a new account's first project starts a free trial: every page says what's 
   await checkpoint(owner, "team-settings-billing-trial-plans", { fullPage: false });
   await owner.keyboard.press("Escape");
   await expect(plans).toBeHidden();
-  // Its trial's AI credits, until it ends.
-  await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Pro trial/ })).toContainText("500");
+  // Its trial's credits, until it ends.
+  await expect(owner.getByRole("table", { name: "Credits left" }).getByRole("row", { name: /Pro trial/ })).toContainText("500");
 
   // Ended: the default plan, and Billing's plans to buy.
   await endTrial(slug);

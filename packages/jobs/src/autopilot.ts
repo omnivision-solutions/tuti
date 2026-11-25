@@ -214,7 +214,17 @@ export const checksSay = (why: string) =>
   /^(Autopilot is off|Autopilot asks first|Its pull request was analysed again|Less than \d+% sure|No progress update|Its comment is too long|Its post |Its article |Its project |Its changelog entry|Another (part|edit) )/.test(why);
 
 /** The reasons the check (E5, E6) stores or gives, by their words: a failed check's by its start. */
-const CHECK_REASONS = [CHECKS_OFF, CHECK_UNCLEAR, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_BEFORE, CHECK_LARGER, checkFailed("")];
+const CHECK_REASONS = [
+  CHECKS_OFF,
+  CHECK_UNCLEAR,
+  CHECK_NO_CREDITS,
+  // CHECK_NO_CREDITS's wording before credits were renamed (2026-11-25), still on edits stored then.
+  "It wasn't checked: AI credits ran out when it was written",
+  CHECK_NO_REPOSITORY,
+  CHECK_BEFORE,
+  CHECK_LARGER,
+  checkFailed(""),
+];
 
 /** When an update that may go out by itself goes: drafts now, the rest after the project's hold. */
 export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, now = new Date()) =>

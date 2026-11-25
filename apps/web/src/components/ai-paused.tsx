@@ -3,12 +3,12 @@ import Link from "next/link";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-/** Says the project's AI is paused (out of AI credits), what that stops, and where credits come from: Billing for owners and admins. */
+/** Says the project's AI is paused (out of credits), what that stops, and where credits come from: Billing for owners and admins. */
 export function AiPaused({ projectSlug, stops, admin }: { projectSlug: string; stops: string; admin: boolean }) {
   return (
     <Alert>
       <PauseCircleIcon />
-      <AlertTitle>This project is out of AI credits</AlertTitle>
+      <AlertTitle>This project is out of credits</AlertTitle>
       <AlertDescription>
         {stops} until it has more.{" "}
         {admin ? (

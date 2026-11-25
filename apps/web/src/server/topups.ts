@@ -2,7 +2,7 @@ import { Prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
-/** A paid Checkout Session for AI credits, as Stripe sends or answers it (credits.topUp put the rest in its metadata). */
+/** A paid Checkout Session for credits, as Stripe sends or answers it (credits.topUp put the rest in its metadata). */
 export type TopUpSession = {
   id?: unknown;
   amount_total?: unknown;
@@ -28,7 +28,7 @@ export async function grantTopUp(session: TopUpSession): Promise<void> {
       stripeSessionId: session.id,
       paidCents: typeof session.amount_total === "number" ? session.amount_total : undefined,
     });
-    log.info("AI credits topped up", { projectId, session: session.id, credits: amount });
+    log.info("Credits topped up", { projectId, session: session.id, credits: amount });
   } catch (error) {
     // Given already (Stripe delivered it again), or the project is gone: either way, nothing more to do.
     // Anything else: Stripe tries again.

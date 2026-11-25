@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { analyseCodeChange, publishCodeChangesNow, resumeCodeChanges, stopCodeChanges } from "@/server/code-changes";
 import { completingWarning } from "@/lib/autopilot-words";
 
-/** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of AI credits). */
+/** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of credits). */
 export function AnalyseCodeChangeButton({
   projectSlug,
   codeChangeId,
@@ -61,7 +61,7 @@ export function AnalyseCodeChangeButton({
   );
 }
 
-/** "Resume all": every merged pull request Autopilot paused for want of AI credits (Home). */
+/** "Resume all": every merged pull request Autopilot paused for want of credits (Home). */
 export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
   const [pending, startTransition] = useTransition();
   return (

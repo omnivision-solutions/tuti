@@ -362,7 +362,7 @@ export async function draftWithAi(api: Api, number: number): Promise<{ draft: st
         answer.status === "no_answer"
           ? "Your docs don't cover what they asked, so there's no draft"
           : answer.status === "unavailable"
-            ? "This project is out of AI credits"
+            ? "This project is out of credits"
             : "The AI couldn't draft a reply: try again",
     };
   } catch (error) {

@@ -761,7 +761,7 @@
         "enabled": {
           "default": false,
           "type": "boolean",
-          "description": "AI credits on: projects pay for AI with prepaid credits (Tuti's cloud)"
+          "description": "Credits on: projects pay for AI with prepaid credits (Tuti's cloud)"
         },
         "perTopupDollar": {
           "default": 100,

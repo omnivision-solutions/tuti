@@ -10,40 +10,40 @@ afterEach(() => {
 const lines = (plan: string) => pricingPlans().flatMap(({ name, highlights, features }) => (name === plan ? [...highlights, ...features] : []));
 const line = (plan: string, start: string) => lines(plan).find(({ text }) => text.startsWith(start));
 
-test("AI credits say what they buy, at the server's credit rate", () => {
+test("Credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 100, perUsageDollar: 500 }));
   // Without Stripe, no top-ups: the cards list only what credits buy.
   vi.stubEnv("STRIPE_SECRET_KEY", "");
-  expect(line("Free", "100 AI credits")?.more?.points).toEqual([
+  expect(line("Free", "100 credits")?.more?.points).toEqual([
     "About 50 AI answers for your customers",
     "Or about 2 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
-  expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
+  expect(line("Pro", "1,000 credits a month")?.more?.points).toEqual([
     "About 500 AI answers for your customers",
     "Or about 25 changes you ship, checked by Autopilot against your help center and feedback",
   ]);
-  expect(line("Business", "5,000 AI credits a month")?.more?.points[1]).toMatch(/^Or about 120 changes/);
+  expect(line("Business", "5,000 credits a month")?.more?.points[1]).toMatch(/^Or about 120 changes/);
 
   // Too few credits for one checked change (40 credits each here): no "about 0 changes" line, and "1 change" singular.
   vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 30, perUsageDollar: 500 }));
-  expect(line("Free", "30 AI credits")?.more?.points).toEqual(["About 15 AI answers for your customers"]);
+  expect(line("Free", "30 credits")?.more?.points).toEqual(["About 15 AI answers for your customers"]);
   vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 50, perUsageDollar: 500 }));
-  expect(line("Free", "50 AI credits")?.more?.points[1]).toBe("Or about 1 change you ship, checked by Autopilot against your help center and feedback");
+  expect(line("Free", "50 credits")?.more?.points[1]).toBe("Or about 1 change you ship, checked by Autopilot against your help center and feedback");
   // One answer's worth: "answer" singular; less: the line alone, with no empty card.
   vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 2, perUsageDollar: 500 }));
-  expect(line("Free", "2 AI credits")?.more?.points).toEqual(["About 1 AI answer for your customers"]);
+  expect(line("Free", "2 credits")?.more?.points).toEqual(["About 1 AI answer for your customers"]);
   vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 1, perUsageDollar: 500 }));
-  expect(line("Free", "1 AI credits")).toEqual({ text: "1 AI credits to start" });
+  expect(line("Free", "1 credits")).toEqual({ text: "1 credits to start" });
   vi.stubEnv("TUTI_CONFIG", creditsOn({ free: 100, perUsageDollar: 500 }));
 
   // With Stripe, credits can be topped up, and the card says so.
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test");
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
-  expect(line("Pro", "1,000 AI credits a month")?.more?.points.at(-1)).toBe("Need more? Top up any time.");
+  expect(line("Pro", "1,000 credits a month")?.more?.points.at(-1)).toBe("Need more? Top up any time.");
 
   vi.stubEnv("TUTI_CONFIG", "");
-  expect(line("Pro", "1,000 AI credits")).toBeUndefined();
+  expect(line("Pro", "1,000 credits")).toBeUndefined();
 });
 
 test("each plan lists its boards, and Autopilot where the plan includes it", () => {
@@ -169,7 +169,7 @@ test("a plan without prices is free where it's the default, and otherwise by quo
   expect([business!.price, business!.byQuote, business!.cta.label]).toEqual([null, true, "Contact us"]);
   expect(business!.cta.href).toMatch(/^mailto:/);
   // Its credits would come with paid invoices, which it has none of.
-  expect(business!.highlights.some(({ text }) => text.includes("AI credits"))).toBe(false);
+  expect(business!.highlights.some(({ text }) => text.includes("credits"))).toBe(false);
   // The comparison still shows it with AI answers: its credits are agreed with it.
   expect(planFacts()[2]).toMatchObject({ credits: null, aiAnswers: true });
 });

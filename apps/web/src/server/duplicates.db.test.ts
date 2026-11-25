@@ -275,7 +275,7 @@ describe("with a decision model (OpenRouter)", () => {
     expect(Object.keys(model.decisions.at(-1)!.questions)).toHaveLength(6);
   });
 
-  test("with AI credits on, a check is recorded and charged as duplicate detection; out of credits, nothing is asked", async () => {
+  test("with credits on, a check is recorded and charged as duplicate detection; out of credits, nothing is asked", async () => {
     vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, duplicates: { posted: { model: "off" } } }));
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     openai.setVector("Translate articles please", along(1));
@@ -295,7 +295,7 @@ describe("with a decision model (OpenRouter)", () => {
     expect(model.decisions).toHaveLength(1);
   });
 
-  test("after posting, with AI credits on, the check is recorded and charged as duplicate detection", async () => {
+  test("after posting, with credits on, the check is recorded and charged as duplicate detection", async () => {
     vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     openai.setVector("Dark mode", along(1));
@@ -309,7 +309,7 @@ describe("with a decision model (OpenRouter)", () => {
     expect(Number(usage!.credits)).toBeGreaterThan(0);
   });
 
-  test("after posting, out of AI credits, posts are suggested by similarity alone, without asking", async () => {
+  test("after posting, out of credits, posts are suggested by similarity alone, without asking", async () => {
     vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
     openai.setVector("Dark mode", along(1));
     openai.setVector("Night theme please", along(DUPLICATE_MIN_SIMILARITY + 0.01));
@@ -523,7 +523,7 @@ describe("with a decision model (OpenRouter)", () => {
     const found = await findSimilarPosts(project.slug, "Translate articles please");
     expect(found.map((p) => p.title)).toEqual(["Live translations for Inbox"]);
     expect(model.decisions).toHaveLength(0);
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("Reading AI credits for a duplicates check failed"), expect.anything());
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("Reading credits for a duplicates check failed"), expect.anything());
   });
 
   test("while typing, a failure shows the posts as found", async () => {

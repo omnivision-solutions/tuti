@@ -13,14 +13,14 @@ import type { PullRequestRead } from "./pull-request";
 /**
  * The check before an article edit is proposed (docs/plan.md, E5): the rule checks in code (edit-rules.ts), then the
  * Checks role reviews the edit against the repository, with the same tools as the analysis. A fail gets one rewrite,
- * checked again; an edit that still fails, or wasn't reviewed (Checks off, out of AI credits, a reply that can't be
+ * checked again; an edit that still fails, or wasn't reviewed (Checks off, out of credits, a reply that can't be
  * read), is saved with the reason and waits for a person (waitsBecause reads `payload.check`).
  */
 
 /** The reasons an edit waits, as the review screen shows them (waitsBecause); checksSay knows them by their first words. */
 export const CHECKS_OFF = "It wasn't checked: Checks was off when it was written";
 export const CHECK_UNCLEAR = "The check didn't answer clearly";
-export const CHECK_NO_CREDITS = "It wasn't checked: AI credits ran out when it was written";
+export const CHECK_NO_CREDITS = "It wasn't checked: credits ran out when it was written";
 /** Why an edit the check couldn't look at the code for waits: the analysis couldn't read the repository. */
 export const CHECK_NO_REPOSITORY = "It wasn't checked: the repository couldn't be read";
 /** Why an edit saved with no check, or checked before it measured an edit's size, waits: only one from before the check (E6). */
@@ -178,7 +178,7 @@ const changedLines = (before: string, after: string) =>
 type Written = { writtenOn: Doc; doc: Doc; reason: string; payload: ArticleEditPayload };
 
 /**
- * One check of an edit: the rule checks, then (unless one fails it) the review. Checks off, or the project out of AI
+ * One check of an edit: the rule checks, then (unless one fails it) the review. Checks off, or the project out of
  * credits, reviews nothing. Whether a fail is worth a rewrite: only one the rules or the review gave reasons for.
  */
 async function checkOnce(written: Written, pr: PullRequestRead, { projectId, context, signal }: Review): Promise<EditCheck & { rewrite: boolean }> {

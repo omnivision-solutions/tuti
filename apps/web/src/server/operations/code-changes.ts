@@ -263,7 +263,7 @@ export type CodeChangeView = ReturnType<typeof changeView> & {
 
 /**
  * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
- * those, as Home's Catch up lists; `paused`: only those paused for want of AI credits; `toReview`: every
+ * those, as Home's Catch up lists; `paused`: only those paused for want of credits; `toReview`: every
  * one with something for the team, Autopilot's To review: those with proposals waiting, all of them and
  * whatever their state (one the team stopped outlives an analysis that finds nothing to do), and the latest
  * 100 analysing, failed or paused, which pile up while a plan or the credits don't run Autopilot).
@@ -1111,7 +1111,7 @@ const codeChangeFields = {
   mergedAt: when("When it merged"),
   state: z
     .enum(CHANGE_STATES)
-    .describe("Its analysis: `analysing` (for up to 30 minutes), `ready`, `nothing_to_do`, `failed` or `paused` (out of AI credits, or the plan didn't include code changes)")
+    .describe("Its analysis: `analysing` (for up to 30 minutes), `ready`, `nothing_to_do`, `failed` or `paused` (out of credits, or the plan didn't include code changes)")
     .meta({ examples: ["ready"] }),
   reason: z.string().describe("Why there's nothing to do, where it failed, or why it's paused; empty otherwise").meta({ examples: [""] }),
   retryAt: z
@@ -1528,7 +1528,7 @@ export const analyseCodeChange = defineOperation({
   name: "codeChanges.analyse",
   title: "Analyse a code change",
   summary:
-    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"). One already being analysed isn't queued again. Refused (402) out of AI credits or where the project's plan doesn't include code changes",
+    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"). One already being analysed isn't queued again. Refused (402) out of credits or where the project's plan doesn't include code changes",
   method: "POST",
   path: "/code-changes/{id}/analyse",
   scope: "write",
@@ -1548,7 +1548,7 @@ export const analyseCodeChange = defineOperation({
       throw new OperationError(409, "analysis_off", "Autopilot is off: an owner turns it on in Settings → Autopilot");
     }
     await requirePlan(projectId, "codeChanges");
-    // Out of AI credits, the team hears so now, rather than finding it paused again.
+    // Out of credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
     // Analysing from now: queued (on Hatchet the job runs later), its pages say so until it's done. Claimed, so two asking
     // at once queue it once: already being analysed (while a run could still be going), nothing more is queued. A retry
@@ -1590,7 +1590,7 @@ export const resumeCodeChanges = defineOperation({
   name: "codeChanges.resume",
   title: "Resume paused code changes",
   summary:
-    "Resume every code change paused because the project was out of AI credits or its plan didn't include code changes (\"Resume all\"): each is analysed again. Refused (402) while the project is still out, or its plan still doesn't include them",
+    "Resume every code change paused because the project was out of credits or its plan didn't include code changes (\"Resume all\"): each is analysed again. Refused (402) while the project is still out, or its plan still doesn't include them",
   method: "POST",
   path: "/code-changes/resume",
   scope: "write",
