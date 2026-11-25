@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
-import { AccessibilityInfo, ActionSheetIOS, Alert, AppState } from "react-native";
+import { AccessibilityInfo, ActionSheetIOS, Alert, AppState, BackHandler } from "react-native";
 
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
@@ -24,14 +24,38 @@ jest.mock("expo-router", () => {
   // The screen's focus: on rendering, and again when the test says it came back (`mockFocus`).
   const useFocusEffect = (effect: () => void) => {
     mockFocus = effect;
-    React.useEffect(() => effect(), [effect]);
+    // Not run while something is over the screen (`mockCovered`: a sheet).
+    React.useEffect(() => (mockCovered ? undefined : effect()), [effect]);
   };
-  return { Stack: { Toolbar, SearchBar }, router: { push: jest.fn() }, useFocusEffect };
+  // The route's search params (the conversation chosen beside the list), which `setParams` changes as the router does
+  // (the test draws the screen again).
+  const setParams = jest.fn((next: Record<string, string | undefined>) => {
+    mockParams = { ...mockParams, ...next };
+  });
+  return {
+    Stack: { Toolbar, SearchBar },
+    router: { push: jest.fn(), setParams },
+    useFocusEffect,
+    useLocalSearchParams: () => mockParams,
+    // The Inbox's own navigation: its params, the same as the router's here.
+    useNavigation: () => ({ setParams }),
+  };
+});
+let mockParams: Record<string, string | undefined> = {};
+// The conversation beside the list is the conversation screen's own (tested there): here, which one and how it leaves.
+jest.mock("@/app/conversation/[number]", () => {
+  const React = require("react");
+  const { Pressable, Text } = require("react-native");
+  return {
+    ConversationPane: ({ number, onLeave }: { number: number; onLeave: () => void }) =>
+      React.createElement(Pressable, { onPress: onLeave, accessibilityRole: "button" }, React.createElement(Text, null, `Conversation #${number}`)),
+  };
 });
 // Notifications are tested on their own (__tests__/notifications-test.tsx): here, only when the Inbox offers them.
 const mockOffer = jest.fn(async () => {});
 jest.mock("@/components/notifications", () => ({ offerNotifications: () => mockOffer() }));
 let mockFocus: (() => void) | null = null;
+let mockCovered = false;
 
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme", owner: "owner-1" };
 const mockSessions = new Map<string, typeof mockSession>();
@@ -1279,5 +1303,143 @@ describe("reading offline", () => {
     await render(<Inbox />);
     expect(await screen.findByText(/Couldn't reach/)).toBeTruthy();
     expect(screen.queryByText("Another account's customer")).toBeNull();
+  });
+});
+
+describe("in a wide window (a tablet, a foldable opened)", () => {
+  const narrow = { ...(globalThis as unknown as { mockWindow: object }).mockWindow };
+  const setWindow = (width: number, height: number) => ((globalThis as unknown as { mockWindow: object }).mockWindow = { ...narrow, width, height });
+  const router = () => jest.requireMock<{ router: { push: jest.Mock; setParams: jest.Mock } }>("expo-router").router;
+  beforeEach(() => {
+    setWindow(1280, 800);
+    mockParams = {};
+    router().push.mockClear();
+    router().setParams.mockClear();
+  });
+  afterEach(() => {
+    (globalThis as unknown as { mockWindow: object }).mockWindow = narrow;
+  });
+
+  it("shows the list with a quiet note beside it while none is chosen", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    expect(await screen.findByText("CSV export stops at 500 rows")).toBeTruthy();
+    expect(screen.getByText("Choose a conversation to read it here.")).toBeTruthy();
+  });
+
+  it("opens a row beside the list, its row marked, and empties the pane when the conversation leaves", async () => {
+    const opening = row("Invite link expired");
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows"), opening]) });
+    const view = await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("button", { name: /: Invite link expired \(#/ }));
+
+    expect(router().push).not.toHaveBeenCalled();
+    expect(router().setParams).toHaveBeenCalledWith({ c: String(opening.number), p: "acme" });
+    await view.rerender(<Inbox />);
+    expect(screen.getByText(`Conversation #${opening.number}`)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /: Invite link expired \(#/ })).toBeSelected();
+    expect(screen.getByRole("button", { name: /: CSV export stops at 500 rows \(#/ })).not.toBeSelected();
+
+    // Answered and closed there: the pane is emptied.
+    await fireEvent.press(screen.getByText(`Conversation #${opening.number}`));
+    await view.rerender(<Inbox />);
+    expect(screen.getByText("Choose a conversation to read it here.")).toBeTruthy();
+  });
+
+  it("never shows another project's conversation of the number chosen", async () => {
+    mockParams = { c: "1", p: "kite" };
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    expect(screen.queryByText("Conversation #1")).toBeNull();
+    expect(screen.getByText("Choose a conversation to read it here.")).toBeTruthy();
+  });
+
+  it("empties the pane on Android's back first, and leaves back alone with none chosen", async () => {
+    const handlers: (() => boolean)[] = [];
+    // (Restored at the end: React Native's own mock of it is a mock too, which restoring every mock would empty.)
+    const listen = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_, handler) => {
+      handlers.push(handler as () => boolean);
+      return { remove: () => void handlers.splice(handlers.indexOf(handler as () => boolean), 1) };
+    });
+    mockParams = { c: "1", p: "acme" };
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const view = await render(<Inbox />);
+    await screen.findByText("Conversation #1");
+
+    let handled = false;
+    await act(async () => void (handled = handlers.at(-1)!()));
+    expect(handled).toBe(true);
+    await view.rerender(<Inbox />);
+    expect(router().setParams).toHaveBeenCalledWith({ c: undefined, p: undefined });
+    expect(screen.getByText("Choose a conversation to read it here.")).toBeTruthy();
+    expect(handlers).toHaveLength(0);
+    listen.mockRestore();
+  });
+
+  it("leaves Android's back to a sheet over the Inbox (the details): it closes the sheet, not the pane", async () => {
+    const listen = jest.spyOn(BackHandler, "addEventListener");
+    mockParams = { c: "1", p: "acme" };
+    mockCovered = true;
+    try {
+      serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+      await render(<Inbox />);
+      await screen.findByText("Conversation #1");
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      mockCovered = false;
+      listen.mockRestore();
+    }
+  });
+
+  it("waits, when the window narrows with a sheet over the Inbox, till the Inbox is in front to push the one chosen", async () => {
+    mockParams = { c: "1", p: "acme" };
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const view = await render(<Inbox />);
+    await screen.findByText("Conversation #1");
+
+    mockCovered = true;
+    try {
+      setWindow(390, 844);
+      await view.rerender(<Inbox />);
+      expect(router().push).not.toHaveBeenCalled();
+      expect(mockParams).toEqual({ c: "1", p: "acme" });
+    } finally {
+      mockCovered = false;
+    }
+  });
+
+  it("keeps one pane on a phone turned sideways: wide, but too short for two", async () => {
+    setWindow(932, 430);
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("button", { name: /: CSV export stops at 500 rows \(#/ }));
+    expect(screen.queryByText("Choose a conversation to read it here.")).toBeNull();
+    expect(router().push).toHaveBeenCalledWith("/conversation/1");
+  });
+
+  it("pushes the one chosen as today when the window narrows, and keeps the list as it was", async () => {
+    mockParams = { c: "1", p: "acme" };
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const view = await render(<Inbox />);
+    await screen.findByText("Conversation #1");
+
+    // Folded, or the split narrowed.
+    setWindow(390, 844);
+    await view.rerender(<Inbox />);
+    expect(router().push).toHaveBeenCalledWith("/conversation/1");
+    expect(router().setParams).toHaveBeenCalledWith({ c: undefined, p: undefined });
+    expect(screen.queryByText("Choose a conversation to read it here.")).toBeNull();
+    expect(screen.getByText("CSV export stops at 500 rows")).toBeTruthy();
+  });
+
+  it("keeps the swipe's actions on the rows in the list beside", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    const target = await screen.findByRole("button", { name: /: CSV export stops at 500 rows \(#/ });
+    expect(target.props.accessibilityActions).toEqual([
+      { name: "snooze", label: "Snooze" },
+      { name: "close", label: "Close" },
+    ]);
   });
 });
