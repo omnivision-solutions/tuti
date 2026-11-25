@@ -48,7 +48,7 @@ async function ask(token: string | null, { at, slug = project.slug }: { at?: str
 const rows = () => prisma.changelogSeen.findMany({ orderBy: [{ projectId: "asc" }, { userId: "asc" }] });
 
 test("someone the page signs in: what they've seen is kept and read back, from any device, and never moves back", async () => {
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0 });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: null });
 
   const response = await ask(await ssoToken("app-user-1"), { at: "2026-10-18T10:00:00.000Z" });
   expect(response.body).toEqual({ seen: "2026-10-18T10:00:00.000Z" });
@@ -59,7 +59,7 @@ test("someone the page signs in: what they've seen is kept and read back, from a
 
   // An older time (a device that showed an older list) doesn't move it back.
   expect((await ask(await ssoToken("app-user-1"), { at: "2026-10-01T00:00:00.000Z" })).body).toEqual({ seen: "2026-10-18T10:00:00.000Z" });
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z", messages: 0 });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z", messages: 0, latest: null });
   // Nor does one from the future go past now.
   const future = await ask(await ssoToken("app-user-1"), { at: "2099-01-01T00:00:00.000Z" });
   expect(new Date(future.body.seen!).getTime()).toBeLessThanOrEqual(Date.now());
@@ -69,20 +69,20 @@ test("someone the page signs in: what they've seen is kept and read back, from a
     ask(await ssoToken("app-user-2"), { at: "2026-10-18T10:00:00.000Z" }),
     ask(await ssoToken("app-user-2"), { at: "2026-10-19T10:00:00.000Z" }),
   ]);
-  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: "2026-10-19T10:00:00.000Z", messages: 0 });
+  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: "2026-10-19T10:00:00.000Z", messages: 0, latest: null });
 });
 
 test("each person and project has their own; nobody else's changes", async () => {
   await ask(await ssoToken("app-user-1"), { at: "2026-10-18T10:00:00.000Z" });
-  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: null, messages: 0 });
+  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: null, messages: 0, latest: null });
 
   // The same person's id in another project's app is someone else.
   const other = await createProject(await signUp());
   const otherSecret = generateSsoSecret();
   await prisma.project.update({ where: { id: other.id }, data: { ssoSecret: otherSecret } });
-  expect((await ask(await ssoToken("app-user-1", { key: otherSecret }), { slug: other.slug })).body).toEqual({ seen: null, messages: 0 });
+  expect((await ask(await ssoToken("app-user-1", { key: otherSecret }), { slug: other.slug })).body).toEqual({ seen: null, messages: 0, latest: null });
   await ask(await ssoToken("app-user-1", { key: otherSecret }), { at: "2026-10-19T10:00:00.000Z", slug: other.slug });
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z", messages: 0 });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z", messages: 0, latest: null });
   expect(await prisma.changelogSeen.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(2);
 });
 
@@ -182,12 +182,12 @@ test("the count has their conversations by email from their address too, as the 
   expect((await ask(await ssoToken("app-user-2", { email: "e2e-kim@example.com" }))).body).toMatchObject({ messages: 0 });
 });
 
-test("on a private portal, it also says when the latest announcement was, to someone who may read the portal only", async () => {
+test("it says when the latest announcement they may read was; on a private portal, only to someone who may read it", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   const publishedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt, announced: true } });
-  // Public: /api/widget/latest says it to anyone, so it isn't said here.
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0 });
+  // Public: anyone may read it (their groups' entries too, see changelog-groups.db.test.ts).
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: publishedAt.toISOString() });
   // Private on a plan with private portals: people signed in by its SSO may read it.
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } });
   expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: publishedAt.toISOString() });

@@ -8,7 +8,7 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { displayDoc } from "@/server/content";
 import { lastingImage } from "@/server/media-urls";
-import { latestAnnouncement } from "@/server/operations/changelog-seen";
+import { freshSince, latestAnnouncement } from "@/server/operations/changelog-seen";
 import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
 /** Longer than a publish's transaction lasts: see `now` below. */
@@ -39,11 +39,17 @@ export async function GET(request: Request) {
   // dated when the publish starts), is after this visit, so the next one shows it. Ignored in those seconds, a card can
   // show once more.
   const now = new Date(Date.now() - PUBLISH_MARGIN_MS).toISOString();
-  const [entry, settings, project] = await Promise.all([
+  const [entry, settings, project, forSome] = await Promise.all([
     // Everyone's: an entry for some groups only never lights the launcher here (the answer is the same for everyone).
     latestAnnouncement({ slug, portalAccess: "PUBLIC" }, SIGNED_OUT),
     widgetSettings({ slug }),
     prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
+    // The newest announcement for some groups (`groups` below), read alongside.
+    prisma.changelogEntry.findFirst({
+      where: { project: { slug, portalAccess: "PUBLIC" }, announced: true, groups: { some: {} }, publishedAt: { not: null, gte: freshSince() } },
+      orderBy: { publishedAt: "desc" },
+      select: { publishedAt: true },
+    }),
   ]);
   // The launcher's own colour, else the portal's accent (Settings → Branding) where it stands out in light and dark; null
   // otherwise: the loader's brand green, which has a dark-mode shade.
@@ -72,6 +78,9 @@ export async function GET(request: Request) {
   // lead to them) but still count for the page (Tuti.unseen), which may open them itself. `private`: a portal that isn't
   // public, whose latest announcement /api/widget/seen tells only someone signed in who may read it.
   const latest = entry?.publishedAt ?? null;
+  // `groups`: a newer announcement is for some reader groups only (not said which, or what): the script asks
+  // /api/widget/seen for the newest one the person the page signs in may read, as it does on a private portal.
+  const forGroups = !!forSome?.publishedAt && (!latest || forSome.publishedAt > latest);
   // The popup's card: plain text only (the script puts it in as text), its cover a lasting link to its smallest size.
   // Read only with the popup on: every page load of every site with the widget asks this.
   const card =
@@ -96,6 +105,7 @@ export async function GET(request: Request) {
       hidden: settings?.hidden ?? [],
       colorScheme: project?.colorScheme ?? "system",
       ...(project && project.portalAccess !== "PUBLIC" && { private: true }),
+      ...(forGroups && { groups: true }),
     },
     { headers },
   );
