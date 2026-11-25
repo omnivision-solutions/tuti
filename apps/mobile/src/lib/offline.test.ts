@@ -2,13 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 
 import { cached, cacheGeneration, conversationKey, forgetCached, inboxKey, keep, MOST_BYTES, MOST_KEPT, offlineNote, projectsKey, viewsKey } from "./offline";
 
+const clearing = vi.hoisted(() => ({ fails: false }));
 vi.mock("expo-sqlite/kv-store", () => {
   const items = new Map<string, string>();
   class SQLiteStorage {
     getItemSync = (key: string) => items.get(key) ?? null;
     setItemSync = (key: string, value: string) => void items.set(key, value);
     removeItemSync = (key: string) => items.delete(key);
-    clearSync = () => (items.clear(), true);
+    clearSync = () => {
+      if (clearing.fails) {
+        throw new Error("disk I/O error");
+      }
+      items.clear();
+      return true;
+    };
   }
   return { SQLiteStorage };
 });
@@ -58,6 +65,18 @@ describe("what's kept to read offline", () => {
     keep(inboxKey(session, "mine"), { rows: [2] }, started);
     expect(cached(inboxKey(session, "open"))).toBeNull();
     expect(cached(inboxKey(session, "mine"))).toBeNull();
+  });
+
+  it("reads nothing after a clear that failed, till one succeeds", () => {
+    keep(inboxKey(session, "open"), { rows: [1] }, cacheGeneration());
+    clearing.fails = true;
+    forgetCached();
+    expect(cached(inboxKey(session, "open"))).toBeNull();
+
+    clearing.fails = false;
+    forgetCached();
+    keep(inboxKey(session, "open"), { rows: [2] }, cacheGeneration());
+    expect(cached(inboxKey(session, "open"))?.data).toEqual({ rows: [2] });
   });
 
   it("says it's offline and how long ago it was updated", () => {

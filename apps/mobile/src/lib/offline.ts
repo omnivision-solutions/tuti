@@ -22,6 +22,8 @@ let storage: SQLiteStorage | null = null;
 const store = () => (storage ??= new SQLiteStorage("offline.db"));
 // Bumped when it's all forgotten: a load that started before then isn't written after.
 let generation = 0;
+// A clear that failed: nothing is read till one succeeds, so a failed clear never hands one account's rows to the next.
+let unreadable = false;
 
 /** The keys: the server and project, then what it is. */
 export const inboxKey = (session: { server: string; project?: string }, view: string) => `${session.server}|${session.project ?? ""}|inbox|${view}`;
@@ -35,6 +37,9 @@ export const conversationKey = (session: { server: string; project?: string }, n
 export const cacheGeneration = () => generation;
 
 export function cached<T>(key: string): Cached<T> | null {
+  if (unreadable) {
+    return null;
+  }
   try {
     const value = store().getItemSync(key);
     return value ? (JSON.parse(value) as Saved<T>) : null;
@@ -72,7 +77,10 @@ export function forgetCached() {
   generation++;
   try {
     store().clearSync();
-  } catch {}
+    unreadable = false;
+  } catch {
+    unreadable = true;
+  }
 }
 
 /** Whether a load failed for want of a connection (the API's words for it), rather than the server's answer. */
