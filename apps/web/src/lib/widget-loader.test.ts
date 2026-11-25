@@ -2096,3 +2096,28 @@ test("a public portal with a newer announcement for some reader groups: someone 
   await settled();
   expect(plain.Tuti.unseen()).toBe(false);
 });
+
+test("a newer announcement for some groups lit for one person stops showing for the next, or once they're signed out; signed in after load, it's checked", async () => {
+  const GROUPS = { ...LATEST, groups: true };
+  const newer = "2026-10-20T10:00:00.000Z";
+  const page = loadWidget({ settings: { identify: (() => Promise.resolve("ada")) as never }, latest: GROUPS, privateLatest: (who) => Promise.resolve(who === "ada" ? newer : LATEST.latest), seenHere: LATEST.latest });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => Promise.resolve("bob"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  page.Tuti.identify(() => Promise.resolve("ada"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => Promise.resolve(""));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+
+  // Signed in only after the page loaded.
+  const later = loadWidget({ latest: GROUPS, privateLatest: newer, seenHere: LATEST.latest });
+  await settled();
+  expect(later.Tuti.unseen()).toBe(false);
+  later.Tuti.identify(token);
+  await settled();
+  expect(later.Tuti.unseen()).toBe(true);
+});

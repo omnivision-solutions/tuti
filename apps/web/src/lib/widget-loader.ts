@@ -801,6 +801,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
           // Nobody's signed in now: the team's messages to whoever was aren't theirs.
           if (!at && asked === panelCounts && read === countReads) unseenMessages = 0;
           if (!at && privatePortal && read === countReads) latest = null;
+          if (!at && forGroups && read === countReads) latest = everyones;
           return null;
         }
         return fetch(api + "/api/widget/seen?project=" + encodeURIComponent(slug), at
@@ -812,7 +813,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
         if (data && typeof data.messages === "number" && asked === panelCounts && read === countReads) unseenMessages = data.messages;
         if (!at && privatePortal && read === countReads) latest = data && typeof data.latest === "string" ? data.latest : null;
         // Theirs, with their groups' (never older than everyone's, which they may read too).
-        if (!at && forGroups && read === countReads && data && typeof data.latest === "string" && !(latest && latest >= data.latest)) latest = data.latest;
+        if (!at && forGroups && read === countReads) latest = data && typeof data.latest === "string" && !(everyones && everyones >= data.latest) ? data.latest : everyones;
         return data && typeof data.seen === "string" ? data.seen : null;
       })
       .catch(function () { return null; });
@@ -1005,12 +1006,14 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
       getToken = fn;
       // Read before it's reset below: a count from a panel means the team writes to people here, even
       // if the inbox flag the script read is from before it was turned on.
-      var check = unseen || inbox || privatePortal;
+      var check = unseen || inbox || privatePortal || forGroups;
       // Someone else, maybe: the team's messages counted so far were to whoever was before (counts
       // already on their way are too, so they're old now). Their own count comes from the server or a panel.
       unseenMessages = 0;
       // A private portal's latest announcement was told to whoever was: the new person's comes from the server.
       if (privatePortal) latest = null;
+      // So was a newer one for some groups: back to everyone's till the new person's is read.
+      if (forGroups) latest = everyones;
       panelCounts++;
       if (known) setUnseen(anyUnseen());
       // Panels already on the page trade the new person's token for their own (a panel kept the one it
