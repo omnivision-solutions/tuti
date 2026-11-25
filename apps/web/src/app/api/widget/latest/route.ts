@@ -39,11 +39,17 @@ export async function GET(request: Request) {
   // dated when the publish starts), is after this visit, so the next one shows it. Ignored in those seconds, a card can
   // show once more.
   const now = new Date(Date.now() - PUBLISH_MARGIN_MS).toISOString();
-  const [entry, settings, project] = await Promise.all([
+  const [entry, settings, project, forSome] = await Promise.all([
     // Everyone's: an entry for some groups only never lights the launcher here (the answer is the same for everyone).
     latestAnnouncement({ slug, portalAccess: "PUBLIC" }, SIGNED_OUT),
     widgetSettings({ slug }),
     prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
+    // The newest announcement for some groups (`groups` below), read alongside.
+    prisma.changelogEntry.findFirst({
+      where: { project: { slug, portalAccess: "PUBLIC" }, announced: true, groups: { some: {} }, publishedAt: { not: null, gte: freshSince() } },
+      orderBy: { publishedAt: "desc" },
+      select: { publishedAt: true },
+    }),
   ]);
   // The launcher's own colour, else the portal's accent (Settings → Branding) where it stands out in light and dark; null
   // otherwise: the loader's brand green, which has a dark-mode shade.
@@ -74,12 +80,7 @@ export async function GET(request: Request) {
   const latest = entry?.publishedAt ?? null;
   // `groups`: a newer announcement is for some reader groups only (not said which, or what): the script asks
   // /api/widget/seen for the newest one the person the page signs in may read, as it does on a private portal.
-  const forGroups =
-    project?.portalAccess === "PUBLIC" &&
-    (await prisma.changelogEntry.count({
-      where: { project: { slug }, announced: true, groups: { some: {} }, publishedAt: latest ? { gt: latest } : { not: null, gte: freshSince() } },
-      take: 1,
-    })) > 0;
+  const forGroups = !!forSome?.publishedAt && (!latest || forSome.publishedAt > latest);
   // The popup's card: plain text only (the script puts it in as text), its cover a lasting link to its smallest size.
   // Read only with the popup on: every page load of every site with the widget asks this.
   const card =

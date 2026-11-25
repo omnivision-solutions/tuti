@@ -3424,3 +3424,43 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   await expect(messages).toHaveCount(4, { timeout: 4_000 });
   await checkpoint(owner, "inbox-emailed-conversation-answered-in-widget");
 });
+
+test("on a public portal, an announcement for some reader groups lights the launcher for someone the customer's site signs in who's in one, not for anyone else", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
+  const key = await createApiKey(owner, slug, "Widget groups test");
+  const api = async (path: string, body: object) => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+  };
+  // Sam (the user the customer's site signs in) is an enterprise customer; the only announcement is for them.
+  await api("/users", { users: [{ id: "app-user-7", properties: { plan: "enterprise" } }] });
+  await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
+  await api("/changelog", { title: "Audit log export", body: "Download your audit log as CSV.", groups: ["enterprise"] });
+  await api("/changelog/1/publish", {});
+
+  const site = sitePage("customer.localhost", slug);
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(site);
+  await expect(page.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback, new updates");
+  await checkpoint(page, "widget-new-for-group");
+
+  // On another plan, Sam isn't in the group: nothing new for them.
+  await api("/users", { users: [{ id: "app-user-7", properties: { plan: "free" } }] });
+  const other = await (await browser.newContext()).newPage();
+  await other.goto(site);
+  await expect(other.getByRole("button", { name: "Feedback" })).toBeVisible();
+  await expect(async () => {
+    await other.reload();
+    await expect(other.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback", { timeout: 5_000 });
+  }).toPass();
+});
