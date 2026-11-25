@@ -215,18 +215,27 @@ describe("Reply", () => {
       await vi.advanceTimersByTimeAsync(1000);
       expect(calls.map((call) => call.method)).toEqual(["POST"]);
       expect(await kept()).toEqual([{ body: "On it!", error: undefined }]);
+      // Shown as sending, not as "Not sent" with Delete, on a screen open meanwhile.
+      const { getDraft, isSending } = await import("./conversation");
+      const { screenKey } = await import("./details");
+      expect(isSending(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent[0]!.id)).toBe(true);
       await vi.advanceTimersByTimeAsync(15_000);
       await acting;
     } finally {
       vi.useRealTimers();
     }
     expect(await kept()).toEqual([{ body: "On it!", error: expect.stringContaining("Couldn't reach") }]);
+    const { getDraft, isSending } = await import("./conversation");
+    const { screenKey } = await import("./details");
+    expect(isSending(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent[0]!.id)).toBe(false);
   });
 
   it("from another server, even one with a project of the same slug, sends nothing and says so", async () => {
     await (await load()).act(response("reply", { userText: "On it!", server: "https://other.example" }));
     expect(calls).toEqual([]);
     expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: It's from a Tuti server you're not signed in to."]);
+    // With its server, so a tap on it opens nothing here (openTarget).
+    expect(phone.shown[0]!.content.data).toEqual({ project: "acme", conversation: 7, server: "https://other.example" });
     expect(await kept()).toEqual([]);
 
     // Its own server, however the address is written.
@@ -279,17 +288,31 @@ describe("Reply", () => {
     expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
   });
 
+  const drafts = () => [...phone.files.keys()].filter((key) => key.startsWith("documents/drafts/"));
+  // A sign-out in the app's other JavaScript (Android's task runs in one of its own when the app was killed): the drafts'
+  // files deleted and the session gone, while this one still has the draft in memory.
+  const signOutElsewhere = () => {
+    drafts().forEach((key) => phone.files.delete(key));
+    phone.stored.set("session", JSON.stringify({ server: SERVER, token: "token-2", cookie: "c", project: "acme" }));
+  };
+
   it("that fails after a sign-out isn't kept for whoever signs in next", async () => {
     answer = () => {
-      // Signed out, and another teammate in, while the send is on its way.
-      phone.stored.set("session", JSON.stringify({ server: SERVER, token: "token-2", cookie: "c", project: "acme" }));
+      signOutElsewhere();
       throw new TypeError("Network request failed");
     };
     await (await load()).act(response("reply", { userText: "On it!" }));
     expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: Couldn't reach tuti.example. Check the address and your connection."]);
-    const { getDraft } = await import("./conversation");
-    const { screenKey } = await import("./details");
-    expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
+    expect(drafts()).toEqual([]);
+  });
+
+  it("that's saved after a sign-out writes nothing back", async () => {
+    answer = () => {
+      signOutElsewhere();
+      return Response.json({});
+    };
+    await (await load()).act(response("reply", { userText: "On it!" }));
+    expect(drafts()).toEqual([]);
   });
 
   it("that fails as a sign-out forgets the drafts, before the session goes, isn't said to be kept", async () => {

@@ -517,6 +517,19 @@ export function attach(api: Api, key: string, picked: Picked): Promise<void> {
 const sends = new Map<string, Promise<Sent | null>>();
 export const isSending = (id: string) => sends.has(id);
 
+/**
+ * A reply being sent from elsewhere (a notification's Reply, src/lib/notification-actions.ts) till `done` settles: a
+ * screen open meanwhile shows it "Sending…" rather than "Not sent" with Delete, and its Retry waits on this send.
+ */
+export function trackSend(id: string, done: Promise<unknown>) {
+  const tracked = done.then(
+    () => ({}),
+    () => null,
+  );
+  sends.set(id, tracked);
+  void tracked.finally(() => sends.delete(id));
+}
+
 /** Said for a reply whose id the server knows from another reply (`request_id_used`): an app bug, as each unsent one has its own id. */
 export const ID_CLASH = "Another reply was sent with this one's id. Edit it to send it as a new one.";
 

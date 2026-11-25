@@ -261,6 +261,7 @@ describe("a notification's conversation", () => {
   it("is read from the server's data, checked", async () => {
     const { targetOf, tapped } = await load();
     expect(targetOf({ project: "acme", conversation: 12 })).toEqual({ project: "acme", number: 12 });
+    expect(targetOf({ project: "acme", conversation: 12, server: "https://tuti.so" })).toEqual({ project: "acme", number: 12, server: "https://tuti.so" });
     for (const bad of [null, {}, { project: "acme" }, { project: "Acme\nx", conversation: 1 }, { project: "acme", conversation: "12" }, { project: "acme", conversation: 0 }, { project: "acme", conversation: 1.5 }]) {
       expect(targetOf(bad)).toBeNull();
     }
@@ -331,10 +332,17 @@ describe("opening a tapped notification", () => {
     expect(order).toEqual(["leave", "project kite", "/conversation/7"]);
   });
 
-  it("opens nothing signed out, and nothing when the project can't be switched", async () => {
+  it("opens nothing signed out, from another server, or when the project can't be switched", async () => {
     const { openTarget } = await load();
     const open = vi.fn();
     await openTarget({ project: "acme", number: 7 }, null, async () => {}, { leave: () => {}, open, projects });
+    // From another server, which can have a project of the same slug: nothing.
+    await openTarget({ project: "acme", number: 7, server: "https://other.example" }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    expect(open).not.toHaveBeenCalled();
+    // Its own server, however the address is written.
+    await openTarget({ project: "acme", number: 7, server: "HTTPS://Tuti.Example.com" }, signedIn, async () => {}, { leave: () => {}, open, projects });
+    expect(open).toHaveBeenCalledWith("/conversation/7");
+    open.mockClear();
     await expect(
       openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), { leave: () => {}, open, projects }),
     ).rejects.toThrow("Keychain unavailable");
