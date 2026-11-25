@@ -125,7 +125,7 @@ afterEach(() => {
 describe("the details sheet", () => {
   it("shows no banner for its conversation's notifications while it's open", async () => {
     serve(SAM);
-    const banner = () => behaviourFor({ request: { content: { data: { project: "acme", conversation: 12 } } } } as never).shouldShowBanner;
+    const banner = () => behaviourFor({ request: { content: { title: "Ada · Acme", data: { project: "acme", conversation: 12 } } } } as never).shouldShowBanner;
     await render(<Details />);
     expect(await screen.findByText("Sam Lee")).toBeTruthy();
     expect(banner()).toBe(false);
@@ -135,7 +135,7 @@ describe("the details sheet", () => {
 
   it("marks its conversation while in focus, also again after a conversation opened over it closes", async () => {
     serve(SAM);
-    const banner = () => behaviourFor({ request: { content: { data: { project: "acme", conversation: 12 } } } } as never).shouldShowBanner;
+    const banner = () => behaviourFor({ request: { content: { title: "Ada · Acme", data: { project: "acme", conversation: 12 } } } } as never).shouldShowBanner;
     // The conversation's screen under it had marked it, and blurs as the sheet focuses: its release leaves the sheet's mark.
     const conversation = lookAt({ project: "acme", number: 12 });
     await render(<Details />);

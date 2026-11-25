@@ -194,12 +194,13 @@ export function lookAt(target: Target) {
 }
 
 /**
- * How a notification arriving while the app is in front shows: not at all over its own conversation, or signed out (one
- * a sign-out that didn't reach the server left coming), as a banner elsewhere.
+ * How a notification arriving while the app is in front shows: not at all over its own conversation, signed out (one
+ * a sign-out that didn't reach the server left coming), or untitled, as a banner elsewhere.
  */
 export function behaviourFor(notification: Notifications.Notification, signedOut = false): Notifications.NotificationBehavior {
   const target = targetOf(notification.request.content.data);
-  const show = !signedOut && (!target || keyOf(target) !== looking?.key);
+  // Untitled: Android's pushes, data only, which the app shows itself (notification-actions.ts `present`).
+  const show = !signedOut && !!notification.request.content.title && (!target || keyOf(target) !== looking?.key);
   return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
 }
 

@@ -254,7 +254,7 @@ describe("registering the device", () => {
   });
 });
 
-const notification = (data: unknown) => ({ request: { content: { data } } }) as never;
+const notification = (data: unknown) => ({ request: { content: { title: "Ada · Acme", data } } }) as never;
 const response = (data: unknown, actionIdentifier = "expo.modules.notifications.actions.DEFAULT") => ({ actionIdentifier, notification: notification(data) }) as never;
 
 describe("a notification's conversation", () => {
@@ -282,6 +282,8 @@ describe("a notification while the app is in front", () => {
     expect(shown({ project: "acme", conversation: 13 })).toBe(true);
     expect(shown({ project: "kite", conversation: 12 })).toBe(true);
     expect(shown({})).toBe(true);
+    // Untitled (Android's pushes, data only, which the app shows itself), nothing.
+    expect(behaviourFor({ request: { content: { title: null, data: { project: "acme", conversation: 13 } } } } as never).shouldShowBanner).toBe(false);
     // Signed out, nothing shows in front.
     expect(behaviourFor(notification({ project: "acme", conversation: 13 }), true).shouldShowBanner).toBe(false);
 

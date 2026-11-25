@@ -33,7 +33,7 @@ const mockApi = jest.fn(async () => ({
 }));
 jest.mock("@/lib/session", () => ({ useApi: () => mockApi, useSession: () => ({ session: mockSession }) }));
 
-const banner = (project: string, conversation: number) => behaviourFor({ request: { content: { data: { project, conversation } } } } as never).shouldShowBanner;
+const banner = (project: string, conversation: number) => behaviourFor({ request: { content: { title: "Ada · Acme", data: { project, conversation } } } } as never).shouldShowBanner;
 
 describe("a conversation on screen", () => {
   it("shows no banner for its own notifications while it's in focus, and does again once left", async () => {

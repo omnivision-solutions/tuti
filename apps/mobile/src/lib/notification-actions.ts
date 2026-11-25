@@ -54,7 +54,8 @@ export const NOT_YOURS = "It's in a project you're not on.";
 export async function act(response: Notifications.NotificationResponse) {
   const { actionIdentifier: action } = response;
   const { identifier, content } = response.notification.request;
-  const target = targetOf(content.data);
+  const data = dataOf(content);
+  const target = targetOf(data);
   const text = response.userText?.trim() ?? "";
   const key = `${identifier}\n${action}\n${text}`;
   if ((action !== REPLY && action !== CLOSE) || !target || (action === REPLY && !text) || done.has(key)) {
@@ -76,21 +77,21 @@ export async function act(response: Notifications.NotificationResponse) {
         createApi({ server: session.server, token: session.token }, () => {})<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
       if (action === REPLY) {
         const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
-        unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(content.data) };
+        unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(data) };
       }
       if (!(await isTheirs(target, session, projects))) {
         refused = NOT_YOURS;
       } else {
         const api = createApi({ ...session, project: target.project }, () => {});
         await (unsent ? sendReply(api, target.number, unsent) : updateConversation(api, target.number, { status: "closed" }));
-        await Notifications.dismissNotificationAsync(identifier).catch(() => {});
+        await remove(response);
         return;
       }
     }
   } catch (error) {
     // The session's over (a 401): signed out, and the next launch forgets its drafts, so nothing is kept.
     if (error instanceof ApiError && error.status === 401) {
-      await tell(identifier, action, content.title, target, SIGNED_OUT, false);
+      await tell(response, target, SIGNED_OUT, false);
       return;
     }
     // Kept only while it's still this session: one signed out of meanwhile (here, or in the app's other JavaScript) is
@@ -102,10 +103,59 @@ export async function act(response: Notifications.NotificationResponse) {
         draft.unsent.some((one) => one.id === kept.id) ? draft : { ...draft, unsent: [...draft.unsent, { ...kept, error: reasonOf(error) }] },
       );
     }
-    await tell(identifier, action, content.title, target, reasonOf(error), !!kept);
+    await tell(response, target, reasonOf(error), !!kept);
     return;
   }
-  await tell(identifier, action, content.title, target, refused, false);
+  await tell(response, target, refused, false);
+}
+
+/**
+ * A push received on Android, as the task is given it: the server's are data only (packages/jobs push.ts), its `data`
+ * in `data.body` as JSON with the notification's `title` and `text`, and shown here with the category's Reply and Close
+ * (Firebase shows a push with a title itself while the app isn't in front, without them). Only while signed in: a push a
+ * sign-out that didn't reach the server left coming shows nothing.
+ */
+export async function present(payload: unknown) {
+  const { data: raw, messageId } = (payload ?? {}) as { data?: { body?: unknown } | null; messageId?: unknown };
+  let data: { title?: unknown; text?: unknown };
+  try {
+    data = JSON.parse(String(raw?.body)) as typeof data;
+  } catch {
+    return;
+  }
+  const target = targetOf(data);
+  if (!target || typeof data.title !== "string" || !(await readSession())) {
+    return;
+  }
+  const at = seenOf(data);
+  await Notifications.scheduleNotificationAsync({
+    // Firebase's id for the push: the same push shown again replaces it.
+    ...(typeof messageId === "string" && { identifier: messageId }),
+    content: {
+      title: data.title,
+      ...(typeof data.text === "string" && { body: data.text }),
+      data: { project: target.project, conversation: target.number, ...(at && { at }) },
+      categoryIdentifier: CATEGORY,
+      sound: "default",
+    },
+    trigger: { channelId: CHANNEL },
+  });
+}
+
+/**
+ * A notification's data. Android's task is given the response as it comes from the system, the data still as JSON in
+ * `dataString` (the listener's has it read into `data`).
+ */
+export function dataOf(content: Notifications.NotificationContent): Record<string, unknown> | undefined {
+  const { dataString } = content as { dataString?: unknown };
+  if (content.data == null && typeof dataString === "string") {
+    try {
+      return JSON.parse(dataString) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+  return content.data ?? undefined;
 }
 
 /** What the notification's message was sent at (the push's `at`), as the reply's `seen`; null from a server without it. */
@@ -114,11 +164,41 @@ export function seenOf(data: unknown) {
   return typeof at === "string" && !Number.isNaN(Date.parse(at)) ? at : null;
 }
 
-/** Takes the notification acted on away, and leaves one saying why it wasn't done. */
-async function tell(identifier: string, action: string, title: string | null, target: Target, reason: string, kept: boolean) {
+/**
+ * Takes the notification acted on away. Android keeps one whose reply is still sending (its spinner) for the reply's
+ * history, even once it's cancelled, until the app updates it: a silent update, without the buttons, ends that. Expo
+ * posts it off the caller's thread, so it's waited for (`sent` in its data) before the cancel, which it would otherwise
+ * outlive, and the system's taking the spinner off after it is too.
+ */
+async function remove({ actionIdentifier, notification }: Notifications.NotificationResponse) {
+  const { identifier, content } = notification.request;
+  if (Platform.OS === "android" && actionIdentifier === REPLY) {
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: { title: content.title, body: content.body, data: { ...dataOf(content), sent: true }, sound: false },
+      trigger: { channelId: CHANNEL },
+    }).catch(() => {});
+    // ponytail: the update polled for up to 3 seconds, then a fixed 1.5 seconds for the system to redraw it (300 ms
+    // wasn't enough on an Android 13 emulator, 1.5 seconds was). Past those, the update stays until it's swiped away.
+    for (let tries = 0; tries < 20; tries++) {
+      await wait(150);
+      const shown = (await Notifications.getPresentedNotificationsAsync().catch(() => [])).find((one) => one.request.identifier === identifier);
+      if (!shown || dataOf(shown.request.content)?.sent) {
+        break;
+      }
+    }
+    await wait(SPINNER_OFF_MS);
+  }
   await Notifications.dismissNotificationAsync(identifier).catch(() => {});
+}
+const SPINNER_OFF_MS = 1500;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Takes the notification acted on away, and leaves one saying why it wasn't done. */
+async function tell(response: Notifications.NotificationResponse, target: Target, reason: string, kept: boolean) {
+  await remove(response);
   await Notifications.scheduleNotificationAsync({
-    content: { ...failure(action, title, reason, kept), data: { project: target.project, conversation: target.number } },
+    content: { ...failure(response.actionIdentifier, response.notification.request.content.title, reason, kept), data: { project: target.project, conversation: target.number } },
     trigger: Platform.OS === "android" ? { channelId: CHANNEL } : null,
   });
 }
@@ -140,9 +220,11 @@ export function startNotificationActions() {
   void setCategory().catch(() => {});
   if (Platform.OS === "android") {
     TaskManager.defineTask<Notifications.NotificationTaskPayload>(TASK, async ({ data }) => {
-      // Also told of every push received: only an action is for this.
+      // An action, or a push received (in front too).
       if (data && "actionIdentifier" in data) {
         await act(data).catch(() => {});
+      } else {
+        await present(data).catch(() => {});
       }
     });
     void Notifications.registerTaskAsync(TASK).catch(() => {});

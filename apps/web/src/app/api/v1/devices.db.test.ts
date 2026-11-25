@@ -261,7 +261,6 @@ test("a user's message notifies the phones of exactly those its email goes to", 
     body: "The export button does nothing",
     sound: "default",
     priority: "high",
-    channelId: "default",
     categoryId: "conversation",
     data: { project: project.slug, conversation: number, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
   });
@@ -306,6 +305,31 @@ test("a user's message sent again with its requestId is pushed, and emailed, onc
   expect((await write()).id).toBe(first.id);
   expect(pushedTo()).toEqual(["owner"]);
   expect(mailbox.emails).toHaveLength(1);
+});
+
+test("an Android phone gets data only, which its app shows with Reply and Close (Firebase would show a titled one without them)", async () => {
+  expect(await api(owner, "POST", "/devices", { deviceId: "android-id", token: "ExponentPushToken[android]", platform: "android" })).toMatchObject({ status: 200 });
+  const { number } = await userWrites("The export button\n\ndoes nothing");
+  expect(expo.sent).toHaveLength(1);
+  const { ticket, headers, ...sent } = expo.sent[0]!;
+  expect(sent).toEqual({
+    to: "ExponentPushToken[android]",
+    priority: "high",
+    data: {
+      project: project.slug,
+      conversation: number,
+      at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      title: "e2e-asker@example.com · " + project.name,
+      text: "The export button does nothing",
+    },
+  });
+
+  // "Show message text" off: who wrote, not what.
+  await api(owner, "PATCH", "/notifications", { showMessageText: false });
+  expo.sent = [];
+  await userWrites("A private matter");
+  expect(expo.sent[0]!.data).toEqual(expect.objectContaining({ title: "e2e-asker@example.com · " + project.name }));
+  expect(JSON.stringify(expo.sent[0])).not.toContain("private");
 });
 
 test("with \"Show message text\" off, a notification says who wrote, not what", async () => {

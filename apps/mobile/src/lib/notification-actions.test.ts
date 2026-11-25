@@ -8,12 +8,13 @@ const phone = vi.hoisted(() => ({
   stored: new Map<string, string>(),
   files: new Map<string, string>(),
   dismissed: [] as string[],
-  shown: [] as { content: { title: string; body: string; data: unknown }; trigger: unknown }[],
+  shown: [] as { identifier?: string; content: { title: string; body: string; data: unknown; categoryIdentifier?: string; sound?: unknown }; trigger: unknown }[],
   categories: [] as { id: string; actions: { identifier: string; options?: object; textInput?: object }[] }[],
   listener: null as ((response: unknown) => unknown) | null,
   last: null as unknown,
   task: null as ((body: { data: unknown }) => Promise<unknown>) | null,
   registered: [] as string[],
+  presented: [] as { request: { identifier?: string; content: { data?: unknown } } }[],
 }));
 vi.mock("react-native", () => ({
   Platform: {
@@ -69,7 +70,14 @@ vi.mock("expo-notifications", () => ({
   },
   getLastNotificationResponse: () => phone.last,
   dismissNotificationAsync: async (id: string) => void phone.dismissed.push(id),
-  scheduleNotificationAsync: async (request: (typeof phone.shown)[number]) => void phone.shown.push(request),
+  // What the system shows: the last one posted with each identifier, posted a little after it's asked for.
+  getPresentedNotificationsAsync: async () => phone.presented,
+  scheduleNotificationAsync: async (request: (typeof phone.shown)[number]) => {
+    phone.shown.push(request);
+    setTimeout(() => {
+      phone.presented = [...phone.presented.filter((one) => one.request.identifier !== request.identifier), { request: { identifier: request.identifier, content: request.content } }];
+    }, 200);
+  },
 }));
 
 type Call = { url: string; method: string; project?: string; body?: unknown };
@@ -97,7 +105,7 @@ const load = () => import("./notification-actions");
 
 beforeEach(() => {
   vi.resetModules();
-  Object.assign(phone, { os: "ios", appState: "active", dismissed: [], shown: [], categories: [], listener: null, last: null, task: null, registered: [] });
+  Object.assign(phone, { os: "ios", appState: "active", dismissed: [], shown: [], categories: [], listener: null, last: null, task: null, registered: [], presented: [] });
   phone.stored.clear();
   phone.files.clear();
   calls.length = 0;
@@ -267,6 +275,49 @@ describe("Close", () => {
 });
 
 describe("on Android", () => {
+  // A push as the task is given it: Firebase's data, the server's in `body` as JSON.
+  const push = (data: object) => ({ messageId: "0:fcm-1", notification: null, data: { categoryId: "conversation", body: JSON.stringify(data), dataString: JSON.stringify(data) } });
+  const pushed = { project: "acme", conversation: 7, at: AT, title: "Ada · Acme", text: "Hi" };
+
+  it("shows a push itself, with Reply and Close, on the app's channel", async () => {
+    phone.os = "android";
+    (await load()).startNotificationActions();
+    await phone.task!({ data: push(pushed) });
+    expect(phone.shown).toEqual([
+      {
+        identifier: "0:fcm-1",
+        content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT }, categoryIdentifier: "conversation", sound: "default" },
+        trigger: { channelId: "default" },
+      },
+    ]);
+  });
+
+  it("shows nothing signed out, or for a push that isn't the server's", async () => {
+    phone.os = "android";
+    const { present } = await load();
+    phone.stored.clear();
+    await present(push(pushed));
+    signIn();
+    await present(push({ ...pushed, project: "Not a slug" }));
+    await present(push({ project: "acme", conversation: 7 }));
+    await present({ data: { body: "not JSON" } });
+    await present(null);
+    expect(phone.shown).toEqual([]);
+  });
+
+  it("after a reply, updates the notification before taking it away, or the system keeps it for the reply's history", async () => {
+    phone.os = "android";
+    phone.presented = [{ request: { identifier: "push-1", content: { data: { project: "acme", conversation: 7 } } } }];
+    const { act } = await load();
+    const acting = act(response("reply", { userText: "On it!" }));
+    // Not taken away until the update is shown: a cancel before it would leave the update behind.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(phone.dismissed).toEqual([]);
+    await acting;
+    expect(phone.shown).toEqual([{ identifier: "push-1", content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, sent: true }, sound: false }, trigger: { channelId: "default" } }]);
+    expect(phone.dismissed).toEqual(["push-1"]);
+  });
+
   it("acts from the background task when the app isn't in front, and not from the listener as well", async () => {
     phone.os = "android";
     phone.appState = "background";
@@ -277,8 +328,12 @@ describe("on Android", () => {
     // Also run for every push received: only an action is acted on.
     await phone.task!({ data: { notification: {}, data: {} } });
     expect(calls).toEqual([]);
-    await phone.task!({ data: response("close") });
-    expect(calls.map((call) => call.method)).toEqual(["PATCH"]);
+    // As the system gives it, the data still JSON.
+    const raw = response("close") as unknown as { notification: { request: { content: { data?: unknown; dataString?: string } } } };
+    raw.notification.request.content.dataString = JSON.stringify(raw.notification.request.content.data);
+    delete raw.notification.request.content.data;
+    await phone.task!({ data: raw });
+    expect(calls.map((call) => [call.method, call.url])).toEqual([["PATCH", `${SERVER}/api/v1/conversations/7`]]);
   });
 
   it("acts from the listener while the app is in front", async () => {
