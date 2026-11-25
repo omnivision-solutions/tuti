@@ -1,4 +1,4 @@
-import { router, Stack } from "expo-router";
+import { router, Stack, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -263,7 +263,27 @@ export default function Inbox() {
       void setProject(slug).catch((e: Error) => setError(`Couldn't keep that choice: ${e.message}`));
     }
   };
-  const open = useCallback((row: Row) => router.push(`/conversation/${row.number}`), []);
+  // Back from a conversation: its row and the counts again, as its stream would after a change. Reading it there sends no
+  // live change (unread is the teammate's own), so it would stay bold and counted till something else changed.
+  const opened = useRef<number | null>(null);
+  const open = useCallback((row: Row) => {
+    opened.current = row.number;
+    router.push(`/conversation/${row.number}`);
+  }, []);
+  const [returned, setReturned] = useState<{ number: number } | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      if (opened.current !== null) {
+        setReturned({ number: opened.current });
+        opened.current = null;
+      }
+    }, []),
+  );
+  useEffect(() => {
+    if (returned) {
+      onLive(false, [returned.number]);
+    }
+  }, [returned]);
 
   const current = projects?.find((p) => p.slug === project);
   const searching = !!q;

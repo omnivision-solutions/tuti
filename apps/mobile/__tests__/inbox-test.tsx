@@ -19,8 +19,14 @@ jest.mock("expo-router", () => {
   });
   const SearchBar = ({ placeholder, onChangeText }: { placeholder: string; onChangeText: (event: unknown) => void }) =>
     React.createElement(TextInput, { placeholder, onChangeText: (text: string) => onChangeText({ nativeEvent: { text } }) });
-  return { Stack: { Toolbar, SearchBar }, router: { push: jest.fn() } };
+  // The screen's focus: on rendering, and again when the test says it came back (`mockFocus`).
+  const useFocusEffect = (effect: () => void) => {
+    mockFocus = effect;
+    React.useEffect(() => effect(), [effect]);
+  };
+  return { Stack: { Toolbar, SearchBar }, router: { push: jest.fn() }, useFocusEffect };
 });
+let mockFocus: (() => void) | null = null;
 
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
 const mockApi = jest.fn<(path: string) => Promise<unknown>>();
@@ -188,6 +194,28 @@ describe("the Inbox", () => {
     const rows = screen.getAllByRole("button", { name: /\(#\d+\)/ });
     expect(rows[0]).toHaveAccessibleName(/^Unread, Maya Chen, Northwind: Invite link expired/);
     expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(2);
+  });
+
+  it("fetches an opened conversation's row and the counts again when the Inbox is back in focus: it may have been read", async () => {
+    const opened = row("Invite link expired", { unread: true });
+    serve({ "/conversations?view=open&limit": page([opened]) });
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("button", { name: /^Unread, Maya Chen, Northwind: Invite link expired/ }));
+    expect(jest.requireMock<{ router: { push: jest.Mock } }>("expo-router").router.push).toHaveBeenCalledWith(`/conversation/${opened.number}`);
+
+    // Read there: the server says so now.
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) => (path === rowPath("open", opened.number) ? Promise.resolve(page([{ ...opened, unread: false }])) : served(path)));
+    const counted = mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length;
+    await act(async () => mockFocus!());
+
+    expect(mockApi).toHaveBeenCalledWith(rowPath("open", opened.number));
+    expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(counted + 1);
+    expect(screen.getByRole("button", { name: /\(#\d+\)/ })).toHaveAccessibleName(/^Maya Chen, Northwind: Invite link expired/);
+    // Focus coming back without a conversation opened since fetches nothing more.
+    const calls = mockApi.mock.calls.length;
+    await act(async () => mockFocus!());
+    expect(mockApi.mock.calls.length).toBe(calls);
   });
 
   it("starts the next page one earlier once a conversation shown leaves the view", async () => {
