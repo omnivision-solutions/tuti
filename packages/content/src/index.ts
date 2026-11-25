@@ -7,3 +7,4 @@ export * from "./notes";
 export * from "./diff";
 export * from "./sections";
 export * from "./readable";
+export * from "./translate";
