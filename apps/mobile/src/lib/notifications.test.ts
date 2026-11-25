@@ -280,13 +280,14 @@ describe("a notification while the app is in front", () => {
 
 describe("opening a tapped notification", () => {
   const signedIn = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
+  const projects = async () => ["acme", "kite"];
 
   it("opens the conversation in the project chosen", async () => {
     const { openTarget } = await load();
     const setProject = vi.fn(async () => {});
     const open = vi.fn();
     const leave = vi.fn();
-    await openTarget({ project: "acme", number: 7 }, signedIn, setProject, { leave, open });
+    await openTarget({ project: "acme", number: 7 }, signedIn, setProject, { leave, open, projects });
     expect(setProject).not.toHaveBeenCalled();
     expect(leave).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith("/conversation/7");
@@ -298,6 +299,7 @@ describe("opening a tapped notification", () => {
     await openTarget({ project: "kite", number: 7 }, signedIn, async (slug) => void order.push(`project ${slug}`), {
       leave: () => order.push("leave"),
       open: (path) => order.push(path),
+      projects,
     });
     expect(order).toEqual(["leave", "project kite", "/conversation/7"]);
   });
@@ -305,10 +307,22 @@ describe("opening a tapped notification", () => {
   it("opens nothing signed out, and nothing when the project can't be switched", async () => {
     const { openTarget } = await load();
     const open = vi.fn();
-    await openTarget({ project: "acme", number: 7 }, null, async () => {}, { leave: () => {}, open });
+    await openTarget({ project: "acme", number: 7 }, null, async () => {}, { leave: () => {}, open, projects });
     await expect(
-      openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), { leave: () => {}, open }),
+      openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), { leave: () => {}, open, projects }),
     ).rejects.toThrow("Keychain unavailable");
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("opens nothing for a project that isn't one of the teammate's, or when their projects can't be read", async () => {
+    const { openTarget } = await load();
+    const open = vi.fn();
+    const leave = vi.fn();
+    const setProject = vi.fn(async () => {});
+    await openTarget({ project: "orbit", number: 7 }, signedIn, setProject, { leave, open, projects });
+    await openTarget({ project: "kite", number: 7 }, signedIn, setProject, { leave, open, projects: () => Promise.reject(new Error("Offline")) });
+    expect(leave).not.toHaveBeenCalled();
+    expect(setProject).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
 });

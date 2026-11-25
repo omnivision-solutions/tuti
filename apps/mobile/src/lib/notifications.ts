@@ -4,7 +4,6 @@ import { File, Paths } from "expo-file-system";
 import * as Notifications from "expo-notifications";
 import { AndroidImportance, IosAuthorizationStatus } from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
-import { useEffect, useEffectEvent } from "react";
 
 import { type Api, ApiError } from "./api";
 import type { Session } from "./session-store";
@@ -143,32 +142,14 @@ export async function removeDevice(api: Api) {
 const again = new Set<() => void>();
 /** Registers again now (notifications just allowed). */
 export const registerAgain = () => again.forEach((register) => register());
-
-/**
- * Keeps this phone registered while signed in: as each session gets its project (the API needs one), at each launch,
- * when the system gives a new token, and when notifications are allowed.
- */
-export function usePushRegistration(session: Session | null | undefined, api: Api | null, platform: Platform) {
-  const signedIn = session?.project ? session.token : null;
-  const register = useEffectEvent((devicePushToken?: Notifications.DevicePushToken) => {
-    if (api && session) {
-      void registerDevice(api, session, platform, devicePushToken).catch(() => {});
-    }
-  });
-  useEffect(() => {
-    if (!signedIn) {
-      return;
-    }
-    register();
-    const changed = Notifications.addPushTokenListener((token) => register(token));
-    const allowed = () => register();
-    again.add(allowed);
-    return () => {
-      changed.remove();
-      again.delete(allowed);
-    };
-  }, [signedIn]);
+/** Calls `register` on registerAgain; the function returned stops. */
+export function onRegisterAgain(register: () => void) {
+  again.add(register);
+  return () => void again.delete(register);
 }
+
+/** Takes the notifications shown off the phone (signing out): they'd show the last account's customers' messages. */
+export const dismissDelivered = () => Notifications.dismissAllNotificationsAsync().catch(() => {});
 
 /** A notification's conversation: `data` as the server sends it, checked, since anything on the phone can post one. */
 export type Target = { project: string; number: number };
@@ -212,20 +193,24 @@ export function behaviourFor(notification: Notifications.Notification, signedOut
 }
 
 /**
- * Opens a tapped notification's conversation, in its project. Another project chosen: the screens open go first (`leave`,
- * back to the Inbox), as a conversation open would show the other project's of its number, then the project switches.
- * Signed out, nothing (sign-in is all there is).
+ * Opens a tapped notification's conversation, in its project. Another project: only one of the teammate's (`projects`,
+ * their slugs; a notification left from another account, or posted by something else, opens nothing), and the screens
+ * open go first (`leave`, back to the Inbox), as a conversation open would show the other project's of its number, then
+ * the project switches. Signed out, nothing (sign-in is all there is).
  */
 export async function openTarget(
   target: Target,
   session: Session | null,
   setProject: (slug: string) => Promise<void>,
-  { leave, open }: { leave: () => void; open: (path: string) => void },
+  { leave, open, projects }: { leave: () => void; open: (path: string) => void; projects: () => Promise<string[]> },
 ) {
   if (!session) {
     return;
   }
   if (session.project !== target.project) {
+    if (!(await projects().catch(() => [] as string[])).includes(target.project)) {
+      return;
+    }
     leave();
     await setProject(target.project);
   }

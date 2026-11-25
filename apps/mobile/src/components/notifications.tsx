@@ -1,12 +1,41 @@
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect, useEffectEvent, useRef } from "react";
-import { Alert, Platform } from "react-native";
+import { Alert, AppState, Platform } from "react-native";
 
-import { askPermission, behaviourFor, openTarget, registerAgain, shouldOffer, type Target, tapped, usePushRegistration } from "@/lib/notifications";
-import { useSession } from "@/lib/session";
+import type { Api } from "@/lib/api";
+import { askPermission, behaviourFor, onRegisterAgain, openTarget, registerAgain, registerDevice, shouldOffer, type Target, tapped } from "@/lib/notifications";
+import { type Session, useSession } from "@/lib/session";
 
 const platform = Platform.OS === "ios" ? "ios" : "android";
+
+/**
+ * Keeps this phone registered while signed in: as each session gets its project (the API needs one), at each launch, on
+ * coming back to the foreground (a registration that failed, or notifications turned on in the system's settings), when
+ * the system gives a new token, and when notifications are allowed. The same session and token are sent once.
+ */
+function usePushRegistration(session: Session | null | undefined, api: Api | null) {
+  const signedIn = session?.project ? session.token : null;
+  const register = useEffectEvent((devicePushToken?: Notifications.DevicePushToken) => {
+    if (api && session) {
+      void registerDevice(api, session, platform, devicePushToken).catch(() => {});
+    }
+  });
+  useEffect(() => {
+    if (!signedIn) {
+      return;
+    }
+    register();
+    const changed = Notifications.addPushTokenListener((token) => register(token));
+    const front = AppState.addEventListener("change", (state) => state === "active" && register());
+    const stop = onRegisterAgain(() => register());
+    return () => {
+      changed.remove();
+      front.remove();
+      stop();
+    };
+  }, [signedIn]);
+}
 
 /**
  * For the root layout: keeps the phone registered while signed in, and opens a tapped notification's conversation, the
@@ -14,7 +43,7 @@ const platform = Platform.OS === "ios" ? "ios" : "android";
  */
 export function useNotifications() {
   const { session, api, setProject } = useSession();
-  usePushRegistration(session, api, platform);
+  usePushRegistration(session, api);
 
   // While the app is in front: a banner, except over the conversation it's about, and nothing signed out.
   const signedOut = session === null;
@@ -33,7 +62,11 @@ export function useNotifications() {
     waiting.current = null;
     // A launch that reads the last tap again doesn't open it again.
     Notifications.clearLastNotificationResponse();
-    openTarget(next, session, setProject, { leave: () => router.canDismiss() && router.dismissAll(), open: (path) => router.push(path) }).catch((e: Error) => Alert.alert("Couldn't switch project", e.message));
+    openTarget(next, session, setProject, {
+      leave: () => router.canDismiss() && router.dismissAll(),
+      open: (path) => router.push(path),
+      projects: () => (api ? api<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug)) : Promise.resolve([])),
+    }).catch((e: Error) => Alert.alert("Couldn't switch project", e.message));
   });
   useEffect(() => {
     open(tapped(Notifications.getLastNotificationResponse()));

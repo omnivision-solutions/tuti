@@ -4,7 +4,7 @@ import { AppState } from "react-native";
 import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
-import { removeDevice } from "./notifications";
+import { dismissDelivered, removeDevice } from "./notifications";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
@@ -35,6 +35,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // The phone stops getting this teammate's notifications: sent before the session ends, its answer never waited for.
     // A 401 to it signs nothing out.
     const removed = session?.project ? removeDevice(createApi(session, () => {})) : null;
+    // What's on the lock screen goes too: the last account's customers' messages. Best effort, never waited for.
+    void dismissDelivered();
     setSession(null);
     forgetDrafts();
     await inTurn(async () => {

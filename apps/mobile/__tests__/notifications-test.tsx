@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import { AccessibilityInfo, Alert, Linking, Platform } from "react-native";
+import { AccessibilityInfo, Alert, AppState, Linking, Platform } from "react-native";
 
 import NotificationSettings from "@/app/notifications";
 import { offerNotifications, useNotifications } from "@/components/notifications";
@@ -101,7 +101,7 @@ beforeEach(() => {
   mockOpen = false;
   mockDismissAll.mockReset();
   mockPush.mockReset();
-  mockApi.mockReset().mockImplementation(async () => ({}));
+  mockApi.mockReset().mockImplementation(async (path) => (path === "/projects" ? { projects: [{ slug: "acme" }, { slug: "kite" }] } : {}));
   mockSetProject.mockClear();
 });
 afterEach(() => {
@@ -150,6 +150,15 @@ describe("a tapped notification", () => {
     expect(mockSetProject.mock.invocationCallOrder[0]).toBeLessThan(mockPush.mock.invocationCallOrder[0]!);
   });
 
+  it("opens nothing for a project that isn't one of the teammate's (a notification left from another account)", async () => {
+    mockOpen = true;
+    await render(<Harness />);
+    await act(async () => mockSystem.onTap!(tap({ project: "orbit", conversation: 3 })));
+    expect(mockDismissAll).not.toHaveBeenCalled();
+    expect(mockSetProject).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("opens a conversation of the same project over the screens open", async () => {
     mockOpen = true;
     await render(<Harness />);
@@ -196,6 +205,32 @@ describe("registering the phone", () => {
 
     await act(async () => mockSystem.onToken!({ type: "ios", data: "two" }));
     await waitFor(() => expect(mockApi).toHaveBeenLastCalledWith("/devices", { method: "POST", body: { deviceId: "phone-1", token: "ExponentPushToken[two]", platform: "ios" } }));
+  });
+
+  it("tries a registration that failed again on coming back to the foreground", async () => {
+    newSession();
+    const front: ((state: string) => void)[] = [];
+    jest.spyOn(AppState, "addEventListener").mockImplementation((_type, listener) => {
+      front.push(listener as (state: string) => void);
+      return { remove: () => {} } as never;
+    });
+    mockApi.mockImplementation(async (path, init) => {
+      if (init?.method === "POST") {
+        throw new Error("Couldn't reach tuti.example.com.");
+      }
+      return {};
+    });
+    await render(<Harness />);
+    await waitFor(() => expect(mockApi).toHaveBeenCalledTimes(1));
+
+    mockApi.mockImplementation(async () => ({}));
+    await act(async () => front.forEach((listener) => listener("active")));
+    await waitFor(() => expect(mockApi).toHaveBeenCalledTimes(2));
+    expect(mockApi).toHaveBeenLastCalledWith("/devices", expect.objectContaining({ method: "POST" }));
+    // Registered: coming back again sends nothing more.
+    await act(async () => front.forEach((listener) => listener("active")));
+    await act(async () => {});
+    expect(mockApi).toHaveBeenCalledTimes(2);
   });
 
   it("registers nothing signed out, or before a project is chosen", async () => {

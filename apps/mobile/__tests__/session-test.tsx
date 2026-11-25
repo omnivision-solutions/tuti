@@ -13,6 +13,9 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: (key: string, value: string) => new Promise<void>((resolve) => mockWrites.push(() => (mockStored.set(key, value), resolve()))),
   deleteItemAsync: async (key: string) => void mockStored.delete(key),
 }));
+// What's on the lock screen, taken off on signing out (never waited for: this one never answers).
+const mockDismissed = jest.fn(() => new Promise<void>(() => {}));
+jest.mock("expo-notifications", () => ({ ...jest.requireActual<object>("expo-notifications"), dismissAllNotificationsAsync: () => mockDismissed() }));
 // The phone's id for its notifications, as the first sign-out makes it up.
 jest.mock("expo-crypto", () => ({ randomUUID: () => "phone-1" }));
 // The server says the session holds, and takes the sign-out.
@@ -111,5 +114,7 @@ describe("signing out", () => {
     const removal = asked.indexOf("DELETE https://tuti.example.com/api/v1/devices/phone-1");
     expect(removal).toBeGreaterThan(-1);
     expect(removal).toBeLessThan(asked.indexOf("POST https://tuti.example.com/api/auth/sign-out"));
+    // The notifications shown go too.
+    expect(mockDismissed).toHaveBeenCalled();
   });
 });
