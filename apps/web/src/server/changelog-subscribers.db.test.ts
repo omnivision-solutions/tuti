@@ -1,5 +1,6 @@
 import { billingFile, configFile, startWebhookReceiver } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { changelogReach, type ChangelogReach, handlers, projectUnsubscribeToken, reached, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
@@ -1633,5 +1634,32 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
     expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: true }]);
+  });
+});
+
+test("the migration marks the rows that unsubscribed before it: unconfirmed with no link out, or emailed an entry once; not a request waiting, nor a confirmed one", async () => {
+  const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "For everyone." });
+  const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+  const row = (data: { confirmTokenHash?: string; confirmedAt?: Date }) =>
+    prisma.changelogSubscriber.create({ data: { projectId: project.id, email: newAddress(), ...data }, select: { id: true } });
+  const noLink = await row({});
+  const emailedOnce = await row({ confirmTokenHash: randomUUID() });
+  await prisma.changelogEmail.create({ data: { entryId, subscriberId: emailedOnce.id, sentAt: new Date() } });
+  const waiting = await row({ confirmTokenHash: randomUUID() });
+  const confirmedOne = await row({ confirmedAt: new Date() });
+  const sql = readFileSync(
+    new URL("../../../../packages/db/prisma/migrations/20261125120000_changelog_subscriber_unsubscribed_at/migration.sql", import.meta.url),
+    "utf8",
+  );
+  // Back to before it (this file's database is its own).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "changelog_subscriber" DROP COLUMN "unsubscribedAt"`);
+  await prisma.$executeRawUnsafe(sql);
+
+  const marked = await prisma.changelogSubscriber.findMany({ where: { projectId: project.id }, select: { id: true, unsubscribedAt: true } });
+  expect(Object.fromEntries(marked.map(({ id, unsubscribedAt }) => [id, unsubscribedAt !== null]))).toEqual({
+    [noLink.id]: true,
+    [emailedOnce.id]: true,
+    [waiting.id]: false,
+    [confirmedOne.id]: false,
   });
 });
