@@ -33,6 +33,7 @@ beforeEach(async () => {
   expo.sent = [];
   expo.unregistered.clear();
   expo.rateExceeded.clear();
+  expo.errors.clear();
   expo.projects.clear();
   expo.failing.clear();
   expo.failSends.clear();
@@ -399,6 +400,12 @@ test("when Expo turns every push away for now (MessageRateExceeded), the job fai
   await prisma.device.create({ data: { userId: owner.id, deviceId: "gone-id", token: "ExponentPushToken[gone]", platform: "ios", sessionId: (await prisma.session.findFirstOrThrow({ where: { userId: owner.id } })).id } });
   expo.unregistered.add("ExponentPushToken[gone]");
   await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("refused every push");
+  // An error that would come back the same on every try (MessageTooBig) isn't retried.
+  expo.rateExceeded.clear();
+  expo.errors.set("ExponentPushToken[owner]", "MessageTooBig");
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).resolves.toMatchObject({ pushed: 0 });
+  expo.errors.clear();
+  expo.rateExceeded.add("ExponentPushToken[owner]");
   // One that went through is enough not to: the rest aren't pushed twice by a retry.
   const other = await addMember(project.id, "MEMBER");
   await phone(other, "other");

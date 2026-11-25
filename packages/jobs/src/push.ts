@@ -157,7 +157,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   // A request that fails doesn't fail the job once another went through (as a project's within one: sendBatch): a retry
   // would push those phones again. The rest still go; only when nothing went through does the job fail, to try again.
   let failure: unknown;
-  // Pushes Expo answered with an error other than DeviceNotRegistered (MessageRateExceeded, which is to be tried later).
+  // Pushes Expo turned away for now (MessageRateExceeded), to be tried later.
   let refused = 0;
   for (let i = 0; i < messages.length; i += MESSAGES_PER_REQUEST) {
     const batch = messages.slice(i, i + MESSAGES_PER_REQUEST);
@@ -175,7 +175,9 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     const tickets = batch.flatMap((m, j) => (data[j]?.status === "ok" ? [{ id: (data[j] as { id: string }).id, token: m.to, createdAt: sentAt }] : []));
     const unregistered = batch.filter((_, j) => isGone(data[j])).map((m) => m.to);
     const failed = batch.length - tickets.length - unregistered.length;
-    refused += failed;
+    // Only what's worth trying again: MessageRateExceeded. Others (MessageTooBig, InvalidCredentials, another project's)
+    // would fail every retry the same way.
+    refused += data.filter((outcome) => outcome?.status === "error" && outcome.details?.error === "MessageRateExceeded").length;
     if (failed > 0) {
       log.warn(`Expo refused ${failed} of ${batch.length} pushes about conversation #${conversation.number}: ${JSON.stringify(data.find((d) => d.status === "error")).slice(0, 300)}`);
     }

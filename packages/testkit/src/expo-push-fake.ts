@@ -14,6 +14,8 @@ export type ExpoPushFake = {
   unregistered: Set<string>;
   /** Tokens Expo answers MessageRateExceeded for (to be tried later). */
   rateExceeded: Set<string>;
+  /** Tokens Expo answers another error for, by its code (MessageTooBig, InvalidCredentials…). */
+  errors: Map<string, string>;
   /** Receipts by ticket id, for getReceipts (a ticket left out has none yet). */
   receipts: Record<string, Outcome>;
   /** The ids each getReceipts asked about. */
@@ -44,7 +46,7 @@ export const deviceNotRegistered = (token: string): Outcome => ({
  */
 export async function startExpoPushFake(): Promise<ExpoPushFake> {
   let tickets = 0;
-  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), rateExceeded: new Set(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), failSends: new Set(), sends: 0, status: 200, close: async () => {} };
+  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), rateExceeded: new Set(), errors: new Map(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), failSends: new Set(), sends: 0, status: 200, close: async () => {} };
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -76,11 +78,11 @@ export async function startExpoPushFake(): Promise<ExpoPushFake> {
           return answer(500, { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "The fake was told to fail this project" }] });
         }
         const data = messages.map((message): Outcome => {
-          const limited = fake.rateExceeded.has(message.to);
-          const ticket = fake.unregistered.has(message.to) || limited ? null : `ticket-${++tickets}`;
+          const error = fake.rateExceeded.has(message.to) ? "MessageRateExceeded" : fake.errors.get(message.to);
+          const ticket = fake.unregistered.has(message.to) || error ? null : `ticket-${++tickets}`;
           fake.sent.push({ ...message, ticket, headers: req.headers });
-          if (limited) {
-            return { status: "error", message: "Too many messages to this device: try again later", details: { error: "MessageRateExceeded" } };
+          if (error) {
+            return { status: "error", message: `The fake answered ${error}`, details: { error } };
           }
           return ticket ? { status: "ok", id: ticket } : deviceNotRegistered(message.to);
         });
