@@ -69,3 +69,13 @@ export async function keepSession<T>(next: T, show: (next: T) => void, write: (n
 
 /** The session in use once a change to `next` is saved (the project chosen): only if it's still that session in use. */
 export const afterChanged = <T extends { token: string }>(now: T | null | undefined, next: T) => (now?.token === next.token ? next : now);
+
+/** Runs storage changes one at a time, in the order they're asked for (each after the one before has settled). */
+export function inOrder() {
+  let last: Promise<unknown> = Promise.resolve();
+  return <T>(work: () => Promise<T>) => {
+    const run = last.then(work);
+    last = run.catch(() => {});
+    return run;
+  };
+}
