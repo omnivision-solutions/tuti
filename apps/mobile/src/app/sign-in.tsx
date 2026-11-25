@@ -94,7 +94,7 @@ export default function SignIn() {
 
   const fieldRadius = Platform.OS === "ios" ? 12 : 24;
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.page }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.page }} behavior="padding">
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.screen, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 }]}

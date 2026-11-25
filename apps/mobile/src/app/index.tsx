@@ -36,6 +36,11 @@ export default function Projects() {
     }
   }, [error]);
 
+  const refresh = () => {
+    setRefreshing(true);
+    void load().finally(() => setRefreshing(false));
+  };
+
   // As the platforms do it: the last row, in the error colour, confirmed first (never one tap in the header).
   const confirmSignOut = () =>
     Alert.alert("Sign out of Tuti?", undefined, [
@@ -49,16 +54,27 @@ export default function Projects() {
       keyExtractor={(project) => project.slug}
       contentInsetAdjustmentBehavior="automatic"
       refreshing={refreshing}
-      onRefresh={() => {
-        setRefreshing(true);
-        void load().finally(() => setRefreshing(false));
-      }}
+      onRefresh={refresh}
       // A refresh that failed says so above the list it couldn't update.
       ListHeaderComponent={error && projects?.length ? <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">{error}</Text> : undefined}
       ListEmptyComponent={
-        <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]} accessibilityLiveRegion="polite">
-          {error ?? (projects ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web." : "Loading…")}
-        </Text>
+        <View style={styles.emptyBox}>
+          <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]} accessibilityLiveRegion="polite">
+            {error ?? (projects ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web." : "Loading…")}
+          </Text>
+          {error && (
+            // Pull to refresh isn't there for TalkBack or a keyboard.
+            <Pressable
+              onPress={refresh}
+              disabled={refreshing}
+              accessibilityRole="button"
+              hitSlop={8}
+              style={({ pressed }) => ({ opacity: pressed || refreshing ? 0.6 : 1 })}
+            >
+              <Text style={[styles.name, { color: colors.primary }]}>Try again</Text>
+            </Pressable>
+          )}
+        </View>
       }
       renderItem={({ item }) => {
         const chosen = item.slug === session?.project;
@@ -100,7 +116,8 @@ export default function Projects() {
 
 const styles = StyleSheet.create({
   stale: { fontSize: 14, lineHeight: 19, paddingHorizontal: 16, paddingVertical: 8 },
-  empty: { fontSize: 15, lineHeight: 21, textAlign: "center", padding: 32 },
+  emptyBox: { alignItems: "center", gap: 12, padding: 32 },
+  empty: { fontSize: 15, lineHeight: 21, textAlign: "center" },
   row: { paddingLeft: 16 },
   rowBody: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingRight: 16, gap: 12 },
   rowText: { flex: 1, gap: 2 },

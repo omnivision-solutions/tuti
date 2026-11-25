@@ -27,6 +27,11 @@ export const sessionHolds = (session: Session) =>
     () => true,
   );
 
+/** How often a session that stays open is read again: Better Auth extends a session read a day after it was last. */
+export const RECHECK_MS = 12 * 60 * 60 * 1000;
+/** Whether it's time to read the session again (on coming back to the foreground; a launch always reads it). */
+export const dueForRecheck = (lastChecked: number, now: number) => now - lastChecked >= RECHECK_MS;
+
 /** Signing out: the stored session is forgotten, then ended on the server (signed out here either way). */
 export async function forgetSession() {
   const stored = await readSession();

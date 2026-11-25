@@ -42,8 +42,8 @@ export async function signInWithPassword(server: string, email: string, password
       // One answer for a wrong password and an address with no account, as the server gives.
       throw new Error("That email and password don't match. Try again, or reset your password.");
     }
-    if (error instanceof ApiError && error.status === 404) {
-      // A server from before the app's password sign-in.
+    // A Tuti server from before the app's password sign-in (any other site's 404 keeps its own error: the wrong address).
+    if (error instanceof ApiError && error.status === 404 && (await isTuti(server))) {
       throw new Error("This server doesn't take passwords from the app yet. Continue with Google or GitHub, or ask whoever runs it to update Tuti.");
     }
     if (error instanceof ApiError && error.code === "EMAIL_NOT_VERIFIED") {
@@ -52,6 +52,9 @@ export async function signInWithPassword(server: string, email: string, password
     throw error;
   }
 }
+
+/** Whether a Tuti server answers at the address: Better Auth's own `ok`. */
+const isTuti = (server: string) => authRequest<{ ok?: unknown }>(server, "/ok").then((answer) => answer?.ok === true, () => false);
 
 /** Where "Forgot password?" goes: the web's own reset, in the system browser. */
 export const forgotPasswordUrl = (server: string) => `${server}/app/auth/forgot-password`;

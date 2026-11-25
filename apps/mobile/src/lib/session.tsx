@@ -1,7 +1,8 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
-import { forgetSession, readSession, type Session, sessionHolds, writeSession } from "./session-store";
+import { dueForRecheck, forgetSession, readSession, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
 export type { Session };
@@ -31,15 +32,34 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await forgetSession();
   }, []);
 
-  useEffect(() => {
-    void readSession().then(async (restored) => {
-      setSession(restored);
-      // One that ended elsewhere signs out here.
-      if (restored && !(await sessionHolds(restored))) {
+  // Reading the session keeps it going (API calls don't): at launch, and on coming back to the foreground twice a day, as
+  // an app left open for days never launches again. One that ended elsewhere signs out here.
+  const lastChecked = useRef(0);
+  const check = useCallback(
+    async (stored: Session) => {
+      lastChecked.current = Date.now();
+      if (!(await sessionHolds(stored))) {
         await signOut();
       }
+    },
+    [signOut],
+  );
+  useEffect(() => {
+    void readSession().then((restored) => {
+      setSession(restored);
+      if (restored) {
+        void check(restored);
+      }
     });
-  }, [signOut]);
+  }, [check]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && session && dueForRecheck(lastChecked.current, Date.now())) {
+        void check(session);
+      }
+    });
+    return () => subscription.remove();
+  }, [session, check]);
 
   const value = useMemo<SessionContext>(
     () => ({

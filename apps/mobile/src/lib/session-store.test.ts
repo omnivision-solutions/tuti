@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { forgetSession, readSession, sessionHolds, writeSession } from "./session-store";
+import { dueForRecheck, forgetSession, readSession, RECHECK_MS, sessionHolds, writeSession } from "./session-store";
 
 const stored = new Map<string, string>();
 const store = vi.hoisted(() => ({ failReads: false }));
@@ -60,6 +60,17 @@ describe("a restored session", () => {
     expect(await sessionHolds(session)).toBe(true);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Wi-Fi login</html>", { status: 200 })));
     expect(await sessionHolds(session)).toBe(true);
+  });
+});
+
+describe("an app left open", () => {
+  it("reads its session again twice a day, so a session in daily use never runs out", () => {
+    const checked = Date.UTC(2026, 10, 25, 8);
+    expect(dueForRecheck(checked, checked + 60_000)).toBe(false);
+    expect(dueForRecheck(checked, checked + RECHECK_MS - 1)).toBe(false);
+    expect(dueForRecheck(checked, checked + RECHECK_MS)).toBe(true);
+    // Better Auth extends a session read a day or more after it was last: twice a day is always in time.
+    expect(RECHECK_MS).toBeLessThan(24 * 60 * 60 * 1000);
   });
 });
 
