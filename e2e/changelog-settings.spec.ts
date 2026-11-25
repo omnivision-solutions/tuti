@@ -91,10 +91,15 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   // Until a model is picked, drafts run on the server's own.
   await expect(owner.getByText("Drafts Claude Haiku 5.5", { exact: true })).toBeVisible();
   await expect(owner.getByText("AI model saved")).toBeHidden({ timeout: 15_000 });
-  // Typed, it's saved on Enter (or on leaving the box); chosen from the list, at once.
+  // Typed, it's saved on Enter (or on leaving the box); chosen from the list, at once. The page's form, edited and
+  // not saved, isn't saved with it.
+  await owner.getByLabel("Instructions").fill("Not saved yet.");
   await drafts.fill("acme/tiny");
   await drafts.press("Enter");
   await expect(owner.getByText("AI model saved")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await expect(owner.getByText("Changelog saved")).toHaveCount(0);
+  await owner.getByLabel("Instructions").fill("");
   await expect(owner.getByText("Drafts Tiny", { exact: true })).toBeVisible();
   await checkpoint(owner, "team-settings-changelog-custom");
   expect(await saved()).toMatchObject({ levels: { changelog: "custom" }, models: { changelog: "acme/tiny" } });

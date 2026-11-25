@@ -379,7 +379,8 @@ the list picks none to approve at once.
   Portal, Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
   on General. Each of its pages is a `SettingsPane`: a pane titled by the page, a line on what it's for beside the title, then its
   `SettingsCard`s (a form that isn't a row in a `SettingBlock`); the Portal group's pages are `PortalSettingsPane`s
-  instead, their settings beside a preview (Portal settings, below). Reporting is a
+  instead, their settings beside a preview (Portal settings, below), except Changelog (how entries are drafted and
+  their covers look), a `SettingsPane` with no preview. Reporting is a
   `SectionPane` (Help center, AI support, Inbox, each page with its icon; a drawer on phones), its links keeping the
   range. Each report is a pane (`ReportPane`): its title in the `PaneHeader`, the date range picker at its right
   (`?range=`; on phones in a row under the title; its dates beside it from 64rem of sidebar inset); never a sentence
@@ -416,7 +417,8 @@ the list picks none to approve at once.
   that change how the portal looks go here. A page's forms use `useCustomizeForm`: "Save changes" saves every one with
   a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made (the portal's
   `PortalLookProvider` takes it); leaving with changes not saved asks first. Tuti's own chat launcher stays off these
-  pages: their previews show the project's widget.
+  pages: their previews show the project's widget. Changelog, in the group with no preview, isn't one of them
+  (`PORTAL_PAGES`): it's a `SettingsPane`, and the launcher shows there as on other settings pages.
 - **Portals** (the public portal's own look: one page header, rows on the paper, a plain rail, a calm shell):
   - **Look.** Inter for headings and text by default (preloaded; headings 650, tracked −0.022em; body 15–17px); a project's own
     fonts (Settings → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
@@ -673,7 +675,7 @@ Use these instead of hand-rolling layout:
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner
   (`launcher:`): a bar (that one, Autopilot's Approve) stops them left of it, a
-  row more if they need it. The launcher isn't in the Inbox or on Settings' Portal pages (`AppWidget`), so
+  row more if they need it. The launcher isn't in the Inbox or on Settings' Portal pages with a preview (`AppWidget`), so
   the Inbox's reply box needs no room for it.
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
   moved to the left (Settings → Widget), `launcher:` would need its side too.

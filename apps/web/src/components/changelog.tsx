@@ -3,6 +3,7 @@
 import type { Editor } from "@tiptap/react";
 import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
 import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
@@ -1540,8 +1541,18 @@ export function ChangelogStyleForm({
     <form {...form} inert={pending} className="flex flex-col gap-7">
       {model && (
         <SettingsCard title="Drafting with AI">
-          {/* Saved as it's chosen, not by the page's Save: Enter in its Custom boxes doesn't save the form too. */}
-          <div onKeyDown={(event) => event.stopPropagation()}>{model}</div>
+          {/* Saved as it's chosen, not by the page's Save: Enter in its Custom boxes doesn't save the form too, neither by the
+              form's own Enter nor by the browser's (a form whose one text box it is submits on Enter). */}
+          <div
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Enter") {
+                event.preventDefault();
+              }
+            }}
+          >
+            {model}
+          </div>
           <SettingBlock className="gap-2">
             <label htmlFor="style-tone" className="font-medium">
               Instructions
@@ -1695,14 +1706,16 @@ export function ChangelogStyleForm({
             ))}
             {!background.image && (
               <div {...background.drop} className="flex min-w-0 flex-col gap-1.5">
-                <button
+                {/* Unstyled (Base UI's), so it looks like the pictures beside it. */}
+                <ButtonPrimitive
                   ref={uploadBackground}
                   type="button"
                   aria-label="Upload Your background"
                   // Off while one uploads, yet focusable: focus stays here through the upload, "Uploading…" read below.
-                  aria-disabled={background.uploading || undefined}
-                  onClick={() => !background.uploading && background.pick()}
-                  className={cn(coverOption, "text-left text-sm")}
+                  disabled={background.uploading}
+                  focusableWhenDisabled
+                  onClick={background.pick}
+                  className={cn(coverOption, "text-left text-sm outline-none focus-visible:*:first:ring-2 focus-visible:*:first:ring-ring")}
                 >
                   <span
                     className={cn(
@@ -1715,7 +1728,7 @@ export function ChangelogStyleForm({
                     {background.uploading ? "Uploading…" : "Upload"}
                   </span>
                   Your background
-                </button>
+                </ButtonPrimitive>
               </div>
             )}
           </fieldset>
