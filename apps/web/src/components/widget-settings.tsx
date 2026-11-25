@@ -107,9 +107,9 @@ export function WidgetSettings({
   const [sent, setSent] = useState<FormDataEntryValue | null>(null);
   if (loaded !== initialIcon) {
     setLoaded(initialIcon);
-    if (initialIcon === sent) {
-      setSent(null);
-    } else {
+    // Either way the save it was sent with is behind us: a later refresh is followed, whatever icon it has.
+    setSent(null);
+    if (initialIcon !== sent) {
       setIcon(initialIcon);
     }
   }
