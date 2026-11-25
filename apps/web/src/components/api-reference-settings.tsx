@@ -38,7 +38,7 @@ const SAVE_FAILED = { error: "Couldn't save that. Try again." };
  * A URL source's address, changed here: the new one is read before it's kept (as adding one reads it), so one that
  * doesn't work is said under the field and the reference stays as it was. The toast says what the new spec changed.
  */
-function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: string; url: string }) {
+export function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: string; url: string }) {
   // Only what's typed over what's stored: a field left alone shows the address the page has now (a teammate's change
   // included), so Change can't put an old one back.
   const [edited, setEdited] = useState<string | null>(null);
