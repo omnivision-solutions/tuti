@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { SignJWT } from "jose";
+
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -8,10 +10,13 @@ import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { GET as entryMarkdown } from "@/app/portal/[project]/(site)/changelog/[number]/md/route";
 import { GET as rss } from "@/app/portal/[project]/(site)/changelog/rss.xml/route";
 import { GET as widgetLatest } from "@/app/api/widget/latest/route";
+import { GET as widgetSeen } from "@/app/api/widget/seen/route";
+import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as postMarkdown } from "@/app/portal/[project]/(site)/feedback/[board]/[post]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { SIGNED_OUT } from "@/lib/read-access";
+import { generateSsoSecret } from "@/lib/sso";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
@@ -168,6 +173,33 @@ test("a group an entry is for can't be deleted", async () => {
   await expect(call(deleteGroup, as(owner), { group: "enterprise" })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("Enterprise news") });
   await forGroups(number, []);
   await expect(call(deleteGroup, as(owner), { group: "enterprise" })).resolves.toEqual({ deleted: "enterprise" });
+});
+
+test("a private portal's widget tells a reader the newest announcement they may read; an entry's link card is for whoever may read it", async () => {
+  const everyone = await published("Public news");
+  const enterprise = await published("Enterprise news", ["enterprise"]);
+  const at = async (number: number) => (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } })).publishedAt!.toISOString();
+  const secret = generateSsoSecret();
+  await prisma.project.update({ where: { id: project.id }, data: { ssoSecret: secret, portalAccess: "PRIVATE" } });
+  /** /api/widget/seen's `latest` for the page's signed-in `user` (by their id in the team's app). */
+  const latestFor = async (user: TestUser) => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT({ sub: `user-${user.id}`, jti: randomUUID() })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 300)
+      .sign(new TextEncoder().encode(secret));
+    const response = await widgetSeen(new Request(`http://x/api/widget/seen?project=${project.slug}`, { headers: { authorization: `Bearer ${token}` } }));
+    return ((await response.json()) as { latest: string | null }).latest;
+  };
+  expect(await latestFor(ada)).toBe(await at(enterprise));
+  expect(await latestFor(bob)).toBe(await at(everyone));
+
+  // Signed out on a public portal (a card kept in shared caches): everyone's only.
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC" } });
+  const card = async (number: number) => (await shareImage(new Request("http://x"), { params: Promise.resolve({ project: project.slug, path: ["changelog", String(number)] }) })).status;
+  expect(await card(everyone)).toBe(200);
+  expect(await card(enterprise)).toBe(404);
 });
 
 describe("email", () => {

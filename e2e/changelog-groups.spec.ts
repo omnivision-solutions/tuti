@@ -46,8 +46,10 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   } finally {
     await db.end();
   }
-  await api("/changelog/1/publish", {});
+  // Everyone's quietly, the enterprise one announced: only enterprise customers have something new.
+  await api("/changelog/1/publish", { announce: false });
   await api("/changelog/2/publish", {});
+  const newDot = (page: typeof owner) => page.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ }).getByText("New");
   const shippedIn = (page: typeof owner) => page.getByRole("main").getByRole("link", { name: "Audit log export" });
 
   const titles = (page: typeof owner) => page.getByRole("main").getByRole("heading", { level: 2 });
@@ -71,12 +73,17 @@ test("an entry for some groups only: their readers see it on the changelog, ever
 
   // An enterprise customer, signed in by the team's app: both, and its page.
   const ada = await newPerson(browser, portalUrl(slug));
-  await ada.goto(`/sso?token=${ssoToken(secret, { sub: "user-1", name: "Ada" })}&redirect=${encodeURIComponent("/changelog")}`);
+  await ada.goto(`/sso?token=${ssoToken(secret, { sub: "user-1", name: "Ada" })}&redirect=${encodeURIComponent("/roadmap")}`);
+  await expect(newDot(ada)).toBeAttached();
+  await ada.goto("/changelog");
   await expect(titles(ada)).toHaveText(["Audit log export", "Dark mode"]);
   await checkpoint(ada, "changelog-enterprise");
   await ada.getByRole("link", { name: "Audit log export" }).click();
   await expect(ada.getByRole("heading", { level: 1, name: "Audit log export" })).toBeVisible();
   await expect(ada.getByText("Download your audit log as CSV.")).toBeVisible();
+  // Kept from search engines, and no Markdown copy offered (that one's everyone's only).
+  await expect(ada.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+  await expect(ada.locator('link[type="text/markdown"]')).toHaveCount(0);
   await ada.goto("/feedback/feature-requests/audit-logs-1");
   await expect(shippedIn(ada)).toBeVisible();
   await ada.goto("/widget?tab=whats-new");
@@ -84,6 +91,9 @@ test("an entry for some groups only: their readers see it on the changelog, ever
 
   // A customer on another plan: only everyone's.
   const bea = await newPerson(browser, portalUrl(slug));
-  await bea.goto(`/sso?token=${ssoToken(secret, { sub: "user-2", name: "Bea" })}&redirect=${encodeURIComponent("/changelog")}`);
+  await bea.goto(`/sso?token=${ssoToken(secret, { sub: "user-2", name: "Bea" })}&redirect=${encodeURIComponent("/roadmap")}`);
+  await expect(bea.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toBeVisible();
+  await expect(newDot(bea)).toHaveCount(0);
+  await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
 });
