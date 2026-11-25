@@ -104,7 +104,7 @@ test("the merged pull requests no entry has: the last 30 days' or since the late
   // docs to fix (the gate found nothing for users, so no line). One is in a draft already.
   const change = (number: number, state: "READY" | "NOTHING_TO_DO", line = false) =>
     prisma.codeChange.create({
-      data: { projectId: project.id, repoId, repo, number, url: url(number), title: "t", author: "a", mergedAt: new Date(), state, ...(line && { actions: { create: { kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", payload: { line: "A dark theme" } } } }) },
+      data: { projectId: project.id, repoId, repo, number, url: url(number), title: "t", author: "a", mergedAt: new Date(), state, forUsers: line, ...(line && { actions: { create: { kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", payload: { line: "A dark theme" } } } }) },
     });
   await Promise.all([change(2, "READY", true), change(3, "NOTHING_TO_DO"), change(1, "READY")]);
   await add(4);
@@ -349,6 +349,15 @@ test("a renamed repository's pull requests an entry has aren't missing, and addi
   expect(await missing()).toEqual([]);
   expect(await call(addChangelogPullRequests, team(), { pullRequests: [{ repo: renamed, number: 8 }] })).toEqual({ number: 1, added: [], alreadyIn: [{ repo: renamed, number: 8 }] });
   expect((await entry(1)).pullRequests).toEqual([{ repo, number: 8, url: url(8), title: "Add a dark theme" }]);
+});
+
+test("never asked the gate (analysed only past it, as the team's pick is): the list doesn't say whether users see it", async () => {
+  github.pullRequest(repo, { number: 9, title: "Bump dependencies", mergedAt: days(3) });
+  // Picked, analysed past the gate (its line written, as every such run writes one), then taken out again.
+  await prisma.codeChange.create({
+    data: { projectId: project.id, repoId, repo, number: 9, url: url(9), title: "t", author: "a", mergedAt: new Date(days(3)), state: "READY", actions: { create: { kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", payload: { line: "Dependencies" } } } },
+  });
+  expect((await call(listMissingChanges, team(), {})).pullRequests).toMatchObject([{ number: 9, forUsers: null }]);
 });
 
 test("the gate's word is the one its analysis saved, also where the team took the pull request out before its line was written", async () => {

@@ -4,6 +4,12 @@
 -- AlterTable
 ALTER TABLE "code_change" ADD COLUMN     "forUsers" BOOLEAN;
 
+-- Ones analysed before it was saved: for users where a changelog line was written for it (ready with none, only docs to
+-- fix, is no more for users than nothing to do).
+UPDATE "code_change" SET "forUsers" = EXISTS (
+  SELECT 1 FROM "code_change_action" WHERE "code_change_action"."codeChangeId" = "code_change"."id" AND "code_change_action"."kind" = 'CHANGELOG_LINE'
+) WHERE "state" IN ('READY', 'NOTHING_TO_DO');
+
 -- CreateTable
 CREATE TABLE "changelog_decision" (
     "projectId" TEXT NOT NULL,

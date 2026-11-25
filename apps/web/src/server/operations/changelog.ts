@@ -1198,7 +1198,7 @@ export const listMissingChanges = defineOperation({
     const [changes, decisions] = await Promise.all([
       prisma.codeChange.findMany({
         where: keys,
-        select: { repoId: true, number: true, url: true, state: true, forUsers: true, _count: { select: { actions: { where: { kind: "CHANGELOG_LINE" } } } } },
+        select: { repoId: true, number: true, url: true, forUsers: true },
       }),
       prisma.changelogDecision.findMany({ where: keys, select: { repoId: true, number: true, url: true } }),
     ]);
@@ -1216,10 +1216,9 @@ export const listMissingChanges = defineOperation({
         .filter((pr) => !urls(pr).some((url) => known.has(url)))
         .map(({ repoId, ...pr }) => {
           const change = changeOf.get(key({ repoId, number: pr.number }));
-          // The gate's word, as its analysis saved it. One analysed before that was saved: for users if a changelog
-          // line was written for it (ready with none, only docs to fix, is no more for users than nothing to do).
-          const analysed = change?.state === "READY" || change?.state === "NOTHING_TO_DO";
-          return { ...pr, forUsers: change?.forUsers ?? (analysed ? change._count.actions > 0 : null) };
+          // The gate's word, as its analysis saved it (the migration filled it in for ones analysed before); null where
+          // the gate was never asked (not analysed, or only past it).
+          return { ...pr, forUsers: change?.forUsers ?? null };
         }),
     };
   },
