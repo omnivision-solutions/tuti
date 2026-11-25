@@ -5,7 +5,8 @@
  * less than the rows would.
  */
 export type AiUsage = {
-  kind: "chat" | "decision";
+  /** `agent`: a browser agent's run (Screenshots), its cost the whole session's. */
+  kind: "chat" | "decision" | "agent";
   model: string;
   inputTokens: number;
   outputTokens: number;

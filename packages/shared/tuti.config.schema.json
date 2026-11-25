@@ -829,6 +829,32 @@
         }
       },
       "additionalProperties": false
+    },
+    "screenshots": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "bu-4.0-mini",
+          "type": "string",
+          "pattern": "^\\S{1,100}$",
+          "description": "The agent's model, a Browser Use model id"
+        },
+        "retryModel": {
+          "default": "bu-4.0",
+          "type": "string",
+          "pattern": "^\\S{1,100}$",
+          "description": "The model a run is tried once more with when the first fails as a whole (not when a screenshot or two weren't reached)"
+        },
+        "maxCostUsd": {
+          "default": 1,
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "description": "The most one run may cost, in dollars, its retry included: Browser Use stops it there (a number above 0, at most 100)"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

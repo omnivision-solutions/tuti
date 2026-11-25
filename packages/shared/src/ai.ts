@@ -70,8 +70,11 @@ export function codeChangesOff(): string | null {
 export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
-/** What AI usage is recorded and charged for: the features, and duplicate detection (its model is the server's, from the config file). */
-export const USAGE_FEATURES = [...AI_FEATURES, "duplicates"] as const;
+/**
+ * What AI usage is recorded and charged for: the features, duplicate detection (its model is the server's, from the
+ * config file) and screenshots (an agent in Browser Use's cloud browser, charged what its session cost).
+ */
+export const USAGE_FEATURES = [...AI_FEATURES, "duplicates", "screenshots"] as const;
 export type UsageFeature = (typeof USAGE_FEATURES)[number];
 
 /**
@@ -405,4 +408,9 @@ export async function decide(
     }
   }
   return answers;
+}
+
+/** Whether screenshots work on this server: a Browser Use key (BROWSER_USE_API_KEY). */
+export function screenshotsEnabled(): boolean {
+  return Boolean(process.env.BROWSER_USE_API_KEY?.trim());
 }

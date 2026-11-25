@@ -82,6 +82,7 @@ model User {
   articleRevisions      ArticleRevision[]
   codeChangeActions     CodeChangeAction[]
   articleVerifications  ArticleVerification[]
+  screenshotRuns        ScreenshotRun[]
   verifyAlls            VerifyAll[]
   dataImports           DataImport[]
   conversations         Conversation[]        @relation("ConversationUser")
@@ -479,6 +480,9 @@ model Project {
   aiUsage                  AiUsage[]
   creditGrants             CreditGrant[]
   planLicense              PlanLicense?
+  screenshotSettings       ScreenshotSettings?
+  screenshotRuns           ScreenshotRun[]
+  screenshots              Screenshot[]
 
   autopilotDigests AutopilotDigest[]
 
@@ -597,6 +601,8 @@ model Media {
   coverBackgroundOf Project[]        @relation("changelogCoverBackground")
   /// Changelog entries it's the cover of (see ChangelogEntry.coverId).
   coverOf           ChangelogEntry[]
+  /// Screenshots it's the image of.
+  screenshotOf      Screenshot[]
 
   @@index([projectId])
   @@index([uploaderId, createdAt])
@@ -3008,9 +3014,9 @@ model ImportedRecord {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, support, changelog, code_changes, duplicates.
+  /// What it was for: answers, escalations, support, changelog, code_changes, duplicates, screenshots.
   feature      String
-  /// chat or decision (embeddings aren't recorded).
+  /// chat, decision or agent (a browser agent's run; embeddings aren't recorded).
   kind         String
   model        String
   inputTokens  Int
@@ -3237,4 +3243,113 @@ model PushTicket {
 
   @@index([createdAt])
   @@map("push_ticket")
+}
+
+/// How a screenshot run signs in to the team's app.
+enum ScreenshotSignIn {
+  NONE
+  PASSWORD
+  /// A link that signs in by itself (a magic or token link).
+  LINK
+}
+
+enum ScreenshotWindow {
+  /// 1440×900.
+  DESKTOP
+  /// 390×844.
+  PHONE
+}
+
+/// A project's Screenshots settings (docs/plan.md, Screenshots): its own app, which an agent in a cloud browser signs
+/// in to and takes screenshots of. The password and sign-in link are sealed (sealValue), never returned.
+model ScreenshotSettings {
+  projectId  String           @id
+  appUrl     String
+  signIn     ScreenshotSignIn @default(NONE)
+  username   String           @default("")
+  /// Sealed (@tuti/shared/signed sealValue, "screenshot-secret").
+  password   String?
+  /// Sealed, like the password.
+  signInLink String?
+  /// What the agent reads every run ("pick the Acme workspace", "close the tour").
+  about      String           @default("")
+  window     ScreenshotWindow @default(DESKTOP)
+  /// Runs go through Browser Use's residential proxy (billed per GB): only for an app that blocks cloud servers.
+  residentialProxy Boolean    @default(false)
+  updatedAt  DateTime         @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("screenshot_settings")
+}
+
+enum ScreenshotRunState {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One agent run in a cloud browser: it signs in once and takes each of its screenshots. `test`: the settings' Test,
+/// which only signs in and takes the screen it lands on. Its cost is the browser session's, charged as AI usage.
+model ScreenshotRun {
+  id          String             @id @default(cuid())
+  projectId   String
+  /// Who started it (an API key's creator for API runs); its images are their uploads.
+  startedById String?
+  test        Boolean            @default(false)
+  state       ScreenshotRunState @default(RUNNING)
+  /// Why it failed as a whole (sign-in, the service).
+  error       String             @default("")
+  /// The service's run and session, once started.
+  externalId  String?
+  sessionId   String?
+  /// The try's workspace at the service while its files may still be there (cleared once they're deleted).
+  workspaceId String?
+  /// In dollars, from the session: everything, and the browser's, the proxy's and the model's parts.
+  cost        Decimal?           @db.Decimal(16, 10)
+  browserCost Decimal?           @db.Decimal(16, 10)
+  proxyCost   Decimal?           @db.Decimal(16, 10)
+  llmCost     Decimal?           @db.Decimal(16, 10)
+  createdAt   DateTime           @default(now())
+  /// When its job started work (null while queued).
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startedBy   User?        @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  screenshots Screenshot[]
+
+  @@index([projectId, test, createdAt])
+  @@map("screenshot_run")
+}
+
+/// One screenshot a run was asked for (`show`): its image, what it shows (also its alt text) and the page's address, or
+/// why it wasn't taken.
+model Screenshot {
+  id          String   @id @default(cuid())
+  projectId   String
+  runId       String
+  /// Its place in the run.
+  position    Int
+  show        String
+  imageId     String?
+  /// The screenshot's size in pixels as taken (often 2×), before its upload was scaled down.
+  width       Int?
+  height      Int?
+  description String   @default("")
+  url         String   @default("")
+  /// Why it wasn't taken; empty when it was (or while the run is running).
+  failed      String   @default("")
+  /// Its share of the run's cost, in dollars.
+  cost        Decimal? @db.Decimal(16, 10)
+  takenAt     DateTime?
+  createdAt   DateTime @default(now())
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run     ScreenshotRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  image   Media?        @relation(fields: [imageId], references: [id], onDelete: SetNull)
+
+  @@index([runId, position])
+  @@index([projectId])
+  @@map("screenshot")
 }

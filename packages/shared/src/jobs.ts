@@ -137,6 +137,16 @@ export const jobs = {
     retries: 0,
   },
   /**
+   * Screenshots (docs/plan.md, Screenshots): an agent in Browser Use's cloud browser signs in to the team's app and takes
+   * a run's screenshots (@tuti/jobs screenshots.ts). Tried once: the run tries a second model itself, and a run that
+   * fails says why, for the team to try again (a retry would sign in, and pay, all over).
+   */
+  screenshotRun: {
+    name: "screenshot-run",
+    input: z.object({ runId: z.string() }),
+    retries: 0,
+  },
+  /**
    * One article of a Verify all (docs/plan.md, V7): verifyArticle, then the next article. A key of its own, so during a
    * deploy these wait for the new worker: the previous one's verifyArticle would neither go on nor leave the email to the end.
    */
