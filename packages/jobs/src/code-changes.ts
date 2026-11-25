@@ -212,8 +212,6 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   // The team picked it for the changelog (changelog.addPullRequests, not taken out since): every run of it goes past the
   // gate, however it was queued (the merge's own, a retry, Resume all, Analyse again), so no run's flags can lose a pick.
   const picked = (await prisma.changelogDecision.count({ where: { projectId: change.projectId, repoId: change.repoId, number: change.number, takenOut: false } })) > 0;
-  // What the caller asked for ("Analyse anyway" on nothing to do), for putting it back as it was if it doesn't run.
-  const asked = input.pastGate;
   input = { ...input, pastGate: input.pastGate || picked };
   // Analysed once: a redelivery or a second run finds it done. Not where it's picked and was ruled out with no
   // changelog line (by a run with the gate that was under way when the team picked it): that's the pick's run to do.
@@ -232,13 +230,13 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   // Turned off since it merged: nothing is sent, and it isn't kept waiting. Never one with updates (their history, Undo,
   // those waiting elsewhere go with it). Asked for again by the team (`force`: analysing since they asked), it's put
   // back, saying why it wasn't: as the one who asked found it (`was`: the team's pick, Analyse again or anyway), else
-  // ready with its updates, else as it was past the gate (nothing to do), else failed.
+  // (failed, or stopped) ready with its updates, else failed.
   if (!change.project.analyseCodeChanges) {
     if (input.force) {
       const updates = await prisma.codeChangeAction.count({ where: { codeChangeId: change.id } });
       await prisma.codeChange.updateMany({
         where: { id: change.id, state: "ANALYSING" },
-        data: { state: input.was ?? (updates > 0 ? "READY" : asked ? "NOTHING_TO_DO" : "FAILED"), reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
+        data: { state: input.was ?? (updates > 0 ? "READY" : "FAILED"), reason: "Autopilot was turned off before it was analysed again.", retryAt: null },
       });
     } else {
       await prisma.codeChange.deleteMany({ where: { ...waiting, actions: { none: {} } } });
