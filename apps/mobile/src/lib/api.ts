@@ -72,3 +72,35 @@ export function createApi(session: { server: string; token: string; project?: st
     }
   };
 }
+
+/** What a request given up on at its deadline (`fetchUntil`) fails with. */
+export class TimedOut extends Error {
+  constructor() {
+    super("Timed out");
+  }
+}
+
+/** A fetch whose requests all give up at one deadline (`deadlineAt`, a time in ms), answers' bodies included. */
+export function fetchUntil(deadlineAt: number): typeof fetch {
+  return async (input, init) => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => {
+          controller.abort();
+          reject(new TimedOut());
+        },
+        Math.max(0, deadlineAt - Date.now()),
+      );
+    });
+    try {
+      // The answer's body too: headers can come and the body never (the network gone in between).
+      const response = await Promise.race([fetch(input, { ...init, signal: controller.signal }), deadline]);
+      const body = await Promise.race([response.text(), deadline]);
+      return new Response(body || null, { status: response.status, statusText: response.statusText, headers: response.headers });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}

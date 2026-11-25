@@ -294,6 +294,31 @@ describe("the server, checked before anything is sent", () => {
     vi.unstubAllGlobals();
   });
 
+  it("gives up on a server that stalls within 10 seconds, as one it can't reach, and sends nothing", async () => {
+    const unreachable = "Couldn't reach tuti.example.com. Check the address and your connection.";
+    const stalls = () => new Promise<Response>(() => {});
+    for (const answer of [
+      // The spec's connection stalls.
+      (url: string) => (url.endsWith("/api/v1/openapi.json") ? stalls() : Response.json({ token: "token-1", cookie: "c" })),
+      // The spec fails, then its ok stalls: one deadline for both.
+      (url: string) => (url.endsWith("/api/v1/openapi.json") ? new Response("Bad gateway", { status: 502 }) : url.endsWith("/api/auth/ok") ? stalls() : Response.json({})),
+    ]) {
+      vi.useFakeTimers();
+      try {
+        const fetch = vi.fn(async (url: string) => answer(url));
+        vi.stubGlobal("fetch", fetch);
+        const signingIn = signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x");
+        const failed = expect(signingIn).rejects.toThrow(unreachable);
+        await vi.advanceTimersByTimeAsync(10_000);
+        await failed;
+        expect(fetch.mock.calls.map(([url]) => url)).not.toContain("https://tuti.example.com/api/auth/app/sign-in/email");
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+      }
+    }
+  });
+
   it("reads the spec as it is now, not a cached one: a server just updated is signed in to", async () => {
     const fetch = serving(spec({ requestId: {} }));
     vi.stubGlobal("fetch", fetch);

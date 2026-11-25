@@ -1,7 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 
-import { ApiError, authRequest } from "./api";
+import { ApiError, authRequest, fetchUntil, TimedOut } from "./api";
+import { hostOf } from "./server";
 import { challengeOf, newState, newVerifier } from "./pkce";
 
 /**
@@ -67,14 +68,20 @@ export const UNCHECKED_SERVER = "Couldn't check this server's version just now. 
  * sign-in's own request, and its error.
  */
 export async function checkServer(server: string) {
+  // Both its requests within one deadline: a connection that stalls (the spec's, or its `ok`'s) is a server that can't be
+  // reached, said as the sign-in would, rather than a sign-in that waits forever.
+  const timed = fetchUntil(Date.now() + CHECK_TIMEOUT_MS);
   let status = 0;
   let spec: unknown = null;
   try {
     // Not the cached one: it's served for five minutes, and a server just updated would be refused meanwhile.
-    const response = await fetch(`${server}/api/v1/openapi.json`, { credentials: "omit", cache: "no-store", headers: { accept: "application/json" } });
+    const response = await timed(`${server}/api/v1/openapi.json`, { credentials: "omit", cache: "no-store", headers: { accept: "application/json" } });
     status = response.status;
     spec = response.ok ? await response.json() : null;
-  } catch {
+  } catch (error) {
+    if (error instanceof TimedOut) {
+      throw unreachable(server);
+    }
     spec = null;
   }
   const { openapi, paths } = (spec ?? {}) as { openapi?: unknown; paths?: unknown };
@@ -86,7 +93,19 @@ export async function checkServer(server: string) {
   // own error, the wrong address. Tuti's own spec says so (apps/web openapi.ts's title), whether or not its `ok` can be
   // reached (a proxy can block it); without one, `ok` tells.
   const tutiSpec = isSpec && (spec as { info?: { title?: unknown } }).info?.title === "Tuti API";
-  if (!tutiSpec && !(await isTuti(server))) {
+  // `ok` within the same deadline; a server it can't reach (or that stalls) is said so, as the sign-in would.
+  const tuti =
+    tutiSpec ||
+    (await authRequest<{ ok?: unknown }>(server, "/ok", {}, timed).then(
+      (answer) => answer?.ok === true,
+      (error: unknown) => {
+        if (error instanceof ApiError && error.status === 0) {
+          throw error;
+        }
+        return false;
+      },
+    ));
+  if (!tuti) {
     return;
   }
   // A spec without it, or none at all (a server from before the spec): older. Anything else (a 5xx, a broken answer):
@@ -119,6 +138,11 @@ export function replyTakesRequestId(spec: OpenApi) {
 
 /** Whether a Tuti server answers at the address: Better Auth's own `ok`. */
 const isTuti = (server: string) => authRequest<{ ok?: unknown }>(server, "/ok").then((answer) => answer?.ok === true, () => false);
+
+/** How long the check before signing in waits for the server, its requests together. */
+export const CHECK_TIMEOUT_MS = 10_000;
+/** What a request that couldn't reach the server says (api.ts `send`'s words). */
+const unreachable = (server: string) => new ApiError(0, "unreachable", `Couldn't reach ${hostOf(server)}. Check the address and your connection.`);
 
 /** Where "Forgot password?" goes: the web's own reset, in the system browser. */
 export const forgotPasswordUrl = (server: string) => `${server}/app/auth/forgot-password`;
