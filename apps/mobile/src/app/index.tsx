@@ -474,12 +474,12 @@ export default function Inbox() {
   const current = projects?.find((p) => p.slug === project);
   // The list without the rows swiped.
   const rows = (list?.rows ?? []).filter((row) => !swipes.has(swipeKey(project, row.number)));
-  // What's shown of a view, as it changes (pages, live changes, the reload after a swipe), kept to read offline: without
-  // a swiped row, so one closed or snoozed never shows again offline while its reload is on its way.
+  // What's shown of a view, as it changes (pages, live changes, the reload after a swipe), kept to read offline. Not
+  // while a swipe waits: what's kept stays as the server last had it till the reload brings the change, or the swipe is
+  // refused.
   useEffect(() => {
-    if (list?.since !== undefined && !q && session) {
-      const kept = list.rows.filter((row) => !swipes.has(swipeKey(session.project, row.number))).slice(0, 100);
-      remember(inboxKey(session, view), { rows: kept, total: list.total } satisfies Saved, list.since);
+    if (list?.since !== undefined && !q && session && swipes.size === 0) {
+      remember(inboxKey(session, view), { rows: list.rows.slice(0, 100), total: list.total } satisfies Saved, list.since);
     }
   }, [list, swipes, q, view, session]);
   const searching = !!q;

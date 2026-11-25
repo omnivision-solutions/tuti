@@ -974,7 +974,7 @@ describe("swiping a row", () => {
       expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
     });
 
-    it("leaves a swiped row out of what's kept while its reload is on its way", async () => {
+    it("keeps the list as the server last had it while a swipe waits for its answer", async () => {
       fakeServer({ acme: [row("Invite link expired"), row("CSV export stops at 500 rows")] });
       const first = await render(<Inbox />);
       await screen.findByText("Invite link expired");
@@ -985,7 +985,31 @@ describe("swiping a row", () => {
       mockApi.mockImplementation(() => Promise.reject(offline()));
       await render(<Inbox />);
       expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
-      expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+      expect(subjects()).toEqual(["Invite link expired", "CSV export stops at 500 rows"]);
+    });
+
+    it("keeps a row whose swipe was refused after the list went offline while it waited", async () => {
+      const { changes } = fakeServer({ acme: [row("Invite link expired"), row("CSV export stops at 500 rows")] });
+      jest.spyOn(Alert, "alert").mockImplementation(() => {});
+      await render(<Inbox />);
+      await screen.findByText("Invite link expired");
+      await pressAction("Close");
+
+      // The connection goes while the close waits: a reload finds none, and the list shows it's offline.
+      const served = mockApi.getMockImplementation()!;
+      mockApi.mockImplementation((path, init) => ((init as { method?: string } | undefined)?.method === "PATCH" ? served(path, init) : Promise.reject(offline())));
+      await act(async () => mockLive!({ kind: "all" }));
+      await act(() => jest.advanceTimersByTimeAsync(200));
+      expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+      // Then the close is refused: the row comes back.
+      await act(async () => changes[0]!.answer(false, "You can't change this conversation."));
+      expect(subjects()).toEqual(["Invite link expired", "CSV export stops at 500 rows"]);
+
+      // Reopened, still offline: it's there.
+      await screen.unmount();
+      await render(<Inbox />);
+      expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+      expect(subjects()).toEqual(["Invite link expired", "CSV export stops at 500 rows"]);
     });
 
     it("refuses a swipe made offline: its row comes back, with why, and the list says it's offline", async () => {
@@ -1000,6 +1024,12 @@ describe("swiping a row", () => {
       expect(alert).toHaveBeenCalledWith(`Couldn't close "Invite link expired"`, "Couldn't reach tuti.example.com. Check the address and your connection.");
       expect(subjects()).toEqual(["Invite link expired"]);
       expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+
+      // Reopened, still offline: the conversation whose change was refused is there.
+      await screen.unmount();
+      await render(<Inbox />);
+      expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+      expect(subjects()).toEqual(["Invite link expired"]);
     });
   });
 
