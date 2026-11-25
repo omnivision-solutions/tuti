@@ -1,8 +1,10 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { MAX_PICKED_PULL_REQUESTS } from "@/lib/added-pull-requests";
 import type { Reaction } from "@/lib/reactions";
 
 import type { CoverDesign } from "./cover-card";
@@ -12,11 +14,16 @@ import type { RewriteMode } from "./release-notes";
 import {
   composeChangelogCover as composeCoverOperation,
   composeCover,
+  addChangelogPullRequests as addPullRequestsOperation,
+  addedAnalysisCost,
+  MAX_ADDED_PULL_REQUESTS,
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
+  listMissingChanges,
   publishChangelogEntry as publishOperation,
   reactToChangelogEntry as reactOperation,
+  removeChangelogPullRequest as removePullRequestOperation,
   rewriteChangelogEntry as rewriteOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
@@ -152,6 +159,48 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
     redirect(`/app/${projectSlug}/changelog`);
   }
   return result;
+}
+
+export type MissingChanges = Awaited<ReturnType<(typeof listMissingChanges)["run"]>> & { cost: Awaited<ReturnType<typeof addedAnalysisCost>> };
+
+/** What "Add changes…" lists: the merged pull requests no entry has (see changelog.missingChanges), and what adding them costs. */
+export async function findMissingChanges(projectSlug: string): Promise<{ error?: string; missing?: MissingChanges }> {
+  let missing: MissingChanges | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    const [found, cost] = await Promise.all([call(listMissingChanges, context, {}), addedAnalysisCost(context.projectId)]);
+    missing = { ...found, cost };
+  });
+  return missing ? { missing } : result;
+}
+
+/** Adds merged pull requests to the running draft (see changelog.addPullRequests): its number, and how many went in. */
+export async function addChangelogPullRequests(
+  projectSlug: string,
+  pullRequests: { repo: string; number: number }[],
+): Promise<{ error?: string; number?: number | null; added?: number }> {
+  let added: { number: number | null; added: number } | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    // The dialog can tick more than one request takes: in batches, into the same running draft. Still a request's worth
+    // of work at most: none is refused as the operation refuses it, and no more than the dialog could list.
+    if (pullRequests.length === 0 || pullRequests.length > MAX_PICKED_PULL_REQUESTS) {
+      throw new OperationError(400, "invalid_input", pullRequests.length === 0 ? "Pick a pull request to add" : `Add up to ${MAX_PICKED_PULL_REQUESTS} pull requests at a time`);
+    }
+    for (let i = 0; i < pullRequests.length; i += MAX_ADDED_PULL_REQUESTS) {
+      const done = await call(addPullRequestsOperation, context, { pullRequests: pullRequests.slice(i, i + MAX_ADDED_PULL_REQUESTS) });
+      added = { number: done.number ?? added?.number ?? null, added: (added?.added ?? 0) + done.added.length };
+    }
+  });
+  // A later batch refused: said, with what the ones before it added (they stay, so the page reloads with them, as it
+  // does after a success: its form would otherwise save the text from before over them).
+  if (result.error && added?.added) {
+    refresh();
+  }
+  return result.error ? { ...result, ...(added && { number: added.number, added: added.added }) } : (added ?? result);
+}
+
+/** Takes a merged pull request out of a draft, with its line (see changelog.removePullRequest). */
+export async function removeChangelogPullRequest(projectSlug: string, number: number, url: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(removePullRequestOperation, context, { number: Number(number), url: String(url) }));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes) and the published entries picked as examples (see changelogStyle.update). */

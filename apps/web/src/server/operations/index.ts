@@ -27,6 +27,7 @@ import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
   composeChangelogCover,
+  addChangelogPullRequests,
   createChangelogEntry,
   editChangelogSection,
   deleteChangelogEntry,
@@ -35,6 +36,8 @@ import {
   getChangelogEntry,
   getChangelogStyle,
   listChangelog,
+  listMissingChanges,
+  removeChangelogPullRequest,
   publishChangelogEntry,
   reactToChangelogEntry,
   unpublishChangelogEntry,
@@ -136,6 +139,9 @@ const all = [
   updateChangelogEntry,
   editChangelogSection,
   composeChangelogCover,
+  listMissingChanges,
+  addChangelogPullRequests,
+  removeChangelogPullRequest,
   draftChangelogEntry,
   rewriteChangelogEntry,
   publishChangelogEntry,

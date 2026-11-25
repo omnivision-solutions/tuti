@@ -77,6 +77,12 @@ export async function mergePullRequest(
   await deliver("pull_request", body);
 }
 
+/** A pull request merged on `repo` that GitHub (the fake) has, with no webhook delivered: one merged before the project connected GitHub. */
+export async function mergedOnGithub(repo: string, pr: { number: number; title: string; author?: string; mergedAt: string }) {
+  const response = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/pull-request`, { method: "POST", body: JSON.stringify({ repo, ...pr }) });
+  expect(response.ok).toBe(true);
+}
+
 /** Repository `repo` on GitHub (the fake): its default branch (`branch`, main) at a commit, with these files. */
 export async function repositoryFiles(repo: string, files: Record<string, string>, branch = "main") {
   const response = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/repository`, {

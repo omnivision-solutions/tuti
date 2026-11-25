@@ -3,7 +3,8 @@ import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
-import { afterChanged, afterEnded, forgetSession, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
+import { latestOnly } from "./inbox";
+import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
 export type { Session };
@@ -23,24 +24,47 @@ const Context = createContext<SessionContext | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
-  const save = useCallback((next: Session | null) => keepSession(next, setSession, writeSession), []);
+  // Storage is written one change at a time, in order: a project chosen just before signing out can't write the session
+  // back after it's deleted.
+  const [inTurn] = useState(inOrder);
+
+  const save = useCallback((next: Session | null) => inTurn(() => keepSession(next, setSession, writeSession)), [inTurn]);
 
   const signOut = useCallback(async () => {
     setSession(null);
     forgetDrafts();
-    await forgetSession();
-  }, []);
+    await inTurn(() => forgetSession());
+  }, [inTurn]);
+
+  // The project chosen last wins: a choice still waiting its turn when a newer one comes is dropped, and one is saved
+  // only into the session still stored (signed out, or into another account, meanwhile: nothing is written).
+  const [choices] = useState(latestOnly);
+  const choose = useCallback(
+    (from: Session, project: string) => {
+      const mine = choices.start();
+      return inTurn(async () => {
+        const stored = await readSession();
+        if (!choices.isLatest(mine) || stored?.token !== from.token) {
+          return;
+        }
+        await keepSession({ ...stored, project }, (next) => setSession((now) => afterChanged(now, next)), writeSession);
+      });
+    },
+    [inTurn, choices],
+  );
 
   // A session found ended (a check, a 401, which can answer late): signed out only if it's still the one in use, so a
   // teammate who signed out and back in meanwhile stays signed in.
   const ended = useCallback(async (which: Session) => {
     setSession((now) => afterEnded(now, which));
     // What was being written goes with the session, so whoever signs in next never sees or sends it.
-    if (draftsGoWith(await readSession(), which)) {
-      forgetDrafts();
-    }
-    await forgetSession(which);
-  }, []);
+    await inTurn(async () => {
+      if (draftsGoWith(await readSession(), which)) {
+        forgetDrafts();
+      }
+      await forgetSession(which);
+    });
+  }, [inTurn]);
 
   // Reading the session keeps it going (API calls don't): at launch, and on coming back to the foreground twice a day, as
   // an app left open for days never launches again. One that ended elsewhere signs out here.
@@ -77,11 +101,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signIn: (signedIn) => save(signedIn),
       signOut,
       // Shown once saved, and only if it's still the session in use (signed out meanwhile stays signed out).
-      setProject: (project) =>
-        session ? keepSession({ ...session, project }, (next) => setSession((now) => afterChanged(now, next)), writeSession) : Promise.resolve(),
+      setProject: (project) => (session ? choose(session, project) : Promise.resolve()),
       api: session ? createApi(session, () => void ended(session)) : null,
     }),
-    [session, save, signOut, ended],
+    [session, save, signOut, ended, choose],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

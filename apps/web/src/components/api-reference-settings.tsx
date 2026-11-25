@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useEditorSlot } from "@/components/use-editor-slot";
+import { keptEdit } from "@/lib/follow-stored";
 import { type ApiReferenceSettings as Changes, changeApiReferenceGithub, changeApiReferenceUrl, saveApiReferenceSettings } from "@/server/api-references";
 
 /**
@@ -37,10 +38,15 @@ const SAVE_FAILED = { error: "Couldn't save that. Try again." };
  * A URL source's address, changed here: the new one is read before it's kept (as adding one reads it), so one that
  * doesn't work is said under the field and the reference stays as it was. The toast says what the new spec changed.
  */
-function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: string; url: string }) {
+export function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: string; url: string }) {
   // Only what's typed over what's stored: a field left alone shows the address the page has now (a teammate's change
   // included), so Change can't put an old one back.
   const [edited, setEdited] = useState<string | null>(null);
+  // The stored address typed in is the field left alone, whichever came first: typed just after "Address changed", before
+  // the page has the new address, it still follows the stored one from then on.
+  if (edited !== keptEdit(edited, url)) {
+    setEdited(null);
+  }
   const value = edited ?? url;
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -58,7 +64,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
         document.getElementById("reference-source-url")?.focus();
         return;
       }
-      // Back to following the stored address, unless something else was typed while this one was read: that stays.
+      // Back to following the stored address (as the server wrote it), unless something else was typed while this one was read: that stays.
       setEdited((now) => (now !== null && now.trim() === next ? null : now));
       const what = [result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ");
       toast.success(what ? `Address changed: ${what}` : "Address changed");
@@ -78,8 +84,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
             aria-invalid={error ? true : undefined}
             aria-describedby="reference-source-url-note"
             onChange={(event) => {
-              // The stored address typed back is the field left alone: it follows the stored one again.
-              setEdited(event.target.value.trim() === url ? null : event.target.value);
+              setEdited(event.target.value);
               setError(undefined);
             }}
           />

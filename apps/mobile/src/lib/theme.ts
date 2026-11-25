@@ -19,6 +19,9 @@ const light = {
   customer: "#f8f4f1", // --inbox-customer: a user's message
   note: "#ffefe2", // --inbox-note: the team's internal note
   onNote: "#9a3b06", // --highlight-foreground
+  // People's faces where they have no picture (the Inbox's rows), one colour per person, and their initials.
+  faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
+  onFace: "#ffffff",
 };
 export type Colors = typeof light;
 
@@ -38,6 +41,8 @@ const dark: Colors = {
   customer: "#252e29",
   note: "#312012",
   onNote: "#ffb27a",
+  faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
+  onFace: "#ffffff",
 };
 
 export const useColors = (): Colors => (useColorScheme() === "dark" ? dark : light);

@@ -261,7 +261,10 @@ the list picks none to approve at once.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
-  ("Link post…"), how it's announced (Email subscribers, Mark it new: picked
+  ("Link post…"), its merged pull requests (each opening on GitHub, `repo#number` under it; a draft's taken out with ×,
+  their line with them, and "Add changes…" listing the ones no entry has, ticked unless Autopilot found nothing for
+  users in them, with what their analyses cost where AI credits are on; a published entry's listed as they shipped),
+  how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
   "View as reader". Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
   each, Edit under the team's own while it's published). Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),

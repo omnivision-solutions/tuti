@@ -483,6 +483,11 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
         return {};
       }
     }
+    // Signed out while it waited (behind a reply saying the same, or a retry's check): it's gone with the drafts.
+    if (since !== generation) {
+      sends.delete(unsent.id);
+      return null;
+    }
     let sent: { id: string; closed?: boolean };
     try {
       sent = await sendReply(api, number, unsent);

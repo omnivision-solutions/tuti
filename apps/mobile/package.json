@@ -9,7 +9,8 @@
     "android": "expo start --android",
     "build": "expo export --platform ios --platform android",
     "lint": "EXPO_OFFLINE=1 expo install --check && expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
   },
   "dependencies": {
     "expo": "~58.0.26",
@@ -33,9 +34,22 @@
     "react-native-screens": "~4.30.1"
   },
   "devDependencies": {
+    "@jest/globals": "30.5.2",
+    "@testing-library/react-native": "^14.1.0",
     "@types/react": "~19.3.0",
     "eslint": "^9",
     "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.15",
     "typescript": "^6.0.3"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "<rootDir>/__tests__/**/*-test.tsx"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!(.pnpm|(jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|react-navigation|@react-navigation/.*))"
+    ]
   }
 }

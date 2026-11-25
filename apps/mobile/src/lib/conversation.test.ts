@@ -561,6 +561,22 @@ describe("telling which reply arrived", () => {
     expect(getDraft(key).unsent).toEqual([{ ...again, error: "Couldn't reach tuti.example.com" }]);
   });
 
+  it("isn't posted once signed out while it waited behind a reply saying the same", async () => {
+    const again = { ...thanks, id: "u2" };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [thanks, again] }));
+    let answer!: (value: unknown) => void;
+    const { api, calls } = fakeApi({ "/conversations/12/messages": () => new Promise((resolve) => (answer = resolve)) });
+    const first = sendUnsent(api, key, 12, thanks, async () => []);
+    const queued = sendUnsent(api, key, 12, again, async () => []);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    forgetDrafts();
+    answer({ id: "m1" });
+    await first;
+    expect(await queued).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(isSending("u2")).toBe(false);
+  });
+
   it("isn't posted again by Retry after a check that failed: it stays unsent with why", async () => {
     const failed = { ...thanks, error: "Couldn't reach tuti.example.com" };
     updateDraft(key, (draft) => ({ ...draft, unsent: [failed] }));

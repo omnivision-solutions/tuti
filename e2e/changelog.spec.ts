@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 
 import { expect, type Locator, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { connectGithub, mergePullRequest, publishRelease } from "./github";
+import { setAnalysis } from "./autopilot";
+import { query } from "./db";
+import { connectGithub, mergedOnGithub, mergePullRequest, publishRelease } from "./github";
 import { afterIntersections, apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { publishedOn } from "./changelog-dates";
@@ -1627,8 +1629,11 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   await comments.getByRole("button", { name: "Edit your comment" }).click();
   const edit = comments.getByRole("textbox", { name: "Edit your comment" });
   await expect(edit).toContainText("Finally! My eyes thank you.");
-  // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh.
-  await edit.fill("");
+  // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh. From the keyboard: fill("") selects
+  // the text behind the editor's back, and its Delete can come before the editor has seen that (a Delete at the text's
+  // end, which deletes nothing).
+  await edit.press("ControlOrMeta+a");
+  await edit.press("Delete");
   // (What Save sends, once the editor's caught up.)
   await expect(comments.locator("form").filter({ has: ada.getByRole("textbox", { name: "Edit your comment" }) }).locator('input[name="content"]')).toHaveValue("");
   await comments.getByRole("button", { name: "Save" }).click();
@@ -1721,4 +1726,164 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   const none = teamComments.getByRole("heading", { name: "No comments. Users comment on it on your portal once it's published." });
   await expect(none).toBeVisible();
   await expect(none).toBeFocused();
+});
+
+test("pull requests by hand: ones merged before GitHub was connected are added from the draft's sidebar, and one taken out is missing again", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  // A repository of this journey's own: GitHub (the fake) is shared by every journey.
+  const id = randomInt(1_000_000, 2_000_000_000);
+  const repo = `acme/${slug}`;
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+  // Merged before GitHub was connected: Tuti never heard of them.
+  await mergedOnGithub(repo, { number: 11, title: "Add a dark theme", author: "ada", mergedAt: daysAgo(3) });
+  await mergedOnGithub(repo, { number: 12, title: "Export to CSV", author: "ada", mergedAt: daysAgo(2) });
+  await mergedOnGithub(repo, { number: 13, title: "Bump dependencies", author: "bot", mergedAt: daysAgo(1) });
+  await connectGithub(team, slug, { id, repositories: [{ id, fullName: repo }] });
+  // Autopilot off (nothing to analyse here); it had found nothing for users in #13, as its gate saves that.
+  await setAnalysis(slug, false);
+  await query(
+    `INSERT INTO code_change (id, "projectId", "repoId", repo, number, url, title, author, "mergedAt", state, "forUsers", "updatedAt")
+     SELECT $2, p.id, $3, $4, 13, $5, 'Bump dependencies', 'bot', now(), 'NOTHING_TO_DO', false, now() FROM project p WHERE p.slug = $1`,
+    [slug, randomUUID(), id, repo, `https://github.com/${repo}/pull/13`],
+  );
+  // One merged since starts the running draft.
+  await mergePullRequest(id, { repo, number: 14, title: "Remember the theme" });
+
+  await team.goto(`/app/${slug}/changelog/1`);
+  const sidebar = team.getByRole("complementary", { name: "Entry settings" });
+  const section = sidebar.getByRole("region", { name: "Pull requests" });
+  const text = team.getByRole("textbox", { name: "What changed" });
+  await expect(section.getByRole("link", { name: "Remember the theme" })).toHaveAttribute("href", `https://github.com/${repo}/pull/14`);
+  await expect(section).toContainText(`${repo}#14`);
+
+  // Add changes… lists the ones no entry has: those Autopilot found nothing for users in start unticked.
+  await section.getByRole("button", { name: "Add changes…" }).click();
+  const dialog = team.getByRole("dialog", { name: "Add changes" });
+  await expect(dialog).toContainText("They're added to this draft, a line each.");
+  const missing = dialog.getByRole("list", { name: "Missing pull requests" });
+  await expect(missing.getByRole("listitem")).toHaveCount(3);
+  const row = (title: string) => missing.getByRole("checkbox", { name: new RegExp(title) });
+  await expect(row("Add a dark theme")).toBeChecked();
+  await expect(row("Export to CSV")).toBeChecked();
+  await expect(row("Bump dependencies")).not.toBeChecked();
+  await expect(missing.getByRole("listitem").filter({ hasText: "Bump dependencies" })).toContainText(`${repo}#13 · bot · `);
+  await expect(missing.getByRole("listitem").filter({ hasText: "Bump dependencies" })).toContainText("Nothing for users");
+  await expect(missing.getByRole("listitem").filter({ hasText: "Add a dark theme" })).not.toContainText("Nothing for users");
+  await expect(dialog).toContainText(/Pull requests merged since \d+ \w+ \d{4} that no entry has\./);
+  await checkpoint(team, "team-changelog-add-changes");
+  // Nothing ticked, nothing to add.
+  await row("Add a dark theme").uncheck();
+  await row("Export to CSV").uncheck();
+  await expect(dialog.getByRole("button", { name: "Add 0 pull requests" })).toBeDisabled();
+  await row("Add a dark theme").check();
+  await row("Export to CSV").check();
+  // While it adds (its answer held here), the dialog stays: what's typed meanwhile would be lost when the page reloads.
+  let releaseAdd!: () => void;
+  const addHeld = new Promise<void>((resolve) => (releaseAdd = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await addHeld;
+    await route.fulfill({ response });
+  });
+  await dialog.getByRole("button", { name: "Add 2 pull requests" }).click();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await team.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  releaseAdd();
+  await expect(team.getByText("Added 2 pull requests")).toBeVisible();
+  await team.unroute("**/*");
+  await expect(dialog).toBeHidden();
+
+  // In the sidebar's list and in the text, a line each.
+  await expect(section.getByRole("link", { name: "Add a dark theme" })).toHaveAttribute("href", `https://github.com/${repo}/pull/11`);
+  await expect(section.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(text).toContainText("Add a dark theme");
+  await expect(text).toContainText("Export to CSV");
+  await checkpoint(team, "team-changelog-pull-requests");
+
+  // Taking one out edits the saved text: unsaved changes are saved first.
+  await team.getByLabel("Title").fill("Dark theme");
+  await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
+  await expect(team.getByText("Save your changes first: pull requests change the saved text.")).toBeVisible();
+  await team.reload();
+  // Asked first: what the team wrote in its line goes with it. Cancel leaves it all as it was.
+  const takingOut = team.getByRole("alertdialog", { name: `Take out ${repo}#12?` });
+  await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
+  await expect(takingOut).toHaveAccessibleDescription("Its line leaves the text, with any changes you made to it. Add changes… puts it back with Autopilot's line or its title.");
+  await takingOut.getByRole("button", { name: "Cancel" }).click();
+  await expect(takingOut).toBeHidden();
+  await expect(section.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(text).toContainText("Export to CSV");
+  // Taken out: it leaves the list and the text, focus on the section's heading.
+  await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
+  // While it's taking it out (its answer held here), the dialog stays: Cancel would undo nothing.
+  let releaseTakeOut!: () => void;
+  const takeOutHeld = new Promise<void>((resolve) => (releaseTakeOut = resolve));
+  await team.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await takeOutHeld;
+    await route.fulfill({ response });
+  });
+  await takingOut.getByRole("button", { name: "Take out" }).click();
+  await expect(takingOut.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await team.keyboard.press("Escape");
+  await expect(takingOut).toBeVisible();
+  releaseTakeOut();
+  await expect(team.getByText("Taken out")).toBeVisible();
+  await team.unroute("**/*");
+  await expect(section.getByRole("link", { name: "Export to CSV" })).toHaveCount(0);
+  await expect(text).not.toContainText("Export to CSV");
+  await expect(text).toContainText("Add a dark theme");
+  await expect(section.getByRole("heading", { name: "Pull requests" })).toBeFocused();
+  // And it's missing again.
+  await section.getByRole("button", { name: "Add changes…" }).click();
+  await expect(missing.getByRole("listitem")).toHaveCount(2);
+  await expect(row("Export to CSV")).toBeChecked();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  // With unsaved changes in this draft, Add waits for them: adding rewrites its saved text.
+  await team.getByLabel("Title").fill("Next release, soon");
+  await section.getByRole("button", { name: "Add changes…" }).click();
+  await dialog.getByRole("button", { name: /^Add \d+ pull requests?$/ }).click();
+  await expect(team.getByText("Save your changes first: pull requests change the saved text.")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  // On another draft, Add changes… says where they go.
+  const api = await apiFor(team, slug);
+  await api("/changelog", { title: "Written by hand" });
+  await team.goto(`/app/${slug}/changelog/2`);
+  await section.getByRole("button", { name: "Add changes…" }).click();
+  await expect(dialog).toContainText("They go into “Next release”, which collects merged pull requests, not into this draft.");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  // GitHub disconnected: still listed while it has them, and Take out doesn't offer Add changes… as the way back.
+  await query(`DELETE FROM github_installation WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]);
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(section.getByRole("button", { name: "Add changes…" })).toHaveCount(0);
+  await section.getByRole("button", { name: `Take out ${repo}#11` }).click();
+  const takingOutDark = team.getByRole("alertdialog", { name: `Take out ${repo}#11?` });
+  await expect(takingOutDark).toHaveAccessibleDescription("Its line leaves the text, with any changes you made to it.");
+  // Published meanwhile (elsewhere): the take-out is refused, said, and the dialog stays to cancel or try again.
+  await api("/changelog/1/publish", {});
+  await takingOutDark.getByRole("button", { name: "Take out" }).click();
+  await expect(team.getByText("Unpublish the entry to change its pull requests")).toBeVisible();
+  await expect(takingOutDark).toBeVisible();
+  await takingOutDark.getByRole("button", { name: "Cancel" }).click();
+
+  // Published, its pull requests are listed as they shipped: none taken out or added.
+  await api("/changelog/1/publish", {});
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(section.getByRole("link", { name: "Add a dark theme" })).toBeVisible();
+  await expect(section.getByRole("button")).toHaveCount(0);
 });
