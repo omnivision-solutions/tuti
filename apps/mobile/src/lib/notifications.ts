@@ -180,7 +180,17 @@ export function targetOf(data: unknown): Target | null {
  * changes on every sign-out. One for a session since left, on any server (another can have a project of the same slug),
  * isn't; one for this one is, whichever of its server's addresses the teammate signed in with. One that names no id isn't.
  */
-export const forThisSignIn = async (target: Target) => !!target.device && target.device === (await deviceId().catch(() => null));
+export const forThisSignIn = async (target: Target) => !!target.device && target.device === (await currentId().catch(() => null));
+
+/**
+ * The id as stored now, read each time: a sign-out in the app's other JavaScript (Android's task runs in one of its own
+ * when the app was killed) changes it there, not in this one's `deviceId()`. That one only when it can't be read.
+ */
+const currentId = () =>
+  SecureStore.getItemAsync(DEVICE_ID, STORE_OPTIONS).then(
+    (stored) => stored ?? deviceId(),
+    () => deviceId(),
+  );
 
 /** The conversation a tap opens: a tap on the notification itself (not one of its actions), with a conversation in it. */
 export const tapped = (response: Notifications.NotificationResponse | null | undefined) =>

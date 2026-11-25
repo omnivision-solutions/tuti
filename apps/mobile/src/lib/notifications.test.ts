@@ -316,6 +316,16 @@ describe("whether a notification is for this sign-in", () => {
     expect(await forThisSignIn({ project: "acme", number: 7, device: await deviceId() })).toBe(true);
     expect(await forThisSignIn({ project: "acme", number: 7 })).toBe(false);
   });
+
+  it("reads the id as stored now: a sign-out in the app's other JavaScript changes it there, not in this one's memory", async () => {
+    const { deviceId, forThisSignIn } = await load();
+    const old = await deviceId();
+    // The other JavaScript signed out and in again: a new id stored, this one's cached id still the old one.
+    stored.set("device-id", "id-from-the-other-javascript");
+    expect(await deviceId()).toBe(old);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: old })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: "id-from-the-other-javascript" })).toBe(true);
+  });
 });
 
 describe("opening a tapped notification", () => {
