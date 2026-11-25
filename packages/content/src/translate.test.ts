@@ -382,3 +382,15 @@ test("tags the source has as text are recognised whatever their case or spacing;
   const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Save", marks: [{ type: "bold" }] }, { type: "text", text: " then run " }, { type: "text", text: "sync", marks: [{ type: "code" }] }] }] });
   expect(check("1", "Speichern, dann <b1><x2/></b1>")).toBe("<b1> is empty");
 });
+
+test("a reply's translation for an id it wasn't asked for is ignored", async () => {
+  const two: Doc = { type: "doc", content: ["Alpha one two three", "Bravo one two three"].map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) };
+  const out = await translateDoc(two, {
+    from: "English",
+    to: "German",
+    batchChars: 20,
+    // First pass: nothing back, so both are retried, each in its own batch; the second retry also answers for "1".
+    ask: async (_, user) => (!user.includes("broke a rule") ? "{}" : user.startsWith('{"1"') ? '{"segments": {"1": "Alfa eins zwei drei"}}' : '{"segments": {"1": "Falsch", "2": "Bravo eins zwei drei"}}'),
+  });
+  expect(out.memory).toEqual({ "Alpha one two three": "Alfa eins zwei drei", "Bravo one two three": "Bravo eins zwei drei" });
+});

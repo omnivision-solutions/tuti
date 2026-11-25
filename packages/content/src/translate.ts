@@ -422,7 +422,8 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     const extra = notes ? `\n\nYour last translations of these broke a rule; fix them:\n${[...notes].map(([id, why]) => `- ${id}: ${why}`).join("\n")}` : "";
     const reply = parseReply(await ask(system, user + extra));
     detected ??= reply.language;
-    return reply.segments;
+    // Only the ids this request asked for: an extra one can't overwrite another batch's translation.
+    return Object.fromEntries(batch.filter((segment) => Object.hasOwn(reply.segments, segment.id)).map((segment) => [segment.id, reply.segments[segment.id]!]));
   };
   const runs = batches(todo, batchChars);
   let providerError: string | undefined;
