@@ -135,8 +135,9 @@ export default function ApiDocsPage() {
           </li>
           <li>Redirects aren&apos;t followed, and endpoints must be public HTTPS URLs.</li>
           <li>
-            <code className="font-mono">changelog.unsubscribed</code> comes when the changelog stops being emailed to an
-            address, however that happened: its <code className="font-mono">data</code> has the{" "}
+            <code className="font-mono">changelog.unsubscribed</code> comes when someone who was getting your changelog by
+            email unsubscribes from it, or turns off all of your project&apos;s emails (not when the portal goes private
+            or a user is deleted): its <code className="font-mono">data</code> has the{" "}
             <code className="font-mono">email</code>, their <code className="font-mono">userId</code> in your app (or
             null), <code className="font-mono">source</code> (<code className="font-mono">email</code>,{" "}
             <code className="font-mono">account</code> or <code className="font-mono">api</code>),{" "}

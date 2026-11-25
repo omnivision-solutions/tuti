@@ -1561,6 +1561,59 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "api", allEmails: false }]);
   });
 
+  test("nothing where it wasn't being emailed: a portal gone private, or an address whose emails another account there turned off", async () => {
+    const [kim, shared] = [newAddress(), newAddress()];
+    const kimUser = await appUser(kim);
+    actAs(kimUser);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    const [first, second] = [await appUser(shared), await appUser(shared)];
+    actAs(first);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    await optOut(first.id);
+    await optOut(second.id);
+    await unsubscribe(await tokenOf(shared));
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: shared, userId: first.appId, source: "email", allEmails: true }]);
+
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    await optOut(kimUser.id);
+    await unsubscribe(await tokenOf(kim));
+    expect(await told()).toHaveLength(1);
+  });
+
+  test("two ways out at one address at once: one event", async () => {
+    const email = newAddress();
+    const [first, second] = [await appUser(email), await appUser(email)];
+    actAs(first);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    const token = await tokenOf(email);
+    // The subscriber's row held, so all of them start before any finishes: each read what it decides on while the others ran.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "projectId" = ${project.id} AND "email" = ${email} FOR UPDATE`;
+      locked();
+      await held;
+    });
+    await isLocked;
+    const ways = Promise.all([optOut(first.id), optOut(second.id), unsubscribe(token), unsubscribe(token, true)]);
+    for (let tries = 0; ; tries++) {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%changelog_subscriber%FOR UPDATE%'`;
+      if (waiting === 4) {
+        break;
+      }
+      expect(tries).toBeLessThan(300);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    release();
+    await holder;
+    await ways;
+    expect(await told()).toHaveLength(1);
+  });
+
   test("from the Account's Stop emails (account), once", async () => {
     const ada = await signUp("Ada");
     await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });

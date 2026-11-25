@@ -118,15 +118,26 @@ async function recordUnsubscribe(
 }
 
 /**
+ * Whether the changelog is emailed to `email` now (a confirmed subscriber that changelogReach reaches), with its row
+ * locked till `tx` ends: every way out at an address takes it first, so they take turns, each sees what the one before
+ * did, and only the one that stops it tells webhooks.
+ */
+async function emailedNow(tx: Prisma.TransactionClient, projectId: string, email: string) {
+  const [row] = await tx.$queryRaw<{ confirmed: boolean }[]>`
+    SELECT "confirmedAt" IS NOT NULL AS confirmed FROM "changelog_subscriber" WHERE "projectId" = ${projectId} AND "email" = ${email} FOR UPDATE`;
+  return !!row?.confirmed && reached(await changelogReach(projectId, { email, confirmed: true }));
+}
+
+/**
  * Turns off all of the project's emails for someone (the opt-out), telling webhooks changelog.unsubscribed when that
  * stops the changelog at their address (changelogAt's): only when it was being emailed there and this is what stopped it.
  */
 export async function optOut(projectId: string, userId: string, source: UnsubscribeSource) {
-  const before = await changelogAt(projectId, userId);
-  const stops = before.email !== null && !!before.subscriber?.confirmedAt && before.reach !== null && reached(before.reach);
+  const { email } = await changelogAt(projectId, userId);
   const deliveries = await prisma.$transaction(async (tx) => {
+    const stops = email !== null && (await emailedNow(tx, projectId, email));
     const { count } = await tx.emailOptOut.createMany({ data: { userId, projectId }, skipDuplicates: true });
-    return count === 1 && stops ? recordUnsubscribe(tx, projectId, before.email!, { source, allEmails: true, by: userId }) : [];
+    return count === 1 && stops ? recordUnsubscribe(tx, projectId, email, { source, allEmails: true, by: userId }) : [];
   });
   await queueDeliveries(deliveries);
 }
@@ -192,6 +203,7 @@ export async function findSubscription(projectSlug: string, token: string) {
      */
     unsubscribe: async (source: UnsubscribeSource, by?: string) => {
       const deliveries = await prisma.$transaction(async (tx) => {
+        const stops = await emailedNow(tx, subscriber.projectId, subscriber.email);
         const { count } = await tx.changelogSubscriber.updateMany({
           where: { id: subscriber.id, token, confirmedAt: { not: null } },
           data: { unsubscribedAt: new Date() },
@@ -200,7 +212,7 @@ export async function findSubscription(projectSlug: string, token: string) {
           where: { id: subscriber.id, token },
           data: { confirmedAt: null, confirmTokenHash: null, confirmExpiresAt: null, confirmUsedAt: null },
         });
-        return count === 1 && reached(reach) ? recordUnsubscribe(tx, subscriber.projectId, subscriber.email, { source, allEmails: false, by }) : [];
+        return count === 1 && stops ? recordUnsubscribe(tx, subscriber.projectId, subscriber.email, { source, allEmails: false, by }) : [];
       });
       await queueDeliveries(deliveries);
     },
