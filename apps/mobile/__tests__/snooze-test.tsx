@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { Platform } from "react-native";
 
@@ -12,7 +12,11 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockParams,
 }));
 
-afterEach(() => void jest.restoreAllMocks());
+beforeEach(() => void jest.useFakeTimers({ now: new Date("2026-11-25T14:00:00") }));
+afterEach(() => {
+  jest.useRealTimers();
+  jest.restoreAllMocks();
+});
 
 describe("a row's snooze choices on Android", () => {
   it("opens the sheet, which says the time chosen to whoever asked, and closes", async () => {
@@ -27,9 +31,7 @@ describe("a row's snooze choices on Android", () => {
     expect(screen.queryByText("Wake now")).toBeNull();
     await fireEvent.press(screen.getByText("In 3 hours"));
     expect(mockBack).toHaveBeenCalled();
-    const [number, at] = chosen.mock.calls[0] as [number, Date];
-    expect(number).toBe(12);
-    expect(Math.abs(at.getTime() - (Date.now() + 3 * 3_600_000))).toBeLessThan(5_000);
+    expect(chosen).toHaveBeenCalledWith(12, new Date("2026-11-25T17:00:00"));
   });
 
   it("offers Wake now for a snoozed one", async () => {

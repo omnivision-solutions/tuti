@@ -25,6 +25,8 @@ type List = { for: string; load: number; rows: Row[]; next: string | null; total
  * by a load of everything that started before (`settled`: the latest load then), which may not have it yet.
  */
 type Swiped = { change: SwipeChange; settled: number | null };
+/** Swipes are by project and number: numbers start again in each project. */
+const swipeKey = (project: string | undefined, number: number) => `${project}#${number}`;
 
 /** The list with one conversation's row in place, moved, or gone (`found` null). */
 function placed(list: List, number: number, found: Row | null): List {
@@ -60,10 +62,10 @@ export default function Inbox() {
   const [loaded, setList] = useState<List | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Swipes by conversation, shown over the list at once, whatever fetches answer meanwhile.
-  const [swiped, setSwiped] = useState<ReadonlyMap<number, Swiped>>(new Map());
-  const unswipe = (keep: (number: number, swipe: Swiped) => boolean) =>
+  const [swiped, setSwiped] = useState<ReadonlyMap<string, Swiped>>(new Map());
+  const unswipe = (keep: (key: string, swipe: Swiped) => boolean) =>
     setSwiped((now) => {
-      const left = new Map([...now].filter(([number, swipe]) => keep(number, swipe)));
+      const left = new Map([...now].filter(([at, swipe]) => keep(at, swipe)));
       return left.size === now.size ? now : left;
     });
   const [refreshing, setRefreshing] = useState(false);
@@ -226,24 +228,25 @@ export default function Inbox() {
           const found = page.conversations.find((row) => row.number === number);
           setList((now) => now && placed(now, number, found ? { ...found, match: null } : null));
           // Fetched since the server had its swipe (one fetched before is dropped): the row is as the server has it.
-          unswipe((swipedNumber, swipe) => swipedNumber !== number || swipe.settled === null);
+          unswipe((at, swipe) => at !== swipeKey(project, number) || swipe.settled === null);
           setNow(Date.now());
         }
       } catch {
         // The next change, or the stream's next opening, fetches it again.
       }
     },
-    [api, view, loads, rowLoads],
+    [api, project, view, loads, rowLoads],
   );
 
   // A swipe's change: the row changes (or goes) at once, and comes back as it was, with why, if the server refuses.
   const triage = useCallback(
     async (row: Row, change: SwipeChange, done: string, verb: string) => {
       const number = row.number;
-      setSwiped((now) => new Map(now).set(number, { change, settled: null }));
+      const at = swipeKey(project, number);
+      setSwiped((now) => new Map(now).set(at, { change, settled: null }));
       try {
         await updateConversation(api, number, change);
-        setSwiped((now) => new Map(now).set(number, { change, settled: loads.current() }));
+        setSwiped((now) => new Map(now).set(at, { change, settled: loads.current() }));
         // In the list too, as the server has it now: a row fetch already on its way, from before, is dropped.
         rowLoads.set(number, (rowLoads.get(number) ?? 0) + 1);
         setList((now) => {
@@ -253,12 +256,12 @@ export default function Inbox() {
         AccessibilityInfo.announceForAccessibility(done);
         void loadCounts().catch(() => {});
       } catch (e) {
-        unswipe((swipedNumber) => swipedNumber !== number);
+        unswipe((swipe) => swipe !== at);
         // An alert: the row may be far down the list, out of sight.
         Alert.alert(`Couldn't ${verb} "${row.subject}"`, e instanceof Error ? e.message : String(e));
       }
     },
-    [api, key, view, q, loads, rowLoads, loadCounts],
+    [api, project, key, view, q, loads, rowLoads, loadCounts],
   );
   const close = useCallback((row: Row) => void triage(row, { status: "closed" }, "Closed", "close"), [triage]);
   const snooze = useCallback(
@@ -352,7 +355,7 @@ export default function Inbox() {
   const current = projects?.find((p) => p.slug === project);
   // The rows as the swipes it may not have yet leave them.
   const rows = (list?.rows ?? []).flatMap((row) => {
-    const swipe = swiped.get(row.number);
+    const swipe = swiped.get(swipeKey(project, row.number));
     const shown = swipe && (swipe.settled === null || list!.load <= swipe.settled) ? afterChange(row, swipe.change, view, q) : row;
     return shown ? [shown] : [];
   });

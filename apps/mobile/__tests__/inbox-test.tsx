@@ -690,6 +690,29 @@ describe("swiping a row", () => {
     expect(sheet.mock.calls[0]![0].options).toEqual(["In 3 hours", "Tomorrow, 9:00", "Monday, 9:00", "Wake now", "Cancel"]);
   });
 
+  it("keeps a swipe to its project: another project's conversation with the same number stays", async () => {
+    const closing = row("Invite link expired");
+    const changes = serveChanges([closing]);
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // Kite Labs is chosen before the server answers; its own conversation has the same number.
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) =>
+      path.startsWith("/conversations?view=open&limit") && mockSession.project === "kite" ? Promise.resolve(page([{ ...closing, subject: "Kite's own" }])) : served(path, init),
+    );
+    try {
+      mockSession.project = "kite";
+      await screen.rerender(<Inbox />);
+      expect(await screen.findByText("Kite's own")).toBeTruthy();
+      await act(async () => changes[0]!.answer(true));
+      expect(screen.getByText("Kite's own")).toBeTruthy();
+    } finally {
+      mockSession.project = "acme";
+    }
+  });
+
   it("offers Close but not Snooze in Spam, as the details sheet", async () => {
     serveChanges([row("Win a prize")], "spam");
     await render(<Inbox />);
