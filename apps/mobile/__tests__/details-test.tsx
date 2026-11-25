@@ -202,19 +202,6 @@ describe("the details sheet", () => {
     expect(announce).toHaveBeenLastCalledWith("Reopened");
   });
 
-  it("keeps a change made here when the status fetched on opening answers after it", async () => {
-    serve(SAM);
-    const answer = mockApi.getMockImplementation()!;
-    let opened: (value: unknown) => void = () => {};
-    mockApi.mockImplementation((path, init) => (path === "/conversations/12" && !init ? new Promise((resolve) => (opened = resolve)) : answer(path, init)));
-    await render(<Details />);
-
-    await fireEvent.press(await screen.findByRole("button", { name: "Close" }));
-    expect(await screen.findByLabelText("Status, Closed")).toBeTruthy();
-    // The fetch from before the close answers: open, as it was then.
-    await act(async () => opened(OPEN));
-    expect(screen.getByLabelText("Status, Closed")).toBeTruthy();
-  });
 
   it("marks it as spam and back", async () => {
     serve(SAM);
@@ -281,6 +268,9 @@ describe("the details sheet", () => {
 
     expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Reopen" })).toBeNull();
+    // Who has it isn't known: no list that would mark someone.
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByRole("button", { name: /^Assignee/ })).toBeNull();
     down = false;
     await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
@@ -305,13 +295,43 @@ describe("the details sheet", () => {
     expect(await screen.findByRole("button", { name: "Assignee, Unassigned" })).toBeTruthy();
   });
 
-  it("shows the status as it is now, not one kept from an earlier visit", async () => {
-    serve(SAM, { status: "closed", assignee: { name: "Olive Owner", email: "e2e-olive@example.com" }, spam: false, snoozedUntil: null });
-    // Kept from an earlier visit: open and nobody's.
-    showTriage(KEY, OPEN);
+  it("takes the status the screen under it keeps, without fetching the whole conversation", async () => {
+    serve(SAM, { ...OPEN, status: "closed" });
+    // What the screen under it fetched on this visit.
+    showTriage(KEY, { ...OPEN, status: "waiting" });
     await render(<Details />);
 
-    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Assignee, Olive Owner" })).toBeTruthy();
+    expect(await screen.findByLabelText("Status, Waiting on user")).toBeTruthy();
+    expect(mockApi.mock.calls.map(([path]) => path)).not.toContain("/conversations/12");
+  });
+
+  it("puts a screen reader back on the row a list was opened from: after a choice, Back, and Android's back", async () => {
+    type Handler = Parameters<typeof BackHandler.addEventListener>[1];
+    const handlers: Handler[] = [];
+    jest.spyOn(BackHandler, "addEventListener").mockImplementation((_event, handler) => {
+      handlers.push(handler);
+      return { remove: () => void handlers.splice(handlers.indexOf(handler), 1) };
+    });
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    const focused = () => {
+      const [[row, kind]] = focus.mock.calls.slice(-1) as unknown as [[{ props: { accessibilityLabel: string } }, string]];
+      return `${kind}: ${row.props.accessibilityLabel}`;
+    };
+    serve(SAM);
+    await render(<Details />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Assignee, Unassigned" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Olive Owner" }));
+    await screen.findByRole("button", { name: "Assignee, Olive Owner" });
+    expect(focused()).toBe("focus: Assignee, Olive Owner");
+
+    await fireEvent.press(screen.getByRole("button", { name: "Snooze, Not snoozed" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Back" }));
+    expect(focused()).toBe("focus: Snooze, Not snoozed");
+
+    focus.mockClear();
+    await fireEvent.press(screen.getByRole("button", { name: "Assignee, Olive Owner" }));
+    await act(async () => void handlers.at(-1)?.({} as Parameters<Handler>[0]));
+    expect(focused()).toBe("focus: Assignee, Olive Owner");
   });
 });

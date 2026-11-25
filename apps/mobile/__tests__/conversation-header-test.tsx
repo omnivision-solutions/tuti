@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 
 import ConversationRoute from "@/app/conversation/[number]";
+import Details from "@/app/conversation/[number]/details";
 import type { Conversation } from "@/lib/conversation";
-import { screenKey, showTriage } from "@/lib/details";
+import { getTriage, screenKey, showTriage } from "@/lib/details";
 
 // The native header as plain views: its title and right side drawn where the screen sets them.
 jest.mock("expo-router", () => {
@@ -63,5 +64,58 @@ describe("the conversation's header", () => {
     // Their name opens it too.
     await fireEvent.press(screen.getByRole("header", { name: "Maya Chen, Northwind" }));
     expect(mockPush).toHaveBeenCalledWith("/conversation/12/details");
+  });
+
+  it("shows its status only once this visit's fetch has answered, never one kept from an earlier visit", async () => {
+    // Kept from an earlier visit: closed, and Olive's.
+    showTriage(screenKey(mockSession, 12), { status: "closed", assignee: { name: "Olive Owner", email: "e2e-olive@example.com" }, spam: false, snoozedUntil: null });
+    let answer: (value: unknown) => void = () => {};
+    mockApi.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    await render(<ConversationRoute />);
+
+    expect(screen.queryByRole("button", { name: /details$/ })).toBeNull();
+    await act(async () => answer(CONVERSATION));
+    expect(await screen.findByRole("button", { name: "Open, unassigned, details" })).toBeTruthy();
+  });
+
+  it("forgets its status on leaving, so a sheet opened later by a link fetches the status as it is then", async () => {
+    mockApi.mockResolvedValue(CONVERSATION);
+    const opened = await render(<ConversationRoute />);
+    await screen.findByRole("button", { name: "Open, unassigned, details" });
+    await opened.unmount();
+    expect(getTriage(screenKey(mockSession, 12))).toBeNull();
+
+    // Closed on the web meanwhile; then `tuti://conversation/12/details`, with no screen under it.
+    mockApi.mockImplementation((path) =>
+      Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? { ...CONVERSATION, status: "closed" } : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+    );
+    const sheet = await render(<Details />);
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+    await sheet.unmount();
+    expect(getTriage(screenKey(mockSession, 12))).toBeNull();
+  });
+
+  it("keeps its status when the details sheet over it closes", async () => {
+    mockApi.mockImplementation((path) =>
+      Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? CONVERSATION : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+    );
+    await render(<ConversationRoute />);
+    await screen.findByRole("button", { name: "Open, unassigned, details" });
+
+    const sheet = await render(<Details />);
+    await screen.findByRole("button", { name: "Close" });
+    await sheet.unmount();
+    expect(getTriage(screenKey(mockSession, 12))).not.toBeNull();
+  });
+
+  it("doesn't put back what the details sheet changed while its fetch was on its way", async () => {
+    let answer: (value: unknown) => void = () => {};
+    mockApi.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    await render(<ConversationRoute />);
+
+    // The sheet closes it while the screen's fetch, from before, is still out.
+    await act(async () => showTriage(screenKey(mockSession, 12), { status: "closed", assignee: null, spam: false, snoozedUntil: null }));
+    await act(async () => answer(CONVERSATION));
+    expect(await screen.findByRole("button", { name: "Closed, unassigned, details" })).toBeTruthy();
   });
 });

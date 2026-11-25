@@ -1,13 +1,14 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AccessibilityInfo, ActivityIndicator, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { AccessibilityInfo, ActivityIndicator, BackHandler, type HostInstance, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getConversation } from "@/lib/conversation";
 import {
   type Assignee,
   type Change,
   dayOf,
+  forgetTriage,
   getAssignees,
   getPerson,
   getTriage,
@@ -20,6 +21,7 @@ import {
   snoozeTime,
   STATUS_WORDS,
   subscribeTriage,
+  triageChanges,
   updateConversation,
 } from "@/lib/details";
 import { useApi, useSession } from "@/lib/session";
@@ -50,8 +52,8 @@ export default function Details() {
   // Why the latest change didn't happen, in the server's words.
   const [failed, setFailed] = useState<string | null>(null);
 
-  // Changes made here so far: a fetch that started before one doesn't put back what it replaced.
-  const changes = useRef(0);
+  const fetchedHere = useRef(false);
+  useEffect(() => () => void (fetchedHere.current && forgetTriage(key)), [key]);
   const load = useCallback(() => {
     getPerson(api, number).then(
       (loaded) => {
@@ -67,20 +69,35 @@ export default function Details() {
       },
       (e: Error) => failure("team", e.message),
     );
-    // Its status as it is now (opened by a link, nothing under it has fetched it lately), unless a change here
-    // answered meanwhile.
-    const since = changes.current;
-    getConversation(api, number).then(
-      (loaded) => {
-        if (changes.current === since) {
-          showTriage(key, loaded);
-        }
-        failure("conversation", null);
-      },
-      (e: Error) => failure("conversation", e.message),
-    );
+    // Its status: the screen under it keeps that current (its fetches, the live stream). Opened by a link, with no
+    // screen under it, the sheet fetches it, and forgets it on closing.
+    if (!getTriage(key)) {
+      fetchedHere.current = true;
+      const since = triageChanges(key);
+      getConversation(api, number).then(
+        (loaded) => {
+          showTriage(key, loaded, since);
+          failure("conversation", null);
+        },
+        (e: Error) => failure("conversation", e.message),
+      );
+    }
   }, [api, number, key]);
   useEffect(load, [load]);
+
+  // Back on the details from a list (a choice, Back, Android's back): a screen reader's focus goes to the row that opened
+  // it, as the control it was on is gone.
+  const assignRow = useRef<HostInstance>(null);
+  const snoozeRow = useRef<HostInstance>(null);
+  const last = useRef<Pane>("details");
+  useEffect(() => {
+    const from = last.current;
+    last.current = pane;
+    const row = pane === "details" ? { assign: assignRow, snooze: snoozeRow, details: null }[from]?.current : null;
+    if (row) {
+      AccessibilityInfo.sendAccessibilityEvent(row, "focus");
+    }
+  }, [pane]);
 
   // A list in place of the details: Android's back returns to them, rather than closing the sheet.
   useEffect(() => {
@@ -108,9 +125,7 @@ export default function Details() {
     setBusy(true);
     setFailed(null);
     try {
-      const updated = await updateConversation(api, number, body);
-      changes.current++;
-      showTriage(key, updated);
+      showTriage(key, await updateConversation(api, number, body));
       setPane("details");
       AccessibilityInfo.announceForAccessibility(done);
     } catch (e) {
@@ -217,13 +232,16 @@ export default function Details() {
 
       <Group title="Conversation" colors={colors}>
         <Row
+          ref={assignRow}
           label="Assignee"
           value={assignee ? `${assignee.name}${assignedToYou ? " (you)" : ""}` : triage ? "Unassigned" : ""}
           colors={colors}
-          onPress={assignees && assignees.length > 0 ? () => setPane("assign") : undefined}
+          // Once who has it is known: the list marks them.
+          onPress={triage && assignees && assignees.length > 0 ? () => setPane("assign") : undefined}
         />
         <Row label="Status" value={triage ? STATUS_WORDS[triage.status] : ""} dot={triage && (triage.status === "open" ? colors.onNote : colors.muted)} colors={colors} />
         <Row
+          ref={snoozeRow}
           label="Snooze"
           value={!triage ? "" : snoozed ? `Snoozed till ${snoozeTime(new Date(triage.snoozedUntil!))}` : "Not snoozed"}
           colors={colors}
@@ -326,6 +344,7 @@ function Group({ title, count, colors, children }: { title: string; count?: numb
 
 /** A label and its value; with `onPress`, a row that opens choices (›), or with `action`, one that acts. */
 function Row({
+  ref,
   label,
   value,
   dot,
@@ -334,6 +353,7 @@ function Row({
   colors,
   onPress,
 }: {
+  ref?: Ref<HostInstance>;
   label: string;
   value?: string;
   dot?: string | null;
@@ -357,6 +377,7 @@ function Row({
   const style = [styles.row, IOS && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }];
   return onPress ? (
     <Pressable
+      ref={ref}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={value ? `${label}, ${value}` : label}
@@ -366,7 +387,7 @@ function Row({
       {content}
     </Pressable>
   ) : (
-    <View style={style} accessible accessibilityLabel={value ? `${label}, ${value}` : label}>
+    <View ref={ref} style={style} accessible accessibilityLabel={value ? `${label}, ${value}` : label}>
       {content}
     </View>
   );

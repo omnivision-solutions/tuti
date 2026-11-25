@@ -61,7 +61,7 @@ import {
   writer,
   writtenAt,
 } from "@/lib/conversation";
-import { getTriage, screenKey, showTriage, standing, subscribeTriage, type Triage } from "@/lib/details";
+import { forgetTriage, getTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -102,12 +102,14 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   // Answers the messages, or rejects when it can't (a send's check needs to know): the screen's own calls go through `refresh`.
   const load = useCallback((): Promise<Message[]> => {
     const ask = ++asked.current;
+    const since = triageChanges(draftKey);
     return getConversation(api, number).then(
       (loaded) => {
         setDraft((now) => withoutArrived(now, loaded.messages));
         if (ask === asked.current) {
           setConversation(loaded);
-          showTriage(draftKey, loaded);
+          // Not over a change the details sheet made while this was on its way.
+          showTriage(draftKey, loaded, since);
           setError(null);
           markReadIfLooking(api, loaded, focused.current && AppState.currentState === "active");
         }
@@ -169,6 +171,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
 
   // Its status and assignee, as the details sheet over it changes them too.
   const triage = useSyncExternalStore(subscribeTriage, () => getTriage(draftKey));
+  useEffect(() => () => forgetTriage(draftKey), [draftKey]);
   const details = () => router.push(`/conversation/${number}/details`);
 
   const [kind, setKind] = useState<Kind>("reply");
