@@ -22,7 +22,7 @@ import { drawable, fonts, logoImage, oneLine, THEMES, TUTI_GREEN } from "./share
 export const COVER_SIZE = { width: 1600, height: 840 } as const;
 
 /** The designs, in the order they're offered. */
-export const COVER_DESIGNS = ["title", "screenshot", "sections", "pattern"] as const;
+export const COVER_DESIGNS = ["title", "screenshot", "sections", "pattern", "background"] as const;
 export type CoverDesign = (typeof COVER_DESIGNS)[number];
 
 export type CoverContent = {
@@ -33,8 +33,14 @@ export type CoverContent = {
   /** Its headings, in order. */
   headings: string[];
   /** Its first image big enough to show off (this project's, processed); null without one. */
-  image: { id: string; width: number; height: number } | null;
+  image: Image | null;
+  /** The team's own background (Settings → Changelog), for the Your background design; null without one. */
+  background: Image | null;
+  /** The design the team picks first (Settings → Changelog); null for the automatic pick. */
+  preferred: CoverDesign | null;
 };
+
+type Image = { id: string; width: number; height: number };
 
 type Site = { project: { name: string }; brand: Branding };
 type Logo = Awaited<ReturnType<typeof logoImage>>;
@@ -57,6 +63,10 @@ export async function coverContent(
   headline?: string,
 ): Promise<CoverContent> {
   const doc = displayDoc(entry);
+  const { changelogCoverDesign, changelogCoverBackground: background } = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { changelogCoverDesign: true, changelogCoverBackground: { select: { id: true, status: true, width: true, height: true } } },
+  });
   const headings = (doc.content ?? []).filter((node) => node.type === "heading").map((node) => drawable(toPlainText(node))).filter(Boolean);
   const ids = imageIds(doc);
   const images = ids.length
@@ -69,6 +79,9 @@ export async function coverContent(
     headings,
     // Without uploads there's nothing to read it from.
     image: first && mediaStorage() ? { id: first.id, width: first.width!, height: first.height! } : null,
+    background:
+      background?.status === "READY" && background.width && background.height && mediaStorage() ? { id: background.id, width: background.width, height: background.height } : null,
+    preferred: (COVER_DESIGNS as readonly string[]).includes(changelogCoverDesign) ? (changelogCoverDesign as CoverDesign) : null,
   };
 }
 
@@ -78,14 +91,20 @@ function imageIds(node: NonNullable<Doc["content"]>[number] | Doc): string[] {
   return [...own, ...(node.content ?? []).flatMap(imageIds)];
 }
 
-/** The designs with something to show for this entry: Screenshot needs an image, Sections two headings. */
-export const coverDesigns = (content: Pick<CoverContent, "headings" | "image">): CoverDesign[] =>
-  COVER_DESIGNS.filter((design) => (design === "screenshot" ? content.image !== null : design === "sections" ? content.headings.length >= 2 : true));
+/** The designs with something to show for this entry: Screenshot needs an image, Sections two headings, Your background the team's. */
+export const coverDesigns = (content: Pick<CoverContent, "headings" | "image" | "background">): CoverDesign[] =>
+  COVER_DESIGNS.filter((design) =>
+    design === "screenshot" ? content.image !== null : design === "sections" ? content.headings.length >= 2 : design === "background" ? content.background !== null : true,
+  );
 
-/** The design picked when nobody picks: the entry's image where it has one, else its title on the portal's colour. */
-export const automaticDesign = (content: Pick<CoverContent, "image">): CoverDesign => (content.image ? "screenshot" : "title");
+/**
+ * The design picked when nobody picks: the team's own pick where the entry has something to show in it, else the
+ * entry's image where it has one, else its title on the portal's colour.
+ */
+export const automaticDesign = (content: Pick<CoverContent, "headings" | "image" | "background" | "preferred">): CoverDesign =>
+  content.preferred && coverDesigns(content).includes(content.preferred) ? content.preferred : content.image ? "screenshot" : "title";
 
-/** The entry's image couldn't be read for the Screenshot design it was asked for by name (storage's own trouble: try again). */
+/** The entry's image (or the team's background) couldn't be read for the design it was asked for by name (storage's own trouble: try again). */
 export class CoverPictureUnread extends Error {}
 
 /**
@@ -95,28 +114,36 @@ export class CoverPictureUnread extends Error {}
  */
 export async function drawCover(site: Site, content: CoverContent, design: CoverDesign, width: number = COVER_SIZE.width, { asAsked = false } = {}): Promise<Buffer> {
   const dark = site.brand.colorScheme === "dark";
-  const [logo, picture] = await Promise.all([logoImage(dark ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo), design === "screenshot" ? pictureOf(content.image) : null]);
-  if (design === "screenshot" && !picture && asAsked) {
+  const pictured = design === "screenshot" || design === "background";
+  const [logo, picture] = await Promise.all([
+    logoImage(dark ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo),
+    design === "screenshot" ? pictureOf(content.image) : design === "background" ? pictureOf(content.background, true) : null,
+  ]);
+  if (pictured && !picture && asAsked) {
     throw new CoverPictureUnread();
   }
   // Its image can't be read after all: the title's design, not a frame with nothing in it.
-  const drawn = design === "screenshot" && !picture ? "title" : design;
+  const drawn = pictured && !picture ? "title" : design;
   const svg = await satori(coverElement(site, content, drawn, logo, picture), { ...COVER_SIZE, fonts: await fonts() });
   return sharp(Buffer.from(svg)).resize(width).png().toBuffer();
 }
 
-/** The entry's image as a PNG (the renderer can't read the stored WebP), no wider than its frame needs. */
-async function pictureOf(image: CoverContent["image"]): Promise<Picture> {
+/**
+ * The entry's image as a PNG (the renderer can't read the stored WebP), no wider than its frame needs; `filling`: the
+ * team's background, cropped to fill the cover.
+ */
+async function pictureOf(image: Image | null, filling = false): Promise<Picture> {
   const storage = mediaStorage();
   if (!image || !storage) {
     return null;
   }
   try {
-    const stored = imageWidths(image.width).find((width) => width >= 960) ?? image.width;
-    const png = await sharp(await storage.get(imageKey(image.id, stored))).resize(1100, 1100, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
-    return { src: `data:image/png;base64,${png.toString("base64")}`, width: image.width, height: image.height };
+    const stored = imageWidths(image.width).find((width) => width >= (filling ? COVER_SIZE.width : 960)) ?? image.width;
+    const read = sharp(await storage.get(imageKey(image.id, stored)));
+    const png = await (filling ? read.resize(COVER_SIZE.width, COVER_SIZE.height, { fit: "cover" }) : read.resize(1100, 1100, { fit: "inside", withoutEnlargement: true })).png().toBuffer();
+    return { src: `data:image/png;base64,${png.toString("base64")}`, ...(filling ? COVER_SIZE : { width: image.width, height: image.height }) };
   } catch (error) {
-    log.warn("Couldn't read an entry's image for its cover", { mediaId: image.id, error });
+    log.warn("Couldn't read an image for a cover", { mediaId: image.id, error });
     return null;
   }
 }
@@ -263,6 +290,25 @@ export function coverElement(site: Site, content: CoverContent, design: CoverDes
             <div style={{ display: "flex", flexDirection: "column" }}>
               {pill(theme.chip, label)}
               {heading([112, 92, 72], [24, 50])}
+            </div>
+          </div>
+        </div>
+      );
+    case "background":
+      // The team's image filling the cover, darkened towards the foot so the white title reads on any of it.
+      return (
+        <div style={{ ...root, backgroundColor: "#1c1917", color: "#ffffff" }}>
+          {picture && (
+            // eslint-disable-next-line @next/next/no-img-element -- an image in the cover, not a page.
+            <img src={picture.src} width={COVER_SIZE.width} height={COVER_SIZE.height} alt="" style={{ position: "absolute", left: 0, top: 0, objectFit: "cover" }} />
+          )}
+          <div style={{ display: "flex", position: "absolute", left: 0, right: 0, bottom: 0, height: 600, backgroundImage: "linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.78))" }} />
+          {/* Placed too, so it's drawn over them (placed layers are drawn over the rest, as on a page). */}
+          <div style={{ ...column, position: "relative", width: 1240 }}>
+            {chip}
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {pill(theme.page, theme.text)}
+              {heading([112, 92, 72], [30, 60])}
             </div>
           </div>
         </div>

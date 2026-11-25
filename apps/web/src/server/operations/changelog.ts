@@ -26,6 +26,7 @@ import {
   sectionRange,
 } from "../release-notes";
 import { branding } from "./branding";
+import { imageOutput } from "./widget";
 import { author, authorId, saving } from "./create";
 import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -781,7 +782,7 @@ export const composeChangelogCover = defineOperation({
       .enum(["auto", ...COVER_DESIGNS])
       .default("auto")
       .describe(
-        "The design: `title` (the portal's colour and the title), `screenshot` (the entry's first image, at least 600px wide, beside the title), `sections` (the title beside the entry's headings: needs two), `pattern` (the title on the portal's page); `auto` is `screenshot` where the entry has such an image, else `title`",
+        "The design: `title` (the portal's colour and the title), `screenshot` (the entry's first image, at least 600px wide, beside the title), `sections` (the title beside the entry's headings: needs two), `pattern` (the title on the portal's page), `background` (the title on the team's own image: needs one, `coverBackground` in changelogStyle.update); `auto` is the team's `coverDesign` where the entry has what it needs, else `screenshot` where the entry has such an image, else `title`",
       )
       .meta({ examples: ["auto"] }),
     headline: z
@@ -820,13 +821,21 @@ export async function composeCover(
   const content = await coverContent(projectId, entry, headline);
   const picked = design === "auto" ? automaticDesign(content) : design;
   if (!coverDesigns(content).includes(picked)) {
-    throw new OperationError(400, "invalid_input", picked === "screenshot" ? "This entry has no image at least 600px wide for the Screenshot design" : "This entry needs two headings for the Sections design");
+    throw new OperationError(
+      400,
+      "invalid_input",
+      picked === "screenshot"
+        ? "This entry has no image at least 600px wide for the Screenshot design"
+        : picked === "background"
+          ? "This project has no cover background for the Your background design yet"
+          : "This entry needs two headings for the Sections design",
+    );
   }
   // Drawing and storing: never under the project lock (storeImage takes it itself). A design asked for by name is that
   // design or nothing: Screenshot whose image storage won't give just now isn't kept as a Title cover (`auto` is).
   const png = await drawCover({ project, brand: brand! }, content, picked, undefined, { asAsked: design !== "auto" }).catch((error: unknown) => {
     if (error instanceof CoverPictureUnread) {
-      throw new OperationError(503, "copy_failed", "Couldn't read the entry's image just now: try again in a moment");
+      throw new OperationError(503, "copy_failed", `Couldn't read ${picked === "background" ? "the cover background" : "the entry's image"} just now: try again in a moment`);
     }
     throw error;
   });
@@ -1117,17 +1126,29 @@ async function countAiEdit(projectId: string) {
 export const MAX_TONE_LENGTH = 4000;
 export const MAX_STYLE_EXAMPLES = 3;
 
-/** The team's tone notes and example entries (the ones still published, in the order picked). */
+/** The team's tone notes and example entries (the ones still published, in the order picked), and their cover defaults. */
 async function changelogStyle(projectId: string) {
-  const { changelogTone, changelogExampleIds, changelogScreenshotMarkers } = await prisma.project.findUniqueOrThrow({
+  const { changelogTone, changelogExampleIds, changelogScreenshotMarkers, changelogCoverDesign, changelogCoverBackground } = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { changelogTone: true, changelogExampleIds: true, changelogScreenshotMarkers: true },
+    select: {
+      changelogTone: true,
+      changelogExampleIds: true,
+      changelogScreenshotMarkers: true,
+      changelogCoverDesign: true,
+      changelogCoverBackground: { select: { id: true, status: true, width: true, height: true } },
+    },
   });
   const entries = await prisma.changelogEntry.findMany({
     where: { projectId, id: { in: changelogExampleIds }, publishedAt: { not: null } },
     select: { id: true, number: true, title: true, body: true, content: true },
   });
-  return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)), screenshotMarkers: changelogScreenshotMarkers };
+  return {
+    tone: changelogTone,
+    examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)),
+    screenshotMarkers: changelogScreenshotMarkers,
+    coverDesign: (COVER_DESIGNS as readonly string[]).includes(changelogCoverDesign) ? (changelogCoverDesign as CoverDesign) : "",
+    coverBackground: lastingImage(changelogCoverBackground),
+  };
 }
 
 /**
@@ -1149,6 +1170,10 @@ async function writingStyle(projectId: string, entryId: string) {
   return { tone, examples: entries.map((entry) => ({ title: entry.title, markdown: toMarkdown(displayDoc(entry)) })), screenshotMarkers };
 }
 
+const COVER_DESIGN_LINE =
+  "The cover design picked first when an entry's cover is made without one named (changelog.composeCover's `auto`, the Publish dialog), where the entry has what it needs; empty for the automatic pick";
+const COVER_BACKGROUND_LINE = "The team's own image, for the `background` cover design";
+
 const styleOutput = z
   .object({
     tone: z.string().describe("Notes on the tone to write in").meta({ examples: ["Friendly, short sentences, no jargon. Address the reader as you."] }),
@@ -1164,19 +1189,26 @@ const styleOutput = z
       .boolean()
       .describe("AI drafts mark where a screenshot belongs with a line \"[Screenshot: what it should show]\", to replace with the picture before publishing")
       .meta({ examples: [false] }),
+    coverDesign: z
+      .enum(["", ...COVER_DESIGNS])
+      .describe(COVER_DESIGN_LINE)
+      .meta({ examples: [""] }),
+    coverBackground: imageOutput.nullable().describe(COVER_BACKGROUND_LINE),
   })
-  .meta({ id: "ChangelogStyle", description: "The changelog's writing style: the tone notes and example entries AI drafts follow" });
+  .meta({ id: "ChangelogStyle", description: "The changelog's writing style (the tone notes and example entries AI drafts follow) and its cover defaults" });
 
-const styleView = ({ tone, examples, screenshotMarkers }: Awaited<ReturnType<typeof changelogStyle>>) => ({
+const styleView = ({ tone, examples, screenshotMarkers, coverDesign, coverBackground }: Awaited<ReturnType<typeof changelogStyle>>) => ({
   tone,
   examples: examples.map(({ number, title }) => ({ number, title })),
   screenshotMarkers,
+  coverDesign,
+  coverBackground,
 });
 
 export const getChangelogStyle = defineOperation({
   name: "changelogStyle.get",
   title: "Get the writing style",
-  summary: "Get the changelog's writing style: the tone notes and example entries AI drafts follow",
+  summary: "Get the changelog's writing style (the tone notes and example entries AI drafts follow) and its cover defaults",
   method: "GET",
   path: "/changelog-style",
   scope: "read",
@@ -1189,11 +1221,12 @@ export const getChangelogStyle = defineOperation({
 export const updateChangelogStyle = defineOperation({
   name: "changelogStyle.update",
   title: "Update the writing style",
-  summary: "Set the changelog's writing style for AI drafts: tone notes and example entries. What's left out stays as it is",
+  summary: "Set the changelog's writing style for AI drafts (tone notes and example entries) and its cover defaults. What's left out stays as it is",
   method: "PATCH",
   path: "/changelog-style",
   scope: "write",
   access: "admin",
+  errors: [409],
   input: z.object({
     tone: z
       .string()
@@ -1213,6 +1246,19 @@ export const updateChangelogStyle = defineOperation({
       .optional()
       .describe("Whether AI drafts mark where a screenshot belongs (\"[Screenshot: what it should show]\"); an entry with a marker left can't be published")
       .meta({ examples: [true] }),
+    coverDesign: z
+      .enum(["", ...COVER_DESIGNS])
+      .optional()
+      .describe(COVER_DESIGN_LINE)
+      .meta({ examples: ["pattern"] }),
+    coverBackground: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .optional()
+      .describe(`${COVER_BACKGROUND_LINE}: the id of one of the images uploaded in the app, null to remove`)
+      .meta({ examples: [null] }),
   }),
   output: styleOutput.describe("The writing style now"),
   example: { tone: "Friendly, short sentences, no jargon. Address the reader as you.", examples: [3] },
@@ -1230,14 +1276,23 @@ export const updateChangelogStyle = defineOperation({
       }
       exampleIds = numbers.map((n) => entries.find((entry) => entry.number === n)!.id);
     }
-    await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        ...(input.tone !== undefined && { changelogTone: input.tone }),
-        ...(input.screenshotMarkers !== undefined && { changelogScreenshotMarkers: input.screenshotMarkers }),
-        ...(exampleIds && { changelogExampleIds: exampleIds }),
-      },
-    });
+    await saving(() =>
+      prisma.$transaction(async (tx) => {
+        // A new background is this project's finished image (a 409 otherwise), attached before the project points at it. The
+        // one it replaces is released by release-media once nothing uses it.
+        await attachCover(tx, projectId, input.coverBackground);
+        await tx.project.update({
+          where: { id: projectId },
+          data: {
+            ...(input.tone !== undefined && { changelogTone: input.tone }),
+            ...(input.screenshotMarkers !== undefined && { changelogScreenshotMarkers: input.screenshotMarkers }),
+            ...(exampleIds && { changelogExampleIds: exampleIds }),
+            ...(input.coverDesign !== undefined && { changelogCoverDesign: input.coverDesign }),
+            ...(input.coverBackground !== undefined && { changelogCoverBackgroundId: input.coverBackground }),
+          },
+        });
+      }),
+    );
     return styleView(await changelogStyle(projectId));
   },
 });

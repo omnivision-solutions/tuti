@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { attachMedia } from "@/server/content";
 import { createUpload } from "@/server/media";
-import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
+import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
 import { createChangelogComment } from "@/server/operations/changelog-comments";
 import { createComment, createPost } from "@/server/operations/create";
 import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
@@ -98,6 +98,19 @@ test("a changelog entry's cover is kept while it's the cover, and released once 
   expect(await release()).toBe(0);
 
   await call(updateChangelogEntry, as(owner), { number: 1, cover: second.id });
+  await ageAttachments();
+  expect(await release()).toBe(1);
+  expect(await attached(first.id)).toEqual([false]);
+  expect(await attached(second.id)).toEqual([true]);
+});
+
+test("the changelog's cover background is kept while it's set, and released once it's replaced", async () => {
+  const [first, second] = [await upload(), await upload()];
+  await call(updateChangelogStyle, as(owner), { coverBackground: first.id });
+  await ageAttachments();
+  expect(await release()).toBe(0);
+
+  await call(updateChangelogStyle, as(owner), { coverBackground: second.id });
   await ageAttachments();
   expect(await release()).toBe(1);
   expect(await attached(first.id)).toEqual([false]);

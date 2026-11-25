@@ -9,7 +9,7 @@ import { automaticDesign, COVER_DESIGNS, COVER_SIZE, type CoverContent, coverDes
 import { fonts } from "./share-card";
 
 const site = (brand: Partial<Branding> = {}) => ({ project: { name: "Acme" }, brand: { color: "#6d4aff", colorScheme: "light", logo: null, logoDark: null, logoText: "", ...brand } as Branding });
-const content = (more: Partial<CoverContent> = {}): CoverContent => ({ title: "Dark mode and faster search", tag: "New", headings: [], image: null, ...more });
+const content = (more: Partial<CoverContent> = {}): CoverContent => ({ title: "Dark mode and faster search", tag: "New", headings: [], image: null, background: null, preferred: null, ...more });
 const picture = async (width: number, height: number) => ({
   src: `data:image/png;base64,${(await sharp({ create: { width: 64, height: 64, channels: 3, background: "#dddddd" } }).png().toBuffer()).toString("base64")}`,
   width,
@@ -20,9 +20,38 @@ const shown = (...args: Parameters<typeof coverElement>) => renderToStaticMarkup
 test("an entry is offered the designs it has something to show in, and gets its image's by default", () => {
   expect(coverDesigns(content())).toEqual(["title", "pattern"]);
   expect(coverDesigns(content({ headings: ["Dark mode"] }))).toEqual(["title", "pattern"]);
-  expect(coverDesigns(content({ headings: ["Dark mode", "Search"], image: { id: "m1", width: 1200, height: 800 } }))).toEqual([...COVER_DESIGNS]);
+  expect(coverDesigns(content({ headings: ["Dark mode", "Search"], image: { id: "m1", width: 1200, height: 800 } }))).toEqual(["title", "screenshot", "sections", "pattern"]);
+  // Your background, last, once the team has one.
+  expect(coverDesigns(content({ headings: ["Dark mode", "Search"], image: { id: "m1", width: 1200, height: 800 }, background: { id: "b1", width: 2000, height: 1000 } }))).toEqual([...COVER_DESIGNS]);
+  expect(COVER_DESIGNS.at(-1)).toBe("background");
   expect(automaticDesign(content())).toBe("title");
   expect(automaticDesign(content({ image: { id: "m1", width: 1200, height: 800 } }))).toBe("screenshot");
+});
+
+test("nobody picking, the team's own design comes first where the entry has what it needs, else the usual pick", () => {
+  const image = { id: "m1", width: 1200, height: 800 };
+  const background = { id: "b1", width: 2000, height: 1000 };
+  expect(automaticDesign(content({ preferred: "pattern", image }))).toBe("pattern");
+  expect(automaticDesign(content({ preferred: "background", background }))).toBe("background");
+  // Screenshot on an entry without an image, Sections with one heading, Your background without one: the usual pick.
+  expect(automaticDesign(content({ preferred: "screenshot" }))).toBe("title");
+  expect(automaticDesign(content({ preferred: "sections", headings: ["One"], image }))).toBe("screenshot");
+  expect(automaticDesign(content({ preferred: "background" }))).toBe("title");
+});
+
+test("Your background fills the cover with the team's image, darkened at the foot, the logo's chip and the title in white over it", async () => {
+  const cover = shown(site(), content(), "background", null, await picture(1600, 840));
+  expect(cover).toContain('src="data:image/png;base64,');
+  expect(cover).toMatch(/width="1600" height="840"[^>]*object-fit:cover/);
+  expect(cover).toContain("linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.78))");
+  expect(cover).toContain("color:#ffffff");
+  expect(cover).toContain("Dark mode and faster search");
+  expect(cover).toContain(">New<");
+  // The chip of the portal's page, at the top, as on the colour.
+  expect(cover).toContain("background:#faf8f4;color:#1c1917");
+  // Clear of the widget's crop, as the other designs (84px at the top and the foot), and placed, so it's drawn over the
+  // image and its shade rather than under them.
+  expect(cover).toContain("padding:84px 0 84px 96px;position:relative");
 });
 
 test("every design says the title and the tag, with the portal's name where it has no logo, and nothing its fonts can't draw", () => {

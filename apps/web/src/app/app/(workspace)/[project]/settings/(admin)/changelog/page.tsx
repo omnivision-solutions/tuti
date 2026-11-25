@@ -7,6 +7,8 @@ import { AiModelSetting } from "@/components/ai-model-setting";
 import { ChangelogStyleForm } from "@/components/changelog";
 import { SettingsCard, SettingsPane } from "@/components/settings-card";
 import { aiModelSetting } from "@/lib/ai-model-setting";
+import { COVER_DESIGNS, type CoverDesign } from "@/server/cover-card";
+import { lastingImage } from "@/server/media-urls";
 import { getAdminProject } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Changelog · Settings" };
@@ -18,9 +20,18 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
   if (!project || !aiEnabled()) {
     notFound();
   }
-  const [model, { changelogTone, changelogExampleIds, changelogScreenshotMarkers }, published] = await Promise.all([
+  const [model, { changelogTone, changelogExampleIds, changelogScreenshotMarkers, changelogCoverDesign, changelogCoverBackground }, published] = await Promise.all([
     aiModelSetting(project, "changelog", { changelog: "Drafts" }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true, changelogScreenshotMarkers: true } }),
+    prisma.project.findUniqueOrThrow({
+      where: { id: project.id },
+      select: {
+        changelogTone: true,
+        changelogExampleIds: true,
+        changelogScreenshotMarkers: true,
+        changelogCoverDesign: true,
+        changelogCoverBackground: { select: { id: true, status: true, width: true, height: true } },
+      },
+    }),
     prisma.changelogEntry.findMany({
       where: { projectId: project.id, publishedAt: { not: null } },
       // As the changelog lists them; ties in one order, so the examples saved are always in the same one.
@@ -28,6 +39,9 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
       select: { id: true, number: true, title: true, sample: true },
     }),
   ]);
+  const background = lastingImage(changelogCoverBackground);
+  // Your background without a background (removed from the API) is the automatic pick, as it draws.
+  const design = (COVER_DESIGNS as readonly string[]).includes(changelogCoverDesign) && (changelogCoverDesign !== "background" || background) ? (changelogCoverDesign as CoverDesign) : null;
   // The picked examples that are still published.
   const examples = published.filter((entry) => changelogExampleIds.includes(entry.id)).map((entry) => entry.number);
   return (
@@ -41,6 +55,8 @@ export default async function ChangelogSettingsPage(props: PageProps<"/app/[proj
           tone={changelogTone}
           examples={examples}
           screenshotMarkers={changelogScreenshotMarkers}
+          coverDesign={design}
+          coverBackground={background && { id: background.id, url: background.url }}
           published={published.map(({ number, title, sample }) => ({ number, title, sample }))}
         />
       </SettingsCard>

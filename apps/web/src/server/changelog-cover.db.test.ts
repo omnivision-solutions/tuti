@@ -8,7 +8,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { composeChangelogCover as composeAction, publishChangelogEntry as publishAction } from "@/server/changelog";
 import * as coverCard from "@/server/cover-card";
-import { composeChangelogCover, createChangelogEntry, getChangelogEntry, publishChangelogEntry } from "@/server/operations/changelog";
+import {
+  composeChangelogCover,
+  createChangelogEntry,
+  getChangelogEntry,
+  getChangelogStyle,
+  publishChangelogEntry,
+  updateChangelogStyle,
+} from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -44,7 +51,7 @@ afterEach(() => {
 });
 
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
-const compose = (input: { number: number; design?: "auto" | "title" | "screenshot" | "sections" | "pattern"; headline?: string }) => call(composeChangelogCover, team(), input);
+const compose = (input: { number: number; design?: "auto" | coverCard.CoverDesign; headline?: string }) => call(composeChangelogCover, team(), input);
 const heading = (text: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text }] });
 const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
 const covers = () => prisma.media.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" } });
@@ -219,4 +226,87 @@ test("in the app: Publish with a design picked adds that cover first, and publis
   const plain = await call(createChangelogEntry, team(), { title: "Fixes" });
   expect(await publishAction(project.slug, plain.number)).toEqual({});
   expect(await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: plain.number } }, select: { coverId: true } })).toEqual({ coverId: null });
+});
+
+/** A finished image of the project's, stored at the widths processing keeps (the ones a cover reads). */
+async function storedImage(width: number, height: number, projectId = project.id) {
+  const media = await prisma.media.create({ data: { projectId, uploaderId: owner.id, size: 10, status: "READY", width, height } });
+  for (const each of [960, 1600].filter((w) => w < width)) {
+    await mediaStorage()!.put(imageKey(media.id, each), await sharp({ create: { width: each, height: Math.round((each * height) / width), channels: 3, background: "#cc6633" } }).webp().toBuffer(), "image/webp");
+  }
+  return media;
+}
+const setStyle = (input: { coverDesign?: "" | coverCard.CoverDesign; coverBackground?: string | null; tone?: string; screenshotMarkers?: boolean }) =>
+  call(updateChangelogStyle, team(), input);
+
+test("Your background is offered once the team has a background, and draws on it; nobody picking, the team's design comes first where the entry has what it needs", async () => {
+  const shot = await storedImage(1200, 800);
+  const plain = await call(createChangelogEntry, team(), { title: "Fixes" });
+  const pictured = await call(createChangelogEntry, team(), {
+    title: "Dark mode",
+    content: { type: "doc", content: [paragraph("Pick a theme."), { type: "image", attrs: { mediaId: shot.id, width: "100", align: "center", alt: "" } }] },
+  });
+  const designsOf = async (number: number) => coverCard.coverDesigns(await coverCard.coverContent(project.id, await prisma.changelogEntry.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number } } })));
+
+  // No background: not offered, and asked for by name it's refused.
+  expect(await designsOf(plain.number)).toEqual(["title", "pattern"]);
+  await expect(compose({ number: plain.number, design: "background" })).rejects.toMatchObject({ status: 400, message: "This project has no cover background for the Your background design yet" });
+
+  const background = await storedImage(2400, 1200);
+  await setStyle({ coverBackground: background.id });
+  expect(await designsOf(plain.number)).toEqual(["title", "pattern", "background"]);
+  const read: string[] = [];
+  s3.beforeGet = (key) => void read.push(key);
+  await compose({ number: plain.number, design: "background" });
+  // Read at the cover's width, not a thumbnail's.
+  expect(read).toContain(imageKey(background.id, 1600));
+  expect(drawn().at(-1)).toMatchObject({ design: "background", title: "Fixes" });
+
+  // The team's design, where the entry has what it needs.
+  await setStyle({ coverDesign: "pattern" });
+  await compose({ number: pictured.number });
+  await setStyle({ coverDesign: "background" });
+  await compose({ number: pictured.number });
+  // Screenshot on an entry with no image: the usual pick, its title's design.
+  await setStyle({ coverDesign: "screenshot" });
+  await compose({ number: plain.number });
+  // Your background once the background's removed: the usual pick, the entry's image.
+  await setStyle({ coverDesign: "background", coverBackground: null });
+  await compose({ number: pictured.number });
+  expect(drawn().slice(-4).map((cover) => cover.design)).toEqual(["pattern", "background", "title", "screenshot"]);
+
+  // Storage loses the background's file: asked for by name it's refused, to try again.
+  await setStyle({ coverBackground: background.id });
+  s3.objects.delete(imageKey(background.id, 1600));
+  await expect(compose({ number: plain.number, design: "background" })).rejects.toMatchObject({ status: 503, message: "Couldn't read the cover background just now: try again in a moment" });
+});
+
+test("the cover's design and background are saved and checked, each on its own: the writing style keeps them, and they keep it", async () => {
+  expect(await call(getChangelogStyle, team(), {})).toMatchObject({ coverDesign: "", coverBackground: null });
+  const background = await storedImage(2400, 1200);
+
+  expect(await setStyle({ coverDesign: "sections", coverBackground: background.id })).toMatchObject({
+    coverDesign: "sections",
+    coverBackground: { id: background.id, url: expect.stringContaining(background.id), width: 2400, height: 1200 },
+  });
+  // Attached as it's set, so the cleanup of unfinished uploads leaves it.
+  expect((await prisma.media.findUniqueOrThrow({ where: { id: background.id } })).attachedAt).toEqual(expect.any(Date));
+
+  // Each setting on its own: the writing style's keep the cover's, and the other way round.
+  await setStyle({ tone: "Short sentences.", screenshotMarkers: true });
+  expect(await call(getChangelogStyle, team(), {})).toMatchObject({ tone: "Short sentences.", screenshotMarkers: true, coverDesign: "sections", coverBackground: { id: background.id } });
+  expect(await setStyle({ coverDesign: "" })).toMatchObject({ tone: "Short sentences.", screenshotMarkers: true, coverDesign: "", coverBackground: { id: background.id } });
+  expect(await setStyle({ coverBackground: null })).toMatchObject({ tone: "Short sentences.", coverDesign: "", coverBackground: null });
+  expect(await setStyle({ coverDesign: "pattern" })).toMatchObject({ coverDesign: "pattern", coverBackground: null });
+
+  // Not a design; an upload that's another project's, unfinished, or a file rather than an image: refused, nothing changed.
+  await expect(setStyle({ coverDesign: "poster" as "title" })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("expected one of") });
+  const other = await createProject(owner);
+  const theirs = await storedImage(2400, 1200, other.id);
+  const unfinished = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "PROCESSING" } });
+  const file = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", filename: "notes.pdf" } });
+  for (const id of [theirs.id, unfinished.id, file.id, "nothing"]) {
+    await expect(setStyle({ coverDesign: "title", coverBackground: id })).rejects.toMatchObject({ status: 409, code: "media_gone" });
+  }
+  expect(await call(getChangelogStyle, team(), {})).toMatchObject({ coverDesign: "pattern", coverBackground: null });
 });

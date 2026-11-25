@@ -116,8 +116,8 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
         SELECT jsonb_path_query(content, '$.**.mediaId') #>> '{}' AS id FROM content WHERE content IS NOT NULL
         -- Uploaded videos keep theirs as the video node's id (@tuti/content isHostedVideo).
         UNION ALL SELECT jsonb_path_query(content, '$.** ? (@.type == "video" && @.attrs.provider == "upload").attrs.id') #>> '{}' FROM content WHERE content IS NOT NULL
-        -- The project's branding images (logos, favicon, share image) and the widget launcher's icon.
-        UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId", "widgetIconImageId"]) FROM project WHERE id = ${projectId}
+        -- The project's branding images (logos, favicon, share image), the widget launcher's icon and the changelog's cover background.
+        UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId", "widgetIconImageId", "changelogCoverBackgroundId"]) FROM project WHERE id = ${projectId}
         UNION ALL SELECT "coverId" FROM changelog_entry WHERE "projectId" = ${projectId}
         -- Avatars uploaded from Account (an upload in whichever project they had open), or copied by an import, their owners on its team or its users (above).
         UNION ALL SELECT "imageId" FROM "user" WHERE "imageId" IN (SELECT id FROM media WHERE "projectId" = ${projectId} AND "attachedAt" < ${cutoff})

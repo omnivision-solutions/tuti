@@ -230,6 +230,10 @@ model Project {
   changelogExampleIds   String[]     @default([])
   /// AI drafts mark where a screenshot belongs ("[Screenshot: …]"), for the team to add before publishing (changelogStyle.update).
   changelogScreenshotMarkers Boolean @default(false)
+  /// The cover design picked first when an entry's cover is made (server/cover-card.tsx); "" for the automatic pick.
+  changelogCoverDesign  String       @default("")
+  /// The team's own image for the "Your background" cover design.
+  changelogCoverBackgroundId String?
   /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
   /// changelogAiHour, for the per-project hourly cap.
   changelogAiHour       DateTime     @default(now())
@@ -437,6 +441,7 @@ model Project {
   brandFavicon            Media?                   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
   seoImage                Media?                   @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
   widgetIconImage         Media?                   @relation("widgetIconImage", fields: [widgetIconImageId], references: [id], onDelete: SetNull)
+  changelogCoverBackground Media?                  @relation("changelogCoverBackground", fields: [changelogCoverBackgroundId], references: [id], onDelete: SetNull)
   invitations             Invitation[]
   boardRedirects          BoardRedirect[]
   postEmbeddings          PostEmbedding[]
@@ -588,6 +593,7 @@ model Media {
   faviconOf    Project[]        @relation("brandFavicon")
   seoImageOf   Project[]        @relation("seoImage")
   widgetIconOf Project[]        @relation("widgetIconImage")
+  coverBackgroundOf Project[]   @relation("changelogCoverBackground")
   /// Changelog entries it's the cover of (see ChangelogEntry.coverId).
   coverOf      ChangelogEntry[]
 
