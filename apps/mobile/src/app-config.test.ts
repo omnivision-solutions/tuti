@@ -35,6 +35,10 @@ describe("the app's Expo config", () => {
     expect(eas.build.production!.distribution).toBeUndefined();
   });
 
+  it("is version 1.0.0, App Store Connect's 1.0", () => {
+    expect(appConfig({}).version).toBe("1.0.0");
+  });
+
   it("declares the app exempt from export compliance: its only encryption is the system's HTTPS", () => {
     expect(appConfig({}).ios?.infoPlist?.ITSAppUsesNonExemptEncryption).toBe(false);
   });
