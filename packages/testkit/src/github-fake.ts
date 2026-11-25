@@ -56,6 +56,8 @@ export type FakePullRequest = {
   labels?: string[];
   author?: string;
   mergedAt?: string;
+  /** Not merged: still open, or closed without merging. */
+  open?: boolean;
   /** Commit messages, oldest first. */
   commits?: string[];
   files?: { filename: string; previous_filename?: string; status?: string; additions?: number; deletions?: number; patch?: string; content?: string }[];
@@ -251,6 +253,26 @@ export async function startGithubFake(): Promise<GithubFake> {
         return res.writeHead(200, { "content-type": "application/x-gzip" }).end(tarball(`${codeloadPath[1]!.replace("/", "-")}-${snapshot.commit}`, snapshot));
       }
       // A pull request, its commits and files (paged like GitHub), and a file's contents at its merge commit (or a repository's commit).
+      // A repository's closed pull requests (merged ones, and ones closed without merging: `open` here), one page.
+      const listPath = /^\/repos\/([^/]+\/[^/]+)\/pulls$/.exec(url.pathname);
+      if (req.method === "GET" && listPath && tokenInstallation) {
+        const perPage = Number(url.searchParams.get("per_page") ?? 30);
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const listed = [...pulls.entries()]
+          .filter(([key]) => key.startsWith(`${listPath[1]}#`))
+          .map(([, pr]) => ({
+            number: pr.number,
+            title: pr.title,
+            html_url: `https://github.com/${listPath[1]}/pull/${pr.number}`,
+            user: { login: pr.author ?? "octocat" },
+            merged_at: pr.open ? null : (pr.mergedAt ?? "2026-10-01T12:00:00Z"),
+            // Last touched when it merged (as far as the fake knows), and listed latest first, as asked.
+            updated_at: pr.mergedAt ?? "2026-10-01T12:00:00Z",
+          }))
+          .sort((x, y) => y.updated_at.localeCompare(x.updated_at));
+        reads.push(`${url.pathname}?page=${page}`);
+        return send(200, listed.slice((page - 1) * perPage, page * perPage));
+      }
       const pullPath = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)(\/commits|\/files)?$/.exec(url.pathname);
       const contentsPath = /^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(url.pathname);
       if (req.method === "GET" && (pullPath || contentsPath)) {
@@ -296,9 +318,11 @@ export async function startGithubFake(): Promise<GithubFake> {
           return send(200, {
             number: pr.number,
             title: pr.title,
+            html_url: `https://github.com/${pullPath![1]}/pull/${pr.number}`,
             body: pr.body ?? null,
             user: { login: pr.author ?? "octocat" },
-            merged_at: pr.mergedAt ?? "2026-10-01T12:00:00Z",
+            // `open`: not merged (yet).
+            merged_at: pr.open ? null : (pr.mergedAt ?? "2026-10-01T12:00:00Z"),
             merge_commit_sha: `merge-${pr.number}`,
             labels: (pr.labels ?? []).map((name) => ({ name })),
           });

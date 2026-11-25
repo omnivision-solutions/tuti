@@ -1539,7 +1539,7 @@ export const analyseCodeChange = defineOperation({
   run: async ({ projectId }, input) => {
     const change = await prisma.codeChange.findFirst({
       where: { id: input.id, projectId },
-      select: { id: true, state: true, reason: true, retryAt: true, retries: true, project: { select: { analyseCodeChanges: true } } },
+      select: { id: true, state: true, reason: true, retryAt: true, retries: true, retryPastGate: true, project: { select: { analyseCodeChanges: true } } },
     });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");
@@ -1561,7 +1561,12 @@ export const analyseCodeChange = defineOperation({
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
     }
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
+      // Past the gate for nothing to do ("Analyse anyway"), and for a run that was to go past it (the team's pick, failed
+      // or stopped), as its retry would.
+      const pastGate = change.state === "NOTHING_TO_DO" || ((change.state === "FAILED" || change.state === "ANALYSING") && change.retryPastGate);
+      // What it was, to be put back so if Autopilot is turned off before the run.
+      const was = change.state === "READY" || change.state === "NOTHING_TO_DO" ? change.state : undefined;
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate, resume: false, ...(was && { was }) });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
       // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.
@@ -1612,14 +1617,14 @@ export const resumeCodeChanges = defineOperation({
     const paused = await prisma.codeChange.findMany({
       where: { projectId, state: "PAUSED" },
       orderBy: { mergedAt: "asc" },
-      select: { id: true },
+      select: { id: true, retryPastGate: true },
     });
     let resumed = 0;
     let failed = 0;
     for (const change of paused) {
       try {
         // Inline, the analysis runs here and says whether it went ahead; on Hatchet, queued is resumed.
-        const result = await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: true });
+        const result = await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: change.retryPastGate, resume: true });
         if (!result?.skipped) {
           resumed++;
         }
