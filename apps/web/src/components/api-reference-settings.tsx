@@ -41,6 +41,11 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
   // Only what's typed over what's stored: a field left alone shows the address the page has now (a teammate's change
   // included), so Change can't put an old one back.
   const [edited, setEdited] = useState<string | null>(null);
+  // The stored address typed in is the field left alone, whichever came first: typed just after "Address changed", before
+  // the page has the new address, it still follows the stored one from then on.
+  if (edited !== null && edited.trim() === url) {
+    setEdited(null);
+  }
   const value = edited ?? url;
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -58,7 +63,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
         document.getElementById("reference-source-url")?.focus();
         return;
       }
-      // Back to following the stored address, unless something else was typed while this one was read: that stays.
+      // Back to following the stored address (as the server wrote it), unless something else was typed while this one was read: that stays.
       setEdited((now) => (now !== null && now.trim() === next ? null : now));
       const what = [result.added && `${result.added} added`, result.removed && `${result.removed} removed`].filter(Boolean).join(", ");
       toast.success(what ? `Address changed: ${what}` : "Address changed");
@@ -78,8 +83,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
             aria-invalid={error ? true : undefined}
             aria-describedby="reference-source-url-note"
             onChange={(event) => {
-              // The stored address typed back is the field left alone: it follows the stored one again.
-              setEdited(event.target.value.trim() === url ? null : event.target.value);
+              setEdited(event.target.value);
               setError(undefined);
             }}
           />

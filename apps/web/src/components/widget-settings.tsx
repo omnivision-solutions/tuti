@@ -101,18 +101,27 @@ export function WidgetSettings({
   aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
-  // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it.
+  // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it. Not to the one this
+  // page sent: its refresh lands after "Widget saved", and would undo a pick made since (Remove right after saving).
   const [loaded, setLoaded] = useState(initialIcon);
+  const [sent, setSent] = useState<FormDataEntryValue | null>(null);
   if (loaded !== initialIcon) {
     setLoaded(initialIcon);
-    setIcon(initialIcon);
+    if (initialIcon === sent) {
+      setSent(null);
+    } else {
+      setIcon(initialIcon);
+    }
   }
   const [upgrading, setUpgrading] = useState(false);
   const iconChoices = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
-    save: (prev, formData) => saveWidgetSettings(projectSlug, prev, formData),
+    save: (prev, formData) => {
+      setSent(formData.get("icon"));
+      return saveWidgetSettings(projectSlug, prev, formData);
+    },
     onSaved: () => {
       toast.success("Widget saved");
       preview.reload();

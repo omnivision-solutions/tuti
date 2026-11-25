@@ -1627,8 +1627,11 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   await comments.getByRole("button", { name: "Edit your comment" }).click();
   const edit = comments.getByRole("textbox", { name: "Edit your comment" });
   await expect(edit).toContainText("Finally! My eyes thank you.");
-  // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh.
-  await edit.fill("");
+  // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh. From the keyboard: fill("") selects
+  // the text behind the editor's back, and its Delete can come before the editor has seen that (a Delete at the text's
+  // end, which deletes nothing).
+  await edit.press("ControlOrMeta+a");
+  await edit.press("Delete");
   // (What Save sends, once the editor's caught up.)
   await expect(comments.locator("form").filter({ has: ada.getByRole("textbox", { name: "Edit your comment" }) }).locator('input[name="content"]')).toHaveValue("");
   await comments.getByRole("button", { name: "Save" }).click();
