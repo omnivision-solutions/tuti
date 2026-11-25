@@ -89,7 +89,8 @@ export async function SubscribersTable({
               <tr className="[&>th]:px-3 [&>th]:pb-2 [&>th]:font-medium">
                 <th scope="col">Email</th>
                 <th scope="col">Status</th>
-                <th scope="col" className="text-right">
+                {/* One order, newest first. */}
+                <th scope="col" aria-sort="descending" className="text-right">
                   Added
                 </th>
                 {admin && (
@@ -107,6 +108,10 @@ export async function SubscribersTable({
                       <span className="truncate font-medium" title={subscriber.email}>
                         {subscriber.email}
                       </span>
+                      {/* On phones, where the row is who and Remove, its status too. */}
+                      <span className="md:hidden">
+                        <StatusPill status={subscriber.status} />
+                      </span>
                       {subscriber.user && (
                         <Link href={`/app/${slug}/users/${encodeURIComponent(subscriber.user)}`} className="truncate text-xs text-muted-foreground hover:text-foreground hover:underline">
                           User {subscriber.user}
@@ -114,12 +119,8 @@ export async function SubscribersTable({
                       )}
                     </div>
                   </td>
-                  <td>
-                    {/* A tint, a dot, sentence case (docs/design.md), like an article's state. */}
-                    <Badge variant="outline" className={cn("border-transparent text-foreground", STATUS[subscriber.status].tint)}>
-                      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATUS[subscriber.status].dot)} />
-                      {STATUS[subscriber.status].label}
-                    </Badge>
+                  <td className="max-md:hidden">
+                    <StatusPill status={subscriber.status} />
                   </td>
                   <td className="text-right whitespace-nowrap text-muted-foreground max-md:hidden">{timeAgo(new Date(subscriber.createdAt))}</td>
                   {admin && (
@@ -139,5 +140,15 @@ export async function SubscribersTable({
         </PageNav>
       )}
     </>
+  );
+}
+
+/** A tint, a dot, sentence case (docs/design.md), like an article's state. */
+function StatusPill({ status }: { status: Status }) {
+  return (
+    <Badge variant="outline" className={cn("border-transparent text-foreground", STATUS[status].tint)}>
+      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATUS[status].dot)} />
+      {STATUS[status].label}
+    </Badge>
   );
 }

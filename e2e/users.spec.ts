@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { sesComplaint } from "./ses";
 
@@ -555,6 +557,16 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   await expect(ada.getByRole("link", { name: "User user-1" })).toHaveAttribute("href", `/app/${slug}/users/user-1`);
   await expect(owner.getByText("isn't emailed to anyone")).toHaveCount(0);
   await checkpoint(owner, "subscribers");
+  // On a phone: each row who and its status, Remove inside the table's visible width.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const scroller = owner.getByRole("main").getByRole("table").locator("..");
+  const remove = ada.getByRole("button", { name: "Remove e2e-ada@example.com" });
+  await expect(ada).toContainText("Subscribed");
+  const [box, button] = [(await scroller.boundingBox())!, (await remove.boundingBox())!];
+  expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "subscribers-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Remove asks first; then they're removed, and Subscribed no longer lists them.
   await rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button", { name: "Remove e2e-reader@example.com" }).click();
@@ -582,4 +594,22 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   await expect(owner.getByText("Portal is now private")).toBeVisible();
   await owner.goto(`/app/${slug}/users?view=subscribers`);
   await expect(owner.getByText("Your portal is private, so its changelog isn't emailed to anyone.")).toBeVisible();
+});
+
+test("on a server selling plans, Users → Subscribers says when the project's email is paused", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await owner.goto(`/app/${slug}/users?view=subscribers`);
+  await expect(owner.getByText("No subscribers yet")).toBeVisible();
+  await expect(owner.getByText("Your project's email is paused")).toHaveCount(0);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`UPDATE project SET "emailPausedAt" = now() WHERE slug = $1`, [slug]);
+  } finally {
+    await db.end();
+  }
+  await owner.reload();
+  await expect(owner.getByText("Your project's email is paused, so nothing is sent until it's resumed.")).toBeVisible();
 });
