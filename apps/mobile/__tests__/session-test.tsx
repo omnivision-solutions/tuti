@@ -121,8 +121,9 @@ describe("signing out", () => {
     expect(mockDismissed).toHaveBeenCalled();
   });
 
-  it("takes the notifications shown off when the server ends the session too", async () => {
+  it("takes the notifications shown off when the server ends the session too, and gives the phone a new id", async () => {
     mockStored.set("session", JSON.stringify(session));
+    mockStored.set("device-id", "id-of-the-ended-session");
     mockDismissed.mockClear();
     jest.mocked(globalThis.fetch).mockImplementation(async (url) => (String(url).endsWith("/projects") ? new Response("{}", { status: 401 }) : new Response("{}")));
     await render(
@@ -137,5 +138,8 @@ describe("signing out", () => {
 
     expect(await screen.findByText("signed out")).toBeTruthy();
     expect(mockDismissed).toHaveBeenCalled();
+    // A push sent before the end and delivered after names the old id, which no longer passes as this sign-in's.
+    await landWrites();
+    expect(mockStored.get("device-id")).toBe("phone-1");
   });
 });

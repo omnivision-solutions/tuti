@@ -143,11 +143,28 @@ export async function removeDevice(api: Api) {
       }
     });
     // A new id from here on: a sign-in that registers while this is still on its way gets a row of its own, which this
-    // late removal can't reach. Kept in memory if storage fails (the next launch then reads the old one, as before).
-    const made = randomUUID();
-    keptId = Promise.resolve(made);
-    rotated = { from: id, to: made };
-    void SecureStore.setItemAsync(DEVICE_ID, made, STORE_OPTIONS).catch(() => {});
+    // late removal can't reach.
+    rotate(id);
+  }
+}
+
+/** A new id for this install, in place of `from`. Kept in memory if storage fails (the next launch then reads the old one). */
+function rotate(from: string) {
+  const made = randomUUID();
+  keptId = Promise.resolve(made);
+  rotated = { from, to: made };
+  void SecureStore.setItemAsync(DEVICE_ID, made, STORE_OPTIONS).catch(() => {});
+}
+
+/**
+ * A new id for this install when the server ends the session in use (a 401, a check): no removal to send, as its rows
+ * went with it, but a push sent before and delivered after (a phone offline meanwhile) still names the old id, which
+ * `forThisSignIn` then refuses, as after a sign-out.
+ */
+export async function forgetDeviceId() {
+  const id = await deviceId().catch(() => null);
+  if (id) {
+    rotate(id);
   }
 }
 
