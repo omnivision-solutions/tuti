@@ -292,7 +292,7 @@ const userInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "Applied apart from the users (a refused call changes neither; if this part fails, the users are saved anyway and sending the same call again is safe). `true` subscribes their address once saved, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, the one they had before this call too, as changelogSubscribers.remove",
+      "Applied apart from the users (a refused call changes neither; if a call fails partway, sending it again finishes it). `true` subscribes their address once saved, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, the one they had before this call too, as changelogSubscribers.remove",
     ),
 });
 
