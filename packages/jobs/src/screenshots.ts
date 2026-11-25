@@ -1,5 +1,5 @@
 import { type Prisma, prisma, type ScreenshotWindow } from "@tuti/db";
-import { config, type JobInput, log } from "@tuti/shared";
+import { config, type JobInput, log, screenshotsEnabled } from "@tuti/shared";
 import { openValue } from "@tuti/shared/signed";
 import { mediaLimit } from "@tuti/shared/storage";
 
@@ -51,9 +51,13 @@ export const SCREENSHOT_ERRORS = {
 export type ShotResult = { id: string; show: string; imageId: string; description: string; url: string } | { id: string; show: string; failed: string };
 
 /**
- * Settles the project's runs that stopped (see SCREENSHOT_RUN_STALE_MS) as failed, with their screenshots: each claimed
- * first, so two reads at once settle it once. One whose job died with the agent running (a deploy, the time limit) has
- * its session's browser stopped, which Browser Use would otherwise bill until it times out, and what it cost charged.
+ * Settles the project's runs that stopped (see SCREENSHOT_RUN_STALE_MS) as failed, with their screenshots, claimed in
+ * one statement so two reads at once settle each once. Then finishes what any ended run left at Browser Use: one whose
+ * job died with the agent running (a deploy, the time limit), or whose charge or file deletion failed (the service
+ * down for a moment), still holds its session or workspace. Its browser is stopped, which Browser Use would otherwise
+ * bill until it times out, its cost charged and its files deleted, each id cleared once done. Charging claims the
+ * session first (chargeSession), so a session is charged once whoever gets to it; deleting files twice is harmless.
+ * Not under the project's lock: these are requests to Browser Use, which would hold it for seconds.
  */
 export async function settleStaleScreenshotRuns(projectId: string) {
   const stale = {
@@ -67,19 +71,32 @@ export async function settleStaleScreenshotRuns(projectId: string) {
   const settled = await prisma.screenshotRun.updateManyAndReturn({ where: stale, data: { state: "FAILED", error: SCREENSHOT_ERRORS.stopped, finishedAt: new Date() }, select: { id: true } });
   for (const { id } of settled) {
     await prisma.screenshot.updateMany({ where: { runId: id, imageId: null, failed: "" }, data: { failed: SCREENSHOT_ERRORS.stopped } });
-    // Its session, while not charged yet (a charged one's id is cleared): stopped, and charged by whichever of this and
-    // its job, if it's still going, claims it first.
-    const { sessionId, workspaceId } = await prisma.screenshotRun.findUniqueOrThrow({ where: { id }, select: { sessionId: true, workspaceId: true } });
-    const client = browserUse();
+  }
+  // Ended runs still holding a session (not charged yet) or a workspace (files not deleted yet), the ones just settled
+  // included. A few at a time: a read waits on these requests.
+  const leftovers = await prisma.screenshotRun.findMany({
+    where: { projectId, state: { in: ["DONE", "FAILED"] }, OR: [{ sessionId: { not: null } }, { workspaceId: { not: null } }] },
+    orderBy: { createdAt: "asc" },
+    take: LEFTOVERS_PER_READ,
+    select: { id: true, sessionId: true, workspaceId: true },
+  });
+  if (leftovers.length === 0 || !screenshotsEnabled()) {
+    return;
+  }
+  const client = browserUse();
+  for (const { id, sessionId, workspaceId } of leftovers) {
     if (sessionId) {
       await chargeSession(client, sessionId, { projectId, runId: id, model: config().screenshots.model }, null);
     }
-    // And the files it saved, deleted, after its browser stopped.
+    // The files, after its browser stopped (above).
     if (workspaceId) {
       await clearWorkspace(client, workspaceId, { projectId, runId: id });
     }
   }
 }
+
+/** Ended runs whose leftovers at Browser Use one read finishes at most (the rest, on the next). */
+const LEFTOVERS_PER_READ = 3;
 
 /** A session's cost, just charged, added to its run's: a run whose job dies later keeps every try's cost. */
 async function addCost(runId: string, cost: SessionCost) {

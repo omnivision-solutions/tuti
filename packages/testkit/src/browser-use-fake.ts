@@ -46,6 +46,8 @@ export type BrowserUseFake = {
   files: Map<string, Map<string, Uint8Array>>;
   /** Sessions whose cost was read. */
   costsRead: string[];
+  /** How many of the next requests of each kind fail (500): deleting a file, reading a session's cost. */
+  failNext: { deletes: number; costs: number };
   /** Lets every stuck run end. */
   release(): void;
   close(): Promise<void>;
@@ -92,6 +94,7 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
     browsers: new Map(),
     costsRead: [],
     events: [],
+    failNext: { deletes: 0, costs: 0 },
     files,
     release: () => {
       for (const run of runs.values()) {
@@ -199,6 +202,10 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
       }
       const listed = /^\/workspaces\/([^/]+)\/files$/.exec(path);
       if (listed && files.has(listed[1]!) && req.method === "DELETE") {
+        if (fake.failNext.deletes > 0) {
+          fake.failNext.deletes--;
+          return answer(500, { detail: "The fake was told to fail this delete" });
+        }
         fake.events.push(`delete ${listed[1]}`);
         const removed = files.get(listed[1]!)!.delete(url.searchParams.get("path") ?? "");
         return removed ? res.writeHead(204).end() : answer(404, { detail: "Not found" });
@@ -233,6 +240,10 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
       }
       const cost = /^\/sessions\/([^/]+)\/cost$/.exec(path);
       if (cost && fake.browsers.has(cost[1]!)) {
+        if (fake.failNext.costs > 0) {
+          fake.failNext.costs--;
+          return answer(500, { detail: "The fake was told to fail this cost read" });
+        }
         fake.costsRead.push(cost[1]!);
         fake.events.push(`cost ${cost[1]}`);
         const run = [...runs.values()].find((one) => one.sessionId === cost[1]);

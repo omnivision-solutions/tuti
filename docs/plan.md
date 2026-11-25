@@ -1131,7 +1131,7 @@ An agent in Browser Use's cloud browser signs in to a team's app (a demo account
 - [ ] SC4. Refresh screenshots gone stale (the decision model says which a change affects)
 - [ ] SC5. A browser profile per project (Browser Use's persistent logins), so a run starts signed in; and a sign-in page on another domain (an identity provider), which the password isn't typed into today
 - [ ] SC6. A self-hosted browser instead of Browser Use's cloud
-- [ ] SC7. A periodic sweep of ended screenshot runs that still hold a session or workspace (a charge or file deletion that failed): charge and delete again, instead of a log line to act on by hand
+- [x] SC7. Ended screenshot runs that still hold a session or workspace (a charge or file deletion that failed) have them finished on a later read: charged once (the session claimed first), files deleted, ids cleared. Done (2026-11-25, with SC1)
 
 ## Later
 

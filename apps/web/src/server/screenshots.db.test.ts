@@ -266,6 +266,32 @@ test("a run whose job died with the agent running has its browser stopped and it
   expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(1);
 });
 
+test("a run whose charge and file deletion failed has them done by a later read, charged once", async () => {
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
+  await grantCredits(project.id, "MANUAL", 10, { days: null });
+  await setUp();
+  // Browser Use fails the cost read and a delete, in the job and again in the read screenshots.take returns with: the run
+  // ends, its screenshot kept, nothing charged, its files there.
+  browserUse.failNext = { deletes: 2, costs: 2 };
+  const run = await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const { sessionId, workspaceId } = browserUse.runs.at(-1)!;
+  expect(run).toMatchObject({ state: "done", cost: null, screenshots: [{ state: "taken" }] });
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(0);
+  expect(browserUse.files.get(workspaceId)!.size).toBeGreaterThan(0);
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { sessionId: true, workspaceId: true } })).toEqual({ sessionId, workspaceId });
+
+  // A later read (the settings page, screenshots.get) finishes it: charged, its files deleted, both ids cleared.
+  expect(await call(getScreenshots, as(), { id: run.id })).toMatchObject({ state: "done", cost: 0.0419 });
+  expect((await prisma.aiUsage.findMany({ where: { projectId: project.id } })).map((usage) => usage.cost!.toNumber())).toEqual([0.0419]);
+  expect(browserUse.files.get(workspaceId)!.size).toBe(0);
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { sessionId: true, workspaceId: true } })).toEqual({ sessionId: null, workspaceId: null });
+  // And never again.
+  await call(getScreenshots, as(), { id: run.id });
+  await call(getScreenshotSettings, as(), {});
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(1);
+  expect((await creditBalance(project.id)).balance).toBeCloseTo(10 - 4.19, 6);
+});
+
 test("a try's files are deleted even when its charge fails in the database, and a failed cost write doesn't stop the run", async () => {
   await setUp();
   // The cost read, then adding it to the run fails: logged, the run goes on, and its files are still deleted.
