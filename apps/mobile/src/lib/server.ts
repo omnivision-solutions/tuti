@@ -3,7 +3,7 @@ export const CLOUD_SERVER = "https://tuti.so";
 
 /**
  * A server's address as typed ("feedback.acme.com", "https://Feedback.acme.com/app/inbox/") → its origin
- * ("https://feedback.acme.com"), or null if it isn't one. https unless http is typed. Hand-parsed: React Native's URL
+ * ("https://feedback.acme.com"), or null if it isn't one: its scheme's default port left out, as an origin. https unless http is typed. Hand-parsed: React Native's URL
  * leaves out most of the standard.
  */
 export function normalizeServer(typed: string): string | null {
@@ -11,11 +11,14 @@ export function normalizeServer(typed: string): string | null {
   if (!match) {
     return null;
   }
-  const [, scheme = "https", host, port = ""] = match;
+  const [, given = "https", host, typedPort = ""] = match;
   if (!host!.startsWith("[") && (!/[a-z0-9]$/i.test(host!) || host!.split(".").some((label) => !label))) {
     return null;
   }
-  return `${scheme.toLowerCase()}://${host!.toLowerCase()}${port}`;
+  const scheme = given.toLowerCase();
+  // The scheme's own port left out, as an origin has it: the server names itself so (its pushes' `server`).
+  const port = typedPort === (scheme === "https" ? ":443" : ":80") ? "" : typedPort;
+  return `${scheme}://${host!.toLowerCase()}${port}`;
 }
 
 /** What to show for a server: its host ("tuti.so", "feedback.acme.com:8443"). */

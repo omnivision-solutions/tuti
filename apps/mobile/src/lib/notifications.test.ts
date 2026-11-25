@@ -305,6 +305,21 @@ describe("a notification while the app is in front", () => {
   });
 });
 
+describe("whether a notification is from the server signed in to", () => {
+  it("compares origins: a default port, a trailing slash or a path on either side are the same server", async () => {
+    const { fromServer } = await load();
+    const at = (server?: string) => ({ project: "acme", number: 7, ...(server && { server }) });
+    // The push names its server as an origin; a session stored with the port typed.
+    expect(fromServer(at("https://tuti.example.com"), { server: "https://tuti.example.com:443" })).toBe(true);
+    expect(fromServer(at("https://tuti.example.com:443/"), { server: "https://tuti.example.com" })).toBe(true);
+    expect(fromServer(at("http://tuti.example.com/app/"), { server: "http://tuti.example.com:80" })).toBe(true);
+    expect(fromServer(at("https://tuti.example.com:8443"), { server: "https://tuti.example.com" })).toBe(false);
+    expect(fromServer(at("https://other.example"), { server: "https://tuti.example.com" })).toBe(false);
+    // A server from before pushes named it.
+    expect(fromServer(at(), { server: "https://tuti.example.com" })).toBe(true);
+  });
+});
+
 describe("opening a tapped notification", () => {
   const signedIn = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
   const projects = async () => ["acme", "kite"];

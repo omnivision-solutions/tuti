@@ -180,7 +180,9 @@ export function targetOf(data: unknown): Target | null {
  * Whether a notification is from the server the session is on: another server can have a project of the same slug. One
  * that doesn't say (a server from before it did) is taken to be.
  */
-export const fromServer = (target: Target, session: { server: string }) => target.server === undefined || normalizeServer(target.server) === session.server;
+export const fromServer = (target: Target, session: { server: string }) =>
+  // Both as origins: a session stored before default ports were left out can still have one.
+  target.server === undefined || normalizeServer(target.server) === normalizeServer(session.server);
 
 /** The conversation a tap opens: a tap on the notification itself (not one of its actions), with a conversation in it. */
 export const tapped = (response: Notifications.NotificationResponse | null | undefined) =>

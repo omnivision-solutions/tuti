@@ -9,6 +9,10 @@ describe("a server's address", () => {
     expect(normalizeServer("HTTP://192.168.1.20:3000/")).toBe("http://192.168.1.20:3000");
     expect(normalizeServer("localhost:3000")).toBe("https://localhost:3000");
     expect(normalizeServer("http://[::1]:3000")).toBe("http://[::1]:3000");
+    // A scheme's default port is left out, as in an origin.
+    expect(normalizeServer("https://Tuti.example.com:443/")).toBe("https://tuti.example.com");
+    expect(normalizeServer("http://tuti.example.com:80")).toBe("http://tuti.example.com");
+    expect(normalizeServer("http://tuti.example.com:443")).toBe("http://tuti.example.com:443");
   });
 
   it("isn't anything else", () => {
