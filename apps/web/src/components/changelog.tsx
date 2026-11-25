@@ -1072,8 +1072,9 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
         projectSlug,
         picked.map(({ repo, number }) => ({ repo, number })),
       );
-      // Nothing added (all in an entry by now): the list doesn't change, so nothing would clear the flag.
-      if (result.error || !result.added) {
+      // Nothing added (all in an entry by now, or refused): the list doesn't change, so nothing would clear the flag. Some
+      // added (a later batch refused): it does, and focus goes to the section's heading as after a success.
+      if (!result.added) {
         focusPullRequests.next = false;
       }
       if (result.error) {
