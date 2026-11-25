@@ -829,6 +829,23 @@ test("requestIds are per conversation and writer, and a reply without one is wri
   expect(await prisma.conversationMessage.count({ where: { projectId: project.id } })).toBe(8);
 });
 
+test("a conversation gives each message's requestId to its own writer only", async () => {
+  const { owner, project, context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  const member = await addMember(project.id, "MEMBER");
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+  await call(replyToConversation, as(owner.id), { number: 1, body: "Mine", requestId: "mine" });
+  await call(replyToConversation, as(member.id), { number: 1, body: "Theirs", requestId: "theirs" });
+  await call(replyToConversation, context, { number: 1, body: "Thanks", requestId: "user", author: { id: sam.id } });
+  await call(replyToConversation, as(owner.id), { number: 1, body: "No id" });
+
+  const ids = async (who: Parameters<typeof call>[1]) => (await call(getConversation, who, { number: 1 })).messages.map((m) => [m.body, m.requestId]);
+  expect(await ids(as(owner.id))).toEqual([["Help", null], ["Mine", "mine"], ["Theirs", null], ["Thanks", null], ["No id", null]]);
+  // An API key's are its creator's.
+  expect(await ids(context)).toEqual(await ids(as(owner.id)));
+  expect(await ids(as(member.id))).toEqual([["Help", null], ["Mine", null], ["Theirs", "theirs"], ["Thanks", null], ["No id", null]]);
+});
+
 test("the same requestId sent at once leaves one message, and each gets it", async () => {
   const { owner, context } = await setup();
   await call(createConversation, context, { user: sam, body: "Help" });
