@@ -1317,8 +1317,156 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   await team.reload();
   await team.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Publish “Dark mode is here”?");
+  // With the lines gone, its cover's designs are offered (another journey makes one): published as it is.
+  await dialog.getByRole("group", { name: "Cover" }).getByText("No cover", { exact: true }).click();
   await dialog.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
+});
+
+test("an entry with no cover gets one composed: picked from its designs as it's published, or made in the editor with a headline, unsaved text kept", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const heading = (text: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text }] });
+  const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
+  await api("/changelog", { title: "Dark mode is here", tags: ["new"], content: { type: "doc", content: [heading("Themes"), paragraph("Pick one in your profile."), heading("Search"), paragraph("It's faster.")] } });
+  await api("/changelog", { title: "Small fixes", body: "A few of them." });
+  const saved = async (number: number) => (await api(`/changelog/${number}`, undefined, "GET")) as unknown as { status: string; cover: { id: string; width: number; height: number } | null };
+  // Every design's picture is the entry's own cover in it, drawn and loaded.
+  const loaded = async (group: Locator) => {
+    for (const picture of await group.locator("img").all()) {
+      await expect.poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(800);
+    }
+  };
+
+  // In the editor: "Make a cover" beside Add featured image. No image in the text, so no Screenshot; two headings, so Sections.
+  await team.goto(`/app/${slug}/changelog/1`);
+  const featured = team.getByRole("group", { name: "Featured image" });
+  await team.getByLabel("Title").fill("Dark mode is here, at last");
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  const making = team.getByRole("dialog", { name: "Make a cover" });
+  // It doesn't wait for Save, and says so.
+  await expect(making).toHaveAccessibleDescription("Drawn from this entry as it's saved and your portal's branding. It becomes the featured image as soon as you use it, without Save.");
+  const designs = making.getByRole("group", { name: "Cover" });
+  await expect(designs.getByRole("radio")).toHaveCount(3);
+  for (const name of ["Title", "Sections", "Pattern"]) {
+    await expect(designs.getByRole("radio", { name, exact: true })).toBeVisible();
+  }
+  // The entry's own design is picked: its title's, without an image.
+  await expect(designs.getByRole("radio", { name: "Title", exact: true })).toBeChecked();
+  await loaded(designs);
+  // A headline in the title's place: the pictures are drawn again with it, once typing pauses.
+  await making.getByLabel("Headline").fill("Now in the dark");
+  await expect(designs.locator("img").first()).toHaveAttribute("src", /headline=Now\+in\+the\+dark/);
+  await loaded(designs);
+  await designs.getByText("Sections", { exact: true }).click();
+  await expect(designs.getByRole("radio", { name: "Sections", exact: true })).toBeChecked();
+  await checkpoint(team, "team-changelog-make-cover");
+  await making.getByRole("button", { name: "Use this cover" }).click();
+  await expect(team.getByText("Cover added")).toBeVisible();
+  await expect(making).toBeHidden();
+  // Its button in the empty band went with the band: the keyboard's focus is on Replace, as after an upload.
+  await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeFocused();
+  // It's the entry's featured image now, and what was typed and not saved is still there.
+  const cover = featured.getByRole("img");
+  await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
+  expect((await saved(1)).cover).toMatchObject({ width: 1600, height: 840 });
+  const made = (await saved(1)).cover!.id;
+  // Saving the text keeps it: the form's cover is the composed one.
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved")).toBeVisible();
+  expect((await saved(1)).cover!.id).toBe(made);
+  // With a cover, Publish offers none.
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  const publishing = team.getByRole("alertdialog");
+  await expect(publishing.getByRole("heading")).toHaveText("Publish “Dark mode is here, at last”?");
+  await expect(publishing.getByRole("group", { name: "Cover" })).toHaveCount(0);
+  await publishing.getByRole("button", { name: "Cancel" }).click();
+
+  // Publishing one without a cover: its designs, the entry's own picked, and "No cover".
+  await team.goto(`/app/${slug}/changelog/2`);
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  const offered = publishing.getByRole("group", { name: "Cover" });
+  await expect(offered.getByRole("radio")).toHaveCount(3);
+  await expect(offered.getByRole("radio", { name: "Title", exact: true })).toBeChecked();
+  await expect(offered.getByRole("radio", { name: "No cover" })).not.toBeChecked();
+  await loaded(offered);
+  await offered.getByText("Pattern", { exact: true }).click();
+  await expect(offered.getByRole("radio", { name: "Pattern", exact: true })).toBeChecked();
+  await checkpoint(team, "team-changelog-publish-cover");
+  // On a phone the dialog is no taller than the screen: it scrolls, and Publish is in reach.
+  await team.setViewportSize({ width: 375, height: 520 });
+  await publishing.getByRole("button", { name: "Publish", exact: true }).scrollIntoViewIfNeeded();
+  await expect(publishing.getByRole("button", { name: "Publish", exact: true })).toBeInViewport({ ratio: 1 });
+  expect((await publishing.boundingBox())!.height).toBeLessThanOrEqual(520);
+  await team.setViewportSize({ width: 1280, height: 720 });
+  // A featured image of their own, not saved yet: Publish offers no cover over it; taken off again, it does.
+  await publishing.getByRole("button", { name: "Cancel" }).click();
+  await featured.getByLabel("Featured image", { exact: true }).setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: await team.screenshot() });
+  await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeVisible();
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(publishing.getByRole("heading")).toHaveText("Publish “Small fixes”?");
+  await expect(publishing.getByRole("group", { name: "Cover" })).toHaveCount(0);
+  await publishing.getByRole("button", { name: "Cancel" }).click();
+  await featured.getByRole("button", { name: "Remove featured image" }).click();
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await offered.getByText("Pattern", { exact: true }).click();
+  await expect(offered.getByRole("radio", { name: "Pattern", exact: true })).toBeChecked();
+  await publishing.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  // Published with it: the editor shows it, and readers see it on the entry's page.
+  await expect.poll(() => featured.getByRole("img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  expect(await saved(2)).toMatchObject({ status: "published", cover: { width: 1600, height: 840 } });
+  const reader = await (await browser.newContext()).newPage();
+  await reader.goto(`${portalUrl(slug)}/changelog/2`);
+  const shown = reader.getByRole("img", { name: "Small fixes" });
+  await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  await checkpoint(reader, "portal-changelog-composed-cover");
+
+  // "No cover" publishes it as it is.
+  await api("/changelog/1", { cover: null }, "PATCH");
+  await team.goto(`/app/${slug}/changelog/1`);
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await publishing.getByRole("group", { name: "Cover" }).getByText("No cover", { exact: true }).click();
+  await expect(publishing.getByRole("group", { name: "Cover" }).getByRole("radio", { name: "No cover" })).toBeChecked();
+  await publishing.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  expect(await saved(1)).toMatchObject({ status: "published", cover: null });
+
+  // An image uploaded and not saved, then "Use this cover": the composed one is the form's, and Save keeps it.
+  await api("/changelog", { title: "Faster search", body: "It's quicker." });
+  // On a published entry with a cover, it says what readers see.
+  await team.goto(`/app/${slug}/changelog/2`);
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  await expect(making).toHaveAccessibleDescription("Drawn from this entry as it's saved and your portal's branding. It replaces the featured image as soon as you use it, without Save. Readers see it right away.");
+  await making.getByRole("button", { name: "Cancel" }).click();
+  await team.goto(`/app/${slug}/changelog/3`);
+  await featured.getByLabel("Featured image", { exact: true }).setInputFiles({ name: "mine.png", mimeType: "image/png", buffer: await team.screenshot() });
+  await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeVisible();
+  const mine = await featured.getByRole("img").getAttribute("src");
+  // Tuti not reached: it says so, the dialog stays to try again, and the form keeps its own image.
+  await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  await making.getByRole("button", { name: "Use this cover" }).click();
+  await expect(team.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(making).toBeVisible();
+  await team.unroute("**/*");
+  await making.getByRole("button", { name: "Cancel" }).click();
+  await expect(making).toBeHidden();
+  await expect(featured.getByRole("img")).toHaveAttribute("src", mine!);
+  expect((await saved(3)).cover).toBeNull();
+  await featured.getByRole("button", { name: "Make a cover" }).click();
+  await making.getByRole("button", { name: "Use this cover" }).click();
+  await expect(team.getByText("Cover added")).toBeVisible();
+  const composed = (await saved(3)).cover!.id;
+  await expect(featured.getByRole("img")).toHaveAttribute("src", new RegExp(composed));
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved")).toBeVisible();
+  expect((await saved(3)).cover!.id).toBe(composed);
 });
 
 test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {

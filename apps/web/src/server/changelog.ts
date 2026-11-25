@@ -5,10 +5,13 @@ import { redirect } from "next/navigation";
 
 import type { Reaction } from "@/lib/reactions";
 
+import type { CoverDesign } from "./cover-card";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import type { RewriteMode } from "./release-notes";
 import {
+  composeChangelogCover as composeCoverOperation,
+  composeCover,
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
@@ -24,6 +27,7 @@ import {
   deleteChangelogComment as deleteCommentOperation,
   updateChangelogComment as updateCommentOperation,
 } from "./operations/changelog-comments";
+import { OperationError } from "./operations/define";
 import { asAdmin, asAnyone, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -105,9 +109,36 @@ export async function acceptChangelogRewrite(
   );
 }
 
-export async function publishChangelogEntry(projectSlug: string, number: number, announce = true, emailSubscribers = false): Promise<FormState> {
+/**
+ * Publishes an entry (see changelog.publish). With `cover` (the design picked in the Publish dialog, for an entry with
+ * no cover), that cover is composed and set first: if it can't be, nothing is published.
+ */
+export async function publishChangelogEntry(projectSlug: string, number: number, announce = true, emailSubscribers = false, cover?: CoverDesign): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, async (context) => {
+    // Only for a draft that still has no cover when it's set: one a teammate added since the dialog opened stays, and an
+    // entry published meanwhile is left as it went out.
+    if (cover !== undefined) {
+      // Checked as changelog.composeCover's input is: the design comes from the browser.
+      const input = composeCoverOperation.input.safeParse({ number: Number(number), design: String(cover) });
+      if (!input.success) {
+        throw new OperationError(400, "invalid_input", input.error.issues[0]?.message ?? "Invalid input");
+      }
+      await composeCover(context, input.data, { ifBare: true }).catch((error: unknown) => {
+        // Picked for them unless they chose: say how to publish without it.
+        if (error instanceof OperationError && error.code === "no_room") {
+          throw new OperationError(409, "no_room", `${error.message}. Pick No cover to publish without one.`);
+        }
+        throw error;
+      });
+    }
+    await call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true });
+  });
+}
+
+/** Composes a cover for the saved entry in a design, with a headline in its title's place if one's given, and sets it (see changelog.composeCover). */
+export async function composeChangelogCover(projectSlug: string, number: number, design: CoverDesign, headline = ""): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) =>
-    call(publishOperation, context, { number: Number(number), announce: announce === true, emailSubscribers: emailSubscribers === true }),
+    call(composeCoverOperation, context, { number: Number(number), design: String(design) as CoverDesign, headline: String(headline) || undefined }),
   );
 }
 
