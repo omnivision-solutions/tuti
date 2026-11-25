@@ -27,9 +27,10 @@ test("a project starts in English alone; other languages are added offline and a
 
   await update({ languages: [{ code: "pt-BR", newPages: "manual", productAvailable: true }, { code: "de", instructions: "  Use du.  " }] });
   await update({ languages: [{ code: "de", live: true }, { code: "pt-BR" }] });
+  // In the order added.
   expect((await get()).languages).toEqual([
-    { code: "de", name: "German", newPages: "automatic", instructions: "Use du.", productAvailable: false, live: true },
     { code: "pt-BR", name: "Portuguese (Brazil)", newPages: "manual", instructions: "", productAvailable: true, live: false },
+    { code: "de", name: "German", newPages: "automatic", instructions: "Use du.", productAvailable: false, live: true },
   ]);
 
   // Left out: removed.

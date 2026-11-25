@@ -25,7 +25,7 @@ const languageOutput = z
 const languagesOutput = z
   .object({
     default: z.object({ code: code.describe("Its code").meta({ examples: ["en"] }), name: z.string().describe("Its name in English").meta({ examples: ["English"] }) }).describe("The language the team writes in"),
-    languages: z.array(languageOutput).describe("The other languages, in the order they were added (those added together, by code)"),
+    languages: z.array(languageOutput).describe("The other languages, in the order they were added"),
   })
   .describe("The portal's languages");
 
@@ -131,9 +131,11 @@ export const updateLanguages = defineOperation({
       }
       await tx.project.update({ where: { id: projectId }, data: { language } });
       await tx.projectLanguage.deleteMany({ where: { projectId, code: { notIn: input.languages.map(({ code }) => code) } } });
-      for (const { code, newPages, ...rest } of input.languages) {
+      // Those added together keep the list's order: a millisecond apart.
+      const now = Date.now();
+      for (const [index, { code, newPages, ...rest }] of input.languages.entries()) {
         const data = { ...(newPages && { automatic: newPages === "automatic" }), ...rest };
-        await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, ...data }, update: data });
+        await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, createdAt: new Date(now + index), ...data }, update: data });
       }
     });
     return projectLanguages(projectId);
