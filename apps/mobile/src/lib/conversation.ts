@@ -30,6 +30,9 @@ export type Conversation = {
   number: number;
   subject: string;
   status: "open" | "waiting" | "closed";
+  assignee: { name: string; email: string } | null;
+  spam: boolean;
+  snoozedUntil: string | null;
   user: { id: string | null; name: string | null; email: string | null; verified: boolean };
   company: string | null;
   unread: boolean;

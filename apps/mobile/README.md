@@ -19,7 +19,7 @@ signed-in screen: `await api<{ conversations: … }>("/conversations?view=mine")
 in their chosen project), signing in in `src/lib/sign-in.ts`, the colours in `src/lib/theme.ts` (`useColors()`), the Inbox's
 list in `src/lib/inbox.ts` (`src/app/index.tsx` is the Inbox, `src/app/inbox/projects.tsx` its project sheet on Android),
 a conversation in `src/app/conversation/[number].tsx` (the Inbox opens it; `tuti://conversation/12` too) with its calls,
-drafts and live updates in `src/lib/conversation.ts`, and the Inbox's live stream in `src/lib/live.ts`. Components that
+drafts and live updates in `src/lib/conversation.ts`, its details sheet (who it's with, assign, snooze, close, spam) in `src/app/conversation/[number]/details.tsx` with its calls in `src/lib/details.ts`, and the Inbox's live stream in `src/lib/live.ts`. Components that
 aren't routes go in `src/components`.
 
 Tests: `src/lib` with Vitest (`*.test.ts`, the repository's `pnpm test`); screens with React Native Testing Library
