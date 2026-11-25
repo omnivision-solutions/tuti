@@ -148,6 +148,7 @@ export default function Details() {
           const chosen = assignee?.email.toLowerCase() === a.email.toLowerCase();
           return (
             <Choice
+              busy={busy}
               key={a.email}
               label={a.you ? "You" : a.name}
               detail={a.you ? a.name : undefined}
@@ -157,7 +158,7 @@ export default function Details() {
             />
           );
         })}
-        <Choice label="Unassigned" chosen={!assignee} colors={colors} onPress={() => (!assignee ? setPane("details") : void change({ assignee: null }, "Unassigned"))} />
+        <Choice busy={busy} label="Unassigned" chosen={!assignee} colors={colors} onPress={() => (!assignee ? setPane("details") : void change({ assignee: null }, "Unassigned"))} />
       </Choices>
     );
   }
@@ -165,9 +166,9 @@ export default function Details() {
     return (
       <Choices title="Snooze" colors={colors} background={background} busy={busy} failed={failed} onBack={() => setPane("details")}>
         {snoozeChoices().map(({ label, at }) => (
-          <Choice key={label} label={label} colors={colors} onPress={() => void change({ snoozedUntil: at.toISOString() }, `Snoozed till ${snoozeTime(at)}`)} />
+          <Choice busy={busy} key={label} label={label} colors={colors} onPress={() => void change({ snoozedUntil: at.toISOString() }, `Snoozed till ${snoozeTime(at)}`)} />
         ))}
-        {snoozed && <Choice label="Wake now" colors={colors} onPress={() => void change({ snoozedUntil: null }, "Back in the inbox")} />}
+        {snoozed && <Choice busy={busy} label="Wake now" colors={colors} onPress={() => void change({ snoozedUntil: null }, "Back in the inbox")} />}
       </Choices>
     );
   }
@@ -233,6 +234,7 @@ export default function Details() {
         <Row
           ref={assignRow}
           label="Assignee"
+          busy={busy}
           value={assignee ? `${assignee.name}${assignedToYou ? " (you)" : ""}` : triage ? "Unassigned" : ""}
           colors={colors}
           // Once who has it is known: the list marks them.
@@ -242,6 +244,7 @@ export default function Details() {
         <Row
           ref={snoozeRow}
           label="Snooze"
+          busy={busy}
           value={!triage ? "" : snoozed ? `Snoozed till ${snoozeTime(new Date(triage.snoozedUntil!))}` : "Not snoozed"}
           colors={colors}
           onPress={canSnooze ? () => setPane("snooze") : undefined}
@@ -249,6 +252,7 @@ export default function Details() {
         {triage && (
           <Row
             label={triage.status === "closed" ? "Reopen" : "Close"}
+            busy={busy}
             action
             colors={colors}
             onPress={() => void (triage.status === "closed" ? change({ status: "open" }, "Reopened") : change({ status: "closed" }, "Closed"))}
@@ -257,6 +261,7 @@ export default function Details() {
         {triage && (
           <Row
             label={triage.spam ? "Not spam" : "Mark as spam"}
+            busy={busy}
             action
             danger={!triage.spam}
             colors={colors}
@@ -349,6 +354,7 @@ function Row({
   dot,
   action = false,
   danger = false,
+  busy = false,
   colors,
   onPress,
 }: {
@@ -358,6 +364,8 @@ function Row({
   dot?: string | null;
   action?: boolean;
   danger?: boolean;
+  /** A change is running: off (dimmed, a press ignored) but still focusable. */
+  busy?: boolean;
   colors: Colors;
   onPress?: () => void;
 }) {
@@ -377,11 +385,13 @@ function Row({
   return onPress ? (
     <Pressable
       ref={ref}
-      onPress={onPress}
+      // Not `disabled`, which would drop focus: a press is ignored while a change runs.
+      onPress={() => !busy && onPress()}
       accessibilityRole="button"
       accessibilityLabel={value ? `${label}, ${value}` : label}
+      accessibilityState={{ disabled: busy, busy }}
       android_ripple={{ color: colors.border }}
-      style={({ pressed }) => [...style, IOS && pressed && { backgroundColor: colors.secondary }]}
+      style={({ pressed }) => [...style, IOS && pressed && !busy && { backgroundColor: colors.secondary }, busy && { opacity: 0.6 }]}
     >
       {content}
     </Pressable>
@@ -416,18 +426,20 @@ function Choices({ title, colors, background, busy, failed, onBack, children }: 
   );
 }
 
-function Choice({ label, detail, chosen = false, colors, onPress }: { label: string; detail?: string; chosen?: boolean; colors: Colors; onPress: () => void }) {
+function Choice({ label, detail, chosen = false, busy, colors, onPress }: { label: string; detail?: string; chosen?: boolean; busy: boolean; colors: Colors; onPress: () => void }) {
   return (
     <Pressable
-      onPress={onPress}
+      // Not `disabled`, which would drop focus: a press is ignored while a change runs.
+      onPress={() => !busy && onPress()}
       accessibilityRole="button"
-      accessibilityState={{ selected: chosen }}
+      accessibilityState={{ selected: chosen, disabled: busy, busy }}
       accessibilityLabel={detail ? `${label}, ${detail}` : label}
       android_ripple={{ color: colors.border }}
       style={({ pressed }) => [
         styles.row,
         IOS ? { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth } : [{ paddingRight: 16, borderRadius: 28 }, chosen && { backgroundColor: colors.soft }],
-        IOS && pressed && { backgroundColor: colors.secondary },
+        IOS && pressed && !busy && { backgroundColor: colors.secondary },
+        busy && { opacity: 0.6 },
       ]}
     >
       <View style={styles.choiceText}>

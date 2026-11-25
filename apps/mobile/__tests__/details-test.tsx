@@ -407,4 +407,28 @@ describe("the details sheet", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     under();
   });
+
+  it("turns the actions off, still focusable, while a change runs", async () => {
+    serve(SAM);
+    const answer = mockApi.getMockImplementation()!;
+    let patched: (value: unknown) => void = () => {};
+    mockApi.mockImplementation((path, init) => (init?.method === "PATCH" ? new Promise((resolve) => (patched = resolve)) : answer(path, init)));
+    await render(<Details />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Close" }));
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mark as spam" })).toBeDisabled();
+    // A press meanwhile is ignored: one change at a time.
+    await fireEvent.press(screen.getByRole("button", { name: "Mark as spam" }));
+    expect(patches()).toEqual([{ status: "closed" }]);
+    await act(async () => patched({ ...OPEN, status: "closed" }));
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeEnabled();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Assignee, Unassigned" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Olive Owner" }));
+    expect(screen.getByRole("button", { name: "You, Ravi Kumar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Olive Owner" })).toBeDisabled();
+    await act(async () => patched({ ...OPEN, status: "closed", assignee: { name: "Olive Owner", email: "e2e-olive@example.com" } }));
+    expect(await screen.findByRole("button", { name: "Assignee, Olive Owner" })).toBeEnabled();
+  });
 });
