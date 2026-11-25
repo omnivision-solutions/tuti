@@ -273,6 +273,20 @@ test("on a queue that refuses it, one with no code change before is failed for t
   });
 });
 
+test("on a queue that refuses it, one a run started on meanwhile isn't failed", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  github.pullRequest(repo, { number: 6, title: "Add a dark theme", mergedAt: days(2) });
+  // Another run (a merge delivered meanwhile) starts on it while this one is being queued; then queueing fails.
+  queue.enqueue.mockImplementationOnce(async () => {
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 6 }, data: { state: "ANALYSING", updatedAt: new Date(Date.now() + 60_000) } });
+    throw new Error("Hatchet is unreachable");
+  });
+
+  await add(6);
+
+  expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 6 }, select: { state: true, retryAt: true } })).toEqual({ state: "ANALYSING", retryAt: null });
+});
+
 test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   github.pullRequest(repo, { number: 3, title: "Bump dependencies", mergedAt: days(2) });

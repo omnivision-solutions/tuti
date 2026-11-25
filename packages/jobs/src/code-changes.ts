@@ -83,17 +83,17 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     where: key,
     create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) },
     update: {},
-    select: { id: true, state: true, reason: true },
+    select: { id: true, state: true, reason: true, updatedAt: true },
   });
   if (change.state === "ANALYSING" || change.state === "FAILED") {
     return {
       run: { codeChangeId: change.id, force: false, pastGate, resume: false },
       // Failed, to be tried again by the retry sweep in a few minutes (past the gate, as asked), rather than analysing
-      // with no run. One that was there already is left to the run it has.
+      // with no run. One that was there already is left to the run it has, and so is one a run started on meanwhile.
       ...(made && {
         unclaim: () =>
           prisma.codeChange.updateMany({
-            where: { id: change.id, state: "ANALYSING" },
+            where: { id: change.id, state: "ANALYSING", updatedAt: change.updatedAt },
             data: { state: "FAILED", reason: "Its analysis couldn't be queued: it's tried again in a few minutes.", retryAt: new Date(Date.now() + QUEUE_RETRY_MS), retryPastGate: pastGate },
           }),
       }),
