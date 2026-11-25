@@ -44,7 +44,7 @@ test("sync adds users by their id in the app, with their name, email (lowercase)
       { id: "user-2", email: "e2e-bea@example.com" },
       { id: "user-3" },
     ]),
-  ).toEqual({ created: 3, updated: 0 });
+  ).toEqual({ created: 3, updated: 0, changelogSkipped: [] });
   expect(await get("user-1")).toMatchObject({
     id: "user-1",
     name: "Ada",
@@ -61,7 +61,7 @@ test("sync adds users by their id in the app, with their name, email (lowercase)
 
 test("a later sync changes only what it gives: properties named are set, null ones removed, the rest kept", async () => {
   await sync([{ id: "user-1", name: "Ada", email: "e2e-ada@example.com", properties: { plan: "free", seats: 3, trial: true } }]);
-  expect(await sync([{ id: "user-1", properties: { plan: "pro", trial: null, features: ["audit"] } }])).toEqual({ created: 0, updated: 1 });
+  expect(await sync([{ id: "user-1", properties: { plan: "pro", trial: null, features: ["audit"] } }])).toEqual({ created: 0, updated: 1, changelogSkipped: [] });
   expect(await get("user-1")).toMatchObject({ name: "Ada", email: "e2e-ada@example.com", properties: { plan: "pro", seats: 3, features: ["audit"] } });
   await sync([{ id: "user-1", name: "Ada Lovelace", email: null, avatar: null }]);
   expect(await get("user-1")).toMatchObject({ name: "Ada Lovelace", email: null, avatar: null, properties: { plan: "pro", seats: 3, features: ["audit"] } });
@@ -102,7 +102,7 @@ test("all or nothing: a user past 50 properties, a bad value or the same id twic
 test(`up to ${MAX_USERS_PER_SYNC} users at once, new and known together`, async () => {
   await sync(Array.from({ length: 10 }, (_, i) => ({ id: `u${i}`, properties: { plan: "free" } })));
   const users = Array.from({ length: MAX_USERS_PER_SYNC }, (_, i) => ({ id: `u${i}`, name: `User ${String(i).padStart(4, "0")}`, properties: { plan: "pro", n: i } }));
-  expect(await sync(users)).toEqual({ created: MAX_USERS_PER_SYNC - 10, updated: 10 });
+  expect(await sync(users)).toEqual({ created: MAX_USERS_PER_SYNC - 10, updated: 10, changelogSkipped: [] });
   expect(await prisma.ssoIdentity.count({ where: { projectId: project.id, properties: { path: ["plan"], equals: "pro" } } })).toBe(MAX_USERS_PER_SYNC);
 });
 
@@ -500,7 +500,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   vi.unstubAllEnvs();
 
   // The same id later is someone new, with nothing of theirs.
-  expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0 });
+  expect(await sync([{ id: "user-1" }])).toEqual({ created: 1, updated: 0, changelogSkipped: [] });
   expect(await get("user-1")).toMatchObject({ name: "Anonymous", email: null, properties: {} });
   const again = await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: "user-1" } } });
   expect(again.userId).not.toBe(ada);
