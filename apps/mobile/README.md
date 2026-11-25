@@ -20,7 +20,7 @@ in their chosen project), signing in in `src/lib/sign-in.ts`, the colours in `sr
 list in `src/lib/inbox.ts` (`src/app/index.tsx` is the Inbox, `src/app/inbox/projects.tsx` its project sheet on Android,
 `src/app/inbox/snooze.tsx` a swiped row's snooze choices: iOS's action sheet, Android's bottom sheet),
 a conversation in `src/app/conversation/[number].tsx` (the Inbox opens it; `tuti://conversation/12` too) with its calls,
-drafts and live updates in `src/lib/conversation.ts`, its details sheet (who it's with, assign, snooze, close, spam) in `src/app/conversation/[number]/details.tsx` with its calls in `src/lib/details.ts`, the Inbox's live stream in `src/lib/live.ts`, and notifications (permission, the device's registration, a tap's
+drafts and live updates in `src/lib/conversation.ts`, its details sheet (who it's with, assign, snooze, close, spam) in `src/app/conversation/[number]/details.tsx` with its calls in `src/lib/details.ts`, the Inbox's live stream in `src/lib/live.ts`, what's kept to read offline in `src/lib/offline.ts` (forgotten with the session), and notifications (permission, the device's registration, a tap's
 conversation) in `src/lib/notifications.ts`, with their settings in `src/app/notifications.tsx`. Components that
 aren't routes go in `src/components`.
 

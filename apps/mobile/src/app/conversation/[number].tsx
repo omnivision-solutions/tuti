@@ -71,6 +71,7 @@ import {
 } from "@/lib/conversation";
 import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { lookAt } from "@/lib/notifications";
+import { cached, cacheGeneration, conversationKey, isOffline, keep as keepCached, offlineNote } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -96,6 +97,8 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   const headerHeight = useHeaderHeight();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Shown as it was kept on the phone, with no connection: when it was last loaded.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   // What's being written, kept on the phone as it's typed (and by sends and uploads that finish after the screen's gone).
   const draft = useSyncExternalStore(
@@ -117,10 +120,14 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   // The newest fetch wins: an older one answering late doesn't put back what it had. Rejects when it can't (the screen's
   // own calls go through `refresh`).
   const asked = useRef(0);
+  // What's shown came from the server: offline, it stays (what was kept may be older), only said to be offline.
+  const fromServer = useRef(false);
   const load = useCallback((): Promise<Conversation> => {
     const ask = ++asked.current;
     const since = draftsGeneration();
     const triageSince = triageChanges(draftKey);
+    const cacheSince = cacheGeneration();
+    const cacheKey = conversationKey(session!, number);
     return getConversation(api, number).then(
       (loaded) => {
         // A reply whose id a message has arrived (its answer lost): gone, from any fetch (that's never stale), but not
@@ -128,28 +135,49 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         afterFetch(draftKey, loaded, since);
         if (ask === asked.current) {
           setConversation(loaded);
+          fromServer.current = true;
           // Not over a change the details sheet made while this was on its way.
           showTriage(draftKey, loaded, triageSince);
           setError(null);
+          setSavedAt(null);
+          keepCached(cacheKey, loaded, cacheSince);
           markReadIfLooking(api, loaded, focused.current && AppState.currentState === "active");
         }
         return loaded;
       },
       (e: Error) => {
         if (ask === asked.current) {
-          setError(e.message);
+          // No connection: what's shown stays, or it's as it was last kept, if it was, saying so.
+          const saved = isOffline(e) ? cached<Conversation>(cacheKey) : null;
+          if (isOffline(e) && fromServer.current) {
+            setSavedAt((now) => now ?? saved?.at ?? Date.now());
+            setError(null);
+          } else if (saved) {
+            setConversation(saved.data);
+            showTriage(draftKey, saved.data, triageSince);
+            setSavedAt(saved.at);
+            setError(null);
+          } else {
+            setError(e.message);
+          }
         }
         throw e;
       },
     );
-  }, [api, number, draftKey]);
+  }, [api, number, draftKey, session]);
   const refresh = useCallback(() => void load().catch(() => {}), [load]);
-  // VoiceOver has no live regions: a failed fetch is announced (TalkBack reads the live region).
+  // VoiceOver has no live regions: a failed fetch is announced (TalkBack reads the live region), and so is showing what
+  // was kept.
   useEffect(() => {
     if (error && IOS) {
       AccessibilityInfo.announceForAccessibility(error);
     }
   }, [error]);
+  useEffect(() => {
+    if (savedAt !== null && IOS) {
+      AccessibilityInfo.announceForAccessibility(offlineNote(savedAt));
+    }
+  }, [savedAt]);
 
   // Live while it's on screen and the app is in front: the stream says when it changed (and opening it fetches it).
   const [active, setActive] = useState(AppState.currentState === "active");
@@ -362,6 +390,11 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
             error ? (
               <Text style={[styles.meta, styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
                 {error}
+              </Text>
+            ) : savedAt !== null ? (
+              // Kept from when it was last loaded: said quietly, with when.
+              <Text style={[styles.meta, styles.stale, { color: colors.muted }]} accessibilityLiveRegion="polite">
+                {offlineNote(savedAt)}
               </Text>
             ) : undefined
           }

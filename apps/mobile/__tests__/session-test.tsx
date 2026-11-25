@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Pressable, Text } from "react-native";
 
+import { cached, cacheGeneration, keep } from "@/lib/offline";
 import { SessionProvider, useSession } from "@/lib/session";
 
 // Secure storage in memory, each write held until the test lets it land.
@@ -94,6 +95,9 @@ describe("choosing a project", () => {
 });
 
 describe("signing out", () => {
+  // Something kept to read offline, from this account.
+  beforeEach(() => keep("kept", { rows: [] }, cacheGeneration()));
+
   it("removes the phone's registration first, without waiting for it", async () => {
     mockStored.set("session", JSON.stringify(session));
     const asked: string[] = [];
@@ -117,8 +121,9 @@ describe("signing out", () => {
     const removal = asked.indexOf("DELETE https://tuti.example.com/api/v1/devices/phone-1");
     expect(removal).toBeGreaterThan(-1);
     expect(removal).toBeLessThan(asked.indexOf("POST https://tuti.example.com/api/auth/sign-out"));
-    // The notifications shown go too.
+    // The notifications shown go too, and what was kept to read offline.
     expect(mockDismissed).toHaveBeenCalled();
+    expect(cached("kept")).toBeNull();
   });
 
   it("takes the notifications shown off when the server ends the session too", async () => {
@@ -137,5 +142,6 @@ describe("signing out", () => {
 
     expect(await screen.findByText("signed out")).toBeTruthy();
     expect(mockDismissed).toHaveBeenCalled();
+    expect(cached("kept")).toBeNull();
   });
 });

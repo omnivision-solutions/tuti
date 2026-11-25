@@ -5,6 +5,7 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, AppState } from "react-native
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
+import { cacheGeneration, forgetCached, inboxKey, keep } from "@/lib/offline";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
 jest.mock("expo-router", () => {
@@ -946,6 +947,54 @@ describe("swiping a row", () => {
     }
   });
 
+  describe("and reading offline", () => {
+    const offline = () => Object.assign(new Error("Couldn't reach tuti.example.com. Check the address and your connection."), { code: "unreachable" });
+    beforeEach(() => forgetCached());
+
+    it("keeps the list as its reload after a swipe shows it", async () => {
+      const closing = row("Invite link expired");
+      const { changes } = fakeServer({ acme: [closing, row("CSV export stops at 500 rows")] });
+      const first = await render(<Inbox />);
+      await screen.findByText("Invite link expired");
+      await pressAction("Close");
+      await act(async () => changes[0]!.answer(true));
+      await first.unmount();
+
+      mockApi.mockImplementation(() => Promise.reject(offline()));
+      await render(<Inbox />);
+      expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+      expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+    });
+
+    it("leaves a swiped row out of what's kept while its reload is on its way", async () => {
+      fakeServer({ acme: [row("Invite link expired"), row("CSV export stops at 500 rows")] });
+      const first = await render(<Inbox />);
+      await screen.findByText("Invite link expired");
+      // Closed, and the app is gone before the server answers.
+      await pressAction("Close");
+      await first.unmount();
+
+      mockApi.mockImplementation(() => Promise.reject(offline()));
+      await render(<Inbox />);
+      expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+      expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+    });
+
+    it("refuses a swipe made offline: its row comes back, with why, and the list says it's offline", async () => {
+      fakeServer({ acme: [row("Invite link expired")] });
+      const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+      await render(<Inbox />);
+      await screen.findByText("Invite link expired");
+
+      mockApi.mockImplementation(() => Promise.reject(offline()));
+      await pressAction("Close");
+      await act(() => jest.advanceTimersByTimeAsync(0));
+      expect(alert).toHaveBeenCalledWith(`Couldn't close "Invite link expired"`, "Couldn't reach tuti.example.com. Check the address and your connection.");
+      expect(subjects()).toEqual(["Invite link expired"]);
+      expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+    });
+  });
+
   it("gives a screen reader the same actions on the row", async () => {
     const { changes } = fakeServer({ acme: [row("Invite link expired")] });
     const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
@@ -961,5 +1010,148 @@ describe("swiping a row", () => {
     expect(sheet).toHaveBeenCalled();
     await fireEvent(target, "accessibilityAction", { nativeEvent: { actionName: "close" } });
     expect(changes[0]!.body).toEqual({ status: "closed" });
+  });
+});
+
+describe("reading offline", () => {
+  const offline = () => Object.assign(new Error("Couldn't reach tuti.example.com. Check the address and your connection."), { code: "unreachable" });
+  beforeEach(() => forgetCached());
+
+  it("shows a view as it was last loaded, saying it's offline and when, with no connection", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const first = await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    await first.unmount();
+
+    await act(() => jest.advanceTimersByTimeAsync(5 * 60_000));
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await render(<Inbox />);
+    expect(await screen.findByText("CSV export stops at 500 rows")).toBeTruthy();
+    expect(screen.getByText("Offline · updated 5 minutes ago")).toBeTruthy();
+    // Said to VoiceOver too, which has no live regions.
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith("Offline · updated 5 minutes ago");
+    // The chips and the switcher as they were too.
+    expect(screen.getByRole("tab", { name: "Needs reply, 4" })).toBeTruthy();
+    expect(screen.getByTestId("switcher-label")).toHaveTextContent("Acme");
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+  });
+
+  it("never shows another project's counts over a project's kept rows", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByRole("tab", { name: "Needs reply, 4" });
+    // Kite Labs' list was kept once, its counts weren't.
+    keep(inboxKey({ server: mockSession.server, project: "kite" }, "open"), { rows: [row("Kite's own")], total: 1 }, cacheGeneration());
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    try {
+      mockSession.project = "kite";
+      await screen.rerender(<Inbox />);
+      expect(await screen.findByText("Kite's own")).toBeTruthy();
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    } finally {
+      mockSession.project = "acme";
+    }
+  });
+
+  it("says why when nothing was kept: a view never loaded", async () => {
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await render(<Inbox />);
+    expect(await screen.findByText(/Couldn't reach/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("never shows a view's kept rows as a search's results", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await fireEvent.changeText(screen.getByPlaceholderText("Search"), "invoice");
+    await act(() => jest.advanceTimersByTimeAsync(300));
+    expect(await screen.findByText(/Couldn't reach/)).toBeTruthy();
+    expect(screen.queryByText("CSV export stops at 500 rows")).toBeNull();
+    expect(screen.queryByText(/^Offline/)).toBeNull();
+  });
+
+  it("keeps every row shown when a reload fails offline, more than are kept, saying so", async () => {
+    // As many as scrolling far shows: more than are kept.
+    const rows = Array.from({ length: 130 }, (_, i) => row(`Conversation ${i + 1}`));
+    serve({ "/conversations?view=open": page(rows) });
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+    // Still there, past the 100 kept.
+    expect(screen.getByTestId("inbox-list").props.data).toHaveLength(130);
+  });
+
+  it("asks for no next page while offline, with no spinner or Try again at its end", async () => {
+    serve({ "/conversations?view=open&limit=25&cursor=0": page([row("First page")], { nextCursor: "25", total: 30 }) });
+    await render(<Inbox />);
+    await screen.findByText("First page");
+    const footer = () => screen.getByTestId("inbox-list").props.ListFooterComponent;
+    expect(footer()).toBeTruthy();
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+    expect(footer()).toBeUndefined();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    const asked = mockApi.mock.calls.length;
+    await fireEvent(screen.getByTestId("inbox-list"), "endReached");
+    expect(mockApi.mock.calls.length).toBe(asked);
+  });
+
+  it("says the server's own error beside the note, once it answers again", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+
+    mockApi.mockImplementation(() => Promise.reject(new Error("Something went wrong on the server.")));
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+  });
+
+  it("shows the chips as kept when only the counts fail offline, and the rows that loaded, not as offline", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]) });
+    const first = await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    await first.unmount();
+
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (path === "/inbox/views" ? Promise.reject(offline()) : served(path, init)));
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+    expect(screen.getByRole("tab", { name: "Needs reply, 4" })).toBeTruthy();
+    expect(screen.queryByText(/^Offline/)).toBeNull();
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+  });
+
+  it("keeps nothing once forgotten (signed out) while a load was on its way", async () => {
+    let answer!: (page: Page) => void;
+    serve({});
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (path.startsWith("/conversations?view=open") ? new Promise((resolve) => (answer = resolve)) : served(path, init)));
+    const first = await render(<Inbox />);
+    forgetCached();
+    await act(async () => answer(page([row("Another account's customer")])));
+    await first.unmount();
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await render(<Inbox />);
+    expect(await screen.findByText(/Couldn't reach/)).toBeTruthy();
+    expect(screen.queryByText("Another account's customer")).toBeNull();
   });
 });

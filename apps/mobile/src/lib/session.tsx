@@ -5,6 +5,7 @@ import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
 import { dismissDelivered, removeDevice } from "./notifications";
+import { forgetCached } from "./offline";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
@@ -39,6 +40,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void dismissDelivered();
     setSession(null);
     forgetDrafts();
+    // And what was kept to read offline: the next person never sees this one's customers.
+    forgetCached();
     await inTurn(async () => {
       await removed;
       await forgetSession();
@@ -70,6 +73,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await inTurn(async () => {
       if (draftsGoWith(await readSession(), which)) {
         forgetDrafts();
+        forgetCached();
         // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too.
         void dismissDelivered();
       }
