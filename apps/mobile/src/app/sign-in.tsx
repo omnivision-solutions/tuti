@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSession } from "@/lib/session";
 import { CLOUD_SERVER, hostOf, normalizeServer, reachable } from "@/lib/server";
-import { continueWith, finishSignIn, forgotPasswordUrl, type SignedIn, signInWithPassword } from "@/lib/sign-in";
+import { awaitingReturn, continueWith, finishSignIn, forgotPasswordUrl, type SignedIn, signInWithPassword } from "@/lib/sign-in";
 import { type Colors, useColors } from "@/lib/theme";
 
 /** What's under way: a sign-in started here, or a way back the app was opened with (`return`). */
@@ -44,7 +44,7 @@ export default function SignIn() {
   // A way back the app was opened with (on Android the app can be closed while the browser is open, so nothing here
   // started it): busy until its exchange is done, so no other sign-in starts meanwhile; nothing after the screen's gone.
   const [settledLink, setSettledLink] = useState<string | null>(null);
-  const returning = !!(JSON.parse(link) as Record<string, unknown>).state && settledLink !== link;
+  const returning = awaitingReturn(link, settledLink);
   useEffect(() => {
     let live = true;
     finishSignIn(JSON.parse(link))

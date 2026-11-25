@@ -2,7 +2,7 @@ import { webcrypto } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { challengeOf, newState, newVerifier } from "./pkce";
-import { continueWith, finishSignIn, forgotPasswordUrl, queryOf, readReturn, signInWithPassword } from "./sign-in";
+import { awaitingReturn, continueWith, finishSignIn, forgotPasswordUrl, queryOf, readReturn, signInWithPassword } from "./sign-in";
 
 vi.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
@@ -58,6 +58,17 @@ describe("the way back to the app", () => {
   it("reads a link's query, skipping what isn't percent-encoded right", () => {
     expect(queryOf("tuti://sign-in?state=a&code=b%20c&bad=%E0%A4%A#frag")).toEqual({ state: "a", code: "b c" });
     expect(queryOf("tuti://sign-in")).toEqual({});
+  });
+});
+
+describe("a way back the app was opened with", () => {
+  it("keeps the sign-in screen busy until that same link is settled", () => {
+    const link = JSON.stringify({ state: "state-1234567890ab", code: "code-1" });
+    expect(awaitingReturn(link, null)).toBe(true);
+    expect(awaitingReturn(link, JSON.stringify({ state: "an-older-state-1234", code: "c" }))).toBe(true);
+    expect(awaitingReturn(link, link)).toBe(false);
+    // Opened plainly (no way back): nothing to wait for.
+    expect(awaitingReturn(JSON.stringify({}), null)).toBe(false);
   });
 });
 

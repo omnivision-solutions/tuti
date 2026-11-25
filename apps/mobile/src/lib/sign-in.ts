@@ -148,3 +148,10 @@ export function queryOf(url: string): Record<string, string> {
   }
   return params;
 }
+
+/**
+ * Whether the sign-in screen is still finishing a way back it was opened with (`link`: its params as JSON): one with a
+ * `state`, until the screen has settled that same link. Busy meanwhile, so no other sign-in starts and gets replaced.
+ */
+export const awaitingReturn = (link: string, settled: string | null) =>
+  !!(JSON.parse(link) as Record<string, unknown>).state && settled !== link;
