@@ -171,6 +171,14 @@ test("what's kept in shared caches or read by machines (RSS, the sitemap, llms.t
   expect(before).not.toHaveProperty("groups");
 });
 
+test("the widget's latest with only a group entry new: no latest for everyone, but `groups`; one older than 30 days doesn't count", async () => {
+  const ask = async () => (await (await widgetLatest(new Request(`http://x/api/widget/latest?project=${project.slug}`))).json()) as Record<string, unknown>;
+  const number = await published("Enterprise news", ["enterprise"]);
+  expect(await ask()).toMatchObject({ latest: null, groups: true });
+  await prisma.changelogEntry.updateMany({ where: { projectId: project.id, number }, data: { publishedAt: new Date(Date.now() - 31 * 86_400_000) } });
+  expect(await ask()).not.toHaveProperty("groups");
+});
+
 test("a group an entry is for can't be deleted", async () => {
   const number = await published("Enterprise news", ["enterprise"]);
   await expect(call(deleteGroup, as(owner), { group: "enterprise" })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("Enterprise news") });

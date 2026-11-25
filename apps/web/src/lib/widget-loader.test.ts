@@ -2121,3 +2121,11 @@ test("a newer announcement for some groups lit for one person stops showing for 
   await settled();
   expect(later.Tuti.unseen()).toBe(true);
 });
+
+test("with no announcement for everyone, a member's own newer one for their groups lights their dot", async () => {
+  const member = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, groups: true }, privateLatest: "2026-10-20T10:00:00.000Z" });
+  const outside = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, groups: true }, privateLatest: null });
+  await settled();
+  expect(member.Tuti.unseen()).toBe(true);
+  expect(outside.Tuti.unseen()).toBe(false);
+});
