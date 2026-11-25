@@ -4,7 +4,7 @@ import * as TaskManager from "expo-task-manager";
 import { AppState, Platform } from "react-native";
 
 import { ApiError, createApi } from "./api";
-import { sendReply, type Unsent, updateDraft } from "./conversation";
+import { draftsGeneration, sendReply, type Unsent, updateDraft } from "./conversation";
 import { screenKey, updateConversation } from "./details";
 import { CHANNEL, isTheirs, type Target, targetOf } from "./notifications";
 import { readSession } from "./session-store";
@@ -61,6 +61,8 @@ export async function act(response: Notifications.NotificationResponse) {
     return;
   }
   done.add(key);
+  // Drafts written only in this sign-in's generation: a sign-out while the send is on its way keeps nothing of it.
+  const since = draftsGeneration();
   const session = await readSession();
   // The reply, made before anything that can fail, so a failure keeps it. Its id is made from the notification and the
   // text: the same reply sent again is the one already saved, never a second.
@@ -74,7 +76,7 @@ export async function act(response: Notifications.NotificationResponse) {
         createApi({ server: session.server, token: session.token }, () => {})<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
       if (action === REPLY) {
         const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
-        unsent = { id, body: text, note: false, close: false, files: [], seen: null };
+        unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(content.data) };
       }
       if (!(await isTheirs(target, session, projects))) {
         refused = NOT_YOURS;
@@ -86,16 +88,31 @@ export async function act(response: Notifications.NotificationResponse) {
       }
     }
   } catch (error) {
-    const kept = unsent;
+    // The session's over (a 401): signed out, and the next launch forgets its drafts, so nothing is kept.
+    if (error instanceof ApiError && error.status === 401) {
+      await tell(identifier, action, content.title, target, SIGNED_OUT, false);
+      return;
+    }
+    // Kept only while it's still this session: one signed out of meanwhile (here, or in the app's other JavaScript) is
+    // no one's to send, and the next teammate to sign in mustn't get it.
+    const kept = session && unsent && (await readSession())?.token === session.token ? unsent : undefined;
     if (session && kept) {
-      updateDraft(screenKey({ server: session.server, project: target.project }, target.number), (draft) =>
-        draft.unsent.some((one) => one.id === kept.id) ? draft : { ...draft, unsent: [...draft.unsent, { ...kept, error: reasonOf(error) }] },
+      updateDraft(
+        screenKey({ server: session.server, project: target.project }, target.number),
+        (draft) => (draft.unsent.some((one) => one.id === kept.id) ? draft : { ...draft, unsent: [...draft.unsent, { ...kept, error: reasonOf(error) }] }),
+        since,
       );
     }
     await tell(identifier, action, content.title, target, reasonOf(error), !!kept);
     return;
   }
   await tell(identifier, action, content.title, target, refused, false);
+}
+
+/** What the notification's message was sent at (the push's `at`), as the reply's `seen`; null from a server without it. */
+export function seenOf(data: unknown) {
+  const at = (data as { at?: unknown } | null)?.at;
+  return typeof at === "string" && !Number.isNaN(Date.parse(at)) ? at : null;
 }
 
 /** Takes the notification acted on away, and leaves one saying why it wasn't done. */

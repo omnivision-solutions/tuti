@@ -263,7 +263,7 @@ test("a user's message notifies the phones of exactly those its email goes to", 
     priority: "high",
     channelId: "default",
     categoryId: "conversation",
-    data: { project: project.slug, conversation: number },
+    data: { project: project.slug, conversation: number, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
   });
   // No access token unless one is set.
   expect(expo.sent[0]!.headers.authorization).toBeUndefined();

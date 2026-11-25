@@ -100,6 +100,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     select: {
       author: true,
       body: true,
+      createdAt: true,
       fromAddress: true,
       conversation: {
         select: {
@@ -154,7 +155,9 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     channelId: "default",
     // The app's Reply and Close on the notification (apps/mobile src/lib/notification-actions.ts).
     categoryId: "conversation",
-    data: { project: conversation.project.slug, conversation: conversation.number },
+    // `at`: the message's time, which a reply from the notification says it saw (conversations.reply's `seen`), so a
+    // message that came after it keeps the conversation waiting on the team.
+    data: { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString() },
   }));
   let sent = 0;
   let gone = 0;

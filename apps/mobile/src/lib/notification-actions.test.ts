@@ -83,12 +83,14 @@ vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
 });
 
 const SERVER = "https://tuti.example";
+/** When the notification's message was sent. */
+const AT = "2026-11-25T10:00:00.000Z";
 const signIn = (project = "acme") => phone.stored.set("session", JSON.stringify({ server: SERVER, token: "token-1", cookie: "c", project }));
 const response = (actionIdentifier: string, { userText, project = "acme", id = "push-1" }: { userText?: string; project?: string; id?: string } = {}) =>
   ({
     actionIdentifier,
     ...(userText !== undefined && { userText }),
-    notification: { date: 0, request: { identifier: id, trigger: null, content: { title: "Ada · Acme", body: "Hi", data: { project, conversation: 7 } } } },
+    notification: { date: 0, request: { identifier: id, trigger: null, content: { title: "Ada · Acme", body: "Hi", data: { project, conversation: 7, at: AT } } } },
   }) as unknown as NotificationResponse;
 
 const load = () => import("./notification-actions");
@@ -126,7 +128,8 @@ describe("Reply", () => {
         url: `${SERVER}/api/v1/conversations/7/messages`,
         method: "POST",
         project: "acme",
-        body: { body: "On it!", requestId: `notification-${Buffer.from("push-1\nOn it!").toString("hex").padEnd(64, "0").slice(0, 40)}` },
+        // Seen: up to the notification's message, so one that came after it keeps the conversation waiting on the team.
+        body: { body: "On it!", seen: AT, requestId: `notification-${Buffer.from("push-1\nOn it!").toString("hex").padEnd(64, "0").slice(0, 40)}` },
       },
     ]);
     expect(phone.dismissed).toEqual(["push-1"]);
@@ -173,6 +176,28 @@ describe("Reply", () => {
     const { getDraft } = await import("./conversation");
     const { screenKey } = await import("./details");
     expect(getDraft(screenKey({ server: SERVER, project: "globex" }, 7)).unsent.map((one) => one.body)).toEqual(["On it!"]);
+  });
+
+  it("whose session the server ended (401) is signed out: nothing kept, as the next launch forgets drafts", async () => {
+    answer = () => Response.json({ error: { code: "unauthorized", message: "Sign in again." } }, { status: 401 });
+    await (await load()).act(response("reply", { userText: "On it!" }));
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: You're signed out of Tuti."]);
+    const { getDraft } = await import("./conversation");
+    const { screenKey } = await import("./details");
+    expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
+  });
+
+  it("that fails after a sign-out isn't kept for whoever signs in next", async () => {
+    answer = () => {
+      // Signed out, and another teammate in, while the send is on its way.
+      phone.stored.set("session", JSON.stringify({ server: SERVER, token: "token-2", cookie: "c", project: "acme" }));
+      throw new TypeError("Network request failed");
+    };
+    await (await load()).act(response("reply", { userText: "On it!" }));
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: Couldn't reach tuti.example. Check the address and your connection."]);
+    const { getDraft } = await import("./conversation");
+    const { screenKey } = await import("./details");
+    expect(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent).toEqual([]);
   });
 
   it("signed out, sends nothing and says so", async () => {
