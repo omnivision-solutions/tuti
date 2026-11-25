@@ -75,14 +75,14 @@ export function visibleArticle(reader: Reader, firstTab: Level | null): Prisma.A
 }
 
 /**
- * Changelog entries `reader` may read: those for everyone (no groups), and those for one of their groups. Everything
- * for the team.
+ * Changelog entries `reader` may read: those for everyone (no groups), and those for one of their groups; never an
+ * email-only one (its subscribers have it by email). Everything for the team.
  */
 export function visibleEntry(reader: Reader): Prisma.ChangelogEntryWhereInput {
   if (reader === null) {
     return {};
   }
-  return { OR: [{ groups: { none: {} } }, ...(reader.groups.length > 0 ? [{ groups: { some: { group: { key: { in: reader.groups } } } } }] : [])] };
+  return { emailOnly: false, OR: [{ groups: { none: {} } }, ...(reader.groups.length > 0 ? [{ groups: { some: { group: { key: { in: reader.groups } } } } }] : [])] };
 }
 
 /** `allows` in SQL, for the level at `alias` (tab, collection or article) whose groups are in `table` by `column`. */

@@ -1768,6 +1768,9 @@ model ChangelogEntry {
   subscriberEmails ChangelogEmail[]
   /// The reader groups it's for: listed and shown only to readers in one of them (and the team). None: everyone.
   groups           ChangelogEntryGroup[]
+  /// Email-only: emailed to subscribers, listed nowhere (the portal, the widget, feeds, the API to readers), its page
+  /// the team's only.
+  emailOnly        Boolean                     @default(false)
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])

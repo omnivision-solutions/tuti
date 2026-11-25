@@ -57,8 +57,8 @@ const teamIds = async (projectId: string) =>
 
 /** The entry, as changelog.get finds it: a draft is as good as missing to everyone but the team, and one for some groups to everyone outside them. */
 async function visibleEntry(actor: Actor, projectId: string, number: number) {
-  const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, publishedAt: true, groups: groupClaims } });
-  if (!entry || (!entry.publishedAt && !(await isTeam(actor, projectId))) || !(await mayReadEntry(actor, projectId, claimsOf(entry)))) {
+  const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, publishedAt: true, emailOnly: true, groups: groupClaims } });
+  if (!entry || (!entry.publishedAt && !(await isTeam(actor, projectId))) || !(await mayReadEntry(actor, projectId, entry))) {
     throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
   }
   return entry;
