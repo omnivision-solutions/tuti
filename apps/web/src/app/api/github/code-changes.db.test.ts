@@ -651,7 +651,13 @@ describe("deciding", () => {
     await merge(35);
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 35 } });
     expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
-    // The pick's run, queued behind it (as claimCodeChange queues it for one found analysing): not skipped as done.
+    // Taken out by the team: a run past the gate would write no line, so it's done as it is.
+    const decision = { projectId: project.id, repoId: installationId, number: 35, repo, url: `https://github.com/${repo}/pull/35`, title: "Dark mode 35", author: "octo", mergedAt: new Date() };
+    await prisma.changelogDecision.create({ data: { ...decision, takenOut: true } });
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: true, resume: false });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
+    // Picked: the pick's run, queued behind it (as claimCodeChange queues it for one found analysing), isn't skipped as done.
+    await prisma.changelogDecision.update({ where: { projectId_repoId_number: { projectId: project.id, repoId: installationId, number: 35 } }, data: { takenOut: false } });
     model.reply(SUMMARY);
     for (let i = 0; i < 5; i++) {
       model.decide(unrelated, '"post"');

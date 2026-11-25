@@ -198,8 +198,12 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   }
   // Analysed once: a redelivery or a second run finds it done. Not a pick's run (past the gate) that finds it ruled out
   // with no changelog line, by a run with the gate that was under way when the team picked it: that one is the pick's.
+  // Only while it's still picked (not taken out again), so a run that can't write its line isn't paid for twice.
   if (!input.force && (change.state === "READY" || change.state === "NOTHING_TO_DO")) {
-    const ruledOutPick = input.pastGate && (await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })) === 0;
+    const ruledOutPick =
+      input.pastGate &&
+      (await prisma.changelogDecision.count({ where: { projectId: change.projectId, repoId: change.repoId, number: change.number, takenOut: false } })) > 0 &&
+      (await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })) === 0;
     if (!ruledOutPick) {
       return { skipped: true };
     }
