@@ -597,8 +597,9 @@ describe("swiping a row", () => {
     expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(counted + 1);
   });
 
-  it("puts it back, saying why, when the server refuses", async () => {
+  it("puts it back, saying why in an alert (it may be far down the list), when the server refuses", async () => {
     const changes = serveChanges([row("Invite link expired")]);
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     await render(<Inbox />);
     await screen.findByText("Invite link expired");
 
@@ -606,7 +607,31 @@ describe("swiping a row", () => {
     expect(screen.queryByText("Invite link expired")).toBeNull();
     await act(async () => changes[0]!.answer(false, "You can't change this conversation."));
     expect(screen.getByText("Invite link expired")).toBeTruthy();
-    expect(screen.getByText(`Couldn't close "Invite link expired": You can't change this conversation.`)).toBeTruthy();
+    expect(alert).toHaveBeenCalledWith(`Couldn't close "Invite link expired"`, "You can't change this conversation.");
+  });
+
+  it("isn't undone by a reload that started before the server had it, nor kept over one that started after", async () => {
+    const closing = row("Invite link expired");
+    const changes = serveChanges([row("CSV export stops at 500 rows"), closing]);
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    // A reload (pull to refresh) starts, and answers only after the close: it still lists it, open.
+    let answerReload!: (page: Page) => void;
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (path.startsWith("/conversations?view=open&limit") ? new Promise((resolve) => (answerReload = resolve)) : served(path, init)));
+    await pressAction("Close", 1);
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    await act(async () => changes[0]!.answer(true));
+    await act(async () => answerReload(page([row("CSV export stops at 500 rows"), closing])));
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+
+    // Reopened since (on the web): a reload started now lists it.
+    mockApi.mockImplementation((path, init) => (path.startsWith("/conversations?view=open&limit") ? Promise.resolve(page([closing])) : served(path, init)));
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.getByText("Invite link expired")).toBeTruthy();
   });
 
   it("isn't undone by a live update that fetched its row before the server had the change", async () => {
@@ -663,6 +688,16 @@ describe("swiping a row", () => {
     expect(rowNamed("Old one").props.accessibilityActions).toEqual([]);
     await pressAction("Snooze");
     expect(sheet.mock.calls[0]![0].options).toEqual(["In 3 hours", "Tomorrow, 9:00", "Monday, 9:00", "Wake now", "Cancel"]);
+  });
+
+  it("offers Close but not Snooze in Spam, as the details sheet", async () => {
+    serveChanges([row("Win a prize")], "spam");
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("tab", { name: "Spam" }));
+    await screen.findByText("Win a prize");
+
+    expect(screen.queryAllByText("Snooze", { includeHiddenElements: true })).toHaveLength(0);
+    expect(rowNamed("Win a prize").props.accessibilityActions).toEqual([{ name: "close", label: "Close" }]);
   });
 
   it("gives a screen reader the same actions on the row", async () => {

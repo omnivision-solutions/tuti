@@ -1,6 +1,6 @@
 import { router, Stack, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Alert, AppState, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
 import { pickSnooze } from "@/app/inbox/snooze";
@@ -14,10 +14,17 @@ import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
 /**
- * The list shown, and what it lists (`for`: the project, view and search it was loaded for). `moved`: rows live changes
- * have added (or, below zero, removed) since, which move where the next page starts.
+ * The list shown, and what it lists (`for`: the project, view and search it was loaded for; `load`: the load of
+ * everything that brought it). `moved`: rows live changes have added (or, below zero, removed) since, which move where
+ * the next page starts.
  */
-type List = { for: string; rows: Row[]; next: string | null; total: number; moved: number };
+type List = { for: string; load: number; rows: Row[]; next: string | null; total: number; moved: number };
+
+/**
+ * A swipe's change, shown over the list: while the server has it (`settled` null), and once it has, over a list loaded
+ * by a load of everything that started before (`settled`: the latest load then), which may not have it yet.
+ */
+type Swiped = { change: SwipeChange; settled: number | null };
 
 /** The list with one conversation's row in place, moved, or gone (`found` null). */
 function placed(list: List, number: number, found: Row | null): List {
@@ -52,10 +59,13 @@ export default function Inbox() {
   const [q, setQ] = useState("");
   const [loaded, setList] = useState<List | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Swipes sent and not answered yet, by conversation: shown over the list at once, whatever fetches answer meanwhile.
-  const [pending, setPending] = useState<ReadonlyMap<number, SwipeChange>>(new Map());
-  // Why the latest swipe didn't happen, in the server's words.
-  const [refused, setRefused] = useState<string | null>(null);
+  // Swipes by conversation, shown over the list at once, whatever fetches answer meanwhile.
+  const [swiped, setSwiped] = useState<ReadonlyMap<number, Swiped>>(new Map());
+  const unswipe = (keep: (number: number, swipe: Swiped) => boolean) =>
+    setSwiped((now) => {
+      const left = new Map([...now].filter(([number, swipe]) => keep(number, swipe)));
+      return left.size === now.size ? now : left;
+    });
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [loads] = useState(latestOnly);
@@ -120,8 +130,10 @@ export default function Inbox() {
       const counts = loadCounts(mine);
       const rows = firstRows(api, view, q, keep).then((page) => {
         if (loads.isLatest(mine)) {
-          const fresh = { for: key, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
+          const fresh = { for: key, load: mine, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
           setList(fresh);
+          // Swipes it has: those the server had before it started.
+          unswipe((_, swipe) => swipe.settled === null || swipe.settled >= mine);
           setError(null);
           setNow(Date.now());
           return fresh;
@@ -213,6 +225,8 @@ export default function Inbox() {
         if (loads.isLatest(mine) && rowLoads.get(number) === turn) {
           const found = page.conversations.find((row) => row.number === number);
           setList((now) => now && placed(now, number, found ? { ...found, match: null } : null));
+          // Fetched since the server had its swipe (one fetched before is dropped): the row is as the server has it.
+          unswipe((swipedNumber, swipe) => swipedNumber !== number || swipe.settled === null);
           setNow(Date.now());
         }
       } catch {
@@ -226,10 +240,10 @@ export default function Inbox() {
   const triage = useCallback(
     async (row: Row, change: SwipeChange, done: string, verb: string) => {
       const number = row.number;
-      setRefused(null);
-      setPending((now) => new Map(now).set(number, change));
+      setSwiped((now) => new Map(now).set(number, { change, settled: null }));
       try {
         await updateConversation(api, number, change);
+        setSwiped((now) => new Map(now).set(number, { change, settled: loads.current() }));
         // In the list too, as the server has it now: a row fetch already on its way, from before, is dropped.
         rowLoads.set(number, (rowLoads.get(number) ?? 0) + 1);
         setList((now) => {
@@ -239,16 +253,12 @@ export default function Inbox() {
         AccessibilityInfo.announceForAccessibility(done);
         void loadCounts().catch(() => {});
       } catch (e) {
-        setRefused(`Couldn't ${verb} "${row.subject}": ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        setPending((now) => {
-          const left = new Map(now);
-          left.delete(number);
-          return left;
-        });
+        unswipe((swipedNumber) => swipedNumber !== number);
+        // An alert: the row may be far down the list, out of sight.
+        Alert.alert(`Couldn't ${verb} "${row.subject}"`, e instanceof Error ? e.message : String(e));
       }
     },
-    [api, key, view, q, rowLoads, loadCounts],
+    [api, key, view, q, loads, rowLoads, loadCounts],
   );
   const close = useCallback((row: Row) => void triage(row, { status: "closed" }, "Closed", "close"), [triage]);
   const snooze = useCallback(
@@ -307,11 +317,7 @@ export default function Inbox() {
       AccessibilityInfo.announceForAccessibility(error);
     }
   }, [error]);
-  useEffect(() => {
-    if (refused && Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(refused);
-    }
-  }, [refused]);
+
 
   const choose = (slug: string) => {
     if (slug !== project) {
@@ -344,10 +350,10 @@ export default function Inbox() {
   useEffect(() => onRead((number) => onLive(false, [number])), []);
 
   const current = projects?.find((p) => p.slug === project);
-  // The rows as the swipes waiting on the server leave them.
+  // The rows as the swipes it may not have yet leave them.
   const rows = (list?.rows ?? []).flatMap((row) => {
-    const change = pending.get(row.number);
-    const shown = change ? afterChange(row, change, view, q) : row;
+    const swipe = swiped.get(row.number);
+    const shown = swipe && (swipe.settled === null || list!.load <= swipe.settled) ? afterChange(row, swipe.change, view, q) : row;
     return shown ? [shown] : [];
   });
   const searching = !!q;
@@ -450,17 +456,11 @@ export default function Inbox() {
                   // A view's error isn't the next one's.
                   onPress={(next) => {
                     setError(null);
-                    setRefused(null);
                     setView(next);
                   }}
                   colors={colors}
                 />
               )
-            )}
-            {refused && (
-              <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
-                {refused}
-              </Text>
             )}
             {/* A refresh that failed says so above the list it couldn't update. */}
             {error && !!list?.rows.length && (
