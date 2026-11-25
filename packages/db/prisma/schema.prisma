@@ -2672,6 +2672,10 @@ model CodeChange {
   retryAt       DateTime?
   retries       Int             @default(0)
   retryPastGate Boolean         @default(false)
+  /// What the team decided about it and the changelog: "IN" once they added it by hand (changelog.addPullRequests: the
+  /// gate no longer takes it out of the draft), "OUT" once they took it out of one (changelog.removePullRequest: no
+  /// analysis or redelivery puts it back); null while it's Autopilot's own to decide.
+  teamChangelog String?
   /// Unused: the marker and the queued job's claim of a one-off rewrite of waiting edits, since removed. Kept while the
   /// previous release reads them; dropped in a later one.
   rewriteDocsOnly Boolean       @default(false)

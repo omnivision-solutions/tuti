@@ -50,22 +50,74 @@ type MergedPullRequest = { repoId: number; repo: string; number: number; url: st
 /**
  * A merged pull request becomes the project's code change, analysed by the `code-change` job, unless
  * analysis is off (on this server, or by the team). A redelivery finds the one it made: queued again
- * only while it isn't analysed yet, and analysed once (the job checks). Returns whether there is one.
+ * only while it isn't analysed yet, and analysed once (the job checks). Returns whether there is one. `pastGate`: the
+ * team picked it for the changelog themselves (changelog.addPullRequests), so the gate isn't asked whether users see it.
  */
-export async function startCodeChange(projectId: string, pr: MergedPullRequest): Promise<boolean> {
+export async function startCodeChange(projectId: string, pr: MergedPullRequest, { pastGate = false } = {}): Promise<boolean> {
+  const claimed = await claimCodeChange(projectId, pr, { pastGate });
+  if (claimed) {
+    await queueClaimed(claimed);
+  }
+  return claimed !== null;
+}
+
+/** A code change claimed for its run: the run to queue, if it's to have one, and how to put it back if queueing fails. */
+type Claimed = { run?: JobInput<"codeChange">; unclaim?: () => Promise<unknown> };
+
+/**
+ * `startCodeChange` in two steps, for a caller that answers before the analyses run (changelog.addPullRequests, where
+ * jobs run in-process): the code change is there from this moment (the team's pick said on it, so taking the pull
+ * request out again has something to say so on), and `queueClaimed` queues its run. Null where analysis is off.
+ */
+export async function claimCodeChange(projectId: string, pr: MergedPullRequest, { pastGate = false } = {}): Promise<Claimed | null> {
   if (!(await analysisOn(projectId))) {
-    return false;
+    return null;
   }
   const change = await prisma.codeChange.upsert({
     where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } },
-    create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) },
+    create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt), ...(pastGate && { teamChangelog: "IN" }) },
     update: {},
-    select: { id: true, state: true },
+    select: { id: true, state: true, reason: true },
   });
   if (change.state === "ANALYSING" || change.state === "FAILED") {
-    await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: false });
+    return { run: { codeChangeId: change.id, force: false, pastGate, resume: false } };
   }
-  return true;
+  // The gate found nothing for users, and the team chose it all the same: analysed again past it, as "Analyse anyway"
+  // does (once: a second request finds it analysing). Nothing to do, or ready with only docs to fix: either way no
+  // changelog line was ever written for it (one that has its line keeps it, and isn't analysed twice).
+  const ruledOut =
+    pastGate &&
+    (change.state === "NOTHING_TO_DO" || (change.state === "READY" && (await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })) === 0));
+  if (ruledOut) {
+    const was = { state: change.state as "NOTHING_TO_DO" | "READY", reason: change.reason };
+    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0 } });
+    if (count > 0) {
+      return {
+        run: { codeChangeId: change.id, force: true, pastGate: true, resume: false },
+        unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: was }),
+      };
+    }
+  }
+  return {};
+}
+
+/**
+ * Queues a claimed code change's run (`queue`: the caller's own `enqueue`, where it has one). On Hatchet, if queueing
+ * fails no run has it: it's put back as it was, to ask for again, and the error is the caller's to say. Inline, the
+ * analysis itself failed, and its code change says where and when it's tried next.
+ */
+export async function queueClaimed(claimed: Claimed, queue: typeof enqueue = enqueue): Promise<void> {
+  if (!claimed.run) {
+    return;
+  }
+  try {
+    await queue("codeChange", claimed.run);
+  } catch (error) {
+    if (process.env.JOBS_DRIVER !== "inline") {
+      await claimed.unclaim?.();
+    }
+    throw error;
+  }
 }
 
 /** Whether the project's merged pull requests become code changes: on this server, and not turned off by the team. */
@@ -489,7 +541,8 @@ async function leaveChangelog(change: { id: string; projectId: string; pullReque
  * stay, as does a line they dismissed, undid or took out with its draft); again only once the gate took it out of the
  * draft, which drops its record. Never where its entry is published (readers would see it). Recorded as applied before it's written
  * (so a record that can't be saved writes nothing), then with what Undo puts back. A failure leaves the pull request's
- * title there, said in the log.
+ * title there, said in the log. Never for one the team took out of a draft (changelog.removePullRequest: its code
+ * change says so, whenever its analysis runs), which isn't put back.
  */
 export async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
   try {
@@ -499,8 +552,8 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
     }
     const claim = await prisma.$transaction(async (tx) => {
       // Decided under the change's lock, so two analyses at once (or a line claimed meanwhile) write it once.
-      await tx.$queryRaw`SELECT 1 FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
-      if ((await tx.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } })) > 0) {
+      const [change] = await tx.$queryRaw<{ teamChangelog: string | null }[]>`SELECT "teamChangelog" FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
+      if (change?.teamChangelog === "OUT" || (await tx.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } })) > 0) {
         return null;
       }
       return tx.codeChangeAction.create({ data: { codeChangeId, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line } }, select: { id: true } });

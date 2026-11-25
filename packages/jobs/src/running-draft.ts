@@ -33,22 +33,22 @@ export async function lockProject(tx: Prisma.TransactionClient, projectId: strin
 /**
  * Adds a merged pull request to the running draft (once per project, however often GitHub delivers it).
  * With `gate` (code changes on), not one whose code change has nothing to do: checked under the same
- * lock the gate takes to remove it, so a redelivery racing the gate can't put it back. Returns whether it was added.
+ * lock the gate takes to remove it, so a redelivery racing the gate can't put it back. Never one the team took out of a
+ * draft (its code change says so), unless they're the ones adding it (`picked`: changelog.addPullRequests), which their
+ * code change then says instead, so the gate leaves it in. Returns whether it was added.
  */
-export async function addToRunningDraft(projectId: string, pr: PullRequest, gate?: { repoId: number }): Promise<boolean> {
+export async function addToRunningDraft(projectId: string, pr: PullRequest, gate?: { repoId: number }, { picked = false } = {}): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     // One at a time (see lockProject): the draft found here is still the running one when it's written.
     if (!(await lockProject(tx, projectId))) {
       return false;
     }
-    if (gate) {
-      const change = await tx.codeChange.findUnique({
-        where: { projectId_repoId_number: { projectId, repoId: gate.repoId, number: pr.number } },
-        select: { state: true },
-      });
-      if (change?.state === "NOTHING_TO_DO") {
-        return false;
-      }
+    const change = await tx.codeChange.findFirst({ where: { projectId, url: pr.url }, select: { state: true, teamChangelog: true } });
+    if (picked) {
+      // Theirs from here on, whether or not an entry already has it.
+      await tx.codeChange.updateMany({ where: { projectId, url: pr.url }, data: { teamChangelog: "IN" } });
+    } else if (change?.teamChangelog === "OUT" || (gate && change?.state === "NOTHING_TO_DO" && change.teamChangelog !== "IN")) {
+      return false;
     }
     // Already in an entry (this draft or an earlier, closed one): a redelivery adds it nowhere.
     const known = await tx.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
@@ -180,15 +180,47 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
     if (!(await lockProject(tx, projectId))) {
       return false;
     }
+    // The team added it themselves (read under the lock their adding takes): the gate's word doesn't take it out.
+    if ((await tx.codeChange.count({ where: { projectId, url, teamChangelog: "IN" } })) > 0) {
+      return false;
+    }
     const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true } });
     if (!known) {
       return false;
     }
-    await tx.changelogEntryPullRequest.delete({ where: { entryId_url: { entryId: known.entryId, url } } });
-    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { content: true } });
-    const doc = withoutBullet((entry.content as Doc | null) ?? { type: "doc", content: [] }, url);
-    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    await takeOut(tx, known.entryId, url);
     return true;
+  });
+}
+
+/** The pull request's row and its bullet (while its text is still a bullet linking to it), out of the entry. */
+async function takeOut(tx: Prisma.TransactionClient, entryId: string, url: string) {
+  await tx.changelogEntryPullRequest.delete({ where: { entryId_url: { entryId, url } } });
+  // The entry's row too: an edit in the changelog (which doesn't take the project's lock) waits, or is seen here.
+  const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${entryId} FOR UPDATE`;
+  const doc = withoutBullet((entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] }, url);
+  await tx.changelogEntry.update({ where: { id: entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+}
+
+/**
+ * The team takes a pull request out of a draft (it ships in a later release, or isn't for readers): its row and its
+ * bullet go, from the running draft or one a release closed; never from a published entry. Its code change is told
+ * (`teamChangelog`), so no analysis still to run, retry or redelivery puts it back, and the line Autopilot wrote for it
+ * stays recorded. In no entry any more, it can be added to the next one (changelog.addPullRequests).
+ */
+export async function removePullRequest(projectId: string, entryId: string, url: string): Promise<"removed" | "published" | "missing"> {
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entryId, entry: { projectId } }, select: { entry: { select: { publishedAt: true } } } });
+    if (!known) {
+      return "missing";
+    }
+    if (known.entry.publishedAt) {
+      return "published";
+    }
+    await takeOut(tx, entryId, url);
+    await tx.codeChange.updateMany({ where: { projectId, url }, data: { teamChangelog: "OUT" } });
+    return "removed";
   });
 }
 

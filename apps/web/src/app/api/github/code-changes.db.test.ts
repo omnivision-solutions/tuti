@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
+import { addChangelogPullRequests, addedPullRequestsAnalysed, removeChangelogPullRequest } from "@/server/operations/changelog";
 import { analyseCodeChange, codeChangeDetail, codeChangeList, getCodeChangeTarget, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
@@ -572,6 +573,112 @@ describe("deciding", () => {
     expect(await changes()).toEqual([expect.objectContaining({ number: 20, state: "READY" })]);
     expect(receiver.received.map((delivery) => JSON.parse(delivery.body).type)).toEqual(["code_change.ready"]);
     await receiver.close();
+  });
+
+  // The changelog's pull requests by hand (changelog.addPullRequests, changelog.removePullRequest): what the team decided holds, whatever an analysis finds later.
+  const picking = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+  const forUsers = () => {
+    model.decide(USERS);
+    noDocs();
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+  };
+  const draftOf = async (url: string) => {
+    const entry = await prisma.changelogEntry.findFirst({ where: { projectId: project.id, pullRequests: { some: { url } } }, select: { number: true, body: true } });
+    return entry;
+  };
+
+  test("ruled out by the gate, then added to the changelog by the team: it's analysed past the gate and gets its line", async () => {
+    github.pullRequest(repo, pullRequest(31));
+    model.decide(INTERNAL);
+    noDocs();
+    await merge(31);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
+    expect(await draftOf(url)).toBeNull();
+    // The team picks it for the changelog all the same: the gate isn't asked again.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 31 }] })).toMatchObject({ added: [{ repo, number: 31 }], alreadyIn: [] });
+    // In the draft at once, under its title; its analysis goes on after the request has answered (jobs run in this process here).
+    expect(await draftOf(url)).not.toBeNull();
+    await addedPullRequestsAnalysed();
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "READY" });
+    expect((await draftOf(url))?.body).toBe("A dark theme");
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" }, select: { status: true, payload: true } })).toEqual([
+      { status: "APPLIED", payload: expect.objectContaining({ line: "A dark theme" }) },
+    ]);
+  });
+
+  test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
+    github.pullRequest(repo, pullRequest(32));
+    // The provider stops answering after the gate: the analysis failed, to be tried again; the pull request is in the draft since the merge.
+    model.decide(USERS);
+    model.fail(503);
+    await merge(32);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "FAILED" });
+    const draft = await draftOf(url);
+    await call(removeChangelogPullRequest, picking(), { number: draft!.number, url });
+    expect(await draftOf(url)).toBeNull();
+    // The retry finds it's for users and writes what it found, but not into the changelog: the team took it out.
+    forUsers();
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, summary: true } })).toEqual({ state: "READY", summary: SUMMARY });
+    expect(await draftOf(url)).toBeNull();
+    expect(await prisma.codeChangeAction.count({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" } })).toBe(0);
+    // GitHub delivering the merge again doesn't either.
+    await merge(32);
+    expect(await draftOf(url)).toBeNull();
+    // Theirs to add back: no line was ever written for it, so it's analysed past the gate for one.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 32 }] })).toMatchObject({ added: [{ repo, number: 32 }] });
+    await addedPullRequestsAnalysed();
+    expect((await draftOf(url))?.body).toBe("A dark theme");
+  });
+
+  test("added by the team, a pull request stays in the draft though the gate then finds nothing for users", async () => {
+    github.pullRequest(repo, pullRequest(33));
+    model.decide(USERS);
+    model.fail(503);
+    await merge(33);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    // The team says it belongs in the changelog while its analysis is still to run: it's where it is, and theirs now.
+    expect(await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 33 }] })).toMatchObject({ added: [], alreadyIn: [{ repo, number: 33 }] });
+    // The run the merge started asks the gate, which finds nothing for users: the changelog keeps it all the same.
+    model.decide(INTERNAL);
+    noDocs();
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
+    expect(await draftOf(url)).not.toBeNull();
+  });
+
+  test("taken out of one draft and added to the next, a pull request keeps the line written for it", async () => {
+    github.pullRequest(repo, pullRequest(34));
+    forUsers();
+    await merge(34);
+    const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    const draft = await draftOf(url);
+    expect(draft!.body).toBe("A dark theme");
+    await call(removeChangelogPullRequest, picking(), { number: draft!.number, url });
+    expect(await draftOf(url)).toBeNull();
+    // It ships with the next release: added again, with Autopilot's line, not its title; nothing is analysed twice.
+    await call(addChangelogPullRequests, picking(), { pullRequests: [{ repo, number: 34 }] });
+    expect((await draftOf(url))!.body).toBe("A dark theme");
+    expect(await prisma.codeChangeAction.count({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" } })).toBe(1);
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "READY" });
   });
 
   test("the changelog line is written again once the gate took its bullet out of the draft, and \"Analyse anyway\" brought it back", async () => {

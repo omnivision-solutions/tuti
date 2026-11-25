@@ -1,6 +1,27 @@
 import { type Doc, isVideo, toMarkdown, toPlainText, videoPageUrl } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, markdownToContent, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, storeImage, toApiStatus, uploadImage } from "@tuti/jobs";
+import {
+  addToRunningDraft,
+  claimCodeChange,
+  enqueue,
+  lockProject,
+  markdownToContent,
+  mergedPullRequests,
+  mergedPullRequestsByRef,
+  type PortalAddress,
+  postSummary,
+  postSummarySelect,
+  queueClaimed,
+  queueDeliveries,
+  recordEvent,
+  removePullRequest,
+  RUNNING_DRAFT_TITLE,
+  SEEN_AS_SQL,
+  setChangelogLine,
+  storeImage,
+  toApiStatus,
+  uploadImage,
+} from "@tuti/jobs";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
@@ -1078,6 +1099,222 @@ async function countAiEdit(projectId: string) {
     throw new OperationError(429, "rate_limited", `Your team has made ${AI_EDITS_PER_HOUR} AI edits this hour. Try again later.`);
   }
 }
+
+const NOT_CONNECTED = "Connect GitHub first (Settings → Integrations)";
+/** GitHub's answer, or a 502 saying it didn't give one (its token refused, a repository gone, its API down). */
+async function fromGithub<T>(projectId: string, read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    log.warn("GitHub couldn't be read for the changelog's pull requests", { projectId, error });
+    throw new OperationError(502, "github_failed", "GitHub didn't answer. Try again in a moment.");
+  }
+}
+
+/** The analyses going on after their request answered (jobs in-process). */
+const inBackground = new Set<Promise<void>>();
+/** Once every analysis `changelog.addPullRequests` left running in this process has ended: for tests, which wait for them rather than watch the clock. */
+export const addedPullRequestsAnalysed = (): Promise<unknown> => Promise.all([...inBackground]);
+
+/**
+ * How far back merged pull requests are looked for at least: one taken out of a draft that has since been published
+ * (it ships in a later release) merged before that entry went out, and is still to be found.
+ */
+const MISSING_SINCE_DAYS = 30;
+/** Pull requests added to the changelog in one request: each is read from GitHub, and analysed where Autopilot is on. */
+export const MAX_ADDED_PULL_REQUESTS = 50;
+
+const pullRequestRef = z.object({
+  repo: z.string().trim().min(3).max(200).describe("The repository, owner/name: one the project includes").meta({ examples: ["acme/app"] }),
+  number: z.number().int().positive().describe("The pull request's number").meta({ examples: [418] }),
+});
+
+export const listMissingChanges = defineOperation({
+  name: "changelog.missingChanges",
+  title: "List missing pull requests",
+  summary:
+    "List the pull requests merged on the project's repositories that are in no changelog entry: ones merged before GitHub was connected (since `since`), and ones taken out of a draft, whenever they merged. Read from GitHub; no AI",
+  method: "GET",
+  path: "/changelog-pull-requests",
+  scope: "read",
+  access: "team",
+  errors: [409, 502],
+  input: z.object({
+    since: z.iso
+      .datetime()
+      .optional()
+      .describe(`Merged since then; without it, the last ${MISSING_SINCE_DAYS} days, or since the latest entry was published if that's longer ago`)
+      .meta({ examples: ["2026-11-01T00:00:00.000Z"] }),
+  }),
+  output: z
+    .object({
+      since: z.string().describe("Merged since then").meta({ examples: ["2026-11-01T00:00:00.000Z"] }),
+      pullRequests: z
+        .array(
+          pullRequestRef.extend({
+            title: z.string().describe("Its title").meta({ examples: ["Add a dark theme"] }),
+            url: z.string().describe("Its page").meta({ examples: ["https://github.com/acme/app/pull/418"] }),
+            author: z.string().describe("Who opened it").meta({ examples: ["octocat"] }),
+            mergedAt: z.string().describe("When it merged").meta({ examples: ["2026-11-02T09:30:00.000Z"] }),
+            forUsers: z
+              .boolean()
+              .nullable()
+              .describe("What Autopilot found: true if it changes something users see, false if nothing for them; null if it hasn't analysed it")
+              .meta({ examples: [true] }),
+          }),
+        )
+        .describe("Newest first"),
+    })
+    .meta({ id: "MissingChanges", description: "Merged pull requests that are in no changelog entry" })
+    .describe("The merged pull requests no entry has"),
+  run: async ({ projectId }, input) => {
+    const latest = await prisma.changelogEntry.findFirst({ where: { projectId, publishedAt: { not: null }, sample: false }, orderBy: { publishedAt: "desc" }, select: { publishedAt: true } });
+    const lately = new Date(Date.now() - MISSING_SINCE_DAYS * 86_400_000);
+    const since = input.since ? new Date(input.since) : latest?.publishedAt && latest.publishedAt < lately ? latest.publishedAt : lately;
+    const merged = await fromGithub(projectId, () => mergedPullRequests(projectId, since));
+    if (!merged) {
+      throw new OperationError(409, "github_not_connected", NOT_CONNECTED);
+    }
+    // And the ones the team took out of a draft, however long ago they merged (a draft that collected for weeks, a
+    // release that waited): they're what this list is for.
+    const takenOut = await prisma.codeChange.findMany({
+      where: { projectId, teamChangelog: "OUT", mergedAt: { lt: since } },
+      select: { repoId: true, repo: true, number: true, title: true, url: true, author: true, mergedAt: true },
+    });
+    const all = [...merged, ...takenOut.map((change) => ({ ...change, mergedAt: change.mergedAt.toISOString() }))].sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
+    const [inEntries, changes] = await Promise.all([
+      prisma.changelogEntryPullRequest.findMany({ where: { entry: { projectId }, url: { in: all.map((pr) => pr.url) } }, select: { url: true } }),
+      prisma.codeChange.findMany({
+        where: { projectId, repoId: { in: all.map((pr) => pr.repoId) }, number: { in: all.map((pr) => pr.number) } },
+        select: { repoId: true, number: true, state: true, _count: { select: { actions: { where: { kind: "CHANGELOG_LINE" } } } } },
+      }),
+    ]);
+    const known = new Set(inEntries.map((pr) => pr.url));
+    return {
+      since: since.toISOString(),
+      pullRequests: all
+        .filter((pr) => !known.has(pr.url))
+        .map(({ repoId, ...pr }) => {
+          const change = changes.find((each) => each.repoId === repoId && each.number === pr.number);
+          // The gate's word, as its analysis left it: for users if a changelog line was written for it. Ready with
+          // none (only docs to fix) is no more for users than nothing to do.
+          const analysed = change?.state === "READY" || change?.state === "NOTHING_TO_DO";
+          return { ...pr, forUsers: analysed ? change._count.actions > 0 : null };
+        }),
+    };
+  },
+});
+
+export const addChangelogPullRequests = defineOperation({
+  name: "changelog.addPullRequests",
+  title: "Add pull requests",
+  summary:
+    "Add merged pull requests to the running draft (\"Next release\", started if there's none), as a merge does: a line each, and its analysis where Autopilot is on. One already in an entry stays where it is",
+  method: "POST",
+  path: "/changelog-pull-requests",
+  scope: "write",
+  access: "team",
+  errors: [409, 502],
+  input: z.object({
+    pullRequests: z
+      .array(pullRequestRef)
+      .min(1)
+      .max(MAX_ADDED_PULL_REQUESTS, `Add up to ${MAX_ADDED_PULL_REQUESTS} pull requests at a time`)
+      .describe(`The pull requests to add, up to ${MAX_ADDED_PULL_REQUESTS}: merged ones, on the project's repositories`),
+  }),
+  output: z
+    .object({
+      number: z.number().int().nullable().describe("The running draft's number; null if nothing was added and there's none").meta({ examples: [8] }),
+      added: z.array(pullRequestRef).describe("Those added to it"),
+      alreadyIn: z.array(pullRequestRef).describe("Those an entry already had: left where they are"),
+    })
+    .meta({ id: "AddedPullRequests", description: "What adding pull requests to the changelog did" })
+    .describe("The running draft, and which were added"),
+  example: { pullRequests: [{ repo: "acme/app", number: 418 }] },
+  run: async ({ projectId }, input) => {
+    // Each as GitHub has it now, all read before any is added: one that isn't a merged pull request of the project's adds none.
+    const read = await fromGithub(projectId, () => mergedPullRequestsByRef(projectId, input.pullRequests));
+    if (!read) {
+      throw new OperationError(409, "github_not_connected", NOT_CONNECTED);
+    }
+    const merged = read.map((pr, i) => {
+      const { repo, number } = input.pullRequests[i]!;
+      if (pr === "unknown" || pr === "open") {
+        throw new OperationError(400, "invalid_input", pr === "open" ? `${repo}#${number} isn't merged` : `There's no pull request ${repo}#${number} on the project's repositories`);
+      }
+      return pr;
+    });
+    const added: typeof merged = [];
+    for (const pr of merged) {
+      // Picked by the team: theirs to have in the changelog whatever Autopilot's gate said or says (its code change is told).
+      if (await addToRunningDraft(projectId, pr, undefined, { picked: true })) {
+        added.push(pr);
+        // Taken out of an earlier draft with the line written for it (Autopilot's, or the team's edit of it): that line
+        // again, not the pull request's title. Its record stays the one it was.
+        const written = await prisma.codeChangeAction.findFirst({ where: { codeChange: { projectId, url: pr.url }, kind: "CHANGELOG_LINE", status: "APPLIED" }, select: { payload: true } });
+        const line = (written?.payload as { line?: unknown } | undefined)?.line;
+        if (typeof line === "string" && line.trim() !== "") {
+          await setChangelogLine(projectId, pr, line);
+        }
+      }
+    }
+    // Their code changes, there before this answers (each says the team picked it, and taking one out again has
+    // somewhere to say so), and their analyses past the gate, one after another. Where jobs run in this process
+    // (JOBS_DRIVER=inline) the analyses go on after the request has answered, as an import's pages do: fifty of them
+    // would hold it for many minutes. Its line is in the draft either way; one that can't start is said in the log.
+    const claims: { pr: (typeof added)[number]; claimed: NonNullable<Awaited<ReturnType<typeof claimCodeChange>>> }[] = [];
+    for (const pr of added) {
+      const claimed = await claimCodeChange(projectId, pr, { pastGate: true });
+      if (claimed?.run) {
+        claims.push({ pr, claimed });
+      }
+    }
+    const analysing = (async () => {
+      for (const { pr, claimed } of claims) {
+        await queueClaimed(claimed, enqueue).catch((error: unknown) => log.warn("A pull request added to the changelog couldn't be analysed", { projectId, repo: pr.repo, number: pr.number, error }));
+      }
+    })();
+    if (process.env.JOBS_DRIVER !== "inline") {
+      await analysing;
+    } else {
+      inBackground.add(analysing);
+      void analysing.finally(() => inBackground.delete(analysing));
+    }
+    const draft = await prisma.changelogEntry.findFirst({ where: { projectId, collecting: true }, select: { number: true } });
+    const ref = ({ repo, number }: { repo: string; number: number }) => ({ repo, number });
+    return { number: draft?.number ?? null, added: added.map(ref), alreadyIn: merged.filter((pr) => !added.includes(pr)).map(ref) };
+  },
+});
+
+export const removeChangelogPullRequest = defineOperation({
+  name: "changelog.removePullRequest",
+  title: "Take a pull request out",
+  summary:
+    "Take a merged pull request out of a draft entry, with its line while that's still a bullet linking to it: it ships later, or isn't for readers. It can be added to the next entry (changelog.addPullRequests). A published entry's stay (a 409)",
+  method: "POST",
+  path: "/changelog/{number}/pull-requests/remove",
+  scope: "write",
+  access: "team",
+  errors: [409],
+  input: z.object({
+    number: entryNumber,
+    url: z.string().trim().min(1).max(2048).describe("The pull request's page, as the entry's `pullRequests` gives it").meta({ examples: ["https://github.com/acme/app/pull/418"] }),
+  }),
+  output: entryOutput.describe("The entry, without it"),
+  example: { url: "https://github.com/acme/app/pull/418" },
+  run: async ({ projectId }, { number, url }) => {
+    const portal = await projectPortal(projectId);
+    const entry = await teamEntry(projectId, number);
+    const done = await removePullRequest(projectId, entry.id, url);
+    if (done === "published") {
+      throw new OperationError(409, "published", "Unpublish the entry to change its pull requests");
+    }
+    if (done === "missing") {
+      throw new OperationError(404, "not_found", "This entry has no such pull request");
+    }
+    return entryView(await teamEntry(projectId, number), portal);
+  },
+});
 
 export const MAX_TONE_LENGTH = 4000;
 export const MAX_STYLE_EXAMPLES = 3;

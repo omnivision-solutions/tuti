@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { billingFile, configFile, type DnsFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, configFile, type DnsFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
@@ -51,6 +51,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
   "changelog.editSection": () => ({ number: 1, append: true, markdown: "Added by the matrix." }),
   "changelog.composeCover": () => ({ number: 1 }),
+  "changelog.missingChanges": () => ({}),
+  "changelog.addPullRequests": () => ({ pullRequests: [{ repo: "acme/matrix", number: 5 }] }),
+  "changelog.removePullRequest": () => ({ number: 2, url: "https://github.com/acme/matrix/pull/4" }),
   "changelog.draft": () => ({ number: 2 }),
   "changelog.rewrite": () => ({ number: 2, mode: "shorten" }),
   "changelog.publish": () => ({ number: 1 }),
@@ -222,6 +225,7 @@ let site: SiteFake;
 let stripe: StripeFake;
 let ses: SesFake;
 let s3: S3Fake;
+let github: GithubFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -245,6 +249,9 @@ beforeAll(async () => {
   }
   ses = await startSesFake();
   s3 = await startS3Fake();
+  // GitHub, for the changelog's pull requests: a merged one on the fixture's repository.
+  github = await startGithubFake();
+  github.pullRequest("acme/matrix", { number: 5, title: "Add a dark theme" });
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -258,7 +265,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close(), s3.close()]));
+afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close(), s3.close(), github.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -281,6 +288,10 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId: project.id, number: 1, title: "Matrix entry", publishedAt: new Date() },
       { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
+  });
+  // A merged pull request in the draft, to take out.
+  await prisma.changelogEntryPullRequest.create({
+    data: { entry: { connect: { projectId_number: { projectId: project.id, number: 2 } } }, url: "https://github.com/acme/matrix/pull/4", repo: "acme/matrix", number: 4, title: "Speed up search" },
   });
   // A comment on #1 by the keys' creator, to edit and delete.
   const entryComment = await prisma.changelogComment.create({
@@ -555,6 +566,13 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   // Uploads, for the cover an entry's composed one is kept as.
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, operation.name === "changelog.composeCover" ? value : "");
+  }
+  // Adding a pull request to the changelog would analyse it (inline here, asking the model): off for that one, as a
+  // team turns it off (the analysis has its own tests, code-changes.db.test.ts).
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: operation.name !== "changelog.addPullRequests" } });
+  // GitHub answers for the changelog's pull requests only: elsewhere it isn't set up (see articles.verify's case).
+  for (const [name, value] of Object.entries(github.env)) {
+    vi.stubEnv(name, ["changelog.missingChanges", "changelog.addPullRequests"].includes(operation.name) ? value : "");
   }
 
   // Another project's key: nothing of this project comes back, and nothing changes.
