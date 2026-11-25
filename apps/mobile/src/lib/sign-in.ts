@@ -1,14 +1,17 @@
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 
-import { authRequest } from "./api";
+import { ApiError, authRequest } from "./api";
 import { challengeOf, newState, newVerifier } from "./pkce";
 
 /**
- * Signing in (apps/web/src/lib/app-sign-in.ts has the server's side). Every way starts with a new state and PKCE
- * verifier, kept in secure storage so an emailed link still works if the phone closed the app meanwhile, and ends at
- * `tuti://sign-in?state=…&code=…` (or `…&error=…`): the sign-in screen's route, so the router opens it with these as
- * its params. Only the latest sign-in's state is taken, and its code is exchanged once.
+ * Signing in (apps/web/src/lib/app-sign-in.ts has the server's side): Google or GitHub in the system's browser sheet,
+ * or the account's email and password in one call.
+ *
+ * Google and GitHub start with a new state and PKCE verifier, kept in secure storage (on Android the phone may close
+ * the app while the browser is in front), and end at `tuti://sign-in?state=…&code=…` (or `…&error=…`): the sign-in
+ * screen's route, so the router opens it with these as its params, beside the browser sheet's own result. Only the
+ * latest sign-in's state is taken, and its code is exchanged once.
  */
 
 export type SignedIn = { server: string; token: string; cookie: string };
@@ -25,11 +28,25 @@ async function begin(server: string) {
   return { state: pending.state, challenge: await challengeOf(pending.verifier) };
 }
 
-/** Emails a sign-in link, if the address has an account (the server says the same either way). */
-export async function emailSignInLink(server: string, email: string) {
-  const { state, challenge } = await begin(server);
-  await authRequest(server, "/app/sign-in-link", { body: { email, state, challenge } });
+/** Email and password: the session, or an Error in words. Needs the server's `/app/sign-in/email` (mobile/app-password). */
+export async function signInWithPassword(server: string, email: string, password: string): Promise<SignedIn> {
+  try {
+    const { token, cookie } = await authRequest<{ token: string; cookie: string }>(server, "/app/sign-in/email", { body: { email, password } });
+    return { server, token, cookie };
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "INVALID_EMAIL_OR_PASSWORD") {
+      // One answer for a wrong password and an address with no account, as the server gives.
+      throw new Error("That email and password don't match. Try again, or reset your password.");
+    }
+    if (error instanceof ApiError && error.code === "EMAIL_NOT_VERIFIED") {
+      throw new Error("Verify your email address first: open the link in the email Tuti sent you, then sign in.");
+    }
+    throw error;
+  }
 }
+
+/** Where "Forgot password?" goes: the web's own reset, in the system browser. */
+export const forgotPasswordUrl = (server: string) => `${server}/app/auth/forgot-password`;
 
 /** Google or GitHub in the system's browser sheet: signed in, or null if the teammate closed it. */
 export async function continueWith(provider: "google" | "github", server: string): Promise<SignedIn | null> {
@@ -68,7 +85,7 @@ const one = (value: string | string[] | undefined) => (Array.isArray(value) ? va
 /** The way back, read: a code for the sign-in started here last, or why there's none, in words. */
 export function readReturn(params: Params, expectedState: string | undefined): { code: string } | { error: string } {
   if (!expectedState || one(params.state) !== expectedState) {
-    return { error: "That link is from an earlier sign-in. Use the latest link you asked for, or ask for a new one." };
+    return { error: "That sign-in was started earlier. Try again." };
   }
   const error = one(params.error);
   if (error) {
@@ -85,9 +102,6 @@ function errorMessage(code: string, description: string | undefined) {
   switch (code) {
     case "signup_disabled":
       return "There's no Tuti account for that address yet. Create one on the web first, then sign in here.";
-    case "INVALID_TOKEN":
-    case "EXPIRED_TOKEN":
-      return "That link has expired or was already used. Ask for a new one.";
     case "access_denied":
       return "Signing in was cancelled.";
     default:

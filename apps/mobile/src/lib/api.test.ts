@@ -48,8 +48,14 @@ describe("the API client", () => {
     const html = vi.fn<typeof fetch>(async () => new Response("<html>Bad gateway</html>", { status: 502 }));
     await expect(createApi({ server: "https://tuti.example.com", token: "t" }, () => {}, html)("/projects")).rejects.toMatchObject({
       status: 502,
-      message: "tuti.example.com answered 502. Try again.",
+      message: "tuti.example.com didn't answer like a Tuti server (502). Check the address and your connection.",
     });
+    // A Wi-Fi login page answers 200: that's no answer either (a session check's `null` would sign out).
+    const portal = vi.fn<typeof fetch>(async () => new Response("<html>Accept the terms</html>", { status: 200 }));
+    await expect(authRequest("https://tuti.example.com", "/get-session", { cookie: "c" }, portal)).rejects.toMatchObject({ code: "not_tuti" });
+    expect(await authRequest("https://tuti.example.com", "/get-session", { cookie: "c" }, answer(200, null))).toBeNull();
+    const empty = vi.fn<typeof fetch>(async () => new Response("", { status: 500 }));
+    await expect(createApi({ server: "https://tuti.example.com", token: "t" }, () => {}, empty)("/projects")).rejects.toMatchObject({ status: 500, code: "not_tuti" });
   });
 
   it("calls /api/auth with the app's scheme for an origin, and the session's cookie", async () => {

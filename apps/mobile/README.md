@@ -3,9 +3,20 @@
 The Inbox on a phone (`docs/plan.md`, "Mobile app"). React Native with Expo; routes live in `src/app`.
 
 ```sh
-pnpm --filter @tuti/mobile start    # the dev server; Expo Go opens it until the app needs a build of its own
+pnpm --filter @tuti/mobile start    # the dev server (Metro), for a development build
 pnpm --filter @tuti/mobile build    # bundle for both platforms, as a store build would (part of `pnpm build`)
 ```
+
+The app runs as a development build, not in Expo Go: Google's and GitHub's sign-in come back to the app through its
+own `tuti://` scheme, which Expo Go doesn't have. Build one on Expo's servers with
+`npx eas-cli build --profile development --platform ios` (a simulator build) or `--platform android` (an APK),
+install it, start Metro, and open the app. Point "Self-hosted server" at a local server (`http://localhost:3100`;
+on an Android emulator, forward the port with `adb reverse tcp:3100 tcp:3100`).
+
+Where things are: routes in `src/app` (signed out: `sign-in`; signed in: everything else, guarded in `_layout.tsx`),
+the API client in `src/lib/api.ts`, the session in `src/lib/session.tsx` (`useSession()`, and `useApi()` for a
+signed-in screen: `await api<{ conversations: … }>("/conversations?view=mine")` calls the operation as the teammate,
+in their chosen project), signing in in `src/lib/sign-in.ts`, and the colours in `src/lib/theme.ts` (`useColors()`).
 
 React, React Native and the Expo packages stay on the versions the app's Expo release supports: `pnpm lint` fails
 when one drifts, and `pnpm --filter @tuti/mobile exec expo install --fix` puts them back.

@@ -1,16 +1,17 @@
 import { useLocalSearchParams } from "expo-router";
-import { type ReactNode, useEffect, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { openBrowserAsync } from "expo-web-browser";
+import { type ComponentRef, type ReactNode, useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSession } from "@/lib/session";
 import { CLOUD_SERVER, hostOf, normalizeServer } from "@/lib/server";
-import { continueWith, emailSignInLink, finishSignIn, type SignedIn } from "@/lib/sign-in";
+import { continueWith, finishSignIn, forgotPasswordUrl, type SignedIn, signInWithPassword } from "@/lib/sign-in";
 import { type Colors, useColors } from "@/lib/theme";
 
-type Busy = "google" | "github" | "email";
+type Busy = "google" | "github" | "password";
 
-// Signed out. `tuti://sign-in?state=…&code=…` links (the emailed link's "Open the app") open this screen with those params.
+// Signed out. Google's and GitHub's way back, `tuti://sign-in?state=…&code=…`, opens this screen with those params.
 export default function SignIn() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -19,9 +20,10 @@ export default function SignIn() {
   // null: Tuti's cloud; otherwise what's typed in the server field.
   const [typedServer, setTypedServer] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const passwordField = useRef<ComponentRef<typeof TextInput>>(null);
   const [busy, setBusy] = useState<Busy | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const run = async (what: Busy, work: () => Promise<SignedIn | null | void>) => {
     setBusy(what);
@@ -45,6 +47,13 @@ export default function SignIn() {
     );
   }, [link, signIn]);
 
+  // VoiceOver has no live regions: an error is announced (TalkBack reads the live region below).
+  useEffect(() => {
+    if (error && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(error);
+    }
+  }, [error]);
+
   const server = () => {
     const address = typedServer === null ? CLOUD_SERVER : normalizeServer(typedServer);
     if (!address) {
@@ -58,20 +67,22 @@ export default function SignIn() {
       void run(which, () => continueWith(which, address));
     }
   };
-  const sendLink = () => {
+  const signInWith = () => {
     const address = server();
-    const to = email.trim();
     if (!address) {
       return;
     }
-    if (!/^\S+@\S+\.\S+$/.test(to)) {
-      setError("Enter your email address.");
+    if (!email.trim() || !password) {
+      setError("Enter your email address and password.");
       return;
     }
-    void run("email", async () => {
-      await emailSignInLink(address, to);
-      setSentTo(to);
-    });
+    void run("password", () => signInWithPassword(address, email.trim(), password));
+  };
+  const forgotPassword = () => {
+    const address = server();
+    if (address) {
+      void openBrowserAsync(forgotPasswordUrl(address));
+    }
   };
 
   const fieldRadius = Platform.OS === "ios" ? 12 : 24;
@@ -81,7 +92,9 @@ export default function SignIn() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.screen, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 }]}
       >
-        <Image source={require("../../assets/icon.png")} style={styles.icon} accessibilityIgnoresInvertColors />
+        <View style={styles.tile}>
+          <Image source={require("../../assets/splash-icon.png")} style={styles.mark} accessibilityIgnoresInvertColors />
+        </View>
         <Text style={[styles.title, { color: colors.text }]} accessibilityRole="header">
           Sign in to Tuti
         </Text>
@@ -102,48 +115,55 @@ export default function SignIn() {
           />
         )}
 
-        <Button colors={colors} onPress={provider("google")} busy={busy === "google"} disabled={!!busy}>
+        <Button colors={colors} label="Continue with Google" onPress={provider("google")} busy={busy === "google"} disabled={!!busy}>
           <Image source={require("../../assets/google.png")} style={styles.logo} />
           <Text style={[styles.label, { color: colors.text }]}>Continue with Google</Text>
         </Button>
-        <Button colors={colors} onPress={provider("github")} busy={busy === "github"} disabled={!!busy}>
+        <Button colors={colors} label="Continue with GitHub" onPress={provider("github")} busy={busy === "github"} disabled={!!busy}>
           <Image source={require("../../assets/github.png")} style={[styles.logo, { tintColor: colors.text }]} />
           <Text style={[styles.label, { color: colors.text }]}>Continue with GitHub</Text>
         </Button>
 
         <Text style={[styles.or, { color: colors.muted }]}>or</Text>
 
-        {sentTo ? (
-          <View style={styles.sent} accessibilityLiveRegion="polite">
-            <Text style={[styles.sentText, { color: colors.text }]}>
-              If {sentTo} has a Tuti account, a sign-in link is on its way. Open it on this phone.
-            </Text>
-            <Link colors={colors} onPress={() => setSentTo(null)}>
-              Use another address
-            </Link>
-          </View>
-        ) : (
-          <>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              onSubmitEditing={sendLink}
-              placeholder="you@company.com"
-              placeholderTextColor={colors.muted}
-              accessibilityLabel="Email address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              returnKeyType="send"
-              style={[styles.field, { borderRadius: fieldRadius, borderColor: colors.input, backgroundColor: colors.card, color: colors.text }]}
-            />
-            <Button colors={colors} primary onPress={sendLink} busy={busy === "email"} disabled={!!busy}>
-              <Text style={[styles.label, { color: colors.onPrimary }]}>Email me a sign-in link</Text>
-            </Button>
-          </>
-        )}
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          onSubmitEditing={() => passwordField.current?.focus()}
+          placeholder="you@company.com"
+          placeholderTextColor={colors.muted}
+          accessibilityLabel="Email"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          keyboardType="email-address"
+          textContentType="username"
+          returnKeyType="next"
+          submitBehavior="submit"
+          style={[styles.field, { borderRadius: fieldRadius, borderColor: colors.input, backgroundColor: colors.card, color: colors.text }]}
+        />
+        <TextInput
+          ref={passwordField}
+          value={password}
+          onChangeText={setPassword}
+          onSubmitEditing={signInWith}
+          placeholder="Password"
+          placeholderTextColor={colors.muted}
+          accessibilityLabel="Password"
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="current-password"
+          textContentType="password"
+          returnKeyType="go"
+          style={[styles.field, { borderRadius: fieldRadius, borderColor: colors.input, backgroundColor: colors.card, color: colors.text }]}
+        />
+        <Button colors={colors} label="Sign in" primary onPress={signInWith} busy={busy === "password"} disabled={!!busy}>
+          <Text style={[styles.label, { color: colors.onPrimary }]}>Sign in</Text>
+        </Button>
+        <Link colors={colors} onPress={forgotPassword}>
+          Forgot password?
+        </Link>
 
         {error && (
           <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
@@ -166,12 +186,13 @@ export default function SignIn() {
   );
 }
 
-function Button({ colors, primary, busy, disabled, onPress, children }: { colors: Colors; primary?: boolean; busy: boolean; disabled: boolean; onPress: () => void; children: ReactNode }) {
+function Button({ colors, label, primary, busy, disabled, onPress, children }: { colors: Colors; label: string; primary?: boolean; busy: boolean; disabled: boolean; onPress: () => void; children: ReactNode }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
+      accessibilityLabel={label}
       accessibilityState={{ disabled, busy }}
       android_ripple={{ color: primary ? colors.onSoft : colors.border }}
       style={({ pressed }) => [
@@ -195,7 +216,9 @@ function Link({ colors, onPress, children }: { colors: Colors; onPress: () => vo
 
 const styles = StyleSheet.create({
   screen: { flexGrow: 1, paddingHorizontal: 24, gap: 10, width: "100%", maxWidth: 440, alignSelf: "center" },
-  icon: { width: 72, height: 72, borderRadius: 18, alignSelf: "center", marginBottom: 8 },
+  // The app's icon as the mockups draw it: the mark on a white tile, in both appearances.
+  tile: { width: 72, height: 72, borderRadius: 18, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 8, boxShadow: "0 2px 10px rgba(0, 0, 0, 0.12)" },
+  mark: { width: 46, height: 46 },
   title: { fontSize: 24, fontWeight: "700", textAlign: "center", letterSpacing: -0.24 },
   lead: { fontSize: 15, textAlign: "center", marginBottom: 16 },
   button: { height: 48, borderRadius: 24, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, overflow: "hidden" },
@@ -203,8 +226,6 @@ const styles = StyleSheet.create({
   logo: { width: 20, height: 20 },
   or: { fontSize: 13, textAlign: "center", marginVertical: 4 },
   field: { height: 48, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
-  sent: { gap: 10, paddingVertical: 8 },
-  sentText: { fontSize: 15, textAlign: "center", lineHeight: 21 },
   error: { fontSize: 15, textAlign: "center", lineHeight: 21 },
   spacer: { flex: 1, minHeight: 24 },
   link: { fontSize: 15, fontWeight: "500" },

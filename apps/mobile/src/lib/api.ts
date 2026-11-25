@@ -33,9 +33,16 @@ async function send<T>(url: string, { method = "GET", body, headers }: Init, fet
   } catch {
     throw new ApiError(0, "unreachable", `Couldn't reach ${hostOf(url)}. Check the address and your connection.`);
   }
-  const json = await response.json().catch(() => null);
+  let json: unknown;
+  try {
+    json = JSON.parse(await response.text());
+  } catch {
+    // Not JSON: not a Tuti server's answer (a Wi-Fi login page, a proxy, the wrong address). Never read as a `null`.
+    throw new ApiError(response.status, "not_tuti", `${hostOf(url)} didn't answer like a Tuti server (${response.status}). Check the address and your connection.`);
+  }
   if (!response.ok) {
-    const error = json?.error ?? json;
+    const body = json as { error?: { code?: string; message?: string }; code?: string; message?: string } | null;
+    const error = body?.error ?? body;
     throw new ApiError(response.status, error?.code ?? `http_${response.status}`, error?.message || `${hostOf(url)} answered ${response.status}. Try again.`);
   }
   return json as T;

@@ -51,6 +51,8 @@ export default function Projects() {
           setRefreshing(true);
           void load().finally(() => setRefreshing(false));
         }}
+        // A refresh that failed says so above the list it couldn't update.
+        ListHeaderComponent={error && projects?.length ? <Text style={[styles.stale, { color: colors.error }]}>{error}</Text> : undefined}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]}>
             {error ?? (projects ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web." : "Loading…")}
@@ -87,6 +89,7 @@ export default function Projects() {
 
 const styles = StyleSheet.create({
   action: { fontSize: 17, fontWeight: Platform.OS === "ios" ? "400" : "500" },
+  stale: { fontSize: 14, lineHeight: 19, paddingHorizontal: 16, paddingVertical: 8 },
   empty: { fontSize: 15, lineHeight: 21, textAlign: "center", padding: 32 },
   row: { paddingLeft: 16 },
   rowBody: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingRight: 16, gap: 12 },

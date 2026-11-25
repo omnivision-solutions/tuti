@@ -20,6 +20,12 @@ type SessionContext = {
 const Context = createContext<SessionContext | null>(null);
 const KEY = "session";
 
+/** The stored session; none if there's none, or it can't be read (signed out, rather than stuck on the splash screen). */
+const readSession = () =>
+  SecureStore.getItemAsync(KEY, STORE_OPTIONS)
+    .then((stored) => (stored ? (JSON.parse(stored) as Session) : null))
+    .catch(() => null);
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
@@ -29,18 +35,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    const stored = await SecureStore.getItemAsync(KEY, STORE_OPTIONS);
+    const stored = await readSession();
     await save(null);
     if (stored) {
-      const { server, cookie } = JSON.parse(stored) as Session;
       // Ends the session on the server too; signed out here either way.
-      await authRequest(server, "/sign-out", { body: {}, cookie }).catch(() => {});
+      await authRequest(stored.server, "/sign-out", { body: {}, cookie: stored.cookie }).catch(() => {});
     }
   }, [save]);
 
   useEffect(() => {
-    void SecureStore.getItemAsync(KEY, STORE_OPTIONS).then((stored) => {
-      const restored = stored ? (JSON.parse(stored) as Session) : null;
+    void readSession().then((restored) => {
       setSession(restored);
       // Reading the session keeps it going (API calls don't); one that ended elsewhere signs out here.
       if (restored) {
