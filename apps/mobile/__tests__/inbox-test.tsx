@@ -211,6 +211,61 @@ describe("the Inbox", () => {
     expect(await screen.findByText("Next page")).toBeTruthy();
   });
 
+  it("takes the later of two fetches of one row, whichever answers last", async () => {
+    const changed = row("Invite link expired");
+    serve({ "/conversations?view=open&limit": page([changed]) });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+
+    const answers: ((page: Page) => void)[] = [];
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) => (path === rowPath("open", changed.number) ? new Promise((resolve) => answers.push(resolve)) : served(path)));
+    await act(async () => mockLive!({ kind: "conversation", number: changed.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    await act(async () => mockLive!({ kind: "conversation", number: changed.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(answers).toHaveLength(2);
+
+    // The later fetch finds it closed (out of Needs reply); the earlier one, unread, answers after it.
+    await act(async () => answers[1]!(page([])));
+    await act(async () => answers[0]!(page([{ ...changed, unread: true }])));
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+  });
+
+  it("offers to try a failed page again", async () => {
+    const first = Array.from({ length: 5 }, (_, i) => row(`First page ${i}`));
+    let fail = true;
+    serve({ "/conversations?view=open&limit=25&cursor=0": page(first, { nextCursor: "25", total: 6 }) });
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) =>
+      path.includes("cursor=25") ? (fail ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : Promise.resolve(page([row("Next page")]))) : served(path),
+    );
+    await render(<Inbox />);
+    await screen.findByText("First page 0");
+
+    const list = screen.getByTestId("inbox-list");
+    await fireEvent(list, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } });
+    await fireEvent(list, "contentSizeChange", 400, 2400);
+    await act(() => jest.advanceTimersByTimeAsync(100));
+    await fireEvent.scroll(list, {
+      nativeEvent: { contentOffset: { x: 0, y: 2000 }, contentSize: { width: 400, height: 2400 }, layoutMeasurement: { width: 400, height: 800 } },
+    });
+    expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
+
+    fail = false;
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Next page")).toBeTruthy();
+    expect(screen.queryByText("Couldn't reach tuti.example.com.")).toBeNull();
+  });
+
+  it("moves the rows' ages on while nothing else changes", async () => {
+    serve({ "/conversations?view=open": page([row("Invite link expired", { lastMessageAt: new Date(Date.now() - 2 * 60_000).toISOString() })]) });
+    await render(<Inbox />);
+    expect(await screen.findByText("2m")).toBeTruthy();
+    await act(() => jest.advanceTimersByTimeAsync(3 * 60_000));
+    expect(screen.getByText("5m")).toBeTruthy();
+  });
+
   it("opens the teammate's first project when none is chosen yet", async () => {
     serve({ "/conversations?view=open": page([]) });
     mockSession.project = "gone";

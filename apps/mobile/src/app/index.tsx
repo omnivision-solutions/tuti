@@ -9,8 +9,11 @@ import { type LiveUpdate, openLive } from "@/lib/live";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
-/** The list shown, and what it lists (`for`: the project, view and search it was loaded for). */
-type List = { for: string; rows: Row[]; next: string | null; total: number };
+/**
+ * The list shown, and what it lists (`for`: the project, view and search it was loaded for). `moved`: rows live changes
+ * have added (or, below zero, removed) since, which move where the next page starts.
+ */
+type List = { for: string; rows: Row[]; next: string | null; total: number; moved: number };
 
 /** What each view says when it has nothing, as the web's Inbox. */
 const EMPTY: Record<ViewName, string> = {
@@ -88,7 +91,7 @@ export default function Inbox() {
       const counts = api<{ views: InboxView[] }>("/inbox/views").then((answer) => loads.isLatest(mine) && setViews(answer.views));
       const rows = api<Page>(listPath({ view, q, limit })).then((page) => {
         if (loads.isLatest(mine)) {
-          setList({ for: key, rows: page.conversations, next: page.nextCursor, total: page.total });
+          setList({ for: key, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 });
           setError(null);
           setNow(Date.now());
         }
@@ -119,10 +122,21 @@ export default function Inbox() {
     }
     paging.current = true;
     const mine = loads.current();
+    const moved = list.moved;
+    setError(null);
     try {
       const page = await api<Page>(listPath({ view, q, cursor: list.next }));
       if (loads.isLatest(mine)) {
-        setList((now) => now && { ...now, rows: appendPage(now.rows, page.conversations), next: page.nextCursor, total: page.total });
+        // Rows a live change added or removed while it loaded move the next page's start too.
+        setList(
+          (now) =>
+            now && {
+              ...now,
+              rows: appendPage(now.rows, page.conversations),
+              next: page.nextCursor && String(Number(page.nextCursor) + now.moved - moved),
+              total: page.total,
+            },
+        );
       }
     } catch (e) {
       if (loads.isLatest(mine)) {
@@ -133,13 +147,17 @@ export default function Inbox() {
     }
   };
 
-  // One conversation changed: its row (in place, moved up, or gone from the view) and the counts.
+  // One conversation changed: its row (in place, moved up, or gone from the view) and the counts. Of two fetches of one
+  // row, only the later one's answer is taken.
+  const [rowLoads] = useState(() => new Map<number, number>());
   const loadRow = useCallback(
     async (number: number) => {
       const mine = loads.current();
+      const turn = (rowLoads.get(number) ?? 0) + 1;
+      rowLoads.set(number, turn);
       try {
         const [page, answer] = await Promise.all([api<Page>(rowPath(view, number)), api<{ views: InboxView[] }>("/inbox/views")]);
-        if (loads.isLatest(mine)) {
+        if (loads.isLatest(mine) && rowLoads.get(number) === turn) {
           const found = page.conversations.find((row) => row.number === number);
           setList((now) => {
             if (!now) {
@@ -147,7 +165,8 @@ export default function Inbox() {
             }
             // The server pages by position: a row in or out of those shown moves where the next page starts.
             const rows = withRow(now.rows, number, found ? { ...found, match: null } : null, now.next === null);
-            return { ...now, rows, next: now.next && String(Number(now.next) + rows.length - now.rows.length) };
+            const moved = rows.length - now.rows.length;
+            return { ...now, rows, next: now.next && String(Number(now.next) + moved), moved: now.moved + moved };
           });
           setViews(answer.views);
           setNow(Date.now());
@@ -156,7 +175,7 @@ export default function Inbox() {
         // The next change, or the stream's next opening, fetches it again.
       }
     },
-    [api, view, loads],
+    [api, view, loads, rowLoads],
   );
 
   // Live while it's open, and opened again on coming back to the foreground (a phone drops it in the background). Several
@@ -346,7 +365,16 @@ export default function Inbox() {
             )}
           </View>
         }
-        ListFooterComponent={list?.next && !error ? <ActivityIndicator style={styles.more} color={colors.muted} /> : undefined}
+        ListFooterComponent={
+          !list?.next ? undefined : error ? (
+            // A page that failed: tried again here (the error is at the top).
+            <Pressable onPress={() => void loadMore()} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.6 : 1 }]}>
+              <Text style={[styles.retry, { color: colors.primary, textAlign: "center" }]}>Try again</Text>
+            </Pressable>
+          ) : (
+            <ActivityIndicator style={styles.more} color={colors.muted} />
+          )
+        }
       />
     </>
   );
