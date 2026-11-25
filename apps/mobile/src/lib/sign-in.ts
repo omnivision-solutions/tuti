@@ -1,7 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 
-import { ApiError, authRequest } from "./api";
+import { ApiError, authRequest, fetchUntil, TimedOut } from "./api";
+import { hostOf } from "./server";
 import { challengeOf, newState, newVerifier } from "./pkce";
 
 /**
@@ -34,6 +35,7 @@ async function begin(server: string) {
  * the app's) in the server's words.
  */
 export async function signInWithPassword(server: string, email: string, password: string): Promise<SignedIn> {
+  await checkServer(server);
   try {
     const { token, cookie } = await authRequest<{ token: string; cookie: string }>(server, "/app/sign-in/email", { body: { email, password } });
     return { server, token, cookie };
@@ -53,14 +55,101 @@ export async function signInWithPassword(server: string, email: string, password
   }
 }
 
+/** Said of a server too old for the app: one whose `conversations.reply` takes no `requestId` (#1070). */
+export const OUTDATED_SERVER = "This server runs an older Tuti than the app needs. Ask whoever runs it to update Tuti, then sign in here.";
+/** Said of a Tuti server whose spec couldn't be read just now (a 5xx, a broken answer): not signed in to unchecked. */
+export const UNCHECKED_SERVER = "Couldn't check this server's version just now. Try again in a moment.";
+
+/**
+ * Before anything is sent (docs/plan.md, M10): the server's API spec, which every Tuti server serves with no session,
+ * must have `conversations.reply` take a `requestId`, or a Retry after a lost answer could send a reply twice. No shim
+ * for an older server (one whose spec lacks it, or that has none): it isn't signed in to. A Tuti server whose spec can't
+ * be read just now isn't signed in to either, unchecked; a server that can't be reached, or another site, is left to the
+ * sign-in's own request, and its error.
+ */
+export async function checkServer(server: string) {
+  // Both its requests within one deadline: a connection that stalls (the spec's, or its `ok`'s) is a server that can't be
+  // reached, said as the sign-in would, rather than a sign-in that waits forever.
+  const timed = fetchUntil(Date.now() + CHECK_TIMEOUT_MS);
+  let status = 0;
+  let spec: unknown = null;
+  try {
+    // Not the cached one: it's served for five minutes, and a server just updated would be refused meanwhile.
+    const response = await timed(`${server}/api/v1/openapi.json`, { credentials: "omit", cache: "no-store", headers: { accept: "application/json" } });
+    status = response.status;
+    spec = response.ok ? await response.json() : null;
+  } catch (error) {
+    if (error instanceof TimedOut) {
+      throw unreachable(server);
+    }
+    spec = null;
+  }
+  const { openapi, paths } = (spec ?? {}) as { openapi?: unknown; paths?: unknown };
+  const isSpec = typeof openapi === "string" && !!paths && typeof paths === "object";
+  if (isSpec && replyTakesRequestId(spec as OpenApi)) {
+    return;
+  }
+  // The rest is said only of a Tuti server: another site (one serving an API of its own there too) keeps the sign-in's
+  // own error, the wrong address. Tuti's own spec says so (apps/web openapi.ts's title), whether or not its `ok` can be
+  // reached (a proxy can block it); without one, `ok` tells.
+  const tutiSpec = isSpec && (spec as { info?: { title?: unknown } }).info?.title === "Tuti API";
+  // `ok` within the same deadline; a server it can't reach (or that stalls) is said so, as the sign-in would.
+  const tuti =
+    tutiSpec ||
+    (await authRequest<{ ok?: unknown }>(server, "/ok", {}, timed).then(
+      (answer) => answer?.ok === true,
+      (error: unknown) => {
+        if (error instanceof ApiError && error.status === 0) {
+          throw error;
+        }
+        return false;
+      },
+    ));
+  if (!tuti) {
+    return;
+  }
+  // A spec without it, or none at all (a server from before the spec): older. Anything else (a 5xx, a broken answer):
+  // not read just now.
+  throw new Error(isSpec || status === 404 ? OUTDATED_SERVER : UNCHECKED_SERVER);
+}
+
+type Schema = { $ref?: string; properties?: Record<string, unknown> };
+type OpenApi = {
+  paths: Record<string, Record<string, { operationId?: string; requestBody?: { content?: Record<string, { schema?: Schema }> } } | undefined>>;
+  components?: { schemas?: Record<string, Schema> };
+};
+
+/** Whether the spec's `conversations.reply` takes `requestId` in its JSON body (inline, or a component it refers to). */
+export function replyTakesRequestId(spec: OpenApi) {
+  for (const operations of Object.values(spec.paths)) {
+    for (const operation of Object.values(operations ?? {})) {
+      if (operation?.operationId !== "conversations.reply") {
+        continue;
+      }
+      let schema = operation.requestBody?.content?.["application/json"]?.schema;
+      if (schema?.$ref?.startsWith("#/components/schemas/")) {
+        schema = spec.components?.schemas?.[schema.$ref.slice("#/components/schemas/".length)];
+      }
+      return !!schema?.properties && "requestId" in schema.properties;
+    }
+  }
+  return false;
+}
+
 /** Whether a Tuti server answers at the address: Better Auth's own `ok`. */
 const isTuti = (server: string) => authRequest<{ ok?: unknown }>(server, "/ok").then((answer) => answer?.ok === true, () => false);
+
+/** How long the check before signing in waits for the server, its requests together. */
+export const CHECK_TIMEOUT_MS = 10_000;
+/** What a request that couldn't reach the server says (api.ts `send`'s words). */
+const unreachable = (server: string) => new ApiError(0, "unreachable", `Couldn't reach ${hostOf(server)}. Check the address and your connection.`);
 
 /** Where "Forgot password?" goes: the web's own reset, in the system browser. */
 export const forgotPasswordUrl = (server: string) => `${server}/app/auth/forgot-password`;
 
 /** Google or GitHub in the system's browser sheet: signed in, or null if the teammate closed it. */
 export async function continueWith(provider: "google" | "github", server: string): Promise<SignedIn | null> {
+  await checkServer(server);
   const { state, challenge } = await begin(server);
   const { url } = await authRequest<{ url: string }>(server, "/sign-in/social", {
     body: { provider, callbackURL: `${RETURN}?state=${state}`, additionalData: { challenge } },
