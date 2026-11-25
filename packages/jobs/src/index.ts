@@ -59,7 +59,7 @@ export { analysisOn, claimCodeChange, codeChange, queueClaimed, GAVE_UP, RETRY_A
 export { type MergedPull, mergedPullRequests, mergedPullRequestsByRef } from "./merged-pull-requests";
 export { continueVerifyAll, noAi, RUN_STALE_MS, settleStale, verifyAllRunSelect, verifyAllsSettled, verifyAllStuck, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { verifyAfterEdit } from "./verify-decision";
-export { addToRunningDraft, autopilotLines, changelogLineOf, closeRunningDraft, lockProject, onlyPullRequestTitles, removePullRequest, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
+export { addToRunningDraft, autopilotLines, changelogLineOf, closeRunningDraft, knownUrl, lockProject, onlyPullRequestTitles, removePullRequest, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
 export { queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";

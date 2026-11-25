@@ -252,6 +252,8 @@ beforeAll(async () => {
   // GitHub, for the changelog's pull requests: a merged one on the fixture's repository.
   github = await startGithubFake();
   github.pullRequest("acme/matrix", { number: 5, title: "Add a dark theme" });
+  // The one entry #2 has, which taking it out reads (what it is, to keep the team's word on).
+  github.pullRequest("acme/matrix", { number: 4, title: "Speed up search" });
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -572,7 +574,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: operation.name !== "changelog.addPullRequests" } });
   // GitHub answers for the changelog's pull requests only: elsewhere it isn't set up (see articles.verify's case).
   for (const [name, value] of Object.entries(github.env)) {
-    vi.stubEnv(name, ["changelog.missingChanges", "changelog.addPullRequests"].includes(operation.name) ? value : "");
+    vi.stubEnv(name, ["changelog.missingChanges", "changelog.addPullRequests", "changelog.removePullRequest"].includes(operation.name) ? value : "");
   }
 
   // Another project's key: nothing of this project comes back, and nothing changes.

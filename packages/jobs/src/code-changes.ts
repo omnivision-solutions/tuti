@@ -61,13 +61,16 @@ export async function startCodeChange(projectId: string, pr: MergedPullRequest, 
   return claimed !== null;
 }
 
-/** A code change claimed for its run: the run to queue, if it's to have one, and how to put it back if queueing fails. */
-type Claimed = { run?: JobInput<"codeChange">; unclaim?: () => Promise<unknown> };
+/**
+ * A code change claimed for its run: the run to queue, if it's to have one, how to put it back if queueing fails, and
+ * whether the claim still holds (nothing else has analysed it or claimed it since).
+ */
+type Claimed = { run?: JobInput<"codeChange">; unclaim?: () => Promise<unknown>; current?: () => Promise<boolean> };
 
 /**
  * `startCodeChange` in two steps, for a caller that answers before the analyses run (changelog.addPullRequests, where
- * jobs run in-process): the code change is there from this moment (the team's pick said on it, so taking the pull
- * request out again has something to say so on), and `queueClaimed` queues its run. Null where analysis is off.
+ * jobs run in-process): the code change is there from this moment, and `queueClaimed` queues its run (unless the claim
+ * no longer holds by then). Null where analysis is off.
  */
 export async function claimCodeChange(projectId: string, pr: MergedPullRequest, { pastGate = false } = {}): Promise<Claimed | null> {
   if (!(await analysisOn(projectId))) {
@@ -75,7 +78,7 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   }
   const change = await prisma.codeChange.upsert({
     where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } },
-    create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt), ...(pastGate && { teamChangelog: "IN" }) },
+    create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) },
     update: {},
     select: { id: true, state: true, reason: true },
   });
@@ -90,11 +93,15 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     (change.state === "NOTHING_TO_DO" || (change.state === "READY" && (await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })) === 0));
   if (ruledOut) {
     const was = { state: change.state as "NOTHING_TO_DO" | "READY", reason: change.reason };
-    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0 } });
+    // Claimed at this moment: its run may start long after (one after another, in-process), and by then "Analyse
+    // anyway" may have analysed it already (once the claim looked stopped). A forced run would do it all again.
+    const claimedAt = new Date();
+    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: was.state }, data: { state: "ANALYSING", reason: "", retryAt: null, retries: 0, updatedAt: claimedAt } });
     if (count > 0) {
       return {
         run: { codeChangeId: change.id, force: true, pastGate: true, resume: false },
         unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: was }),
+        current: async () => (await prisma.codeChange.count({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt } })) > 0,
       };
     }
   }
@@ -107,7 +114,7 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
  * analysis itself failed, and its code change says where and when it's tried next.
  */
 export async function queueClaimed(claimed: Claimed, queue: typeof enqueue = enqueue): Promise<void> {
-  if (!claimed.run) {
+  if (!claimed.run || (claimed.current && !(await claimed.current()))) {
     return;
   }
   try {
@@ -478,7 +485,7 @@ async function analyse(
     let saved: Awaited<ReturnType<typeof finish>> | null = null;
     for (let tries = 1; !saved; tries++) {
       try {
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, ...versions }, kept, {
+        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: seen, ...versions }, kept, {
           projectId: change.projectId,
           pullRequest: change.pullRequest,
           data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
@@ -519,7 +526,7 @@ type Versions = { decider: string; model: string; settings: { values: Record<str
 
 /** Nothing to do (the gate and the docs agent found nothing): saved so, and it leaves the changelog. */
 async function nothingToDo(change: { id: string; projectId: string; pullRequest: { url: string } }, reason: string, versions: Versions) {
-  await finish(change.id, { state: "NOTHING_TO_DO", reason, summary: "", why: "", ...versions }, []);
+  await finish(change.id, { state: "NOTHING_TO_DO", reason, summary: "", why: "", forUsers: false, ...versions }, []);
   await leaveChangelog(change);
   return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0, scheduled: 0 };
 }
@@ -541,8 +548,8 @@ async function leaveChangelog(change: { id: string; projectId: string; pullReque
  * stay, as does a line they dismissed, undid or took out with its draft); again only once the gate took it out of the
  * draft, which drops its record. Never where its entry is published (readers would see it). Recorded as applied before it's written
  * (so a record that can't be saved writes nothing), then with what Undo puts back. A failure leaves the pull request's
- * title there, said in the log. Never for one the team took out of a draft (changelog.removePullRequest: its code
- * change says so, whenever its analysis runs), which isn't put back.
+ * title there, said in the log. Never for one the team took out of a draft (changelog.removePullRequest: their
+ * ChangelogDecision says so, whenever its analysis runs), which isn't put back.
  */
 export async function writeChangelogLine(projectId: string, codeChangeId: string, pr: { repo: string; number: number; url: string; title: string }, line: string) {
   try {
@@ -552,8 +559,9 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
     }
     const claim = await prisma.$transaction(async (tx) => {
       // Decided under the change's lock, so two analyses at once (or a line claimed meanwhile) write it once.
-      const [change] = await tx.$queryRaw<{ teamChangelog: string | null }[]>`SELECT "teamChangelog" FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
-      if (change?.teamChangelog === "OUT" || (await tx.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } })) > 0) {
+      const [change] = await tx.$queryRaw<{ repoId: number; number: number }[]>`SELECT "repoId", number FROM code_change WHERE id = ${codeChangeId} FOR UPDATE`;
+      const takenOut = change && (await tx.changelogDecision.count({ where: { projectId, repoId: change.repoId, number: change.number, takenOut: true } })) > 0;
+      if (takenOut || (await tx.codeChangeAction.count({ where: { codeChangeId, kind: "CHANGELOG_LINE" } })) > 0) {
         return null;
       }
       return tx.codeChangeAction.create({ data: { codeChangeId, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line } }, select: { id: true } });
@@ -716,7 +724,7 @@ async function postCandidates(projectId: string, vector: string, named: number[]
  */
 async function finish(
   id: string,
-  data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string; settings?: Versions["settings"] },
+  data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string; settings?: Versions["settings"]; forUsers?: boolean },
   proposals: Proposal[],
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number; landed: string[] }> {

@@ -29,12 +29,17 @@ const connection = (projectId: string) =>
   prisma.githubInstallation.findUnique({ where: { projectId }, select: { installationId: true, included: { select: { repoId: true, fullName: true }, orderBy: { fullName: "asc" } } } });
 
 /**
- * The pull requests merged on the project's included repositories since `since`, newest first; null when GitHub isn't
- * connected. Read from GitHub as they are now (titles since edited, ones merged before the app was installed): each
- * repository's closed pull requests, latest updated first, page by page until one was last updated before `since`
- * (merged since then, it was updated since then too), so an early date reaches as far back as it asks.
+ * The pull requests merged on the project's included repositories since `since`, newest first, with the repositories
+ * (as named now); null when GitHub isn't connected. Read from GitHub as they are now (titles since edited, ones merged
+ * before the app was installed): each repository's closed pull requests, latest updated first, page by page until one
+ * was last updated before `since` (merged since then, it was updated since then too), so an early date reaches as far
+ * back as it asks. A repository with more than MAX_PAGES pages since then is read as far as they go: `since` is then
+ * the latest date every repository was read back to, and only those merged since it are listed.
  */
-export async function mergedPullRequests(projectId: string, since: Date): Promise<MergedPull[] | null> {
+export async function mergedPullRequests(
+  projectId: string,
+  since: Date,
+): Promise<{ since: Date; pullRequests: MergedPull[]; repos: { repoId: number; fullName: string }[] } | null> {
   const github = await connection(projectId);
   if (!github) {
     return null;
@@ -42,25 +47,29 @@ export async function mergedPullRequests(projectId: string, since: Date): Promis
   const api = await installationApi(github.installationId);
   // One repository after another, a page at a time: an early date is many requests, and the installation's rate limit
   // is shared with everything else Tuti reads from GitHub.
-  const merged: MergedPull[][] = [];
+  const found: MergedPull[] = [];
+  let covered = since;
   for (const repo of github.included) {
-    merged.push(
-      await (async () => {
-      const found: MergedPull[] = [];
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const listed = await api.get<Listed[]>(`/repos/${repo.fullName}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`);
-        found.push(...listed.map((pr) => asMerged(repo, pr)).filter((pr): pr is MergedPull => pr !== null && new Date(pr.mergedAt) >= since));
-        const last = listed.at(-1);
-        // The last page, or everything from here on was last touched before the date asked for.
-        if (listed.length < 100 || (last?.updated_at !== undefined && new Date(last.updated_at) < since)) {
-          break;
-        }
+    for (let page = 1; ; page++) {
+      const listed = await api.get<Listed[]>(`/repos/${repo.fullName}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`);
+      found.push(...listed.map((pr) => asMerged(repo, pr)).filter((pr): pr is MergedPull => pr !== null && new Date(pr.mergedAt) >= since));
+      const last = listed.at(-1)?.updated_at;
+      // The last page, or everything from here on was last touched before the date asked for.
+      if (listed.length < 100 || last === undefined || new Date(last) < since) {
+        break;
       }
-      return found;
-      })(),
-    );
+      // As far as it's read: everything merged since this one's last touch has been listed.
+      if (page === MAX_PAGES) {
+        covered = new Date(Math.max(covered.getTime(), new Date(last).getTime()));
+        break;
+      }
+    }
   }
-  return merged.flat().sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
+  return {
+    since: covered,
+    pullRequests: found.filter((pr) => new Date(pr.mergedAt) >= covered).sort((a, b) => b.mergedAt.localeCompare(a.mergedAt)),
+    repos: github.included,
+  };
 }
 
 /**

@@ -19,6 +19,27 @@ const SKIP_LABELS = new Set(["chore", "internal", "deps", "dependencies"]);
 export const skipsChangelog = (labels: string[]) => labels.some((label) => SKIP_LABELS.has(label.toLowerCase()));
 
 type PullRequest = { repo: string; number: number; url: string; title: string };
+/** A merged pull request as GitHub gives it (MergedPull), what the team's decision on it keeps. */
+type Merged = PullRequest & { repoId: number; author: string; mergedAt: string };
+
+/**
+ * The page the project knows a pull request by: the one its code change or the team's decision on it has, or else
+ * `url`. A repository's pages move when it's renamed, and the changelog's rows keep the one they were written with.
+ */
+export async function knownUrl(tx: Prisma.TransactionClient, projectId: string, pr: { repoId: number; number: number; url: string }): Promise<string> {
+  const key = { projectId, repoId: pr.repoId, number: pr.number };
+  const [change, decision] = await Promise.all([
+    tx.codeChange.findUnique({ where: { projectId_repoId_number: key }, select: { url: true } }),
+    tx.changelogDecision.findUnique({ where: { projectId_repoId_number: key }, select: { url: true } }),
+  ]);
+  return change?.url ?? decision?.url ?? pr.url;
+}
+
+/** The team's decision on a pull request (taken out of a draft, or picked in), kept with the page the changelog has it under. */
+const keepDecision = (tx: Prisma.TransactionClient, projectId: string, pr: Merged, takenOut: boolean) => {
+  const kept = { repo: pr.repo, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt), takenOut };
+  return tx.changelogDecision.upsert({ where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } }, create: { projectId, repoId: pr.repoId, number: pr.number, ...kept }, update: kept });
+};
 
 /**
  * Locks a project's row for the rest of the transaction. Everything that changes
@@ -34,20 +55,35 @@ export async function lockProject(tx: Prisma.TransactionClient, projectId: strin
  * Adds a merged pull request to the running draft (once per project, however often GitHub delivers it).
  * With `gate` (code changes on), not one whose code change has nothing to do: checked under the same
  * lock the gate takes to remove it, so a redelivery racing the gate can't put it back. Never one the team took out of a
- * draft (its code change says so), unless they're the ones adding it (`picked`: changelog.addPullRequests), which their
- * code change then says instead, so the gate leaves it in. Returns whether it was added.
+ * draft (ChangelogDecision, found by `pr.repoId` where it's given), unless they're the ones adding it (`picked`:
+ * changelog.addPullRequests, with what GitHub says of it), which their decision then says instead, so the gate leaves it
+ * in. By the page the project knows it by (as knownUrl), so a renamed repository's isn't added twice. Returns whether it
+ * was added.
  */
-export async function addToRunningDraft(projectId: string, pr: PullRequest, gate?: { repoId: number }, { picked = false } = {}): Promise<boolean> {
+export async function addToRunningDraft(
+  projectId: string,
+  given: PullRequest & { repoId?: number },
+  gate?: { repoId: number },
+  { picked }: { picked?: Merged } = {},
+): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     // One at a time (see lockProject): the draft found here is still the running one when it's written.
     if (!(await lockProject(tx, projectId))) {
       return false;
     }
-    const change = await tx.codeChange.findFirst({ where: { projectId, url: pr.url }, select: { state: true, teamChangelog: true } });
+    const repoId = given.repoId ?? gate?.repoId;
+    const key = repoId === undefined ? null : { projectId, repoId, number: given.number };
+    const [change, decision] = key
+      ? await Promise.all([
+          tx.codeChange.findUnique({ where: { projectId_repoId_number: key }, select: { state: true, url: true } }),
+          tx.changelogDecision.findUnique({ where: { projectId_repoId_number: key }, select: { takenOut: true, url: true } }),
+        ])
+      : [null, await tx.changelogDecision.findFirst({ where: { projectId, url: given.url }, select: { takenOut: true, url: true } })];
+    const pr = { ...given, url: change?.url ?? decision?.url ?? given.url };
     if (picked) {
       // Theirs from here on, whether or not an entry already has it.
-      await tx.codeChange.updateMany({ where: { projectId, url: pr.url }, data: { teamChangelog: "IN" } });
-    } else if (change?.teamChangelog === "OUT" || (gate && change?.state === "NOTHING_TO_DO" && change.teamChangelog !== "IN")) {
+      await keepDecision(tx, projectId, { ...picked, url: pr.url }, false);
+    } else if (decision?.takenOut || (gate && change?.state === "NOTHING_TO_DO" && decision?.takenOut !== false)) {
       return false;
     }
     // Already in an entry (this draft or an earlier, closed one): a redelivery adds it nowhere.
@@ -181,7 +217,8 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
       return false;
     }
     // The team added it themselves (read under the lock their adding takes): the gate's word doesn't take it out.
-    if ((await tx.codeChange.count({ where: { projectId, url, teamChangelog: "IN" } })) > 0) {
+    const change = await tx.codeChange.findFirst({ where: { projectId, url }, select: { repoId: true, number: true } });
+    if (change && (await tx.changelogDecision.count({ where: { projectId, repoId: change.repoId, number: change.number, takenOut: false } })) > 0) {
       return false;
     }
     const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true } });
@@ -204,11 +241,12 @@ async function takeOut(tx: Prisma.TransactionClient, entryId: string, url: strin
 
 /**
  * The team takes a pull request out of a draft (it ships in a later release, or isn't for readers): its row and its
- * bullet go, from the running draft or one a release closed; never from a published entry. Its code change is told
- * (`teamChangelog`), so no analysis still to run, retry or redelivery puts it back, and the line Autopilot wrote for it
- * stays recorded. In no entry any more, it can be added to the next one (changelog.addPullRequests).
+ * bullet go, from the running draft or one a release closed; never from a published entry. Their decision is kept
+ * (`pr`: what GitHub says of it, null where that's not known), so no analysis still to run, retry or redelivery puts it
+ * back, and the line Autopilot wrote for it stays recorded. In no entry any more, it can be added to the next one
+ * (changelog.addPullRequests).
  */
-export async function removePullRequest(projectId: string, entryId: string, url: string): Promise<"removed" | "published" | "missing"> {
+export async function removePullRequest(projectId: string, entryId: string, url: string, pr: Merged | null): Promise<"removed" | "published" | "missing"> {
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entryId, entry: { projectId } }, select: { entry: { select: { publishedAt: true } } } });
@@ -219,7 +257,9 @@ export async function removePullRequest(projectId: string, entryId: string, url:
       return "published";
     }
     await takeOut(tx, entryId, url);
-    await tx.codeChange.updateMany({ where: { projectId, url }, data: { teamChangelog: "OUT" } });
+    if (pr) {
+      await keepDecision(tx, projectId, { ...pr, url }, true);
+    }
     return "removed";
   });
 }

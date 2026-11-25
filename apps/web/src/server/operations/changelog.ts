@@ -4,10 +4,12 @@ import {
   addToRunningDraft,
   claimCodeChange,
   enqueue,
+  knownUrl,
   lockProject,
   markdownToContent,
   mergedPullRequests,
   mergedPullRequestsByRef,
+  type MergedPull,
   type PortalAddress,
   postSummary,
   postSummarySelect,
@@ -1148,7 +1150,12 @@ export const listMissingChanges = defineOperation({
   }),
   output: z
     .object({
-      since: z.string().describe("Merged since then").meta({ examples: ["2026-11-01T00:00:00.000Z"] }),
+      since: z
+        .string()
+        .describe(
+          "Merged since then: the date asked for (or the default), or a later one where a repository has more closed pull requests since that date than are read at once (its latest 2,000), so the list reaches no further back",
+        )
+        .meta({ examples: ["2026-11-01T00:00:00.000Z"] }),
       pullRequests: z
         .array(
           pullRequestRef.extend({
@@ -1170,36 +1177,46 @@ export const listMissingChanges = defineOperation({
   run: async ({ projectId }, input) => {
     const latest = await prisma.changelogEntry.findFirst({ where: { projectId, publishedAt: { not: null }, sample: false }, orderBy: { publishedAt: "desc" }, select: { publishedAt: true } });
     const lately = new Date(Date.now() - MISSING_SINCE_DAYS * 86_400_000);
-    const since = input.since ? new Date(input.since) : latest?.publishedAt && latest.publishedAt < lately ? latest.publishedAt : lately;
-    const merged = await fromGithub(projectId, () => mergedPullRequests(projectId, since));
-    if (!merged) {
+    const asked = input.since ? new Date(input.since) : latest?.publishedAt && latest.publishedAt < lately ? latest.publishedAt : lately;
+    const github = await fromGithub(projectId, () => mergedPullRequests(projectId, asked));
+    if (!github) {
       throw new OperationError(409, "github_not_connected", NOT_CONNECTED);
     }
+    const { since, repos } = github;
     // And the ones the team took out of a draft, however long ago they merged (a draft that collected for weeks, a
-    // release that waited): they're what this list is for.
-    const takenOut = await prisma.codeChange.findMany({
-      where: { projectId, teamChangelog: "OUT", mergedAt: { lt: since } },
-      select: { repoId: true, repo: true, number: true, title: true, url: true, author: true, mergedAt: true },
+    // release that waited): they're what this list is for. Only on repositories the project still includes (adding
+    // one from elsewhere would be refused), under their names now.
+    const takenOut = await prisma.changelogDecision.findMany({
+      where: { projectId, takenOut: true, repoId: { in: repos.map((repo) => repo.repoId) }, mergedAt: { lt: since } },
+      select: { repoId: true, number: true, title: true, url: true, author: true, mergedAt: true },
     });
-    const all = [...merged, ...takenOut.map((change) => ({ ...change, mergedAt: change.mergedAt.toISOString() }))].sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
-    const [inEntries, changes] = await Promise.all([
-      prisma.changelogEntryPullRequest.findMany({ where: { entry: { projectId }, url: { in: all.map((pr) => pr.url) } }, select: { url: true } }),
+    const all = [
+      ...github.pullRequests,
+      ...takenOut.map((decision) => ({ ...decision, repo: repos.find((repo) => repo.repoId === decision.repoId)!.fullName, mergedAt: decision.mergedAt.toISOString() })),
+    ].sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
+    const keys = { projectId, repoId: { in: all.map((pr) => pr.repoId) }, number: { in: all.map((pr) => pr.number) } };
+    const [changes, decisions] = await Promise.all([
       prisma.codeChange.findMany({
-        where: { projectId, repoId: { in: all.map((pr) => pr.repoId) }, number: { in: all.map((pr) => pr.number) } },
-        select: { repoId: true, number: true, state: true, _count: { select: { actions: { where: { kind: "CHANGELOG_LINE" } } } } },
+        where: keys,
+        select: { repoId: true, number: true, url: true, state: true, forUsers: true, _count: { select: { actions: { where: { kind: "CHANGELOG_LINE" } } } } },
       }),
+      prisma.changelogDecision.findMany({ where: keys, select: { repoId: true, number: true, url: true } }),
     ]);
+    const of = <T extends { repoId: number; number: number }>(rows: T[], pr: { repoId: number; number: number }) => rows.find((row) => row.repoId === pr.repoId && row.number === pr.number);
+    // Every page the project knows each by: an entry's row keeps the one it was written with, a renamed repository's old one.
+    const urls = (pr: { repoId: number; number: number; url: string }) => [pr.url, of(changes, pr)?.url, of(decisions, pr)?.url].filter((url): url is string => url !== undefined);
+    const inEntries = await prisma.changelogEntryPullRequest.findMany({ where: { entry: { projectId }, url: { in: all.flatMap(urls) } }, select: { url: true } });
     const known = new Set(inEntries.map((pr) => pr.url));
     return {
       since: since.toISOString(),
       pullRequests: all
-        .filter((pr) => !known.has(pr.url))
+        .filter((pr) => !urls(pr).some((url) => known.has(url)))
         .map(({ repoId, ...pr }) => {
-          const change = changes.find((each) => each.repoId === repoId && each.number === pr.number);
-          // The gate's word, as its analysis left it: for users if a changelog line was written for it. Ready with
-          // none (only docs to fix) is no more for users than nothing to do.
+          const change = of(changes, { repoId, number: pr.number });
+          // The gate's word, as its analysis saved it. One analysed before that was saved: for users if a changelog
+          // line was written for it (ready with none, only docs to fix, is no more for users than nothing to do).
           const analysed = change?.state === "READY" || change?.state === "NOTHING_TO_DO";
-          return { ...pr, forUsers: analysed ? change._count.actions > 0 : null };
+          return { ...pr, forUsers: change?.forUsers ?? (analysed ? change._count.actions > 0 : null) };
         }),
     };
   },
@@ -1244,34 +1261,44 @@ export const addChangelogPullRequests = defineOperation({
       }
       return pr;
     });
-    const added: typeof merged = [];
-    for (const pr of merged) {
-      // Picked by the team: theirs to have in the changelog whatever Autopilot's gate said or says (its code change is told).
-      if (await addToRunningDraft(projectId, pr, undefined, { picked: true })) {
+    const added: MergedPull[] = [];
+    for (const found of merged) {
+      // By the page the project knows it by (a renamed repository's old one, where it has that), so it's found where it is.
+      const pr = { ...found, url: await knownUrl(prisma, projectId, found) };
+      // Picked by the team: theirs to have in the changelog whatever Autopilot's gate said or says (their decision is kept).
+      if (await addToRunningDraft(projectId, pr, undefined, { picked: pr })) {
         added.push(pr);
         // Taken out of an earlier draft with the line written for it (Autopilot's, or the team's edit of it): that line
         // again, not the pull request's title. Its record stays the one it was.
-        const written = await prisma.codeChangeAction.findFirst({ where: { codeChange: { projectId, url: pr.url }, kind: "CHANGELOG_LINE", status: "APPLIED" }, select: { payload: true } });
+        const written = await prisma.codeChangeAction.findFirst({
+          where: { codeChange: { projectId, repoId: pr.repoId, number: pr.number }, kind: "CHANGELOG_LINE", status: "APPLIED" },
+          select: { payload: true },
+        });
         const line = (written?.payload as { line?: unknown } | undefined)?.line;
         if (typeof line === "string" && line.trim() !== "") {
           await setChangelogLine(projectId, pr, line);
         }
       }
     }
-    // Their code changes, there before this answers (each says the team picked it, and taking one out again has
-    // somewhere to say so), and their analyses past the gate, one after another. Where jobs run in this process
-    // (JOBS_DRIVER=inline) the analyses go on after the request has answered, as an import's pages do: fifty of them
-    // would hold it for many minutes. Its line is in the draft either way; one that can't start is said in the log.
-    const claims: { pr: (typeof added)[number]; claimed: NonNullable<Awaited<ReturnType<typeof claimCodeChange>>> }[] = [];
+    // Their code changes, there before this answers, and their analyses past the gate, one after another. Where jobs
+    // run in this process (JOBS_DRIVER=inline) the analyses go on after the request has answered, as an import's pages
+    // do: fifty of them would hold it for many minutes. Its line is in the draft either way; one that can't start is
+    // said in the log, and the rest go on.
+    const cantAnalyse = (pr: MergedPull) => (error: unknown) => {
+      log.warn("A pull request added to the changelog couldn't be analysed", { projectId, repo: pr.repo, number: pr.number, error });
+      return null;
+    };
+    const claims: { pr: MergedPull; claimed: NonNullable<Awaited<ReturnType<typeof claimCodeChange>>> }[] = [];
     for (const pr of added) {
-      const claimed = await claimCodeChange(projectId, pr, { pastGate: true });
+      const claimed = await claimCodeChange(projectId, pr, { pastGate: true }).catch(cantAnalyse(pr));
       if (claimed?.run) {
         claims.push({ pr, claimed });
       }
     }
     const analysing = (async () => {
       for (const { pr, claimed } of claims) {
-        await queueClaimed(claimed, enqueue).catch((error: unknown) => log.warn("A pull request added to the changelog couldn't be analysed", { projectId, repo: pr.repo, number: pr.number, error }));
+        // Skipped where its claim no longer holds (analysed meanwhile, by "Analyse anyway" say): see queueClaimed.
+        await queueClaimed(claimed, enqueue).catch(cantAnalyse(pr));
       }
     })();
     if (process.env.JOBS_DRIVER !== "inline") {
@@ -1282,9 +1309,25 @@ export const addChangelogPullRequests = defineOperation({
     }
     const draft = await prisma.changelogEntry.findFirst({ where: { projectId, collecting: true }, select: { number: true } });
     const ref = ({ repo, number }: { repo: string; number: number }) => ({ repo, number });
-    return { number: draft?.number ?? null, added: added.map(ref), alreadyIn: merged.filter((pr) => !added.includes(pr)).map(ref) };
+    const isAdded = (pr: MergedPull) => added.some((each) => each.repoId === pr.repoId && each.number === pr.number);
+    return { number: draft?.number ?? null, added: added.map(ref), alreadyIn: merged.filter((pr) => !isAdded(pr)).map(ref) };
   },
 });
+
+/**
+ * What the pull request on this page of an entry's is, to keep the team's decision on (GitHub's id for its repository,
+ * when it merged): its code change's or an earlier decision's word, else GitHub's. Null where it isn't known (GitHub
+ * not connected, or the repository no longer included).
+ */
+async function pullRequestAt(projectId: string, url: string, ref: { repo: string; number: number }): Promise<MergedPull | null> {
+  const select = { repoId: true, repo: true, number: true, title: true, author: true, mergedAt: true };
+  const known = (await prisma.codeChange.findFirst({ where: { projectId, url }, select })) ?? (await prisma.changelogDecision.findFirst({ where: { projectId, url }, select }));
+  if (known) {
+    return { ...known, url, mergedAt: known.mergedAt.toISOString() };
+  }
+  const [read] = (await fromGithub(projectId, () => mergedPullRequestsByRef(projectId, [ref]))) ?? [];
+  return typeof read === "object" ? { ...read, url } : null;
+}
 
 export const removeChangelogPullRequest = defineOperation({
   name: "changelog.removePullRequest",
@@ -1295,7 +1338,7 @@ export const removeChangelogPullRequest = defineOperation({
   path: "/changelog/{number}/pull-requests/remove",
   scope: "write",
   access: "team",
-  errors: [409],
+  errors: [409, 502],
   input: z.object({
     number: entryNumber,
     url: z.string().trim().min(1).max(2048).describe("The pull request's page, as the entry's `pullRequests` gives it").meta({ examples: ["https://github.com/acme/app/pull/418"] }),
@@ -1305,7 +1348,8 @@ export const removeChangelogPullRequest = defineOperation({
   run: async ({ projectId }, { number, url }) => {
     const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, number);
-    const done = await removePullRequest(projectId, entry.id, url);
+    const row = entry.publishedAt ? null : await prisma.changelogEntryPullRequest.findUnique({ where: { entryId_url: { entryId: entry.id, url } }, select: { repo: true, number: true } });
+    const done = await removePullRequest(projectId, entry.id, url, row && (await pullRequestAt(projectId, url, row)));
     if (done === "published") {
       throw new OperationError(409, "published", "Unpublish the entry to change its pull requests");
     }

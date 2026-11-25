@@ -24,7 +24,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   // again, and a redelivery after that doesn't put it back); without them, labels for internal work keep it out.
   const codeChangesOn = await analysisOn(projectId);
   const drafted =
-    (codeChangesOn || !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, pr, codeChangesOn ? { repoId: input.repoId } : undefined));
+    (codeChangesOn || !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, { ...pr, repoId: input.repoId }, codeChangesOn ? { repoId: input.repoId } : undefined));
   const analysed = await startCodeChange(projectId, {
     ...pr,
     repoId: input.repoId,

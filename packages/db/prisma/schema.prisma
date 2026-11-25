@@ -462,6 +462,7 @@ model Project {
   docsGapDismissals       DocsGapDismissal[]
   changelogSeen           ChangelogSeen[]
   codeChanges             CodeChange[]
+  changelogDecisions      ChangelogDecision[]
   articleVerifications    ArticleVerification[]
   verifyAlls              VerifyAll[]
   dataImports             DataImport[]
@@ -1888,6 +1889,31 @@ model ChangelogEntryPullRequest {
   @@map("changelog_entry_pull_request")
 }
 
+/// What the team decided about a merged pull request and the changelog, whatever Autopilot's state: picked in by hand
+/// (changelog.addPullRequests: the gate doesn't take it out of the draft) or taken out of a draft
+/// (changelog.removePullRequest: no analysis or redelivered merge puts it back, and it's listed as missing whenever it
+/// merged). Keyed by GitHub's id for the repository, which a rename doesn't change; the rest is the pull request as it
+/// was when they decided.
+model ChangelogDecision {
+  projectId String
+  repoId    Int
+  number    Int
+  /// owner/name and the page, as the changelog knew them.
+  repo      String
+  url       String
+  title     String
+  author    String
+  mergedAt  DateTime
+  takenOut  Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, repoId, number])
+  @@map("changelog_decision")
+}
+
 /// A docs collection: a group of articles on the portal's /docs.
 model Collection {
   id          String     @id @default(cuid())
@@ -2672,10 +2698,9 @@ model CodeChange {
   retryAt       DateTime?
   retries       Int             @default(0)
   retryPastGate Boolean         @default(false)
-  /// What the team decided about it and the changelog: "IN" once they added it by hand (changelog.addPullRequests: the
-  /// gate no longer takes it out of the draft), "OUT" once they took it out of one (changelog.removePullRequest: no
-  /// analysis or redelivery puts it back); null while it's Autopilot's own to decide.
-  teamChangelog String?
+  /// The gate's word, as the analysis saved it: users see what it changes (true), or not (false); null before an
+  /// analysis saved one. The team's own say on the changelog is ChangelogDecision's.
+  forUsers      Boolean?
   /// Unused: the marker and the queued job's claim of a one-off rewrite of waiting edits, since removed. Kept while the
   /// previous release reads them; dropped in a later one.
   rewriteDocsOnly Boolean       @default(false)

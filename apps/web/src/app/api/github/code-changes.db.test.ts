@@ -597,7 +597,8 @@ describe("deciding", () => {
     noDocs();
     await merge(31);
     const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
-    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
+    // The gate's word saved with it.
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, forUsers: true } })).toEqual({ state: "NOTHING_TO_DO", forUsers: false });
     expect(await draftOf(url)).toBeNull();
     // The team picks it for the changelog all the same: the gate isn't asked again.
     model.reply(SUMMARY);
@@ -631,7 +632,8 @@ describe("deciding", () => {
     // The retry finds it's for users and writes what it found, but not into the changelog: the team took it out.
     forUsers();
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
-    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, summary: true } })).toEqual({ state: "READY", summary: SUMMARY });
+    // The gate's word is saved all the same: the missing list says users see it, though it has no line.
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, summary: true, forUsers: true } })).toEqual({ state: "READY", summary: SUMMARY, forUsers: true });
     expect(await draftOf(url)).toBeNull();
     expect(await prisma.codeChangeAction.count({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" } })).toBe(0);
     // GitHub delivering the merge again doesn't either.
