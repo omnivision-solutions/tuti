@@ -827,7 +827,7 @@ export async function composeCover(
       picked === "screenshot"
         ? "This entry has no image at least 600px wide for the Screenshot design"
         : picked === "background"
-          ? "Add a cover background in Settings → Changelog for the Your background design"
+          ? "This project has no cover background for the Your background design yet"
           : "This entry needs two headings for the Sections design",
     );
   }

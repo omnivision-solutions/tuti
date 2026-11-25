@@ -250,7 +250,7 @@ test("Your background is offered once the team has a background, and draws on it
 
   // No background: not offered, and asked for by name it's refused.
   expect(await designsOf(plain.number)).toEqual(["title", "pattern"]);
-  await expect(compose({ number: plain.number, design: "background" })).rejects.toMatchObject({ status: 400, message: "Add a cover background in Settings → Changelog for the Your background design" });
+  await expect(compose({ number: plain.number, design: "background" })).rejects.toMatchObject({ status: 400, message: "This project has no cover background for the Your background design yet" });
 
   const background = await storedImage(2400, 1200);
   await setStyle({ coverBackground: background.id });
