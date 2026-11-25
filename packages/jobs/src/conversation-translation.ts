@@ -190,5 +190,6 @@ export async function replyTranslation(
   if (result.problem) {
     return { error: `The translation failed its checks: ${result.problem.reason}`, language };
   }
-  return { text: result.text, language };
+  // Nothing to translate (a link, an emoji, a number): it goes as written.
+  return result.text === text ? null : { text: result.text, language };
 }

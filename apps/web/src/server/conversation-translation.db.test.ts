@@ -167,6 +167,21 @@ test("reply, en → de: previewed, then sent with the preview; the customer gets
   expect(await prisma.aiUsage.count({ where: { projectId: project.id, feature: "translation" } })).toBe(3);
 });
 
+test("a user's message sent again with its requestId (an API key writing as them) gets the one already in, translated", async () => {
+  const { project } = await setup();
+  const owner = await prisma.user.findFirstOrThrow({ where: { teamMemberships: { some: { projectId: project.id } } } });
+  const key = { projectId: project.id, actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id } };
+  model.reply(translated(ENGLISH, "de"));
+  await call(createConversation, key, { user: { id: "kai", name: "Kai", email: "e2e-kai@example.com" }, body: GERMAN });
+  const theirs = { number: 1, body: "Ich habe noch eine Frage zu meiner Rechnung.", author: { id: "kai" }, requestId: "theirs-1" };
+  model.reply(translated("I have another question about my invoice."));
+  const first = await call(replyToConversation, key, theirs);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: first.id } })).toMatchObject({ teamText: "I have another question about my invoice." });
+  // Its teamText is its translation: the retry is compared with what they sent.
+  expect(await call(replyToConversation, key, theirs)).toMatchObject({ id: first.id });
+  expect(model.requests).toHaveLength(2);
+});
+
 test("a preview is sent only while it's in the customer's language: changed since, it's previewed again", async () => {
   const { project, team, conversation } = await german();
   model.reply(translated("Danke!"));
@@ -206,8 +221,7 @@ test("a failed translation: the message shows as written with why; a reply is ne
   expect(refused).toMatchObject({ status: 502, code: "translation_failed" });
   expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(0);
 
-  model.fail(500);
-  model.fail(500);
+  // Sent as written: the model isn't asked again.
   expect(await call(replyToConversation, team, { number: 1, body: "Could you try again?", untranslated: true })).toMatchObject({
     body: "Could you try again?",
     teamText: null,

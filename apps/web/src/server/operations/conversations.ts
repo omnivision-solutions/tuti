@@ -1146,8 +1146,8 @@ async function sentBefore(
     return null;
   }
   const files = (ids: string[]) => [...new Set(ids)].sort().join();
-  // A translated reply is compared by the team's own text.
-  if ((sent.teamText ?? sent.body) !== input.body || sent.note !== (input.note ?? false) || files(sent.attachments.map((file) => file.id)) !== files(input.attachments ?? [])) {
+  // A translated reply is compared by the team's own text (a user's message's teamText is its translation, not what they sent).
+  if ((writer.author === "TEAM" ? (sent.teamText ?? sent.body) : sent.body) !== input.body || sent.note !== (input.note ?? false) || files(sent.attachments.map((file) => file.id)) !== files(input.attachments ?? [])) {
     throw new OperationError(409, "request_id_used", "This requestId was already used for another reply");
   }
   return sent;
@@ -1278,7 +1278,8 @@ export const replyToConversation = defineOperation({
     // The team writes in its language; where the conversation is translated, the user gets theirs (docs/plan.md L22).
     // Never untranslated unless the team chose it. Notes are the team's own: never translated.
     let translated: { body: string; teamText: string; language: string } | undefined;
-    if (writer.author === "TEAM" && !input.note) {
+    // `untranslated`: the team chose to send it as written ("Send in English"): nothing asked.
+    if (writer.author === "TEAM" && !input.note && !input.untranslated) {
       if ((input.translation === undefined) !== (input.language === undefined)) {
         throw new OperationError(400, "invalid_input", "Send `translation` and `language` together");
       }
@@ -1292,8 +1293,8 @@ export const replyToConversation = defineOperation({
       if (translation && "text" in translation) {
         translated = { body: translation.text, teamText: input.body, language: translation.language };
       }
-    } else if (input.translation || input.language || input.untranslated) {
-      throw new OperationError(400, "invalid_input", "Only the team's replies are translated");
+    } else if (input.translation || input.language || (input.untranslated && (writer.author !== "TEAM" || input.note))) {
+      throw new OperationError(400, "invalid_input", "Only the team's replies are translated, and `untranslated` sends one without its translation");
     }
     const outcome: { closed?: boolean; keptOpen?: boolean } = {};
     try {
