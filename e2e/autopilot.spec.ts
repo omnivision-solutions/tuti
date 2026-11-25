@@ -536,8 +536,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
   await checkpoint(owner, "changelog-autopilot-lines", { fullPage: false });
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
-  const asTheyAre = owner.getByRole("alertdialog", { name: "Publish Autopilot's lines as they are?" });
-  await expect(asTheyAre).toContainText("“Next release” still lists its pull requests a line each, as they came in, not release notes.");
+  const asTheyAre = owner.getByRole("alertdialog", { name: "Publish “Next release”?" });
+  await expect(asTheyAre).toContainText("Its text is still Autopilot's lines, one per pull request.");
   await asTheyAre.getByRole("button", { name: "Cancel" }).click();
   // Edited by hand, it's written: Publish is the main action, and Draft with AI is in Edit with AI's menu.
   await owner.getByRole("textbox", { name: "What changed" }).getByText("Dark theme", { exact: true }).click();

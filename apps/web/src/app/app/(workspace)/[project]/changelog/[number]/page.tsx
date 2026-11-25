@@ -154,7 +154,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                     number={entry.number}
                     title={entry.title}
                     published={entry.publishedAt !== null}
-                    postCount={listed.length}
+                    postCount={completing.length}
                     emails={emails}
                     sample={entry.sample}
                     canDraftWithAi={aiEnabled() && entry.publishedAt === null}
@@ -168,7 +168,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   number={entry.number}
                   title={entry.title}
                   published={entry.publishedAt !== null}
-                  postCount={listed.length}
+                  postCount={completing.length}
                   subscribers={subscribers ?? 0}
                   emailedSubscribers={entry.subscribersEmailedAt !== null}
                   subscribersLeft={left}
