@@ -35,6 +35,7 @@ export const dueForRecheck = (lastChecked: number, now: number) => now - lastChe
 /**
  * Signs out: forgets the session here and ends it on the server. `only`: only if it's still that session (a check or a
  * 401 that answers late, about a session someone has since signed out of and back in after, leaves the new one alone).
+ * Done once it's forgotten: the server's answer isn't waited for, so a server that hangs holds up no sign-in after it.
  */
 export async function forgetSession(only?: Session) {
   const stored = await readSession();
@@ -43,7 +44,7 @@ export async function forgetSession(only?: Session) {
   }
   await writeSession(null);
   if (stored) {
-    await authRequest(stored.server, "/sign-out", { body: {}, cookie: stored.cookie }).catch(() => {});
+    void authRequest(stored.server, "/sign-out", { body: {}, cookie: stored.cookie }).catch(() => {});
   }
 }
 

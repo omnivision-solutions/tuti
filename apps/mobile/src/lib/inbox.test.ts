@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ageOf, appendPage, initialsOf, latestOnly, lineOf, listPath, type Row, rowPath, searchAgeOf, withRow } from "./inbox";
+import { ageOf, appendPage, initialsOf, latestOnly, lineOf, listPath, type Row, rowPath, searchAgeOf, spokenAgeOf, withRow } from "./inbox";
 
 const NOW = Date.parse("2026-11-25T12:00:00Z");
 const row = (number: number, minutesAgo: number, more: Partial<Row> = {}): Row => ({
@@ -47,6 +47,8 @@ describe("a row's text", () => {
     expect(ageOf(new Date(NOW - 3 * 3_600_000).toISOString(), NOW)).toBe("3h");
     expect(ageOf(new Date(NOW - 50 * 3_600_000).toISOString(), NOW)).toBe("2d");
     expect(searchAgeOf(row(1, 4, { status: "closed" }), NOW)).toBe("Closed · 4m");
+    expect(spokenAgeOf(new Date(NOW - 20_000).toISOString(), NOW)).toBe("1 minute ago");
+    expect(spokenAgeOf(new Date(NOW - 3 * 3_600_000).toISOString(), NOW)).toBe("3 hours ago");
   });
 
   it("makes initials of a name or an address", () => {

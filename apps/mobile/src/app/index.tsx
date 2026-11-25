@@ -135,7 +135,14 @@ export default function Inbox() {
         const [page, answer] = await Promise.all([api<Page>(rowPath(view, number)), api<{ views: InboxView[] }>("/inbox/views")]);
         if (loads.isLatest(mine)) {
           const found = page.conversations.find((row) => row.number === number);
-          setList((now) => now && { ...now, rows: withRow(now.rows, number, found ? { ...found, match: null } : null) });
+          setList((now) => {
+            if (!now) {
+              return now;
+            }
+            // The server pages by position: a row in or out of those shown moves where the next page starts.
+            const rows = withRow(now.rows, number, found ? { ...found, match: null } : null);
+            return { ...now, rows, next: now.next && String(Number(now.next) + rows.length - now.rows.length) };
+          });
           setViews(answer.views);
           setNow(Date.now());
         }
@@ -199,7 +206,7 @@ export default function Inbox() {
       void setProject(slug).catch((e: Error) => setError(`Couldn't keep that choice: ${e.message}`));
     }
   };
-  const open = useCallback((row: Row) => router.push(`/conversation/${row.number}` as never), []);
+  const open = useCallback((row: Row) => router.push(`/conversation/${row.number}`), []);
 
   const current = projects?.find((p) => p.slug === project);
   const searching = !!q;
@@ -333,7 +340,7 @@ export default function Inbox() {
             )}
           </View>
         }
-        ListFooterComponent={list?.next ? <ActivityIndicator style={styles.more} color={colors.muted} /> : undefined}
+        ListFooterComponent={list?.next && !error ? <ActivityIndicator style={styles.more} color={colors.muted} /> : undefined}
       />
     </>
   );

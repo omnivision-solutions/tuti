@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Alert } from "react-native";
 
 import Inbox from "@/app/index";
-import type { InboxView, Page, Row } from "@/lib/inbox";
+import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
 jest.mock("expo-router", () => {
@@ -30,8 +30,14 @@ jest.mock("@/lib/session", () => ({
   useApi: () => mockApi,
   useSession: () => ({ session: mockSession, setProject: mockSetProject, signOut: mockSignOut }),
 }));
-// The stream is tested on its own (src/lib/live.test.ts).
-jest.mock("@/lib/live", () => ({ openLive: () => () => {} }));
+// The stream is tested on its own (src/lib/live.test.ts): here the test sends its updates.
+let mockLive: ((update: { kind: "all" } | { kind: "conversation"; number: number }) => void) | null = null;
+jest.mock("@/lib/live", () => ({
+  openLive: (_session: unknown, onUpdate: typeof mockLive) => {
+    mockLive = onUpdate;
+    return () => (mockLive = null);
+  },
+}));
 
 const VIEWS: InboxView[] = [
   { view: "open", title: "Needs reply", count: 4 },
@@ -159,6 +165,62 @@ describe("the Inbox", () => {
 
     expect(screen.getByText("Mine, newer")).toBeTruthy();
     expect(screen.queryByText("Needs reply, older")).toBeNull();
+  });
+
+  it("fetches a changed conversation's row and the counts when the stream says it changed", async () => {
+    const changed = row("Invite link expired");
+    const other = row("CSV export stops at 500 rows");
+    serve({ "/conversations?view=open&limit": page([other, changed]) });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    expect(mockLive).not.toBeNull();
+
+    // A new message moves it up, and it's unread now.
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) =>
+      path === rowPath("open", changed.number) ? Promise.resolve(page([{ ...changed, unread: true, lastMessageAt: new Date().toISOString() }])) : served(path),
+    );
+    await act(async () => mockLive!({ kind: "conversation", number: changed.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+
+    const rows = screen.getAllByRole("button", { name: /\(#\d+\)/ });
+    expect(rows[0]).toHaveAccessibleName(/^Unread, Maya Chen, Northwind: Invite link expired/);
+    expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(2);
+  });
+
+  it("starts the next page one earlier once a conversation shown leaves the view", async () => {
+    const first = Array.from({ length: 5 }, (_, i) => row(`First page ${i}`));
+    serve({ "/conversations?view=open&limit=25&cursor=0": page(first, { nextCursor: "25", total: 30 }), "/conversations?view=open&limit=25&cursor=24": page([row("Next page")]) });
+    await render(<Inbox />);
+    await screen.findByText("First page 0");
+
+    // Closed on the web: it's in the view no longer.
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) => (path === rowPath("open", first[2]!.number) ? Promise.resolve(page([])) : served(path)));
+    await act(async () => mockLive!({ kind: "conversation", number: first[2]!.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(screen.queryByText("First page 2")).toBeNull();
+
+    const list = screen.getByTestId("inbox-list");
+    await fireEvent(list, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } });
+    await fireEvent(list, "contentSizeChange", 400, 2400);
+    await act(() => jest.advanceTimersByTimeAsync(100));
+    await fireEvent.scroll(list, {
+      nativeEvent: { contentOffset: { x: 0, y: 2000 }, contentSize: { width: 400, height: 2400 }, layoutMeasurement: { width: 400, height: 800 } },
+    });
+    expect(await screen.findByText("Next page")).toBeTruthy();
+  });
+
+  it("opens the teammate's first project when none is chosen yet", async () => {
+    serve({ "/conversations?view=open": page([]) });
+    mockSession.project = "gone";
+    try {
+      await render(<Inbox />);
+      await act(() => jest.advanceTimersByTimeAsync(0));
+      expect(mockSetProject).toHaveBeenCalledWith("acme");
+    } finally {
+      mockSession.project = "acme";
+    }
   });
 
   it("switches project from the switcher, and signs out from it once confirmed", async () => {

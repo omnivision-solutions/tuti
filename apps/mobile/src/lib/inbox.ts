@@ -72,7 +72,14 @@ export function ageOf(at: string, now = Date.now()) {
   return minutes < 60 ? `${minutes}m` : hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
-const STATUS = { open: "Open", waiting: "Waiting", closed: "Closed" } as const;
+/** `ageOf` in words, to be read out: "5 minutes ago", "1 hour ago", "2 days ago". */
+export function spokenAgeOf(at: string, now = Date.now()) {
+  const [, n, unit] = /^(\d+)([mhd])$/.exec(ageOf(at, now))!;
+  const word = { m: "minute", h: "hour", d: "day" }[unit as "m" | "h" | "d"];
+  return `${n} ${word}${n === "1" ? "" : "s"} ago`;
+}
+
+export const STATUS = { open: "Open", waiting: "Waiting", closed: "Closed" } as const;
 /** A search finds every status: the row says which, before its age. */
 export const searchAgeOf = (row: Row, now = Date.now()) => `${STATUS[row.status]} · ${ageOf(row.lastMessageAt, now)}`;
 

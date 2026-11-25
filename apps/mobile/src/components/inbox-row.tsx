@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { ageOf, initialsOf, lineOf, personOf, type Row, searchAgeOf } from "@/lib/inbox";
+import { ageOf, initialsOf, lineOf, personOf, type Row, searchAgeOf, spokenAgeOf, STATUS } from "@/lib/inbox";
 import { type Colors } from "@/lib/theme";
 
 // The faces' colours, as the mockups and the web's avatars: one per person, the same each time.
@@ -17,8 +17,8 @@ export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress }:
     <Pressable
       onPress={() => onPress(row)}
       accessibilityRole="button"
-      // Read as the web's row: who, what and which, and who has it.
-      accessibilityLabel={`${row.unread ? "Unread, " : ""}${person}${row.company ? `, ${row.company}` : ""}: ${row.subject} (#${row.number})${row.assignee ? `, assigned to ${row.assignee.name}` : ""}`}
+      // Read as the web's row: who, what and which, who has it, and (in words) how long ago; in a search, its status too.
+      accessibilityLabel={`${row.unread ? "Unread, " : ""}${person}${row.company ? `, ${row.company}` : ""}: ${row.subject} (#${row.number})${row.assignee ? `, assigned to ${row.assignee.name}` : ""}${q ? `, ${STATUS[row.status]}` : ""}, latest message ${spokenAgeOf(row.lastMessageAt, now)}`}
       accessibilityHint={line ?? undefined}
       android_ripple={{ color: colors.border }}
       style={({ pressed }) => [styles.row, Platform.OS === "ios" && pressed && { backgroundColor: colors.secondary }]}
