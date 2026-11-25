@@ -43,3 +43,8 @@ jest.mock("expo-sqlite/kv-store", () => {
   }
   return { __esModule: true, SQLiteStorage, default: new SQLiteStorage("ExpoSQLiteStorage") };
 });
+
+// The window a screen is drawn in: a phone's unless a test says otherwise (`global.mockWindow`, a tablet's to try the
+// side-by-side Inbox). React Native's own mock is 750 wide, a tablet's width here.
+global.mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({ __esModule: true, default: () => global.mockWindow }));

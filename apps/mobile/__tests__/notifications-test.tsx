@@ -5,6 +5,7 @@ import { AccessibilityInfo, Alert, AppState, Linking, Platform } from "react-nat
 import NotificationSettings from "@/app/notifications";
 import { offerNotifications, useNotifications } from "@/components/notifications";
 import type { Session } from "@/lib/session";
+import { onForgetChosen } from "@/lib/layout";
 
 // The system's notifications: what's allowed, the token it gives, and the taps and token changes the test sends.
 type Response = { actionIdentifier: string; notification: { request: { content: { data: unknown } } } };
@@ -170,6 +171,20 @@ describe("a tapped notification", () => {
     expect(mockSetProject).not.toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith("/conversation/4");
     expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockPush.mock.invocationCallOrder[0]!);
+  });
+
+  it("forgets a conversation chosen beside the Inbox before going back to it, so going back never pushes it", async () => {
+    mockOpen = true;
+    const forgotten = jest.fn();
+    const stop = onForgetChosen(forgotten);
+    try {
+      await render(<Harness />);
+      await act(async () => mockSystem.onTap!(tap({ project: "acme", conversation: 4 })));
+      expect(forgotten).toHaveBeenCalled();
+      expect(forgotten.mock.invocationCallOrder[0]).toBeLessThan(mockDismissAll.mock.invocationCallOrder.at(-1)!);
+    } finally {
+      stop();
+    }
   });
 
   it("opens nothing signed out, where sign-in is all there is", async () => {
