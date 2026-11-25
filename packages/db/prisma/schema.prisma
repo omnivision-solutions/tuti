@@ -1417,6 +1417,8 @@ model ConversationMessage {
   attachmentsDropped Int            @default(0)
   /// The import that brought it (docs/plan.md, Switching from Featurebase): never emailed, never an unread dot.
   importId           String?
+  /// The id its writer's client made for it (conversations.reply's `requestId`): sending it again gets this message, not a second one.
+  requestId          String?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1426,6 +1428,7 @@ model ConversationMessage {
   attachments  ConversationAttachment[]
 
   @@index([conversationId, createdAt])
+  @@unique([conversationId, author, authorId, requestId], where: raw("\"requestId\" IS NOT NULL"))
   /// The Inbox's search (conversations.list's `q`): one index of a project's messages by the trigrams of their
   /// text (pg_trgm, with btree_gin for the project), so `contains` reads only the project's messages that may
   /// have it. Searches of one or two characters have no trigram, and read the project's through the index on `projectId`.

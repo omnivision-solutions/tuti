@@ -1,4 +1,4 @@
-import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, type Prisma, prisma } from "@tuti/db";
+import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, Prisma, prisma } from "@tuti/db";
 import { enqueue, historySince, inSomePlansHistory, visibleConversations } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
@@ -1015,7 +1015,7 @@ export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string
 export async function addMessage(
   conversationId: string,
   projectId: string,
-  message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
+  message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean; requestId?: string } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
   /**
@@ -1081,6 +1081,26 @@ export async function addMessage(
   });
 }
 
+/**
+ * The message this writer already sent in this conversation with this `requestId` (conversations.reply), or null. The same
+ * id with another message (its text, being a note, its files) is refused: a client's bug, not a retry.
+ */
+async function sentBefore(
+  conversationId: string,
+  writer: { author: "USER" | "TEAM"; authorId: string },
+  input: { requestId: string; body: string; note?: boolean; attachments?: string[] },
+) {
+  const sent = await prisma.conversationMessage.findFirst({ where: { conversationId, ...writer, requestId: input.requestId }, select: messageSelect });
+  if (!sent) {
+    return null;
+  }
+  const files = (ids: string[]) => [...new Set(ids)].sort().join();
+  if (sent.body !== input.body || sent.note !== (input.note ?? false) || files(sent.attachments.map((file) => file.id)) !== files(input.attachments ?? [])) {
+    throw new OperationError(409, "request_id_used", "This requestId was already used for another reply");
+  }
+  return sent;
+}
+
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
   title: "Reply to a conversation",
@@ -1090,9 +1110,20 @@ export const replyToConversation = defineOperation({
   path: "/conversations/{number}/messages",
   scope: "write",
   access: "team",
+  errors: [409],
   input: z.object({
     number: conversationNumber,
     body,
+    requestId: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[A-Za-z0-9._:-]+$/, "Letters, digits, and . _ : - only")
+      .optional()
+      .describe(
+        "An id your client makes for this message (up to 100 letters, digits, `.`, `_`, `:` or `-`; a UUID will do). Send the same id again (a retry after a lost answer) and you get the reply already sent, not a second one; the same id with a different message is refused (409). Ids are per conversation and writer",
+      )
+      .meta({ examples: ["3f1c9b2e-7a4d-4e8f-9c21-5b6d8e0f1a23"] }),
     author: appUser
       .pick({ id: true })
       .optional()
@@ -1124,9 +1155,15 @@ export const replyToConversation = defineOperation({
       keptOpen: z
         .boolean()
         .optional()
-        .describe("A reply's (not a note's or the user's): whether it stays open and waiting on the team, as the user wrote after what the team saw (`seen`), unanswered")
+        .describe(
+          "A reply's (not a note's or the user's): whether it stays open and waiting on the team, as the user wrote after what the team saw (`seen`), unanswered. Not given for a `requestId` already sent",
+        )
         .meta({ examples: [false] }),
-      closed: z.boolean().optional().describe("With `close`: whether it closed the conversation (not when it was kept open)").meta({ examples: [true] }),
+      closed: z
+        .boolean()
+        .optional()
+        .describe("With `close`: whether it closed the conversation (not when it was kept open). Not given for a `requestId` already sent")
+        .meta({ examples: [true] }),
     })
     .describe("The message written"),
   run: async ({ actor, projectId }, input) => {
@@ -1142,8 +1179,7 @@ export const replyToConversation = defineOperation({
     if (input.attachments?.length && (input.author || actor.kind !== "user")) {
       throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
     }
-    const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
-    const outcome: { closed?: boolean; keptOpen?: boolean } = {};
+    let writer: { author: "USER" | "TEAM"; authorId: string } = { author: "TEAM", authorId: teamMemberId(actor) };
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -1155,22 +1191,38 @@ export const replyToConversation = defineOperation({
       if (!identity || identity.userId !== conversation.userId) {
         throw new OperationError(403, "forbidden", "Only the conversation's user can write as its user");
       }
-      message = await addMessage(conversation.id, projectId, { author: "USER", authorId: identity.userId, channel: "API", body: input.body });
-    } else {
-      message = await addMessage(
-        conversation.id,
-        projectId,
-        {
-          author: "TEAM",
-          authorId: teamMemberId(actor),
-          channel: actor.kind === "user" ? "APP" : "API",
-          body: input.body,
-          note: input.note ?? false,
-        },
-        uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
-        // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
-        { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
-      );
+      writer = { author: "USER", authorId: identity.userId };
+    }
+    // A retry of one already sent (its answer was lost) gets it back, and nothing runs again: no message, email, push or
+    // webhook. Before the uploads are checked: the first one claimed them.
+    const { requestId } = input;
+    const repeat = requestId ? await sentBefore(conversation.id, writer, { ...input, requestId }) : null;
+    if (repeat) {
+      return messageView(repeat);
+    }
+    const outcome: { closed?: boolean; keptOpen?: boolean } = {};
+    try {
+      const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
+      message =
+        writer.author === "USER"
+          ? await addMessage(conversation.id, projectId, { ...writer, channel: "API", body: input.body, requestId })
+          : await addMessage(
+              conversation.id,
+              projectId,
+              { ...writer, channel: actor.kind === "user" ? "APP" : "API", body: input.body, note: input.note ?? false, requestId },
+              uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
+              // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
+              { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
+            );
+    } catch (error) {
+      // The same id sent twice at once: the unique index lets one write it, and the other answers with that one. Or the
+      // first was written since this one looked, and claimed the uploads this one then found gone (400).
+      const raced = (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") || (error instanceof OperationError && error.status === 400);
+      const sent = requestId && raced && (await sentBefore(conversation.id, writer, { ...input, requestId }));
+      if (sent) {
+        return messageView(sent);
+      }
+      throw error;
     }
     if (message.author === "USER") {
       return announceUserMessage(projectId, conversation.number, message);

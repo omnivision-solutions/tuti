@@ -779,3 +779,71 @@ test("a reply kept open, its follow-up answered in it: set waiting on the user b
   await expect(call(updateConversation, context, { number: 1, status: "waiting" })).rejects.toMatchObject({ status: 409 });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "open" });
 });
+
+test("a reply sent again with its requestId (a retry after a lost answer) gets the one already sent, and writes nothing", async () => {
+  const { owner, context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: context.projectId };
+
+  const first = await call(replyToConversation, team, { number: 1, body: "On it", requestId: "retry-1", close: true });
+  expect(first).toMatchObject({ body: "On it", closed: true });
+  // Its user writes again meanwhile: a repeat moves nothing.
+  await call(replyToConversation, context, { number: 1, body: "Thanks!", author: { id: sam.id } });
+  const before = await prisma.conversation.findFirstOrThrow({ where: { projectId: context.projectId, number: 1 } });
+
+  const again = await call(replyToConversation, team, { number: 1, body: "On it", requestId: "retry-1", close: true });
+  expect(again).toEqual({ ...first, keptOpen: undefined, closed: undefined });
+  expect(again).not.toHaveProperty("closed");
+  expect(await prisma.conversationMessage.count({ where: { conversationId: before.id, author: "TEAM" } })).toBe(1);
+  expect(await prisma.conversation.findFirstOrThrow({ where: { id: before.id } })).toEqual(before);
+
+  // Over the API too: the key's creator is the same writer.
+  expect(await call(replyToConversation, context, { number: 1, body: "On it", requestId: "retry-1", close: true })).toMatchObject({ id: first.id });
+
+  // The same id with another message is refused, and nothing is written.
+  for (const changed of [{ body: "On it!" }, { body: "On it", note: true }]) {
+    const refused = await call(replyToConversation, team, { number: 1, requestId: "retry-1", ...changed }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(OperationError);
+    expect(refused).toMatchObject({ status: 409, message: "This requestId was already used for another reply" });
+  }
+  expect(await prisma.conversationMessage.count({ where: { conversationId: before.id } })).toBe(3);
+});
+
+test("requestIds are per conversation and writer, and a reply without one is written every time", async () => {
+  const { owner, project, context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  await call(createConversation, context, { user: sam, body: "More help" });
+  const member = await addMember(project.id, "MEMBER");
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+
+  const sent = [
+    await call(replyToConversation, as(owner.id), { number: 1, body: "On it", requestId: "same" }),
+    await call(replyToConversation, as(owner.id), { number: 2, body: "On it", requestId: "same" }),
+    await call(replyToConversation, as(member.id), { number: 1, body: "On it", requestId: "same" }),
+    // Its user, written by the key: another writer.
+    await call(replyToConversation, context, { number: 1, body: "On it", requestId: "same", author: { id: sam.id } }),
+    await call(replyToConversation, as(owner.id), { number: 1, body: "No id" }),
+    await call(replyToConversation, as(owner.id), { number: 1, body: "No id" }),
+  ];
+  expect(new Set(sent.map((message) => message.id)).size).toBe(6);
+  expect(await prisma.conversationMessage.count({ where: { projectId: project.id } })).toBe(8);
+});
+
+test("the same requestId sent at once leaves one message, and each gets it", async () => {
+  const { owner, context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: context.projectId };
+
+  const answers = await Promise.all(Array.from({ length: 5 }, () => call(replyToConversation, team, { number: 1, body: "On it", requestId: "at-once" })));
+  expect(new Set(answers.map((message) => message.id)).size).toBe(1);
+  expect(await prisma.conversationMessage.count({ where: { projectId: context.projectId, author: "TEAM" } })).toBe(1);
+});
+
+test("a requestId is a client's id: up to 100 letters, digits and . _ : -", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  for (const requestId of ["", "a b", "x".repeat(101), "ü"]) {
+    await expect(call(replyToConversation, context, { number: 1, body: "On it", requestId })).rejects.toMatchObject({ status: 400 });
+  }
+  await expect(call(replyToConversation, context, { number: 1, body: "On it", requestId: "3f1c9b2e-7a4d:x_y." + "x".repeat(82) })).resolves.toMatchObject({ body: "On it" });
+});
