@@ -108,8 +108,8 @@ export const updateEmailPreferences = defineOperation({
     ) {
       throw new OperationError(409, "opted_out", "Emails to your address are turned off, so the changelog can't be sent to it.");
     }
-    // For the changelog.unsubscribed webhook: the person on their Account page, or the team's app acting for them.
-    const source = input.author ? "api" : "account";
+    // For the changelog.unsubscribed webhook: the person on their Account page, or the team's app (an API key).
+    const source = context.actor.kind === "apiKey" ? "api" : "account";
     const posts = { ownPosts: input.ownPosts, followedPosts: input.followedPosts };
     if (posts.ownPosts !== undefined || posts.followedPosts !== undefined) {
       await prisma.emailPreference.upsert({ where: { userId_projectId: key }, create: { ...key, ...posts }, update: posts });
@@ -127,7 +127,7 @@ export const updateEmailPreferences = defineOperation({
     } else if (input.changelog === false && changelog?.subscriber) {
       // The unsubscribe link's own way.
       const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { slug: true } });
-      await (await findSubscription(slug, changelog.subscriber.token))?.unsubscribe(source);
+      await (await findSubscription(slug, changelog.subscriber.token))?.unsubscribe(source, userId);
     }
     return emailPreferences(context.projectId, userId);
   },

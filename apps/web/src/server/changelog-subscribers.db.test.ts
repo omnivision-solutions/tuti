@@ -1490,6 +1490,11 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     actAs(ada);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
+    expect(await unsubscribedAt(ada.email.toLowerCase())).toEqual(expect.any(Date));
+    // Turned back on, it's theirs again.
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await unsubscribedAt(ada.email.toLowerCase())).toBeNull();
+    expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
 
     const email = newAddress();
     const sam = await ssoUser(email);
@@ -1499,6 +1504,7 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     await call(updateEmailPreferences, key, { changelog: false, author: { id: sam.id } });
 
     expect(await told()).toEqual([
+      { event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: false },
       { event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: false },
       { event: "changelog.unsubscribed", email, userId: sam.id, source: "api", allEmails: false },
     ]);
@@ -1519,6 +1525,32 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     expect(await told()).toEqual([{ event: "changelog.unsubscribed", email, userId: sam.id, source: "email", allEmails: true }]);
     // The opt-out leaves the subscription as it was (turning emails back on restarts it); its own unsubscribe ended it.
     expect(await unsubscribedAt(email)).toEqual(expect.any(Date));
+  });
+
+  test("the person who acted is named, not another of the app's users at the same address; an unsubscribe link names nobody when several share it", async () => {
+    const email = newAddress();
+    const [first, second] = [await ssoUser(email), await ssoUser(email)];
+    actAs(second);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+    await call(updateEmailPreferences, key, { changelog: false, author: { id: second.id } });
+    await confirmed(email);
+    await unsubscribe(await tokenOf(email));
+    await optOut(first.id);
+    expect(await told()).toEqual([
+      { event: "changelog.unsubscribed", email, userId: second.id, source: "api", allEmails: false },
+      { event: "changelog.unsubscribed", email, userId: null, source: "email", allEmails: false },
+    ]);
+  });
+
+  test("an API key turning off its creator's own emails (no author) is the team's app too: api", async () => {
+    const ada = await signUp("Ada");
+    await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: ada.id }, projectId: project.id };
+    await call(updateEmailPreferences, key, { changelog: false });
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "api", allEmails: false }]);
   });
 
   test("from the Account's Stop emails (account), once", async () => {

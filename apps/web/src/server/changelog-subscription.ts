@@ -93,18 +93,24 @@ export type UnsubscribeSource = "email" | "account" | "api";
 
 /**
  * The changelog.unsubscribed event (its deliveries saved with `tx`, to queue once it commits): the address, the
- * person's id in the project's app where its SSO or API knows the address (else null), how, and whether it was all of
- * the project's emails or just the changelog.
+ * person's id in the project's app, how, and whether it was all of the project's emails or just the changelog. The id
+ * is `by`'s (the account that acted) where it's known, else that of the one user the project's SSO or API has at the
+ * address; null for none, or several (addresses aren't unique).
  */
-async function recordUnsubscribe(tx: Prisma.TransactionClient, projectId: string, email: string, source: UnsubscribeSource, allEmails: boolean) {
-  const known = await tx.ssoIdentity.findFirst({
-    where: { projectId, email: { equals: email, mode: "insensitive" } },
+async function recordUnsubscribe(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  email: string,
+  { source, allEmails, by }: { source: UnsubscribeSource; allEmails: boolean; by?: string },
+) {
+  const known = await tx.ssoIdentity.findMany({
+    where: { projectId, ...(by ? { userId: by } : { email: { equals: email, mode: "insensitive" } }) },
     select: { externalId: true },
-    orderBy: { createdAt: "asc" },
+    take: 2,
   });
   return recordEvent(tx, projectId, "changelog.unsubscribed", {
     email,
-    userId: known?.externalId ?? null,
+    userId: known.length === 1 ? known[0]!.externalId : null,
     source,
     allEmails,
     unsubscribedAt: new Date(),
@@ -120,7 +126,7 @@ export async function optOut(projectId: string, userId: string, source: Unsubscr
   const stops = before.email !== null && !!before.subscriber?.confirmedAt && before.reach !== null && reached(before.reach);
   const deliveries = await prisma.$transaction(async (tx) => {
     const { count } = await tx.emailOptOut.createMany({ data: { userId, projectId }, skipDuplicates: true });
-    return count === 1 && stops ? recordUnsubscribe(tx, projectId, before.email!, source, true) : [];
+    return count === 1 && stops ? recordUnsubscribe(tx, projectId, before.email!, { source, allEmails: true, by: userId }) : [];
   });
   await queueDeliveries(deliveries);
 }
@@ -182,8 +188,9 @@ export async function findSubscription(projectSlug: string, token: string) {
      * Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can). A confirmed
      * one is marked unsubscribed (the team can't add it back), and webhooks hear changelog.unsubscribed if it was being
      * emailed (changelogReach): not again for one already ended, nor where all of the project's emails were off already.
+     * `by`: the account that did it, where one did (the Account switch), named in the event.
      */
-    unsubscribe: async (source: UnsubscribeSource) => {
+    unsubscribe: async (source: UnsubscribeSource, by?: string) => {
       const deliveries = await prisma.$transaction(async (tx) => {
         const { count } = await tx.changelogSubscriber.updateMany({
           where: { id: subscriber.id, token, confirmedAt: { not: null } },
@@ -193,7 +200,7 @@ export async function findSubscription(projectSlug: string, token: string) {
           where: { id: subscriber.id, token },
           data: { confirmedAt: null, confirmTokenHash: null, confirmExpiresAt: null, confirmUsedAt: null },
         });
-        return count === 1 && reached(reach) ? recordUnsubscribe(tx, subscriber.projectId, subscriber.email, source, false) : [];
+        return count === 1 && reached(reach) ? recordUnsubscribe(tx, subscriber.projectId, subscriber.email, { source, allEmails: false, by }) : [];
       });
       await queueDeliveries(deliveries);
     },
