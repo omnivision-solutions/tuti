@@ -261,10 +261,11 @@ the list picks none to approve at once.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   The team's changelog (`/changelog`) is one pane and one list: its tags as pills with their counts in the header
   (`FilterPills`, `?tag=`), its search (`PaneSearch`) and New entry; then the drafts under a group label (the one whose
-  release notes wait first, with "Draft with AI" at its row's end, then the running draft), then the published entries
+  release notes wait first, with "Draft with AI" at its row's end while its text is unwritten and AI can run, else
+  "Write it"; then the running draft), then the published entries
   under their months. Each row leads with a date column (when it went out, or a draft's last edit), its cover small at
   the end only where it has one, and under its title what it holds or what readers did (pull requests, posts completed,
-  reactions, comments), saying nothing for none.
+  reactions, comments; a published entry's posts are those its publishing completed), saying nothing for none.
   A changelog entry's editor has a sidebar
   beside the text with a line on its left, as a post's has (under it on phones, after a line; no card), its groups
   under group labels: its status first (Draft, or Published and the date), its tags as chips, the posts it completes
