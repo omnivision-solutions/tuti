@@ -373,14 +373,19 @@ export function RichEditor({
       }
       onCreate?.(editor);
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction }) => {
       // What it was given stays what it sends.
       if (unreadableRef.current) {
         return;
       }
       const doc = editor.getJSON();
       setValue(isEmptyDoc(doc) ? "" : JSON.stringify(doc));
-      onChange?.(editor);
+      // Not a change someone made where only plugins changed the text: the empty paragraph StarterKit's TrailingNode
+      // adds after a text ending in a list, on the editor's first transaction (an entry of pull requests' lines would
+      // read as edited before anyone typed).
+      if (transaction.docChanged) {
+        onChange?.(editor);
+      }
     },
   });
 

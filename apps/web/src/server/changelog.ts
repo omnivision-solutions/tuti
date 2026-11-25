@@ -12,11 +12,15 @@ import type { RewriteMode } from "./release-notes";
 import {
   composeChangelogCover as composeCoverOperation,
   composeCover,
+  addChangelogPullRequests as addPullRequestsOperation,
+  addedAnalysisCost,
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
+  listMissingChanges,
   publishChangelogEntry as publishOperation,
   reactToChangelogEntry as reactOperation,
+  removeChangelogPullRequest as removePullRequestOperation,
   rewriteChangelogEntry as rewriteOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
@@ -152,6 +156,36 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
     redirect(`/app/${projectSlug}/changelog`);
   }
   return result;
+}
+
+export type MissingChanges = Awaited<ReturnType<(typeof listMissingChanges)["run"]>> & { cost: Awaited<ReturnType<typeof addedAnalysisCost>> };
+
+/** What "Add changes…" lists: the merged pull requests no entry has (see changelog.missingChanges), and what adding them costs. */
+export async function findMissingChanges(projectSlug: string): Promise<{ error?: string; missing?: MissingChanges }> {
+  let missing: MissingChanges | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    const [found, cost] = await Promise.all([call(listMissingChanges, context, {}), addedAnalysisCost(context.projectId)]);
+    missing = { ...found, cost };
+  });
+  return missing ? { missing } : result;
+}
+
+/** Adds merged pull requests to the running draft (see changelog.addPullRequests): its number, and how many went in. */
+export async function addChangelogPullRequests(
+  projectSlug: string,
+  pullRequests: { repo: string; number: number }[],
+): Promise<{ error?: string; number?: number | null; added?: number }> {
+  let added: { number: number | null; added: number } | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    const done = await call(addPullRequestsOperation, context, { pullRequests });
+    added = { number: done.number, added: done.added.length };
+  });
+  return added ?? result;
+}
+
+/** Takes a merged pull request out of a draft, with its line (see changelog.removePullRequest). */
+export async function removeChangelogPullRequest(projectSlug: string, number: number, url: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(removePullRequestOperation, context, { number: Number(number), url: String(url) }));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes) and the published entries picked as examples (see changelogStyle.update). */

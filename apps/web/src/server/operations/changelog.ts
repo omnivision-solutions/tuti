@@ -2,7 +2,9 @@ import { type Doc, isVideo, toMarkdown, toPlainText, videoPageUrl } from "@tuti/
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
 import {
   addToRunningDraft,
+  analysisOn,
   claimCodeChange,
+  creditBalance,
   enqueue,
   knownUrl,
   lockProject,
@@ -25,10 +27,11 @@ import {
   uploadImage,
 } from "@tuti/jobs";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
-import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
+import { aiEnabled, complete, creditsEnabled, creditsPerUsageDollar, listModels, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
+import { costPerUse } from "@/lib/model-tiers";
 import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
@@ -48,6 +51,7 @@ import {
   rewritePrompt,
   sectionRange,
 } from "../release-notes";
+import { aiModels } from "./ai-models";
 import { branding } from "./branding";
 import { imageOutput } from "./widget";
 import { author, authorId, saving } from "./create";
@@ -1359,6 +1363,22 @@ export const addChangelogPullRequests = defineOperation({
     return { number: draft?.number ?? null, added: added.map(ref), alreadyIn: merged.filter((pr) => !isAdded(pr)).map(ref) };
   },
 });
+
+/**
+ * With AI credits on and Autopilot analysing, what "Add changes…" says each pull request added costs: `each`, its
+ * deciding and writing as Settings → AI models prices them (typical sizes at the models' prices; null where the endpoint
+ * didn't say them), and the balance. Null with credits off or nothing analysed (adding costs nothing then).
+ */
+export async function addedAnalysisCost(projectId: string): Promise<{ each: number | null; balance: number } | null> {
+  if (!creditsEnabled() || !(await analysisOn(projectId))) {
+    return null;
+  }
+  const listed = new Map((await listModels().catch(() => [])).map((model) => [model.id, model]));
+  const models = await aiModels(projectId, listed);
+  const parts = (["code_changes_decide", "code_changes"] as const).map((role) => costPerUse(role, listed.get(models[role].used)));
+  const dollars = parts.every((part) => part !== null) ? parts.reduce((sum, part) => sum + part!.dollars, 0) : null;
+  return { each: dollars === null ? null : dollars * creditsPerUsageDollar(), balance: (await creditBalance(projectId)).balance };
+}
 
 /**
  * What the pull request on this page of an entry's is, to keep the team's decision on (GitHub's id for its repository,

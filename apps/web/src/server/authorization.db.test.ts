@@ -213,6 +213,16 @@ const matrix: Matrix = {
       },
     },
     findPostsToComplete: { allowed: "MEMBER", call: (slug) => changelog.findPostsToComplete(slug, "Post") },
+    // GitHub (the fake): the fixture's repository's merged pull request #5, and #4 in draft #2.
+    findMissingChanges: { allowed: "MEMBER", call: (slug) => withEnv(githubFake.env, () => changelog.findMissingChanges(slug)) },
+    addChangelogPullRequests: {
+      allowed: "MEMBER",
+      call: (slug, f) => withEnv(githubFake.env, () => changelog.addChangelogPullRequests(slug, [{ repo: `acme/docs-${f.githubRepoId}`, number: 5 }])),
+    },
+    removeChangelogPullRequest: {
+      allowed: "MEMBER",
+      call: (slug, f) => withEnv(githubFake.env, () => changelog.removeChangelogPullRequest(slug, 2, `https://github.com/acme/docs-${f.githubRepoId}/pull/4`)),
+    },
     draftChangelogEntry: {
       allowed: "MEMBER",
       before: () => model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." })),
@@ -1051,6 +1061,18 @@ async function createFixture(own: "domain" | "site" = "domain") {
           { repoId: 95_000 + githubRepoId, fullName: `acme/spec-${githubRepoId}` },
         ],
       },
+    },
+  });
+  // Merged pull requests on the included repository (GitHub, the fake): #5 to add to the changelog, #4 in draft #2 to take out.
+  githubFake.pullRequest(`acme/docs-${githubRepoId}`, { number: 5, title: "Add a dark theme", mergedAt: new Date().toISOString() });
+  githubFake.pullRequest(`acme/docs-${githubRepoId}`, { number: 4, title: "Speed up search", mergedAt: new Date().toISOString() });
+  await prisma.changelogEntryPullRequest.create({
+    data: {
+      entry: { connect: { projectId_number: { projectId, number: 2 } } },
+      url: `https://github.com/acme/docs-${githubRepoId}/pull/4`,
+      repo: `acme/docs-${githubRepoId}`,
+      number: 4,
+      title: "Speed up search",
     },
   });
   // An API reference read from a file in that repository (GitHub, the fake), to change to another file.

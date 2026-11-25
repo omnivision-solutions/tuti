@@ -1,11 +1,12 @@
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { grantCredits, handlers } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { FAKE_MODEL_KEY, type GithubFake, startGithubFake } from "@tuti/testkit";
+import { creditsOn, FAKE_MODEL_KEY, type GithubFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import {
   addChangelogPullRequests,
+  addedAnalysisCost,
   addedPullRequestsAnalysed,
   createChangelogEntry,
   getChangelogEntry,
@@ -464,4 +465,25 @@ test("in-process, a ruled-out pull request analysed some other way before its tu
 
   expect(queue.enqueue).toHaveBeenCalledTimes(1);
   expect(queue.enqueue.mock.calls[0]![1]).toMatchObject({ force: false });
+});
+
+test("what adding costs, said before it's added: with AI credits on, each one's analysis at the models' prices, and the balance; nothing with credits or Autopilot off", async () => {
+  const model = await startModelFake();
+  try {
+    vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);
+    expect(await addedAnalysisCost(project.id)).toBeNull();
+    vi.stubEnv("TUTI_CONFIG", creditsOn());
+    await grantCredits(project.id, "MANUAL", 100, { days: null });
+    const cost = await addedAnalysisCost(project.id);
+    expect(cost).toEqual({ each: expect.any(Number), balance: 100 });
+    expect(cost!.each).toBeGreaterThan(0);
+    // The endpoint not saying its prices: that it costs credits, not how many.
+    vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
+    expect(await addedAnalysisCost(project.id)).toEqual({ each: null, balance: 100 });
+    // Autopilot off: nothing is analysed, so nothing is spent.
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+    expect(await addedAnalysisCost(project.id)).toBeNull();
+  } finally {
+    await model.close();
+  }
 });
