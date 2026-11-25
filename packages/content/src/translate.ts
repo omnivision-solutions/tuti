@@ -237,10 +237,10 @@ export function segmentsOf(doc: Doc): {
 /** Plain text (an Inbox message) as one segment: line breaks, URLs, email addresses and `code` kept as they are. */
 export function segmentOfText(text: string): { segment: Segment; apply: (translated: string) => string | Problem; check: (id: string, translated: string) => string | null } {
   const kept: string[] = [];
-  const parts = text.split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8})/);
+  const parts = text.split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8})/i);
   // A URL's closing parenthesis is left out unless the URL opened one (".../Function_(mathematics)"): take it back.
   for (let i = 1; i < parts.length; i += 2) {
-    while (/^https?:/.test(parts[i]!) && (parts[i]!.match(/\(/g) ?? []).length > (parts[i]!.match(/\)/g) ?? []).length && parts[i + 1]!.startsWith(")")) {
+    while (/^https?:/i.test(parts[i]!) && (parts[i]!.match(/\(/g) ?? []).length > (parts[i]!.match(/\)/g) ?? []).length && parts[i + 1]!.startsWith(")")) {
       parts[i] = `${parts[i]})`;
       parts[i + 1] = parts[i + 1]!.slice(1);
     }

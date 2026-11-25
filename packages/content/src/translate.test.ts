@@ -337,3 +337,7 @@ test("a placeholder moved out of a link takes the open tags' marks, keeping its 
 test("an entity past the last code point is dropped, not thrown", () => {
   expect(segmentOfText("Hi there").apply("Hallo &#9999999;zusammen")).toBe("Hallo zusammen");
 });
+
+test("a URL's scheme in capitals is still kept exactly", () => {
+  expect(segmentOfText("Read HTTPS://Example.com/Help now").segment.text).toBe("Read <x1/> now");
+});
