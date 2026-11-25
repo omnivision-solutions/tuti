@@ -13,7 +13,7 @@ export type PricingPlan = {
   name: string;
   /** Dollars a month, billed monthly and billed yearly (null where it isn't sold that way); null for a plan not sold. */
   price: { month: number | null; year: number | null } | null;
-  /** What every plan lists first, its own: Autopilot and its AI credits. */
+  /** What every plan lists first, its own: Autopilot and its credits. */
   highlights: PlanLine[];
   /** The line between the highlights and the rest: "Everything in Free, plus:". */
   intro?: string;

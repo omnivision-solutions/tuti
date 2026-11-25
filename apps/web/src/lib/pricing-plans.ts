@@ -29,7 +29,7 @@ function changesFor(plan: PlanKey, count: number): number | null {
   return planIncludes(plan, "codeChanges") && changes >= 1 ? changes : null;
 }
 
-/** "1,000 AI credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
+/** "1,000 credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
 function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
   if (!creditsEnabled() || count <= 0) {
     return [];
@@ -42,7 +42,7 @@ function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
     ...(topupsEnabled() ? ["Need more? Top up any time."] : []),
   ];
   // Nothing to say they buy: the line alone, not an empty card.
-  return [{ text: `${number(count)} AI credits ${per}`, ...(points.length > 0 && { more: { title: "What credits buy", points } }) }];
+  return [{ text: `${number(count)} credits ${per}`, ...(points.length > 0 && { more: { title: "What credits buy", points } }) }];
 }
 
 const AUTOPILOT: PlanLine = {
@@ -168,7 +168,7 @@ export function pricingPlans(): PricingPlan[] {
 
 /** What a plan has, as numbers and yes/no, for tuti.so's comparison table. Limits: null is no limit. */
 export type PlanFacts = {
-  /** AI credits each paid month gives; null where AI isn't paid with credits or the plan gets none a month (free, by quote). */
+  /** Credits each paid month gives; null where AI isn't paid with credits or the plan gets none a month (free, by quote). */
   credits: number | null;
   /** The credits a free default plan starts with (the config file's credits.free), once; null elsewhere or where there are none. */
   startCredits: number | null;

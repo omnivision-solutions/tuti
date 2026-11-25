@@ -198,6 +198,7 @@ const entryOutput = z
 
 const entrySelect = {
   id: true,
+  emailOnly: true,
   number: true,
   title: true,
   body: true,
@@ -265,12 +266,14 @@ const findEntry = (projectId: string, number: number) =>
   prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: entrySelect });
 
 /** Whether `actor` may read an entry for these groups' keys (as visibleEntry): one for some groups only is the team's and theirs. */
-export async function mayReadEntry(actor: Actor, projectId: string, groups: string[]): Promise<boolean> {
-  if (groups.length === 0) {
+export async function mayReadEntry(actor: Actor, projectId: string, entry: { emailOnly: boolean; groups: { group: { key: string } }[] }): Promise<boolean> {
+  const groups = claimsOf(entry);
+  if (groups.length === 0 && !entry.emailOnly) {
     return true;
   }
   const reader = await actorReader(actor, projectId);
-  return reader === null || groups.some((group) => reader.groups.includes(group));
+  // An email-only entry is the team's (visibleEntry).
+  return reader === null || (!entry.emailOnly && groups.some((group) => reader.groups.includes(group)));
 }
 
 async function teamEntry(projectId: string, number: number) {
@@ -539,7 +542,7 @@ export const getChangelogEntry = defineOperation({
     const portal = await projectPortal(projectId);
     const [entry, team] = await Promise.all([findEntry(projectId, number), isTeam(actor, projectId)]);
     // A draft is as good as missing to everyone but the team, and an entry for some groups to everyone outside them.
-    if (!entry || (!entry.publishedAt && !team) || !(team || (await mayReadEntry(actor, projectId, claimsOf(entry))))) {
+    if (!entry || (!entry.publishedAt && !team) || !(team || (await mayReadEntry(actor, projectId, entry)))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
     return entryView(asReaderSees(entry, team), portal, undefined, { team });
@@ -575,9 +578,9 @@ export const reactToChangelogEntry = defineOperation({
     const { projectId } = context;
     const entry = await prisma.changelogEntry.findUnique({
       where: { projectId_number: { projectId, number: input.number } },
-      select: { id: true, publishedAt: true, groups: groupClaims },
+      select: { id: true, publishedAt: true, emailOnly: true, groups: groupClaims },
     });
-    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId))) || !(await mayReadEntry(context.actor, projectId, claimsOf(entry)))) {
+    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId))) || !(await mayReadEntry(context.actor, projectId, entry))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${input.number}`);
     }
     if (!entry.publishedAt) {
@@ -1419,7 +1422,7 @@ export const addChangelogPullRequests = defineOperation({
 });
 
 /**
- * With AI credits on and Autopilot analysing, what "Add changes…" says each pull request added costs: `each`, its
+ * With credits on and Autopilot analysing, what "Add changes…" says each pull request added costs: `each`, its
  * deciding and writing as Settings → AI models prices them (typical sizes at the models' prices; null where the endpoint
  * didn't say them), and the balance. Null with credits off or nothing analysed (adding costs nothing then).
  */

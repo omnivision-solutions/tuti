@@ -10,7 +10,7 @@ import { getUsage } from "@/server/operations/usage";
 import { addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-/** AI credits (docs/plan.md, AI usage per project): what each answered request is charged, from which grants, and the balance. */
+/** Credits (docs/plan.md, AI usage per project): what each answered request is charged, from which grants, and the balance. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -146,27 +146,27 @@ test("owners and admins with verified addresses are emailed once when credits ru
   await grantCredits(project.id, "MANUAL", 100, { days: null });
 
   await answered(0.4);
-  expect(emailed("is running low on AI credits")).toEqual([]);
+  expect(emailed("is running low on credits")).toEqual([]);
   await answered(0.2);
-  expect(emailed("is running low on AI credits")).toEqual(told);
-  const email = mailbox.emails.find((sent) => sent.to.includes(owner.email) && sent.subject.endsWith("is running low on AI credits"))!;
-  expect(email.text).toContain(`${project.name} has 40 AI credits left.`);
+  expect(emailed("is running low on credits")).toEqual(told);
+  const email = mailbox.emails.find((sent) => sent.to.includes(owner.email) && sent.subject.endsWith("is running low on credits"))!;
+  expect(email.text).toContain(`${project.name} has 40 credits left.`);
   expect(email.text).toContain(`http://tuti.localhost:3100/app/${project.slug}/settings/billing`);
   await answered(0.1);
-  expect(emailed("is running low on AI credits")).toEqual(told);
+  expect(emailed("is running low on credits")).toEqual(told);
 
   // Two charges at once take it past 0: one email each.
   await Promise.all([answered(0.2), answered(0.2)]);
-  expect(emailed("is out of AI credits")).toEqual(told);
+  expect(emailed("is out of credits")).toEqual(told);
   await expect(aiFor(project.id, "answers")).rejects.toThrow(OutOfCredits);
-  expect(emailed("is out of AI credits")).toEqual(told);
+  expect(emailed("is out of credits")).toEqual(told);
   // Not members, nor an admin whose address isn't verified.
   expect(mailbox.emails.some((sent) => sent.subject.startsWith(project.name) && (sent.to.includes(member.email) || sent.to.includes(unverified.email)))).toBe(false);
 
   // More credits, still under 50 once the debt is paid: they hear again.
   await grantCredits(project.id, "MANUAL", 30, { days: null });
   await answered(0.01);
-  expect(emailed("is running low on AI credits")).toEqual([...told, ...told].sort());
+  expect(emailed("is running low on credits")).toEqual([...told, ...told].sort());
 });
 
 test("credits that expire stop the AI with an email, though nothing was charged", async () => {
@@ -174,10 +174,10 @@ test("credits that expire stop the AI with an email, though nothing was charged"
   vi.useFakeTimers({ toFake: ["Date"] });
   await grantCredits(project.id, "MANUAL", 500, { days: 1 });
   await answered(0.01);
-  expect(emailed("is out of AI credits")).toEqual([]);
+  expect(emailed("is out of credits")).toEqual([]);
   vi.setSystemTime(Date.now() + 2 * 86_400_000);
   await expect(aiFor(project.id, "answers")).rejects.toThrow(OutOfCredits);
-  expect(emailed("is out of AI credits")).toEqual([owner.email]);
+  expect(emailed("is out of credits")).toEqual([owner.email]);
 });
 
 test("a grant made while the email is claimed counts: no email about the old balance, and the new credits running low still email", async () => {
@@ -210,10 +210,10 @@ test("a grant made while the email is claimed counts: no email about the old bal
   );
   commit();
   await Promise.all([granting, emailing]);
-  expect(emailed("is running low on AI credits")).toEqual([]);
+  expect(emailed("is running low on credits")).toEqual([]);
 
   await answered(9.7);
-  expect(emailed("is running low on AI credits")).toEqual([owner.email]);
+  expect(emailed("is running low on credits")).toEqual([owner.email]);
 });
 
 test("credits.low 0: a balance of exactly 0 is out", async () => {
@@ -222,7 +222,7 @@ test("credits.low 0: a balance of exactly 0 is out", async () => {
   await grantCredits(project.id, "MANUAL", 10, { days: null });
   await answered(0.1);
   expect(await balance()).toBe(0);
-  expect(emailed("is out of AI credits")).toEqual([owner.email]);
+  expect(emailed("is out of credits")).toEqual([owner.email]);
 });
 
 test("with nobody to email (no verified owner or admin yet), nothing is claimed: once someone is, the next charge emails them", async () => {
@@ -233,7 +233,7 @@ test("with nobody to email (no verified owner or admin yet), nothing is claimed:
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiCreditsLowEmailedAt: true } })).toEqual({ aiCreditsLowEmailedAt: null });
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await answered(0.01);
-  expect(emailed("is running low on AI credits")).toEqual([owner.email]);
+  expect(emailed("is running low on credits")).toEqual([owner.email]);
 });
 
 test("credits.low 0 emails only once credits are out", async () => {
@@ -241,9 +241,9 @@ test("credits.low 0 emails only once credits are out", async () => {
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await grantCredits(project.id, "MANUAL", 10, { days: null });
   await answered(0.09);
-  expect(emailed("is running low on AI credits")).toEqual([]);
+  expect(emailed("is running low on credits")).toEqual([]);
   await answered(0.01);
-  expect(emailed("is out of AI credits")).toEqual([owner.email]);
+  expect(emailed("is out of credits")).toEqual([owner.email]);
 });
 
 test("every project gets credits.free once, lasting like a top-up, however many look at once", async () => {

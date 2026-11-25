@@ -50,7 +50,7 @@ function Meter({ label, left, of, used }: { label: string; left: number | null; 
 
 /**
  * Settings → Billing: the project's plan, one row (where plans are sold; on the default plan "Upgrade" opens the plans
- * to buy), this month's emails (and a license's month's AI credits), its AI credits (where AI is paid with them: the
+ * to buy), this month's emails (and a license's month's credits), its credits (where AI is paid with them: the
  * balance, what's left by when it expires, and buying more), the add-on, and what its AI use cost each month.
  */
 export default async function BillingSettingsPage(props: PageProps<"/app/[project]/settings/billing">) {
@@ -94,7 +94,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const licensed = Boolean(license && !license.revokedAt);
   // A licensed project's add-on is billed monthly where it's sold so, else yearly (plan.badge).
   const licensedBilling = badgePrice("month") ? "monthly" : "yearly";
-  // A license's AI credits for its month (they end with it, as its emails do: emails.until) are This month's, spent
+  // A license's credits for its month (they end with it, as its emails do: emails.until) are This month's, spent
   // ones too (the meter then reads 0); the rest (a trial's, the free ones, top-ups) are listed under it.
   // ponytail: a Stripe plan's credits stay in the list; into This month too when its period is a month, if asked for.
   // The license's month while it runs (its own: a plan with no email limit has it too): over and the next not given
@@ -222,7 +222,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
           {monthly.length > 0 && (
             <SettingBlock>
-              <Meter label="AI credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />
+              <Meter label="Credits" left={sum(monthly, "remaining")} of={sum(monthly, "credits")} />
               {/* The next AI request takes what's owed from the credits there (chargeCredits); with none over, AI is paused (aiPaused). */}
               {owed >= 0.01 && (
                 <p className="text-sm text-muted-foreground">
@@ -236,7 +236,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       {(showCredits || topupsEnabled()) && (
         // The credits that last past the month (a trial's, the free ones, top-ups), beside where more are bought. With
         // only a license's month's, buying more is all there is: no title.
-        <SettingsCard title={monthly.length === 0 ? "AI credits" : extra.length > 0 ? "Extra AI credits" : undefined}>
+        <SettingsCard title={monthly.length === 0 ? "Credits" : extra.length > 0 ? "Extra credits" : undefined}>
           {showCredits && (
             <SettingBlock className="gap-2">
               {/* The balance (what's owed taken off, never below none: what's owed is said under it), of what the credits listed under it started as. */}
@@ -249,7 +249,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 </p>
               )}
               {extra.length > 0 && (
-                <table className="w-full text-sm text-muted-foreground" aria-label="AI credits left">
+                <table className="w-full text-sm text-muted-foreground" aria-label="Credits left">
                   <thead className="sr-only">
                     <tr>
                       <th>Credits</th>

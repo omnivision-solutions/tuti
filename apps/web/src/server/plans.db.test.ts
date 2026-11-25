@@ -10,7 +10,7 @@ import { getPlan, managePlan, subscribePlan } from "@/server/operations/plan";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-/** Plans (docs/plan.md, Plans): Stripe Checkout starts one, Stripe's webhook keeps the project's plan in step, and each paid period gives its AI credits once. */
+/** Plans (docs/plan.md, Plans): Stripe Checkout starts one, Stripe's webhook keeps the project's plan in step, and each paid period gives its credits once. */
 
 let stripe: StripeFake;
 let owner: TestUser;

@@ -137,14 +137,14 @@ test("the old key's deactivation arriving before the upgrade: the upgrade brings
   expect(await planOf(project.id)).toBe("appsumo-1");
 });
 
-/** The project's AI credits left from its license (PLAN) and from top-ups, and what was taken back. */
+/** The project's credits left from its license (PLAN) and from top-ups, and what was taken back. */
 const creditsLeft = async (projectId: string) => {
   const grants = await prisma.creditGrant.findMany({ where: { projectId }, select: { source: true, remaining: true, takenBack: true } });
   const sum = (source: string, field: "remaining" | "takenBack") => grants.filter((one) => one.source === source).reduce((total, one) => total + one[field].toNumber(), 0);
   return { license: sum("PLAN", "remaining"), takenBack: sum("PLAN", "takenBack"), topups: sum("TOPUP", "remaining") };
 };
 
-test("a refund takes back the AI credits its license gave that are left, and leaves the project's top-ups", async () => {
+test("a refund takes back the credits its license gave that are left, and leaves the project's top-ups", async () => {
   const { project, key } = await assigned();
   await grantCredits(project.id, "TOPUP", 500, { days: 365 });
   const spent = await prisma.creditGrant.findFirstOrThrow({ where: { projectId: project.id, source: "PLAN" } });

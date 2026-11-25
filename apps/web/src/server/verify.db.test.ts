@@ -210,10 +210,10 @@ test("no Verify while the project doesn't analyse merged pull requests, nor with
   expect(github.reads.filter((path) => path.startsWith(`/repos/${repo}`))).toEqual([]);
 });
 
-test("out of AI credits, Verify is refused with the credits message, before anything is read", async () => {
+test("out of credits, Verify is refused with the credits message, before anything is read", async () => {
   const article = await published();
   vi.stubEnv("TUTI_CONFIG", creditsOn());
-  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 402, message: "This project is out of AI credits. See Settings → Billing." });
+  await expect(call(verifyArticle, team(), { slug: article.slug })).rejects.toMatchObject({ status: 402, message: "This project is out of credits. See Settings → Billing." });
   expect(await prisma.articleVerification.count({ where: { projectId: project.id } })).toBe(0);
   // With credits, it runs and they're spent.
   await grantCredits(project.id, "MANUAL", 10, { days: null });

@@ -19,7 +19,7 @@ export function GET() {
     ...pricingTerms(),
     enterprise: ENTERPRISE,
     yearlyNote: yearlyNote(plans.flatMap(({ price }) => (price ? [price] : []))),
-    // AI answers and Autopilot are in every plan where none has to buy AI credits, or Free starts with some.
+    // AI answers and Autopilot are in every plan where none has to buy credits, or Free starts with some.
     aiInEveryPlan: !creditsEnabled() || freeCredits() > 0,
   });
 }

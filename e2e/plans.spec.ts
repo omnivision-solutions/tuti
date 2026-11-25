@@ -12,7 +12,7 @@ import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
 // On Tuti's cloud, which sells plans.
-test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powered by tuti\" with the add-on, and cancels the plan in Stripe's portal", async ({ browser }, testInfo) => {
+test("an owner starts Pro on Stripe, gets its month's credits, hides \"Powered by tuti\" with the add-on, and cancels the plan in Stripe's portal", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -28,19 +28,19 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   const primaries = (within: Locator) =>
     within.locator("button, a").evaluateAll((buttons) => buttons.filter((button) => /(^| )bg-primary( |$)/.test(button.className)).map((button) => button.textContent));
   expect(await primaries(owner.getByRole("main"))).toEqual(["Upgrade"]);
-  // Its email to its users this month, against its plan's limit; its AI credits (the free ones, which last longer) in
+  // Its email to its users this month, against its plan's limit; its credits (the free ones, which last longer) in
   // their own card, with buying more.
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("1,000 of 1,000 left")).toBeVisible();
-  await expect(owner.getByRole("heading", { name: "AI credits", exact: true })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Credits", exact: true })).toBeVisible();
   await expect(owner.getByRole("group", { name: "Balance" }).getByText("1,000 of 1,000 left")).toBeVisible();
   // The badge's card has a way to the plans on the free plan too, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
-  // On a phone: nothing runs off the side, and Buy AI credits' amounts go under its label.
+  // On a phone: nothing runs off the side, and Buy credits' amounts go under its label.
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  const buyLabel = (await owner.getByText("Buy AI credits", { exact: true }).boundingBox())!;
+  const buyLabel = (await owner.getByText("Buy credits", { exact: true }).boundingBox())!;
   expect((await owner.getByRole("radiogroup", { name: "Amount" }).boundingBox())!.y).toBeGreaterThanOrEqual(buyLabel.y + buyLabel.height);
   // Upgrade stays beside the plan's name there.
   const freeName = (await planRow.getByText("Your plan", { exact: true }).boundingBox())!;
@@ -123,7 +123,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("10,000 of 10,000 left")).toBeVisible();
   await expect(owner.getByText("$49 a month, added to this project's plan.", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Pro plan/ })).toContainText("1,000");
+  await expect(owner.getByRole("table", { name: "Credits left" }).getByRole("row", { name: /Pro plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => owner.locator('[data-slot="pane-body"]').last().evaluate((body) => body.scrollWidth - body.clientWidth)).toBeLessThanOrEqual(0);

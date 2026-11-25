@@ -271,7 +271,7 @@ the list picks none to approve at once.
   under group labels: its status first (Draft, or Published and the date), its tags as chips, the posts it completes
   ("Link post…"), its merged pull requests (each a `PR #41` chip as Autopilot shows them, its title beside it; a draft's taken out with ×,
   their line with them, and "Add changes…" listing the ones no entry has, ticked unless Autopilot found nothing for
-  users in them, with what their analyses cost where AI credits are on; a published entry's listed as they shipped),
+  users in them, with what their analyses cost where credits are on; a published entry's listed as they shipped),
   how it's announced (Email subscribers, Mark it new, one short line each: picked
   there, so Publish only confirms; published, what happened, said once, and how many people who asked were told).
   Once it's published, "View on portal" is in the header's More actions, as on a post's page. Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under

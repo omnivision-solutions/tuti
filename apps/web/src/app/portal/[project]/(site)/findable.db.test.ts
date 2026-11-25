@@ -362,7 +362,8 @@ test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts
   expect(urls).toContain(`${portal}/docs/inviting-your-team`);
   expect(urls).toContain(`${portal}/feedback/feature-requests/post-50000`);
   expect(urls).not.toContain(`${portal}/feedback/feature-requests/post-1`);
-});
+  // 50,000 rows inserted and a 50,000-URL sitemap built: 3–5 s on a busy runner, at the 5 s default.
+}, 20_000);
 
 test("robots.txt welcomes crawlers and points to the sitemap", async () => {
   const project = await docsContents();

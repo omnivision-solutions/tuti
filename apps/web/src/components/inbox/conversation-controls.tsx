@@ -285,7 +285,7 @@ export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: 
   );
 }
 
-/** "Summarize": the AI's summary of the conversation, added as a note (disabled while the project is out of AI credits). */
+/** "Summarize": the AI's summary of the conversation, added as a note (disabled while the project is out of credits). */
 export function SummarizeButton({ projectSlug, number, paused }: Props & { paused: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
@@ -302,7 +302,7 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
         })
       }
     >
-      {pending ? "Summarizing…" : paused ? "Summarize with AI: out of AI credits" : "Summarize with AI"}
+      {pending ? "Summarizing…" : paused ? "Summarize with AI: out of credits" : "Summarize with AI"}
     </DropdownMenuItem>
   );
 }

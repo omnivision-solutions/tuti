@@ -6,7 +6,7 @@ import { defineOperation } from "./define";
 
 /** What the project's AI use cost (docs/plan.md, AI usage per project), month by month. */
 
-/** `credits`: what was charged, with AI credits on. */
+/** `credits`: what was charged, with credits on. */
 type Totals = { requests: number; inputTokens: number; outputTokens: number; cost: number; credits: number; unpriced: number };
 export type UsageMonth = Totals & { month: string; features: (Totals & { feature: UsageFeature })[] };
 
@@ -48,16 +48,16 @@ export async function aiUsageByMonth(projectId: string, months: number): Promise
   return [...byMonth.values()];
 }
 
-/** A month's use as the team sees it: with AI credits on, what it was charged in credits, and not what the models cost the server. */
+/** A month's use as the team sees it: with credits on, what it was charged in credits, and not what the models cost the server. */
 const forTeam = <T extends Totals>({ cost, credits, ...totals }: T) => (creditsEnabled() ? { ...totals, credits } : { ...totals, cost });
 
-/** A month's or a feature's totals, as getUsage returns them: the cost, or with AI credits on, the credits charged. */
+/** A month's or a feature's totals, as getUsage returns them: the cost, or with credits on, the credits charged. */
 const usageTotals = z.object({
   requests: z.number().int().describe("Requests to the AI").meta({ examples: [128] }),
   inputTokens: z.number().int().describe("Tokens sent to the model").meta({ examples: [512000] }),
   outputTokens: z.number().int().describe("Tokens the model wrote").meta({ examples: [64000] }),
-  cost: z.number().optional().describe("What it cost in dollars, by its provider's price (left out on a server with AI credits)").meta({ examples: [1.84] }),
-  credits: z.number().optional().describe("The AI credits charged, on a server with AI credits, instead of the cost").meta({ examples: [184] }),
+  cost: z.number().optional().describe("What it cost in dollars, by its provider's price (left out on a server with credits)").meta({ examples: [1.84] }),
+  credits: z.number().optional().describe("The credits charged, on a server with credits, instead of the cost").meta({ examples: [184] }),
   unpriced: z.number().int().describe("Requests whose provider gave no price, so the cost leaves them out").meta({ examples: [0] }),
 });
 

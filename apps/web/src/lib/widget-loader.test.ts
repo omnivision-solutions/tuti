@@ -2077,3 +2077,55 @@ test("a page view told an older answer (reused by the browser) records the visit
   await settled();
   expect(next.popup).toBeDefined();
 });
+
+test("a public portal with a newer announcement for some reader groups: someone signed in who may read it gets the dot, nobody else, and the popup doesn't show everyone's older one as new", async () => {
+  const GROUPS = { ...ANNOUNCED, groups: true };
+  const newer = "2026-10-20T10:00:00.000Z";
+  // Seen everyone's here already; the person's own latest is the newer group entry.
+  const member = loadWidget({ settings: { identify: token }, latest: GROUPS, privateLatest: newer, seenHere: ANNOUNCED.latest, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  const outside = loadWidget({ settings: { identify: token }, latest: GROUPS, privateLatest: ANNOUNCED.latest, seenHere: ANNOUNCED.latest });
+  const anonymous = loadWidget({ latest: GROUPS, seenHere: ANNOUNCED.latest });
+  await settled();
+  expect(member.Tuti.unseen()).toBe(true);
+  expect(member.popup).toBeUndefined();
+  expect(outside.Tuti.unseen()).toBe(false);
+  expect(anonymous.Tuti.unseen()).toBe(false);
+  expect(anonymous.seenRequests).toEqual([]);
+  // Without the flag, a signed-in visitor who's seen everyone's isn't asked about it.
+  const plain = loadWidget({ settings: { identify: token }, latest: ANNOUNCED, privateLatest: newer, seenHere: ANNOUNCED.latest });
+  await settled();
+  expect(plain.Tuti.unseen()).toBe(false);
+});
+
+test("a newer announcement for some groups lit for one person stops showing for the next, or once they're signed out; signed in after load, it's checked", async () => {
+  const GROUPS = { ...LATEST, groups: true };
+  const newer = "2026-10-20T10:00:00.000Z";
+  const page = loadWidget({ settings: { identify: (() => Promise.resolve("ada")) as never }, latest: GROUPS, privateLatest: (who) => Promise.resolve(who === "ada" ? newer : LATEST.latest), seenHere: LATEST.latest });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => Promise.resolve("bob"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  page.Tuti.identify(() => Promise.resolve("ada"));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => Promise.resolve(""));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+
+  // Signed in only after the page loaded.
+  const later = loadWidget({ latest: GROUPS, privateLatest: newer, seenHere: LATEST.latest });
+  await settled();
+  expect(later.Tuti.unseen()).toBe(false);
+  later.Tuti.identify(token);
+  await settled();
+  expect(later.Tuti.unseen()).toBe(true);
+});
+
+test("with no announcement for everyone, a member's own newer one for their groups lights their dot", async () => {
+  const member = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, groups: true }, privateLatest: "2026-10-20T10:00:00.000Z" });
+  const outside = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, groups: true }, privateLatest: null });
+  await settled();
+  expect(member.Tuti.unseen()).toBe(true);
+  expect(outside.Tuti.unseen()).toBe(false);
+});

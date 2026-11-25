@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo } from "react-native";
 
-import ConversationRoute from "@/app/conversation/[number]";
+import ConversationRoute, { ConversationPane } from "@/app/conversation/[number]";
+import { onForgetChosen } from "@/lib/layout";
 import { ApiError } from "@/lib/api";
 import { cached, cacheGeneration, conversationKey, forgetCached, keep, startCache } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
@@ -13,16 +14,24 @@ jest.mock("expo-router", () => {
   return {
     Stack: { Screen: () => null },
     useLocalSearchParams: () => ({ number: "12" }),
-    router: { back: jest.fn(), canGoBack: () => true },
+    router: { back: jest.fn(), canGoBack: () => true, dismissTo: jest.fn() },
     // Focused once it's on screen, and again when the test says it came back (`mockFocus`).
     useFocusEffect: (effect: () => void) => {
       mockFocus = effect;
-      React.useEffect(() => effect(), [effect]);
+      // Not run while something is over the screen (`mockCovered`: the details sheet).
+      React.useEffect(() => (mockCovered ? undefined : effect()), [effect, mockCovered]);
     },
   };
 });
 let mockFocus: (() => void) | null = null;
-jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
+let mockCovered = false;
+jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 120 }));
+// A plain view with its props, so a test reads the offset it was given.
+jest.mock("react-native/Libraries/Components/Keyboard/KeyboardAvoidingView", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return { __esModule: true, default: (props: object) => React.createElement(View, { ...props, testID: "keyboard-avoiding" }) };
+});
 jest.mock("expo-symbols", () => ({ SymbolView: () => null }));
 jest.mock("expo-image-picker", () => ({ UIImagePickerPreferredAssetRepresentationMode: { Compatible: "compatible" } }));
 jest.mock("expo-document-picker", () => ({}));
@@ -257,5 +266,118 @@ describe("reading offline", () => {
     await render(<ConversationRoute />);
     expect(await screen.findByText("Conversation not found.")).toBeTruthy();
     expect(screen.queryByText("Hi! The export stops at 500 rows.")).toBeNull();
+  });
+});
+
+describe("in a wide window (a tablet, a foldable opened)", () => {
+  const window = globalThis as unknown as { mockWindow: { width: number; height: number } };
+  const narrow = { ...window.mockWindow };
+  const dismissTo = () => jest.requireMock<{ router: { dismissTo: jest.Mock } }>("expo-router").router.dismissTo;
+  beforeEach(() => {
+    forgetDrafts();
+    dismissTo().mockClear();
+    mockApi.mockImplementation(async (path) => (path === "/conversations/12" ? conversation([message({})]) : {}));
+  });
+  afterEach(() => void (window.mockWindow = narrow));
+
+  it("hands the conversation to the Inbox, beside its list, however it was opened (a link, a notification)", async () => {
+    window.mockWindow = { ...narrow, width: 1280, height: 800 };
+    await render(<ConversationRoute />);
+    expect(dismissTo()).toHaveBeenCalledWith({ pathname: "/", params: { c: "12", p: "acme" } });
+    expect(screen.queryByText("Hi! The export stops at 500 rows.")).toBeNull();
+  });
+
+  it("hands it over when the window widens with it open (a foldable opened)", async () => {
+    const view = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    expect(dismissTo()).not.toHaveBeenCalled();
+
+    window.mockWindow = { ...narrow, width: 900, height: 1280 };
+    await view.rerender(<ConversationRoute />);
+    expect(dismissTo()).toHaveBeenCalledWith({ pathname: "/", params: { c: "12", p: "acme" } });
+  });
+
+  it("empties the pane, rather than going back, once a Send and close has closed it", async () => {
+    window.mockWindow = { ...narrow, width: 1280, height: 800 };
+    const closing: Unsent = { id: "u1", body: "Thanks!", note: false, close: true, files: [], seen: "2026-11-25T09:00:00.000Z", error: NETWORK };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
+    mockApi.mockImplementation((path) => (path === "/conversations/12" ? Promise.resolve(conversation([message({}), first], "waiting")) : Promise.resolve({})));
+    const back = jest.requireMock<{ router: { back: jest.Mock } }>("expo-router").router.back;
+    back.mockClear();
+    const leave = jest.fn();
+    await render(<ConversationPane number={12} onLeave={leave} />);
+    await screen.findByText(CLOSE_LEFT);
+
+    // Retry closes it (the reply had arrived): done with.
+    await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => {});
+    expect(leave).toHaveBeenCalled();
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it("shows the conversation again when the window narrows before the hand-off has taken it", async () => {
+    const view = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    window.mockWindow = { ...narrow, width: 900, height: 1280 };
+    await view.rerender(<ConversationRoute />);
+    expect(dismissTo()).toHaveBeenCalled();
+
+    // Folded back before the Inbox came to the front (dismissTo hasn't popped it here).
+    window.mockWindow = narrow;
+    await view.rerender(<ConversationRoute />);
+    expect(await screen.findByText("Hi! The export stops at 500 rows.")).toBeTruthy();
+  });
+
+  it("waits, when the window widens with the details sheet over it, till the sheet has closed to hand it over", async () => {
+    const view = await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    mockCovered = true;
+    try {
+      window.mockWindow = { ...narrow, width: 1280, height: 800 };
+      await view.rerender(<ConversationRoute />);
+      expect(dismissTo()).not.toHaveBeenCalled();
+      // Still under the sheet, and seen again as it closes: never blank meanwhile.
+      expect(screen.getByText("Hi! The export stops at 500 rows.")).toBeTruthy();
+    } finally {
+      mockCovered = false;
+    }
+    await view.rerender(<ConversationRoute />);
+    expect(dismissTo()).toHaveBeenCalledWith({ pathname: "/", params: { c: "12", p: "acme" } });
+    expect(screen.queryByText("Hi! The export stops at 500 rows.")).toBeNull();
+  });
+
+  it("keeps the composer on the keyboard in the pane on iOS: the Inbox already put it under the header", async () => {
+    window.mockWindow = { ...narrow, width: 1280, height: 800 };
+    const view = await render(<ConversationPane number={12} onLeave={() => {}} />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    expect(screen.getByTestId("keyboard-avoiding").props.keyboardVerticalOffset).toBe(0);
+    await view.unmount();
+
+    // Its own screen still lifts it by the header it's under.
+    window.mockWindow = narrow;
+    await render(<ConversationRoute />);
+    await screen.findByText("Hi! The export stops at 500 rows.");
+    expect(screen.getByTestId("keyboard-avoiding").props.keyboardVerticalOffset).toBe(120);
+  });
+
+  it("forgets a conversation chosen beside the Inbox when it opens on its own (a narrow window)", async () => {
+    const forgotten = jest.fn();
+    const stop = onForgetChosen(forgotten);
+    try {
+      await render(<ConversationRoute />);
+      await screen.findByText("Hi! The export stops at 500 rows.");
+      expect(forgotten).toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+
+  it("draws its own header beside the list: who it's with and where it stands, each opening the details", async () => {
+    window.mockWindow = { ...narrow, width: 1280, height: 800 };
+    await render(<ConversationPane number={12} onLeave={() => {}} />);
+    expect(await screen.findByText("Hi! The export stops at 500 rows.")).toBeTruthy();
+    expect(screen.getByRole("header", { name: /^Maya Chen/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Open, unassigned, details$/ })).toBeTruthy();
+    expect(dismissTo()).not.toHaveBeenCalled();
   });
 });

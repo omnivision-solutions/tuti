@@ -199,7 +199,7 @@ test("one article failing doesn't stop the rest", async () => {
   expect((await runs(all.id)).map((run) => run.state)).toEqual(["FAILED", "DONE"]);
 });
 
-test("with AI credits on, running out partway stops it, saying how far it got", async () => {
+test("with credits on, running out partway stops it, saying how far it got", async () => {
   vi.stubEnv("TUTI_CONFIG", creditsOn());
   await published("Seats");
   await published("Billing");
@@ -208,12 +208,12 @@ test("with AI credits on, running out partway stops it, saying how far it got", 
   await grantCredits(project.id, "MANUAL", 0.01, { days: null });
   replies("Seats", OUTDATED);
   const all = await verifiedAll();
-  expect(all).toMatchObject({ state: "stopped", checked: 1, total: 3, fixed: 1, reason: "It stopped after checking 1 of 3 articles: the project ran out of AI credits." });
+  expect(all).toMatchObject({ state: "stopped", checked: 1, total: 3, fixed: 1, reason: "It stopped after checking 1 of 3 articles: the project ran out of credits." });
   expect(await prisma.articleVerification.count({ where: { projectId: project.id } })).toBe(1);
   // Owners still hear of what it fixed, once, with where it stopped.
   const summary = summaries();
   expect(summary).toHaveLength(1);
-  expect(summary[0]!.text).toContain("ran out of AI credits");
+  expect(summary[0]!.text).toContain("ran out of credits");
   // Out of credits from the start, it's refused.
   await expect(call(verifyAll, team(), {})).rejects.toMatchObject({ status: 402 });
 });

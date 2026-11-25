@@ -37,7 +37,7 @@ export async function takeBackCharge(chargeId: string): Promise<void> {
   }
   if (grant) {
     const credits = await takeBackCredits(grant.id, share);
-    log.info("AI credits taken back for a refunded or disputed payment", { projectId: grant.projectId, charge: charge.id, credits });
+    log.info("Credits taken back for a refunded or disputed payment", { projectId: grant.projectId, charge: charge.id, credits });
   }
   if (!invoiceId || taken < charge.amount) {
     if (!grant) {

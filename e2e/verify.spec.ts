@@ -174,7 +174,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   const confirm = owner.getByRole("dialog", { name: "Verify all 2 published articles?" });
   await expect(confirm).toContainText("Articles verified at that commit and unchanged since are skipped.");
   // Credits are on (like Tuti's cloud): about 5 an article before the project has run any, of its 1,000 free.
-  await expect(confirm).toContainText("It will cost up to about 10 AI credits: about 5 an article, what a typical article costs. You have 1,000.");
+  await expect(confirm).toContainText("It will cost up to about 10 credits: about 5 an article, what a typical article costs. You have 1,000.");
   await checkpoint(owner, "verify-all-confirm", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "verify-all-confirm-dark", { fullPage: false });

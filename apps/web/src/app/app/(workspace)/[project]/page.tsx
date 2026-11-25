@@ -276,7 +276,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
           title="Paused"
           description={
             included
-              ? "Merged pull requests not analysed yet: the project ran out of AI credits. Resume them once it has more."
+              ? "Merged pull requests not analysed yet: the project ran out of credits. Resume them once it has more."
               : "Merged pull requests not analysed yet: this project's plan doesn't include Autopilot. They wait for it."
           }
           action={included && <ResumeAllButton projectSlug={slug} />}

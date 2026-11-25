@@ -72,6 +72,7 @@ import {
 import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { lookAt } from "@/lib/notifications";
 import { cached, cacheGeneration, conversationKey, isOffline, keep as keepCached, offlineNote, useMinutes } from "@/lib/offline";
+import { forgetChosen, useWide } from "@/lib/layout";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -80,16 +81,47 @@ type Row = { message: Message; index: number } | { unsent: Unsent };
 
 const IOS = Platform.OS === "ios";
 
-// A conversation, opened from the Inbox or a link (`tuti://conversation/12`), in the signed-in teammate's project.
+// A conversation, opened from the Inbox or a link (`tuti://conversation/12`), in the signed-in teammate's project. In a
+// wide window it's shown beside the Inbox instead: whatever opened it (a row, a notification, a link, the details), and
+// when the window widens with it open, it goes back to the Inbox with it chosen.
 export default function ConversationRoute() {
   const { number } = useLocalSearchParams<{ number: string }>();
   const { session } = useSession();
+  const wide = useWide();
+  // Shown until it hands off (one opened in a wide window never is): widened under the details sheet, it stays on screen.
+  const [handingOff, setHandingOff] = useState(wide);
+  // Only while it's in front: with the details sheet over it, once the sheet has closed.
+  useFocusEffect(
+    useCallback(() => {
+      if (wide) {
+        setHandingOff(true);
+        router.dismissTo({ pathname: "/", params: { c: number, p: session?.project } });
+      }
+    }, [wide, number, session?.project]),
+  );
+  // Opened on its own: a choice left over from a wide window is forgotten.
+  useEffect(() => {
+    if (!wide) {
+      forgetChosen();
+    }
+  }, [wide]);
+  // Folded back before the Inbox took it: still its own screen.
+  if (handingOff && wide) {
+    return null;
+  }
   // One screen per conversation: its draft is read once, and goes with it.
   const key = screenKey(session!, number);
   return <ConversationScreen key={key} number={Number(number)} draftKey={key} />;
 }
 
-function ConversationScreen({ number, draftKey }: { number: number; draftKey: string }) {
+/** The conversation beside the Inbox's list (a wide window): its header in the pane, and `onLeave` where a screen goes back. */
+export function ConversationPane({ number, onLeave }: { number: number; onLeave: () => void }) {
+  const { session } = useSession();
+  const key = screenKey(session!, number);
+  return <ConversationScreen key={key} number={number} draftKey={key} pane onLeave={onLeave} />;
+}
+
+function ConversationScreen({ number, draftKey, pane = false, onLeave }: { number: number; draftKey: string; pane?: boolean; onLeave?: () => void }) {
   const colors = useColors();
   const api = useApi();
   const { session } = useSession();
@@ -261,7 +293,10 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       }
     } else {
       const { leave, notice } = afterSend(sent, focused.current);
-      if (leave && router.canGoBack()) {
+      if (leave && pane) {
+        // Answered and closed: done with, the pane emptied.
+        onLeave?.();
+      } else if (leave && router.canGoBack()) {
         // Answered and closed: done with, back to the Inbox.
         router.back();
       } else if (notice) {
@@ -351,18 +386,31 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     : [];
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.card }} behavior="padding" keyboardVerticalOffset={headerHeight}>
-      <Stack.Screen
-        options={{
-          title: person,
-          headerLargeTitleEnabled: false,
-          headerStyle: { backgroundColor: colors.card },
-          headerShadowVisible: true,
-          headerTitle: conversation ? () => <Person conversation={conversation} colors={colors} onPress={details} /> : "",
-          // Once this screen's fetch has answered: what's kept from an earlier visit may be out of date.
-          headerRight: triage && conversation ? () => <Standing triage={triage} colors={colors} onPress={details} /> : undefined,
-        }}
-      />
+    // In the pane on iOS the Inbox's padding already puts it under the header: counted again, the composer floats above the keyboard.
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.card }}
+      behavior="padding"
+      keyboardVerticalOffset={pane && IOS ? 0 : headerHeight}
+    >
+      {pane ? (
+        // Beside the list: its header in the pane, the Inbox's own header above both.
+        <View style={[styles.paneHeader, { borderBottomColor: colors.border }]}>
+          {conversation && <Person conversation={conversation} colors={colors} onPress={details} />}
+          {triage && conversation && <Standing triage={triage} colors={colors} onPress={details} />}
+        </View>
+      ) : (
+        <Stack.Screen
+          options={{
+            title: person,
+            headerLargeTitleEnabled: false,
+            headerStyle: { backgroundColor: colors.card },
+            headerShadowVisible: true,
+            headerTitle: conversation ? () => <Person conversation={conversation} colors={colors} onPress={details} /> : "",
+            // Once this screen's fetch has answered: what's kept from an earlier visit may be out of date.
+            headerRight: triage && conversation ? () => <Standing triage={triage} colors={colors} onPress={details} /> : undefined,
+          }}
+        />
+      )}
       {!conversation ? (
         <View style={styles.center}>
           <Text style={[styles.body, { color: error ? colors.error : colors.muted, textAlign: "center" }]} accessibilityLiveRegion="polite">
@@ -755,6 +803,7 @@ function menu(choices: { label: string; onPress: () => void }[], title?: string)
 }
 
 const styles = StyleSheet.create({
+  paneHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 56, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 32 },
   messages: { paddingHorizontal: 12, paddingVertical: 8 },
   subject: { paddingVertical: 12, gap: 2 },

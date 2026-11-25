@@ -69,7 +69,7 @@ export type DocsAnswer = {
   /**
    * "no_answer": nothing in the docs answers it. "off_limits": the question names a topic the team put
    * off-limits, so the AI wasn't asked. "failed": the AI didn't answer in time; `sources` are the closest articles.
-   * "unavailable": the project's AI is paused (out of AI credits), so the AI wasn't asked; `sources` are the closest articles.
+   * "unavailable": the project's AI is paused (out of credits), so the AI wasn't asked; `sources` are the closest articles.
    */
   status: "answered" | "no_answer" | "off_limits" | "failed" | "unavailable";
   /** Plain text: paragraphs separated by blank lines, "- " list items. */
@@ -331,7 +331,7 @@ export const askDocs = defineOperation({
       status: z
         .enum(["answered", "no_answer", "off_limits", "failed", "unavailable"])
         .describe(
-          "`answered`; `no_answer` (“I don't know”): the docs don't cover it; `off_limits`: it names one of the team's off-limits topics (see assistant.update), so the AI isn't asked; `failed`: the AI didn't answer in time; `unavailable`: the project is out of AI credits, so the AI isn't asked. With `failed` and `unavailable`, `sources` are the closest articles",
+          "`answered`; `no_answer` (“I don't know”): the docs don't cover it; `off_limits`: it names one of the team's off-limits topics (see assistant.update), so the AI isn't asked; `failed`: the AI didn't answer in time; `unavailable`: the project is out of credits, so the AI isn't asked. With `failed` and `unavailable`, `sources` are the closest articles",
         )
         .meta({ examples: ["answered"] }),
       answer: z

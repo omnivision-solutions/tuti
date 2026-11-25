@@ -253,7 +253,7 @@ beforeAll(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   // license.check asks the local site, which has no licence server (its own 404): "unreachable".
   vi.stubEnv("LICENSE_SERVER_URL", site.origin);
-  // Top-ups pay on Stripe: the local fake (with AI credits on, only for credits.topUp; see below).
+  // Top-ups pay on Stripe: the local fake (with credits on, only for credits.topUp; see below).
   stripe = await startStripeFake();
   for (const [name, value] of Object.entries(stripe.env)) {
     vi.stubEnv(name, value);
@@ -571,7 +571,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const input = () => cases[operation.name as OperationName](fixture);
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
-  // AI credits on for buying them only: elsewhere a project with none would be refused its AI. Custom domains on, as above.
+  // Credits on for buying them only: elsewhere a project with none would be refused its AI. Custom domains on, as above.
   vi.stubEnv("TUTI_CONFIG", configFile({ customDomains: { target: "customers.example.net" }, credits: { enabled: operation.name === "credits.topUp" } }));
   vi.stubEnv("BILLING_CONFIG", operation.name === "plan.subscribe" ? billingFile() : "");
   // Email, and Amazon SES for teams' own domains, for the support settings; for a key's escalation, which only email answers.

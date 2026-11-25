@@ -471,7 +471,7 @@ test("in-process, a ruled-out pull request analysed some other way before its tu
   expect(queue.enqueue.mock.calls[0]![1]).toMatchObject({ force: false });
 });
 
-test("what adding costs, said before it's added: with AI credits on, each one's analysis at the models' prices, and the balance; nothing with credits or Autopilot off", async () => {
+test("what adding costs, said before it's added: with credits on, each one's analysis at the models' prices, and the balance; nothing with credits or Autopilot off", async () => {
   const model = await startModelFake();
   try {
     vi.stubEnv("OPENAI_BASE_URL", model.env.OPENAI_BASE_URL!);

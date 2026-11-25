@@ -624,10 +624,10 @@ test("an analysis the AI provider didn't answer says when Autopilot tries again,
   await expect(owner.getByText("The analysis stopped. The AI provider didn't answer.", { exact: true })).toBeVisible();
   await setAnalysis(slug, true);
 
-  // Out of AI credits, it waits for some (whenever it was due).
+  // Out of credits, it waits for some (whenever it was due).
   await spendCredits(slug);
   await owner.reload();
-  await expect(owner.getByText("The analysis stopped. The AI provider didn't answer. Autopilot tries again once the project has AI credits.", { exact: true })).toBeVisible();
+  await expect(owner.getByText("The analysis stopped. The AI provider didn't answer. Autopilot tries again once the project has credits.", { exact: true })).toBeVisible();
 
   await setPullRequestState(slug, number, "FAILED", "The AI provider didn't answer. Autopilot tried again 3 times, then gave up.");
   await owner.reload();

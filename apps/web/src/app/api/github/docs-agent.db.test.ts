@@ -1415,7 +1415,7 @@ describe("the check before an edit is proposed (E5)", () => {
     });
   });
 
-  test("out of AI credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
+  test("out of credits by the time it's checked, the edit isn't reviewed and waits for a person", async () => {
     vi.stubEnv("TUTI_CONFIG", creditsOn());
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     pullRequest(88);
@@ -1426,6 +1426,6 @@ describe("the check before an edit is proposed (E5)", () => {
     model.reply(EDIT, () => prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } }), '"problem"');
     await merge(88);
     expect(reviews()).toEqual([]);
-    expect(await edit(88)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: AI credits ran out when it was written" });
+    expect(await edit(88)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: credits ran out when it was written" });
   });
 });

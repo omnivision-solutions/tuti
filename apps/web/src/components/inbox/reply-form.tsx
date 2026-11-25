@@ -25,8 +25,8 @@ type Kind = "reply" | "note";
 const TAB =
   "-mb-px inline-flex items-center gap-1.25 rounded-none border-b-2 border-transparent px-0.5 py-2 text-xs leading-5 data-active:border-primary data-active:bg-transparent data-active:font-semibold data-active:shadow-none dark:data-active:bg-transparent";
 
-/** Why Draft with AI is off, while the project is out of AI credits. */
-const PAUSED = "This project is out of AI credits";
+/** Why Draft with AI is off, while the project is out of credits. */
+const PAUSED = "This project is out of credits";
 
 /**
  * What's written in each conversation's reply and note, the files attached that had uploaded (and the names of those
@@ -62,7 +62,7 @@ export function ReplyForm({
   number: number;
   /** When the latest message on the page was written (ISO): the user writing after it keeps the conversation open. */
   seen?: string;
-  /** "Draft with AI": shown when the server has AI and docs search ("on"), disabled while the project is out of AI credits ("paused"). */
+  /** "Draft with AI": shown when the server has AI and docs search ("on"), disabled while the project is out of credits ("paused"). */
   draftWithAi?: "on" | "paused" | "off";
   /** "Insert article": shown when the project has published articles a link can go to. */
   articles?: boolean;
@@ -354,7 +354,7 @@ export function ReplyForm({
                     </span>
                   )}
                 </TooltipTrigger>
-                <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of AI credits" : "Draft with AI"}</TooltipContent>
+                <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of credits" : "Draft with AI"}</TooltipContent>
               </Tooltip>
             )}
           </div>

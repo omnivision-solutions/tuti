@@ -62,7 +62,7 @@ const plan = z
       .default(false)
       .describe("Left off the pricing page and Billing's plans (a default plan nobody picks, such as one a trial ends on); the next plan shown lists everything."),
     featured: z.boolean().default(false).describe("Its card stands out on the pricing page, and its Upgrade is Billing's main button."),
-    monthlyCredits: count.default(0).describe("AI credits each paid month gives (a year: twelve months' worth), with AI credits on."),
+    monthlyCredits: count.default(0).describe("Credits each paid month gives (a year: twelve months' worth), with credits on."),
   })
   .strict();
 
@@ -81,7 +81,7 @@ export const billingSchema = z
       .object({
         plan: z.string().describe("The plan the trial gives: one of the plans."),
         days: days.describe("How long it lasts."),
-        credits: count.default(0).describe("AI credits it gives, expiring when it ends (with AI credits on)."),
+        credits: count.default(0).describe("Credits it gives, expiring when it ends (with credits on)."),
         emails: count.nullable().default(null).describe("The trial's email allowance (trialTerms), for email limits; null: none."),
       })
       .strict()

@@ -55,7 +55,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
   // On a plan without Autopilot it's kept, but can't be analysed again (codeChanges.analyse refuses).
   const { plan, analyseCodeChanges } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, analyseCodeChanges: true } });
   const included = planIncludes(plan, "codeChanges");
-  // A retry waiting, while Autopilot is on and in the plan (else the sweep drops it); out of AI credits, it waits for some
+  // A retry waiting, while Autopilot is on and in the plan (else the sweep drops it); out of credits, it waits for some
   // (the sweep skips it till then), whenever it's due.
   const retryAt = codeChangesEnabled() && analyseCodeChanges && included ? change.retryAt : null;
   const retryWaits = retryAt !== null && (await aiPaused(membership.project.id));
@@ -153,10 +153,10 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
               <AlertDescription className="flex flex-col items-start gap-2">
                 <span>
                   {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
-                  {/* The provider didn't answer: tried again by itself, "today at 3:10 pm" in the reader's time; out of AI credits, once there are some. */}
+                  {/* The provider didn't answer: tried again by itself, "today at 3:10 pm" in the reader's time; out of credits, once there are some. */}
                   {retryAt &&
                     (retryWaits ? (
-                      " Autopilot tries again once the project has AI credits."
+                      " Autopilot tries again once the project has credits."
                     ) : (
                       <>
                         {" "}
