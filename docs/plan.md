@@ -1063,6 +1063,45 @@ Decided (2026-11-25):
 - [ ] S5. A private portal's changelog emailed to its readers: subscribers who can read it, with the form for signed-in readers
 - [ ] S6. Email-only entries: emailed to subscribers, listed nowhere, its page only for the team
 
+## Languages: the portal in more than one language (asked 2026-11-25)
+
+A team whose customers read other languages has one help center, changelog and portal in its own, and nothing to offer the rest: Ferndesk and Featurebase translate a help center with AI and a glossary, Mintlify keeps a folder per language. A project gets a default language and others: its portal (feedback, roadmap, changelog, help center, API reference, sign-in and account pages, the widget, and emails to readers) is served in each, and its articles, changelog entries and labels are translated by AI and kept up to date, or written by the team. The app (the team's side) stays English.
+
+Decided (2026-11-25):
+- **Addresses.** The default language keeps today's addresses; another gets a prefix (`/de/docs/<slug>`, under a site path or custom domain too). One slug for every language. `hreflang` and `x-default` on every page, sitemap alternates, `/de/llms.txt`.
+- **The reader's language.** A switcher in the portal's header (shown with more than one language live) sets it, kept in a cookie and on a signed-in reader. "Send visitors to their language" (off by default) sends a first visit to the portal's home by `Accept-Language`; never on other pages. The widget takes the SDK's `locale`, else the browser's.
+- **A language goes live when switched on**, so the team can check it first.
+- **Automatic or manual, per language version.** Each language has a default for new pages (Automatic or Manual). Every translation is edited like a normal article or entry; each language version of an article, entry or label has "Keep up to date": on, the editor says the next publish in the default language replaces edits made there; off, they are kept, and once the source changes it says so and offers to update only the sections that changed.
+- **A page not yet translated** shows the default language's version, with a line saying it isn't in the reader's language yet (Featurebase hides it, Mintlify 404s). Never a missing page.
+- **Glossary and instructions.** Terms never translated, or translated one way per language, and instructions per language ("Use du"). After translating, a check that each term came out as set (one retry, else the translation is flagged). Changing a term retranslates the automatic versions that use it, nothing else.
+- **Never sent for translation:** code, inline code, links' addresses, mentions, files. Only text is, block by block, so a translation keeps the content's structure.
+- **Paid in AI credits, languages by plan.** Translating is an AI role (`translation`, Settings → AI models), recorded and charged in AI credits as "Translation" by characters; only changed sections are sent again. The number of languages, the default included, is a plan limit (`languages` in the billing config): Starter 1, Growth 3, Scale 10; no limit without a billing config. Past it, Add language offers the upgrade; after a downgrade the newest languages go offline, kept, until an upgrade or the team removes some.
+- **The portal's own text** comes in de, fr, es, pt-BR, it, nl, ja, ko, zh-CN and pl first: message files in the repo (`next-intl`, without its routing: `proxy.ts` routes), written once with AI and checked. Dates and numbers through `Intl`. Teams can't reword single lines of it yet.
+- **Not now:** the app in other languages; posts, comments and conversations (people's own words); translated slugs; a history of a translation's versions (each knows the source version it was made from).
+
+Screens (mocked 2026-11-25; the mockups are the templates):
+- **Portal header:** a globe and the language's own name ("🌐 Deutsch ▾") between search and Sign in, opening a menu of the live languages by their own names, the current one ticked. On phones in the menu.
+- **Settings → Languages,** under Portal after SEO (settings rows): Default language (a select: "What your team writes in. Its pages keep their addresses."); Other languages, "+ Add language" beside the heading, a row each with its code tile, name, "Automatic · all 42 pages translated" / "Manual · 3 of 42 translated · 1 behind English", a Live switch and a ⋯ menu (New pages: Automatic or Manual; Instructions; Retranslate automatic pages; Remove); Translating: Glossary (count, Edit), Send visitors to their language (switch), This month (characters and AI credits).
+- **Glossary** (from Languages): a table of terms, a column per language, "Never translated" across a row or a word per language ("Model decides" when empty); + Add term, Save; "Changing a term retranslates the automatic pages that use it."
+- **Article editor:** a language pill after the back link ("English ▾"), a menu of the versions with a dot and their state (Default · Published; Automatic · up to date; translating…; English changed). On an automatic version a green line over the text: "Translated automatically from English. You can edit it, but publishing English again replaces your edits here." with the Keep up to date switch; with it off and English changed, an orange line "English changed in 2 sections since this was edited." with Show changes and Update those sections.
+- **Changelog entry:** the same pill, and Languages in the sidebar: each language with its dot and state.
+- **Collection, tab, board and status settings:** a Translations group after Details, a row per language (name and description, Automatic or edited, Edit; "Not translated: readers see the English name", Add).
+- **API reference pages and the widget:** nothing new; their words in the reader's language.
+
+- [ ] L1. Project languages: the default and the others (each with its default mode, instructions and live switch) in the database, `languages.get` and `languages.update`, and the `languages` plan limit
+- [ ] L2. Settings → Languages, without the glossary
+- [ ] L3. Addresses: `proxy.ts` takes a live language's prefix off the path and passes it to the pages (as a site path is); `portalHref` and `usePortalHref` add it back; `<html lang>`, `hreflang`, sitemap alternates, per-language `llms.txt`
+- [ ] L4. `next-intl` and message files for the launch languages, the header's switcher, the reader's language (cookie, signed-in reader), Send visitors to their language
+- [ ] L5. The portal's own text, a screen per PR (parallel): header, nav and footer; Feedback, boards and posts; roadmap; changelog pages; docs home, article and search; AI answers; sign-in, sign-up, password and account pages; the widget; API reference pages; emails to readers (in their language)
+- [ ] L6. Article translations: `article_translation` (language, title, description, keywords, content, body, keep up to date, the source revision, section hashes, published and draft) and the `translate` job (on publish, adding a language, Retranslate), the `translation` AI role and its AI credits, the glossary check
+- [ ] L7. The portal reads them: translated articles, collections and tabs' names; the not-yet-translated line; search with each language's stemmer (`simple` where Postgres has none); sections and embeddings per language, so AI answers cite the reader's language
+- [ ] L8. The article editor's language pill: editing a version, Keep up to date, Update those sections
+- [ ] L9. Glossary and instructions: the screen, the check, retranslating what a changed term touches
+- [ ] L10. Labels: collection and tab settings' Translations, then boards and statuses, then nav, docs home and widget text
+- [ ] L11. Changelog: `changelog_translation`, the editor's pill and sidebar, translated before it's announced, subscribers emailed in their language
+- [ ] L12. API references: the spec's words translated on sync, only what changed; paths, names, code and examples never
+- [ ] L13. Imports bring their other languages as translations (Featurebase, Ferndesk, Intercom), Keep up to date off
+
 ## Later
 
 - [ ] The app host's hourly limit on emailed links (`SIGN_IN_LINKS_PER_PORTAL_PER_HOUR`, shared by password resets) is one count for the whole server: on a server with many teams it wants a limit of its own, or none beside the per-address and per-visitor ones
@@ -1074,8 +1113,6 @@ Decided (2026-11-25):
 - [ ] More sources: GitLab, Linear, Jira; Slack notifications
 - [ ] Turbo cache in CI, once jobs get slow (each takes 1–2 minutes now)
 - [ ] Preview deployments per PR
-- [ ] Featurebase's help center in its other languages (the import brings its default locale only), once articles keep a locale
-- [ ] AI translations of the help center and widget, with a glossary; keep a locale on articles from the start (from the Ferndesk review, 2026-10-19)
 - [x] Featurebase's changelog as a part of the import (entries with their dates, covers and linked posts; subscribers with Contacts; nothing emailed), once I1–I5 are in. Done (2026-11-06): the `changelog` part (`@tuti/jobs` import-changelog.ts; checked by reading `/changelogs` once), written straight to the database as sample content is (nothing announced, emailed or sent to webhooks): entries in date order (numbered so), ten a page, published at their date or drafts as drafts, content through `htmlToContent("changelog")` with images copied, the featured image as the cover, categories as tags by their words (new, improved, fixed, breaking; others none), one Featurebase emailed to subscribers marked emailed (`subscribersEmailedAt`) so publishing it again doesn't email it twice; entries only some segments or roles see left out, and comments on entries counted (Tuti's changelog has none). Not brought: linked posts and subscribers, which Featurebase's API doesn't list
 - [ ] A generic "support endpoint" (JSON of conversations) as a source for docs gaps, before any native helpdesk integration (from the Ferndesk review, 2026-10-19)
 - [ ] Slack and Linear: start an agent task ("draft docs from this thread") (from the Ferndesk review, 2026-10-19)
