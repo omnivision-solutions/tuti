@@ -35,6 +35,10 @@ describe("the app's Expo config", () => {
     expect(eas.build.production!.distribution).toBeUndefined();
   });
 
+  it("declares the app exempt from export compliance: its only encryption is the system's HTTPS", () => {
+    expect(appConfig({}).ios?.infoPlist?.ITSAppUsesNonExemptEncryption).toBe(false);
+  });
+
   it("takes an empty variable as not set", () => {
     const config = appConfig({ EXPO_OWNER: "", EAS_PROJECT_ID: "", APP_ID: "" });
     expect(config.owner).toBeUndefined();

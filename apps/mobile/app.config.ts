@@ -20,7 +20,12 @@ export function appConfig(env: Env): ExpoConfig {
     orientation: "default",
     userInterfaceStyle: "automatic",
     icon: "./assets/icon.png",
-    ios: { bundleIdentifier: appId, supportsTablet: true },
+    ios: {
+      bundleIdentifier: appId,
+      supportsTablet: true,
+      // Export compliance: exempt. The app's only encryption is the system's HTTPS; it has none of its own.
+      infoPlist: { ITSAppUsesNonExemptEncryption: false },
+    },
     android: {
       package: appId,
       // Firebase's config for this app id, which Android's push tokens need: a file EAS keeps with the build (M10), never this directory.
