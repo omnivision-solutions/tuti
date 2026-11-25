@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, type ReadAccessDraft, WhoCanRead } from "@/components/who-can-read";
-import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
+import { embedNote, type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
 import type { Access, WithoutAccess } from "@/lib/read-access";
 import { saveArticleSettings } from "@/server/docs";
@@ -320,10 +320,7 @@ function SavedSettings({
           <FieldLegend>Embed</FieldLegend>
           <FieldDescription>
             Open this article in the widget from your app. Its ID never changes, so links keep working if you rename it.
-            {/* The widget opens only an article with a page: published, listed Everywhere or Unlisted (as saved). */}
-            {!article.published
-              ? " It opens once the article is published."
-              : (article.listing === "hidden" || article.listing === "ai_only") && ` It doesn't open while the article is ${LISTING_LABELS[article.listing]}.`}
+            {embedNote(article.published, article.listing)}
           </FieldDescription>
           <CopyField label="Article ID" value={article.id} name="article ID" />
           <CopyField label="Help button" value={`<button type="button" data-tuti-article="${article.id}">Help</button>`} name="help button" />
