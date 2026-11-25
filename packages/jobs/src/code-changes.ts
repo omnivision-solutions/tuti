@@ -445,7 +445,7 @@ export async function retryCodeChanges(now = new Date()): Promise<JobResult> {
           // On Hatchet, queueing failed: due again, for the next sweep (inline, the analysis itself failed, and says so).
           if (process.env.JOBS_DRIVER !== "inline") {
             queued--;
-            await prisma.codeChange.updateMany({ where: { id: change.id, retryAt: null }, data: { retryAt: change.retryAt } });
+            await prisma.codeChange.updateMany({ where: { id: change.id, state: change.state, retryAt: null }, data: { retryAt: change.retryAt } });
           }
           log.error("Queueing a pick's run failed", { error, codeChangeId: change.id });
         });
