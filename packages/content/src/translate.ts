@@ -1,0 +1,379 @@
+import type { JSONContent } from "@tiptap/core";
+
+import type { Doc } from "./document";
+
+/*
+ * Translating a document without letting the model touch its structure (docs/plan.md, Languages). The model only
+ * ever sees text: each block of text (a paragraph, heading, step title, summary, table cell's paragraph) becomes one
+ * segment, its bold, italic and links as numbered tags it may move to fit the language's word order, and anything
+ * that must not change (inline code, inline nodes) as a placeholder. Blocks, lists, tables, images, code blocks and
+ * every attribute stay in the original document; each segment's translation is checked (every tag and placeholder
+ * exactly once, nested, none empty; glossary terms as set) and put back in place of the block's text. A segment that
+ * fails keeps its source text and is reported, so a reply can never break the document.
+ *
+ * The same functions translate plain text (Inbox messages): URLs, email addresses and `code` become placeholders.
+ */
+
+export type Segment = { id: string; text: string };
+export type GlossaryTerm = { term: string; translation?: string };
+export type Problem = { id: string; reason: string };
+
+/** Text blocks: their content is inline, and each is one segment. Code blocks are never translated. */
+const TEXT_BLOCKS = new Set(["paragraph", "heading", "stepTitle", "detailsSummary"]);
+/** Marks the model sees as tags, outermost first (so tags nest the same way every time). Anything else is kept whole. */
+const TAG_LETTER: Record<string, string> = { link: "a", bold: "b", italic: "i", strike: "s", underline: "u" };
+const MARK_ORDER = Object.keys(TAG_LETTER);
+
+const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const unescape = (text: string) => text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+type Mark = NonNullable<JSONContent["marks"]>[number];
+const key = (mark: Mark) => JSON.stringify([mark.type, mark.attrs ?? {}]);
+/** Whether text has anything to translate: a letter outside tags and placeholders. */
+const hasWords = (tagged: string) => /\p{L}/u.test(tagged.replace(/<[^>]*>/g, "").replace(/&\w+;/g, ""));
+
+type Slot = { id: string; source: string; apply: (text: string) => string | null };
+
+/** A text block's inline content as tagged text, and how to read a translation of it back into inline content. */
+function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: string) => JSONContent[] | string } {
+  const tags = new Map<number, Mark>(); // tag number → its mark
+  const kept = new Map<number, JSONContent>(); // placeholder number → the node, as it was
+  let n = 0;
+  let out = "";
+  let open: { key: string; id: number; letter: string }[] = [];
+  const close = (to: number) => {
+    while (open.length > to) {
+      const tag = open.pop()!;
+      out += `</${tag.letter}${tag.id}>`;
+    }
+  };
+  for (const node of nodes) {
+    const tagged = (node.marks ?? []).filter((mark) => mark.type! in TAG_LETTER).sort((a, b) => MARK_ORDER.indexOf(a.type!) - MARK_ORDER.indexOf(b.type!));
+    const wanted = tagged.map(key);
+    let same = 0;
+    while (same < open.length && same < wanted.length && open[same]!.key === wanted[same]) same++;
+    close(same);
+    for (const mark of tagged.slice(same)) {
+      const id = ++n;
+      tags.set(id, mark);
+      open.push({ key: key(mark), id, letter: TAG_LETTER[mark.type!]! });
+      out += `<${TAG_LETTER[mark.type!]}${id}>`;
+    }
+    const whole = node.type !== "text" || (node.marks ?? []).some((mark) => !(mark.type! in TAG_LETTER));
+    if (node.type === "hardBreak") {
+      out += "<br/>";
+    } else if (whole) {
+      const id = ++n;
+      kept.set(id, node);
+      out += `<x${id}/>`;
+    } else {
+      out += escape(node.text ?? "");
+    }
+  }
+  close(0);
+
+  const decode = (text: string): JSONContent[] | string => {
+    const result: JSONContent[] = [];
+    const stack: { id: number; letter: string; length: number }[] = [];
+    const seenTags = new Set<number>();
+    const seenKept = new Set<number>();
+    let last = 0;
+    const pushText = (raw: string) => {
+      const value = unescape(raw);
+      if (!value) return;
+      const marks = stack.map((tag) => tags.get(tag.id)!);
+      const prev = result.at(-1);
+      if (prev?.type === "text" && !prev.marks?.some((m) => !(m.type! in TAG_LETTER)) && JSON.stringify(prev.marks ?? []) === JSON.stringify(marks)) {
+        prev.text += value;
+      } else {
+        result.push({ type: "text", text: value, ...(marks.length > 0 && { marks }) });
+      }
+    };
+    for (const match of text.matchAll(/<(\/?)([a-z])(\d+)>|<x(\d+)\/>|<br\s*\/?>/g)) {
+      pushText(text.slice(last, match.index));
+      last = match.index + match[0].length;
+      if (match[0].startsWith("<br")) {
+        result.push({ type: "hardBreak" });
+      } else if (match[4]) {
+        const id = Number(match[4]);
+        if (!kept.has(id) || seenKept.has(id)) return `placeholder x${id} is unknown or repeated`;
+        seenKept.add(id);
+        result.push(structuredClone(kept.get(id)!));
+      } else {
+        const id = Number(match[3]);
+        const letter = match[2]!;
+        if (match[1]) {
+          const top = stack.pop();
+          if (!top || top.id !== id || top.letter !== letter) return `</${letter}${id}> closes a tag that isn't the innermost open one`;
+          if (result.length === top.length) return `<${letter}${id}> is empty`;
+        } else {
+          const mark = tags.get(id);
+          if (!mark || TAG_LETTER[mark.type!] !== letter || seenTags.has(id)) return `<${letter}${id}> is unknown or repeated`;
+          seenTags.add(id);
+          stack.push({ id, letter, length: result.length });
+        }
+      }
+    }
+    pushText(text.slice(last));
+    if (stack.length > 0) return `<${stack[0]!.letter}${stack[0]!.id}> is never closed`;
+    const missingTag = [...tags.keys()].find((id) => !seenTags.has(id));
+    if (missingTag !== undefined) return `<${TAG_LETTER[tags.get(missingTag)!.type!]}${missingTag}> is missing`;
+    const missingKept = [...kept.keys()].find((id) => !seenKept.has(id));
+    if (missingKept !== undefined) return `placeholder <x${missingKept}/> is missing`;
+    if (/[<>]/.test(text.replace(/<(\/?)([a-z])(\d+)>|<x(\d+)\/>|<br\s*\/?>/g, ""))) return "it has a tag that isn't in the source";
+    return result;
+  };
+  return { text: out, decode };
+}
+
+/**
+ * The segments to translate in `doc`, and `apply`, which returns a copy of it with each translated segment in place
+ * (a segment missing from `translations`, or failing its checks, keeps its source text and is in `problems`).
+ */
+export function segmentsOf(doc: Doc): { segments: Segment[]; apply: (translations: Record<string, string>) => { doc: Doc; problems: Problem[] } } {
+  const copy = structuredClone(doc);
+  const slots: Slot[] = [];
+  const visit = (node: JSONContent) => {
+    if (TEXT_BLOCKS.has(node.type ?? "")) {
+      const { text, decode } = encodeInline(node.content ?? []);
+      if (hasWords(text)) {
+        const id = String(slots.length + 1);
+        slots.push({
+          id,
+          source: text,
+          apply: (translated) => {
+            const content = decode(translated);
+            if (typeof content === "string") return content;
+            node.content = content;
+            return null;
+          },
+        });
+      }
+      return;
+    }
+    if (node.type === "image" && typeof node.attrs?.alt === "string" && hasWords(escape(node.attrs.alt))) {
+      const id = String(slots.length + 1);
+      slots.push({
+        id,
+        source: escape(node.attrs.alt),
+        apply: (translated) => {
+          if (/<[^>]*>/.test(translated)) return "an image's description can't have tags";
+          node.attrs!.alt = unescape(translated).trim();
+          return null;
+        },
+      });
+      return;
+    }
+    if (node.type === "codeBlock") return;
+    node.content?.forEach(visit);
+  };
+  visit(copy);
+  let applied = false;
+  return {
+    segments: slots.map(({ id, source }) => ({ id, text: source })),
+    apply: (translations) => {
+      if (applied) throw new Error("apply runs once: segmentsOf again for another language");
+      applied = true;
+      const problems: Problem[] = [];
+      for (const slot of slots) {
+        const translated = translations[slot.id];
+        const reason = translated === undefined ? "no translation" : slot.apply(translated);
+        if (reason) problems.push({ id: slot.id, reason });
+      }
+      return { doc: copy, problems };
+    },
+  };
+}
+
+/** Plain text (an Inbox message) as one segment: line breaks, URLs, email addresses and `code` kept as they are. */
+export function segmentOfText(text: string): { segment: Segment; apply: (translated: string) => string | Problem } {
+  const kept: string[] = [];
+  const tagged = text
+    .split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)/)
+    .map((part, i) => {
+      if (i % 2 === 0) return escape(part).replace(/\r?\n/g, "<br/>");
+      kept.push(part);
+      return `<x${kept.length}/>`;
+    })
+    .join("");
+  return {
+    segment: { id: "1", text: tagged },
+    apply: (translated) => {
+      const seen = new Set<number>();
+      let bad: string | null = null;
+      const out = translated
+        .replace(/<x(\d+)\/>|<br\s*\/?>/g, (match, id?: string) => {
+          if (!id) return "\n";
+          const n = Number(id);
+          if (!kept[n - 1] || seen.has(n)) bad = `placeholder <x${n}/> is unknown or repeated`;
+          seen.add(n);
+          return kept[n - 1] ?? "";
+        })
+        .replace(/&lt;|&gt;|&amp;/g, (entity) => unescape(entity));
+      if (!bad && seen.size !== kept.length) bad = "a placeholder is missing";
+      if (!bad && /<\/?[a-z]+\d*\/?>/i.test(translated.replace(/<x(\d+)\/>|<br\s*\/?>/g, ""))) bad = "it has a tag that isn't in the source";
+      return bad ? { id: "1", reason: bad } : out;
+    },
+  };
+}
+
+/** Where a glossary term must come out in a translated segment: as its translation, or unchanged when it has none. */
+export function glossaryProblems(source: string, translated: string, glossary: GlossaryTerm[]): string[] {
+  const plain = (text: string) => unescape(text.replace(/<[^>]*>/g, " ")).toLowerCase();
+  const [from, to] = [plain(source), plain(translated)];
+  return glossary
+    .filter(({ term }) => contains(from, term.toLowerCase()))
+    .filter(({ term, translation }) => !contains(to, stem((translation ?? term).toLowerCase())))
+    .map(({ term, translation }) => (translation ? `"${term}" must be translated as "${translation}"` : `"${term}" must stay "${term}"`));
+}
+
+/** Whether `text` has a word starting with `term` (so "boards", "Tuti's"), or has it anywhere for scripts without spaces. */
+function contains(text: string, term: string): boolean {
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(term)) return text.includes(term);
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}`, "u").test(text);
+}
+
+/**
+ * A translated term as it may be inflected: a word of 6 letters or more loses its last 2 ("tablica" matches "tablicy").
+ * ponytail: a crude stem, not a per-language one; it can miss a stem change (German umlauts) and accept a near word.
+ */
+const stem = (term: string) => (/^\p{L}{6,}$/u.test(term) ? term.slice(0, -2) : term);
+
+export type TranslateOptions = {
+  /** Language names or BCP 47 codes. `from` unset: the model says which language the text is in (Inbox). */
+  from?: string;
+  to: string;
+  glossary?: GlossaryTerm[];
+  /** The team's own instructions for this language ("Use du, not Sie"). */
+  instructions?: string;
+  /** What the text is (an article's title, "a customer's chat message"), for context. */
+  about?: string;
+  /** The model: one system and one user message in, its reply out (complete, or a fake in tests). */
+  ask: (system: string, user: string) => Promise<string>;
+  /** Earlier translations of segments, by their source text: reused as they are, so only changed text is sent. */
+  memory?: Record<string, string>;
+  /** The most source text sent in one request; more is split into several, each with its neighbours' order kept. */
+  batchChars?: number;
+};
+
+export type Translated = { translations: Record<string, string>; problems: Problem[]; detected?: string; memory: Record<string, string> };
+
+export function translationPrompt({ from, to, glossary = [], instructions, about }: Omit<TranslateOptions, "ask" | "memory" | "batchChars">): string {
+  return [
+    `You translate ${from ? `from ${from} ` : ""}into ${to}. ${about ? `The text is ${about}.` : ""}`,
+    "You get a JSON object of segments by id, in the order they appear; translate each one.",
+    "Segments contain tags: <b1>…</b1> bold, <i2>…</i2> italic, <a3>…</a3> a link, <s4>…</s4> struck out, <u5>…</u5> underlined. Keep every tag exactly once with its number, around the words it belongs to; move it if the language's word order needs. Never leave a tag empty.",
+    "<x6/> is a placeholder for something that is never translated (code, a link, an address): keep each one exactly once, where it belongs. <br/> is a line break: keep it. &lt; &gt; &amp; are the characters < > &: keep them escaped.",
+    "Keep product names, code, commands, file names and keyboard keys as they are. Write naturally, like documentation written in the language, not a word-for-word translation; keep the meaning and the tone (formal or informal) of the source.",
+    glossary.length > 0
+      ? `Glossary, always followed:\n${glossary.map(({ term, translation }) => (translation ? `- "${term}" → "${translation}"` : `- "${term}": never translated`)).join("\n")}`
+      : "",
+    instructions ? `The team's instructions for this language:\n${instructions}` : "",
+    `Reply with JSON only: {${from ? "" : '"language": "<the BCP 47 code of the source language, e.g. de or pt-BR>", '}"segments": {"<id>": "<translation>", …}} with every id.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Translates segments: in batches, each translation checked, and failed ones asked again once with the reasons. */
+export async function translateSegments(segments: Segment[], options: TranslateOptions): Promise<Translated> {
+  const { ask, glossary = [], memory = {}, batchChars = 6000 } = options;
+  const translations: Record<string, string> = {};
+  const todo = segments.filter((segment) => {
+    const known = memory[segment.text];
+    if (known !== undefined) translations[segment.id] = known;
+    return known === undefined;
+  });
+  let detected: string | undefined;
+  const system = translationPrompt(options);
+  const request = async (batch: Segment[], notes?: Map<string, string>) => {
+    const user = JSON.stringify(Object.fromEntries(batch.map(({ id, text }) => [id, text])));
+    const extra = notes ? `\n\nYour last translations of these broke a rule; fix them:\n${[...notes].map(([id, why]) => `- ${id}: ${why}`).join("\n")}` : "";
+    const reply = parseReply(await ask(system, user + extra));
+    detected ??= reply.language;
+    return reply.segments;
+  };
+  const check = (segment: Segment, text: string | undefined) => {
+    if (typeof text !== "string" || text.trim() === "") return "no translation";
+    const tagged = (value: string) => [...value.matchAll(/<\/?[a-z]\d+>|<x\d+\/>/g)].map((m) => m[0]).sort().join();
+    if (tagged(segment.text) !== tagged(text)) return "its tags and placeholders don't match the source's";
+    // Left in the source language: only when the source's is known (a message may already be in the target's).
+    if (options.from && text.trim() === segment.text.trim() && (segment.text.match(/\p{L}{2,}/gu) ?? []).length >= 4) return "it isn't translated";
+    return glossaryProblems(segment.text, text, glossary).join("; ") || null;
+  };
+  const runs = batches(todo, batchChars);
+  const results = await Promise.all(runs.map((batch) => request(batch).catch(() => ({}) as Record<string, string>)));
+  const failed = new Map<string, string>();
+  for (const [i, batch] of runs.entries()) {
+    for (const segment of batch) {
+      const text = results[i]![segment.id];
+      const reason = check(segment, text);
+      if (reason) failed.set(segment.id, reason);
+      else translations[segment.id] = text!;
+    }
+  }
+  const problems: Problem[] = [];
+  if (failed.size > 0) {
+    const again = todo.filter((segment) => failed.has(segment.id));
+    const retried = await request(again, failed).catch(() => ({}) as Record<string, string>);
+    for (const segment of again) {
+      const reason = check(segment, retried[segment.id]);
+      if (reason) problems.push({ id: segment.id, reason });
+      else translations[segment.id] = retried[segment.id]!;
+    }
+  }
+  const learned = { ...memory };
+  for (const segment of segments) {
+    if (translations[segment.id] !== undefined) learned[segment.text] = translations[segment.id]!;
+  }
+  return { translations, problems, detected, memory: learned };
+}
+
+/** Segments in order, cut into runs of at most `max` characters (a longer segment goes alone). */
+function batches(segments: Segment[], max: number): Segment[][] {
+  const out: Segment[][] = [];
+  let size = 0;
+  for (const segment of segments) {
+    if (out.length === 0 || size + segment.text.length > max) {
+      out.push([]);
+      size = 0;
+    }
+    out.at(-1)!.push(segment);
+    size += segment.text.length;
+  }
+  return out;
+}
+
+/** The model's JSON reply (inside a code fence or not); anything else counts as no translations. */
+function parseReply(reply: string): { language?: string; segments: Record<string, string> } {
+  const json = reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1);
+  try {
+    const parsed = JSON.parse(json) as { language?: unknown; segments?: unknown };
+    const segments = parsed.segments && typeof parsed.segments === "object" ? (parsed.segments as Record<string, unknown>) : {};
+    return {
+      language: typeof parsed.language === "string" ? parsed.language : undefined,
+      segments: Object.fromEntries(Object.entries(segments).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+    };
+  } catch {
+    return { segments: {} };
+  }
+}
+
+/** A document in another language: the same blocks, marks and attributes, its text translated. */
+export async function translateDoc(doc: Doc, options: TranslateOptions): Promise<{ doc: Doc; problems: Problem[]; memory: Record<string, string> }> {
+  const { segments, apply } = segmentsOf(doc);
+  const result = await translateSegments(segments, options);
+  const applied = apply(result.translations);
+  const problems = [...result.problems, ...applied.problems.filter((p) => !result.problems.some((q) => q.id === p.id))];
+  return { doc: applied.doc, problems, memory: result.memory };
+}
+
+/** Plain text (an Inbox message) in another language, and the language it was in when `from` isn't given. */
+export async function translateText(text: string, options: TranslateOptions): Promise<{ text: string; detected?: string; problem?: Problem }> {
+  const { segment, apply } = segmentOfText(text);
+  const result = await translateSegments([segment], { ...options, batchChars: Infinity });
+  const translated = result.translations["1"];
+  if (translated === undefined) return { text, detected: result.detected, problem: result.problems[0] ?? { id: "1", reason: "no translation" } };
+  const out = apply(translated);
+  return typeof out === "string" ? { text: out, detected: result.detected } : { text, detected: result.detected, problem: out };
+}
