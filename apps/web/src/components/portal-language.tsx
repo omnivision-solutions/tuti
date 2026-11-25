@@ -23,7 +23,8 @@ declare module "next-intl" {
 /** The portal's own text in the reader's language (next-intl, without its routing: proxy.ts routes), for its client components. */
 export function PortalIntl({ language, messages, children }: { language: Language; messages: Messages; children: React.ReactNode }) {
   return (
-    <NextIntlClientProvider locale={language} messages={messages}>
+    // A time zone for what formats dates on the server and in the browser alike: none is shown in the reader's own yet.
+    <NextIntlClientProvider locale={language} messages={messages} timeZone="UTC">
       {children}
     </NextIntlClientProvider>
   );
@@ -67,7 +68,7 @@ export function LanguageSwitcher({ languages, current }: { languages: Language[]
       <DropdownMenuContent align="end" className="w-auto min-w-40">
         <DropdownMenuRadioGroup value={current} onValueChange={(code: string) => code !== current && choose(code)}>
           {languages.map((code) => (
-            <DropdownMenuRadioItem key={code} value={code} lang={code}>
+            <DropdownMenuRadioItem key={code} value={code} lang={code} closeOnClick>
               {LANGUAGES[code].native}
             </DropdownMenuRadioItem>
           ))}

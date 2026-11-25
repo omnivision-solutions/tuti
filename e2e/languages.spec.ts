@@ -33,7 +33,11 @@ test("a reader chooses German in the portal's header and its text follows, on de
   await menu.getByRole("menuitemradio", { name: "Deutsch" }).click();
 
   await expect(reader.getByRole("link", { name: "Anmelden" })).toBeVisible();
-  await expect(reader.getByRole("button", { name: "Sprache: Deutsch" })).toBeVisible();
+  // Its name in the page's language, and focus kept on it (it's never taken out of the tab order while saving).
+  const german = reader.getByRole("button", { name: "Sprache: Deutsch" });
+  await expect(german).toHaveAttribute("lang", "de");
+  await expect(german).toBeFocused();
+  await expect(reader.getByRole("link", { name: "Anmelden" }).locator("[lang=de]")).toHaveText("Anmelden");
   await checkpoint(reader, "header-in-german", { fullPage: false });
   // Kept: another page, and the next visit.
   await reader.goto("/changelog");
@@ -42,11 +46,21 @@ test("a reader chooses German in the portal's header and its text follows, on de
   // On phones it's in the menu.
   await reader.setViewportSize({ width: 390, height: 844 });
   await expect(reader.getByRole("button", { name: "Sprache: Deutsch" })).toBeHidden();
-  await reader.getByRole("button", { name: "Menü" }).click();
-  const languages = reader.getByRole("dialog").getByRole("group", { name: "Sprache" });
+  const menuButton = reader.getByRole("button", { name: "Menü" });
+  await expect(menuButton).toHaveAttribute("lang", "de");
+  await menuButton.click();
+  const dialog = reader.getByRole("dialog", { name: "Menü" });
+  await expect(dialog.getByRole("button", { name: "Menü schließen" })).toHaveAttribute("lang", "de");
+  const languages = dialog.getByRole("group", { name: "Sprache" });
+  await expect(languages).toHaveAttribute("lang", "de");
   await expect(languages.getByRole("button", { name: "Deutsch" })).toHaveAttribute("aria-pressed", "true");
   await checkpoint(reader, "phone-menu-in-german", { fullPage: false });
-  await languages.getByRole("button", { name: "English" }).click();
+  // The menu stays open, now in English.
+  const english = reader.getByRole("dialog").getByRole("button", { name: "English", exact: true });
+  await english.click();
+  await expect(reader.getByRole("button", { name: "Close the menu" })).toHaveAttribute("lang", "en");
+  await expect(english).toHaveAttribute("aria-pressed", "true");
+  await expect(english).toBeFocused();
   await reader.getByRole("button", { name: "Close the menu" }).click();
   await expect(reader.getByRole("link", { name: "Sign in" })).toBeVisible();
 
