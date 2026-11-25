@@ -526,7 +526,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Draft · collecting merged pull requests until a release or you publish it")).toBeVisible();
   await expect(owner.getByText("Dark theme", { exact: true })).toBeVisible();
   await expect(owner.getByText("A tidier theme store")).toBeVisible();
-  await expect(owner.getByText(chore)).toHaveCount(0);
+  // Not its title in the text (the sidebar lists the draft's pull requests by title).
+  await expect(owner.getByRole("textbox", { name: "What changed" })).not.toContainText(chore);
   // Still only Autopilot's lines, not release notes: Draft with AI is the main action (filled), Publish asks first.
   // (By the primary variant's class, not the colour: buttons fade between fills.)
   const primary = /(^|\s)bg-primary(\s|$)/;
