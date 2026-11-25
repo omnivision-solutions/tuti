@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import { randomUUID } from "expo-crypto";
+import { File, Paths } from "expo-file-system";
 import * as Notifications from "expo-notifications";
 import { AndroidImportance, IosAuthorizationStatus } from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
@@ -18,7 +19,8 @@ import { STORE_OPTIONS } from "./sign-in";
 type Platform = "ios" | "android";
 
 const DEVICE_ID = "device-id";
-const ASKED = "notifications-asked";
+/** Asked already, in a file rather than the keychain: iOS forgets the permission on reinstalling, and so does this. */
+const asked = () => new File(Paths.document, "notifications-asked");
 /** Where pushes without a channel of their own go: Expo's push service sends to `default` when none is named. */
 const CHANNEL = "default";
 
@@ -65,10 +67,11 @@ export async function askPermission(platform: Platform) {
  */
 export async function shouldOffer() {
   try {
-    if (await SecureStore.getItemAsync(ASKED, STORE_OPTIONS)) {
+    const file = asked();
+    if (file.exists) {
       return false;
     }
-    await SecureStore.setItemAsync(ASKED, "1", STORE_OPTIONS);
+    file.writeSync("1");
     const now = await Notifications.getPermissionsAsync();
     return !now.granted && now.status === Notifications.PermissionStatus.UNDETERMINED && now.canAskAgain;
   } catch {
@@ -185,14 +188,21 @@ export function behaviourFor(notification: Notifications.Notification): Notifica
 }
 
 /**
- * Opens a tapped notification's conversation, in its project: switching to it first if another is chosen. Signed out,
- * nothing (sign-in is all there is).
+ * Opens a tapped notification's conversation, in its project. Another project chosen: the screens open go first (`leave`,
+ * back to the Inbox), as a conversation open would show the other project's of its number, then the project switches.
+ * Signed out, nothing (sign-in is all there is).
  */
-export async function openTarget(target: Target, session: Session | null, setProject: (slug: string) => Promise<void>, open: (path: string) => void) {
+export async function openTarget(
+  target: Target,
+  session: Session | null,
+  setProject: (slug: string) => Promise<void>,
+  { leave, open }: { leave: () => void; open: (path: string) => void },
+) {
   if (!session) {
     return;
   }
   if (session.project !== target.project) {
+    leave();
     await setProject(target.project);
   }
   open(`/conversation/${target.number}`);

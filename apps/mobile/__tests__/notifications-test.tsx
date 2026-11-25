@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import { Alert, Linking } from "react-native";
+import { AccessibilityInfo, Alert, Linking, Platform } from "react-native";
 
 import NotificationSettings from "@/app/notifications";
 import { offerNotifications, useNotifications } from "@/components/notifications";
@@ -47,8 +47,30 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: async (key: string, value: string) => void mockStored.set(key, value),
 }));
 jest.mock("expo-crypto", () => ({ randomUUID: () => "phone-1" }));
+// The app's own files: whether it has asked.
+const mockFiles = new Set<string>();
+jest.mock("expo-file-system", () => ({
+  Paths: { document: "documents" },
+  File: class {
+    mockName: string;
+    constructor(_dir: unknown, mockName: string) {
+      this.mockName = mockName;
+    }
+    get exists() {
+      return mockFiles.has(this.mockName);
+    }
+    writeSync() {
+      mockFiles.add(this.mockName);
+    }
+  },
+}));
+// The navigation: a conversation may be open over the Inbox (`mockOpen`).
 const mockPush = jest.fn<(path: string) => void>();
-jest.mock("expo-router", () => ({ router: { push: (path: string) => mockPush(path) } }));
+const mockDismissAll = jest.fn();
+let mockOpen = false;
+jest.mock("expo-router", () => ({
+  router: { push: (path: string) => mockPush(path), canDismiss: () => mockOpen, dismissAll: () => mockDismissAll() },
+}));
 
 const signedIn: Session = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
 let mockSession: Session | null | undefined = signedIn;
@@ -74,6 +96,9 @@ beforeEach(() => {
   mockSystem.asked = 0;
   mockSession = signedIn;
   mockStored.clear();
+  mockFiles.clear();
+  mockOpen = false;
+  mockDismissAll.mockReset();
   mockPush.mockReset();
   mockApi.mockReset().mockImplementation(async () => ({}));
   mockSetProject.mockClear();
@@ -113,12 +138,23 @@ describe("a tapped notification", () => {
     expect(mockPush).toHaveBeenCalledTimes(1);
   });
 
-  it("switches to its project first when another is chosen", async () => {
+  it("goes back to the Inbox and switches to its project first when another is chosen", async () => {
+    mockOpen = true;
     await render(<Harness />);
     await act(async () => mockSystem.onTap!(tap({ project: "kite", conversation: 3 })));
     expect(mockSetProject).toHaveBeenCalledWith("kite");
     expect(mockPush).toHaveBeenCalledWith("/conversation/3");
+    // The conversation open would otherwise turn into the other project's of its number.
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockSetProject.mock.invocationCallOrder[0]!);
     expect(mockSetProject.mock.invocationCallOrder[0]).toBeLessThan(mockPush.mock.invocationCallOrder[0]!);
+  });
+
+  it("opens a conversation of the same project over the screens open", async () => {
+    mockOpen = true;
+    await render(<Harness />);
+    await act(async () => mockSystem.onTap!(tap({ project: "acme", conversation: 4 })));
+    expect(mockDismissAll).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith("/conversation/4");
   });
 
   it("opens nothing signed out, where sign-in is all there is", async () => {
@@ -215,6 +251,25 @@ describe("the notifications' settings", () => {
     await fireEvent(await screen.findByRole("switch", { name: "Show message text" }), "valueChange", false);
     expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Show message text" })).toHaveProp("value", true);
+  });
+
+  it("announces a failed change to VoiceOver, which has no live regions", async () => {
+    const os = Platform.OS;
+    Platform.OS = "ios";
+    try {
+      const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => {});
+      mockApi.mockImplementation(async (path, init) => {
+        if (init?.method === "PATCH") {
+          throw new Error("Couldn't reach tuti.example.com.");
+        }
+        return { showMessageText: true };
+      });
+      await render(<NotificationSettings />);
+      await fireEvent(await screen.findByRole("switch", { name: "Show message text" }), "valueChange", false);
+      await waitFor(() => expect(announce).toHaveBeenCalledWith("Couldn't reach tuti.example.com."));
+    } finally {
+      Platform.OS = os;
+    }
   });
 
   it("opens the system's settings when they're off", async () => {

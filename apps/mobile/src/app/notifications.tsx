@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { AccessibilityInfo, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
 import { allow } from "@/components/notifications";
 import { permission, registerAgain } from "@/lib/notifications";
@@ -33,6 +33,13 @@ export default function NotificationSettings() {
     const subscription = AppState.addEventListener("change", (state) => state === "active" && void check());
     return () => subscription.remove();
   }, [check]);
+
+  // VoiceOver has no live regions: an error (a switch put back) is announced (TalkBack reads the live region below).
+  useEffect(() => {
+    if (error && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(error);
+    }
+  }, [error]);
 
   const load = useCallback(() => api<Settings>("/notifications").then(setSettings, (e: Error) => setError(e.message)), [api]);
   useEffect(() => {

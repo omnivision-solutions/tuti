@@ -30,7 +30,7 @@ export function useNotifications() {
     waiting.current = null;
     // A launch that reads the last tap again doesn't open it again.
     Notifications.clearLastNotificationResponse();
-    openTarget(next, session, setProject, (path) => router.push(path)).catch((e: Error) => Alert.alert("Couldn't switch project", e.message));
+    openTarget(next, session, setProject, { leave: () => router.canDismiss() && router.dismissAll(), open: (path) => router.push(path) }).catch((e: Error) => Alert.alert("Couldn't switch project", e.message));
   });
   useEffect(() => {
     open(tapped(Notifications.getLastNotificationResponse()));

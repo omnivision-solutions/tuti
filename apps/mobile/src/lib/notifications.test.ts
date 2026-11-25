@@ -9,6 +9,22 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: async (key: string, value: string) => void stored.set(key, value),
 }));
 vi.mock("expo-web-browser", () => ({}));
+const files = new Map<string, string>();
+vi.mock("expo-file-system", () => ({
+  Paths: { document: "documents" },
+  File: class {
+    constructor(
+      readonly dir: string,
+      readonly name: string,
+    ) {}
+    get exists() {
+      return files.has(`${this.dir}/${this.name}`);
+    }
+    writeSync(text: string) {
+      files.set(`${this.dir}/${this.name}`, text);
+    }
+  },
+}));
 let ids = 0;
 vi.mock("expo-crypto", () => ({ randomUUID: () => `id-${++ids}` }));
 const config = vi.hoisted(() => ({ projectId: "eas-project" as string | undefined }));
@@ -47,6 +63,7 @@ const api = (async (path: string, init?: { method?: string; body?: unknown }) =>
 beforeEach(() => {
   vi.resetModules();
   stored.clear();
+  files.clear();
   calls.length = 0;
   ids = 0;
   config.projectId = "eas-project";
@@ -77,9 +94,18 @@ describe("asking for permission", () => {
     expect(await (await load()).shouldOffer()).toBe(false);
   });
 
+  it("is offered again after a reinstall, which forgets the app's files (not its keychain) and the permission alike", async () => {
+    system.permissions = { granted: false, status: "undetermined", canAskAgain: true };
+    const { shouldOffer } = await load();
+    expect(await shouldOffer()).toBe(true);
+    files.clear();
+    expect(stored.size).toBe(0);
+    expect(await shouldOffer()).toBe(true);
+  });
+
   it("isn't offered once allowed or refused", async () => {
     expect(await (await load()).shouldOffer()).toBe(false);
-    stored.clear();
+    files.clear();
     system.permissions = { granted: false, status: "denied", canAskAgain: false };
     expect(await (await load()).shouldOffer()).toBe(false);
   });
@@ -196,29 +222,29 @@ describe("opening a tapped notification", () => {
     const { openTarget } = await load();
     const setProject = vi.fn(async () => {});
     const open = vi.fn();
-    await openTarget({ project: "acme", number: 7 }, signedIn, setProject, open);
+    const leave = vi.fn();
+    await openTarget({ project: "acme", number: 7 }, signedIn, setProject, { leave, open });
     expect(setProject).not.toHaveBeenCalled();
+    expect(leave).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith("/conversation/7");
   });
 
-  it("switches to its project first", async () => {
+  it("leaves the screens open, then switches to its project", async () => {
     const { openTarget } = await load();
     const order: string[] = [];
-    await openTarget(
-      { project: "kite", number: 7 },
-      signedIn,
-      async (slug) => void order.push(`project ${slug}`),
-      (path) => order.push(path),
-    );
-    expect(order).toEqual(["project kite", "/conversation/7"]);
+    await openTarget({ project: "kite", number: 7 }, signedIn, async (slug) => void order.push(`project ${slug}`), {
+      leave: () => order.push("leave"),
+      open: (path) => order.push(path),
+    });
+    expect(order).toEqual(["leave", "project kite", "/conversation/7"]);
   });
 
   it("opens nothing signed out, and nothing when the project can't be switched", async () => {
     const { openTarget } = await load();
     const open = vi.fn();
-    await openTarget({ project: "acme", number: 7 }, null, async () => {}, open);
+    await openTarget({ project: "acme", number: 7 }, null, async () => {}, { leave: () => {}, open });
     await expect(
-      openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), open),
+      openTarget({ project: "kite", number: 7 }, signedIn, () => Promise.reject(new Error("Keychain unavailable")), { leave: () => {}, open }),
     ).rejects.toThrow("Keychain unavailable");
     expect(open).not.toHaveBeenCalled();
   });
