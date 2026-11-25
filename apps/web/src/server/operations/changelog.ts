@@ -136,7 +136,8 @@ const entryOutput = z
     tags: z.array(z.enum(TAGS)).describe("What kind of change it is").meta({ examples: [["new"]] }),
     groups: z
       .array(z.string())
-      .describe("The keys of the reader groups it's for: only their readers (and the team) see it. None: everyone")
+      .optional()
+      .describe("The keys of the reader groups it's for: only their readers (and the team) see it. None: everyone. Only for the team")
       .meta({ examples: [[]] }),
     body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
     content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
@@ -206,8 +207,11 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-/** An entry for the API; `counts` when its reactions were read already; `listed`: one of a list's, which go without their Markdown. */
-async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts, { listed = false } = {}) {
+/**
+ * An entry for the API; `counts` when its reactions were read already; `listed`: one of a list's, which go without their
+ * Markdown; `team`: for the team, the only ones told its groups (a reader in one isn't told the others).
+ */
+async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts, { listed = false, team = true } = {}) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   const text = displayDoc(entry);
   return {
@@ -220,7 +224,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     /** The running draft: merged pull requests are being added to it. */
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
-    groups: claimsOf(entry),
+    ...(team && { groups: claimsOf(entry) }),
     body: entry.body,
     content: text,
     /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
@@ -505,7 +509,7 @@ export const listChangelog = defineOperation({
     const shown = entries.slice(0, input.limit);
     const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts, { listed: true }))),
+      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts, { listed: true, team }))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -528,7 +532,7 @@ export const getChangelogEntry = defineOperation({
     if (!entry || (!entry.publishedAt && !team) || !(team || (await mayReadEntry(actor, projectId, claimsOf(entry))))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
-    return entryView(asReaderSees(entry, team), portal);
+    return entryView(asReaderSees(entry, team), portal, undefined, { team });
   },
 });
 

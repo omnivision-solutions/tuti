@@ -94,8 +94,11 @@ test("the API: only the group's readers and the team list, get, react to and rea
   expect(await numbers(ada)).toEqual([enterprise, everyone]);
   expect(await numbers(bob)).toEqual([everyone]);
   expect((await call(getChangelogEntry, as(owner), { number: enterprise })).groups).toEqual(["enterprise"]);
-  expect((await call(getChangelogEntry, as(ada), { number: enterprise })).title).toBe("For enterprise");
-  expect((await call(getChangelogEntry, as(bob), { number: everyone })).groups).toEqual([]);
+  expect((await call(getChangelogEntry, as(owner), { number: everyone })).groups).toEqual([]);
+  // A reader in one of its groups reads it, without being told which groups it's for (nor so of others).
+  expect(await call(getChangelogEntry, as(ada), { number: enterprise })).toMatchObject({ title: "For enterprise" });
+  expect(await call(getChangelogEntry, as(ada), { number: enterprise })).not.toHaveProperty("groups");
+  expect((await call(listChangelog, as(ada), {})).entries.some((entry) => "groups" in entry)).toBe(false);
   for (const run of [
     () => call(getChangelogEntry, as(bob), { number: enterprise }),
     () => call(reactToChangelogEntry, as(bob), { number: enterprise, reaction: "tada", reacted: true }),

@@ -68,6 +68,9 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await visitor.goto("/roadmap");
   await expect(visitor.getByRole("main").getByText("Audit logs")).toBeVisible();
   await expect(shippedIn(visitor)).toHaveCount(0);
+  await visitor.goto("/widget");
+  await expect(visitor.getByText(/^Dark mode · /)).toBeVisible();
+  await expect(visitor.getByText("Audit log export")).toHaveCount(0);
   await visitor.goto("/widget?tab=whats-new");
   await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Dark mode"]);
 
@@ -86,6 +89,8 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(ada.locator('link[type="text/markdown"]')).toHaveCount(0);
   await ada.goto("/feedback/feature-requests/audit-logs-1");
   await expect(shippedIn(ada)).toBeVisible();
+  await ada.goto("/widget");
+  await expect(ada.getByText(/^Audit log export · /)).toBeVisible();
   await ada.goto("/widget?tab=whats-new");
   await expect(ada.getByRole("heading", { level: 2 })).toHaveText(["Audit log export", "Dark mode"]);
 
@@ -96,4 +101,19 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(newDot(bea)).toHaveCount(0);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
+  // Her What's new has nothing announced for her, so it marks nothing seen (not the time of the one she can't read).
+  await bea.goto("/widget?tab=whats-new");
+  await expect(bea.getByRole("heading", { level: 2 })).toHaveText(["Dark mode"]);
+  await bea.waitForLoadState("networkidle");
+  const seen = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await seen.connect();
+  try {
+    const { rows } = await seen.query(
+      `SELECT 1 FROM changelog_seen s JOIN project p ON p.id = s."projectId" JOIN sso_identity i ON i."userId" = s."userId" WHERE p.slug = $1 AND i."externalId" = 'user-2'`,
+      [slug],
+    );
+    expect(rows).toEqual([]);
+  } finally {
+    await seen.end();
+  }
 });
