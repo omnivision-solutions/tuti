@@ -644,6 +644,27 @@ describe("deciding", () => {
     expect(queue).not.toHaveBeenCalled();
   });
 
+  test("picked while its run with the gate was under way, which ruled it out: the pick's run still goes past the gate", async () => {
+    github.pullRequest(repo, pullRequest(35));
+    model.decide(INTERNAL);
+    noDocs();
+    await merge(35);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 35 } });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "NOTHING_TO_DO" });
+    // The pick's run, queued behind it (as claimCodeChange queues it for one found analysing): not skipped as done.
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: true, resume: false });
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "READY" });
+    expect(await prisma.codeChangeAction.count({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" } })).toBe(1);
+    // Once it has its line, another such run is done already.
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: true, resume: false });
+  });
+
   test("taken out of its draft by the team while its analysis waits to be tried again, a pull request isn't put back", async () => {
     github.pullRequest(repo, pullRequest(32));
     // The provider stops answering after the gate: the analysis failed, to be tried again; the pull request is in the draft since the merge.

@@ -87,6 +87,7 @@ test("run past the gate (added to the changelog by the team), then Autopilot tur
 });
 
 test("a pick stranded by a restart, then Autopilot turned off: the sweep puts it back as the claim found it", async () => {
+  vi.stubEnv("JOBS_DRIVER", "inline");
   // Ready with a docs update and no line: the team's pick claims it for a run past the gate, which never comes.
   const change = await pullRequest(10);
   await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
@@ -109,7 +110,20 @@ test("Analyse again on the team's pick whose run past the gate failed: past the 
   expect(jobs.enqueue).toHaveBeenLastCalledWith("codeChange", { codeChangeId: change.id, force: true, pastGate: true, resume: false });
 });
 
+test("on Hatchet, a pick whose run stopped: Analyse anyway on it, once stale, still goes past the gate", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  const change = await pullRequest(13, "NOTHING_TO_DO");
+  await claimCodeChange(project.id, { repoId: 1, repo: "acme/app", number: 13, url: change.url, title: change.title, author: "octo", mergedAt: change.mergedAt.toISOString() }, { pastGate: true });
+  // Its worker died mid-run: analysing for over half an hour.
+  await prisma.codeChange.update({ where: { id: change.id }, data: { updatedAt: new Date(Date.now() - 31 * 60_000) } });
+
+  await call(analyseCodeChange, team(), { id: change.id });
+
+  expect(jobs.enqueue).toHaveBeenLastCalledWith("codeChange", { codeChangeId: change.id, force: true, pastGate: true, resume: false });
+});
+
 test("a pick stranded by a restart on a server that no longer has AI: failed, saying so", async () => {
+  vi.stubEnv("JOBS_DRIVER", "inline");
   const change = await pullRequest(12, "NOTHING_TO_DO");
   await claimCodeChange(project.id, { repoId: 1, repo: "acme/app", number: 12, url: change.url, title: change.title, author: "octo", mergedAt: change.mergedAt.toISOString() }, { pastGate: true });
   await prisma.codeChange.updateMany({ where: { id: { not: change.id } }, data: { retryAt: null } });

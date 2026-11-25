@@ -138,11 +138,12 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
  * Inline, a claim's run waits in the web server's memory, one after another (changelog.addPullRequests): if the
  * server stops first, nothing would run it. It's due for the retry sweep after this, as a run past the gate if asked;
  * the run, when it starts, clears it, and the loop then skips a claim the sweep took. Long enough for a batch of 50 to
- * get through, so the sweep doesn't take ones still waiting their turn. On Hatchet the run is queued at once: no need.
+ * get through, so the sweep doesn't take ones still waiting their turn. On Hatchet the run is queued at once: no retry
+ * is due, but the pick is recorded all the same (Analyse again on a stopped one keeps it past the gate).
  */
 const STRANDED_CLAIM_MS = 6 * 60 * 60_000;
 const stranded = (pastGate: boolean) =>
-  process.env.JOBS_DRIVER === "inline" ? { retryAt: new Date(Date.now() + STRANDED_CLAIM_MS), retryPastGate: pastGate } : { retryAt: null };
+  process.env.JOBS_DRIVER === "inline" ? { retryAt: new Date(Date.now() + STRANDED_CLAIM_MS), retryPastGate: pastGate } : { retryAt: null, retryPastGate: pastGate };
 
 /** How long a code change whose run couldn't be queued waits for the retry sweep. */
 const QUEUE_RETRY_MS = 5 * 60_000;
@@ -195,9 +196,13 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   if (!change) {
     return { skipped: true };
   }
-  // Analysed once: a redelivery or a second run finds it done.
+  // Analysed once: a redelivery or a second run finds it done. Not a pick's run (past the gate) that finds it ruled out
+  // with no changelog line, by a run with the gate that was under way when the team picked it: that one is the pick's.
   if (!input.force && (change.state === "READY" || change.state === "NOTHING_TO_DO")) {
-    return { skipped: true };
+    const ruledOutPick = input.pastGate && (await prisma.codeChangeAction.count({ where: { codeChangeId: change.id, kind: "CHANGELOG_LINE" } })) === 0;
+    if (!ruledOutPick) {
+      return { skipped: true };
+    }
   }
   // Paused for want of AI credits: only the team resumes it (`force` or `resume`), never a run queued
   // before it paused (a redelivered merge), even once there are credits again.
