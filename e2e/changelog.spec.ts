@@ -723,6 +723,12 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
   await expect(team.getByRole("listitem").filter({ hasText: "Old idea, dropped" })).not.toContainText("post");
+  // Another entry listing that completed post, published, completed nothing: no count.
+  const { number: again } = (await api("/changelog", { title: "Dark mode, polished", posts: [1] })) as unknown as { number: number };
+  await api(`/changelog/${again}/publish`, {});
+  await team.reload();
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
 });
 
 test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {

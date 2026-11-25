@@ -56,8 +56,9 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         sample: true,
         updatedAt: true,
         cover: { select: { id: true, status: true, width: true, height: true } },
-        // Its posts' statuses, not merged ones (their votes moved; the editor leaves them out): what it completes.
+        // A draft's posts, not merged ones (the editor leaves them out), and the posts publishing it completed.
         posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { status: true } } } },
+        postEvents: { where: { to: "COMPLETED" }, select: { postId: true } },
         _count: { select: { pullRequests: true, comments: true } },
       },
     }),
@@ -106,8 +107,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
-    // Published: its posts that are completed. A draft: those publishing will complete (as it does, not the Completed or Closed).
-    const posts = entry.posts.filter(({ post }) => (entry.publishedAt ? post.status === "COMPLETED" : post.status !== "COMPLETED" && post.status !== "CLOSED")).length;
+    // Published: the posts publishing it completed (each once, if it was published again). A draft: those publishing
+    // will complete (as it does: not the Completed or Closed).
+    const posts = entry.publishedAt
+      ? new Set(entry.postEvents.map((e) => e.postId)).size
+      : entry.posts.filter(({ post }) => post.status !== "COMPLETED" && post.status !== "CLOSED").length;
     return (
       <ItemRow
         key={entry.number}
