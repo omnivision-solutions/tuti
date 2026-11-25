@@ -1807,6 +1807,14 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await expect(row("Export to CSV")).toBeChecked();
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
+  // With unsaved changes in this draft, Add waits for them: adding rewrites its saved text.
+  await team.getByLabel("Title").fill("Next release, soon");
+  await section.getByRole("button", { name: "Add changes…" }).click();
+  await dialog.getByRole("button", { name: /^Add \d+ pull requests?$/ }).click();
+  await expect(team.getByText("Save your changes first: pull requests change the saved text.")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
   // On another draft, Add changes… says where they go.
   const api = await apiFor(team, slug);
   await api("/changelog", { title: "Written by hand" });

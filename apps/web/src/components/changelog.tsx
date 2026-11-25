@@ -1058,11 +1058,9 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
         focusPullRequests.next = false;
       }
       if (result.error) {
-        // Some were added before a later batch was refused: the page reloads with them, which remounts this dialog
-        // closed in the draft they went into, so it's said in a toast, which stays.
-        if (result.added) {
-          toast.error(`Added ${plural(result.added, "pull request")}, then: ${result.error}`);
-        }
+        // In a toast too, which stays: the dialog may have been closed meanwhile, or (some added before a later batch
+        // was refused) the page reloads with them, which remounts it closed in the draft they went into.
+        toast.error(result.added ? `Added ${plural(result.added, "pull request")}, then: ${result.error}` : result.error);
         setFound({ ...found, error: result.error });
         return;
       }
