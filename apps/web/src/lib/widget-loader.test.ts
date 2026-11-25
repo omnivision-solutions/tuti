@@ -2077,3 +2077,22 @@ test("a page view told an older answer (reused by the browser) records the visit
   await settled();
   expect(next.popup).toBeDefined();
 });
+
+test("a public portal with a newer announcement for some reader groups: someone signed in who may read it gets the dot, nobody else, and the popup doesn't show everyone's older one as new", async () => {
+  const GROUPS = { ...ANNOUNCED, groups: true };
+  const newer = "2026-10-20T10:00:00.000Z";
+  // Seen everyone's here already; the person's own latest is the newer group entry.
+  const member = loadWidget({ settings: { identify: token }, latest: GROUPS, privateLatest: newer, seenHere: ANNOUNCED.latest, before: visitedAt("2026-10-17T00:00:00.000Z") });
+  const outside = loadWidget({ settings: { identify: token }, latest: GROUPS, privateLatest: ANNOUNCED.latest, seenHere: ANNOUNCED.latest });
+  const anonymous = loadWidget({ latest: GROUPS, seenHere: ANNOUNCED.latest });
+  await settled();
+  expect(member.Tuti.unseen()).toBe(true);
+  expect(member.popup).toBeUndefined();
+  expect(outside.Tuti.unseen()).toBe(false);
+  expect(anonymous.Tuti.unseen()).toBe(false);
+  expect(anonymous.seenRequests).toEqual([]);
+  // Without the flag, a signed-in visitor who's seen everyone's isn't asked about it.
+  const plain = loadWidget({ settings: { identify: token }, latest: ANNOUNCED, privateLatest: newer, seenHere: ANNOUNCED.latest });
+  await settled();
+  expect(plain.Tuti.unseen()).toBe(false);
+});

@@ -71,7 +71,9 @@ import {
  * `getToken`) whether they have elsewhere, and tells it when the panel has shown one. The
  * later of the two times counts. A panel asking (`ask`) hears that same time, from before
  * what it shows now (What's new marks what's unread, Home counts it). A private portal's latest announcement
- * comes from there too, for someone signed in who may read the portal; nobody else's dot lights for it.
+ * comes from there too, for someone signed in who may read the portal; nobody else's dot lights for it. So does a
+ * public portal's when a newer one is for some reader groups only (/api/widget/latest's `groups`): the newest the
+ * person may read, theirs included; the popup, whose card is everyone's latest, waits then.
  *
  * With the popup on (Settings → Widget), a new announcement also shows as a small card above the launcher (its cover,
  * title, two lines and Read more), when it's unseen by the dot's rule and was published since this browser last loaded a
@@ -227,6 +229,10 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   var inbox = false;
   // A private portal: its latest announcement is only told to someone the page signs in who may read it.
   var privatePortal = false;
+  // A newer announcement is for some reader groups only: /api/widget/seen says whether it's one the person the page signs in may read.
+  var forGroups = false;
+  // Everyone's latest, as /api/widget/latest said it: the popup's card is that one, so it shows only while it's the newest.
+  var everyones = null;
   var known = false;
   var latest = null;
   var seen = null;
@@ -289,7 +295,7 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
   var popupShown = null;
   function popupWanted() {
     if (!announcement || hideLauncher || sidebar || opened || !known || checking || onChangelog() || !isUnseen() || hidden.indexOf("whatsNew") >= 0 ||
-      !lastVisit || !(latest > lastVisit)) return false;
+      !lastVisit || !(latest > lastVisit) || (forGroups && latest !== everyones)) return false;
     var number = String(announcement.number);
     if (popupShown === number) return true;
     if (storage(function (s) { return s.getItem(popupKey); }) === number) return false;
@@ -762,19 +768,21 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
+      everyones = latest;
       // Only the server's time: without an answer this visit saw nothing, so the last one still counts.
       if (data && typeof data.now === "string") recordVisit(data.now);
       var entry = data && data.announcement;
       announcement = entry && typeof entry.number === "number" && typeof entry.title === "string" ? entry : null;
       inbox = !!(data && data.inbox === true);
       privatePortal = !!(data && data.private === true);
+      forGroups = !!(data && data.groups === true);
       hidden = data && Array.isArray(data.hidden) ? data.hidden : [];
       scheme = data && (data.colorScheme === "light" || data.colorScheme === "dark") ? data.colorScheme : null;
       paint();
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
-      if (isUnseen() || ((inbox || privatePortal) && getToken)) return checkElsewhere();
+      if (isUnseen() || ((inbox || privatePortal || forGroups) && getToken)) return checkElsewhere();
       setUnseen(false);
     });
 
@@ -803,6 +811,8 @@ export function widgetLoader(portalTemplate: string, own: { slug: string; url: s
       .then(function (data) {
         if (data && typeof data.messages === "number" && asked === panelCounts && read === countReads) unseenMessages = data.messages;
         if (!at && privatePortal && read === countReads) latest = data && typeof data.latest === "string" ? data.latest : null;
+        // Theirs, with their groups' (never older than everyone's, which they may read too).
+        if (!at && forGroups && read === countReads && data && typeof data.latest === "string" && !(latest && latest >= data.latest)) latest = data.latest;
         return data && typeof data.seen === "string" ? data.seen : null;
       })
       .catch(function () { return null; });
