@@ -9,7 +9,8 @@ import { CLOUD_SERVER, hostOf, normalizeServer, reachable } from "@/lib/server";
 import { continueWith, finishSignIn, forgotPasswordUrl, type SignedIn, signInWithPassword } from "@/lib/sign-in";
 import { type Colors, useColors } from "@/lib/theme";
 
-type Busy = "google" | "github" | "password";
+/** What's under way: a sign-in started here, or a way back the app was opened with (`return`). */
+type Busy = "google" | "github" | "password" | "return";
 
 // Signed out. Google's and GitHub's way back, `tuti://sign-in?state=…&code=…`, opens this screen with those params.
 export default function SignIn() {
@@ -22,7 +23,7 @@ export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const passwordField = useRef<ComponentRef<typeof TextInput>>(null);
-  const [busy, setBusy] = useState<Busy | null>(null);
+  const [running, setBusy] = useState<Busy | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const run = async (what: Busy, work: () => Promise<SignedIn | null | void>) => {
@@ -40,12 +41,35 @@ export default function SignIn() {
     }
   };
 
+  // A way back the app was opened with (on Android the app can be closed while the browser is open, so nothing here
+  // started it): busy until its exchange is done, so no other sign-in starts meanwhile; nothing after the screen's gone.
+  const [settledLink, setSettledLink] = useState<string | null>(null);
+  const returning = !!(JSON.parse(link) as Record<string, unknown>).state && settledLink !== link;
   useEffect(() => {
-    finishSignIn(JSON.parse(link)).then(
-      (signedIn) => signedIn && signIn(signedIn),
-      (e: Error) => setError(e.message),
-    );
+    let live = true;
+    finishSignIn(JSON.parse(link))
+      .then(
+        (signedIn) => {
+          if (live && signedIn) {
+            return signIn(signedIn);
+          }
+        },
+        (e: Error) => {
+          if (live) {
+            setError(e.message);
+          }
+        },
+      )
+      .finally(() => {
+        if (live) {
+          setSettledLink(link);
+        }
+      });
+    return () => {
+      live = false;
+    };
   }, [link, signIn]);
+  const busy: Busy | null = running ?? (returning ? "return" : null);
 
   // VoiceOver has no live regions: an error is announced (TalkBack reads the live region below).
   useEffect(() => {
