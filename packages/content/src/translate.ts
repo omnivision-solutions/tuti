@@ -129,7 +129,11 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
         if (!kept.has(id) || seenKept.has(id)) return `placeholder x${id} is unknown or repeated`;
         seenKept.add(id);
         fill();
-        result.push(structuredClone(kept.get(id)!));
+        // Its own marks (code) stay; bold, italic and links are the open tags', like the text around it.
+        const node = structuredClone(kept.get(id)!);
+        const marks = [...stack.map((tag) => tags.get(tag.id)!), ...(node.marks ?? []).filter((mark) => !(mark.type! in TAG_LETTER))];
+        delete node.marks;
+        result.push({ ...node, ...(marks.length > 0 && { marks }) });
       } else {
         const id = Number(match[3]);
         const letter = match[2]!;

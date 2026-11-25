@@ -326,3 +326,14 @@ test("a segment with no words may come back with no words", async () => {
 test("a newline written as an entity is a space too", () => {
   expect(segmentOfText("Hi there").apply("Hallo&#10;zusammen&#13;&#10;!")).toBe("Hallo zusammen !");
 });
+
+test("a placeholder moved out of a link takes the open tags' marks, keeping its own code mark", () => {
+  const link = { type: "link", attrs: { href: "https://a.example" } };
+  const { segments, apply } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Run ", marks: [link] }, { type: "text", text: "sync", marks: [link, { type: "code" }] }, { type: "text", text: " today please" }] }] });
+  expect(segments[0]!.text).toBe("<a1>Run <x2/></a1> today please");
+  expect(apply({ "1": "<x2/> <a1>heute ausführen</a1> bitte" }).doc.content![0]!.content![0]).toEqual({ type: "text", text: "sync", marks: [{ type: "code" }] });
+});
+
+test("an entity past the last code point is dropped, not thrown", () => {
+  expect(segmentOfText("Hi there").apply("Hallo &#9999999;zusammen")).toBe("Hallo zusammen");
+});
