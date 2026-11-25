@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { dueForRecheck, forgetSession, readSession, RECHECK_MS, sessionHolds, writeSession } from "./session-store";
+import { afterEnded, dueForRecheck, forgetSession, readSession, RECHECK_MS, recheckOnForeground, sessionHolds, writeSession } from "./session-store";
 
 const stored = new Map<string, string>();
 const store = vi.hoisted(() => ({ failReads: false }));
@@ -71,6 +71,22 @@ describe("an app left open", () => {
     expect(dueForRecheck(checked, checked + RECHECK_MS)).toBe(true);
     // Better Auth extends a session read a day or more after it was last: twice a day is always in time.
     expect(RECHECK_MS).toBeLessThan(24 * 60 * 60 * 1000);
+  });
+});
+
+describe("a session found ended", () => {
+  it("signs out only if it's still the session in use", () => {
+    const newer = { ...session, token: "token-2" };
+    expect(afterEnded(session, session)).toBeNull();
+    expect(afterEnded(newer, session)).toBe(newer);
+    expect(afterEnded(null, session)).toBeNull();
+  });
+
+  it("is read again on coming back to the foreground, signed in and due", () => {
+    expect(recheckOnForeground("active", true, 0, RECHECK_MS)).toBe(true);
+    expect(recheckOnForeground("active", true, 0, RECHECK_MS - 1)).toBe(false);
+    expect(recheckOnForeground("background", true, 0, RECHECK_MS)).toBe(false);
+    expect(recheckOnForeground("active", false, 0, RECHECK_MS)).toBe(false);
   });
 });
 

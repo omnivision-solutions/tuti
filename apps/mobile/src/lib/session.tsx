@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
-import { dueForRecheck, forgetSession, readSession, type Session, sessionHolds, writeSession } from "./session-store";
+import { afterEnded, forgetSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
 export type { Session };
@@ -38,7 +38,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // A session found ended (a check, a 401, which can answer late): signed out only if it's still the one in use, so a
   // teammate who signed out and back in meanwhile stays signed in.
   const ended = useCallback(async (which: Session) => {
-    setSession((now) => (now?.token === which.token ? null : now));
+    setSession((now) => afterEnded(now, which));
     await forgetSession(which);
   }, []);
 
@@ -64,7 +64,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [check]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active" && session && dueForRecheck(lastChecked.current, Date.now())) {
+      if (recheckOnForeground(state, !!session, lastChecked.current, Date.now()) && session) {
         void check(session);
       }
     });

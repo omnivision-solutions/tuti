@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hostOf, normalizeServer } from "./server";
+import { hostOf, normalizeServer, reachable } from "./server";
 
 describe("a server's address", () => {
   it("is the origin of what's typed, https unless http is", () => {
@@ -15,6 +15,17 @@ describe("a server's address", () => {
     for (const typed of ["", "   ", "ftp://acme.com", "acme..com", "acme.com.", "-", "me@acme.com", "https://", "tuti://sign-in"]) {
       expect(normalizeServer(typed), typed).toBeNull();
     }
+  });
+
+  it("is signed in to over https only, and a development build also takes http to this computer", () => {
+    expect(reachable("https://feedback.acme.com", false)).toBe(true);
+    for (const server of ["http://192.168.1.20:3000", "http://tuti.lan", "http://localhost:3100"]) {
+      expect(reachable(server, false), server).toBe(false);
+    }
+    for (const server of ["http://localhost:3100", "http://127.0.0.1:3100", "http://[::1]:3000"]) {
+      expect(reachable(server, true), server).toBe(true);
+    }
+    expect(reachable("http://192.168.1.20:3000", true)).toBe(false);
   });
 
   it("shows as its host", () => {

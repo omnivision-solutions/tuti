@@ -5,7 +5,7 @@ import { AccessibilityInfo, ActivityIndicator, Image, KeyboardAvoidingView, Plat
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSession } from "@/lib/session";
-import { CLOUD_SERVER, hostOf, normalizeServer } from "@/lib/server";
+import { CLOUD_SERVER, hostOf, normalizeServer, reachable } from "@/lib/server";
 import { continueWith, finishSignIn, forgotPasswordUrl, type SignedIn, signInWithPassword } from "@/lib/sign-in";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -58,6 +58,11 @@ export default function SignIn() {
     const address = typedServer === null ? CLOUD_SERVER : normalizeServer(typedServer);
     if (!address) {
       setError("Enter your server's address, like tuti.example.com.");
+      return null;
+    }
+    if (!reachable(address, __DEV__)) {
+      setError("Use your server's https address: the app signs in over https only.");
+      return null;
     }
     return address;
   };
