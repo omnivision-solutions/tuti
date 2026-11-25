@@ -10,7 +10,7 @@ const phone = vi.hoisted(() => ({
   dismissed: [] as string[],
   shown: [] as { content: { title: string; body: string; data: unknown }; trigger: unknown }[],
   categories: [] as { id: string; actions: { identifier: string; options?: object; textInput?: object }[] }[],
-  listener: null as ((response: unknown) => void) | null,
+  listener: null as ((response: unknown) => unknown) | null,
   last: null as unknown,
   task: null as ((body: { data: unknown }) => Promise<unknown>) | null,
   registered: [] as string[],
@@ -92,7 +92,6 @@ const response = (actionIdentifier: string, { userText, project = "acme", id = "
   }) as unknown as NotificationResponse;
 
 const load = () => import("./notification-actions");
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 beforeEach(() => {
   vi.resetModules();
@@ -136,9 +135,8 @@ describe("Reply", () => {
 
   it("is sent once when the listener and the last response both tell of it", async () => {
     phone.last = response("reply", { userText: "On it!" });
-    (await load()).startNotificationActions();
-    phone.listener!(response("reply", { userText: "On it!" }));
-    await settle();
+    await (await load()).startNotificationActions();
+    await phone.listener!(response("reply", { userText: "On it!" }));
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
   });
 
@@ -156,6 +154,19 @@ describe("Reply", () => {
     expect(calls.map((call) => call.url)).toEqual([`${SERVER}/api/v1/projects`]);
     expect(phone.dismissed).toEqual([]);
     expect(phone.shown).toEqual([]);
+  });
+
+  it("that can't check the project (offline) is kept too, never lost", async () => {
+    answer = () => {
+      throw new TypeError("Network request failed");
+    };
+    await (await load()).act(response("reply", { userText: "On it!", project: "globex" }));
+    expect(phone.shown.map((shown) => shown.content.body)).toEqual([
+      "Ada · Acme: Couldn't reach tuti.example. Check the address and your connection. It's kept in the conversation, with Retry.",
+    ]);
+    const { getDraft } = await import("./conversation");
+    const { screenKey } = await import("./details");
+    expect(getDraft(screenKey({ server: SERVER, project: "globex" }, 7)).unsent.map((one) => one.body)).toEqual(["On it!"]);
   });
 
   it("does nothing signed out", async () => {
@@ -218,8 +229,7 @@ describe("on Android", () => {
     phone.appState = "background";
     (await load()).startNotificationActions();
     expect(phone.registered).toEqual(["notification-action"]);
-    phone.listener!(response("close"));
-    await settle();
+    await phone.listener!(response("close"));
     expect(calls).toEqual([]);
     // Also run for every push received: only an action is acted on.
     await phone.task!({ data: { notification: {}, data: {} } });
@@ -231,8 +241,7 @@ describe("on Android", () => {
   it("acts from the listener while the app is in front", async () => {
     phone.os = "android";
     (await load()).startNotificationActions();
-    phone.listener!(response("close"));
-    await settle();
+    await phone.listener!(response("close"));
     expect(calls.map((call) => call.method)).toEqual(["PATCH"]);
   });
 });

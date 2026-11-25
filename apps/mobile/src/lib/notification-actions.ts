@@ -63,19 +63,18 @@ export async function act(response: Notifications.NotificationResponse) {
   const api = createApi({ ...session, project: target.project }, () => {});
   const projects = () =>
     createApi({ server: session.server, token: session.token }, () => {})<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
+  // The reply before anything that can fail, so a failure keeps it. Its id is made from the notification and the text:
+  // the same reply sent again is the one already saved, never a second.
   let unsent: Unsent | undefined;
   try {
+    if (action === REPLY) {
+      const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
+      unsent = { id, body: text, note: false, close: false, files: [], seen: null };
+    }
     if (!(await isTheirs(target, session, projects))) {
       return;
     }
-    if (action === CLOSE) {
-      await updateConversation(api, target.number, { status: "closed" });
-    } else {
-      // Made from the notification and the text: the same reply sent again is the one already saved, never a second.
-      const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
-      unsent = { id, body: text, note: false, close: false, files: [], seen: null };
-      await sendReply(api, target.number, unsent);
-    }
+    await (unsent ? sendReply(api, target.number, unsent) : updateConversation(api, target.number, { status: "closed" }));
   } catch (error) {
     const reason = reasonOf(error);
     const kept = unsent;
@@ -86,7 +85,7 @@ export async function act(response: Notifications.NotificationResponse) {
     }
     await Notifications.dismissNotificationAsync(identifier).catch(() => {});
     await Notifications.scheduleNotificationAsync({
-      content: { ...failure(action, content.title, reason), data: { project: target.project, conversation: target.number } },
+      content: { ...failure(action, content.title, reason, !!kept), data: { project: target.project, conversation: target.number } },
       trigger: Platform.OS === "android" ? { channelId: CHANNEL } : null,
     });
     return;
@@ -95,21 +94,18 @@ export async function act(response: Notifications.NotificationResponse) {
 }
 
 /** The notification left when an action didn't go: tapped, it opens the conversation. */
-export function failure(action: string, title: string | null, reason: string) {
+export function failure(action: string, title: string | null, reason: string, kept: boolean) {
   const about = title ? `${title}: ` : "";
   return action === REPLY
-    ? { title: "Your reply didn't send", body: `${about}${reason} It's kept in the conversation, with Retry.` }
+    ? { title: "Your reply didn't send", body: `${about}${reason}${kept ? " It's kept in the conversation, with Retry." : ""}` }
     : { title: "Couldn't close the conversation", body: `${about}${reason}` };
 }
 
-/** Acts on a response, on Android only while the app is in front: otherwise its background task does. */
-const heard = (response: Notifications.NotificationResponse | null) => {
-  if (response && (Platform.OS === "ios" || AppState.currentState === "active")) {
-    void act(response).catch(() => {});
-  }
-};
+/** Acts on a response, on Android only while the app is in front: otherwise its background task does. Done when it is. */
+const heard = (response: Notifications.NotificationResponse | null) =>
+  response && (Platform.OS === "ios" || AppState.currentState === "active") ? act(response).catch(() => {}) : Promise.resolve();
 
-/** At every start of the app's JavaScript (index.ts), Android's background one too. */
+/** At every start of the app's JavaScript (index.ts), Android's background one too. Done when the last response is acted on. */
 export function startNotificationActions() {
   void setCategory().catch(() => {});
   if (Platform.OS === "android") {
@@ -122,5 +118,5 @@ export function startNotificationActions() {
     void Notifications.registerTaskAsync(TASK).catch(() => {});
   }
   Notifications.addNotificationResponseReceivedListener(heard);
-  heard(Notifications.getLastNotificationResponse());
+  return heard(Notifications.getLastNotificationResponse());
 }
