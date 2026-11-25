@@ -24,6 +24,9 @@ import { getMembership } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Changelog" };
 
+/** Since then publishing records which posts it completed (PostEvent.changelogEntryId); an entry published before, its completed posts. */
+const RECORDED_SINCE = new Date("2026-11-03T00:00:00Z");
+
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 /**
@@ -107,10 +110,12 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
-    // Published: the posts publishing it completed (each once, if it was published again). A draft: those publishing
-    // will complete (as it does: not the Completed or Closed).
+    // Published: the posts publishing it completed (each once, if it was published again), or before that was recorded
+    // its posts that are completed. A draft: those publishing will complete (as it does: not the Completed or Closed).
     const posts = entry.publishedAt
-      ? new Set(entry.postEvents.map((e) => e.postId)).size
+      ? entry.publishedAt < RECORDED_SINCE && entry.postEvents.length === 0
+        ? entry.posts.filter(({ post }) => post.status === "COMPLETED").length
+        : new Set(entry.postEvents.map((e) => e.postId)).size
       : entry.posts.filter(({ post }) => post.status !== "COMPLETED" && post.status !== "CLOSED").length;
     return (
       <ItemRow
