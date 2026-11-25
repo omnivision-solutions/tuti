@@ -34,9 +34,17 @@ const unescape = (text: string) =>
   text
     .replace(/&(lt|gt|quot|apos|nbsp|#\d{1,7}|#x[\da-f]{1,6});/gi, (_, name: string) => {
       const code = name.startsWith("#") ? Number.parseInt(name.slice(name[1] === "x" || name[1] === "X" ? 2 : 1), name[1] === "x" || name[1] === "X" ? 16 : 10) : NaN;
-      return Number.isNaN(code) ? ENTITIES[name.toLowerCase()]! : code <= 0x10ffff ? String.fromCodePoint(code) : "";
+      return Number.isNaN(code) ? ENTITIES[name.toLowerCase()]! : storable(code) ? String.fromCodePoint(code) : "";
     })
     .replace(/&amp;/g, "&");
+/** A code point Postgres can store as text: not NUL or another control (tab and newlines aside), not half a surrogate pair, not past the last. */
+const storable = (code: number) => (code >= 0x20 || code === 0x09 || code === 0x0a || code === 0x0d) && (code < 0xd800 || code > 0xdfff) && code <= 0x10ffff;
+/**
+ * A tag-shaped leftover in a reply ("<strong>") that the source doesn't have as text ("Press <Enter>" may keep <Enter>);
+ * a bare < or > is text. Our own markup is taken out first.
+ */
+const madeUpTag = (reply: string, source: string): boolean =>
+  [...reply.replace(MARKUP, "").matchAll(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi)].some((m) => !unescape(source).includes(m[0]));
 /** Our tags, placeholders and line breaks: the only markup segments have (never a generic `<…>`, which a reply may fake). */
 const MARKUP = /<\/?[a-z]\d{1,4}>|<x\d{1,4}\/>|<br\s?\/?>/g;
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -131,7 +139,9 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
         fill();
         // Its own marks (code) stay; bold, italic and links are the open tags', like the text around it.
         const node = structuredClone(kept.get(id)!);
-        const marks = [...stack.map((tag) => tags.get(tag.id)!), ...(node.marks ?? []).filter((mark) => !(mark.type! in TAG_LETTER))];
+        // Inline code takes no other mark (the schema's code excludes them all), so it keeps only its own.
+        const own = (node.marks ?? []).filter((mark) => !(mark.type! in TAG_LETTER));
+        const marks = own.some((mark) => mark.type === "code") ? own : [...stack.map((tag) => tags.get(tag.id)!), ...own];
         delete node.marks;
         result.push({ ...node, ...(marks.length > 0 && { marks }) });
       } else {
@@ -157,7 +167,7 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
     if (missingTag !== undefined) return `<${TAG_LETTER[tags.get(missingTag)!.type!]}${missingTag}> is missing`;
     const missingKept = [...kept.keys()].find((id) => !seenKept.has(id));
     if (missingKept !== undefined) return `placeholder <x${missingKept}/> is missing`;
-    if (/[<>]/.test(text.replace(/<(\/?)([a-z])(\d+)>|<x(\d+)\/>|<br\s*\/?>/g, ""))) return "it has a tag that isn't in the source";
+    if (madeUpTag(text, out)) return "it has a tag that isn't in the source";
     return result;
   };
   return { text: out, decode };
@@ -199,7 +209,7 @@ export function segmentsOf(doc: Doc): {
         id,
         source: escape(node.attrs.alt),
         check: (translated) =>
-          /<[a-z/]/i.test(translated)
+          translated.replace(MARKUP, "") !== translated || madeUpTag(translated, escape(String(node.attrs!.alt)))
             ? "an image's description can't have tags"
             : unescape(translated).trim().length > MAX_ALT_LENGTH
               ? `an image's description must be at most ${MAX_ALT_LENGTH} characters`
@@ -270,7 +280,7 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
       .join("");
     if (!bad && seen.size !== kept.length) bad = "a placeholder is missing";
     if (!bad && (translated.match(/<br\s*\/?>/g) ?? []).length !== (tagged.match(/<br\/>/g) ?? []).length) bad = "its line breaks don't match the source's";
-    if (!bad && /<\/?[a-z]+\d*\/?>/i.test(translated.replace(/<x(\d+)\/>|<br\s*\/?>/g, ""))) bad = "it has a tag that isn't in the source";
+    if (!bad && madeUpTag(translated, tagged)) bad = "it has a tag that isn't in the source";
     return bad ? { id: "1", reason: bad } : out;
   };
   return {
@@ -433,7 +443,8 @@ export async function translateSegments(segments: Segment[], options: TranslateO
   }
   // A provider error a retry made up for isn't one.
   if (segments.every((segment) => translations[segment.id] !== undefined)) providerError = undefined;
-  const learned = { ...memory };
+  // Only the current segments: a paragraph edited or removed since drops out, so the memory doesn't grow forever.
+  const learned: Record<string, string> = {};
   for (const segment of segments) {
     if (translations[segment.id] !== undefined) learned[segment.text] = translations[segment.id]!;
   }

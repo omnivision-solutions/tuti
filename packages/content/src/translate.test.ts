@@ -327,17 +327,36 @@ test("a newline written as an entity is a space too", () => {
   expect(segmentOfText("Hi there").apply("Hallo&#10;zusammen&#13;&#10;!")).toBe("Hallo zusammen !");
 });
 
-test("a placeholder moved out of a link takes the open tags' marks, keeping its own code mark", () => {
-  const link = { type: "link", attrs: { href: "https://a.example" } };
-  const { segments, apply } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Run ", marks: [link] }, { type: "text", text: "sync", marks: [link, { type: "code" }] }, { type: "text", text: " today please" }] }] });
-  expect(segments[0]!.text).toBe("<a1>Run <x2/></a1> today please");
-  expect(apply({ "1": "<x2/> <a1>heute ausführen</a1> bitte" }).doc.content![0]!.content![0]).toEqual({ type: "text", text: "sync", marks: [{ type: "code" }] });
-});
-
 test("an entity past the last code point is dropped, not thrown", () => {
   expect(segmentOfText("Hi there").apply("Hallo &#9999999;zusammen")).toBe("Hallo zusammen");
 });
 
 test("a URL's scheme in capitals is still kept exactly", () => {
   expect(segmentOfText("Read HTTPS://Example.com/Help now").segment.text).toBe("Read <x1/> now");
+});
+
+test("inline code moved into a bold tag stays code only, so the document is still valid", async () => {
+  const { parseDoc } = await import("./document");
+  const parsed = parseDoc("article", { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Click " }, { type: "text", text: "Save", marks: [{ type: "bold" }] }, { type: "text", text: " or run " }, { type: "text", text: "tuti sync", marks: [{ type: "code" }] }] }] });
+  if (!parsed.ok) throw new Error(parsed.error);
+  const { segments, apply } = segmentsOf(parsed.doc);
+  expect(segments[0]!.text).toBe("Click <b1>Save</b1> or run <x2/>");
+  const out = apply({ "1": "Klicke <b1>Speichern oder führe <x2/> aus</b1>" }).doc;
+  expect(out.content![0]!.content!.find((n) => n.text === "tuti sync")).toEqual({ type: "text", text: "tuti sync", marks: [{ type: "code" }] });
+  expect(parseDoc("article", out).ok).toBe(true);
+});
+
+test("a bare < or > is text; a tag the source has as text may stay", () => {
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Go to Settings > Billing, then press <Enter>" }] }] });
+  expect(check("1", "Gehe zu Einstellungen > Abrechnung und drücke <Enter>")).toBeNull();
+  expect(check("1", "Gehe zu <strong>Einstellungen</strong>")).toBe("it has a tag that isn't in the source");
+  const image = segmentsOf({ type: "doc", content: [{ type: "image", attrs: { mediaId: "m", alt: "Press <Enter> to save", w: 1, h: 1 } }] });
+  expect(image.check("1", "Drücke <Enter> zum Speichern")).toBeNull();
+});
+
+test("the memory keeps only the current segments; entities Postgres can't store are dropped", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readers vote on new posts." }] }] };
+  const out = await translateDoc(one, { from: "English", to: "German", memory: { "An old paragraph long gone": "Ein alter Absatz" }, ask: async () => '{"segments": {"1": "Leser stimmen ab."}}' });
+  expect(out.memory).toEqual({ "Readers vote on new posts.": "Leser stimmen ab." });
+  expect(segmentOfText("Hi there").apply("Hallo&#0;&#xD800;&#7; zusammen")).toBe("Hallo zusammen");
 });
