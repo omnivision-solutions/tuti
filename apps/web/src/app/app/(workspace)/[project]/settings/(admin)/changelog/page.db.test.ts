@@ -1,5 +1,6 @@
 import { isValidElement, type ReactElement } from "react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { ChangelogStyleForm } from "@/components/changelog";
 import { settingsGroups } from "@/lib/settings-pages";
@@ -10,6 +11,11 @@ import ChangelogSettingsPage from "./page";
 /** Settings → Changelog: its covers are there with AI or without; how AI drafts, only with it. */
 
 let slug: string;
+let model: ModelFake;
+beforeAll(async () => {
+  model = await startModelFake();
+});
+afterAll(() => model.close());
 beforeEach(async () => {
   const owner = await signUp("Owner");
   slug = (await createProject(owner)).slug;
@@ -34,7 +40,10 @@ test("without AI, the page and its link are there with the cover only", async ()
 });
 
 test("with AI, the page has its AI model too, and its link is still with the portal's pages", async () => {
-  vi.stubEnv("OPENAI_API_KEY", "sk-or-placeholder");
+  // The model fake answers the AI model's list of models: nothing leaves the machine.
+  for (const [name, value] of Object.entries(model.env)) {
+    vi.stubEnv(name, value);
+  }
   expect((await form()).props.model).toBeTruthy();
   expect(portal()).toEqual(["Branding", "Navigation", "Docs home", "Content actions", "Changelog", "Widget", "SEO", "Custom code"]);
   expect(ai()).not.toContain("Changelog");

@@ -174,6 +174,8 @@ function RoleModel({
           onBlur={() => void pick(value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
+              // Saved here, not by a form it may be in (Settings → Changelog's): the browser's own Enter submits that.
+              event.preventDefault();
               void pick(value);
             }
           }}

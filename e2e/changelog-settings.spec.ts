@@ -63,7 +63,9 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await query(`UPDATE project SET "planKey" = 'pro' WHERE slug = $1`, [slug]);
   await owner.reload();
   await expect(level("Best")).toHaveAccessibleDescription("");
-  await level("Best").click();
+  // Picked from the keyboard too: Enter on a level's button (inside the page's form, which Enter mustn't submit).
+  await level("Best").focus();
+  await level("Best").press("Enter");
   await expect(owner.getByText("AI model saved")).toBeVisible();
   await expect(level("Best")).toBeChecked();
   await expect(owner.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();

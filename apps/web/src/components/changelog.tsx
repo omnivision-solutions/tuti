@@ -1541,18 +1541,9 @@ export function ChangelogStyleForm({
     <form {...form} inert={pending} className="flex flex-col gap-7">
       {model && (
         <SettingsCard title="Drafting with AI">
-          {/* Saved as it's chosen, not by the page's Save: Enter in its Custom boxes doesn't save the form too, neither by the
-              form's own Enter nor by the browser's (a form whose one text box it is submits on Enter). */}
-          <div
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === "Enter") {
-                event.preventDefault();
-              }
-            }}
-          >
-            {model}
-          </div>
+          {/* Saved as it's chosen, not by the page's Save: Enter in its Custom boxes doesn't save the form too (the boxes
+              cancel the browser's own submitting themselves; Enter on a level's button still picks it). */}
+          <div onKeyDown={(event) => event.stopPropagation()}>{model}</div>
           <SettingBlock className="gap-2">
             <label htmlFor="style-tone" className="font-medium">
               Instructions
