@@ -1054,7 +1054,8 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
       );
       if (result.error) {
         focusPullRequests.next = false;
-        setFound({ ...found, error: result.error });
+        // Some were added before a later batch was refused: said, so the list isn't taken for what's missing still.
+        setFound({ ...found, error: result.added ? `Added ${plural(result.added, "pull request")}, then: ${result.error}` : result.error });
         return;
       }
       setOpen(false);
