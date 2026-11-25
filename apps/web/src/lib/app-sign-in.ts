@@ -1,54 +1,57 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { emailConfigured } from "@tuti/email";
-import { log } from "@tuti/shared";
 import type { BetterAuthPlugin } from "better-auth";
 import { addOAuthServerContext, APIError, createAuthEndpoint, createAuthMiddleware, getOAuthState } from "better-auth/api";
 import { parseSetCookieHeader } from "better-auth/cookies";
 import { makeSignature } from "better-auth/crypto";
 import { z } from "zod";
 
-import { requestTarget } from "@/server/custom-domains";
-
 import { hashSecret, randomSecret } from "./portal-handoff";
 
 /**
- * Signing in from Tuti's mobile app (docs/plan.md, Mobile app). The app has no web view of its own for it: Google,
- * GitHub and an emailed link finish in the device's browser, which then opens the app through its link scheme. Only
- * this scheme is trusted (lib/auth.ts), on the app's host only, on every server: a self-hosted one needs no setting.
+ * Signing in from Tuti's mobile app (docs/plan.md, Mobile app): Google, GitHub, or the account's email and password.
+ * The app has no web view of its own for it: Google and GitHub finish in the device's browser, which then opens the app
+ * through its link scheme. Only this scheme is trusted (lib/auth.ts), on the app's host only, on every server: a
+ * self-hosted one needs no setting.
  *
  * A link scheme belongs to nobody: on Android another app can register it and receive the redirect. So the redirect
  * carries no session, only a code, and the code is worth nothing without a secret the app that started the sign-in
- * kept (PKCE, as RFC 8252 asks of native apps). The app signs in to an account that exists: none is made from it.
+ * kept (PKCE, as RFC 8252 asks of native apps). A password goes over HTTPS straight to the server and the session comes
+ * back in the answer, never through a redirect, so it needs none of that. The app signs in to an account that exists:
+ * none is made from it.
  *
  * The contract, all under the server's /api/auth, JSON in and out. The app's requests come from no page: it sends its
  * scheme in an `expo-origin: tuti://` header (Better Auth's Expo client does), which stands in for an origin.
  *
- * Before any sign-in the app makes up:
+ * Email and password, one call: `POST /app/sign-in/email { email, password }` → `{ token, cookie }`, as step 3 below
+ * answers. It is the web's own password sign-in (Better Auth's /sign-in/email) and answers as it does: 401
+ * `INVALID_EMAIL_OR_PASSWORD` for a wrong password and an address with no account (or no password) alike, 403
+ * `EMAIL_NOT_VERIFIED` for an address not verified yet on a server that sends email (it emails the verification link,
+ * as the web does), 429 under the web's limit (shared with the web's sign-in, per visitor). The answer sets no cookie.
+ * "Forgot password?" opens `<server>/app/auth/forgot-password` in the device's browser: the web's reset, whose new
+ * password the app then signs in with.
+ *
+ * Google or GitHub, before the sign-in the app makes up:
  * - `verifier`: 43 to 128 random characters of A-Z a-z 0-9 - . _ ~, kept on the device, never sent until step 3;
  * - `challenge`: the verifier's SHA-256, base64url without padding (43 characters);
  * - `state`: 16 to 128 random characters of A-Z a-z 0-9 - _.
  *
- * 1. Start, one of:
- *    - the emailed link: `POST /app/sign-in-link { email, state, challenge }` → `{ status: true }`, whether or not the
- *      address has an account (one without gets no email). The person opens the link and taps "Open the app".
- *    - Google or GitHub: `POST /sign-in/social { provider: "google" | "github", callbackURL: "tuti://sign-in?state=<state>",
- *      additionalData: { challenge } }` and nothing else → `{ url }`. The app opens the device's browser (an auth
- *      session) at `GET /expo-authorization-proxy?authorizationURL=<url>`, with `url` exactly as it came, which goes
- *      on to the provider.
+ * 1. `POST /sign-in/social { provider: "google" | "github", callbackURL: "tuti://sign-in?state=<state>",
+ *    additionalData: { challenge } }` and nothing else → `{ url }`. The app opens the device's browser (an auth
+ *    session) at `GET /expo-authorization-proxy?authorizationURL=<url>`, with `url` exactly as it came, which goes on
+ *    to the provider.
  * 2. The browser is redirected to `tuti://sign-in?state=<state>&code=<code>`, or `…&error=<code>` (and maybe
- *    `error_description`): `signup_disabled` for someone with no account (they make one on the web first),
- *    `INVALID_TOKEN` for a link used or expired, a provider's own otherwise. The app takes only a `state` it made up.
+ *    `error_description`): `signup_disabled` for someone with no account (they make one on the web first), a
+ *    provider's own otherwise. The app takes only a `state` it made up.
  * 3. `POST /app/session { code, verifier }` → `{ token, cookie }`, within two minutes, once. `token` is the bearer
  *    token for /api/v1 (`Authorization: Bearer <token>`, with `Tuti-Project`); `cookie` is the `Cookie` header for
  *    /api/auth itself (`GET /get-session`, which also extends the session; `POST /sign-out`). Both go in the device's
  *    secure storage. Anything wrong (401 `INVALID_CODE`: the verifier isn't the challenge's, the code was used, is
  *    unknown or too old) ends the session behind the code: someone else has it. So the app posts a code once.
  *
- * What this doesn't stop: a sign-in another app on the phone starts itself, with its own verifier. For Google and
- * GitHub the person would be signing in from that app; for the emailed link they'd be tapping "Open the app" on a link
- * they didn't ask for.
+ * What this doesn't stop: a Google or GitHub sign-in another app on the phone starts itself, with its own verifier: the
+ * person would be signing in from that app.
  *
  * Signed in, the Inbox stays current while it's open through `GET /api/live` (not /api/auth; not in the API reference
  * yet), a Server-Sent Events stream with the same headers as /api/v1: `Authorization: Bearer <token>` and
@@ -68,8 +71,6 @@ export const APP_ORIGIN = "tuti://";
 /** Whether an address is the app's, as Better Auth reads the scheme: in any case, with or without the slashes. */
 export const isAppLink = (url: unknown): url is string => typeof url === "string" && /^tuti:/i.test(url);
 
-/** What the app made up when it started a sign-in, which it gets back with the code: it takes no code it didn't ask for. */
-const APP_SIGN_IN_STATE = /^[A-Za-z0-9_-]{16,128}$/;
 /** A verifier's SHA-256, base64url: what the app sends when it starts, and what `verifier` must hash to at the end. */
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 const isChallenge = (challenge: unknown): challenge is string => typeof challenge === "string" && CHALLENGE.test(challenge);
@@ -77,23 +78,8 @@ const isChallenge = (challenge: unknown): challenge is string => typeof challeng
 /** How long a code works: the time for the app to come to the front and post it. */
 const CODE_SECONDS = 120;
 
-/** Where the `verification` rows are: an emailed link's state and challenge by its token, a code's session by the code, both hashed. */
-const linkRow = (token: string) => `app-sign-in-link:${hashSecret(token)}`;
+/** Where the `verification` rows are: a code's session by the code, hashed. */
 const codeRow = (code: string, used = false) => `app-sign-in-${used ? "used" : "code"}:${hashSecret(code)}`;
-
-/** Keeps what the app asked an emailed link with, for as long as the link works (sendSignInLink, lib/auth.ts). */
-export async function keepAppSignInLink(token: string, asked: { state: string; challenge: string }, expiresAt: Date) {
-  await prisma.verification.create({ data: { id: randomUUID(), identifier: linkRow(token), value: JSON.stringify(asked), expiresAt } });
-}
-
-/** What the app asked an emailed link with, if the link can still be used (read only: the sign-in itself uses it up). */
-export async function appSignInLink(token: string): Promise<{ state: string; challenge: string } | null> {
-  const row = await prisma.verification.findFirst({ where: { identifier: linkRow(token), expiresAt: { gt: new Date() } }, select: { value: true } });
-  return row && (JSON.parse(row.value) as { state: string; challenge: string });
-}
-
-/** Where an emailed link's "Open the app" sends the browser: the app, which checks `state`. */
-export const appSignInReturn = (state: string) => `${APP_ORIGIN}sign-in?state=${state}`;
 
 const refused = () => new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
 
@@ -117,6 +103,15 @@ export async function noAccountFromApp() {
 /** The session token a signed cookie's value holds (`<token>.<signature>`, percent-encoded). */
 const sessionTokenOf = (signed: string) => decodeURIComponent(signed).split(".")[0]!;
 
+/**
+ * What the app gets for a session (the contract above): its cookie's value, signed as Better Auth signs it, which /api/v1
+ * takes as the bearer token, and the cookie itself, for /api/auth.
+ */
+async function handOver(ctx: { context: { secret: string }; json: (body: { token: string; cookie: string }) => unknown }, session: string, cookie: string) {
+  const token = encodeURIComponent(`${session}.${await makeSignature(session, ctx.context.secret)}`);
+  return ctx.json({ token, cookie: `${cookie}=${token}` });
+}
+
 export const appSignIn = () =>
   ({
     id: "tuti-app-sign-in",
@@ -131,8 +126,9 @@ export const appSignIn = () =>
       headers.set("origin", APP_ORIGIN);
       return { request: new Request(request, { headers }) };
     },
-    // Beside Better Auth's own limits: the app's two posts, per visitor.
-    rateLimit: [{ pathMatcher: (path) => path === "/app/session" || path === "/app/sign-in-link", window: 60, max: 10 }],
+    // Beside Better Auth's own limits: the code's exchange, per visitor. The password sign-in is limited where the web's
+    // is (its own sign-in, which it goes through).
+    rateLimit: [{ pathMatcher: (path) => path === "/app/session", window: 60, max: 10 }],
     hooks: {
       before: [
         {
@@ -162,12 +158,11 @@ export const appSignIn = () =>
       ],
       after: [
         {
-          // A sign-in that ends with a redirect to the app (Google's or GitHub's way back, the emailed link's
-          // "Open the app"). The session it made isn't the browser's, which had no say in whose sign-in it finished:
+          // A sign-in that ends with a redirect to the app (Google's or GitHub's way back). The session it made isn't the browser's, which had no say in whose sign-in it finished:
           // its cookies come out of the answer. Nor does it ride in the redirect, which any app that registered the
           // scheme may get: a code does, for the app that holds the verifier of this sign-in's challenge to exchange
           // (/app/session). No challenge kept (a sign-in the start above didn't mark as the app's): no session at all.
-          matcher: (ctx) => !!ctx.path?.startsWith("/callback") || ctx.path === "/magic-link/verify",
+          matcher: (ctx) => !!ctx.path?.startsWith("/callback"),
           handler: createAuthMiddleware(async (ctx) => {
             const headers = ctx.context.responseHeaders;
             const location = headers?.get("location");
@@ -181,8 +176,7 @@ export const appSignIn = () =>
               // No session: an error on its way to the app.
               return;
             }
-            const token = typeof ctx.query?.token === "string" ? ctx.query.token : "";
-            const challenge = ctx.path === "/magic-link/verify" ? (await appSignInLink(token))?.challenge : appSignInOf(await getOAuthState())?.challenge;
+            const challenge = appSignInOf(await getOAuthState())?.challenge;
             const now = Date.now();
             await prisma.verification.deleteMany({ where: { identifier: { startsWith: "app-sign-in-" }, expiresAt: { lt: new Date(now) } } });
             const to = new URL(location);
@@ -243,47 +237,6 @@ export const appSignIn = () =>
         throw ctx.redirect(onward);
       }),
       /**
-       * POST /api/auth/app/sign-in-link `{ email, state, challenge }`: emails an account a link that signs the app in
-       * (the page it opens: /app/auth/app-link). Under the limits of every emailed link (server/email-link-limits.ts),
-       * and it answers the same whether or not the address has an account: one without gets nothing, as the app has no
-       * sign-up.
-       */
-      appSignInLink: createAuthEndpoint(
-        "/app/sign-in-link",
-        {
-          method: "POST",
-          body: z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email()), state: z.string().regex(APP_SIGN_IN_STATE), challenge: z.string().regex(CHALLENGE) }),
-        },
-        async (ctx) => {
-          const headers = ctx.headers ?? new Headers();
-          if (!emailConfigured() || (await requestTarget(headers.get("host"))).kind !== "app") {
-            throw new APIError("BAD_REQUEST", { message: "Sign-in links aren't available here." });
-          }
-          const { email, state, challenge } = ctx.body;
-          // A verified account only. Opening the link verifies the address, and an unverified account's password may be
-          // someone else's, who signed up with this address first: verifying would let them in (as onExistingUserSignUp
-          // in lib/auth.ts never sends the verification link). Its owner verifies on the web first.
-          const account = await prisma.user.findUnique({ where: { email }, select: { emailVerified: true } });
-          const sends = !!account?.emailVerified;
-          // Imported here: both import lib/auth.ts, which imports this file.
-          const { countEmailedLink } = await import("@/server/email-link-limits");
-          const limited = await countEmailedLink(null, email, headers, sends ? "address" : "nobody");
-          if ("error" in limited) {
-            throw new APIError("TOO_MANY_REQUESTS", { message: limited.error });
-          }
-          if (limited.id && sends) {
-            try {
-              const { auth } = await import("./auth");
-              await auth.api.signInMagicLink({ body: { email, metadata: { linkId: limited.id, app: { state, challenge } } }, headers });
-            } catch (error) {
-              // Only an address with an account gets this far, so the answer stays the same.
-              log.error("Sending the app's sign-in link failed", { error });
-            }
-          }
-          return ctx.json({ status: true });
-        },
-      ),
-      /**
        * POST /api/auth/app/session `{ code, verifier }`: the app's last step. The code from the redirect, with the
        * verifier whose challenge the sign-in was started with, for the session: `{ token, cookie }` (the contract above).
        * Once: the first post claims the code, right or wrong. A wrong verifier, a code used before or too old: refused,
@@ -307,9 +260,48 @@ export const appSignIn = () =>
           }
           throw new APIError("UNAUTHORIZED", { code: "INVALID_CODE", message: "This code doesn't work. Sign in again." });
         }
-        // Signed as Better Auth signs the session's cookie: its value is what /api/v1 takes as the bearer token.
-        const token = encodeURIComponent(`${kept.session}.${await makeSignature(kept.session, ctx.context.secret)}`);
-        return ctx.json({ token, cookie: `${kept.cookie}=${token}` });
+        return handOver(ctx, kept.session, kept.cookie);
       }),
+      /**
+       * POST /api/auth/app/sign-in/email `{ email, password }`: the app's password sign-in, for `{ token, cookie }` (the
+       * contract above). It is the web's (Better Auth's /sign-in/email), asked of the server as a request of its own,
+       * so that everything the web's goes through applies as it is: its limit, counted with the web's for the visitor
+       * (the inner request carries their address), its answer for a wrong password, an unknown or an unverified
+       * address, and no account made. Only that answer's session cookie is taken, and given as the app's session: the
+       * answer sets no cookie.
+       *
+       * Only from the app: a page's request has an Origin, which onRequest above leaves, so a page can't get a token here.
+       */
+      appPasswordSignIn: createAuthEndpoint(
+        "/app/sign-in/email",
+        { method: "POST", body: z.object({ email: z.string().max(320), password: z.string().max(1000) }) },
+        async (ctx) => {
+          if (!ctx.request || ctx.headers?.get("origin") !== APP_ORIGIN) {
+            throw new APIError("FORBIDDEN", { message: "This sign-in is the Tuti app's." });
+          }
+          const headers = new Headers(ctx.request.headers);
+          // Signed in or not on this device, the answer is a new session: never a cookie of the caller's.
+          headers.delete("cookie");
+          headers.delete("content-length");
+          headers.set("content-type", "application/json");
+          const { email, password } = ctx.body;
+          // Imported here, and its type named: lib/auth.ts imports this file.
+          const { auth } = (await import("./auth")) as { auth: { handler: (request: Request) => Promise<Response> } };
+          const answer = await auth.handler(
+            new Request(new URL("/api/auth/sign-in/email", ctx.request.url), { method: "POST", headers, body: JSON.stringify({ email, password }) }),
+          );
+          const name = ctx.context.authCookies.sessionToken.name;
+          const signed = parseSetCookieHeader(answer.headers.get("set-cookie") ?? "").get(name)?.value;
+          if (!answer.ok) {
+            // The web's refusal as it is, without its headers: the status, its body, and when to try again.
+            const retry = answer.headers.get("x-retry-after");
+            return new Response(await answer.text(), { status: answer.status, headers: { "content-type": "application/json", ...(retry && { "x-retry-after": retry }) } });
+          }
+          if (!signed) {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: "Signing in failed. Try again." });
+          }
+          return handOver(ctx, sessionTokenOf(signed), name);
+        },
+      ),
     },
   }) satisfies BetterAuthPlugin;
