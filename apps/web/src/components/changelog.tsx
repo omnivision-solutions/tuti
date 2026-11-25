@@ -971,14 +971,15 @@ function EntryPullRequests({
   const [confirming, setConfirming] = useState<{ url: string; ref: string } | null>(null);
   const takeOut = (url: string) =>
     startTransition(async () => {
-      setConfirming(null);
       // Its button goes (disabled meanwhile, then gone): focus goes to the section's heading.
       focusPullRequests.next = true;
       const result = await removeChangelogPullRequest(projectSlug, number, url);
       if (result.error) {
+        // The dialog stays, to try again or cancel.
         focusPullRequests.next = false;
         toast.error(result.error);
       } else {
+        setConfirming(null);
         toast.success("Taken out");
       }
     });
