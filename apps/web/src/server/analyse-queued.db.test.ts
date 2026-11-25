@@ -174,6 +174,20 @@ test("picked, ready with its line, analysed again, then Autopilot turned off bef
   expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "READY", reason: "Autopilot was turned off before it was analysed again." });
 });
 
+test("a failed pick with a docs update, analysed again past the gate, then Autopilot turned off: ready with it", async () => {
+  const change = await pullRequest(18);
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
+  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The AI provider didn't answer.", retryPastGate: true } });
+  await call(analyseCodeChange, team(), { id: change.id });
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+  const [, input] = jobs.enqueue.mock.calls.at(-1)! as [string, Parameters<typeof handlers.codeChange>[0]];
+  expect(input).toMatchObject({ force: true, pastGate: true });
+
+  await handlers.codeChange(input, quiet);
+
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id } })).toMatchObject({ state: "READY" });
+});
+
 test("queueing that fails on Hatchet puts the pull request back as it was, its reason too", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   const change = await pullRequest(3, "NOTHING_TO_DO", "Users don't see it: it changes the build.");

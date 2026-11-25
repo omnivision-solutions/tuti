@@ -1564,7 +1564,9 @@ export const analyseCodeChange = defineOperation({
       // Past the gate for nothing to do ("Analyse anyway"), and for a run that was to go past it (the team's pick, failed
       // or stopped), as its retry would.
       const pastGate = change.state === "NOTHING_TO_DO" || ((change.state === "FAILED" || change.state === "ANALYSING") && change.retryPastGate);
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate, resume: false });
+      // What it was, to be put back so if Autopilot is turned off before the run.
+      const was = change.state === "READY" || change.state === "NOTHING_TO_DO" ? change.state : undefined;
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate, resume: false, ...(was && { was }) });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did: as it was. Not one
       // whose run had stopped (analysing, past the window): put back, it would look under way again, so it's failed.
