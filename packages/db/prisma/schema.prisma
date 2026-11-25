@@ -3305,6 +3305,10 @@ model ScreenshotRun {
   sessionId   String?
   /// The try's workspace at the service while its files may still be there (cleared once they're deleted).
   workspaceId String?
+  /// Once it ended with a session or workspace left (a charge or deletion that failed): how many times a read has tried
+  /// to finish them, and not before when it tries again (backing off; given up after a few).
+  cleanupAttempts Int       @default(0)
+  cleanupAfter    DateTime?
   /// In dollars, from the session: everything, and the browser's, the proxy's and the model's parts.
   cost        Decimal?           @db.Decimal(16, 10)
   browserCost Decimal?           @db.Decimal(16, 10)

@@ -4,7 +4,7 @@ import { openValue } from "@tuti/shared/signed";
 import { mediaLimit } from "@tuti/shared/storage";
 
 import { screenshotsMeter } from "./ai-usage";
-import { type BrowserUse, browserUse, type RunSummary, type SessionCost, TERMINAL } from "./browser-use";
+import { type BrowserUse, browserUse, BrowserUseError, type RunSummary, type SessionCost, TERMINAL } from "./browser-use";
 import { aiPaused } from "./credits";
 import { storeImage } from "./import-media";
 import { enqueue, type JobLogger, type JobResult } from "./index";
@@ -73,30 +73,62 @@ export async function settleStaleScreenshotRuns(projectId: string) {
     await prisma.screenshot.updateMany({ where: { runId: id, imageId: null, failed: "" }, data: { failed: SCREENSHOT_ERRORS.stopped } });
   }
   // Ended runs still holding a session (not charged yet) or a workspace (files not deleted yet), the ones just settled
-  // included. A few at a time: a read waits on these requests.
-  const leftovers = await prisma.screenshotRun.findMany({
-    where: { projectId, state: { in: ["DONE", "FAILED"] }, OR: [{ sessionId: { not: null } }, { workspaceId: { not: null } }] },
-    orderBy: { createdAt: "asc" },
-    take: LEFTOVERS_PER_READ,
-    select: { id: true, sessionId: true, workspaceId: true },
-  });
-  if (leftovers.length === 0 || !screenshotsEnabled()) {
+  // included, and due: never tried first, then the longest waiting. A few at a time: a read waits on these requests.
+  if (!screenshotsEnabled()) {
     return;
   }
+  const now = new Date();
+  const leftovers = await prisma.screenshotRun.findMany({
+    where: {
+      projectId,
+      state: { in: ["DONE", "FAILED"] },
+      OR: [{ sessionId: { not: null } }, { workspaceId: { not: null } }],
+      AND: [{ OR: [{ cleanupAfter: null }, { cleanupAfter: { lte: now } }] }],
+    },
+    orderBy: [{ cleanupAfter: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
+    take: LEFTOVERS_PER_READ,
+    select: { id: true, sessionId: true, workspaceId: true, cleanupAttempts: true },
+  });
   const client = browserUse();
-  for (const { id, sessionId, workspaceId } of leftovers) {
-    if (sessionId) {
-      await chargeSession(client, sessionId, { projectId, runId: id, model: config().screenshots.model }, null);
+  for (const { id, sessionId, workspaceId, cleanupAttempts } of leftovers) {
+    // Claimed for this try, its next one put off: two reads at once take it once, and one that keeps failing (the
+    // service down) waits longer each time instead of filling every read.
+    const attempt = cleanupAttempts + 1;
+    const { count } = await prisma.screenshotRun.updateMany({
+      where: { id, cleanupAttempts },
+      data: { cleanupAttempts: attempt, cleanupAfter: new Date(now.getTime() + CLEANUP_BACKOFF_MS * 4 ** (attempt - 1)) },
+    });
+    if (count === 0) {
+      continue;
     }
-    // The files, after its browser stopped (above).
-    if (workspaceId) {
-      await clearWorkspace(client, workspaceId, { projectId, runId: id });
+    // Its files only once its browser is stopped: else the next try does both again.
+    const charge = sessionId ? await chargeSession(client, sessionId, { projectId, runId: id, model: config().screenshots.model }, null) : SETTLED;
+    const cleared = !workspaceId || (charge.stopped && (await clearWorkspace(client, workspaceId, { projectId, runId: id })));
+    if ((!charge.settled || !cleared) && attempt >= CLEANUP_ATTEMPTS) {
+      // Given up: it stops costing reads and requests. What's left is in the log, to finish by hand.
+      log.error("Finishing a screenshot run's leftovers at Browser Use failed too often: given up", {
+        projectId,
+        runId: id,
+        sessionId: charge.settled ? null : sessionId,
+        workspaceId: cleared ? null : workspaceId,
+      });
+      await prisma.screenshotRun.update({ where: { id }, data: { sessionId: null, workspaceId: null } });
     }
   }
 }
 
-/** Ended runs whose leftovers at Browser Use one read finishes at most (the rest, on the next). */
+/** Ended runs whose leftovers at Browser Use one read tries to finish at most (the rest, on later reads). */
 const LEFTOVERS_PER_READ = 3;
+/** Tries at a run's leftovers before giving up, a minute apart at first and four times longer each time (1, 4, 16, 64 minutes). */
+const CLEANUP_ATTEMPTS = 5;
+const CLEANUP_BACKOFF_MS = 60_000;
+
+/** What became of a session: its browser stopped, and `settled` once it needs nothing more (charged, by this or another, or gone). */
+type Charge = { stopped: boolean; cost: SessionCost | null; settled: boolean };
+const SETTLED: Charge = { stopped: true, cost: null, settled: true };
+
+/** Browser Use no longer has it (its session or workspace expired or was removed): nothing more to do with it. */
+const gone = (error: unknown) => error instanceof BrowserUseError && error.status === 404;
 
 /** A session's cost, just charged, added to its run's: a run whose job dies later keeps every try's cost. */
 async function addCost(runId: string, cost: SessionCost) {
@@ -194,8 +226,10 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
       break;
     }
     error = tried.error;
-    // A try that ran without its cost known (the service didn't say): what's left of the budget is too, so no retry.
-    if (tried.spentUnknown) {
+    // A try that left something at Browser Use (its browser not stopped or not charged, so what's left of the budget
+    // isn't known either; or its files not deleted): no retry, which would put its own session and workspace on the run
+    // in their place. A later read finishes them (settleStaleScreenshotRuns).
+    if (tried.leftover) {
       break;
     }
   }
@@ -249,23 +283,26 @@ type Attempt = { runId: string; projectId: string; settings: Settings; shots: { 
  * One agent run: its answer and files, or why not; then, however it ended (an error, the time limit), the session's
  * browser stopped and what the whole session cost, charged.
  */
-async function attempt(client: BrowserUse, input: Attempt): Promise<({ answer: Answer } | { error: string }) & { cost: SessionCost | null; spentUnknown: boolean }> {
+async function attempt(client: BrowserUse, input: Attempt): Promise<({ answer: Answer } | { error: string }) & { cost: SessionCost | null; leftover: boolean }> {
   const session: { id: string | null; summary: RunSummary | null; workspaceId: string | null } = { id: null, summary: null, workspaceId: null };
   const outcome = await agentRun(client, input, session).catch((error: unknown) => {
     log.warn("A screenshot run's agent failed", { projectId: input.projectId, runId: input.runId, error });
     return { error: SCREENSHOT_ERRORS.service };
   });
-  // The browser stopped first (in chargeSession), so the agent can't save more after the files are deleted; and nothing
-  // of the team's signed-in app stays at Browser Use, however the try (or its charge) ended.
-  let cost: SessionCost | null;
+  // The browser stopped first (in chargeSession), and the files deleted only once it has, so the agent can't save more
+  // after them; nothing of the team's signed-in app stays at Browser Use, however the try (or its charge) ended. A
+  // charge that threw (the database) did so after stopping the browser.
+  // Thrown only by the database, after stopping the browser.
+  let charge: Charge = { ...SETTLED, settled: false };
+  let cleared = !session.workspaceId;
   try {
-    cost = session.id ? await chargeSession(client, session.id, input, session.summary) : null;
+    charge = session.id ? await chargeSession(client, session.id, input, session.summary) : SETTLED;
   } finally {
-    if (session.workspaceId) {
-      await clearWorkspace(client, session.workspaceId, input);
+    if (session.workspaceId && charge.stopped) {
+      cleared = await clearWorkspace(client, session.workspaceId, input);
     }
   }
-  return { ...outcome, cost, spentUnknown: !!session.id && !cost };
+  return { ...outcome, cost: charge.cost, leftover: !charge.settled || !cleared };
 }
 
 async function agentRun(
@@ -324,59 +361,89 @@ async function agentRun(
 }
 
 /** Deletes every file in a run's workspace (Browser Use keeps no way to delete the workspace itself); logged, never thrown. */
-async function clearWorkspace(client: BrowserUse, workspaceId: string, { projectId, runId }: { projectId: string; runId: string }) {
+/** Whether it's empty now (its id cleared from the run). */
+async function clearWorkspace(client: BrowserUse, workspaceId: string, { projectId, runId }: { projectId: string; runId: string }): Promise<boolean> {
   try {
     // A listing gives 100 at most: listed again until it's empty (bounded, for an agent that saved thousands).
     for (let round = 0; round < MAX_CLEAR_ROUNDS; round++) {
-      const { files } = await client.files(workspaceId, false);
+      const files = await client.files(workspaceId, false).then(
+        (listed) => listed.files,
+        (error: unknown) => {
+          if (gone(error)) {
+            return [];
+          }
+          throw error;
+        },
+      );
       if (files.length === 0) {
         await prisma.screenshotRun.updateMany({ where: { id: runId, workspaceId }, data: { workspaceId: null } });
-        return;
+        return true;
       }
       for (const file of files) {
-        await client.deleteFile(workspaceId, file.path);
+        // One already gone is as good as deleted.
+        await client.deleteFile(workspaceId, file.path).catch((error: unknown) => {
+          if (!gone(error)) {
+            throw error;
+          }
+        });
       }
     }
     log.error("A screenshot run's workspace at Browser Use still has files after deleting for a while", { projectId, runId, workspaceId });
   } catch (error) {
     log.error("Deleting a screenshot run's files at Browser Use failed: they're still there", { projectId, runId, workspaceId, error });
   }
+  return false;
 }
 
 /**
  * Stops the session's browsers and reads what the session cost; then, once it's claimed (its id cleared from the run, so
- * the job and a settle never both charge it), charges it and adds it to the run's cost. Null when another claimed it, or
- * when the cost can't be read or isn't a number (logged, never thrown: the run's result stands). The session then stays
- * on the run, unclaimed: a settle charges it if the job dies; otherwise the log has what to charge by hand.
+ * the job and a settle never both charge it), charges it and adds it to the run's cost. Never throws for the service
+ * (logged): a browser that couldn't be stopped (its cost may still grow), or a cost that can't be read or isn't a
+ * number, leaves the session on the run, not settled, for a later read. A session Browser Use no longer has is settled
+ * with nothing charged (logged): its cost can't be known any more.
  */
-async function chargeSession(client: BrowserUse, sessionId: string, { projectId, runId, model }: { projectId: string; runId: string; model: string }, summary: RunSummary | null) {
+async function chargeSession(client: BrowserUse, sessionId: string, { projectId, runId, model }: { projectId: string; runId: string; model: string }, summary: RunSummary | null): Promise<Charge> {
+  const pending: Charge = { stopped: true, cost: null, settled: false };
+  const forget = async (why: string, error?: unknown) => {
+    log.error(why, { projectId, runId, sessionId, error });
+    await prisma.screenshotRun.updateMany({ where: { id: runId, sessionId }, data: { sessionId: null } });
+    return SETTLED;
+  };
   try {
     for (const browser of (await client.activeBrowsers(sessionId)).items) {
       await client.stopBrowser(browser.id);
     }
   } catch (error) {
-    log.error("Stopping a screenshot run's browser failed: it's billed until it times out", { projectId, runId, sessionId, error });
+    if (gone(error)) {
+      return forget("A screenshot run's session is gone at Browser Use: it can't be charged", error);
+    }
+    log.error("Stopping a screenshot run's browser failed: it isn't charged yet", { projectId, runId, sessionId, error });
+    return { ...pending, stopped: false };
   }
   let cost: SessionCost;
   try {
     cost = await client.sessionCost(sessionId);
   } catch (error) {
+    if (gone(error)) {
+      return forget("A screenshot run's session is gone at Browser Use: it can't be charged", error);
+    }
     log.error("Reading a screenshot run's cost failed: it isn't charged yet", { projectId, runId, sessionId, error });
-    return null;
+    return pending;
   }
   const dollars = Number(cost.totalCostUsd);
   if (!Number.isFinite(dollars) || dollars < 0) {
     log.error("A screenshot run's cost isn't a number: it isn't charged yet", { projectId, runId, sessionId, cost });
-    return null;
+    return pending;
   }
   const { count } = await prisma.screenshotRun.updateMany({ where: { id: runId, sessionId }, data: { sessionId: null } });
   if (count === 0) {
-    return null;
+    // Another (the job, or a read) claimed it and charges it.
+    return SETTLED;
   }
   // Logged, never thrown, by the meter itself: a write that fails there leaves what to charge by hand in the log.
   await screenshotsMeter(projectId)({ kind: "agent", model, inputTokens: summary?.totalInputTokens ?? 0, outputTokens: summary?.totalOutputTokens ?? 0, cost: dollars });
   await addCost(runId, cost).catch((error: unknown) => log.error("Adding a screenshot run's cost to it failed: it was charged", { projectId, runId, sessionId, cost, error }));
-  return cost;
+  return { stopped: true, cost, settled: true };
 }
 
 const PASSWORD_ALIAS = "app_password";

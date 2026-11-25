@@ -1,6 +1,6 @@
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lastingMediaUrl, SCREENSHOT_SECRET, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, SCREENSHOT_SECRET, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -197,42 +197,51 @@ export const updateScreenshotSettings = defineOperation({
   }),
   output: settingsOutput.describe("The screenshot settings, as saved"),
   example: { appUrl: "https://app.example.com", signIn: "password", username: "demo@example.com", password: "a demo account's password", about: "Close the welcome tour.", window: "desktop" },
+  // Read, merged and saved under the project's lock: two updates at once (a password, the notes) keep both.
   run: async ({ projectId }, input) => {
-    const saved = await prisma.screenshotSettings.findUnique({ where: { projectId } });
-    const appUrl = input.appUrl ?? saved?.appUrl;
-    if (!appUrl) {
-      throw new OperationError(400, "invalid_input", "Enter your app's address");
-    }
-    const signIn = (input.signIn?.toUpperCase() ?? saved?.signIn ?? "NONE") as ScreenshotSignIn;
-    const username = input.username ?? saved?.username ?? "";
-    // The secrets are only ever given to the agent on the app's own host: one that moved forgets them, so changing the
-    // address can't send the saved password (typed only on that host) or link somewhere else.
-    // By origin: another scheme (https to http) or port is another place too.
-    const sameHost = !!saved && new URL(saved.appUrl).origin === new URL(appUrl).origin;
-    const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameHost ? saved.password : null;
-    const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameHost ? saved.signInLink : null;
-    const moved = saved && !sameHost ? " again: the app's address moved to another site" : "";
-    if (signIn === "PASSWORD" && (!username || !password)) {
-      throw new OperationError(400, "invalid_input", username && moved ? `Enter the password${moved}` : "Enter the username and password to sign in with");
-    }
-    if (signIn === "LINK" && !signInLink) {
-      throw new OperationError(400, "invalid_input", `Enter the sign-in link${moved}`);
-    }
-    const data = {
-      appUrl,
-      signIn,
-      // Only the way it signs in keeps its secret.
-      username: signIn === "PASSWORD" ? username : "",
-      password: signIn === "PASSWORD" ? password : null,
-      signInLink: signIn === "LINK" ? signInLink : null,
-      about: input.about ?? saved?.about ?? "",
-      window: (input.window?.toUpperCase() ?? saved?.window ?? "DESKTOP") as ScreenshotWindow,
-      residentialProxy: input.residentialProxy ?? saved?.residentialProxy ?? false,
-    };
-    await prisma.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      await saveSettings(tx, projectId, input);
+    });
     return settingsView(projectId);
   },
 });
+
+/** screenshotSettings.update's read, merge and save, in `tx` under the project's lock. */
+async function saveSettings(tx: Prisma.TransactionClient, projectId: string, input: z.infer<typeof updateScreenshotSettings.input>) {
+  const saved = await tx.screenshotSettings.findUnique({ where: { projectId } });
+  const appUrl = input.appUrl ?? saved?.appUrl;
+  if (!appUrl) {
+    throw new OperationError(400, "invalid_input", "Enter your app's address");
+  }
+  const signIn = (input.signIn?.toUpperCase() ?? saved?.signIn ?? "NONE") as ScreenshotSignIn;
+  const username = input.username ?? saved?.username ?? "";
+  // The secrets are only ever given to the agent on the app's own host: one that moved forgets them, so changing the
+  // address can't send the saved password (typed only on that host) or link somewhere else.
+  // By origin: another scheme (https to http) or port is another place too.
+  const sameHost = !!saved && new URL(saved.appUrl).origin === new URL(appUrl).origin;
+  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameHost ? saved.password : null;
+  const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameHost ? saved.signInLink : null;
+  const moved = saved && !sameHost ? " again: the app's address moved to another site" : "";
+  if (signIn === "PASSWORD" && (!username || !password)) {
+    throw new OperationError(400, "invalid_input", username && moved ? `Enter the password${moved}` : "Enter the username and password to sign in with");
+  }
+  if (signIn === "LINK" && !signInLink) {
+    throw new OperationError(400, "invalid_input", `Enter the sign-in link${moved}`);
+  }
+  const data = {
+    appUrl,
+    signIn,
+    // Only the way it signs in keeps its secret.
+    username: signIn === "PASSWORD" ? username : "",
+    password: signIn === "PASSWORD" ? password : null,
+    signInLink: signIn === "LINK" ? signInLink : null,
+    about: input.about ?? saved?.about ?? "",
+    window: (input.window?.toUpperCase() ?? saved?.window ?? "DESKTOP") as ScreenshotWindow,
+    residentialProxy: input.residentialProxy ?? saved?.residentialProxy ?? false,
+  };
+  await tx.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
+}
 
 /** Refuses a run that can't go: no key or uploads here (503), no settings (409), no credits (402). */
 async function refuseRun(projectId: string) {

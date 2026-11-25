@@ -48,6 +48,13 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await save.click();
   await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
+  // Saved, the field is emptied at once: moving the app to another site and saving doesn't send it again for there.
+  await expect(passwordField).toHaveValue("");
+  await expect(save).toBeDisabled();
+  await owner.getByLabel("App address").fill("https://other.example.net");
+  await save.click();
+  await expect(owner.getByText("Enter the password again: the app's address moved to another site")).toBeVisible();
+  await owner.getByLabel("App address").fill("https://app.example.com");
   // Saved, the password is never shown again, nor in the page.
   await owner.reload();
   await expect(passwordField).toHaveValue("");

@@ -41,6 +41,8 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
   const id = useId();
   const [signIn, setSignIn] = useState<SignIn>(settings.signIn);
   const { state, pending, form } = useCustomizeForm({
+    // Saved, they're never shown again, nor sent again: an address changed next to another site must get new ones.
+    clearOnSave: ["password", "signInLink"],
     save: async (prev, formData) => {
       const result = await saveScreenshotSettings(projectSlug, prev, formData);
       if (!result.error) {

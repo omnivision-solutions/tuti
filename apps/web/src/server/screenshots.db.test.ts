@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
-import { creditBalance, grantCredits, handlers, takeScreenshots as takeScreenshotRun, withoutLink } from "@tuti/jobs";
+import { creditBalance, grantCredits, handlers, lockProject, SCREENSHOT_SECRET, takeScreenshots as takeScreenshotRun, withoutLink } from "@tuti/jobs";
 import { type BrowserUseFake, configFile, creditsOn, type S3Fake, startBrowserUseFake, startS3Fake } from "@tuti/testkit";
+import { openValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { call } from "@/server/operations/run";
@@ -45,6 +46,8 @@ beforeEach(async () => {
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const setUp = (input: Parameters<typeof updateScreenshotSettings.run>[1] = {}) =>
   call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/home", signIn: "password", username: "e2e-demo@example.com", password: PASSWORD, ...input });
+/** A run's next try at its leftovers at Browser Use is due now (the backoff passed). */
+const timePasses = (id: string) => prisma.screenshotRun.update({ where: { id }, data: { cleanupAfter: new Date(Date.now() - 1000) } });
 /** The run's session's browser, by the fake's latest run. */
 const lastBrowser = () => browserUse.browsers.get(browserUse.runs.at(-1)!.sessionId)!;
 
@@ -109,6 +112,33 @@ test("a try whose cost couldn't be read isn't retried: what's left of the budget
   browserUse.next({ status: "failed", error: "Max steps reached", cost: { totalCostUsd: "n/a" } });
   expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "failed", cost: null });
   expect(browserUse.runs).toHaveLength(before + 2);
+});
+
+test("two updates at once keep both: a new password and new notes", async () => {
+  await setUp({ about: "Old notes." });
+  // Updates wait for the project's lock (held here by another transaction): each reads, merges and saves under it.
+  let release!: () => void;
+  let locked!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const taken = new Promise<void>((resolve) => (locked = resolve));
+  const holding = prisma.$transaction(async (tx) => {
+    await lockProject(tx, project.id);
+    locked();
+    await held;
+  });
+  await taken;
+  let done = false;
+  const updates = Promise.all([call(updateScreenshotSettings, as(), { password: "the-new-password" }), call(updateScreenshotSettings, as(), { about: "New notes." })]).then(() => {
+    done = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  expect(done).toBe(false);
+  release();
+  await holding;
+  await updates;
+  const row = await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
+  expect(row.about).toBe("New notes.");
+  expect(openValue(SCREENSHOT_SECRET, row.password!)).toBe("the-new-password");
 });
 
 test("settings are refused without what their sign-in needs", async () => {
@@ -272,7 +302,7 @@ test("a run whose charge and file deletion failed has them done by a later read,
   await setUp();
   // Browser Use fails the cost read and a delete, in the job and again in the read screenshots.take returns with: the run
   // ends, its screenshot kept, nothing charged, its files there.
-  browserUse.failNext = { deletes: 2, costs: 2 };
+  browserUse.failNext = { deletes: 2, costs: 2, stops: 0 };
   const run = await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   const { sessionId, workspaceId } = browserUse.runs.at(-1)!;
   expect(run).toMatchObject({ state: "done", cost: null, screenshots: [{ state: "taken" }] });
@@ -280,7 +310,9 @@ test("a run whose charge and file deletion failed has them done by a later read,
   expect(browserUse.files.get(workspaceId)!.size).toBeGreaterThan(0);
   expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { sessionId: true, workspaceId: true } })).toEqual({ sessionId, workspaceId });
 
-  // A later read (the settings page, screenshots.get) finishes it: charged, its files deleted, both ids cleared.
+  // A later read (the settings page, screenshots.get), once the backoff passed, finishes it: charged, its files deleted,
+  // both ids cleared.
+  await timePasses(run.id);
   expect(await call(getScreenshots, as(), { id: run.id })).toMatchObject({ state: "done", cost: 0.0419 });
   expect((await prisma.aiUsage.findMany({ where: { projectId: project.id } })).map((usage) => usage.cost!.toNumber())).toEqual([0.0419]);
   expect(browserUse.files.get(workspaceId)!.size).toBe(0);
@@ -290,6 +322,107 @@ test("a run whose charge and file deletion failed has them done by a later read,
   await call(getScreenshotSettings, as(), {});
   expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(1);
   expect((await creditBalance(project.id)).balance).toBeCloseTo(10 - 4.19, 6);
+});
+
+test("a browser that couldn't be stopped isn't charged yet, nor its files deleted; a later read stops it, charges its final cost and deletes them", async () => {
+  await setUp();
+  // Stopping fails in the job and in the read screenshots.take returns with.
+  browserUse.failNext = { deletes: 0, costs: 0, stops: 2 };
+  const run = await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const { sessionId, workspaceId } = browserUse.runs.at(-1)!;
+  expect(run).toMatchObject({ state: "done", cost: null, screenshots: [{ state: "taken" }] });
+  expect(browserUse.browsers.get(sessionId)!.status).toBe("active");
+  expect(browserUse.costsRead).not.toContain(sessionId);
+  expect(browserUse.files.get(workspaceId)!.size).toBeGreaterThan(0);
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { sessionId: true, workspaceId: true } })).toEqual({ sessionId, workspaceId });
+  // Later: stopped, then its cost read and charged once, then its files deleted.
+  await timePasses(run.id);
+  expect(await call(getScreenshots, as(), { id: run.id })).toMatchObject({ cost: 0.0419 });
+  expect(browserUse.browsers.get(sessionId)!.status).toBe("stopped");
+  expect(browserUse.files.get(workspaceId)!.size).toBe(0);
+  const order = browserUse.events.filter((event) => event.endsWith(sessionId) || event.endsWith(workspaceId));
+  expect(order.slice(0, 2)).toEqual([`stop ${sessionId}`, `cost ${sessionId}`]);
+  await call(getScreenshots, as(), { id: run.id });
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("a try whose files couldn't be deleted isn't retried, so its workspace stays tracked until a later read deletes them", async () => {
+  await setUp({ signIn: "none" });
+  const before = browserUse.runs.length;
+  // The first try fails as a whole (an answer that can't be read) with its files saved; deleting them fails in the job and
+  // in take's own read.
+  browserUse.next({ output: "I took them, I think." });
+  browserUse.failNext = { deletes: 2, costs: 0, stops: 0 };
+  const firstWorkspace = await (async () => {
+    const run = await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+    expect(run).toMatchObject({ state: "failed" });
+    // No retry: its workspace wasn't overwritten by a second try's.
+    expect(browserUse.runs).toHaveLength(before + 1);
+    const { workspaceId } = browserUse.runs.at(-1)!;
+    expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { workspaceId: true } })).toEqual({ workspaceId });
+    return { runId: run.id, workspaceId };
+  })();
+  expect(browserUse.files.get(firstWorkspace.workspaceId)!.size).toBeGreaterThan(0);
+  await timePasses(firstWorkspace.runId);
+  await call(getScreenshots, as(), { id: firstWorkspace.runId });
+  expect(browserUse.files.get(firstWorkspace.workspaceId)!.size).toBe(0);
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: firstWorkspace.runId }, select: { workspaceId: true } })).toEqual({ workspaceId: null });
+});
+
+test("runs whose leftovers keep failing back off and are given up, never blocking a newer run's", async () => {
+  await setUp();
+  // Three runs whose session's cost is never a number: each stays with its session, not charged.
+  const stuck: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    browserUse.next({ cost: { totalCostUsd: "n/a" } });
+    stuck.push((await call(takeScreenshots, as(), { shots: [{ show: `Stuck ${i}` }] })).id);
+  }
+  const held = () => prisma.screenshotRun.findMany({ where: { id: { in: stuck } }, select: { sessionId: true, cleanupAttempts: true } });
+  expect((await held()).every((run) => run.sessionId !== null && run.cleanupAttempts >= 1)).toBe(true);
+  // All three due again, and a newer run whose cost read fails once (in its job): its leftovers come first.
+  for (const id of stuck) {
+    await timePasses(id);
+  }
+  browserUse.failNext = { deletes: 0, costs: 1, stops: 0 };
+  const newer = await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(newer).toMatchObject({ state: "done", cost: 0.0419 });
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: newer.id }, select: { sessionId: true } })).toEqual({ sessionId: null });
+
+  // A stuck one is tried a few times, longer apart each time, then given up: its ids cleared, nothing charged.
+  const [first] = stuck;
+  const costsBefore = browserUse.costsRead.length;
+  for (let i = 0; i < 6; i++) {
+    await timePasses(first!);
+    await call(getScreenshots, as(), { id: first! });
+  }
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: first! }, select: { sessionId: true, workspaceId: true, cleanupAttempts: true } })).toEqual({
+    sessionId: null,
+    workspaceId: null,
+    cleanupAttempts: 5,
+  });
+  // Not tried while its backoff runs: a read right after one try makes no requests for it.
+  const second = stuck[1]!;
+  await timePasses(second);
+  await call(getScreenshots, as(), { id: second });
+  const reads = browserUse.costsRead.length;
+  await call(getScreenshots, as(), { id: second });
+  expect(browserUse.costsRead.length).toBe(reads);
+  expect(reads).toBeGreaterThan(costsBefore);
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id, cost: { not: null } } })).toBe(1);
+});
+
+test("a session or workspace Browser Use no longer has is done with: its ids cleared, nothing charged", async () => {
+  await setUp();
+  const run = await prisma.screenshotRun.create({
+    data: { projectId: project.id, startedById: owner.id, state: "DONE", finishedAt: new Date(), sessionId: "00000000-0000-4000-8000-000000000404", workspaceId: "00000000-0000-4000-8000-000000000405" },
+  });
+  await call(getScreenshots, as(), { id: run.id });
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { sessionId: true, workspaceId: true, cleanupAttempts: true } })).toEqual({
+    sessionId: null,
+    workspaceId: null,
+    cleanupAttempts: 1,
+  });
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(0);
 });
 
 test("a try's files are deleted even when its charge fails in the database, and a failed cost write doesn't stop the run", async () => {

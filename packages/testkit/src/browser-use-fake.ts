@@ -46,8 +46,8 @@ export type BrowserUseFake = {
   files: Map<string, Map<string, Uint8Array>>;
   /** Sessions whose cost was read. */
   costsRead: string[];
-  /** How many of the next requests of each kind fail (500): deleting a file, reading a session's cost. */
-  failNext: { deletes: number; costs: number };
+  /** How many of the next requests of each kind fail (500): deleting a file, reading a session's cost, stopping a browser. */
+  failNext: { deletes: number; costs: number; stops: number };
   /** Lets every stuck run end. */
   release(): void;
   close(): Promise<void>;
@@ -94,7 +94,7 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
     browsers: new Map(),
     costsRead: [],
     events: [],
-    failNext: { deletes: 0, costs: 0 },
+    failNext: { deletes: 0, costs: 0, stops: 0 },
     files,
     release: () => {
       for (const run of runs.values()) {
@@ -229,6 +229,10 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         return answer(200, { items, totalItems: items.length, pageNumber: 1, pageSize: 100 });
       }
       const stop = /^\/browsers\/([^/]+)$/.exec(path);
+      if (stop && req.method === "PATCH" && fake.failNext.stops > 0) {
+        fake.failNext.stops--;
+        return answer(500, { detail: "The fake was told to fail this stop" });
+      }
       if (stop && req.method === "PATCH") {
         const browser = [...fake.browsers.values()].find((one) => one.id === stop[1]);
         if (!browser || body.action !== "stop") {

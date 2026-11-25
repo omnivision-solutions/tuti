@@ -36,6 +36,8 @@ CREATE TABLE "screenshot_run" (
     "externalId" TEXT,
     "sessionId" TEXT,
     "workspaceId" TEXT,
+    "cleanupAttempts" INTEGER NOT NULL DEFAULT 0,
+    "cleanupAfter" TIMESTAMP(3),
     "cost" DECIMAL(16,10),
     "browserCost" DECIMAL(16,10),
     "proxyCost" DECIMAL(16,10),
