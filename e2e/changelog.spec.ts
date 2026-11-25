@@ -630,7 +630,8 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   const announced = team.getByRole("group", { name: "How it's announced" });
   await announced.getByRole("checkbox", { name: "Mark it new" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
-  await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget.");
+  // What's saved is published: the post taken off here is still in it.
+  await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget, completes 1 post.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(announced).toContainText("In your widget's What's new, not marked new.");
