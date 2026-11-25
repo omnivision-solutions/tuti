@@ -151,7 +151,7 @@ export type SwipeChange = { status: "closed" } | { snoozedUntil: string | null }
  */
 export function afterChange(row: Row, change: SwipeChange, view: ViewName, q: string): Row | null {
   if ("status" in change) {
-    return q || view === "spam" ? { ...row, status: "closed" } : null;
+    return q || view === "spam" || view === "closed" ? { ...row, status: "closed" } : null;
   }
   return q || (change.snoozedUntil !== null) === (view === "snoozed") ? row : null;
 }

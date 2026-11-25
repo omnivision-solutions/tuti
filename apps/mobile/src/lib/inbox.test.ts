@@ -121,11 +121,12 @@ describe("afterChange", () => {
   const snooze = { snoozedUntil: "2026-11-26T09:00:00Z" };
   const wake = { snoozedUntil: null };
 
-  it("takes a closed one out of every view but Spam, and keeps it in a search, closed", () => {
+  it("takes a closed one out of every view but Closed and Spam, and keeps it in a search, closed", () => {
     for (const view of ["open", "mine", "unassigned", "waiting", "snoozed"] as const) {
       expect(afterChange(open, close, view, "")).toBeNull();
     }
     expect(afterChange(open, close, "spam", "")).toEqual({ ...open, status: "closed" });
+    expect(afterChange(open, close, "closed", "")).toEqual({ ...open, status: "closed" });
     expect(afterChange(open, close, "open", "csv")).toEqual({ ...open, status: "closed" });
   });
 

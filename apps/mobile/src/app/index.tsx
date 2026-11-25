@@ -24,7 +24,7 @@ type List = { for: string; load: number; rows: Row[]; next: string | null; total
  * A swipe's change, shown over the list: while the server has it (`settled` null), and once it has, over a list loaded
  * by a load of everything that started before (`settled`: the latest load then), which may not have it yet.
  */
-type Swiped = { change: SwipeChange; settled: number | null };
+type Swiped = { change: SwipeChange; settled: number | null; turn: number };
 /** Swipes are by project and number: numbers start again in each project. */
 const swipeKey = (project: string | undefined, number: number) => `${project}#${number}`;
 
@@ -241,14 +241,17 @@ export default function Inbox() {
   );
 
   // A swipe's change: the row changes (or goes) at once, and comes back as it was, with why, if the server refuses.
+  // Each swipe's turn: of two on one row (a search keeps a snoozed one), only the later one's answer settles or clears it.
+  const turns = useRef(0);
   const triage = useCallback(
     async (row: Row, change: SwipeChange, done: string, verb: string) => {
       const number = row.number;
       const at = swipeKey(project, number);
-      setSwiped((now) => new Map(now).set(at, { change, settled: null }));
+      const turn = ++turns.current;
+      setSwiped((now) => new Map(now).set(at, { change, settled: null, turn }));
       try {
         await updateConversation(api, number, change);
-        setSwiped((now) => new Map(now).set(at, { change, settled: loads.current() }));
+        setSwiped((now) => (now.get(at)?.turn === turn ? new Map(now).set(at, { change, settled: loads.current(), turn }) : now));
         // In the list too, as the server has it now: a row fetch already on its way, from before, is dropped.
         rowLoads.set(at, (rowLoads.get(at) ?? 0) + 1);
         setList((now) => {
@@ -258,7 +261,7 @@ export default function Inbox() {
         AccessibilityInfo.announceForAccessibility(done);
         void loadCounts().catch(() => {});
       } catch (e) {
-        unswipe((swipe) => swipe !== at);
+        unswipe((swipeAt, swipe) => swipeAt !== at || swipe.turn !== turn);
         // An alert: the row may be far down the list, out of sight.
         Alert.alert(`Couldn't ${verb} "${row.subject}"`, e instanceof Error ? e.message : String(e));
       }

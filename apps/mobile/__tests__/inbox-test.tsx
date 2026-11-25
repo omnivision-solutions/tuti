@@ -656,6 +656,8 @@ describe("swiping a row", () => {
   });
 
   it("snoozes it till the time chosen from the details sheet's choices", async () => {
+    // A Wednesday afternoon, in the teammate's own time.
+    jest.setSystemTime(new Date("2026-11-25T14:00:00"));
     const snoozing = row("Invite link expired");
     const changes = serveChanges([snoozing]);
     const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
@@ -671,10 +673,7 @@ describe("swiping a row", () => {
 
     await act(async () => choose(1));
     expect(screen.queryByText("Invite link expired")).toBeNull();
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0);
-    expect(changes[0]!.body).toEqual({ snoozedUntil: tomorrow.toISOString() });
+    expect(changes[0]!.body).toEqual({ snoozedUntil: new Date("2026-11-26T09:00:00").toISOString() });
   });
 
   it("offers Wake now in Snoozed, and nothing for a closed one", async () => {
@@ -688,6 +687,70 @@ describe("swiping a row", () => {
     expect(rowNamed("Old one").props.accessibilityActions).toEqual([]);
     await pressAction("Snooze");
     expect(sheet.mock.calls[0]![0].options).toEqual(["In 3 hours", "Tomorrow, 9:00", "Monday, 9:00", "Wake now", "Cancel"]);
+  });
+
+  it("wakes one in Snoozed: it leaves the list, and the server's told to wake it", async () => {
+    const waking = row("Invite link expired");
+    const changes = serveChanges([waking, row("Still asleep")], "snoozed");
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("tab", { name: "Snoozed" }));
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Snooze");
+    const [, choose] = sheet.mock.calls[0]!;
+    await act(async () => choose(3));
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+    expect(changes.map(({ path, body }) => ({ path, body }))).toEqual([{ path: `/conversations/${waking.number}`, body: { snoozedUntil: null } }]);
+    await act(async () => changes[0]!.answer(true));
+    expect(screen.queryByText("Invite link expired")).toBeNull();
+    expect(screen.getByText("Still asleep")).toBeTruthy();
+  });
+
+  it("still shows a conversation closed from another view in Closed, chosen before the server answered", async () => {
+    const closing = row("Invite link expired");
+    const changes = serveChanges([closing]);
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    // Closed lists it, closed, while the close is still on its way back.
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (path.startsWith("/conversations?view=closed") ? Promise.resolve(page([{ ...closing, status: "closed" }])) : served(path, init)));
+    await fireEvent.press(screen.getByRole("tab", { name: "Closed, 9" }));
+    expect(await screen.findByText("Invite link expired")).toBeTruthy();
+    await act(async () => changes[0]!.answer(true));
+    expect(screen.getByText("Invite link expired")).toBeTruthy();
+  });
+
+  it("lets only a row's latest swipe settle or undo it: a snooze refused after a close was sent leaves the close", async () => {
+    const both = row("Invite link expired", { match: { note: false, snippet: "invite link" } });
+    serve({ "/conversations?view=open": page([]), "/conversations?q=invite": page([both]) });
+    const served = mockApi.getMockImplementation()!;
+    const changes: { body: unknown; answer: (ok: boolean) => void }[] = [];
+    mockApi.mockImplementation((path, init) => {
+      const { method, body } = (init ?? {}) as { method?: string; body?: unknown };
+      return method === "PATCH"
+        ? new Promise((resolve, reject) => changes.push({ body, answer: (ok) => (ok ? resolve({}) : reject(new Error("Couldn't snooze it."))) }))
+        : served(path, init);
+    });
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    await render(<Inbox />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Search"), "invite");
+    await act(() => jest.advanceTimersByTimeAsync(300));
+    await screen.findByText("Invite link expired");
+
+    // In a search a snoozed one stays, so it can be closed before the snooze answers.
+    await pressAction("Snooze");
+    await act(async () => sheet.mock.calls[0]![1](0));
+    await pressAction("Close");
+    expect(screen.getByText(/^Closed · /)).toBeTruthy();
+
+    await act(async () => changes[0]!.answer(false));
+    expect(screen.getByText(/^Closed · /)).toBeTruthy();
+    await act(async () => changes[1]!.answer(true));
+    expect(screen.getByText(/^Closed · /)).toBeTruthy();
   });
 
   it("keeps a swipe to its project: another project's conversation with the same number stays", async () => {
