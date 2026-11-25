@@ -659,6 +659,13 @@ export const getConversation = defineOperation({
         .array(
           messageOutput.extend({
             fromYou,
+            requestId: z
+              .string()
+              .nullable()
+              .describe(
+                "The `requestId` conversations.reply was sent with, on your own messages only (`fromYou`): after a lost answer, it says your reply arrived. Null on everyone else's, and when it had none",
+              )
+              .meta({ examples: ["3f1c9b2e-7a4d-4e8f-9c21-5b6d8e0f1a23"] }),
             fromAddress: z
               .string()
               .nullable()
@@ -681,7 +688,7 @@ export const getConversation = defineOperation({
     const messages = await prisma.conversationMessage.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "asc" },
-      select: { ...messageSelect, authorId: true, fromAddress: true, seenAt: true, emailStatus: true, emailError: true },
+      select: { ...messageSelect, authorId: true, requestId: true, fromAddress: true, seenAt: true, emailStatus: true, emailError: true },
     });
     // Each attachment with a link to it, signed for a while: images to show, other files saved under their name.
     const links = new Map(
@@ -703,10 +710,13 @@ export const getConversation = defineOperation({
       posts: await linkedPosts(conversation.id),
       messages: messages.map((message) => {
         const shown = messageView(message);
+        const fromYou = message.author === "TEAM" && message.authorId === me;
         return {
           ...shown,
           attachments: shown.attachments.map((a) => ({ ...a, url: links.get(a.id) ?? null })),
-          fromYou: message.author === "TEAM" && message.authorId === me,
+          fromYou,
+          // Another writer's ids are their client's own bookkeeping.
+          requestId: fromYou ? message.requestId : null,
           fromAddress: message.fromAddress,
           seenAt: message.seenAt,
           emailStatus: message.emailStatus?.toLowerCase() ?? null,
