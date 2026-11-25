@@ -8,7 +8,7 @@ const mockBack = jest.fn();
 const mockPush = jest.fn();
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
-  router: { back: () => mockBack(), push: (to: unknown) => mockPush(to) },
+  router: { back: () => mockBack(), push: (to: unknown) => mockPush(to), canGoBack: () => true, replace: jest.fn() },
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -42,5 +42,34 @@ describe("a row's snooze choices on Android", () => {
     await render(<Snooze />);
     await fireEvent.press(screen.getByText("Wake now"));
     expect(chosen).toHaveBeenCalledWith(7, null);
+  });
+
+  it("lets the swipe go once it's closed without a choice: a link to it later snoozes nothing", async () => {
+    jest.replaceProperty(Platform, "OS", "android");
+    const chosen = jest.fn();
+    pickSnooze(12, false, chosen);
+    mockParams = { number: "12", snoozed: "" };
+    const sheet = await render(<Snooze />);
+    // Back.
+    await sheet.unmount();
+
+    // Even for the same conversation.
+    mockBack.mockClear();
+    await render(<Snooze />);
+    expect(screen.queryByText("In 3 hours")).toBeNull();
+    expect(mockBack).toHaveBeenCalled();
+    expect(chosen).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for a number other than the swipe's, and closes", async () => {
+    jest.replaceProperty(Platform, "OS", "android");
+    const chosen = jest.fn();
+    pickSnooze(12, false, chosen);
+    mockBack.mockClear();
+    mockParams = { number: "99", snoozed: "" };
+    await render(<Snooze />);
+    expect(screen.queryByText("In 3 hours")).toBeNull();
+    expect(mockBack).toHaveBeenCalled();
+    expect(chosen).not.toHaveBeenCalled();
   });
 });

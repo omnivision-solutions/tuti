@@ -751,6 +751,34 @@ describe("swiping a row", () => {
     expect(screen.getByText("Invite link expired")).toBeTruthy();
   });
 
+  it("asks for the next page once a close on its way has answered, from where it moves it, so no row is skipped", async () => {
+    // Needs reply has 30: 25 shown, and the third is closed, still on its way.
+    const rows = Array.from({ length: 30 }, (_, i) => row(`Conversation ${i + 1}`));
+    const changes = serveChanges([]);
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) =>
+      path === "/conversations?view=open&limit=25&cursor=0"
+        ? Promise.resolve(page(rows.slice(0, 25), { nextCursor: "25", total: 30 }))
+        : // The server has the close: every later row is one up.
+          path === "/conversations?view=open&limit=25&cursor=24"
+          ? Promise.resolve(page(rows.slice(25), { total: 29 }))
+          : served(path, init),
+    );
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+    await pressAction("Close", 2);
+
+    // Scrolled to the end before the answer: nothing asked yet.
+    await fireEvent(screen.getByTestId("inbox-list"), "endReached");
+    expect(mockApi.mock.calls.some(([path]) => path.includes("cursor=25") || path.includes("cursor=24"))).toBe(false);
+
+    await act(async () => changes[0]!.answer(true));
+    expect(mockApi).toHaveBeenCalledWith("/conversations?view=open&limit=25&cursor=24");
+    // Every row but the closed one, 26 included (the list draws only the first few here).
+    const subjects = (screen.getByTestId("inbox-list").props.data as Row[]).map((r) => r.subject);
+    expect(subjects).toEqual(rows.filter((_, i) => i !== 2).map((r) => r.subject));
+  });
+
   it("lets only a row's latest swipe settle or undo it: a snooze refused after a close was sent leaves the close", async () => {
     const both = row("Invite link expired", { match: { note: false, snippet: "invite link" } });
     serve({ "/conversations?view=open": page([]), "/conversations?q=invite": page([both]) });

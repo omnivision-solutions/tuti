@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useState } from "react";
 import { ActionSheetIOS, Platform, Pressable, ScrollView, StyleSheet, Text } from "react-native";
 
 import { snoozeChoices } from "@/lib/details";
@@ -6,7 +7,8 @@ import { useColors } from "@/lib/theme";
 
 /** A snooze chosen for a conversation: till `at`, or null to wake it. */
 type Chosen = (number: number, at: Date | null) => void;
-let chosen: Chosen | null = null;
+/** The swipe the sheet was opened for: its conversation, and what to do with the choice. Let go when the sheet closes. */
+let asked: { number: number; then: Chosen } | null = null;
 
 /** The details sheet's snooze choices, and Wake now for a snoozed one. */
 const choicesFor = (snoozed: boolean) => [...snoozeChoices().map(({ label, at }) => ({ label, at: at as Date | null })), ...(snoozed ? [{ label: "Wake now", at: null }] : [])];
@@ -25,7 +27,7 @@ export function pickSnooze(number: number, snoozed: boolean, then: Chosen) {
     });
     return;
   }
-  chosen = then;
+  asked = { number, then };
   router.push({ pathname: "/inbox/snooze", params: { number, snoozed: snoozed ? "1" : "" } });
 }
 
@@ -33,6 +35,28 @@ export function pickSnooze(number: number, snoozed: boolean, then: Chosen) {
 export default function Snooze() {
   const colors = useColors();
   const params = useLocalSearchParams<{ number: string; snoozed?: string }>();
+  const number = Number(params.number);
+  // Only for the swipe that opened it: a link to this sheet, or one for another conversation, does nothing and closes.
+  const [mine] = useState(() => (asked?.number === number ? asked : null));
+  useEffect(() => {
+    if (!mine) {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/");
+      }
+      return;
+    }
+    // Closed by a choice, Back or a swipe down: the swipe is let go.
+    return () => {
+      if (asked === mine) {
+        asked = null;
+      }
+    };
+  }, [mine]);
+  if (!mine) {
+    return null;
+  }
   return (
     <ScrollView contentContainerStyle={styles.sheet}>
       <Text style={[styles.heading, { color: colors.primary }]} accessibilityRole="header">
@@ -43,8 +67,7 @@ export default function Snooze() {
           key={label}
           onPress={() => {
             router.back();
-            chosen?.(Number(params.number), at);
-            chosen = null;
+            mine.then(number, at);
           }}
           accessibilityRole="button"
           android_ripple={{ color: colors.border }}

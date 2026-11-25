@@ -175,7 +175,17 @@ export default function Inbox() {
   };
 
   // The next page after `from` (the list shown, unless a reload's).
+  // Swipes the server hasn't answered yet. Pages start at an offset, and one the server has already taken out of the
+  // view moves every later row up one: the next page waits for their answers, which put their rows in place and the
+  // next page's start with them (`pagingAfterSwipes`), so none is skipped.
+  const swiping = useRef(0);
+  const pagingAfterSwipes = useRef(false);
+  const [swipesAnswered, setSwipesAnswered] = useState(0);
   const loadMore = async (from = list): Promise<void> => {
+    if (from?.next && swiping.current > 0) {
+      pagingAfterSwipes.current = true;
+      return;
+    }
     if (!from?.next || paging.current) {
       return;
     }
@@ -250,6 +260,7 @@ export default function Inbox() {
       const number = row.number;
       const at = swipeKey(project, number);
       const turn = ++turns.current;
+      swiping.current++;
       setSwiped((now) => new Map(now).set(at, { change, settled: null, turn }));
       try {
         await updateConversation(api, number, change);
@@ -268,6 +279,10 @@ export default function Inbox() {
         unswipe((swipeAt, swipe) => swipeAt !== at || swipe.turn !== turn);
         // An alert: the row may be far down the list, out of sight.
         Alert.alert(`Couldn't ${verb} "${row.subject}"`, e instanceof Error ? e.message : String(e));
+      } finally {
+        if (--swiping.current === 0) {
+          setSwipesAnswered((n) => n + 1);
+        }
       }
     },
     [api, project, key, view, q, loads, rowLoads, loadCounts],
@@ -283,6 +298,15 @@ export default function Inbox() {
 
   // Live while it's open, and opened again on coming back to the foreground (a phone drops it in the background). Several
   // changes at once make one fetch; a search is fetched whole.
+  // A next page asked for while swipes were on their way: asked now, from where the list they've settled starts it.
+  const pageNow = useEffectEvent(() => void loadMore());
+  useEffect(() => {
+    if (pagingAfterSwipes.current && swiping.current === 0) {
+      pagingAfterSwipes.current = false;
+      pageNow();
+    }
+  }, [swipesAnswered]);
+
   const onLive = useEffectEvent((all: boolean, numbers: number[]) => {
     if (all || q) {
       void loadAll(list?.rows.length);
