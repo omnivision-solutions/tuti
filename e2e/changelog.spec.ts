@@ -575,6 +575,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
   await expect(team.getByRole("status").filter({ hasText: "Search for" })).toHaveText("Search for “post titles” found 1 entry");
+  // Its characters are words, not patterns: % finds nothing here.
+  await search.fill("%");
+  await search.press("Enter");
+  await expect(team.getByText("No entries match your search")).toBeVisible();
   // An old link to a tag no entry has: nothing matches, and a way back to them all.
   await team.goto(`/app/${slug}/changelog?tag=fixed`);
   await expect(team.getByText("No entries match", { exact: true })).toBeVisible();
@@ -993,6 +997,15 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(released).toContainText("Released");
   await expect(released).toContainText("2 merged pull requests");
   await expect(released).not.toContainText("Collecting pull requests");
+  // A merge after it starts a new running draft: second, above a draft edited since.
+  await mergePullRequest(installationId, { number: 43, title: "Faster theme switch" });
+  await api("/changelog/2", { body: "Invoices are clearer, and sorted by date." }, "PATCH");
+  await team.reload();
+  await expect(drafts.getByRole("listitem")).toHaveCount(3);
+  await expect(drafts.getByRole("listitem").nth(0)).toContainText("v1.4");
+  await expect(drafts.getByRole("listitem").nth(1)).toContainText("Next release");
+  await expect(drafts.getByRole("listitem").nth(1)).toContainText("Collecting pull requests");
+  await expect(drafts.getByRole("listitem").nth(2)).toContainText("Billing tweaks");
   await released.getByRole("link", { name: "Draft with AI" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
 
@@ -1281,10 +1294,11 @@ test("the next release waits to be written; its entry gets a featured image read
   await team.emulateMedia({ colorScheme: "dark" });
   await checkpoint(team, "team-changelog-told-dark");
   await team.emulateMedia({ colorScheme: "light" });
-  // Published, the draft no longer collects: nothing waits to be written.
+  // Published, it no longer waits to be written: the new running draft does.
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
-  await expect(team.getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
+  await expect(drafts.getByRole("listitem").first()).toContainText("Next release");
 
   // On the portal: the cover, named for the entry, on the list and on the entry's page.
   await ada.goto("/changelog");

@@ -41,9 +41,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
   const q = (typeof params.q === "string" ? params.q : undefined)?.trim().slice(0, 255) || undefined;
   const tag = changelogTag(params.tag);
   const projectId = membership.project.id;
+  // The search as words, as the app's other searches take it: its % and _ aren't patterns.
+  const has = q && { contains: q.replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const };
   const [found, total, ready] = await Promise.all([
     prisma.changelogEntry.findMany({
-      where: { projectId, ...(q && { OR: [{ title: { contains: q, mode: "insensitive" } }, { body: { contains: q, mode: "insensitive" } }] }) },
+      where: { projectId, ...(has && { OR: [{ title: has }, { body: has }] }) },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
       select: {
         id: true,
