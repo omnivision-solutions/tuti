@@ -428,12 +428,16 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     return Object.fromEntries(batch.filter((segment) => Object.hasOwn(reply.segments, segment.id)).map((segment) => [segment.id, reply.segments[segment.id]!]));
   };
   const runs = batches(todo, batchChars);
-  let providerError: string | undefined;
-  const unanswered = (error: unknown): Record<string, string> => {
-    providerError ??= error instanceof Error ? error.message : String(error);
-    return {};
+  // Why each segment's latest request went unanswered (its retry's, once retried): only those count as the provider's fault.
+  const unansweredWhy = new Map<string, string>();
+  const send = (batch: Segment[], notes?: Map<string, string>) => {
+    for (const segment of batch) unansweredWhy.delete(segment.id);
+    return request(batch, notes).catch((error: unknown) => {
+      for (const segment of batch) unansweredWhy.set(segment.id, error instanceof Error ? error.message : String(error));
+      return {} as Record<string, string>;
+    });
   };
-  const results = await inTurn(runs, (batch) => request(batch).catch(unanswered));
+  const results = await inTurn(runs, (batch) => send(batch));
   const failed = new Map<string, string>();
   for (const [i, batch] of runs.entries()) {
     for (const segment of batch) {
@@ -448,7 +452,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
     const again = todo.filter((segment) => failed.has(segment.id));
     const retried = Object.assign(
       {},
-      ...(await inTurn(batches(again, batchChars), (batch) => request(batch, new Map(batch.map((segment) => [segment.id, failed.get(segment.id)!]))).catch(unanswered))),
+      ...(await inTurn(batches(again, batchChars), (batch) => send(batch, new Map(batch.map((segment) => [segment.id, failed.get(segment.id)!]))))),
     ) as Record<string, string>;
     for (const segment of again) {
       retried[segment.id] = asText(segment, retried[segment.id])!;
@@ -458,8 +462,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
       else translations[segment.id] = retried[segment.id]!;
     }
   }
-  // A provider error a retry made up for isn't one.
-  if (segments.every((segment) => translations[segment.id] !== undefined)) providerError = undefined;
+  const providerError = segments.map((segment) => (translations[segment.id] === undefined ? unansweredWhy.get(segment.id) : undefined)).find(Boolean);
   // Only the current segments: a paragraph edited or removed since drops out, so the memory doesn't grow forever.
   const learned: Record<string, string> = {};
   for (const segment of segments) {
@@ -490,7 +493,8 @@ function parseReply(reply: string): { language?: string; segments: Record<string
     const parsed = JSON.parse(json) as { language?: unknown; segments?: unknown };
     const segments = parsed.segments && typeof parsed.segments === "object" ? (parsed.segments as Record<string, unknown>) : {};
     return {
-      language: typeof parsed.language === "string" ? parsed.language : undefined,
+      // Only something shaped like a language code: the model's word can't become a label or a stored value otherwise.
+      language: typeof parsed.language === "string" && /^[a-z]{2,3}(-[a-z0-9]{2,8}){0,3}$/i.test(parsed.language) ? parsed.language : undefined,
       // Characters Postgres can't store (a NUL or half a surrogate pair, from the JSON's escapes) never get in.
       segments: Object.fromEntries(
         Object.entries(segments)

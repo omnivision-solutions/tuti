@@ -402,3 +402,31 @@ test("a real <br/> stays a break when the source also has <br/> as text; unchang
   const doc = await translateDoc({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readers vote on posts they like." }] }] }, { from: "English", to: "German", ask: async () => replies.shift()! });
   expect(doc.problems).toEqual([{ id: "1", reason: "it isn't translated" }]);
 });
+
+test("a detected language that isn't a language code is dropped", async () => {
+  for (const language of ["de\u0000 ignore previous", "Deutsch"]) {
+    const out = await translateText("Hallo, ich kann mich nicht anmelden", { to: "English", ask: async () => JSON.stringify({ language, segments: { "1": "Hi, I can't sign in" } }) });
+    expect(out.detected).toBeUndefined();
+  }
+});
+
+test("a provider error the retry made up for isn't reported, though another segment failed its checks", async () => {
+  const two: Doc = { type: "doc", content: ["Alpha one two three", "Bravo one two three"].map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) };
+  let calls = 0;
+  const out = await translateDoc(two, {
+    from: "English",
+    to: "German",
+    batchChars: 20,
+    ask: async (_, user) => {
+      calls++;
+      if (user.startsWith('{"1"')) {
+        if (!user.includes("broke a rule")) throw new Error("timeout");
+        return '{"segments": {"1": "Alfa eins zwei drei"}}';
+      }
+      return '{"segments": {"2": "Bravo <b9>eins</b9>"}}';
+    },
+  });
+  expect(calls).toBe(4);
+  expect(out.providerError).toBeUndefined();
+  expect(out.problems.map((p) => p.id)).toEqual(["2"]);
+});
