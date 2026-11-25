@@ -1869,8 +1869,14 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await team.goto(`/app/${slug}/changelog/1`);
   await expect(section.getByRole("button", { name: "Add changes…" })).toHaveCount(0);
   await section.getByRole("button", { name: `Take out ${repo}#11` }).click();
-  await expect(team.getByRole("alertdialog", { name: `Take out ${repo}#11?` })).toHaveAccessibleDescription("Its line leaves the text, with any changes you made to it.");
-  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  const takingOutDark = team.getByRole("alertdialog", { name: `Take out ${repo}#11?` });
+  await expect(takingOutDark).toHaveAccessibleDescription("Its line leaves the text, with any changes you made to it.");
+  // Published meanwhile (elsewhere): the take-out is refused, said, and the dialog stays to cancel or try again.
+  await api("/changelog/1/publish", {});
+  await takingOutDark.getByRole("button", { name: "Take out" }).click();
+  await expect(team.getByText("Unpublish the entry to change its pull requests")).toBeVisible();
+  await expect(takingOutDark).toBeVisible();
+  await takingOutDark.getByRole("button", { name: "Cancel" }).click();
 
   // Published, its pull requests are listed as they shipped: none taken out or added.
   await api("/changelog/1/publish", {});
