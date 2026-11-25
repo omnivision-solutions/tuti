@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { inGroup, storedRule } from "@/lib/group-conditions";
 import { readerGroup } from "@/lib/reader-groups";
-import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
+import { MAX_PROPERTIES, mergeProperties, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
 
 import { inGroupSql } from "../group-conditions-sql";
 import { withLockRetries } from "../lock-retries";
@@ -292,7 +292,7 @@ const userInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "Applied apart from the users (they're saved even if this part fails; sending the same call again is safe). `true` subscribes their address once saved, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, the one they had before this call too, as changelogSubscribers.remove",
+      "Applied apart from the users (a refused call changes neither; if this part fails, the users are saved anyway and sending the same call again is safe). `true` subscribes their address once saved, as changelogSubscribers.add (never one that unsubscribed or turned your project's emails off: `changelogSkipped` says so); `false` removes it, the one they had before this call too, as changelogSubscribers.remove",
     ),
 });
 
@@ -336,8 +336,18 @@ export const syncUsersOperation = defineOperation({
     const ids = (on: boolean) => input.users.filter((user) => user.subscribedToChangelog === on).map((user) => user.id);
     const [on, off] = [ids(true), ids(false)];
     // `false`: the address they have now stops first, so one the sync changes or clears stops too, and a failure later
-    // leaves it to a retry of the same call, which finds it again.
+    // leaves it to a retry of the same call, which finds it again. Its one refusal (past 50 properties, as syncUsers
+    // has it) is made before that, so a refused call changes nothing.
     if (off.length > 0) {
+      const changing = input.users.filter((user) => user.properties);
+      const stored = changing.length
+        ? await prisma.ssoIdentity.findMany({ where: { projectId, externalId: { in: changing.map((user) => user.id) } }, select: { externalId: true, properties: true } })
+        : [];
+      const before = new Map(stored.map((identity) => [identity.externalId, identity.properties]));
+      const over = changing.find((user) => mergeProperties(storedProperties(before.get(user.id) ?? {}), user.properties!).dropped.length > 0);
+      if (over) {
+        throw new OperationError(400, "invalid_input", `“${over.id}” would have more than ${MAX_PROPERTIES} properties`);
+      }
       await unsubscribe(projectId, { users: off });
     }
     const { created } = await syncUsers(

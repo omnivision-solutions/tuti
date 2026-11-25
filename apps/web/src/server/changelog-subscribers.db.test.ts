@@ -1844,6 +1844,14 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     expect((await row(kim))!.confirmedAt).toEqual(expect.any(Date));
     expect((await call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: false }] })).changelogSkipped).toEqual([]);
     expect((await row(kim))!.confirmedAt).toBeNull();
+    // A sync refused (past 50 properties) changes nothing, the subscription neither.
+    await call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: true }] });
+    const fifty = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, i]));
+    await call(syncUsersOperation, key(), { users: [{ id: "app-full", properties: fifty }] });
+    await expect(
+      call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: false }, { id: "app-full", properties: { extra: 1 } }] }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect((await row(kim))!.confirmedAt).toEqual(expect.any(Date));
     // Their address cleared and false in one sync: the old address stops too.
     await call(syncUsersOperation, key(), { users: [{ id: "app-kim", subscribedToChangelog: true }] });
     await call(syncUsersOperation, key(), { users: [{ id: "app-kim", email: null, subscribedToChangelog: false }] });
