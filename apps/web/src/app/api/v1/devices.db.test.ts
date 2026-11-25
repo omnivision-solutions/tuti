@@ -187,9 +187,16 @@ test("two accounts registering one phone at the same moment leave it registered 
   let done = false;
   const ownerRegistration = api(owner, "POST", "/devices", { deviceId: "owner-id", token, platform: "ios" }).then((response) => ((done = true), response));
   // Until it's waiting on the token's lock (without the lock it never waits, and this fails).
+  // This database's waiters on the device-token lock (class 13) only: other test files share the Postgres server.
   let waiting = 0;
-  for (let i = 0; i < 200 && waiting === 0; i++) {
-    [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+  for (const deadline = Date.now() + 3_000; waiting === 0 && Date.now() < deadline; ) {
+    [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+      SELECT count(*)::int AS waiting FROM pg_locks
+      WHERE locktype = 'advisory' AND NOT granted AND classid = 13
+        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`;
+    if (waiting === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   }
   expect(waiting).toBe(1);
   expect(done).toBe(false);
