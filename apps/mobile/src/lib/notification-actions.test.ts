@@ -17,6 +17,8 @@ const phone = vi.hoisted(() => ({
   last: null as unknown,
   task: null as ((body: { data: unknown }) => Promise<unknown>) | null,
   registered: [] as string[],
+  /** Called as the stored response is cleared. */
+  onClear: null as (() => void) | null,
   presented: [] as { request: { identifier?: string; content: { data?: unknown } } }[],
 }));
 vi.mock("react-native", () => ({
@@ -86,7 +88,10 @@ vi.mock("expo-notifications", () => ({
     return { remove: () => {} };
   },
   getLastNotificationResponse: () => phone.last,
-  clearLastNotificationResponse: () => void (phone.last = null),
+  clearLastNotificationResponse: () => {
+    phone.onClear?.();
+    phone.last = null;
+  },
   dismissNotificationAsync: async (id: string) => void phone.dismissed.push(id),
   // What the system shows: the last one posted with each identifier, posted a little after it's asked for.
   getPresentedNotificationsAsync: async () => phone.presented,
@@ -142,7 +147,7 @@ const load = () => import("./notification-actions");
 
 beforeEach(() => {
   vi.resetModules();
-  Object.assign(phone, { os: "ios", version: 33, postMs: 200, appState: "active", dismissed: [], shown: [], categories: [], listener: null, last: null, task: null, registered: [], presented: [] });
+  Object.assign(phone, { os: "ios", version: 33, postMs: 200, appState: "active", dismissed: [], shown: [], categories: [], listener: null, last: null, task: null, registered: [], presented: [], onClear: null });
   phone.stored.clear();
   phone.files.clear();
   calls.length = 0;
@@ -209,6 +214,26 @@ describe("Reply", () => {
     expect(calls.map((call) => call.method)).toEqual(["PATCH"]);
   });
 
+  it("clears a Reply's stored response only once its text is in the draft, a Close's before it's sent", async () => {
+    const drafts = () => [...phone.files.keys()].filter((key) => key.startsWith("documents/drafts/")).length;
+    let draftsWhenCleared = -1;
+    phone.onClear = () => (draftsWhenCleared = drafts());
+    phone.last = response("reply", { userText: "On it!" });
+    await (await load()).startNotificationActions();
+    expect(phone.last).toBeNull();
+    // The app ended right then would still have the reply, in the draft (it leaves the draft once saved, after).
+    expect(draftsWhenCleared).toBe(1);
+    expect(calls.map((call) => call.method)).toEqual(["POST"]);
+
+    let callsWhenCleared = -1;
+    phone.onClear = () => (callsWhenCleared = calls.filter((call) => call.method === "PATCH").length);
+    phone.last = response("close", { id: "push-2" });
+    vi.resetModules();
+    await (await load()).startNotificationActions();
+    // Repeated, a Close could close a conversation reopened meanwhile: cleared before it's sent.
+    expect(callsWhenCleared).toBe(0);
+  });
+
   it("leaves a newer last response for its own start", async () => {
     phone.last = response("close", { id: "push-2" });
     await (await load()).act(response("close"));
@@ -226,9 +251,16 @@ describe("Reply", () => {
       // Shown as sending, not as "Not sent" with Delete, on a screen open meanwhile.
       const { getDraft, isSending } = await import("./conversation");
       const { screenKey } = await import("./details");
-      expect(isSending(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent[0]!.id)).toBe(true);
-      await vi.advanceTimersByTimeAsync(18_000);
+      const sending = getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent[0]!;
+      expect(isSending(sending.id)).toBe(true);
+      // Retry tapped meanwhile waits on this send, and hears that it didn't go (null), not a success.
+      const { sendUnsent } = await import("./conversation");
+      const retried = sendUnsent((() => Promise.reject(new Error("not called"))) as never, screenKey({ server: SERVER, project: "acme" }, 7), 7, sending, () =>
+        Promise.reject(new Error("not called")),
+      );
+      await vi.advanceTimersByTimeAsync(12_000);
       await acting;
+      expect(await retried).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -262,18 +294,19 @@ describe("Reply", () => {
   it("gives up on all its requests at one deadline: a slow project check leaves the reply less time, not a fresh limit", async () => {
     vi.useFakeTimers();
     try {
-      // Another project: its check takes 10 seconds, then the reply hangs.
+      // Another project: its check takes 6 seconds, then the reply hangs.
       answer = (call) => {
         if (call.url.endsWith("/projects")) {
-          return new Promise<Response>((resolve) => setTimeout(() => resolve(Response.json({ projects: [{ slug: "globex" }] })), 10_000)) as unknown as Response;
+          return new Promise<Response>((resolve) => setTimeout(() => resolve(Response.json({ projects: [{ slug: "globex" }] })), 6_000)) as unknown as Response;
         }
         return new Promise<Response>(() => {}) as unknown as Response;
       };
       const acting = (await load()).act(response("reply", { userText: "On it!", project: "globex" }));
-      await vi.advanceTimersByTimeAsync(17_000);
+      await vi.advanceTimersByTimeAsync(11_000);
       expect(calls.map((call) => call.method)).toEqual(["GET", "POST"]);
       expect(phone.shown).toEqual([]);
-      // 18 seconds from the start, not from the reply's request.
+      // 12 seconds from the start, not from the reply's request: well within the 25 seconds iOS keeps the app running
+      // from the tap, which a cold start of the JavaScript delays.
       await vi.advanceTimersByTimeAsync(1_000);
       await acting;
     } finally {
@@ -288,7 +321,7 @@ describe("Reply", () => {
       // Headers, then the network gone before the body.
       answer = () => ({ status: 200, statusText: "OK", headers: new Headers(), ok: true, text: () => new Promise<string>(() => {}) }) as unknown as Response;
       const acting = (await load()).act(response("reply", { userText: "On it!" }));
-      await vi.advanceTimersByTimeAsync(18_000);
+      await vi.advanceTimersByTimeAsync(12_000);
       await acting;
     } finally {
       vi.useRealTimers();
@@ -387,7 +420,7 @@ describe("Reply", () => {
     try {
       hang = true;
       const acting = (await load()).act(response("reply", { userText: "On it!" }));
-      await vi.advanceTimersByTimeAsync(18_000);
+      await vi.advanceTimersByTimeAsync(12_000);
       await acting;
     } finally {
       vi.useRealTimers();

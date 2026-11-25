@@ -45,10 +45,12 @@ const done = new Set<string>();
 /**
  * How long an action's requests (`/projects`, then the reply or close) wait for their answers, all together, bodies
  * included: a phone can leave one hanging for minutes (a network that went and came back), which would say nothing at
- * all. Within the 25 seconds iOS is asked to keep the app running for it (patches/expo-notifications.patch). A reply
- * whose answer this gave up on may have been saved: its `requestId` makes Retry give back the one saved, not a second.
+ * all. Counted from when the JavaScript starts acting, which a cold launch delays, so well within the 25 seconds iOS keeps
+ * the app running from the tap (patches/expo-notifications.patch): what's left is for the app to start and to say that
+ * the action didn't go. A reply whose answer this gave up on may have been saved: its `requestId` makes Retry give back
+ * the one saved, not a second.
  */
-export const ACTION_TIMEOUT_MS = 18_000;
+export const ACTION_TIMEOUT_MS = 12_000;
 
 /** A fetch whose requests all give up at one deadline, ACTION_TIMEOUT_MS from when it's made. */
 function fetchUntil(deadlineAt: number): typeof fetch {
@@ -112,10 +114,15 @@ export async function act(response: Notifications.NotificationResponse) {
     return;
   }
   done.add(key);
-  forget(response);
+  // The stored response is cleared so a later start doesn't act on it again: a Close's first (repeated, it could close a
+  // conversation reopened meanwhile), a Reply's once its text is in the draft (repeated, it's the same reply, `requestId`).
+  if (action === CLOSE) {
+    forget(response);
+  }
   const timedFetch = fetchUntil(Date.now() + ACTION_TIMEOUT_MS);
   // A reply of only spaces: nothing to send, but the notification goes, or Android shows it sending for good.
   if (action === REPLY && !text) {
+    forget(response);
     await remove(response);
     return;
   }
@@ -124,6 +131,7 @@ export async function act(response: Notifications.NotificationResponse) {
   const since = draftsGeneration();
   const session = await readSession();
   if (!session || !(await forThisSignIn(target))) {
+    forget(response);
     await tell(response, target, session ? SIGNED_OUT_SINCE : SIGNED_OUT, false);
     return;
   }
@@ -143,19 +151,21 @@ export async function act(response: Notifications.NotificationResponse) {
     createApi({ server: session.server, token: session.token }, () => {}, timedFetch)<{ projects: { slug: string }[] }>("/projects").then((answer) => answer.projects.map((p) => p.slug));
   // Its id is made from the notification and the text: the same reply sent again is the one already saved, never a second.
   let unsent: Unsent | undefined;
-  let sent!: () => void;
+  // Ends the reply's "Sending…" with how it went (`trackSend`): a Retry tapped meanwhile hears that it didn't go.
+  let settle: ((sent: boolean) => void) | undefined;
   try {
     if (action === REPLY) {
       const id = `notification-${(await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${identifier}\n${text}`)).slice(0, 40)}`;
       const made: Unsent = { id, body: text, note: false, close: false, files: [], seen: seenOf(data) };
       unsent = made;
-      trackSend(id, new Promise<void>((resolve) => (sent = resolve)));
+      trackSend(id, new Promise<void>((resolve, reject) => (settle = (sent) => (sent ? resolve() : reject(new Error("Not sent"))))));
       await change((all) => (all.some((one) => one.id === made.id) ? all : [...all, made]));
+      forget(response);
     }
     try {
       if (!(await isTheirs(target, session, projects))) {
         if (unsent) {
-          sent();
+          settle?.(false);
           await drop(unsent.id);
         }
         await tell(response, target, NOT_YOURS, false);
@@ -163,15 +173,18 @@ export async function act(response: Notifications.NotificationResponse) {
       }
       const api = createApi({ ...session, project: target.project }, () => {}, timedFetch);
       await (unsent ? sendReply(api, target.number, unsent) : updateConversation(api, target.number, { status: "closed" }));
-    } finally {
       // No longer sending, before the draft says what happened.
-      sent?.();
+      settle?.(true);
+    } catch (error) {
+      settle?.(false);
+      throw error;
     }
     if (unsent) {
       await drop(unsent.id);
     }
     await remove(response);
   } catch (error) {
+    forget(response);
     // Kept only while it's still this session (`change`); not after a 401: the session's over, and the next launch
     // forgets its drafts.
     const ended = error instanceof ApiError && error.status === 401;
