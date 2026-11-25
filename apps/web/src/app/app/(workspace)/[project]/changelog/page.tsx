@@ -55,12 +55,13 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         releasedAt: true,
         sample: true,
         updatedAt: true,
+        createdAt: true,
         cover: { select: { id: true, status: true, width: true, height: true } },
-        // Its posts, not merged ones (the editor leaves them out), with the entries whose publishing completed each, where
-        // that was recorded (PostEvent.changelogEntryId; not before it was, nor for one completed by hand).
+        // Its posts, not merged ones (the editor leaves them out), with when each was completed and by which entry's
+        // publishing, where that was recorded (PostEvent.changelogEntryId: null before it was, and when done by hand).
         posts: {
           where: { post: { duplicateOfId: null } },
-          select: { post: { select: { status: true, events: { where: { to: "COMPLETED", changelogEntryId: { not: null } }, select: { changelogEntryId: true } } } } },
+          select: { post: { select: { status: true, events: { where: { to: "COMPLETED" }, select: { changelogEntryId: true, createdAt: true } } } } },
         },
         _count: { select: { pullRequests: true, comments: true } },
       },
@@ -110,11 +111,12 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
-    // Published: its posts that are completed, not those another entry's publishing completed. A draft: those
-    // publishing will complete (as it does: not the Completed or Closed).
+    // Published: the posts it completed: its publishing recorded doing so, or (before that was recorded) they were completed
+    // after it was written, not before (by hand, or by an older entry). A draft: those publishing will complete (as it
+    // does: not the Completed or Closed).
     const posts = entry.posts.filter(({ post }) =>
       entry.publishedAt
-        ? post.status === "COMPLETED" && (post.events.length === 0 || post.events.some((e) => e.changelogEntryId === entry.id))
+        ? post.status === "COMPLETED" && post.events.some((e) => e.changelogEntryId === entry.id || (e.changelogEntryId === null && e.createdAt > entry.createdAt))
         : post.status !== "COMPLETED" && post.status !== "CLOSED",
     ).length;
     return (

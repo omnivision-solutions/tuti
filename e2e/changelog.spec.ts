@@ -747,6 +747,13 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await api("/changelog/1/publish", {});
   await team.reload();
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
+  // Nor does a later entry count it (its completion is older than the entry), nor a post completed by hand before it was written.
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
+  await api("/posts/4", { status: "completed" }, "PATCH");
+  const { number: byHand } = (await api("/changelog", { title: "Calendar sync is out", posts: [4] })) as unknown as { number: number };
+  await api(`/changelog/${byHand}/publish`, {});
+  await team.reload();
+  await expect(team.getByRole("listitem").filter({ hasText: "Calendar sync is out" })).not.toContainText("post");
 });
 
 test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {
