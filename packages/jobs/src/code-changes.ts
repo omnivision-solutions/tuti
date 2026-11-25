@@ -39,6 +39,7 @@ import { seenAs } from "./post-audience";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
 import { type Repository, readRepository } from "./repository";
 import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
+import { RUN_STALE_MS } from "./verify";
 import { verifyAfterEdit } from "./verify-decision";
 
 /**
@@ -92,13 +93,14 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     });
   // Paused (out of credits) or failed: the team's pick is resumed or retried past the gate, as asked, whatever runs it.
   if ((change.state === "PAUSED" || change.state === "FAILED") && pastGate) {
-    await prisma.codeChange.updateMany({ where: { id: change.id, state: change.state }, data: { retryPastGate: true } });
+    // Only if it isn't already: a second pick doesn't touch the row (and so the first one's claim) for nothing.
+    await prisma.codeChange.updateMany({ where: { id: change.id, state: change.state, retryPastGate: false }, data: { retryPastGate: true } });
   }
   // Inline, one analysing is a run under way in this server (the merge's): it honours the pick itself (it reads the
   // team's decision), so a second, parallel run isn't started. A stranded one is the retry sweep's.
-  if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline") {
+  if (change.state === "ANALYSING" && !made && process.env.JOBS_DRIVER === "inline" && change.updatedAt.getTime() > Date.now() - RUN_STALE_MS) {
     if (pastGate) {
-      await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: { retryPastGate: true } });
+      await prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", retryPastGate: false }, data: { retryPastGate: true } });
     }
     return {};
   }
@@ -580,9 +582,12 @@ async function analyse(
       }
     }
     const { waiting, linked, scheduled, landed } = saved;
-    if (seen || (await picked())) {
+    // Picked while the docs were written (after the last look): its line is written now, not left as the title.
+    const late = !seen && (await picked());
+    if (seen || late) {
       // Users see it, so the changelog says it: the pull request's bullet in the running draft, rewritten.
-      await writeChangelogLine(change.projectId, change.id, change.pullRequest, line || change.pullRequest.title);
+      const written = late ? (await writeProposals(pr, summary, [], [], use)).line : line;
+      await writeChangelogLine(change.projectId, change.id, change.pullRequest, written || change.pullRequest.title);
     } else {
       // Docs to fix, though the gate says users don't see it: the changelog doesn't hear about it.
       await leaveChangelog(change);

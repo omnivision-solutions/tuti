@@ -312,6 +312,16 @@ test("in-process, one whose analysis is already under way gets no second, parall
   expect(await decisions()).toEqual([{ number: 9, takenOut: false }]);
 });
 
+test("in-process, one analysing for over half an hour (its run died with the server) gets a run from the pick", async () => {
+  github.pullRequest(repo, { number: 10, title: "Add a dark theme", mergedAt: days(2) });
+  await prisma.codeChange.create({ data: { projectId: project.id, repoId, repo, number: 10, url: url(10), title: "t", author: "a", mergedAt: new Date(days(2)), state: "ANALYSING", updatedAt: new Date(Date.now() - 31 * 60_000) } });
+
+  await add(10);
+  await addedPullRequestsAnalysed();
+
+  expect(queue.enqueue).toHaveBeenCalledWith("codeChange", expect.objectContaining({ pastGate: true }));
+});
+
 test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   github.pullRequest(repo, { number: 3, title: "Bump dependencies", mergedAt: days(2) });
