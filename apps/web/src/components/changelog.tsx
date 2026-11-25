@@ -1005,7 +1005,10 @@ function EntryPullRequests({
               {/* As Autopilot shows them: "PR #41", its title, and a link to GitHub on hover or a press. */}
               <div className="flex min-w-0 flex-1 items-start gap-2">
                 <PullRequestChip projectSlug={projectSlug} pr={pr} />
-                <span className="min-w-0 line-clamp-2 break-words">{pr.title}</span>
+                {/* The chip's name says it already ("PR #41: <title>"): read once. */}
+                <span aria-hidden className="min-w-0 line-clamp-2 break-words">
+                  {pr.title}
+                </span>
               </div>
               {!published && (
                 <Button

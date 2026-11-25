@@ -1786,7 +1786,9 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await expect(section.getByRole("listitem").first()).toHaveText(/^PR #14\s*Remember the theme$/);
   await chip(14, "Remember the theme").click();
   await expect(team.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", `https://github.com/${repo}/pull/14`);
+  // Autopilot is off here, so it never read it: no who merged it when, no activity page.
   await expect(team.getByText(`${repo}#14`, { exact: true })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Its activity" })).toHaveCount(0);
   await team.keyboard.press("Escape");
 
   // Add changes… lists the ones no entry has: those Autopilot found nothing for users in start unticked.
@@ -1917,4 +1919,16 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   // Only the chips: no Take out, no Add changes….
   await expect(section.getByRole("button")).toHaveText([/^PR #\d+$/, /^PR #\d+$/]);
   await expect(section.getByRole("button", { name: /^Take out|^Add changes/ })).toHaveCount(0);
+
+  // One Autopilot read: its chip says who merged it when, and links to its activity page.
+  const readId = randomUUID();
+  await query(
+    `INSERT INTO code_change (id, "projectId", "repoId", repo, number, url, title, author, "mergedAt", state, "forUsers", "updatedAt")
+     SELECT $2, p.id, $3, $4, 11, $5, 'Add a dark theme', 'ada', now(), 'NOTHING_TO_DO', true, now() FROM project p WHERE p.slug = $1`,
+    [slug, readId, id, repo, `https://github.com/${repo}/pull/11`],
+  );
+  await team.reload();
+  await chip(11, "Add a dark theme").click();
+  await expect(team.getByRole("link", { name: "Its activity" })).toHaveAttribute("href", `/app/${slug}/autopilot/activity/${readId}`);
+  await expect(team.getByText(/^ada · merged .+ · /)).toContainText(`${repo}#11`);
 });
