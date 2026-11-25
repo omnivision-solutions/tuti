@@ -41,8 +41,11 @@ export function appConfig(env: Env): ExpoConfig {
       ],
     ],
     experiments: { reactCompiler: true },
+    // Over-the-air updates (EAS Update) reach only builds with the same native code: the runtime version is the
+    // fingerprint of everything native (modules, their patches, this config). A native change needs a new build.
+    runtimeVersion: { policy: "fingerprint" },
     ...(env.EXPO_OWNER ? { owner: env.EXPO_OWNER } : {}),
-    ...(env.EAS_PROJECT_ID ? { extra: { eas: { projectId: env.EAS_PROJECT_ID } } } : {}),
+    ...(env.EAS_PROJECT_ID ? { extra: { eas: { projectId: env.EAS_PROJECT_ID } }, updates: { url: `https://u.expo.dev/${env.EAS_PROJECT_ID}` } } : {}),
   };
 }
 

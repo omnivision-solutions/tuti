@@ -34,6 +34,7 @@ async function begin(server: string) {
  * the app's) in the server's words.
  */
 export async function signInWithPassword(server: string, email: string, password: string): Promise<SignedIn> {
+  await checkServer(server);
   try {
     const { token, cookie } = await authRequest<{ token: string; cookie: string }>(server, "/app/sign-in/email", { body: { email, password } });
     return { server, token, cookie };
@@ -53,6 +54,58 @@ export async function signInWithPassword(server: string, email: string, password
   }
 }
 
+/** Said of a server too old for the app: one whose `conversations.reply` takes no `requestId` (#1070). */
+export const OUTDATED_SERVER = "This server runs an older Tuti than the app needs. Ask whoever runs it to update Tuti, then sign in here.";
+
+/**
+ * Before anything is sent (docs/plan.md, M10): the server's API spec, which every Tuti server serves with no session,
+ * must have `conversations.reply` take a `requestId`, or a Retry after a lost answer could send a reply twice. No shim
+ * for an older server: it isn't signed in to. A server that can't be reached, or answers with no spec, is left to the
+ * sign-in's own request, and its error.
+ */
+export async function checkServer(server: string) {
+  let spec: unknown;
+  try {
+    const response = await fetch(`${server}/api/v1/openapi.json`, { credentials: "omit", headers: { accept: "application/json" } });
+    if (!response.ok) {
+      return;
+    }
+    spec = await response.json();
+  } catch {
+    return;
+  }
+  const { openapi, paths } = (spec ?? {}) as { openapi?: unknown; paths?: unknown };
+  if (typeof openapi !== "string" || !paths || typeof paths !== "object") {
+    return;
+  }
+  if (!replyTakesRequestId(spec as OpenApi)) {
+    throw new Error(OUTDATED_SERVER);
+  }
+}
+
+type Schema = { $ref?: string; properties?: Record<string, unknown> };
+type OpenApi = {
+  paths: Record<string, Record<string, { operationId?: string; requestBody?: { content?: Record<string, { schema?: Schema }> } } | undefined>>;
+  components?: { schemas?: Record<string, Schema> };
+};
+
+/** Whether the spec's `conversations.reply` takes `requestId` in its JSON body (inline, or a component it refers to). */
+export function replyTakesRequestId(spec: OpenApi) {
+  for (const operations of Object.values(spec.paths)) {
+    for (const operation of Object.values(operations ?? {})) {
+      if (operation?.operationId !== "conversations.reply") {
+        continue;
+      }
+      let schema = operation.requestBody?.content?.["application/json"]?.schema;
+      if (schema?.$ref?.startsWith("#/components/schemas/")) {
+        schema = spec.components?.schemas?.[schema.$ref.slice("#/components/schemas/".length)];
+      }
+      return !!schema?.properties && "requestId" in schema.properties;
+    }
+  }
+  return false;
+}
+
 /** Whether a Tuti server answers at the address: Better Auth's own `ok`. */
 const isTuti = (server: string) => authRequest<{ ok?: unknown }>(server, "/ok").then((answer) => answer?.ok === true, () => false);
 
@@ -61,6 +114,7 @@ export const forgotPasswordUrl = (server: string) => `${server}/app/auth/forgot-
 
 /** Google or GitHub in the system's browser sheet: signed in, or null if the teammate closed it. */
 export async function continueWith(provider: "google" | "github", server: string): Promise<SignedIn | null> {
+  await checkServer(server);
   const { state, challenge } = await begin(server);
   const { url } = await authRequest<{ url: string }>(server, "/sign-in/social", {
     body: { provider, callbackURL: `${RETURN}?state=${state}`, additionalData: { challenge } },
