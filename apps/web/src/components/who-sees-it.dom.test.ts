@@ -72,6 +72,16 @@ test("Publish is told of an unsaved pick only while the picker that has it is th
 test("while a save runs the picks wait: one made then would be dropped as the picker starts afresh after it", async () => {
   const box = document.createElement("form");
   document.body.append(box);
-  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, saving: true, onChange: () => {} })));
-  expect([...box.querySelectorAll<HTMLInputElement>('input[name="groups"]')].every((input) => input.disabled)).toBe(true);
+  const onChange = vi.fn();
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, saving: true, onChange })));
+  const beta = box.querySelector<HTMLInputElement>('input[value="beta"]')!;
+  // Off, but focusable: the keyboard keeps its place.
+  expect(beta.getAttribute("aria-disabled")).toBe("true");
+  expect(beta.disabled).toBe(false);
+  beta.focus();
+  await act(async () => beta.click());
+  expect(beta.checked).toBe(false);
+  expect(document.activeElement).toBe(beta);
+  expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
 });

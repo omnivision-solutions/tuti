@@ -743,9 +743,14 @@ export function WhoSeesIt({
               name="groups"
               value={group.key}
               defaultChecked={picked.includes(group.key)}
-              disabled={pending}
+              // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
+              aria-disabled={pending || undefined}
               aria-describedby={upgrade ? needsId : undefined}
               onClick={(event) => {
+                if (pending) {
+                  event.preventDefault();
+                  return;
+                }
                 // Picking one needs the plan: the prompt opens and it stays unpicked.
                 if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
                   event.preventDefault();
@@ -753,8 +758,8 @@ export function WhoSeesIt({
                 }
               }}
               onChange={(event) => {
-                // The pick the prompt refused (onClick put it back) isn't a change.
-                if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
+                // The pick the prompt refused, or made while a save runs (onClick put it back), isn't a change.
+                if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
                   return;
                 }
                 setChanged(true);
