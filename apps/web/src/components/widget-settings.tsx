@@ -15,6 +15,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { LauncherIcon } from "@/components/widget-preview";
+import { onRefresh, type Pending, pendingAfterSave } from "@/lib/follow-stored";
 import { linksFrom } from "@/lib/forms";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
@@ -104,12 +105,12 @@ export function WidgetSettings({
   // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it. Not to the one this
   // page sent: its refresh lands after "Widget saved", and would undo a pick made since (Remove right after saving).
   const [loaded, setLoaded] = useState(initialIcon);
-  const [sent, setSent] = useState<FormDataEntryValue | null>(null);
+  const [sent, setSent] = useState<Pending<FormDataEntryValue | null>>(null);
   if (loaded !== initialIcon) {
     setLoaded(initialIcon);
-    // Either way the save it was sent with is behind us: a later refresh is followed, whatever icon it has.
-    setSent(null);
-    if (initialIcon !== sent) {
+    const refreshed = onRefresh<FormDataEntryValue | null>(sent, initialIcon);
+    setSent(refreshed.pending);
+    if (refreshed.follow) {
       setIcon(initialIcon);
     }
   }
@@ -119,7 +120,7 @@ export function WidgetSettings({
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
     save: async (prev, formData) => {
-      setSent(formData.get("icon"));
+      setSent(pendingAfterSave<FormDataEntryValue | null>(formData.get("icon"), initialIcon));
       const result = await saveWidgetSettings(projectSlug, prev, formData);
       // Not saved: no refresh of its own is coming, so the next one (a teammate's) is followed.
       if (result.error) {

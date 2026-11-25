@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useEditorSlot } from "@/components/use-editor-slot";
+import { keptEdit } from "@/lib/follow-stored";
 import { type ApiReferenceSettings as Changes, changeApiReferenceGithub, changeApiReferenceUrl, saveApiReferenceSettings } from "@/server/api-references";
 
 /**
@@ -43,7 +44,7 @@ function SourceUrl({ projectSlug, slug, url }: { projectSlug: string; slug: stri
   const [edited, setEdited] = useState<string | null>(null);
   // The stored address typed in is the field left alone, whichever came first: typed just after "Address changed", before
   // the page has the new address, it still follows the stored one from then on.
-  if (edited !== null && edited.trim() === url) {
+  if (edited !== keptEdit(edited, url)) {
     setEdited(null);
   }
   const value = edited ?? url;
