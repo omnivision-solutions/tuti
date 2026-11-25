@@ -273,6 +273,19 @@ test("on a queue that refuses it, one with no code change before is failed for t
   });
 });
 
+test("one that failed before, picked on a queue that refuses it: its retry runs past the gate", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  github.pullRequest(repo, { number: 8, title: "Add a dark theme", mergedAt: days(2) });
+  await prisma.codeChange.create({
+    data: { projectId: project.id, repoId, repo, number: 8, url: url(8), title: "t", author: "a", mergedAt: new Date(days(2)), state: "FAILED", reason: "The AI provider didn't answer.", retryAt: new Date(), retryPastGate: false },
+  });
+  queue.enqueue.mockRejectedValueOnce(new Error("Hatchet is unreachable"));
+
+  await add(8);
+
+  expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 8 }, select: { state: true, retryPastGate: true } })).toEqual({ state: "FAILED", retryPastGate: true });
+});
+
 test("on a queue that refuses it, one a run started on meanwhile isn't failed", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   github.pullRequest(repo, { number: 6, title: "Add a dark theme", mergedAt: days(2) });

@@ -90,9 +90,9 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
       made = false;
       return prisma.codeChange.findUniqueOrThrow({ where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } }, select });
     });
-  // Paused (out of credits): the team's pick is resumed past the gate, as asked.
-  if (change.state === "PAUSED" && pastGate) {
-    await prisma.codeChange.updateMany({ where: { id: change.id, state: "PAUSED" }, data: { retryPastGate: true } });
+  // Paused (out of credits) or failed: the team's pick is resumed or retried past the gate, as asked, whatever runs it.
+  if ((change.state === "PAUSED" || change.state === "FAILED") && pastGate) {
+    await prisma.codeChange.updateMany({ where: { id: change.id, state: change.state }, data: { retryPastGate: true } });
   }
   if (change.state === "ANALYSING" || change.state === "FAILED") {
     return {
