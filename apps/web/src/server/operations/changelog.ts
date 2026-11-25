@@ -109,6 +109,12 @@ const fields = {
       `The reader groups it's for, by key (see groups.list), up to ${MAX_READER_GROUPS}: only their readers (and the team) see it on the portal, in the widget and in the API, it's in no feed, sitemap or Markdown copy, and it's emailed only to subscribers in them. None (the default): everyone`,
     )
     .meta({ examples: [["customers"]] }),
+  emailOnly: z
+    .boolean()
+    .describe(
+      "Email only: emailed to subscribers (published with `emailSubscribers`), and listed nowhere: not on the portal, in the widget, feeds or the API to readers; its page is the team's only, and its email links to none",
+    )
+    .meta({ examples: [false] }),
   cover: z
     .string()
     .trim()
@@ -149,6 +155,7 @@ const entryOutput = z
       .optional()
       .describe("The keys of the reader groups it's for: only their readers (and the team) see it. None: everyone. Only for the team")
       .meta({ examples: [[]] }),
+    emailOnly: z.boolean().optional().describe("Email only: emailed to subscribers, listed nowhere. Only for the team").meta({ examples: [false] }),
     body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
     content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
     markdown: z
@@ -235,7 +242,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     /** The running draft: merged pull requests are being added to it. */
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
-    ...(team && { groups: claimsOf(entry) }),
+    ...(team && { groups: claimsOf(entry), emailOnly: entry.emailOnly }),
     body: entry.body,
     content: text,
     /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
@@ -615,7 +622,7 @@ export const createChangelogEntry = defineOperation({
   scope: "write",
   access: "team",
   errors: [402, 409, 503],
-  input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]), groups: fields.groups.default([]) }),
+  input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]), groups: fields.groups.default([]), emailOnly: fields.emailOnly.default(false) }),
   output: entryOutput.describe("The entry, a draft"),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
@@ -646,6 +653,7 @@ export const createChangelogEntry = defineOperation({
             body: text.text,
             content: text.doc,
             tags: input.tags.map(toTag),
+            emailOnly: input.emailOnly,
             coverId: cover ?? null,
             createdById: actor.kind === "user" ? actor.userId : actor.createdById,
           },
@@ -672,6 +680,7 @@ const updateInput = z.object({
     content: fields.content,
     markdown: fields.markdown,
     tags: fields.tags.optional(),
+    emailOnly: fields.emailOnly.optional(),
     groups: fields.groups
       .optional()
       .describe(
@@ -797,6 +806,7 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
             ...(input.title !== undefined && { title: input.title }),
             ...(text && { body: text.text, content: text.doc }),
             ...(input.tags && { tags: input.tags.map(toTag) }),
+            ...(input.emailOnly !== undefined && { emailOnly: input.emailOnly }),
             ...(cover !== undefined && { coverId: cover }),
           },
           select: entrySelect,

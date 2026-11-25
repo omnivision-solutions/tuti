@@ -1,24 +1,31 @@
-import { prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { randomUUID } from "node:crypto";
+
+import { startSesFake } from "@tuti/testkit/ses";
+import { afterAll, beforeEach, expect, test } from "vitest";
 
 import { GET as entryMarkdown } from "@/app/portal/[project]/(site)/changelog/[number]/md/route";
 import { GET as rss } from "@/app/portal/[project]/(site)/changelog/rss.xml/route";
 import { GET as widgetLatest } from "@/app/api/widget/latest/route";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
 
 import { changelogContents, publishedEntries } from "./changelog-queries";
-import { createChangelogEntry, getChangelogEntry, listChangelog, publishChangelogEntry, reactToChangelogEntry } from "./operations/changelog";
+import { createChangelogEntry, getChangelogEntry, listChangelog, publishChangelogEntry, reactToChangelogEntry, updateChangelogEntry } from "./operations/changelog";
+import { addChangelogSubscribers } from "./operations/changelog-subscribers";
 import { listChangelogComments } from "./operations/changelog-comments";
 import { latestAnnouncement } from "./operations/changelog-seen";
 import { call } from "./operations/run";
 import { readerOf } from "./portal-access";
 
 /**
- * An email-only entry (docs/plan.md S6): emailed to subscribers, listed nowhere, its page the team's only. Nothing sets
- * it yet (the next release's API and editor will: the previous release, beside this one in a deploy, would list it), so
- * the tests set it in the database.
+ * An email-only entry (docs/plan.md S6), set by changelog.create and changelog.update: emailed to subscribers, listed
+ * nowhere, its page the team's only (its email links to none).
  */
+
+// The project's own sender asks SES for its tenant.
+const ses = await startSesFake();
+afterAll(() => ses.close());
 
 let owner: TestUser;
 let reader: TestUser;
@@ -34,8 +41,7 @@ beforeEach(async () => {
 });
 
 async function published(title: string, emailOnly = false) {
-  const entry = await call(createChangelogEntry, as(owner), { title, body: `${title}.` });
-  await prisma.changelogEntry.updateMany({ where: { projectId: project.id, number: entry.number }, data: { emailOnly } });
+  const entry = await call(createChangelogEntry, as(owner), { title, body: `${title}.`, emailOnly });
   await call(publishChangelogEntry, as(owner), { number: entry.number, announce: true });
   return entry.number;
 }
@@ -55,7 +61,13 @@ test("an email-only entry is the team's: no reader lists, reads, reacts to or co
   ]) {
     await expect(run()).rejects.toMatchObject({ status: 404 });
   }
-  await expect(call(getChangelogEntry, as(owner), { number: quiet })).resolves.toMatchObject({ title: "Pricing change" });
+  // The team reads it, and sees that it's email-only; readers aren't told of the flag on others either.
+  await expect(call(getChangelogEntry, as(owner), { number: quiet })).resolves.toMatchObject({ title: "Pricing change", emailOnly: true });
+  expect(await call(getChangelogEntry, as(reader), { number: everyone })).not.toHaveProperty("emailOnly");
+  // Listed again once it isn't.
+  expect((await call(updateChangelogEntry, as(owner), { number: quiet, emailOnly: false })).emailOnly).toBe(false);
+  expect(await numbers(reader)).toEqual([quiet, everyone]);
+  await call(updateChangelogEntry, as(owner), { number: quiet, emailOnly: true });
 
   const asReader = await readerOf(project.id, reader.id);
   for (const who of [asReader, SIGNED_OUT]) {
@@ -70,4 +82,15 @@ test("an email-only entry is the team's: no reader lists, reads, reacts to or co
   expect((await entryMarkdown(new Request("http://x/"), params({ number: String(quiet) }))).status).toBe(404);
   const latest = (await (await widgetLatest(new Request(`http://x/api/widget/latest?project=${project.slug}`))).json()) as { latest: string | null };
   expect(latest.latest).toBe(before.latest);
+});
+
+test("published with Email subscribers, it's emailed in full, linking to no page (readers have none)", async () => {
+  const kim = `e2e-${randomUUID()}@example.com`;
+  await call(addChangelogSubscribers, as(owner), { emails: [kim] });
+  const entry = await call(createChangelogEntry, as(owner), { title: "Pricing change", body: "Plans cost less from May.", emailOnly: true });
+  await call(publishChangelogEntry, as(owner), { number: entry.number, emailSubscribers: true });
+  const [email] = mailbox.emails.filter((sent) => sent.to.includes(kim) && sent.subject === `${project.name}: Pricing change`);
+  expect(email!.text).toContain("Plans cost less from May.");
+  expect(email!.text).not.toContain(`/changelog/${entry.number}`);
+  expect(email!.text).not.toContain("Read the update");
 });

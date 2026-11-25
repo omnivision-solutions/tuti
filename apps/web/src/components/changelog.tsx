@@ -89,6 +89,8 @@ type Entry = {
   tags: TagName[];
   /** The keys of the reader groups it's for; none: everyone. */
   groups: string[];
+  /** Email-only: emailed to subscribers, listed nowhere. */
+  emailOnly?: boolean;
   posts: number[];
   published: boolean;
   /** Its cover (the featured image): a link to its thumbnail size. */
@@ -682,7 +684,15 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} saving={pending} onChange={() => setDirty(true)} />}
+        <WhoSeesIt
+          key={`${saves}:${entry?.groups.join() ?? ""}:${entry?.emailOnly ?? false}`}
+          groups={groups}
+          picked={entry?.groups ?? []}
+          emailOnly={entry?.emailOnly ?? false}
+          upgrade={groupsUpgrade}
+          saving={pending}
+          onChange={() => setDirty(true)}
+        />
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
@@ -707,32 +717,38 @@ export function ChangelogForm({
 export function WhoSeesIt({
   groups,
   picked,
+  emailOnly = false,
   upgrade,
   saving: pending = false,
   onChange,
 }: {
   groups: { key: string; name: string }[];
   picked: string[];
+  /** Saved as email-only: emailed to subscribers, listed nowhere. */
+  emailOnly?: boolean;
   upgrade: UpgradePrompt | null;
   /** A save is running: the picks wait for it (one made now would be dropped as the picker starts afresh after it). */
   saving?: boolean;
   onChange: () => void;
 }) {
   const [changed, setChanged] = useState(false);
+  const [onlyChanged, setOnlyChanged] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   // Told to Publish, which waits for it: while this picker has a change it hasn't saved, and no longer once it's gone
   // (started afresh after a save, or with the form when new saved text replaces it, which drops the picks too).
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => {
-    saving?.setGroupsChanged(changed);
+    saving?.setGroupsChanged(changed || onlyChanged);
     return () => saving?.setGroupsChanged(false);
-  }, [saving, changed]);
+  }, [saving, changed, onlyChanged]);
   const needsId = useId();
+  const onlyId = useId();
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="group-label mb-2">Who sees it</legend>
       {changed && <input type="hidden" name="groupsEditable" value="1" />}
-      <div className="flex flex-wrap gap-2">
+      {onlyChanged && <input type="hidden" name="emailOnlyEditable" value="1" />}
+      {groups.length > 0 && <div className="flex flex-wrap gap-2">
         {groups.map((group) => (
           <label
             key={group.key}
@@ -771,8 +787,36 @@ export function WhoSeesIt({
             {group.name}
           </label>
         ))}
+      </div>}
+      {groups.length > 0 && (
+        <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
+      )}
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          id={onlyId}
+          name="emailOnly"
+          value="1"
+          defaultChecked={emailOnly}
+          aria-describedby={`${onlyId}-hint`}
+          aria-disabled={pending || undefined}
+          onClick={(event) => pending && event.preventDefault()}
+          onChange={() => {
+            if (pending) {
+              return;
+            }
+            setOnlyChanged(true);
+            onChange();
+          }}
+          className="mt-0.5 size-4 accent-primary"
+        />
+        <div className="flex flex-col gap-0.5">
+          <label htmlFor={onlyId}>Email only</label>
+          <p id={`${onlyId}-hint`} className="text-xs text-muted-foreground">
+            Emailed to subscribers and listed nowhere. Its page is your team&apos;s only.
+          </p>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
       {upgrade && (
         <>
           <span id={needsId} hidden>
@@ -813,8 +857,11 @@ export function publishSummary({
   subscribersLeft,
   posts,
   asked,
+  emailOnly = false,
 }: {
   email: boolean;
+  /** Email-only: listed nowhere, so it doesn't go on the portal or in the widget. */
+  emailOnly?: boolean;
   subscribers: number;
   emailedSubscribers: boolean;
   subscribersLeft: number;
@@ -825,7 +872,7 @@ export function publishSummary({
 }): { start: string; count: string | null; who: string } {
   const toSubscribers = emailedSubscribers ? subscribersLeft : email ? subscribers : 0;
   const emails = toSubscribers + asked;
-  const where = `It goes on your portal and in your widget${posts > 0 ? `, completes ${plural(posts, "post")}` : ""}`;
+  const where = `${emailOnly ? "It's listed nowhere" : "It goes on your portal and in your widget"}${posts > 0 ? `, completes ${plural(posts, "post")}` : ""}`;
   const who = [
     toSubscribers > 0 && `${toSubscribers} to ${emailedSubscribers ? "subscribers who haven't had it yet" : `your ${toSubscribers === 1 ? "subscriber" : "subscribers"}`}`,
     asked > 0 && `${asked} to the people who asked for ${posts === 1 ? "the post" : "the posts"} it completes`,
@@ -1912,12 +1959,15 @@ export function ChangelogEntryActions({
   unwritten,
   markers = [],
   covers = null,
+  emailOnly = false,
   part,
 }: {
   projectSlug: string;
   number: number;
   title: string;
   published: boolean;
+  /** Saved as email-only: the Publish dialog says it's listed nowhere. */
+  emailOnly?: boolean;
   /** Lines an AI draft left for the team to fill in ("[Check: …]", "[Screenshot: …]"), still in the saved text: it isn't published with them. */
   markers?: string[];
   /** The entry has no cover and one can be composed: the Publish dialog offers its designs, with one picked. */
@@ -1970,6 +2020,7 @@ export function ChangelogEntryActions({
     subscribersLeft: sample || importedOn ? 0 : subscribersLeft,
     posts: postCount,
     asked: emails,
+    emailOnly,
   });
   // The cover Publish adds (the entry's own design until they pick), or "none".
   const [pickedCover_, setPickedCover] = useState<CoverDesign | "none">();

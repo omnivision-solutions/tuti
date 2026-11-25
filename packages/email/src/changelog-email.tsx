@@ -8,7 +8,8 @@ import { CONTENT_WIDTH, EmailRichText } from "./rich-text";
 
 type ChangelogProps = EmailBrand & {
   entryTitle: string;
-  entryUrl: string;
+  /** Its page on the portal; null for an email-only entry, which has none for readers (no "Read the update"). */
+  entryUrl: string | null;
   doc: Doc;
   /** When it was published: "New · 15 November 2026" over its title, as the portal's changelog shows it. */
   publishedAt: Date;
@@ -35,12 +36,11 @@ export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt,
       <Eyebrow accent={accent}>{`New · ${formatDate(publishedAt)}`}</Eyebrow>
       <Title>{entryTitle}</Title>
       <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} accent={accent} />
-      <Button
-        href={entryUrl}
-        style={buttonStyle(accent)}
-      >
-        Read the update
-      </Button>
+      {entryUrl && (
+        <Button href={entryUrl} style={buttonStyle(accent)}>
+          Read the update
+        </Button>
+      )}
     </Layout>
   );
 }

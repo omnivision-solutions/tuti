@@ -1,12 +1,12 @@
 import { Button } from "@react-email/components";
-import { type Doc, isMediaId, isPixelSize, isSafeLink, isVideo } from "@tuti/content";
+import { type Doc, isMediaId, isPixelSize, isSafeLink, isVideo, videoPageUrl } from "@tuti/content";
 import { emailImageKey, EMAIL_IMAGE_WIDTH, type MediaUrls } from "@tuti/content/media";
 import { Fragment, type ReactNode } from "react";
 
 import { accentColors, colors } from "./layout";
 
 type Node = NonNullable<Doc["content"]>[number];
-type Context = { media?: MediaUrls; linkUrl: string; accent: string; tight?: boolean };
+type Context = { media?: MediaUrls; linkUrl: string | null; accent: string; tight?: boolean };
 
 /** Width of the text inside Layout's card (560 container − 2×12 padding − 2×1 card edge − 2×28 card padding). */
 export const CONTENT_WIDTH = 478;
@@ -20,9 +20,9 @@ const mono = { fontFamily: "SFMono-Regular, Menlo, Consolas, monospace", fontSiz
  * skipped and unsafe links render as text. Images use the email JPEG from the image
  * job, from `mediaUrls` (left out without one there); those URLs must keep working
  * (lastingMediaUrls in apps/web). Videos become a link to `linkUrl`, the page where
- * they play (e.g. the changelog entry). Links take the project's `accent` where it reads as text (accentColors' `link`).
+ * they play (e.g. the changelog entry); with none (an email-only entry, which has no page), the video's own. Links take the project's `accent` where it reads as text (accentColors' `link`).
  */
-export function EmailRichText({ doc, mediaUrls, linkUrl, accent }: { doc: Doc; mediaUrls?: MediaUrls | null; linkUrl: string; accent?: string | null }) {
+export function EmailRichText({ doc, mediaUrls, linkUrl, accent }: { doc: Doc; mediaUrls?: MediaUrls | null; linkUrl: string | null; accent?: string | null }) {
   return <>{children(doc, { media: mediaUrls ?? undefined, linkUrl, accent: accentColors(accent).link })}</>;
 }
 
@@ -98,7 +98,7 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
       return isVideo(node.attrs ?? {}) ? (
         <p key={key} style={{ margin: "0 0 16px" }}>
           <Button
-            href={ctx.linkUrl}
+            href={ctx.linkUrl ?? videoPageUrl(node.attrs as Parameters<typeof videoPageUrl>[0])}
             style={{ color: ctx.accent, border: `1px solid ${colors.border}`, borderRadius: 10, padding: "10px 16px", fontSize: 15, fontWeight: 600 }}
           >
             Watch the video

@@ -153,6 +153,11 @@ describe("the Publish dialog's line", () => {
   });
 });
 
+test("an email-only entry's Publish line says it's listed nowhere", () => {
+  const { start, count } = publishSummary({ email: true, subscribers: 3, emailedSubscribers: false, subscribersLeft: 0, posts: 0, asked: 0, emailOnly: true });
+  expect(`${start}${count}.`).toBe("It's listed nowhere, and sends 3 emails.");
+});
+
 describe("Who sees it", () => {
   test("a draft for some groups counts, and says it counts, only the subscribers in them", () => {
     expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 0)).toContain("Nobody in its groups has subscribed.");
@@ -171,9 +176,9 @@ describe("Who sees it", () => {
 
   test("on a plan without reader groups, each group's description names the plan it needs", () => {
     const html = picker({ title: "Reader groups need the Business plan", billingHref: null, note: null });
-    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    const id = /name="groups"[^>]*aria-describedby="([^"]+)"|aria-describedby="([^"]+)"[^>]*name="groups"/.exec(html)?.slice(1).find(Boolean);
     expect(id).toBeTruthy();
     expect(html).toContain(`id="${id}" hidden="">Reader groups need the Business plan</span>`);
-    expect(picker(null)).not.toContain("aria-describedby");
+    expect(picker(null)).not.toMatch(/<input[^>]*name="groups"[^>]*aria-describedby/);
   });
 });

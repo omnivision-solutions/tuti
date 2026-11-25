@@ -288,6 +288,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       subscribersEmailedAt: true,
       subscribersEmailDueAt: true,
       sample: true,
+      emailOnly: true,
       projectId: true,
       project: { select: { name: true, slug: true, portalAccess: true, brandColor: true } },
     },
@@ -328,7 +329,8 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
-  const entryUrl = `${origin}/changelog/${entry.number}`;
+  // An email-only entry has no page for readers: no link to one.
+  const entryUrl = entry.emailOnly ? null : `${origin}/changelog/${entry.number}`;
   const doc = (entry.content as Doc | null) ?? fromPlainText(entry.body);
   const images = entryImages(doc, entry.cover?.status === "READY" ? entry.coverId : null, log);
   let emailed = 0;
