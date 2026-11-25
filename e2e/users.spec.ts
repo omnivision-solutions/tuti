@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { sesComplaint } from "./ses";
 
@@ -39,7 +41,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   // One pane: Users in its header, its views as pills (People with how many), Sync from your app at its right end.
   const header = owner.getByRole("region", { name: "Users" }).locator('[data-slot="pane-header"]');
   await expect(header.getByRole("heading", { name: "Users", level: 1 })).toBeVisible();
-  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People 3", "Companies"]);
+  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People 3", "Companies", "Subscribers"]);
   await expect(header.getByRole("link", { name: /^People\s*3$/ })).toHaveAttribute("aria-current", "page");
   await expect(header.getByRole("link", { name: "Sync from your app" })).toHaveAttribute("href", "/api/docs#users.sync");
   const table = owner.getByRole("main").getByRole("table");
@@ -529,4 +531,86 @@ test("on a phone, Who's asking's suggestion of a long-named property stays insid
   const trigger = (await value.boundingBox())!;
   expect(trigger.x + trigger.width).toBeLessThanOrEqual(box.x + box.width);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+});
+
+test("Users → Subscribers lists the changelog's email subscribers, users or not, and an admin removes one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+
+  // None yet: the view says how they get there.
+  await owner.goto(`/app/${slug}/users`);
+  await owner.getByRole("link", { name: "Subscribers" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users\\?view=subscribers$`));
+  await expect(owner.getByText("No subscribers yet")).toBeVisible();
+
+  // The team's app adds a user of theirs and an address with no user.
+  await api("/users", { users: [{ id: "user-1", name: "Ada Lovelace", email: "e2e-ada@example.com" }] });
+  await api("/changelog-subscribers", { users: ["user-1"], emails: ["e2e-reader@example.com"] });
+  await owner.reload();
+  const rows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");
+  await expect(rows).toHaveCount(2);
+  const ada = rows.filter({ hasText: "e2e-ada@example.com" });
+  await expect(ada).toContainText("Subscribed");
+  await expect(ada.getByRole("link", { name: "User user-1" })).toHaveAttribute("href", `/app/${slug}/users/user-1`);
+  await expect(owner.getByText("isn't emailed to anyone")).toHaveCount(0);
+  await checkpoint(owner, "subscribers");
+  // On a phone: each row who and its status, Remove inside the table's visible width.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const scroller = owner.getByRole("main").getByRole("table").locator("..");
+  const remove = ada.getByRole("button", { name: "Remove e2e-ada@example.com" });
+  // The Status column is hidden here: the one shown is under the address.
+  await expect(ada.getByText("Subscribed", { exact: true }).filter({ visible: true })).toHaveCount(1);
+  const [box, button] = [(await scroller.boundingBox())!, (await remove.boundingBox())!];
+  expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "subscribers-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
+  // Remove asks first; then they're removed, and Subscribed no longer lists them.
+  await rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button", { name: "Remove e2e-reader@example.com" }).click();
+  await expect(owner.getByRole("alertdialog")).toContainText("They stop getting your changelog by email, and any link to confirm it stops working.");
+  await owner.getByRole("button", { name: "Remove subscriber" }).click();
+  await expect(owner.getByText("e2e-reader@example.com removed")).toBeVisible();
+  // Its row has no Remove now: focus goes to the search box, not the page's top.
+  await expect(owner.getByRole("searchbox", { name: "Search subscribers" })).toBeFocused();
+  await expect(rows.filter({ hasText: "e2e-reader@example.com" })).toContainText("Removed");
+  await expect(rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button")).toHaveCount(0);
+  // Ada turns all of the project's emails off: still confirmed, so still removable (turned back on, she'd get it).
+  await api("/email-preferences", { unsubscribed: true, author: { id: "user-1" } }, "PATCH");
+  await owner.reload();
+  await expect(ada).toContainText("All emails off");
+  await expect(ada.getByRole("button", { name: "Remove e2e-ada@example.com" })).toBeVisible();
+  await owner.getByRole("combobox", { name: "Status" }).click();
+  await owner.getByRole("option", { name: "All emails off" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("e2e-ada@example.com");
+
+  // A private portal emails nobody its changelog: the view says so.
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Who can see your portal" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  await owner.goto(`/app/${slug}/users?view=subscribers`);
+  await expect(owner.getByText("Your portal is private, so its changelog isn't emailed to anyone.")).toBeVisible();
+});
+
+test("on a server selling plans, Users → Subscribers says when the project's email is paused", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await owner.goto(`/app/${slug}/users?view=subscribers`);
+  await expect(owner.getByText("No subscribers yet")).toBeVisible();
+  await expect(owner.getByText("Your project's email is paused")).toHaveCount(0);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`UPDATE project SET "emailPausedAt" = now() WHERE slug = $1`, [slug]);
+  } finally {
+    await db.end();
+  }
+  await owner.reload();
+  await expect(owner.getByText("Your project's email is paused, so nothing is sent until it's resumed.")).toBeVisible();
 });

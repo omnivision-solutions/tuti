@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
+import { projectEmailWaits } from "@tuti/jobs";
 import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, SearchIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -10,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
 import { FilterPills } from "@/components/filter-pills";
 import { PageNav } from "@/components/page-nav";
+import { SubscribersTable } from "@/components/subscribers-table";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -53,8 +55,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const context = { actor: { kind: "user" as const, userId: session.user.id }, projectId: project.id };
   const formats = storedPropertyFormats(project.propertyFormats);
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
+  const view = searchParams.view === "companies" || searchParams.view === "subscribers" ? searchParams.view : undefined;
   /**
-   * The page's pane: Users, its views (People, with how many there are once it's known, and Companies) as pills, and
+   * The page's pane: Users, its views (People, with how many there are once it's known, Companies, and Subscribers: the changelog's, users or not) as pills, and
    * how users get here (single sign-on, or users.sync: in the docs).
    */
   const pane = ({ people, description, children }: { people?: number; description: string; children: ReactNode }) => (
@@ -69,8 +72,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
               items={[
                 { title: "People", href: `/app/${slug}/users`, count: people?.toLocaleString("en-GB") },
                 { title: "Companies", href: `/app/${slug}/users?view=companies` },
+                { title: "Subscribers", href: `/app/${slug}/users?view=subscribers` },
               ]}
-              current={searchParams.view === "companies" ? `/app/${slug}/users?view=companies` : `/app/${slug}/users`}
+              current={view ? `/app/${slug}/users?view=${view}` : `/app/${slug}/users`}
             />
           }
           actions={
@@ -87,13 +91,26 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
       </Pane>
     </PaneLayout>
   );
-  if (searchParams.view === "companies") {
+  if (view === "companies") {
     return pane({
       description: "The people who use your app, and what they asked for.",
       children: <CompaniesTable context={context} page={page} sort={searchParams.sort} formats={formats} />,
     });
   }
   const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 255) : "";
+  if (view === "subscribers") {
+    const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { portalAccess: true } });
+    const notSending =
+      portalAccess !== "PUBLIC"
+        ? "Your portal is private, so its changelog isn't emailed to anyone."
+        : (await projectEmailWaits(project.id))
+          ? "Your project's email is paused, so nothing is sent until it's resumed."
+          : null;
+    return pane({
+      description: "Who gets your changelog by email.",
+      children: <SubscribersTable context={context} slug={slug} page={page} q={q} status={searchParams.status} admin={isAdminRole(membership.role)} notSending={notSending} />,
+    });
+  }
   // A company's people, from Companies (its name as it is).
   const company = typeof searchParams.company === "string" && searchParams.company ? searchParams.company.slice(0, 200) : undefined;
   const groups = await prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } });

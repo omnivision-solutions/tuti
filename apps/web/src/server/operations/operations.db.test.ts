@@ -36,6 +36,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "votes.set": () => ({ number: 1, voted: true }),
   "subscriptions.set": () => ({ number: 1, subscribed: true }),
   "emailPreferences.update": () => ({ followedPosts: false, author: { id: "matrix-reader" } }),
+  "changelogSubscribers.list": () => ({}),
   "changelogSubscribers.add": () => ({ emails: ["e2e-matrix-subscriber@example.com"] }),
   "changelogSubscribers.remove": () => ({ emails: ["e2e-matrix-subscriber@example.com"] }),
   "duplicates.list": () => ({}),

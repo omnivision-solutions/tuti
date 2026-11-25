@@ -573,6 +573,7 @@ const matrix: Matrix = {
     setAskingProperty: { allowed: "ADMIN", call: (slug) => groups.setAskingProperty(slug, "mrr") },
     setUserColumns: { allowed: "ADMIN", call: (slug) => groups.setUserColumns(slug, ["company", "mrr"]) },
     setPropertyFormats: { allowed: "ADMIN", call: (slug) => groups.setPropertyFormats(slug, { mrr: { label: "MRR", format: "money" } }) },
+    removeChangelogSubscriber: { allowed: "ADMIN", call: (slug) => groups.removeChangelogSubscriber(slug, "e2e-matrix-subscriber@example.com") },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.

@@ -42,7 +42,7 @@ export type ChangelogReach = "gets" | "paused" | "unconfirmed" | "private" | "op
  * case. Checked in the query that reads the subscribers, so no list of addresses is sent (a long one would pass
  * Postgres's limit on a query's parameters).
  */
-const optedOutSql = (projectId: string, email: Prisma.Sql) => Prisma.sql`EXISTS (
+export const optedOutSql = (projectId: string, email: Prisma.Sql) => Prisma.sql`EXISTS (
   SELECT 1 FROM "email_opt_out" o
   JOIN "user" u ON u."id" = o."userId"
   LEFT JOIN "sso_identity" si ON si."userId" = u."id" AND si."projectId" = o."projectId"
