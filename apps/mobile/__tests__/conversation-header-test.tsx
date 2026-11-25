@@ -24,7 +24,7 @@ jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({
 const mockPush = jest.fn();
 
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
-const mockApi = jest.fn<(path: string) => Promise<unknown>>();
+const mockApi = jest.fn<(path: string, init?: { method?: string }) => Promise<unknown>>();
 jest.mock("@/lib/session", () => ({
   useApi: () => mockApi,
   useSession: () => ({ session: mockSession }),
@@ -125,6 +125,24 @@ describe("the conversation's header", () => {
 
     expect(getTriage(screenKey(mockSession, 12))).not.toBeNull();
     expect(opened.getByRole("button", { name: "Open, unassigned, details" })).toBeTruthy();
+  });
+
+  it("takes a change that answers after the sheet closed, while the screen is still open", async () => {
+    let patched: (value: unknown) => void = () => {};
+    mockApi.mockImplementation((path, init?: { method?: string }) =>
+      init?.method === "PATCH"
+        ? new Promise((resolve) => (patched = resolve))
+        : Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? CONVERSATION : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+    );
+    const opened = await render(<ConversationRoute />);
+    await screen.findByRole("button", { name: "Open, unassigned, details" });
+    const sheet = await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Close" }));
+    await sheet.unmount();
+
+    // The close answers once the sheet has gone: the header, still open, shows it.
+    await act(async () => patched({ ...CONVERSATION, status: "closed" }));
+    expect(opened.getByRole("button", { name: "Closed, unassigned, details" })).toBeTruthy();
   });
 
   it("doesn't put back what the details sheet changed while its fetch was on its way", async () => {
