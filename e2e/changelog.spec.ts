@@ -593,6 +593,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 });
 
 test("an entry's posts in the editor: a merged one doesn't block saving, and unpublishing shows the saved ones", async ({ browser }, testInfo) => {
+  // A hundred posts made, then the list's counts checked: more than the default 30 s on a busy machine.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");

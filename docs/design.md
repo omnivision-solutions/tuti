@@ -260,7 +260,7 @@ the list picks none to approve at once.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   The team's changelog (`/changelog`) is one pane and one list: its tags as pills with their counts in the header
-  (`FilterPills`, `?tag=`), its search (`PaneSearch`) and New entry; then the drafts under a group label (the one whose
+  (`FilterPills`, `?tag=`, as on its portal), its search (`PaneSearch`) and New entry; then the drafts under a group label (the one whose
   release notes wait first, with "Draft with AI" at its row's end while its text is unwritten and AI can run, else
   "Write it"; then the running draft), then the published entries
   under their months. Each row leads with a date column (when it went out, or a draft's last edit), its cover small at
@@ -373,12 +373,12 @@ the list picks none to approve at once.
   then their profile (groups, properties, on a muted fill) beside all their posts, votes and conversations, each
   status a badge (one column on phones).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Users, a docs tab's Content, Access and
+  statuses, Users, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
   pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations), and on the portal a list's views are the same pills (the changelog's tags, a board's sort) and the docs tabs are underline tabs under the site bar (`PartRow`); switching a control's mode is a segmented
-  `Tabs` (the reply box's Reply and Note are underline tabs across the top of its card instead, under Inbox) (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
+  `Tabs` (the reply box's Reply and Note are underline tabs across the top of its card instead, under Inbox) (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed, each with its count) are `FilterPills`, as the board's sort, so
-  the portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
+  the portal's lists read the same way, and the team's changelog has the same tag pills, so it reads as its portal does. A portal board's status is a menu at the end of its sort row (each status with its
   count): a second row of chips or tabs would put more between the visitor and the list. Below `lg` the board's pills
   wrap instead, so nothing sits off-screen: the status menu beside the board switcher, the sorts under them (A board). The portal roadmap's three columns, one at a time on phones, are a segmented control:
   three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
