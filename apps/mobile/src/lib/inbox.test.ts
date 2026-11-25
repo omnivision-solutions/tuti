@@ -72,6 +72,8 @@ describe("the rows shown", () => {
     expect(withRow(rows, 2, null).map((r) => r.number)).toEqual([3, 1]);
     // Older than every row shown: on a page not loaded yet.
     expect(withRow(rows, 9, row(9, 60)).map((r) => r.number)).toEqual([3, 2, 1]);
+    // Unless every row of the view is shown: then it's last.
+    expect(withRow(rows, 9, row(9, 60), true).map((r) => r.number)).toEqual([3, 2, 1, 9]);
   });
 });
 

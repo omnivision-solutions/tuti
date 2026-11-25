@@ -95,17 +95,20 @@ export const initialsOf = (name: string) =>
 /** A page after the rows already shown, without those it repeats (offset pages shift as conversations move up). */
 export const appendPage = (rows: Row[], page: Row[]) => [...rows, ...page.filter((row) => !rows.some((shown) => shown.number === row.number))];
 
-/** The list once one conversation is fetched again: in place and in order, or gone (`found` null: it left the view). */
-export function withRow(rows: Row[], number: number, found: Row | null) {
+/**
+ * The list once one conversation is fetched again: in place and in order, or gone (`found` null: it left the view).
+ * `complete`: every row of the view is shown (no next page).
+ */
+export function withRow(rows: Row[], number: number, found: Row | null, complete = false) {
   const others = rows.filter((row) => row.number !== number);
   if (!found) {
     return others;
   }
   // Latest message first, as the server orders them.
   const after = others.findIndex((row) => row.lastMessageAt < found.lastMessageAt || (row.lastMessageAt === found.lastMessageAt && row.number < found.number));
-  // Older than every row shown: it's on a page not loaded yet.
+  // Older than every row shown: last, unless it's on a page not loaded yet.
   if (after === -1) {
-    return rows.some((row) => row.number === number) ? [...others, found] : others;
+    return complete || rows.some((row) => row.number === number) ? [...others, found] : others;
   }
   return [...others.slice(0, after), found, ...others.slice(after)];
 }

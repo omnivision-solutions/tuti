@@ -16,6 +16,9 @@ const light = {
   error: "#be1218", // --destructive-foreground
   soft: "#e8f5ec",
   onSoft: "#0f5e37",
+  // People's faces where they have no picture (the Inbox's rows), one colour per person, and their initials.
+  faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
+  onFace: "#ffffff",
 };
 export type Colors = typeof light;
 
@@ -32,6 +35,8 @@ const dark: Colors = {
   error: "#ff8d8b",
   soft: "#173323",
   onSoft: "#8fe6b3",
+  faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
+  onFace: "#ffffff",
 };
 
 export const useColors = (): Colors => (useColorScheme() === "dark" ? dark : light);

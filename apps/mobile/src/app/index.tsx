@@ -45,6 +45,12 @@ export default function Inbox() {
   const key = `${project}\n${view}\n${q}`;
   const list = loaded?.for === key ? loaded : null;
 
+  // The rows' ages move on while nothing else changes.
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
+
   // The search waits for typing to pause.
   useEffect(() => {
     const soon = setTimeout(() => setQ(typed.trim()), 300);
@@ -140,7 +146,7 @@ export default function Inbox() {
               return now;
             }
             // The server pages by position: a row in or out of those shown moves where the next page starts.
-            const rows = withRow(now.rows, number, found ? { ...found, match: null } : null);
+            const rows = withRow(now.rows, number, found ? { ...found, match: null } : null, now.next === null);
             return { ...now, rows, next: now.next && String(Number(now.next) + rows.length - now.rows.length) };
           });
           setViews(answer.views);
