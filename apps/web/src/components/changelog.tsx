@@ -689,7 +689,7 @@ export function ChangelogForm({
           groups={groups}
           picked={entry?.groups ?? []}
           emailOnly={entry?.emailOnly ?? false}
-          emailable={subscribers !== null && !(entry?.published && !entry.emailedSubscribers)}
+          emailable={emailable(entry, subscribers)}
           upgrade={groupsUpgrade}
           saving={pending}
           onChange={() => setDirty(true)}
@@ -833,6 +833,13 @@ export function WhoSeesIt({
     </fieldset>
   );
 }
+
+/**
+ * Whether publishing can still email the entry, as changelog.publish has it: never a private portal's (`subscribers`
+ * null), a sample one or a quiet imported one, nor once it's published without email.
+ */
+export const emailable = (entry: Pick<Entry, "sample" | "importedOn" | "published" | "emailedSubscribers"> | null, subscribers: number | null) =>
+  subscribers !== null && !entry?.sample && !entry?.importedOn && !(entry?.published && !entry.emailedSubscribers);
 
 /** "3 subscribers", "1 subscriber". */
 const subscriberCountText = (n: number) => `${n} ${n === 1 ? "subscriber" : "subscribers"}`;

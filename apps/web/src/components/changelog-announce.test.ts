@@ -7,7 +7,7 @@ vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
 
-const { HowAnnounced, publishSummary, WhoSeesIt } = await import("./changelog");
+const { emailable, HowAnnounced, publishSummary, WhoSeesIt } = await import("./changelog");
 
 /** The Publish dialog's line, as text (the count's popover aside). */
 const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
@@ -191,4 +191,15 @@ describe("Who sees it", () => {
     expect(html).toContain(`id="${id}" hidden="">Reader groups need the Business plan</span>`);
     expect(picker(null)).not.toMatch(/<input[^>]*name="groups"[^>]*aria-describedby/);
   });
+});
+
+test("Email only promises an email only where publishing can still send one", () => {
+  const draft = { sample: false, importedOn: null, published: false, emailedSubscribers: false };
+  expect(emailable(null, 3)).toBe(true);
+  expect(emailable(draft, 0)).toBe(true);
+  expect(emailable(draft, null)).toBe(false);
+  expect(emailable({ ...draft, sample: true }, 3)).toBe(false);
+  expect(emailable({ ...draft, importedOn: "2 April 2024" }, 3)).toBe(false);
+  expect(emailable({ ...draft, published: true }, 3)).toBe(false);
+  expect(emailable({ ...draft, published: true, emailedSubscribers: true }, 3)).toBe(true);
 });
