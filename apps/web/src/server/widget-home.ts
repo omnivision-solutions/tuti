@@ -1,6 +1,8 @@
 import { Prisma, type PostStatus, prisma } from "@tuti/db";
 
 import { postPath } from "@/lib/post-urls";
+import type { Reader } from "@/lib/read-access";
+import { visibleEntry } from "@/lib/reader-groups";
 
 import type { Fresh } from "@/lib/whats-new";
 
@@ -158,14 +160,14 @@ export async function portalReaderHome(projectId: string): Promise<{ name: strin
 }
 
 /**
- * What may be new to someone in What's new: the entries announced in the last 30 days (as the launcher's dot),
+ * What may be new to someone in What's new: the entries announced in the last 30 days that `reader` may read (as the launcher's dot),
  * and, for `userId`, up to when they've seen them on any device (the panel learns what this browser has
  * seen from the widget's script). See lib/whats-new.ts.
  */
-export async function whatsNewSeen(projectId: string, userId: string | null, now = new Date()): Promise<{ fresh: Fresh[]; seen: string | null }> {
+export async function whatsNewSeen(projectId: string, userId: string | null, reader: Reader, now = new Date()): Promise<{ fresh: Fresh[]; seen: string | null }> {
   const [fresh, seen] = await Promise.all([
     prisma.changelogEntry.findMany({
-      where: { projectId, announced: true, publishedAt: { not: null, gte: freshSince(now) } },
+      where: { projectId, announced: true, publishedAt: { not: null, gte: freshSince(now) }, ...visibleEntry(reader) },
       orderBy: { publishedAt: "desc" },
       select: { number: true, publishedAt: true },
     }),

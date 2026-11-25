@@ -238,7 +238,7 @@ export const deleteGroup = defineOperation({
   name: "groups.delete",
   title: "Delete a reader group",
   summary:
-    "Delete a reader group. One a tab, collection or article is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go.",
+    "Delete a reader group. One a tab, collection, article or changelog entry is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go.",
   method: "DELETE",
   path: "/groups/{group}",
   scope: "write",
@@ -247,7 +247,7 @@ export const deleteGroup = defineOperation({
   input: z.object({ group: readerGroup.describe("The group's key") }),
   output: z.object({ deleted: z.string().describe("The deleted group's key").meta({ examples: ["beta"] }) }).describe("The group is gone"),
   run: async ({ projectId }, input) => {
-    // Locked, so a tab, collection or article being saved with it lands first (and is named here) or finds it gone.
+    // Locked, so a tab, collection, article or changelog entry being saved with it lands first (and is named here) or finds it gone.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const group = await tx.readerGroup.findUnique({
@@ -257,12 +257,13 @@ export const deleteGroup = defineOperation({
           tabs: { select: { tab: { select: { name: true } } }, orderBy: { tab: { name: "asc" } } },
           collections: { select: { collection: { select: { name: true } } }, orderBy: { collection: { name: "asc" } } },
           articles: { where: { article: { deletedAt: null } }, select: { article: { select: { title: true } } }, orderBy: { article: { title: "asc" } } },
+          changelogEntries: { select: { entry: { select: { title: true } } }, orderBy: { entry: { number: "asc" } } },
         },
       });
       if (!group) {
         throw notFound(input.group);
       }
-      const users = [...group.tabs.map((t) => t.tab.name), ...group.collections.map((c) => c.collection.name), ...group.articles.map((a) => a.article.title)];
+      const users = [...group.tabs.map((t) => t.tab.name), ...group.collections.map((c) => c.collection.name), ...group.articles.map((a) => a.article.title), ...group.changelogEntries.map((e) => e.entry.title)];
       if (users.length > 0) {
         throw new OperationError(409, "conflict", `Used by ${new Intl.ListFormat("en-GB").format(users)}; remove it from them first`);
       }
@@ -273,3 +274,13 @@ export const deleteGroup = defineOperation({
     return { deleted: input.group };
   },
 });
+
+/** Links to the project's groups with these keys, for a tab, collection, article or changelog entry; one that isn't there is refused. Call it with the project locked. */
+export async function groupLinks(tx: Prisma.TransactionClient, projectId: string, keys: string[]) {
+  const groups = await tx.readerGroup.findMany({ where: { projectId, key: { in: keys } }, select: { id: true, key: true } });
+  const missing = keys.find((key) => !groups.some((group) => group.key === key));
+  if (missing !== undefined) {
+    throw new OperationError(400, "invalid_input", `There's no group “${missing}”: add it in Settings → Groups first`);
+  }
+  return groups.map((group) => ({ groupId: group.id }));
+}

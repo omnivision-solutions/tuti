@@ -46,7 +46,8 @@ import { askAPerson } from "@/server/operations/docs-escalate";
 import { widgetSettings } from "@/server/operations/widget";
 import { widgetIdeas } from "@/server/widget";
 import { canActIn } from "@/server/membership";
-import { mayRead } from "@/server/portal-access";
+import { currentReader, mayRead } from "@/server/portal-access";
+import { visibleEntry } from "@/lib/reader-groups";
 import { portalBase, portalHref, portalLinks } from "@/server/portal-base";
 import { getSession } from "@/server/session";
 import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
@@ -278,9 +279,10 @@ async function Home({
   docs: boolean;
   feedback: boolean;
 }) {
+  const reader = await currentReader(projectId);
   const [latest, suggested, faces, replyMs, seen, at] = await Promise.all([
     prisma.changelogEntry.findFirst({
-      where: { project: { slug }, publishedAt: { not: null } },
+      where: { project: { slug }, publishedAt: { not: null }, ...visibleEntry(reader) },
       orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
       select: { title: true, publishedAt: true },
     }),
@@ -288,7 +290,7 @@ async function Home({
     messages ? teamFaces(projectId) : [],
     messages ? usualReplyMs(projectId) : null,
     // The portal's signed-in reader's, on its own site (see WhatsNew).
-    getSession().then((session) => whatsNewSeen(projectId, session?.user.id ?? null)),
+    getSession().then((session) => whatsNewSeen(projectId, session?.user.id ?? null, reader)),
     portalLinks(),
   ]);
   return (
@@ -481,21 +483,21 @@ async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: 
 async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }) {
   // Only on the portal's own site: elsewhere its cookies aren't sent, and the page's script
   // records it for people it signs in (Tuti.identify).
-  const [session, link] = await Promise.all([getSession(), portalLinks()]);
+  const [session, link, reader] = await Promise.all([getSession(), portalLinks(), currentReader(projectId)]);
   const [recent, announced, seen] = await Promise.all([
-    publishedEntries(slug, { take: 10 }),
+    publishedEntries(slug, reader, { take: 10 }),
     prisma.changelogEntry.findFirst({
-      where: { project: { slug }, announced: true, publishedAt: { not: null } },
+      where: { project: { slug }, announced: true, publishedAt: { not: null }, ...visibleEntry(reader) },
       orderBy: { publishedAt: "desc" },
       select: { number: true, publishedAt: true },
     }),
-    whatsNewSeen(projectId, session?.user.id ?? null),
+    whatsNewSeen(projectId, session?.user.id ?? null, reader),
   ]);
   // The latest announcement and every one that may be unread are always in the list (after newer quiet ones if
   // need be): they're what the button's "new" dot and Home's "2 new" are about, and opening this tab marks them seen.
   const wanted = new Set([...(announced ? [announced.number] : []), ...seen.fresh.map((entry) => entry.number)]);
   const missing = [...wanted].filter((number) => !recent.some((entry) => entry.number === number));
-  const older = missing.length > 0 ? await publishedEntries(slug, { numbers: missing, take: missing.length }) : [];
+  const older = missing.length > 0 ? await publishedEntries(slug, reader, { numbers: missing, take: missing.length }) : [];
   // Older than the ten newest, so after them; newest first too.
   const entries = [...recent, ...older];
   const at = announced?.publishedAt?.toISOString() ?? null;
@@ -549,7 +551,7 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
   // As Feedback: the portal's signed-in reader on its own site, else whoever the customer's page signs in (WidgetReactions).
   const session = await getSession();
   const portalSignedIn = !!session && (await canActIn(session.user.id, projectId));
-  const [entry] = await publishedEntries(slug, { number, take: 1, userId: portalSignedIn ? session.user.id : undefined });
+  const [entry] = await publishedEntries(slug, await currentReader(projectId), { number, take: 1, userId: portalSignedIn ? session.user.id : undefined });
   const back = <BackLink href={await portalHref("/widget?tab=whats-new")}>What&apos;s new</BackLink>;
   if (!entry) {
     return (

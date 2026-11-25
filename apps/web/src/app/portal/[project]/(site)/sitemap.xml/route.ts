@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 
+import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -53,7 +54,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       collections: { where: { sample: false }, select: { slug: true, updatedAt: true } },
       docsTabs: { select: { slug: true, updatedAt: true } },
       apiReferences: { select: { slug: true, updatedAt: true } },
-      changelogEntries: { where: { publishedAt: { not: null }, sample: false }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
+      changelogEntries: { where: { publishedAt: { not: null }, sample: false, ...visibleEntry(SIGNED_OUT) }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
     },
   });
   if (!project) {

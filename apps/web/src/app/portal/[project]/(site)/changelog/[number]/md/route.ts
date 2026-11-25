@@ -1,6 +1,8 @@
 import { prisma } from "@tuti/db";
 
 import { formatDate } from "@/lib/format";
+import { SIGNED_OUT } from "@/lib/read-access";
+import { visibleEntry } from "@/lib/reader-groups";
 import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { articleMarkdown } from "@/server/docs-queries";
@@ -10,7 +12,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const { project, number } = await params;
   const entry = /^\d{1,9}$/.test(number)
     ? await prisma.changelogEntry.findFirst({
-        where: { project: { slug: project }, number: Number(number), publishedAt: { not: null } },
+        // For everyone only, as it's kept in shared caches: an entry for some groups is on its page alone.
+        where: { project: { slug: project }, number: Number(number), publishedAt: { not: null }, ...visibleEntry(SIGNED_OUT) },
         select: { title: true, body: true, content: true, publishedAt: true, sample: true },
       })
     : null;

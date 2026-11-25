@@ -9,7 +9,7 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { portalAddress } from "@/server/custom-domains";
 import { type ApiReferencePage, apiReferencePage } from "@/server/api-reference-queries";
 import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
-import { canReadPortal, currentPostViewer, currentReader, mayRead } from "@/server/portal-access";
+import { canReadPortal, currentPostViewer, currentReader, mayRead, slugReader } from "@/server/portal-access";
 import { portalSite } from "@/server/portal-metadata";
 import { canSeePost, seesBoard, visiblePosts } from "@/server/post-visibility";
 import { type ShareCard, shareCard } from "@/server/share-card";
@@ -183,13 +183,13 @@ async function changelogCard(slug: string, site: Site, rest: string[]): Promise<
     if (!Number.isInteger(page) || String(page) !== rest[1] || page < 2 || page > 10_000) {
       return null;
     }
-    if (!(await publishedEntries(slug, { take: 1, skip: (page - 1) * PAGE_SIZE })).length) {
+    if (!(await publishedEntries(slug, await slugReader(slug), { take: 1, skip: (page - 1) * PAGE_SIZE })).length) {
       return null;
     }
   } else if (rest.length !== 0) {
     return changelogEntryCard(slug, rest);
   }
-  const [latest] = await publishedEntries(slug, { take: 1 });
+  const [latest] = await publishedEntries(slug, await slugReader(slug), { take: 1 });
   return { eyebrow: "Changelog", title: `What's new, improved and fixed in ${site.project.name}.`, facts: latest?.publishedAt ? [`Latest ${formatDate(latest.publishedAt)}`] : [], picture: "changelog" };
 }
 
@@ -197,7 +197,8 @@ async function changelogEntryCard(slug: string, rest: string[]): Promise<ShareCa
   if (rest.length !== 1 || !/^\d{1,9}$/.test(rest[0]!)) {
     return null;
   }
-  const [entry] = await publishedEntries(slug, { number: Number(rest[0]), take: 1 });
+  // Whoever's asking: the card of an entry for some groups is only for them (and never kept in shared caches, as they're signed in).
+  const [entry] = await publishedEntries(slug, await slugReader(slug), { number: Number(rest[0]), take: 1 });
   return entry ? { eyebrow: "Changelog", title: entry.title, facts: entry.publishedAt ? [formatDate(entry.publishedAt)] : [], picture: "changelog" } : null;
 }
 

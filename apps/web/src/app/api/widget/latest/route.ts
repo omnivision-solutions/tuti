@@ -1,6 +1,7 @@
 import { excerpt } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { liveDomain, projectWith } from "@tuti/jobs";
+import { SIGNED_OUT } from "@/lib/read-access";
 
 import { customDomainTarget } from "@/lib/custom-domains";
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -39,7 +40,8 @@ export async function GET(request: Request) {
   // show once more.
   const now = new Date(Date.now() - PUBLISH_MARGIN_MS).toISOString();
   const [entry, settings, project] = await Promise.all([
-    latestAnnouncement({ slug, portalAccess: "PUBLIC" }),
+    // Everyone's: an entry for some groups only never lights the launcher here (the answer is the same for everyone).
+    latestAnnouncement({ slug, portalAccess: "PUBLIC" }, SIGNED_OUT),
     widgetSettings({ slug }),
     prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
   ]);

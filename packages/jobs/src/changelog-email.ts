@@ -142,7 +142,7 @@ export async function subscribersLeft(entryId: string): Promise<number> {
  * unsubscribing, unpublishing or making the portal private waits for this, or this sees it), not as the run began.
  * A new claim, or one a crashed run left unsent. Returns the claim's time, which the run then uses to mark it sent or
  * release it (never touching a claim another run took over); null when they don't want it any more, someone else has
- * it, or it's sent; "stop" when the entry is unpublished, its portal private or its emails let go now.
+ * it, or it's sent; "stop" when the entry is unpublished, for some reader groups only, its portal private or its emails let go now.
  */
 async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
@@ -150,10 +150,12 @@ async function claim(entry: { id: string; projectId: string; emailedAt: Date }, 
     // can't each hold one the other waits for; the subscriber's last.
     const [project] = await tx.$queryRaw<{ portalAccess: string }[]>`
       SELECT "portalAccess" FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
-    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null }[]>`
-      SELECT "publishedAt", "subscribersEmailDueAt" AS due FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
-    // Its emails let go meanwhile (a resume drops a pause's): nobody else.
-    if (!current?.publishedAt || !current.due || project?.portalAccess !== "PUBLIC") {
+    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null; forGroups: boolean }[]>`
+      SELECT "publishedAt", "subscribersEmailDueAt" AS due,
+        EXISTS (SELECT 1 FROM "changelog_entry_group" g WHERE g."entryId" = ${entry.id}) AS "forGroups"
+      FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
+    // Its emails let go meanwhile (a resume drops a pause's), or made for some groups only (not emailed yet): nobody else.
+    if (!current?.publishedAt || !current.due || current.forGroups || project?.portalAccess !== "PUBLIC") {
       return "stop";
     }
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
@@ -254,6 +256,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       sample: true,
       projectId: true,
       project: { select: { name: true, slug: true, portalAccess: true, brandColor: true } },
+      groups: { select: { groupId: true }, take: 1 },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -270,6 +273,12 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   // Taken off the portal meanwhile: still due, so publishing it again sends the rest.
   if (!entry.publishedAt) {
     return { waiting: "the entry isn't published" };
+  }
+  // For some reader groups only: not emailed to anyone yet (it would reach subscribers outside them). Still due, so
+  // making it for everyone again sends it.
+  // ponytail: emailing a group entry to its groups' subscribers comes next (docs/plan.md S4).
+  if (entry.groups.length > 0) {
+    return { waiting: "the entry is for some reader groups only" };
   }
   const { projectId, project, publishedAt } = entry;
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).

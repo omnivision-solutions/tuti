@@ -23,6 +23,7 @@ import { reachSentence } from "@/server/changelog-subscription";
 import { accountEmails } from "@/server/operations/email-preferences";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
+import { slugReader } from "@/server/portal-access";
 import { portalBase, portalLinks } from "@/server/portal-base";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
@@ -55,7 +56,7 @@ const monthOf = (date: Date) => ({
  * each with its title, `current` (an entry's number, on its page) marked; then all of them.
  */
 export async function ChangelogMenu({ slug, current }: { slug: string; current?: number }) {
-  const [at, entries] = await Promise.all([portalLinks(), changelogContents(slug)]);
+  const [at, entries] = await Promise.all([portalLinks(), slugReader(slug).then((reader) => changelogContents(slug, reader))]);
   if (entries.length === 0) {
     return null;
   }
@@ -142,11 +143,11 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const at = await portalLinks();
   const base = await portalBase();
   // One more than a page, to know whether there are older ones.
-  const session = await getSession();
+  const [session, reader] = await Promise.all([getSession(), slugReader(slug)]);
   const [found, announced, dates, project] = await Promise.all([
-    publishedEntries(slug, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
-    session ? latestAnnouncement({ slug }) : null,
-    changelogDates(slug),
+    publishedEntries(slug, reader, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
+    session ? latestAnnouncement({ slug }, reader) : null,
+    changelogDates(slug, reader),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
   const entries = found.slice(0, PAGE_SIZE);

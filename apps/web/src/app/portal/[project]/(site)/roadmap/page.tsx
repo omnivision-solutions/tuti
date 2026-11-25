@@ -21,7 +21,8 @@ import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
-import { currentPostViewer } from "@/server/portal-access";
+import { currentPostViewer, currentReader } from "@/server/portal-access";
+import { visibleEntry } from "@/lib/reader-groups";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { cn } from "@/lib/utils";
 import { shownBoards } from "@/server/post-visibility";
@@ -65,7 +66,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
     voter ? prisma.vote.findMany({ where: { userId: voter, postId: { in: ids } }, select: { postId: true } }) : [],
     // The published changelog entry that shipped each completed one, the latest first (as on the post's page).
     prisma.changelogEntryPost.findMany({
-      where: { postId: { in: columns[ROADMAP.length - 1]!.map((post) => post.id) }, entry: { publishedAt: { not: null } } },
+      where: { postId: { in: columns[ROADMAP.length - 1]!.map((post) => post.id) }, entry: { publishedAt: { not: null }, ...visibleEntry(await currentReader(project.id)) } },
       orderBy: { entry: { publishedAt: "desc" } },
       select: { postId: true, entry: { select: { number: true, title: true } } },
     }),

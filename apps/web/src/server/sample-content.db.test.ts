@@ -347,7 +347,7 @@ test("the team's update never takes a sample post (refused at save; linked anywa
   await call(publishChangelogEntry, team, { number: own.number, announce: false });
   expect((await prisma.post.findUniqueOrThrow({ where: { id: posts[1]!.id } })).status).toBe("OPEN");
   expect(jobs.recordEvent.mock.calls.map((args) => [args[2], (args[3] as { posts: unknown[] }).posts])).toEqual([["changelog.published", []]]);
-  expect((await publishedEntries(project.slug, { number: own.number, take: 1 }))[0]!.posts).toEqual([]);
+  expect((await publishedEntries(project.slug, null, { number: own.number, take: 1 }))[0]!.posts).toEqual([]);
   expect(await entryTold(ownId)).toBeNull();
   // The sample update, unpublished and published again (announced, by default): not announced, no webhook.
   jobs.recordEvent.mockClear();

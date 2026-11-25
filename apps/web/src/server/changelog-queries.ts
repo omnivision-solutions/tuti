@@ -1,7 +1,9 @@
 import { prisma, type ChangelogTag } from "@tuti/db";
 
 import type { PublishedEntry } from "@/components/changelog-entry";
+import type { Reader } from "@/lib/read-access";
 import { REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
+import { visibleEntry } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
 
@@ -80,10 +82,10 @@ export async function draftToWrite(projectId: string) {
   );
 }
 
-/** The newest published changelog entries, by date (the header's menu on phones lists them): just enough to name and link them. */
-export function changelogContents(projectSlug: string, take = 30) {
+/** The newest published changelog entries `reader` may read, by date (the header's menu on phones lists them): just enough to name and link them. */
+export function changelogContents(projectSlug: string, reader: Reader, take = 30) {
   return prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null } },
+    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...visibleEntry(reader) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     take,
     select: { number: true, title: true, publishedAt: true },
@@ -91,23 +93,24 @@ export function changelogContents(projectSlug: string, take = 30) {
 }
 
 /**
- * Every published entry's date and tags, newest first: the portal's changelog makes its tag chips and month index from them.
+ * Every published entry's date and tags that `reader` may read, newest first: the portal's changelog makes its tag chips and month index from them.
  * ponytail: the whole history, a few bytes an entry; count by month in SQL if one ever has many thousands.
  */
-export function changelogDates(projectSlug: string) {
+export function changelogDates(projectSlug: string, reader: Reader) {
   return prisma.changelogEntry.findMany({
-    where: { project: { slug: projectSlug }, publishedAt: { not: null } },
+    where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...visibleEntry(reader) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     select: { number: true, tags: true, publishedAt: true },
   });
 }
 
 /**
- * A project's published changelog entries, newest first (or one of them, with `number`, or some, with `numbers`; or those with `tag`), `take`
+ * A project's published changelog entries that `reader` may read (visibleEntry), newest first (or one of them, with `number`, or some, with `numbers`; or those with `tag`), `take`
  * from `skip`, with their reactions (and which ones `userId` left).
  */
 export async function publishedEntries(
   projectSlug: string,
+  reader: Reader,
   // `withSample: false` leaves out sample content (server/sample-content.ts) before `take`: the RSS feed.
   {
     number,
@@ -127,6 +130,7 @@ export async function publishedEntries(
       AND: [...(number !== undefined ? [{ number }] : []), ...(numbers ? [{ number: { in: numbers } }] : [])],
       ...(tag && { tags: { has: tag } }),
       ...(!withSample && { sample: false }),
+      ...visibleEntry(reader),
     },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     skip,

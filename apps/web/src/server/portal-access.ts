@@ -192,6 +192,12 @@ export async function currentReader(projectId: string): Promise<Reader> {
   return (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : read;
 }
 
+/** currentReader on the portal at `slug` (signed out when there's no such project). */
+export async function slugReader(slug: string): Promise<Reader> {
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+  return project ? currentReader(project.id) : SIGNED_OUT;
+}
+
 /**
  * Whoever's reading on this request as a viewer of posts (post-visibility.ts): the team, as currentReader has it (the
  * team previewing the portal as a reader sees what people signed out do), or the portal's or widget's person.

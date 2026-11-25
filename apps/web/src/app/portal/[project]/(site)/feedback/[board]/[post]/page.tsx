@@ -25,7 +25,8 @@ import { SampleBadge } from "@/components/sample-badge";
 import { etaOnPortal, formatDate, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
-import { currentPostViewer } from "@/server/portal-access";
+import { currentPostViewer, slugReader } from "@/server/portal-access";
+import { visibleEntry } from "@/lib/reader-groups";
 import { firstBoardPath } from "@/server/portal-home";
 import { canSeePost, SIGNED_OUT_VIEWER } from "@/server/post-visibility";
 import { postsLike } from "@/server/post-lists";
@@ -111,9 +112,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
       project: { select: { portalAccess: true, plan: true, team: { select: { userId: true } } } },
       duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board: { select: { slug: true, off: true } } } },
-      // The published changelog entry that shipped it, if any.
+      // The published changelog entry that shipped it, if any, of those the reader may read.
       changelogEntries: {
-        where: { entry: { publishedAt: { not: null } } },
+        where: { entry: { publishedAt: { not: null }, ...visibleEntry(await slugReader(projectSlug)) } },
         orderBy: { entry: { publishedAt: "desc" } },
         take: 1,
         select: { entry: { select: { number: true, title: true } } },

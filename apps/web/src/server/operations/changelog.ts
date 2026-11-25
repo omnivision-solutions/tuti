@@ -34,6 +34,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { costPerUse } from "@/lib/model-tiers";
 import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
+import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup, visibleEntry } from "@/lib/reader-groups";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, MEDIA_GONE, readContent } from "../content";
@@ -59,6 +60,9 @@ import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
 import { onTeam } from "../session";
+import { actorReader } from "../portal-access";
+import { groupLinks } from "./groups";
+import { requirePlan } from "./plan";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
@@ -97,6 +101,14 @@ const fields = {
     .describe("What kind of change it is: new, improved, fixed or breaking")
     .meta({ examples: [["new"]] }),
   posts: z.array(postNumber).max(50).describe("The posts it completes, by number: pick up to 50").meta({ examples: [[12]] }),
+  groups: z
+    .array(readerGroup)
+    .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
+    .transform((groups) => [...new Set(groups)])
+    .describe(
+      `The reader groups it's for, by key (see groups.list), up to ${MAX_READER_GROUPS}: only their readers (and the team) see it on the portal, in the widget and in the API, and it's in no feed, sitemap or Markdown copy. None (the default): everyone`,
+    )
+    .meta({ examples: [["customers"]] }),
   cover: z
     .string()
     .trim()
@@ -132,6 +144,7 @@ const entryOutput = z
     announced: z.boolean().describe("Published with an announcement (shown as new in the widget), not quietly").meta({ examples: [true] }),
     collecting: z.boolean().describe("The running draft: merged pull requests are being added to it").meta({ examples: [false] }),
     tags: z.array(z.enum(TAGS)).describe("What kind of change it is").meta({ examples: [["new"]] }),
+    groups: z.array(z.string()).describe("The keys of the reader groups it's for; none: everyone").meta({ examples: [[]] }),
     body: z.string().describe("Its text, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
     content: doc.describe("Its text as rich content: the editor's JSON (a `doc`)").meta({ examples: [exampleDoc] }),
     markdown: z
@@ -186,6 +199,7 @@ const entrySelect = {
   body: true,
   content: true,
   tags: true,
+  groups: groupClaims,
   publishedAt: true,
   announced: true,
   collecting: true,
@@ -213,6 +227,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
     /** The running draft: merged pull requests are being added to it. */
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
+    groups: claimsOf(entry),
     body: entry.body,
     content: text,
     /** As Markdown, its images as lasting links (left out where uploads aren't set up): what an API client edits and sends back. */
@@ -241,6 +256,15 @@ const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry
 
 const findEntry = (projectId: string, number: number) =>
   prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: entrySelect });
+
+/** Whether `actor` may read an entry for these groups' keys (as visibleEntry): one for some groups only is the team's and theirs. */
+export async function mayReadEntry(actor: Actor, projectId: string, groups: string[]): Promise<boolean> {
+  if (groups.length === 0) {
+    return true;
+  }
+  const reader = await actorReader(actor, projectId);
+  return reader === null || groups.some((group) => reader.groups.includes(group));
+}
 
 async function teamEntry(projectId: string, number: number) {
   const entry = await findEntry(projectId, number);
@@ -479,7 +503,7 @@ export const listChangelog = defineOperation({
     }
     const published = input.status === "published";
     const entries = await prisma.changelogEntry.findMany({
-      where: { projectId, publishedAt: published ? { not: null } : null },
+      where: { projectId, publishedAt: published ? { not: null } : null, ...visibleEntry(team ? null : await actorReader(actor, projectId)) },
       orderBy: published ? [{ publishedAt: "desc" }, { number: "desc" }] : [{ updatedAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
       take: input.limit + 1,
@@ -507,8 +531,8 @@ export const getChangelogEntry = defineOperation({
   run: async ({ actor, projectId }, { number }) => {
     const portal = await projectPortal(projectId);
     const [entry, team] = await Promise.all([findEntry(projectId, number), isTeam(actor, projectId)]);
-    // A draft is as good as missing to everyone but the team.
-    if (!entry || (!entry.publishedAt && !team)) {
+    // A draft is as good as missing to everyone but the team, and an entry for some groups to everyone outside them.
+    if (!entry || (!entry.publishedAt && !team) || !(team || (await mayReadEntry(actor, projectId, claimsOf(entry))))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
     return entryView(asReaderSees(entry, team), portal);
@@ -544,9 +568,9 @@ export const reactToChangelogEntry = defineOperation({
     const { projectId } = context;
     const entry = await prisma.changelogEntry.findUnique({
       where: { projectId_number: { projectId, number: input.number } },
-      select: { id: true, publishedAt: true },
+      select: { id: true, publishedAt: true, groups: groupClaims },
     });
-    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId)))) {
+    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId))) || !(await mayReadEntry(context.actor, projectId, claimsOf(entry)))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${input.number}`);
     }
     if (!entry.publishedAt) {
@@ -581,7 +605,7 @@ export const createChangelogEntry = defineOperation({
   scope: "write",
   access: "team",
   errors: [409, 503],
-  input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]) }),
+  input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]), groups: fields.groups.default([]) }),
   output: entryOutput.describe("The entry, a draft"),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
@@ -618,6 +642,11 @@ export const createChangelogEntry = defineOperation({
           select: { id: true },
         });
         await linkEntryPosts(tx, posts.map((postId) => ({ entryId: created.id, postId })));
+        // The project's row is locked (above), as groups.delete locks it: a group deleted meanwhile is refused here or there.
+        if (input.groups.length > 0) {
+          await requirePlan(projectId, "privatePortal", tx);
+          await tx.changelogEntryGroup.createMany({ data: (await groupLinks(tx, projectId, input.groups)).map((link) => ({ entryId: created.id, ...link })) });
+        }
         await attachMedia(tx, projectId, text.mediaIds);
         return tx.changelogEntry.findUniqueOrThrow({ where: { id: created.id }, select: entrySelect });
       }),
@@ -633,6 +662,9 @@ const updateInput = z.object({
     content: fields.content,
     markdown: fields.markdown,
     tags: fields.tags.optional(),
+    groups: fields.groups.optional().describe(
+      `The reader groups it's for, by key (see groups.list), up to ${MAX_READER_GROUPS}: they replace the list; none, for everyone. Only their readers (and the team) see it`,
+    ),
     posts: fields.posts
       .optional()
       .describe("The posts it completes, by number: they replace the list. Only while it's a draft (published, the same list or a 409)"),
@@ -647,7 +679,7 @@ const updateInput = z.object({
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
   title: "Update a changelog entry",
-  summary: "Change a changelog entry: its title, text, tags, featured image or the posts it completes. What's left out stays as it is",
+  summary: "Change a changelog entry: its title, text, tags, the reader groups it's for, featured image or the posts it completes. What's left out stays as it is",
   method: "PATCH",
   path: "/changelog/{number}",
   scope: "write",
@@ -716,6 +748,16 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
           if (now?.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
             throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
           }
+        }
+        if (input.groups) {
+          // Locked as groups.delete locks it (see changelog.create). Some groups need the plan; everyone never does.
+          await lockProject(tx, projectId);
+          const links = await groupLinks(tx, projectId, input.groups);
+          if (links.length > 0) {
+            await requirePlan(projectId, "privatePortal", tx);
+          }
+          await tx.changelogEntryGroup.deleteMany({ where: { entryId: entry.id } });
+          await tx.changelogEntryGroup.createMany({ data: links.map((link) => ({ entryId: entry.id, ...link })) });
         }
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });

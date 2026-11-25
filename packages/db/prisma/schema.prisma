@@ -13,43 +13,43 @@ datasource db {
 // the domain back-relations on User are ours.
 
 model User {
-  id                String          @id
-  name              String
+  id                   String          @id
+  name                 String
   /// Also indexed as lower(email) (a migration's index Prisma can't describe), so a project user's address finds their accounts.
-  email             String
+  email                String
   /// Autopilot's email for the projects they're told about: as each change is analysed, or never.
-  autopilotEmails   AutopilotEmails @default(AS_THEY_HAPPEN)
+  autopilotEmails      AutopilotEmails @default(AS_THEY_HAPPEN)
   /// The time zone their browser reported when they chose the digest (an IANA name).
-  autopilotTimeZone String?
-  emailVerified     Boolean         @default(false)
-  image             String?
+  autopilotTimeZone    String?
+  emailVerified        Boolean         @default(false)
+  image                String?
   /// The upload `image` links to when they chose it from Account (a media id; the release-media job keeps it while it's here).
-  imageId           String?
+  imageId              String?
   /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
-  unsubscribeToken  String          @unique @default(dbgenerated("gen_random_uuid()::text"))
+  unsubscribeToken     String          @unique @default(dbgenerated("gen_random_uuid()::text"))
   /// One of a project's sample people (Home's "Add sample content"): removed with its sample content, or with the project.
-  sampleProjectId   String?
-  sampleProject     Project?        @relation("SamplePeople", fields: [sampleProjectId], references: [id], onDelete: Cascade)
+  sampleProjectId      String?
+  sampleProject        Project?        @relation("SamplePeople", fields: [sampleProjectId], references: [id], onDelete: Cascade)
   /// A placeholder person an import made (docs/plan.md, Switching from Featurebase): a teammate in the other tool who isn't
   /// on this project's team, under their name, with no account anyone can sign in to. Removed with the project; handed over
   /// (what they wrote, then deleted) to whoever joins the team with `placeholderFor`, their address in the other tool.
   placeholderProjectId String?
-  placeholderProject   Project?     @relation("Placeholders", fields: [placeholderProjectId], references: [id], onDelete: Cascade)
+  placeholderProject   Project?        @relation("Placeholders", fields: [placeholderProjectId], references: [id], onDelete: Cascade)
   placeholderFor       String?
   /// When their first project started its free trial (the billing file's `trial`): one trial per account, so their later projects start on the default plan.
-  trialStartedAt    DateTime?
+  trialStartedAt       DateTime?
   /// When the project's app deleted them (users.delete): kept as "Deleted user", so their posts, comments and
   /// conversations stay; nothing about them is left, they can't act and nothing is emailed to them.
-  deletedAt         DateTime?
+  deletedAt            DateTime?
   /// Requests in the current minute with their app session, for the API's rate limit per teammate (as api_key's, per key).
-  apiRateWindowStart DateTime?
-  apiRateCount       Int            @default(0)
+  apiRateWindowStart   DateTime?
+  apiRateCount         Int             @default(0)
   /// "Show message text" in the mobile app's notifications (packages/jobs push.ts): off, one says who wrote, not what.
-  pushShowsText      Boolean        @default(true)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  sessions          Session[]
-  accounts          Account[]
+  pushShowsText        Boolean         @default(true)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  sessions             Session[]
+  accounts             Account[]
 
   teamMemberships    TeamMember[]
   posts              Post[]
@@ -183,302 +183,302 @@ model Installation {
 }
 
 model Project {
-  id                    String       @id @default(cuid())
-  slug                  String       @unique
-  name                  String
+  id                             String       @id @default(cuid())
+  slug                           String       @unique
+  name                           String
   /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
-  ssoSecret             String?
+  ssoSecret                      String?
   /// The page on the project's own app where its users sign in (https), for the portal's "Continue with <project>":
   /// the portal sends people there with `redirect` (the portal path to come back to), and the app passes it on to /sso.
-  ssoSignInUrl          String?
+  ssoSignInUrl                   String?
   /// Who's asking: the number property (Users, from the app: MRR, seats…) totalled over a post's voters for the team; none until picked.
-  askingProperty        String?
+  askingProperty                 String?
   /// The users' properties Users shows as columns, in order (users.sync's `properties`; project.update).
-  userColumns           String[]     @default(["company", "plan"])
+  userColumns                    String[]     @default(["company", "plan"])
   /// How the team shows its users' properties, by name: a name of its own and a format (lib/property-formats.ts).
-  propertyFormats       Json         @default("{}")
+  propertyFormats                Json         @default("{}")
   /// What the team said it will use, after "Create project" ("feedback", "docs", "changelog", "support"; project.update's
   /// `uses`): Home's "Get set up" follows it. Empty until picked, and then every step shows.
-  uses                  String[]     @default([])
+  uses                           String[]     @default([])
   /// Last post number handed out; posts are numbered #1, #2, … per project.
-  postCount             Int          @default(0)
+  postCount                      Int          @default(0)
   /// Last changelog entry number handed out, like postCount.
-  changelogCount        Int          @default(0)
+  changelogCount                 Int          @default(0)
   /// Last conversation number handed out (#1, #2, … per project, like postCount).
-  conversationCount     Int          @default(0)
+  conversationCount              Int          @default(0)
   /// The support inbox is on (Settings → Support): Messages in the widget, "Ask a person" starts a conversation.
-  supportInbox          Boolean      @default(false)
+  supportInbox                   Boolean      @default(false)
   /// The team's standing instructions for replies drafted by AI in the inbox (Settings → AI → Inbox; support.update).
-  supportDraftInstructions String    @default("")
+  supportDraftInstructions       String       @default("")
   // "emailRequestedAt" and "emailApprovedAt" (projects were once approved before emailing their users) are
   // still in the database, unread, so the release before this one keeps working: a later release drops them.
   /// On a server selling plans, its email to its users is paused (its bounces or complaints went over,
   /// packages/jobs/src/email-limits.ts) until the operator resumes it: when, and why.
-  emailPausedAt         DateTime?
-  emailPausedReason     String?
+  emailPausedAt                  DateTime?
+  emailPausedReason              String?
   /// When the operator was told of the pause (null until it's sent, so a failed send is tried again),
   /// and when it was last resumed (its rates count from then).
-  emailPauseToldAt      DateTime?
-  emailResumedAt        DateTime?
+  emailPauseToldAt               DateTime?
+  emailResumedAt                 DateTime?
   /// Its Amazon SES tenant and the support domain's identity associated with it (`<tenant> <identity ARN>`), once set up for its
   /// email (packages/jobs/src/ses-tenant.ts); null on a server without SES.
-  sesTenant             String?
+  sesTenant                      String?
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
-  changelogTone         String       @default("")
-  changelogExampleIds   String[]     @default([])
+  changelogTone                  String       @default("")
+  changelogExampleIds            String[]     @default([])
   /// AI drafts mark where a screenshot belongs ("[Screenshot: …]"), for the team to add before publishing (changelogStyle.update).
-  changelogScreenshotMarkers Boolean @default(false)
+  changelogScreenshotMarkers     Boolean      @default(false)
   /// The cover design picked first when an entry's cover is made (server/cover-card.tsx); "" for the automatic pick.
-  changelogCoverDesign  String       @default("")
+  changelogCoverDesign           String       @default("")
   /// The team's own image for the "Your background" cover design.
-  changelogCoverBackgroundId String?
+  changelogCoverBackgroundId     String?
   /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
   /// changelogAiHour, for the per-project hourly cap.
-  changelogAiHour       DateTime     @default(now())
-  changelogAiCount      Int          @default(0)
+  changelogAiHour                DateTime     @default(now())
+  changelogAiCount               Int          @default(0)
   /// The widget's launcher on customers' sites (see the widget.* operations): its
   /// label, colour (`#rrggbb`; null is the brand green, with its dark-mode shade),
   /// corner ("bottom-right" or "bottom-left"), and up to 5 quick links shown at the
   /// top of the panel (`[{ label, url }]`, https only).
-  widgetLabel           String       @default("Feedback")
-  widgetColor           String?
-  widgetPosition        String       @default("bottom-right")
-  widgetLinks           Json         @default("[]")
+  widgetLabel                    String       @default("Feedback")
+  widgetColor                    String?
+  widgetPosition                 String       @default("bottom-right")
+  widgetLinks                    Json         @default("[]")
   /// The launcher's icon (where plans are sold, on Pro: see planIncludes): "chat" (the default), "help",
   /// "megaphone", "lightbulb", or "image" for an upload (widgetIconImageId, attached while it's used).
   /// Kept on a lower plan, which shows "chat" until the plan is back.
-  widgetIcon            String       @default("chat")
-  widgetIconImageId     String?
+  widgetIcon                     String       @default("chat")
+  widgetIconImageId              String?
   /// The panel's Home: its heading and the greeting above it (empty for "How can we help?" and
   /// "Hi there 👋", with the visitor's first name once their site says who), and the parts the
   /// team turned off ("docs", "messages", "feedback", "whatsNew": gone from Home and the tabs).
-  widgetTitle           String       @default("")
-  widgetGreeting        String       @default("")
-  widgetHidden          String[]     @default([])
+  widgetTitle                    String       @default("")
+  widgetGreeting                 String       @default("")
+  widgetHidden                   String[]     @default([])
   /// The launcher on the project's own portal too, for its Messages, Feedback and What's new.
-  widgetOnPortal        Boolean      @default(true)
+  widgetOnPortal                 Boolean      @default(true)
   /// A new message in Messages goes to the docs' AI first, with "Ask a person" to pass it to the team.
-  widgetAiFirst         Boolean      @default(true)
+  widgetAiFirst                  Boolean      @default(true)
   /// A new announcement pops up as a small card by the launcher (once per browser), on top of its dot.
-  widgetPopup           Boolean      @default(false)
+  widgetPopup                    Boolean      @default(false)
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
   /// footer (`[{ label, url }]`, https only), and whether the footer says "Powered by tuti".
-  brandLogoId           String?
-  brandLogoDarkId       String?
-  brandFaviconId        String?
-  brandColor            String?
-  headerLinks           Json         @default("[]")
-  footerLinks           Json         @default("[]")
-  poweredBy             Boolean      @default(true)
+  brandLogoId                    String?
+  brandLogoDarkId                String?
+  brandFaviconId                 String?
+  brandColor                     String?
+  headerLinks                    Json         @default("[]")
+  footerLinks                    Json         @default("[]")
+  poweredBy                      Boolean      @default(true)
   /// What readers can do with an article (Customize → Content actions): the menu at all, and in it
   /// copying it as Markdown and opening it in ChatGPT or Claude; and whether its page says when it
   /// was last updated.
-  articleActions        Boolean      @default(true)
-  articleCopyMarkdown   Boolean      @default(true)
-  articleOpenChatGpt    Boolean      @default(true)
-  articleOpenClaude     Boolean      @default(true)
-  articleUpdatedDate    Boolean      @default(true)
+  articleActions                 Boolean      @default(true)
+  articleCopyMarkdown            Boolean      @default(true)
+  articleOpenChatGpt             Boolean      @default(true)
+  articleOpenClaude              Boolean      @default(true)
+  articleUpdatedDate             Boolean      @default(true)
   /// The docs' home (Customize → Docs home): a title and a subtitle at its top (empty for "Docs" and
   /// the default line), and whether it lists the most-read articles (new projects do).
-  docsTitle             String       @default("")
-  docsSubtitle          String       @default("")
-  docsPopular           Boolean      @default(true)
+  docsTitle                      String       @default("")
+  docsSubtitle                   String       @default("")
+  docsPopular                    Boolean      @default(true)
   /// The portal's own search listing (Customize → SEO): its title (empty: the project's name), its
   /// description, and the image a link to it shows (an upload, like the logos).
-  seoTitle              String       @default("")
-  seoDescription        String       @default("")
-  seoImageId            String?
+  seoTitle                       String       @default("")
+  seoDescription                 String       @default("")
+  seoImageId                     String?
   /// More of the look (Customize → Branding): light or dark mode for readers who haven't picked one
   /// ("system": their device's), text beside the logo (empty: none, or the project's name without a
   /// logo), and where the logo goes (null: the portal's home).
-  colorScheme           String       @default("system")
+  colorScheme                    String       @default("system")
   /// Whether readers get a light/dark switch in the portal's footer; off, every reader gets colorScheme
   /// (under a path of the team's site, a theme the site keeps stays).
-  themeSwitch           Boolean      @default(true)
+  themeSwitch                    Boolean      @default(true)
   /// Fonts for headings and for text (Customize → Branding → Typography), from the portal fonts
   /// (apps/web/src/lib/portal-fonts.ts); empty for the page's own.
   /// The team's own code (Customize → Custom code): CSS on every portal page, and HTML (scripts,
   /// say analytics) at the end of the page only where the portal is on their own domain or site.
-  customCss             String       @default("")
-  customHtml            String       @default("")
-  headingFont           String       @default("")
-  bodyFont              String       @default("")
-  logoText              String       @default("")
-  logoLink              String?
+  customCss                      String       @default("")
+  customHtml                     String       @default("")
+  headingFont                    String       @default("")
+  bodyFont                       String       @default("")
+  logoText                       String       @default("")
+  logoLink                       String?
   /// More links (Customize → Navigation): up to 5 above the docs' tree (`[{ label, url }]`, https
   /// only).
-  sidebarLinks          Json         @default("[]")
+  sidebarLinks                   Json         @default("[]")
   /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
   /// valid one the footer says "Powered by tuti" whatever poweredBy says.
-  licenseKey            String?
+  licenseKey                     String?
   /// Renewing that key from tuti.so (server/license-renewal.ts): the one-time token for the next
   /// renewal, the request id of an attempt whose answer hasn't arrived (a retry carries it), when an
   /// admin first asked for a licence (checks start then; a project nobody asked about never
   /// contacts tuti.so), and when it was last checked (at most daily, and one check at a time).
-  licenseToken          String?
-  licenseRequestId      String?
-  licenseRequestedAt    DateTime?
-  licenseCheckedAt      DateTime?
+  licenseToken                   String?
+  licenseRequestId               String?
+  licenseRequestedAt             DateTime?
+  licenseCheckedAt               DateTime?
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
-  portalAccess          PortalAccess @default(PUBLIC)
+  portalAccess                   PortalAccess @default(PUBLIC)
   /// What the portal's home (`/`) opens: the first board, the roadmap, the changelog or the docs.
-  portalHome            PortalHome   @default(FEEDBACK)
+  portalHome                     PortalHome   @default(FEEDBACK)
   /// How the docs' AI answers (see the assistant.* operations): a tone, the answer
   /// length, standing instructions, and off-limits topics (short phrases; a question that
   /// contains one gets a fixed reply without asking the model).
-  assistantTone         String       @default("")
-  assistantLength       AnswerLength @default(MEDIUM)
-  assistantInstructions String       @default("")
-  assistantOffLimits    String[]     @default([])
+  assistantTone                  String       @default("")
+  assistantLength                AnswerLength @default(MEDIUM)
+  assistantInstructions          String       @default("")
+  assistantOffLimits             String[]     @default([])
   /// Unused: where "Ask a person" emailed questions before it started conversations in the
   /// inbox. Kept while the previous release reads them; dropped in a later one.
-  supportEmail          String?
-  supportEmailPending   String?
-  supportEmailTokenHash String?      @unique
+  supportEmail                   String?
+  supportEmailPending            String?
+  supportEmailTokenHash          String?      @unique
   /// Merged pull requests become code changes (see CodeChange): on unless the team turned it off.
-  analyseCodeChanges    Boolean      @default(true)
+  analyseCodeChanges             Boolean      @default(true)
   /// Tuti applies a code change's "links" proposals by itself when it's this sure (AUTO_LINK), if the
   /// team opted in. Only links: completing posts, comments and docs always wait for someone.
-  autoApplyLinks        Boolean      @default(true)
+  autoApplyLinks                 Boolean      @default(true)
   /// When the widget was first on one of the team's sites (Home's "Get set up": add the widget).
-  widgetSeenAt          DateTime?
+  widgetSeenAt                   DateTime?
   /// Autopilot (Settings → Autopilot, owners): what it does by itself. Drafts (the changelog line, a new
   /// article's draft) at once; article edits and progress updates after the hold; completing posts only if on.
-  autopilotDrafts       Boolean      @default(true)
-  autopilotArticleEdits Boolean      @default(true)
-  autopilotProgress     Boolean      @default(true)
-  autopilotComplete     Boolean      @default(false)
+  autopilotDrafts                Boolean      @default(true)
+  autopilotArticleEdits          Boolean      @default(true)
+  autopilotProgress              Boolean      @default(true)
+  autopilotComplete              Boolean      @default(false)
   /// What always waits for someone: an update less sure than this (percent); a post with this many people
   /// (author, voters, commenters) or more; an article with this many views in the last 30 days or more.
-  autopilotMinSure      Int          @default(95)
-  autopilotMaxReach     Int          @default(25)
-  autopilotMaxViews     Int          @default(500)
+  autopilotMinSure               Int          @default(95)
+  autopilotMaxReach              Int          @default(25)
+  autopilotMaxViews              Int          @default(500)
   /// How long what goes out by itself waits first, in hours.
-  autopilotHoldHours    Int          @default(24)
+  autopilotHoldHours             Int          @default(24)
   /// Who's told about Autopilot's changes besides owners (and the members chosen, TeamMember.autopilotTold).
-  autopilotTellAdmins   Boolean      @default(false)
+  autopilotTellAdmins            Boolean      @default(false)
   /// Unused: an owner or admin dismissed a notice Autopilot's page no longer shows (Checks off). Kept while the
   /// previous release reads it; dropped in a later one.
-  autopilotChecksNoticeDismissed Boolean @default(false)
+  autopilotChecksNoticeDismissed Boolean      @default(false)
   /// The model the project picked for an AI feature, by feature (answers, escalations, changelog,
   /// code_changes): a model id; a feature that isn't here uses the server's default for it.
-  aiModels              Json         @default("{}")
+  aiModels                       Json         @default("{}")
   /// The level each group of AI roles runs on (AI_GROUPS in @tuti/shared): { answers: "best", … }; Balanced where none.
-  aiLevels              Json         @default("{}")
+  aiLevels                       Json         @default("{}")
   /// Autopilot's Advanced tuning (Settings → AI models, owners, Business): the project's own values for a few of
   /// Autopilot's settings, by path ("decide.rounds": 6); a value that isn't here is the server's. Kept after a
   /// downgrade, used only on a plan with it. Who changed them last, and when.
-  codeChangesTuning     Json         @default("{}")
-  tuningUpdatedAt       DateTime?
-  tuningUpdatedBy       String?
-  tuningEditor          User?        @relation("TuningEditor", fields: [tuningUpdatedBy], references: [id], onDelete: SetNull)
+  codeChangesTuning              Json         @default("{}")
+  tuningUpdatedAt                DateTime?
+  tuningUpdatedBy                String?
+  tuningEditor                   User?        @relation("TuningEditor", fields: [tuningUpdatedBy], references: [id], onDelete: SetNull)
   /// AI credits charged beyond what the project's grants had left (a request already running when they ran
   /// out): taken from the next grant first. Only with AI credits on (see CreditGrant).
-  aiCreditDebt          Decimal      @default(0) @db.Decimal(20, 6)
+  aiCreditDebt                   Decimal      @default(0) @db.Decimal(20, 6)
   /// When the project was given AI_CREDITS_FREE (once, the first time its credits were looked at).
-  freeCreditsGrantedAt  DateTime?
+  freeCreditsGrantedAt           DateTime?
   /// When owners and admins were emailed that AI credits ran low (AI_CREDITS_LOW) or out: once each until the next grant, which clears both (a trigger on credit_grant).
-  aiCreditsLowEmailedAt DateTime?
-  aiCreditsOutEmailedAt DateTime?
+  aiCreditsLowEmailedAt          DateTime?
+  aiCreditsOutEmailedAt          DateTime?
   /// The project's plan where plans are sold (docs/plan.md, Plans): its key in the billing file (BILLING_CONFIG), kept in
   /// step with its Stripe subscription by Stripe's webhook (server/subscriptions.ts); null without a live one, which is the
   /// file's default plan (as is a key the file no longer lists). Its
   /// Stripe customer stays once made, so a later plan is billed to the same one; the subscription is the live
   /// one, or once it ended the last one that held the plan (until another does).
-  plan                  String?      @map("planKey")
-  stripeCustomerId      String?      @unique
-  stripeSubscriptionId  String?      @unique
+  plan                           String?      @map("planKey")
+  stripeCustomerId               String?      @unique
+  stripeSubscriptionId           String?      @unique
   /// The live subscription's billing: "month" or "year", Stripe's status ("active", "trialing",
   /// "past_due" while Stripe retries a failed payment), when its period ends (it renews then), and
   /// when it ends for good if it's cancelled (null: it renews).
-  planInterval          String?
-  planStatus            String?
-  planPeriodEnd         DateTime?
-  planEndsAt            DateTime?
+  planInterval                   String?
+  planStatus                     String?
+  planPeriodEnd                  DateTime?
+  planEndsAt                     DateTime?
   /// The "Powered by tuti" add-on ($49 a month) is on the live subscription: with it the project may hide the
   /// badge, as with a licence key (server/license.ts). False once either the add-on or the plan ends.
-  badgeAddOn            Boolean      @default(false)
+  badgeAddOn                     Boolean      @default(false)
   /// When its free trial ends (the billing file's `trial`): until then a project on the default plan is on the trial's
   /// plan (effectivePlan). Every read of `plan` through @tuti/db gets that plan, unless the select names trialEndsAt too,
   /// which reads the plan as stored. Cleared once a subscription is live; kept once it ended ("Your trial has ended").
-  trialEndsAt           DateTime?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  trialEndsAt                    DateTime?
+  createdAt                      DateTime     @default(now())
+  updatedAt                      DateTime     @updatedAt
 
-  team                    TeamMember[]
-  samplePeople            User[]                   @relation("SamplePeople")
-  placeholders            User[]                   @relation("Placeholders")
-  boards                  Board[]
-  posts                   Post[]
-  conversations           Conversation[]
-  conversationMessages    ConversationMessage[]
-  conversationAttachments ConversationAttachment[]
-  widgetPresence          WidgetPresence[]
-  mailSubdomain           MailSubdomain?
-  inboundEmails           InboundEmail[]
-  emailBlocks             EmailBlock[]
-  emailDays               ProjectEmailDay[]
-  emailMonths             ProjectEmailMonth[]
-  emailDomain             EmailDomain?
-  votes                   Vote[]
-  comments                Comment[]
-  ssoIdentities           SsoIdentity[]
-  ssoTokenUses            SsoTokenUse[]
-  portalHandoffs          PortalHandoff[]
-  signInLinks             SignInLink[]
-  apiKeys                 ApiKey[]
-  githubInstallation      GithubInstallation?
-  postLinks               PostLink[]
-  webhooks                Webhook[]
-  media                   Media[]                  @relation("projectMedia")
-  brandLogo               Media?                   @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
-  brandLogoDark           Media?                   @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
-  brandFavicon            Media?                   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
-  seoImage                Media?                   @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
-  widgetIconImage         Media?                   @relation("widgetIconImage", fields: [widgetIconImageId], references: [id], onDelete: SetNull)
-  changelogCoverBackground Media?                  @relation("changelogCoverBackground", fields: [changelogCoverBackgroundId], references: [id], onDelete: SetNull)
-  invitations             Invitation[]
-  boardRedirects          BoardRedirect[]
-  postEmbeddings          PostEmbedding[]
-  duplicateSuggestions    DuplicateSuggestion[]
-  emailOptOuts            EmailOptOut[]
-  emailPreferences        EmailPreference[]
-  changelogEntries        ChangelogEntry[]
-  changelogSubscribers    ChangelogSubscriber[]
-  articles                Article[]
-  articleChunks           ArticleChunk[]
-  apiOperationEntries     ApiOperationEntry[]
-  collections             Collection[]
-  docsTabs                DocsTab[]
-  apiReferences           ApiReference[]
-  apiTries                ApiTry[]
-  apiReferenceFetches     ApiReferenceFetch[]
-  readerGroups            ReaderGroup[]
-  docsRedirects           DocsRedirect[]
-  portalReaders           PortalReader[]
-  portalReaderEmails      PortalReaderEmail[]
-  customDomain            CustomDomain?
-  siteMount               SiteMount?
-  portalRedirects         PortalRedirect[]
-  docsSearchDays          DocsSearchDay[]
-  docsFailedSearchDays    DocsFailedSearchDay[]
-  docsQuestions           DocsQuestion[]
-  docsGapDismissals       DocsGapDismissal[]
-  changelogSeen           ChangelogSeen[]
-  codeChanges             CodeChange[]
-  changelogDecisions      ChangelogDecision[]
-  articleVerifications    ArticleVerification[]
-  verifyAlls              VerifyAll[]
-  dataImports             DataImport[]
-  importedRecords         ImportedRecord[]
-  aiUsage                 AiUsage[]
-  creditGrants          CreditGrant[]
-  planLicense             PlanLicense?
+  team                     TeamMember[]
+  samplePeople             User[]                   @relation("SamplePeople")
+  placeholders             User[]                   @relation("Placeholders")
+  boards                   Board[]
+  posts                    Post[]
+  conversations            Conversation[]
+  conversationMessages     ConversationMessage[]
+  conversationAttachments  ConversationAttachment[]
+  widgetPresence           WidgetPresence[]
+  mailSubdomain            MailSubdomain?
+  inboundEmails            InboundEmail[]
+  emailBlocks              EmailBlock[]
+  emailDays                ProjectEmailDay[]
+  emailMonths              ProjectEmailMonth[]
+  emailDomain              EmailDomain?
+  votes                    Vote[]
+  comments                 Comment[]
+  ssoIdentities            SsoIdentity[]
+  ssoTokenUses             SsoTokenUse[]
+  portalHandoffs           PortalHandoff[]
+  signInLinks              SignInLink[]
+  apiKeys                  ApiKey[]
+  githubInstallation       GithubInstallation?
+  postLinks                PostLink[]
+  webhooks                 Webhook[]
+  media                    Media[]                  @relation("projectMedia")
+  brandLogo                Media?                   @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
+  brandLogoDark            Media?                   @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
+  brandFavicon             Media?                   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
+  seoImage                 Media?                   @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
+  widgetIconImage          Media?                   @relation("widgetIconImage", fields: [widgetIconImageId], references: [id], onDelete: SetNull)
+  changelogCoverBackground Media?                   @relation("changelogCoverBackground", fields: [changelogCoverBackgroundId], references: [id], onDelete: SetNull)
+  invitations              Invitation[]
+  boardRedirects           BoardRedirect[]
+  postEmbeddings           PostEmbedding[]
+  duplicateSuggestions     DuplicateSuggestion[]
+  emailOptOuts             EmailOptOut[]
+  emailPreferences         EmailPreference[]
+  changelogEntries         ChangelogEntry[]
+  changelogSubscribers     ChangelogSubscriber[]
+  articles                 Article[]
+  articleChunks            ArticleChunk[]
+  apiOperationEntries      ApiOperationEntry[]
+  collections              Collection[]
+  docsTabs                 DocsTab[]
+  apiReferences            ApiReference[]
+  apiTries                 ApiTry[]
+  apiReferenceFetches      ApiReferenceFetch[]
+  readerGroups             ReaderGroup[]
+  docsRedirects            DocsRedirect[]
+  portalReaders            PortalReader[]
+  portalReaderEmails       PortalReaderEmail[]
+  customDomain             CustomDomain?
+  siteMount                SiteMount?
+  portalRedirects          PortalRedirect[]
+  docsSearchDays           DocsSearchDay[]
+  docsFailedSearchDays     DocsFailedSearchDay[]
+  docsQuestions            DocsQuestion[]
+  docsGapDismissals        DocsGapDismissal[]
+  changelogSeen            ChangelogSeen[]
+  codeChanges              CodeChange[]
+  changelogDecisions       ChangelogDecision[]
+  articleVerifications     ArticleVerification[]
+  verifyAlls               VerifyAll[]
+  dataImports              DataImport[]
+  importedRecords          ImportedRecord[]
+  aiUsage                  AiUsage[]
+  creditGrants             CreditGrant[]
+  planLicense              PlanLicense?
 
   autopilotDigests AutopilotDigest[]
 
@@ -586,17 +586,17 @@ model Media {
   attachedAt DateTime?
   createdAt  DateTime    @default(now())
 
-  project      Project          @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
-  uploader     User             @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  project           Project          @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
+  uploader          User             @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
   /// Projects whose branding uses it (see Project.brandLogoId).
-  logoOf       Project[]        @relation("brandLogo")
-  logoDarkOf   Project[]        @relation("brandLogoDark")
-  faviconOf    Project[]        @relation("brandFavicon")
-  seoImageOf   Project[]        @relation("seoImage")
-  widgetIconOf Project[]        @relation("widgetIconImage")
-  coverBackgroundOf Project[]   @relation("changelogCoverBackground")
+  logoOf            Project[]        @relation("brandLogo")
+  logoDarkOf        Project[]        @relation("brandLogoDark")
+  faviconOf         Project[]        @relation("brandFavicon")
+  seoImageOf        Project[]        @relation("seoImage")
+  widgetIconOf      Project[]        @relation("widgetIconImage")
+  coverBackgroundOf Project[]        @relation("changelogCoverBackground")
   /// Changelog entries it's the cover of (see ChangelogEntry.coverId).
-  coverOf      ChangelogEntry[]
+  coverOf           ChangelogEntry[]
 
   @@index([projectId])
   @@index([uploaderId, createdAt])
@@ -964,7 +964,7 @@ enum PostStatus {
 }
 
 model Board {
-  id                 String   @id @default(cuid())
+  id                 String         @id @default(cuid())
   projectId          String
   slug               String
   name               String
@@ -1008,40 +1008,40 @@ model BoardRedirect {
 }
 
 model Post {
-  id                 String     @id @default(cuid())
-  projectId          String
-  boardId            String
-  authorId           String
+  id                  String         @id @default(cuid())
+  projectId           String
+  boardId             String
+  authorId            String
   /// Per-project number (#123), used in URLs: /p/<title>-<number>.
-  number             Int
-  title              String
+  number              Int
+  title               String
   /// Plain text of the post (derived from `content`), for previews, search and embeddings.
-  body               String     @default("")
+  body                String         @default("")
   /// The post as rich content (@tuti/content "post" profile, ProseMirror JSON).
   /// Null for posts written before rich text: their `body` is the plain text.
-  content            Json?
-  status             PostStatus @default(OPEN)
+  content             Json?
+  status              PostStatus     @default(OPEN)
   /// Denormalised so boards can sort by votes without a COUNT per row.
-  voteCount          Int        @default(0)
-  commentCount       Int        @default(0)
+  voteCount           Int            @default(0)
+  commentCount        Int            @default(0)
   /// Set when this post is merged into another one; votes move to the original.
-  duplicateOfId      String?
+  duplicateOfId       String?
   /// When it was checked for posts it duplicates (once it had its embedding); null: not yet, so the embeddings backfill
   /// checks it.
   duplicatesCheckedAt DateTime?
   /// Set when the post moves to a status its people hear about (Planned, In progress, Completed), cleared once everyone
   /// is emailed about the one it has; the shipped-emails-resubmit cron re-runs late ones.
-  shippedEmailsDueAt DateTime?
+  shippedEmailsDueAt  DateTime?
   /// Who on the team looks after it (the team's only); null: nobody yet.
-  ownerId            String?
+  ownerId             String?
   /// When the team expects it, as a month (its first day, UTC); null: not said.
-  eta                DateTime?
+  eta                 DateTime?
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
-  sample             Boolean    @default(false)
+  sample              Boolean        @default(false)
   /// Who sees it, its comments and votes besides the team; its board's postVisibility when it's made.
-  visibility         PostVisibility @default(PUBLIC)
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  visibility          PostVisibility @default(PUBLIC)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
   project                Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   board                  Board                 @relation(fields: [boardId], references: [id], onDelete: Cascade)
@@ -1427,8 +1427,8 @@ model ConversationMessage {
   import       DataImport?              @relation(fields: [importId], references: [id], onDelete: SetNull)
   attachments  ConversationAttachment[]
 
-  @@index([conversationId, createdAt])
   @@unique([conversationId, author, authorId, requestId], where: raw("\"requestId\" IS NOT NULL"))
+  @@index([conversationId, createdAt])
   /// The Inbox's search (conversations.list's `q`): one index of a project's messages by the trigrams of their
   /// text (pg_trgm, with btree_gin for the project), so `contains` reads only the project's messages that may
   /// have it. Searches of one or two characters have no trigram, and read the project's through the index on `projectId`.
@@ -1497,31 +1497,31 @@ model PostSubscription {
 }
 
 model Comment {
-  id               String    @id @default(cuid())
-  projectId        String
-  postId           String
-  authorId         String
+  id                  String    @id @default(cuid())
+  projectId           String
+  postId              String
+  authorId            String
   /// Plain text (derived from `content`).
-  body             String
+  body                String
   /// Rich content (@tuti/content "comment" profile); null for comments from before rich text.
-  content          Json?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  content             Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
   /// The team's reply, sent to the post's voters too (Email voters): due from then until each of them was
   /// emailed (reply_email), so the cron brings back one whose job never ran or died.
-  votersEmailDueAt DateTime?
+  votersEmailDueAt    DateTime?
   /// Someone else's comment, to be emailed to the post's author: due a few minutes on, so comments close together go in
   /// one email (comment-email), until it's sent or dropped. The claim is a reply_email row, as the reply's to voters.
-  authorEmailDueAt DateTime?
+  authorEmailDueAt    DateTime?
   /// When comment-emails-due last queued its email to the post's author: not queued again for a while after, so a run
   /// still going (or waiting to start) isn't queued every minute.
   authorEmailQueuedAt DateTime?
   /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's comment even if its author is on
   /// the team, so it isn't shown as the team's.
-  asReader         Boolean   @default(false)
+  asReader            Boolean   @default(false)
   /// The top-level comment it replies to (replies are one level deep). Its parent gone (its author's account
   /// deleted, Autopilot's comment undone): it stays, as a comment of its own.
-  parentId         String?
+  parentId            String?
 
   project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   post        Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -1766,6 +1766,8 @@ model ChangelogEntry {
   /// The status changes publishing it made (its posts completed): who they emailed is how many were told.
   postEvents       PostEvent[]
   subscriberEmails ChangelogEmail[]
+  /// The reader groups it's for: listed and shown only to readers in one of them (and the team). None: everyone.
+  groups           ChangelogEntryGroup[]
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])
@@ -1839,7 +1841,7 @@ model ChangelogReaction {
 /// A reader's comment on a published changelog entry (the comment profile, as a post's). Its author edits or deletes it;
 /// the team deletes any. Unpublishing the entry hides them with it.
 model ChangelogComment {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   entryId   String
   authorId  String
   /// Plain text (derived from `content`).
@@ -1847,8 +1849,8 @@ model ChangelogComment {
   /// Rich content (@tuti/content "comment" profile).
   content   Json
   /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's, even if its author is on the team.
-  asReader  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  asReader  Boolean   @default(false)
+  createdAt DateTime  @default(now())
   /// When its author last edited it; null if never.
   editedAt  DateTime?
 
@@ -1987,27 +1989,28 @@ enum GroupMatch {
 /// A group of readers (Settings → Groups): the project's users whose properties match its conditions,
 /// worked out when they read. Docs tabs, collections and articles can be for some groups only.
 model ReaderGroup {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   projectId   String
   /// From the name when it's made, unique in the project and never changed: how the API and
   /// collections name it (`/groups/{key}`, `groups` on collections.*).
   key         String
   name        String
   /// Matched against the project's users' properties, all of them or (`match` any) one (lib/group-conditions.ts GroupCondition[]).
-  conditions  Json     @default("[]")
+  conditions  Json       @default("[]")
   match       GroupMatch @default(all)
   /// The name a token's `groups` gave it before groups came only from conditions; cleared when its
   /// conditions change, and turned into one by a trigger when an instance from before writes it,
   /// while a deploy overlaps them. Goes, with the trigger, in a later migration.
-  legacyClaim String?  @map("claim")
-  description String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  legacyClaim String?    @map("claim")
+  description String     @default("")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  tabs        TabGroup[]
-  collections CollectionGroup[]
-  articles    ArticleGroup[]
+  project          Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tabs             TabGroup[]
+  collections      CollectionGroup[]
+  articles         ArticleGroup[]
+  changelogEntries ChangelogEntryGroup[]
 
   @@unique([projectId, key])
   @@map("reader_group")
@@ -2062,6 +2065,19 @@ model ArticleGroup {
   @@id([articleId, groupId])
   @@index([groupId])
   @@map("article_group")
+}
+
+/// A group a changelog entry is for. A group in use can't be deleted, as for CollectionGroup.
+model ChangelogEntryGroup {
+  entryId String
+  groupId String
+
+  entry ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  group ReaderGroup    @relation(fields: [groupId], references: [id], onDelete: NoAction)
+
+  @@id([entryId, groupId])
+  @@index([groupId])
+  @@map("changelog_entry_group")
 }
 
 /// A group a collection is for (with `access` GROUPS). A group in use can't be deleted (NO ACTION,
@@ -2188,7 +2204,7 @@ model ApiReference {
   /// What the spec read into (`ApiDoc` in @tuti/shared/api-reference), with the slugs the pages keep.
   /// Large: lists never select it, or `spec`.
   /// Plain json, not jsonb: jsonb reorders an object's keys, and an example shows them as the spec wrote them.
-  doc            Json @db.Json
+  doc            Json                  @db.Json
   /// The team's choices, kept across reads (`ApiReferenceState`): slugs, what's hidden, what's new, the groups' order.
   state          Json
   /// For lists: how many operations `doc` has, how many of them are on the help center, and how many are new (`state.unseen`).
@@ -2211,9 +2227,9 @@ model ApiReference {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
-  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// tabs.delete moves it to another tab first; SetNull only keeps a delete that skipped that from failing.
-  tab     DocsTab? @relation(fields: [tabId], references: [id], onDelete: SetNull)
+  tab     DocsTab?            @relation(fields: [tabId], references: [id], onDelete: SetNull)
   entries ApiOperationEntry[]
 
   @@unique([projectId, slug])
@@ -2614,7 +2630,7 @@ model ArticleChunk {
 /// a reference's in step: one per operation `onHelpCenter` gives, never a hidden one). Whether a reader may find it (its
 /// reference published, its tab one they may read) is checked when they search, as an article's is.
 model ApiOperationEntry {
-  id          String @id @default(cuid())
+  id          String                       @id @default(cuid())
   referenceId String
   projectId   String
   /// The operation's key ("POST /posts"), its page's slug under the reference, its method or GraphQL kind, path and title.
@@ -2687,45 +2703,45 @@ enum CodeChangeActionStatus {
 /// Code changes). Nothing customer-facing changes until someone applies an action. Belongs to its
 /// project, and goes with it.
 model CodeChange {
-  id        String          @id @default(cuid())
-  projectId String
+  id              String           @id @default(cuid())
+  projectId       String
   /// GitHub's id for the repository, and its owner/name when it merged.
-  repoId    Int
-  repo      String
-  number    Int
-  url       String
-  title     String
+  repoId          Int
+  repo            String
+  number          Int
+  url             String
+  title           String
   /// The pull request's author on GitHub (login).
-  author    String
-  mergedAt  DateTime
-  state     CodeChangeState @default(ANALYSING)
+  author          String
+  mergedAt        DateTime
+  state           CodeChangeState  @default(ANALYSING)
   /// Why there's nothing to do, or where the analysis failed. Never diff text.
-  reason    String          @default("")
+  reason          String           @default("")
   /// What changed for users, and why Tuti proposes its actions (both written by the model).
-  summary   String          @default("")
-  why       String          @default("")
+  summary         String           @default("")
+  why             String           @default("")
   /// The writing model and the decision model that analysed it, so a new one re-analyses only on request.
-  model     String?
-  decider   String?
+  model           String?
+  decider         String?
   /// The Advanced tuning values the analysis ran with ({ values: by path, tuned: the paths the project changed }); null before them.
-  settings  Json?
+  settings        Json?
   /// An analysis the AI provider didn't answer is tried again by itself at `retryAt` (null: not to be), as it was asked
   /// (`retryPastGate`: "Analyse anyway"); `retries` is how many times it has been since a person last asked.
-  retryAt       DateTime?
-  retries       Int             @default(0)
-  retryPastGate Boolean         @default(false)
+  retryAt         DateTime?
+  retries         Int              @default(0)
+  retryPastGate   Boolean          @default(false)
   /// The gate's word, as the analysis saved it: users see what it changes (true), or not (false); null before an
   /// analysis saved one. The team's own say on the changelog is ChangelogDecision's.
-  forUsers      Boolean?
+  forUsers        Boolean?
   /// What a claim for a run past the gate moved it from (changelog.addPullRequests), to put it back if that run never
   /// happens (Autopilot turned off before it did).
-  claimedFrom   CodeChangeState?
+  claimedFrom     CodeChangeState?
   /// Unused: the marker and the queued job's claim of a one-off rewrite of waiting edits, since removed. Kept while the
   /// previous release reads them; dropped in a later one.
-  rewriteDocsOnly Boolean       @default(false)
+  rewriteDocsOnly Boolean          @default(false)
   claim           String?
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   actions CodeChangeAction[]
@@ -2908,44 +2924,44 @@ enum ImportState {
 /// An import from another tool (docs/plan.md, Switching from Featurebase): one run, a chain of jobs (import-step),
 /// each doing page after page of its current step for a while, saving where it got to with each.
 model DataImport {
-  id          String       @id @default(cuid())
-  projectId   String
-  source      ImportSource
-  startedById String?
+  id              String       @id @default(cuid())
+  projectId       String
+  source          ImportSource
+  startedById     String?
   /// The source's API key, only while it runs: cleared when it ends, done or failed.
-  apiKey      String?
+  apiKey          String?
   /// The parts picked (contacts; feedback, docs and inbox later).
-  parts       String[]     @default([])
+  parts           String[]     @default([])
   /// Whether the help center's articles published in the source come published, else as drafts: a source that can't
   /// say who may read each one asks (apps/web lib/import-parts.ts `askPublish`); the others bring them as they were.
-  publishArticles Boolean  @default(true)
+  publishArticles Boolean      @default(true)
   /// Whether feedback comes as it was, else onto Private boards, each post Private: a source that can't say who may see
   /// each post asks (apps/web lib/import-parts.ts `askPostVisibility`); the others bring them as they were.
-  publicPosts     Boolean  @default(true)
-  state       ImportState  @default(RUNNING)
+  publicPosts     Boolean      @default(true)
+  state           ImportState  @default(RUNNING)
   /// The step under way (packages/jobs/src/imports.ts STEPS) and where it got to in it (the source's cursor; null: its first page).
-  step        String       @default("")
-  cursor      String?
+  step            String       @default("")
+  cursor          String?
   /// What came across, per kind: { contacts: { imported: 12, leftOut: { "<reason>": 2 } } }.
-  counts      Json         @default("{}")
+  counts          Json         @default("{}")
   /// What the source keeps for the import's later steps (packages/jobs import-sources SourceMemo): a crawled help
   /// center's list of pages, found by its first step, so every step pages through the same list.
-  sourceState Json?
+  sourceState     Json?
   /// Why it failed, in words.
-  error       String       @default("")
-  createdAt   DateTime     @default(now())
+  error           String       @default("")
+  createdAt       DateTime     @default(now())
   /// When it last moved: one that hasn't for a while is stuck (resumed by resume-imports, failed after a day).
-  updatedAt   DateTime     @default(now()) @updatedAt
+  updatedAt       DateTime     @default(now()) @updatedAt
   /// While it waits for its source (a rate limit, or a failure that may pass): when its page is tried again.
-  resumeAt    DateTime?
+  resumeAt        DateTime?
   /// How many times the page it's at was begun without saving: 0 once one saves.
-  tries       Int          @default(0)
+  tries           Int          @default(0)
   /// When it last saved a page (or started): one that hasn't for a day is failed. Not `updatedAt`: resuming it moves that.
-  progressAt  DateTime     @default(now())
-  finishedAt  DateTime?
+  progressAt      DateTime     @default(now())
+  finishedAt      DateTime?
 
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  startedBy User?   @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  project   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startedBy User?                 @relation(fields: [startedById], references: [id], onDelete: SetNull)
   messages  ConversationMessage[]
 
   @@index([projectId, createdAt])
@@ -2956,26 +2972,26 @@ model DataImport {
 /// What an import brought across: the source's id of a record (a contact, a post, …) and the local record it became, so
 /// a retried page or another import skips it, and later parts find who a contact is here.
 model ImportedRecord {
-  id            String       @id @default(cuid())
-  projectId     String
-  source        ImportSource
+  id              String       @id @default(cuid())
+  projectId       String
+  source          ImportSource
   /// What it is: contact, admin, collection, article, …
-  kind          String
-  externalId    String
-  localId       String
+  kind            String
+  externalId      String
+  localId         String
   /// For a record made empty first and filled later (an article: its title first, so links to it resolve, then its
   /// content): whether it's filled. A retried or repeated import fills those that aren't.
-  contentLanded Boolean      @default(false)
+  contentLanded   Boolean      @default(false)
   /// An article's title as the import made it (empty, before its content): one whose title here isn't this any more
   /// was retitled by the team, and is theirs (Featurebase's own renames don't change it).
-  madeTitle     String?
+  madeTitle       String?
   /// The import that last counted what became of it (an article's content: brought, or why not), so each import counts
   /// it once however its pages are read, again or shifted.
-  countedIn     String?
+  countedIn       String?
   /// When the source last changed it, as an import last read it (a conversation's last activity): a later import reads
   /// it again only once it changed since, for what's new in it (a conversation's new messages).
   sourceUpdatedAt DateTime?
-  createdAt     DateTime     @default(now())
+  createdAt       DateTime     @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -3027,28 +3043,28 @@ enum CreditSource {
 /// Credits a project was given, of one kind (docs/plan.md, AI usage per project): spent soonest-expiring first,
 /// and gone once they expire. A kind's balance is what's left of its unexpired grants (AI's less the project's debt).
 model CreditGrant {
-  id              String         @id @default(cuid())
+  id              String       @id @default(cuid())
   projectId       String
-  kind            CreditKind     @default(AI)
+  kind            CreditKind   @default(AI)
   source          CreditSource
-  credits         Decimal        @db.Decimal(20, 6)
-  remaining       Decimal        @db.Decimal(20, 6)
+  credits         Decimal      @db.Decimal(20, 6)
+  remaining       Decimal      @db.Decimal(20, 6)
   /// Null: for good.
   expiresAt       DateTime?
   /// For the operator: why it was given (a support case, a plan's period).
-  note            String         @default("")
+  note            String       @default("")
   /// A top-up's Stripe Checkout Session: one grant per payment, however often Stripe says it's paid.
-  stripeSessionId String?        @unique
+  stripeSessionId String?      @unique
   /// What a top-up paid, in US cents.
   paidCents       Int?
   /// A plan's Stripe invoice: one grant per paid invoice (its period's credits).
-  stripeInvoiceId String?        @unique
+  stripeInvoiceId String?      @unique
   /// A plan license's month (grantLicenseCredits): its source revoking it (a refund) takes what's left back.
   planLicenseId   String?
   /// Credits taken back because the payment was refunded or disputed (server/refunds.ts): from what was
   /// left, and the rest, already spent, as the project's debt.
-  takenBack       Decimal        @default(0) @db.Decimal(20, 6)
-  createdAt       DateTime       @default(now())
+  takenBack       Decimal      @default(0) @db.Decimal(20, 6)
+  createdAt       DateTime     @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

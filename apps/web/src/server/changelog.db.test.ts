@@ -608,12 +608,12 @@ describe("the cover and who was told", () => {
 
     // On the portal: an image of it, the entry's title its text.
     await call(publishChangelogEntry, as(owner), { number: 1 });
-    const [shown] = await publishedEntries(project.slug);
+    const [shown] = await publishedEntries(project.slug, null);
     expect(shown!.cover).toEqual({ type: "doc", content: [{ type: "image", attrs: { mediaId: second.id, w: 1200, h: 600, alt: "Dark mode" } }] });
 
     await call(updateChangelogEntry, as(owner), { number: 1, cover: null });
     expect(await coverOf(1)).toBeNull();
-    expect((await publishedEntries(project.slug))[0]!.cover).toBeNull();
+    expect((await publishedEntries(project.slug, null))[0]!.cover).toBeNull();
   });
 
   test("an upload of another project's, one still processing or none at all can't be a cover", async () => {
@@ -674,7 +674,7 @@ describe("reactions", () => {
 
     expect(await call(getChangelogEntry, as(visitor), { number: 1 })).toMatchObject({ reactions: { heart: 1, tada: 2 } });
     expect((await call(listChangelog, as(visitor), {})).entries[0]).toMatchObject({ reactions: { heart: 1, tada: 2 } });
-    const [entry] = await publishedEntries(project.slug, { userId: visitor.id });
+    const [entry] = await publishedEntries(project.slug, null, { userId: visitor.id });
     expect(entry).toMatchObject({ reactions: { thumbs_up: 0, heart: 1, tada: 2 } });
     expect(entry!.reacted.sort()).toEqual(["heart", "tada"]);
 

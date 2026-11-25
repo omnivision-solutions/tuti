@@ -8,6 +8,8 @@ import { displayDoc } from "@/server/content";
 import { portalAddress } from "@/server/custom-domains";
 import { mediaUrls } from "@/server/media-urls";
 import { portalHref } from "@/server/portal-base";
+import { SIGNED_OUT } from "@/lib/read-access";
+import { visibleEntry } from "@/lib/reader-groups";
 import { canSeePost, SIGNED_OUT_VIEWER } from "@/server/post-visibility";
 
 const board = { select: { slug: true, name: true, off: true, postVisibility: true } } as const;
@@ -34,7 +36,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         project: { select: { team: { select: { userId: true } } } },
         duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board } },
         changelogEntries: {
-          where: { entry: { publishedAt: { not: null } } },
+          where: { entry: { publishedAt: { not: null }, ...visibleEntry(SIGNED_OUT) } },
           orderBy: { entry: { publishedAt: "desc" } },
           take: 1,
           select: { entry: { select: { title: true } } },

@@ -1,6 +1,9 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
+import type { Reader } from "@/lib/read-access";
+import { visibleEntry } from "@/lib/reader-groups";
+
 import { author, authorId } from "./create";
 import { defineOperation } from "./define";
 
@@ -16,18 +19,18 @@ const FRESH_DAYS = 30;
 /** Announced entries published since then may be new to someone. */
 export const freshSince = (now = new Date()) => new Date(now.getTime() - FRESH_DAYS * 24 * 60 * 60 * 1000);
 
-/** The project's latest announced entry from the last FRESH_DAYS (the higher number of two published together), if there is one. */
-export function latestAnnouncement(project: Prisma.ProjectWhereInput) {
+/** The project's latest announced entry from the last FRESH_DAYS that `reader` may read (the higher number of two published together), if there is one. */
+export function latestAnnouncement(project: Prisma.ProjectWhereInput, reader: Reader) {
   return prisma.changelogEntry.findFirst({
-    where: { project, announced: true, publishedAt: { not: null, gte: freshSince() } },
+    where: { project, announced: true, ...visibleEntry(reader), publishedAt: { not: null, gte: freshSince() } },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     select: { id: true, publishedAt: true },
   });
 }
 
-/** When the project's latest announced entry from the last FRESH_DAYS was published, if there is one. */
-export async function latestAnnouncedAt(project: Prisma.ProjectWhereInput): Promise<Date | null> {
-  return (await latestAnnouncement(project))?.publishedAt ?? null;
+/** When the project's latest announced entry from the last FRESH_DAYS that `reader` may read was published, if there is one. */
+export async function latestAnnouncedAt(project: Prisma.ProjectWhereInput, reader: Reader): Promise<Date | null> {
+  return (await latestAnnouncement(project, reader))?.publishedAt ?? null;
 }
 
 /** Up to when this person has seen the project's announcements, on any device. */
@@ -36,9 +39,9 @@ export async function changelogSeenAt(projectId: string, userId: string): Promis
   return row?.seenAt ?? null;
 }
 
-/** Whether this person has a fresh announcement they haven't seen anywhere. */
-export async function hasUnseenAnnouncement(projectId: string, userId: string): Promise<boolean> {
-  const [latest, seen] = await Promise.all([latestAnnouncedAt({ id: projectId }), changelogSeenAt(projectId, userId)]);
+/** Whether this person (as `reader`) has a fresh announcement for them they haven't seen anywhere. */
+export async function hasUnseenAnnouncement(projectId: string, userId: string, reader: Reader): Promise<boolean> {
+  const [latest, seen] = await Promise.all([latestAnnouncedAt({ id: projectId }, reader), changelogSeenAt(projectId, userId)]);
   return !!latest && (!seen || latest > seen);
 }
 
