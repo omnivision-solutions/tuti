@@ -68,3 +68,10 @@ test("Publish is told of an unsaved pick only while the picker that has it is th
   await render(false);
   expect(box.querySelector("output")?.textContent).toBe("false");
 });
+
+test("while a save runs the picks wait: one made then would be dropped as the picker starts afresh after it", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, saving: true, onChange: () => {} })));
+  expect([...box.querySelectorAll<HTMLInputElement>('input[name="groups"]')].every((input) => input.disabled)).toBe(true);
+});

@@ -682,7 +682,7 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => setDirty(true)} />}
+        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} saving={pending} onChange={() => setDirty(true)} />}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
@@ -708,11 +708,14 @@ export function WhoSeesIt({
   groups,
   picked,
   upgrade,
+  saving: pending = false,
   onChange,
 }: {
   groups: { key: string; name: string }[];
   picked: string[];
   upgrade: UpgradePrompt | null;
+  /** A save is running: the picks wait for it (one made now would be dropped as the picker starts afresh after it). */
+  saving?: boolean;
   onChange: () => void;
 }) {
   const [changed, setChanged] = useState(false);
@@ -740,6 +743,7 @@ export function WhoSeesIt({
               name="groups"
               value={group.key}
               defaultChecked={picked.includes(group.key)}
+              disabled={pending}
               aria-describedby={upgrade ? needsId : undefined}
               onClick={(event) => {
                 // Picking one needs the plan: the prompt opens and it stays unpicked.
