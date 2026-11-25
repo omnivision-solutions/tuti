@@ -3,10 +3,12 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
+import { pickSnooze } from "@/app/inbox/snooze";
 import { InboxRow } from "@/components/inbox-row";
 import { offerNotifications } from "@/components/notifications";
 import { onRead } from "@/lib/conversation";
-import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
+import { snoozeTime, updateConversation } from "@/lib/details";
+import { afterChange, appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type SwipeChange, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
@@ -16,6 +18,14 @@ import { type Colors, useColors } from "@/lib/theme";
  * have added (or, below zero, removed) since, which move where the next page starts.
  */
 type List = { for: string; rows: Row[]; next: string | null; total: number; moved: number };
+
+/** The list with one conversation's row in place, moved, or gone (`found` null). */
+function placed(list: List, number: number, found: Row | null): List {
+  // The server pages by position: a row in or out of those shown moves where the next page starts.
+  const rows = withRow(list.rows, number, found, list.next === null);
+  const moved = rows.length - list.rows.length;
+  return { ...list, rows, next: list.next && String(Number(list.next) + moved), moved: list.moved + moved };
+}
 
 /** What each view says when it has nothing, as the web's Inbox. */
 const EMPTY: Record<ViewName, string> = {
@@ -42,6 +52,10 @@ export default function Inbox() {
   const [q, setQ] = useState("");
   const [loaded, setList] = useState<List | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Swipes sent and not answered yet, by conversation: shown over the list at once, whatever fetches answer meanwhile.
+  const [pending, setPending] = useState<ReadonlyMap<number, SwipeChange>>(new Map());
+  // Why the latest swipe didn't happen, in the server's words.
+  const [refused, setRefused] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [loads] = useState(latestOnly);
@@ -198,15 +212,7 @@ export default function Inbox() {
         const page = await api<Page>(rowPath(view, number));
         if (loads.isLatest(mine) && rowLoads.get(number) === turn) {
           const found = page.conversations.find((row) => row.number === number);
-          setList((now) => {
-            if (!now) {
-              return now;
-            }
-            // The server pages by position: a row in or out of those shown moves where the next page starts.
-            const rows = withRow(now.rows, number, found ? { ...found, match: null } : null, now.next === null);
-            const moved = rows.length - now.rows.length;
-            return { ...now, rows, next: now.next && String(Number(now.next) + moved), moved: now.moved + moved };
-          });
+          setList((now) => now && placed(now, number, found ? { ...found, match: null } : null));
           setNow(Date.now());
         }
       } catch {
@@ -214,6 +220,43 @@ export default function Inbox() {
       }
     },
     [api, view, loads, rowLoads],
+  );
+
+  // A swipe's change: the row changes (or goes) at once, and comes back as it was, with why, if the server refuses.
+  const triage = useCallback(
+    async (row: Row, change: SwipeChange, done: string, verb: string) => {
+      const number = row.number;
+      setRefused(null);
+      setPending((now) => new Map(now).set(number, change));
+      try {
+        await updateConversation(api, number, change);
+        // In the list too, as the server has it now: a row fetch already on its way, from before, is dropped.
+        rowLoads.set(number, (rowLoads.get(number) ?? 0) + 1);
+        setList((now) => {
+          const shown = now?.for === key ? now.rows.find((r) => r.number === number) : undefined;
+          return shown ? placed(now!, number, afterChange(shown, change, view, q)) : now;
+        });
+        AccessibilityInfo.announceForAccessibility(done);
+        void loadCounts().catch(() => {});
+      } catch (e) {
+        setRefused(`Couldn't ${verb} "${row.subject}": ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setPending((now) => {
+          const left = new Map(now);
+          left.delete(number);
+          return left;
+        });
+      }
+    },
+    [api, key, view, q, rowLoads, loadCounts],
+  );
+  const close = useCallback((row: Row) => void triage(row, { status: "closed" }, "Closed", "close"), [triage]);
+  const snooze = useCallback(
+    (row: Row) =>
+      pickSnooze(row.number, view === "snoozed" && !q, (_, at) =>
+        void (at ? triage(row, { snoozedUntil: at.toISOString() }, `Snoozed till ${snoozeTime(at)}`, "snooze") : triage(row, { snoozedUntil: null }, "Back in the inbox", "wake")),
+      ),
+    [triage, view, q],
   );
 
   // Live while it's open, and opened again on coming back to the foreground (a phone drops it in the background). Several
@@ -264,6 +307,11 @@ export default function Inbox() {
       AccessibilityInfo.announceForAccessibility(error);
     }
   }, [error]);
+  useEffect(() => {
+    if (refused && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(refused);
+    }
+  }, [refused]);
 
   const choose = (slug: string) => {
     if (slug !== project) {
@@ -296,6 +344,12 @@ export default function Inbox() {
   useEffect(() => onRead((number) => onLive(false, [number])), []);
 
   const current = projects?.find((p) => p.slug === project);
+  // The rows as the swipes waiting on the server leave them.
+  const rows = (list?.rows ?? []).flatMap((row) => {
+    const change = pending.get(row.number);
+    const shown = change ? afterChange(row, change, view, q) : row;
+    return shown ? [shown] : [];
+  });
   const searching = !!q;
   const noProjects = projects?.length === 0;
 
@@ -360,7 +414,7 @@ export default function Inbox() {
       />
       <FlatList
         testID="inbox-list"
-        data={list?.rows ?? []}
+        data={rows}
         keyExtractor={(row) => String(row.number)}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
@@ -368,7 +422,18 @@ export default function Inbox() {
         onRefresh={refresh}
         onEndReached={() => void loadMore()}
         onEndReachedThreshold={0.5}
-        renderItem={({ item }) => <InboxRow row={item} colors={colors} q={q} now={now} onPress={open} />}
+        renderItem={({ item }) => (
+          <InboxRow
+            row={item}
+            colors={colors}
+            q={q}
+            now={now}
+            onPress={open}
+            // Not for one that's closed; nor snoozed in Spam, as the details sheet.
+            onClose={item.status === "closed" ? undefined : close}
+            onSnooze={item.status === "closed" || (view === "spam" && !q) ? undefined : snooze}
+          />
+        )}
         ListHeaderComponent={
           <>
             {searching ? (
@@ -385,11 +450,17 @@ export default function Inbox() {
                   // A view's error isn't the next one's.
                   onPress={(next) => {
                     setError(null);
+                    setRefused(null);
                     setView(next);
                   }}
                   colors={colors}
                 />
               )
+            )}
+            {refused && (
+              <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
+                {refused}
+              </Text>
             )}
             {/* A refresh that failed says so above the list it couldn't update. */}
             {error && !!list?.rows.length && (

@@ -22,6 +22,8 @@ const light = {
   // People's faces where they have no picture (the Inbox's rows), one colour per person, and their initials.
   faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
   onFace: "#ffffff",
+  // A row's Snooze, behind it as it's swiped (its Close is `primary`); white text.
+  snooze: "#5a675f",
 };
 export type Colors = typeof light;
 
@@ -43,6 +45,7 @@ const dark: Colors = {
   onNote: "#ffb27a",
   faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
   onFace: "#ffffff",
+  snooze: "#5a675f",
 };
 
 export const useColors = (): Colors => (useColorScheme() === "dark" ? dark : light);

@@ -1,5 +1,7 @@
-import { memo } from "react";
+import { SymbolView } from "expo-symbols";
+import { memo, useRef } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { ageOf, initialsOf, lineOf, personOf, type Row, searchAgeOf, spokenAgeOf, STATUS } from "@/lib/inbox";
 import { type Colors } from "@/lib/theme";
@@ -7,8 +9,67 @@ import { type Colors } from "@/lib/theme";
 // A person's face colour (the theme's `faces`): the same one each time.
 const faceOf = (name: string, faces: string[]) => faces[[...name].reduce((sum, c) => sum + c.charCodeAt(0), 0) % faces.length]!;
 
-/** One conversation in the Inbox: who, their company and how long ago; the subject; the latest message (or the match); unread in bold with a dot. */
-export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress }: { row: Row; colors: Colors; q: string; now: number; onPress: (row: Row) => void }) {
+// The row swiped open, closed when another opens, as Mail's.
+let swiped: SwipeableMethods | null = null;
+
+type Props = { row: Row; colors: Colors; q: string; now: number; onPress: (row: Row) => void; onSnooze?: (row: Row) => void; onClose?: (row: Row) => void };
+
+/**
+ * One conversation in the Inbox: who, their company and how long ago; the subject; the latest message (or the match);
+ * unread in bold with a dot. Swiped left, Snooze and Close (each when given); a screen reader has them as its actions.
+ */
+export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress, onSnooze, onClose }: Props) {
+  const swipe = useRef<SwipeableMethods>(null);
+  const actions = [
+    onSnooze && { name: "snooze", label: "Snooze", icon: { ios: "clock", android: "schedule" } as const, ink: colors.onFace, background: colors.snooze, run: onSnooze },
+    onClose && { name: "close", label: "Close", icon: { ios: "checkmark", android: "check" } as const, ink: colors.onPrimary, background: colors.primary, run: onClose },
+  ].filter((action) => !!action);
+  const pressable = <RowBody row={row} colors={colors} q={q} now={now} onPress={onPress} actions={actions} />;
+  if (!actions.length) {
+    return pressable;
+  }
+  return (
+    <Swipeable
+      ref={swipe}
+      friction={1.5}
+      rightThreshold={40}
+      overshootRight={false}
+      onSwipeableWillOpen={() => {
+        if (swiped !== swipe.current) {
+          swiped?.close();
+        }
+        swiped = swipe.current;
+      }}
+      onSwipeableClose={() => {
+        if (swiped === swipe.current) {
+          swiped = null;
+        }
+      }}
+      renderRightActions={() => (
+        // Behind the row: a screen reader has them as the row's actions instead.
+        <View style={styles.actions} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {actions.map((action) => (
+            <Pressable
+              key={action.name}
+              onPress={() => {
+                swipe.current?.close();
+                action.run(row);
+              }}
+              style={({ pressed }) => [styles.action, { backgroundColor: action.background, opacity: pressed ? 0.8 : 1 }]}
+            >
+              <SymbolView name={action.icon} size={22} tintColor={action.ink} />
+              <Text style={[styles.actionText, { color: action.ink }]}>{action.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    >
+      {pressable}
+    </Swipeable>
+  );
+});
+
+function RowBody({ row, colors, q, now, onPress, actions }: Omit<Props, "onSnooze" | "onClose"> & { actions: { name: string; label: string; run: (row: Row) => void }[] }) {
   const person = personOf(row);
   const line = lineOf(row);
   const weight = row.unread ? "700" : "400";
@@ -16,11 +77,14 @@ export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress }:
     <Pressable
       onPress={() => onPress(row)}
       accessibilityRole="button"
+      accessibilityActions={actions.map(({ name, label }) => ({ name, label }))}
+      onAccessibilityAction={(event) => actions.find((action) => action.name === event.nativeEvent.actionName)?.run(row)}
       // Read as the web's row: who, what and which, who has it, and (in words) how long ago; in a search, its status too.
       accessibilityLabel={`${row.unread ? "Unread, " : ""}${person}${row.company ? `, ${row.company}` : ""}: ${row.subject} (#${row.number})${row.assignee ? `, assigned to ${row.assignee.name}` : ""}${q ? `, ${STATUS[row.status]}` : ""}, latest message ${spokenAgeOf(row.lastMessageAt, now)}`}
       accessibilityHint={line ?? undefined}
       android_ripple={{ color: colors.border }}
-      style={({ pressed }) => [styles.row, Platform.OS === "ios" && pressed && { backgroundColor: colors.secondary }]}
+      // Opaque, over the actions behind it.
+      style={({ pressed }) => [styles.row, { backgroundColor: Platform.OS === "ios" && pressed ? colors.secondary : colors.page }]}
     >
       <View style={[styles.dot, row.unread && { backgroundColor: colors.primary }]} />
       <View style={[styles.face, { backgroundColor: faceOf(person, colors.faces) }]}>
@@ -54,7 +118,7 @@ export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress }:
       </View>
     </Pressable>
   );
-});
+}
 
 /** The search's words marked in the line that matched, as the web's search results. */
 function Marked({ text, q, colors }: { text: string; q: string; colors: Colors }) {
@@ -89,4 +153,7 @@ const styles = StyleSheet.create({
   line: { fontSize: 14, flex: 1 },
   assignee: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   assigneeInitial: { fontSize: 10, fontWeight: "600" },
+  actions: { flexDirection: "row" },
+  action: { width: 76, alignItems: "center", justifyContent: "center", gap: 4 },
+  actionText: { fontSize: 12, fontWeight: "500" },
 });

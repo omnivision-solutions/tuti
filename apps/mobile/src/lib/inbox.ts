@@ -140,3 +140,18 @@ export function latestOnly() {
   let latest = 0;
   return { start: () => ++latest, current: () => latest, isLatest: (n: number) => n === latest };
 }
+
+/** What a row's swipe changes: close it, snooze it till a time, or (in Snoozed) wake it. */
+export type SwipeChange = { status: "closed" } | { snoozedUntil: string | null };
+
+/**
+ * A row once a swipe's change is made, as the server's views have it: null when it leaves the list (a closed one is
+ * only in Closed and Spam, a snoozed one leaves the views of what's awake, a woken one leaves Snoozed). A search lists
+ * every status.
+ */
+export function afterChange(row: Row, change: SwipeChange, view: ViewName, q: string): Row | null {
+  if ("status" in change) {
+    return q || view === "spam" ? { ...row, status: "closed" } : null;
+  }
+  return q || (change.snoozedUntil !== null) === (view === "snoozed") ? row : null;
+}
