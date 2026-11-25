@@ -46,6 +46,7 @@ export const FAKE_MODELS = [
   { id: "anthropic/claude-haiku-5.5", name: "Anthropic: Claude Haiku 5.5", pricing: { prompt: "0.000001", completion: "0.000005" }, supported_parameters: TOOLS },
   { id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5", pricing: { prompt: "0.000003", completion: "0.000015" }, supported_parameters: TOOLS },
   { id: "anthropic/claude-opus-5.5", name: "Anthropic: Claude Opus 5.5", pricing: { prompt: "0.000005", completion: "0.000025" }, supported_parameters: TOOLS },
+  { id: "openai/gpt-6.1-terra", name: "OpenAI: GPT-6.1 Terra", pricing: { prompt: "0.0000004", completion: "0.0000016" }, supported_parameters: TOOLS },
   { id: "acme/tiny", name: "Acme: Tiny", pricing: { prompt: "0.0000001", completion: "0.0000004" }, supported_parameters: TOOLS },
   { id: "acme/no-tools", name: "Acme: No tools", pricing: { prompt: "0.0000001", completion: "0.0000004" }, supported_parameters: ["max_tokens", "temperature"] },
   { id: "acme/no-price", name: "Acme: No price" },

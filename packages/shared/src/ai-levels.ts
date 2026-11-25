@@ -16,6 +16,7 @@ export const AI_GROUPS = {
   support: ["support_draft", "support_summary"],
   changelog: ["changelog"],
   code_changes: ["code_changes_decide", "code_changes_check", "code_changes"],
+  translation: ["translation"],
 } as const satisfies Record<string, readonly AiRole[]>;
 export type AiGroup = keyof typeof AI_GROUPS;
 export const AI_GROUP_NAMES = Object.keys(AI_GROUPS) as AiGroup[];

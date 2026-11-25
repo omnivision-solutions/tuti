@@ -2,7 +2,7 @@ import { configFile, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { embed } from "./embeddings";
-import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, providerDidNotAnswer, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
+import { AI_ROLE_NAMES, AI_ROLES, aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, DEFAULT_TRANSLATION_MODEL, defaultModel, listModels, modelMaxPrice, providerDidNotAnswer, roleCanBeOff, roleDefaultModel, roleNeedsTools, withinModelCap } from "./ai";
 import { type AiUsage, replyCost } from "./usage";
 
 let model: ModelFake;
@@ -108,7 +108,7 @@ test("roles: each is a feature's kind of work, with that feature's default unles
   expect(AI_ROLE_NAMES.filter(roleCanBeOff)).toEqual(["code_changes_check"]);
   expect([AI_ROLES.support_draft.feature, AI_ROLES.support_summary.feature]).toEqual(["support", "support"]);
   vi.stubEnv("TUTI_CONFIG", configFile({ ai: { features: { support: "acme/inbox" } }, autopilot: { decide: { model: "acme/decider" }, redecide: { model: "acme/checker" }, write: { model: "acme/writer" } } }));
-  expect(AI_ROLE_NAMES.map(roleDefaultModel)).toEqual([DEFAULT_AI_MODEL, DEFAULT_AI_MODEL, "acme/inbox", "acme/inbox", DEFAULT_AI_MODEL, "acme/decider", "acme/checker", "acme/writer"]);
+  expect(AI_ROLE_NAMES.map(roleDefaultModel)).toEqual([DEFAULT_AI_MODEL, DEFAULT_AI_MODEL, "acme/inbox", "acme/inbox", DEFAULT_AI_MODEL, "acme/decider", "acme/checker", "acme/writer", DEFAULT_TRANSLATION_MODEL]);
 });
 
 test("each feature's default model: its own setting, else ai.model, else Tuti's (for code changes, Autopilot's write model)", () => {
@@ -125,6 +125,12 @@ test("each feature's default model: its own setting, else ai.model, else Tuti's 
   ]);
   vi.stubEnv("TUTI_CONFIG", configFile({ ai: { model: "acme/everything" } }));
   expect(defaultModel("code_changes")).toBe("acme/everything");
+  // Translation has its own default, below ai.model and its own setting like the others.
+  expect(defaultModel("translation")).toBe("acme/everything");
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { features: { translation: "acme/translator" } } }));
+  expect(defaultModel("translation")).toBe("acme/translator");
+  vi.stubEnv("TUTI_CONFIG", "");
+  expect(defaultModel("translation")).toBe(DEFAULT_TRANSLATION_MODEL);
 });
 
 test("lists the endpoint's models, with their prices per token and whether they take tool calls", async () => {

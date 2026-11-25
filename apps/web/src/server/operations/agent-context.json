@@ -89,6 +89,7 @@
   "conversations.reply": ["author","close","closed","conversation","internal","keptopen","never","note","open","reply","says","seen","sees","sent","stays","team","unanswered","user","waiting","whether","write","wrote"],
   "conversations.suggestReply": ["answer","asked","asking","cover","docs","drafted","edit","nothing","otherwise","reply","send","sent","team","user"],
   "conversations.summarize": ["adds","conversation","done","note","open","sees","summary","team","user","wants"],
+  "conversations.translateReply": ["another","conversations","language","nothing","project","reply","send","sent","theirs","translated","translates","translation","user","writes"],
   "conversations.unlinkPost": ["conversation","post","unlink"],
   "conversations.update": ["assign","change","come","conversation","email","inbox","latest","mark","member","message","null","open","reply","replying","sets","snooze","snoozeduntil","spam","status","team","till","time","unassign","user","views","waiting","wakes","writes","year"],
   "conversations.upload": ["attachments","content","contenttype","conversations","file","gone","hour","keys","people","reply","send","start","teammate","type","unsent","uploading","uploads","uploadurl"],

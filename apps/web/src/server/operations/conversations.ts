@@ -1,5 +1,5 @@
 import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, Prisma, prisma } from "@tuti/db";
-import { enqueue, historySince, inSomePlansHistory, visibleConversations } from "@tuti/jobs";
+import { enqueue, historySince, inSomePlansHistory, replyTranslation, visibleConversations } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -158,6 +158,19 @@ const messageOutput = z
     note: z.boolean().describe("An internal note: only the team sees it, never sent").meta({ examples: [false] }),
     attachments: z.array(attachmentOutput).describe("The files it came with"),
     attachmentsDropped: z.number().int().describe("How many files it came with couldn't be kept (no media storage, or an import couldn't copy them)").meta({ examples: [0] }),
+    teamText: z
+      .string()
+      .nullable()
+      .describe(
+        "Translated (Translate conversations): the text in the team's language, the user's message translated or the team's reply as it was written; `body` is then the user's side (what they wrote, or the translation they got). Null when it wasn't translated",
+      )
+      .meta({ examples: [null] }),
+    language: z.string().nullable().describe("Translated: the language `body` is in (a BCP 47 code); null when it wasn't translated").meta({ examples: [null] }),
+    translationError: z
+      .string()
+      .nullable()
+      .describe("Why the user's message couldn't be translated (it shows as they wrote it); null otherwise")
+      .meta({ examples: [null] }),
     createdAt: at("When it was written"),
   })
   .meta({ id: "ConversationMessage", description: "A message in a conversation, or the team's note" });
@@ -204,6 +217,9 @@ const messageSelect = {
   authorUser: { select: { name: true } },
   attachments: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, contentType: true, size: true } },
   attachmentsDropped: true,
+  teamText: true,
+  language: true,
+  translationError: true,
 } satisfies Prisma.ConversationMessageSelect;
 
 type MessageRow = Prisma.ConversationMessageGetPayload<{ select: typeof messageSelect }>;
@@ -253,6 +269,9 @@ function messageView(row: MessageRow) {
     /** The files it came with (kept in the media storage), and how many couldn't be kept (no storage). */
     attachments: row.attachments,
     attachmentsDropped: row.attachmentsDropped,
+    teamText: row.teamText,
+    language: row.language,
+    translationError: row.translationError,
     createdAt: row.createdAt,
   };
 }
@@ -483,7 +502,9 @@ export async function conversationsMatching(projectId: string, q: string): Promi
           ]
         : []),
       // With its project, so the search reads this project's messages only.
+      // A translated message's team-side text too (its own index, as `body`'s).
       { messages: { some: { projectId, body: has } } },
+      { messages: { some: { projectId, teamText: has } } },
     ],
   };
 }
@@ -503,9 +524,12 @@ export async function matchedMessages(ids: string[], q: string) {
         SELECT c.id AS "conversationId", m.id, m.author, m.note, m."createdAt", m.length, m."from", substring(m.body FROM m."from" FOR ${SNIPPET_LENGTH}) AS text
         FROM unnest(${ids}::text[]) AS c(id)
         CROSS JOIN LATERAL (
-          SELECT id, author, note, "createdAt", body, length(body) AS length, greatest(position(lower(${q}) IN lower(body)) - ${SNIPPET_LEAD}, 1) AS "from"
-          FROM conversation_message
-          WHERE "conversationId" = c.id AND body ILIKE ${`%${likeText(q)}%`} ORDER BY "createdAt" DESC, id DESC LIMIT 1
+          SELECT cm.id, cm.author, cm.note, cm."createdAt", t.body, length(t.body) AS length, greatest(position(lower(${q}) IN lower(t.body)) - ${SNIPPET_LEAD}, 1) AS "from"
+          FROM conversation_message cm
+          -- The text that has it: the message's own, else its translation (teamText).
+          CROSS JOIN LATERAL (SELECT CASE WHEN cm.body ILIKE ${`%${likeText(q)}%`} THEN cm.body ELSE cm."teamText" END AS body) t
+          WHERE cm."conversationId" = c.id AND (cm.body ILIKE ${`%${likeText(q)}%`} OR cm."teamText" ILIKE ${`%${likeText(q)}%`})
+          ORDER BY cm."createdAt" DESC, cm.id DESC LIMIT 1
         ) m`
     : [];
   return new Map(
@@ -887,9 +911,16 @@ export const createConversation = defineOperation({
  * Emails the team about the user's message (packages/jobs, conversation-message) and pushes it to their phones
  * (conversation-push); never fails or holds up the request.
  */
-async function tellTeam(messageId: string) {
+async function tellTeam(projectId: string, messageId: string) {
+  const { translateConversations } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { translateConversations: true } });
   // Side by side: with jobs inline (JOBS_DRIVER=inline) each runs as it's queued, so the push doesn't wait on the email.
   await Promise.all([
+    // Translated into the team's language in the background (docs/plan.md L22): the message is already in.
+    translateConversations &&
+      enqueue("translateMessage", { messageId }).catch((error: unknown) => {
+        // Shown as written: the team reads the original.
+        log.error("Enqueueing a message's translation failed", { error, messageId });
+      }),
     enqueue("conversationMessage", { messageId }).catch((error: unknown) => {
       // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
       log.error("Enqueueing the team's email about a message failed", { error, messageId });
@@ -905,7 +936,7 @@ async function tellTeam(messageId: string) {
 export async function announceConversation(projectId: string, conversation: ConversationRow, message: MessageRow) {
   const result = { ...view(conversation, await projectSlug(projectId)), messages: [messageView(message)] };
   await emitEvent(projectId, "conversation.created", result);
-  await tellTeam(message.id);
+  await tellTeam(projectId, message.id);
   return result;
 }
 
@@ -913,7 +944,7 @@ export async function announceConversation(projectId: string, conversation: Conv
 export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
   const result = messageView(message);
   await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
-  await tellTeam(message.id);
+  await tellTeam(projectId, message.id);
   return result;
 }
 
@@ -1025,7 +1056,17 @@ export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string
 export async function addMessage(
   conversationId: string,
   projectId: string,
-  message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean; requestId?: string } & Partial<ReceivedEmail>,
+  message: {
+    author: "USER" | "TEAM" | "AI";
+    authorId: string | null;
+    channel: "API" | "APP" | "WIDGET" | "EMAIL";
+    body: string;
+    note?: boolean;
+    requestId?: string;
+    /** A translated reply: the team's own text, and the language `body` is in. */
+    teamText?: string;
+    language?: string;
+  } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
   /**
@@ -1105,7 +1146,8 @@ async function sentBefore(
     return null;
   }
   const files = (ids: string[]) => [...new Set(ids)].sort().join();
-  if (sent.body !== input.body || sent.note !== (input.note ?? false) || files(sent.attachments.map((file) => file.id)) !== files(input.attachments ?? [])) {
+  // A translated reply is compared by the team's own text.
+  if ((sent.teamText ?? sent.body) !== input.body || sent.note !== (input.note ?? false) || files(sent.attachments.map((file) => file.id)) !== files(input.attachments ?? [])) {
     throw new OperationError(409, "request_id_used", "This requestId was already used for another reply");
   }
   return sent;
@@ -1120,10 +1162,25 @@ export const replyToConversation = defineOperation({
   path: "/conversations/{number}/messages",
   scope: "write",
   access: "team",
-  errors: [409],
+  errors: [409, 502],
   input: z.object({
     number: conversationNumber,
     body,
+    translation: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_MESSAGE_LENGTH * 2)
+      .optional()
+      .describe(
+        "Where the conversation is translated: the translation of `body` the team saw (conversations.translateReply), sent to the user as it is. Without it, the reply is translated as it's sent",
+      )
+      .meta({ examples: ["Danke, Sam! Eine Lösung ist unterwegs."] }),
+    untranslated: z
+      .boolean()
+      .optional()
+      .describe("Where the conversation is translated and the translation failed: send `body` as written. Without it, a reply that can't be translated isn't sent (502)")
+      .meta({ examples: [false] }),
     requestId: z
       .string()
       .min(1)
@@ -1210,6 +1267,23 @@ export const replyToConversation = defineOperation({
     if (repeat) {
       return messageView(repeat);
     }
+    // The team writes in its language; where the conversation is translated, the user gets theirs (docs/plan.md L22).
+    // Never untranslated unless the team chose it. Notes are the team's own: never translated.
+    let translated: { body: string; teamText: string; language: string } | undefined;
+    if (writer.author === "TEAM" && !input.note) {
+      const translation = await replyTranslation(projectId, conversation.id, input.body, input.translation);
+      if (!translation && input.translation) {
+        throw new OperationError(400, "invalid_input", "This conversation isn't translated: send the reply without a translation");
+      }
+      if (translation && "error" in translation && !input.untranslated) {
+        throw new OperationError(502, "translation_failed", `${translation.error} Send it untranslated (untranslated: true), or try again.`);
+      }
+      if (translation && "text" in translation) {
+        translated = { body: translation.text, teamText: input.body, language: translation.language };
+      }
+    } else if (input.translation || input.untranslated) {
+      throw new OperationError(400, "invalid_input", "Only the team's replies are translated");
+    }
     const outcome: { closed?: boolean; keptOpen?: boolean } = {};
     try {
       const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
@@ -1219,7 +1293,7 @@ export const replyToConversation = defineOperation({
           : await addMessage(
               conversation.id,
               projectId,
-              { ...writer, channel: actor.kind === "user" ? "APP" : "API", body: input.body, note: input.note ?? false, requestId },
+              { ...writer, channel: actor.kind === "user" ? "APP" : "API", body: input.body, note: input.note ?? false, requestId, ...translated },
               uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
               // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
               { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
@@ -1244,6 +1318,42 @@ export const replyToConversation = defineOperation({
       ...(!input.note && { keptOpen: outcome.keptOpen === true }),
       ...(input.close && { closed: outcome.closed === true }),
     };
+  },
+});
+
+export const translateReply = defineOperation({
+  name: "conversations.translateReply",
+  title: "Preview a reply's translation",
+  summary:
+    "Where the project translates conversations and the user writes in another language: the reply translated into theirs, as they'd get it (nothing is sent). Send it with conversations.reply's `translation`.",
+  method: "POST",
+  path: "/conversations/{number}/reply-translation",
+  scope: "write",
+  access: "team",
+  input: z.object({ number: conversationNumber, body }),
+  example: { number: 12, body: "Thanks, Sam! A fix is on its way." },
+  output: z
+    .object({
+      status: z
+        .enum(["translated", "not_translated", "failed"])
+        .describe(
+          "translated: `text` is what the user would get; not_translated: the reply goes as written (translation is off, or their language is the team's or not known yet); failed: it couldn't be translated (`error`), and sending it takes `untranslated`",
+        )
+        .meta({ examples: ["translated"] }),
+      text: z.string().nullable().describe("The translation; null unless translated").meta({ examples: ["Danke, Sam! Eine Lösung ist unterwegs."] }),
+      language: z.string().nullable().describe("The user's language (a BCP 47 code); null when not_translated").meta({ examples: ["de"] }),
+      error: z.string().nullable().describe("Why it failed; null unless failed").meta({ examples: [null] }),
+    })
+    .describe("The reply's translation"),
+  run: async ({ projectId }, input) => {
+    const conversation = await findConversation(projectId, input.number);
+    const translation = await replyTranslation(projectId, conversation.id, input.body);
+    if (!translation) {
+      return { status: "not_translated" as const, text: null, language: null, error: null };
+    }
+    return "error" in translation
+      ? { status: "failed" as const, text: null, language: translation.language, error: translation.error }
+      : { status: "translated" as const, text: translation.text, language: translation.language, error: null };
   },
 });
 

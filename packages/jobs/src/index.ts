@@ -22,6 +22,7 @@ import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
+import { translateMessage } from "./conversation-translation";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
@@ -55,6 +56,7 @@ export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, duplicatesMeter } from "./ai-usage";
+export { DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, translateMessage, translationSettings } from "./conversation-translation";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords } from "./code-change-docs";
@@ -97,6 +99,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   postCreated,
   conversationMessage,
   conversationPush,
+  translateMessage,
   checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,
   checkEmailDomains,

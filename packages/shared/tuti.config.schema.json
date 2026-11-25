@@ -146,6 +146,20 @@
                 }
               ],
               "description": "Autopilot's articles' model, instead of `ai.model` (without either, Autopilot's write model)"
+            },
+            "translation": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Translating conversations' model, instead of `ai.model` (without either, openai/gpt-6.1-terra)"
             }
           },
           "additionalProperties": false
@@ -211,6 +225,11 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 200
+                    },
+                    "translation": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
                     }
                   },
                   "additionalProperties": false
@@ -254,6 +273,11 @@
                       "maxLength": 200
                     },
                     "code_changes": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "translation": {
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 200

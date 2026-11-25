@@ -152,7 +152,7 @@ test("start-up: an embeddings failure says what the provider said (out of credit
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
     String(url).endsWith("/embeddings")
       ? new Response('{"error":{"message":"Insufficient credits"}}', { status: 402 })
-      : new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}'),
+      : new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"},{"id":"openai/gpt-6.1-terra"}]}'),
   );
   await checkAiProvider();
   expect(error.mock.calls.map(([message]) => String(message))).toEqual([
@@ -166,7 +166,7 @@ test("start-up: an address fetch refuses (credentials in it) is never logged as 
   env({ OPENAI_API_KEY: "sk-proj-x", OPENAI_BASE_URL: "https://user:token@embed-gw.example/v1" });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     if (String(url).endsWith("/embeddings")) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${String(url)}`);
-    return new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}');
+    return new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"},{"id":"openai/gpt-6.1-terra"}]}');
   });
   await checkAiProvider();
   const logged = error.mock.calls.map(([message]) => String(message));
@@ -260,7 +260,7 @@ test("start-up: an endpoint without the Decisions API says once that Autopilot a
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   // It serves the other features' model, not Autopilot's (which nothing there would ask): no error about it.
-  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }] })));
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }, { id: "openai/gpt-6.1-terra" }] })));
   env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
   await checkAiProvider();
   expect(warn.mock.calls).toEqual([["Autopilot and Verify need OpenRouter's Decisions API; acme.openai.azure.com doesn't have it"]]);
@@ -268,7 +268,7 @@ test("start-up: an endpoint without the Decisions API says once that Autopilot a
 
   // OpenRouter, or the fake (an OpenRouter key): nothing.
   warn.mockClear();
-  fetch.mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }, { id: "anthropic/claude-sonnet-5.5" }] })));
+  fetch.mockImplementation(async () => new Response(JSON.stringify({ data: [{ id: "anthropic/claude-haiku-5.5" }, { id: "anthropic/claude-sonnet-5.5" }, { id: "openai/gpt-6.1-terra" }] })));
   env({ OPENAI_API_KEY: "sk-or-v1-new", OPENAI_BASE_URL: "" });
   await checkAiProvider();
   env(model.env);

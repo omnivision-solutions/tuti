@@ -151,6 +151,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix", requestId: `matrix-${randomUUID()}` }),
   "conversations.update": () => ({ number: 1, status: "closed" }),
+  // Translation is off in the fixture: not_translated, and the model isn't asked.
+  "conversations.translateReply": () => ({ number: 1, body: "From the matrix" }),
   "conversations.linkPost": () => ({ number: 1, post: 1 }),
   "conversations.unlinkPost": () => ({ number: 1, post: 1 }),
   // Nothing in the fixture's docs is close to what was asked: no draft, and the model isn't asked.
