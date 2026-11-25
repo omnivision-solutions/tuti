@@ -1732,6 +1732,15 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     expect((await row(left))!.unsubscribedAt).toBeNull();
   });
 
+  test("asking on a paused project's form leaves no row, so it isn't read as an unsubscribe: the team can add them", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    const asked = newAddress();
+    expect(await subscribe(asked)).toEqual({ sentTo: asked });
+    expect(await row(asked)).toBeNull();
+    expect((await call(addChangelogSubscribers, key(), { emails: [asked] })).subscribed).toEqual([asked]);
+  });
+
   test("removed by the team: webhooks hear it (api, with their id in the app where named), and the team can add them back", async () => {
     const [kim, lee, never] = [newAddress(), newAddress(), newAddress()];
     const sam = await ssoUser(lee);
