@@ -486,7 +486,8 @@ async function analyse(
     let saved: Awaited<ReturnType<typeof finish>> | null = null;
     for (let tries = 1; !saved; tries++) {
       try {
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: seen, ...versions }, kept, {
+        // The gate's word only where it was asked: a run past it (the team's pick, Analyse anyway) keeps the one before.
+        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? seen : undefined, ...versions }, kept, {
           projectId: change.projectId,
           pullRequest: change.pullRequest,
           data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),

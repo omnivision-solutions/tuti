@@ -611,7 +611,8 @@ describe("deciding", () => {
     // In the draft at once, under its title; its analysis goes on after the request has answered (jobs run in this process here).
     expect(await draftOf(url)).not.toBeNull();
     await addedPullRequestsAnalysed();
-    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).toEqual({ state: "READY" });
+    // Analysed past the gate, it keeps the gate's word: the team's pick isn't Autopilot finding users see it.
+    expect(await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true, forUsers: true } })).toEqual({ state: "READY", forUsers: false });
     expect((await draftOf(url))?.body).toBe("A dark theme");
     expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, kind: "CHANGELOG_LINE" }, select: { status: true, payload: true } })).toEqual([
       { status: "APPLIED", payload: expect.objectContaining({ line: "A dark theme" }) },
