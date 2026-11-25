@@ -25,7 +25,7 @@ const languageOutput = z
 const languagesOutput = z
   .object({
     default: z.object({ code: code.describe("Its code").meta({ examples: ["en"] }), name: z.string().describe("Its name in English").meta({ examples: ["English"] }) }).describe("The language the team writes in"),
-    languages: z.array(languageOutput).describe("The other languages, in the order they were added"),
+    languages: z.array(languageOutput).describe("The other languages, in the order they were added (those added together, by code)"),
   })
   .describe("The portal's languages");
 

@@ -25,7 +25,7 @@ test("a project starts in English alone; other languages are added offline and a
   const { get, update } = await setUp();
   expect(await get()).toEqual({ default: { code: "en", name: "English" }, languages: [] });
 
-  await update({ languages: [{ code: "de", instructions: "  Use du.  " }, { code: "pt-BR", newPages: "manual", productAvailable: true }] });
+  await update({ languages: [{ code: "pt-BR", newPages: "manual", productAvailable: true }, { code: "de", instructions: "  Use du.  " }] });
   await update({ languages: [{ code: "de", live: true }, { code: "pt-BR" }] });
   expect((await get()).languages).toEqual([
     { code: "de", name: "German", newPages: "automatic", instructions: "Use du.", productAvailable: false, live: true },
