@@ -77,7 +77,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too. And the
         // phone's id, as a sign-out changes it: a push sent before and delivered after names the old one.
         void dismissDelivered();
-        void forgetDeviceId();
+        await forgetDeviceId();
       }
       await forgetSession(which);
     });

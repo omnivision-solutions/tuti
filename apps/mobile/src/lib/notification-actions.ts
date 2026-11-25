@@ -43,29 +43,37 @@ export const setCategory = () =>
 const done = new Set<string>();
 
 /**
- * How long a request from a notification waits for its answer, body and all: a phone can leave one hanging for minutes
- * (a network that went and came back), which would say nothing at all. A reply whose answer this gave up on may have been
- * saved: its `requestId` makes Retry give back the one saved, not a second.
+ * How long an action's requests (`/projects`, then the reply or close) wait for their answers, all together, bodies
+ * included: a phone can leave one hanging for minutes (a network that went and came back), which would say nothing at
+ * all. Within the 25 seconds iOS is asked to keep the app running for it (patches/expo-notifications.patch). A reply
+ * whose answer this gave up on may have been saved: its `requestId` makes Retry give back the one saved, not a second.
  */
-export const ACTION_TIMEOUT_MS = 15_000;
-const timedFetch: typeof fetch = async (input, init) => {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new TypeError("Timed out"));
-    }, ACTION_TIMEOUT_MS);
-  });
-  try {
-    // The answer's body too: headers can come and the body never (the network gone in between).
-    const response = await Promise.race([fetch(input, { ...init, signal: controller.signal }), deadline]);
-    const body = await Promise.race([response.text(), deadline]);
-    return new Response(body || null, { status: response.status, statusText: response.statusText, headers: response.headers });
-  } finally {
-    clearTimeout(timer);
-  }
-};
+export const ACTION_TIMEOUT_MS = 18_000;
+
+/** A fetch whose requests all give up at one deadline, ACTION_TIMEOUT_MS from when it's made. */
+function fetchUntil(deadlineAt: number): typeof fetch {
+  return async (input, init) => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => {
+          controller.abort();
+          reject(new TypeError("Timed out"));
+        },
+        Math.max(0, deadlineAt - Date.now()),
+      );
+    });
+    try {
+      // The answer's body too: headers can come and the body never (the network gone in between).
+      const response = await Promise.race([fetch(input, { ...init, signal: controller.signal }), deadline]);
+      const body = await Promise.race([response.text(), deadline]);
+      return new Response(body || null, { status: response.status, statusText: response.statusText, headers: response.headers });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
 
 /** What the failure notification says, in the server's words where it gave them. */
 const reasonOf = (error: unknown) => (error instanceof ApiError || error instanceof Error ? error.message : "Something went wrong.");
@@ -105,6 +113,7 @@ export async function act(response: Notifications.NotificationResponse) {
   }
   done.add(key);
   forget(response);
+  const timedFetch = fetchUntil(Date.now() + ACTION_TIMEOUT_MS);
   // A reply of only spaces: nothing to send, but the notification goes, or Android shows it sending for good.
   if (action === REPLY && !text) {
     await remove(response);
@@ -271,7 +280,8 @@ async function tell(response: Notifications.NotificationResponse, target: Target
     // With its registration's id: tapped, it opens the conversation only while that's still this sign-in (openTarget).
     content: {
       ...failure(response.actionIdentifier, response.notification.request.content.title, reason, kept),
-      data: { project: target.project, conversation: target.number, ...(target.device && { device: target.device }) },
+      // `failed`: always shown, also over its conversation or signed out (notifications.ts `behaviourFor`).
+      data: { project: target.project, conversation: target.number, ...(target.device && { device: target.device }), failed: true },
     },
     trigger: Platform.OS === "android" ? { channelId: CHANNEL } : null,
   });

@@ -227,7 +227,7 @@ describe("Reply", () => {
       const { getDraft, isSending } = await import("./conversation");
       const { screenKey } = await import("./details");
       expect(isSending(getDraft(screenKey({ server: SERVER, project: "acme" }, 7)).unsent[0]!.id)).toBe(true);
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(18_000);
       await acting;
     } finally {
       vi.useRealTimers();
@@ -243,7 +243,7 @@ describe("Reply", () => {
     expect(calls).toEqual([]);
     expect(phone.shown.map((shown) => shown.content.body)).toEqual(["Ada · Acme: It's for an account you've since signed out of."]);
     // With that id, so a tap on it opens nothing either (openTarget).
-    expect(phone.shown[0]!.content.data).toEqual({ project: "acme", conversation: 7, device: "an-id-since-left" });
+    expect(phone.shown[0]!.content.data).toEqual({ project: "acme", conversation: 7, device: "an-id-since-left", failed: true });
     expect(await kept()).toEqual([]);
 
     // A push that names no registration: nothing either.
@@ -259,13 +259,36 @@ describe("Reply", () => {
     expect(calls.map((call) => [call.method, call.url])).toEqual([["POST", "https://help.acme.example/api/v1/conversations/7/messages"]]);
   });
 
+  it("gives up on all its requests at one deadline: a slow project check leaves the reply less time, not a fresh limit", async () => {
+    vi.useFakeTimers();
+    try {
+      // Another project: its check takes 10 seconds, then the reply hangs.
+      answer = (call) => {
+        if (call.url.endsWith("/projects")) {
+          return new Promise<Response>((resolve) => setTimeout(() => resolve(Response.json({ projects: [{ slug: "globex" }] })), 10_000)) as unknown as Response;
+        }
+        return new Promise<Response>(() => {}) as unknown as Response;
+      };
+      const acting = (await load()).act(response("reply", { userText: "On it!", project: "globex" }));
+      await vi.advanceTimersByTimeAsync(17_000);
+      expect(calls.map((call) => call.method)).toEqual(["GET", "POST"]);
+      expect(phone.shown).toEqual([]);
+      // 18 seconds from the start, not from the reply's request.
+      await vi.advanceTimersByTimeAsync(1_000);
+      await acting;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(phone.shown.map((shown) => shown.content.title)).toEqual(["Your reply didn't send"]);
+  });
+
   it("whose answer's body never comes is given up on too, and kept", async () => {
     vi.useFakeTimers();
     try {
       // Headers, then the network gone before the body.
       answer = () => ({ status: 200, statusText: "OK", headers: new Headers(), ok: true, text: () => new Promise<string>(() => {}) }) as unknown as Response;
       const acting = (await load()).act(response("reply", { userText: "On it!" }));
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(18_000);
       await acting;
     } finally {
       vi.useRealTimers();
@@ -289,7 +312,7 @@ describe("Reply", () => {
     // Not sent, and said so, rather than left spinning.
     expect(phone.dismissed).toEqual(["push-2"]);
     expect(phone.shown.map((shown) => shown.content)).toEqual([
-      { title: "Your reply didn't send", body: "Ada · Acme: It's in a project you're not on.", data: { project: "initech", conversation: 7, device: DEVICE } },
+      { title: "Your reply didn't send", body: "Ada · Acme: It's in a project you're not on.", data: { project: "initech", conversation: 7, device: DEVICE, failed: true } },
     ]);
     const { getDraft } = await import("./conversation");
     const { screenKey } = await import("./details");
@@ -364,7 +387,7 @@ describe("Reply", () => {
     try {
       hang = true;
       const acting = (await load()).act(response("reply", { userText: "On it!" }));
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(18_000);
       await acting;
     } finally {
       vi.useRealTimers();
@@ -401,7 +424,7 @@ describe("Reply", () => {
         content: {
           title: "Your reply didn't send",
           body: "Ada · Acme: Couldn't reach tuti.example. Check the address and your connection. It's kept in the conversation, with Retry.",
-          data: { project: "acme", conversation: 7, device: DEVICE },
+          data: { project: "acme", conversation: 7, device: DEVICE, failed: true },
         },
         trigger: null,
       },
@@ -428,7 +451,7 @@ describe("Close", () => {
     await (await load()).act(response("close"));
     expect(phone.shown).toEqual([
       {
-        content: { title: "Couldn't close the conversation", body: "Ada · Acme: You can't change this conversation.", data: { project: "acme", conversation: 7, device: DEVICE } },
+        content: { title: "Couldn't close the conversation", body: "Ada · Acme: You can't change this conversation.", data: { project: "acme", conversation: 7, device: DEVICE, failed: true } },
         trigger: { channelId: "default" },
       },
     ]);

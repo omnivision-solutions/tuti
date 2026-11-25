@@ -22,7 +22,7 @@ index 769b5522b9e20caba4b4bebd50a7817759be1eff..2bf85d8e0e89b85c444d3039c2435ba3
  
    override suspend fun build(): Notification {
 diff --git a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
-index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..4fa881d82c824a35b0f4647c4b204ffb9418fd4e 100644
+index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..3300e0e2d8c632766024b2de4dc12e559cb1be5c 100644
 --- a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
 +++ b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
 @@ -2,6 +2,7 @@
@@ -49,7 +49,7 @@ index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..4fa881d82c824a35b0f4647c4b204ffb
 +   Tuti: an action that doesn't open the app (Reply, Close) is acted on by the app's JavaScript, which sends a request
 +   (apps/mobile src/lib/notification-actions.ts). iOS suspends a background app as soon as the completion handler below
 +   is called, and a killed one is launched only to answer it, before the JavaScript has even started: a background task
-+   keeps it running meanwhile, ended after 25 seconds (past the JavaScript's 15-second limit for its request) or when iOS
++   keeps it running meanwhile, ended after 25 seconds (past the JavaScript's 18-second limit for its requests) or when iOS
 +   says its time is up.
 +   */
 +  private func keepRunningForAction(_ response: UNNotificationResponse) {

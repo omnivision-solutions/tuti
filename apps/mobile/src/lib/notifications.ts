@@ -152,7 +152,7 @@ export async function removeDevice(api: Api) {
 function rotate(from: string) {
   const made = randomUUID();
   keptId = Promise.resolve(made);
-  rotated = { from, to: made };
+  rotated = { from: new Set([...(rotated?.from ?? []), from]), to: made };
   void SecureStore.setItemAsync(DEVICE_ID, made, STORE_OPTIONS).catch(() => {});
 }
 
@@ -200,17 +200,17 @@ export function targetOf(data: unknown): Target | null {
  */
 export const forThisSignIn = async (target: Target) => !!target.device && target.device === (await currentId().catch(() => null));
 
-/** The id this JavaScript last changed on a sign-out (`removeDevice`), and the one it replaced. */
-let rotated: { from: string; to: string } | null = null;
+/** The id this JavaScript last changed to on a sign-out (`removeDevice`), and every one it replaced. */
+let rotated: { from: Set<string>; to: string } | null = null;
 
 /**
  * The id as stored now, read each time: a sign-out in the app's other JavaScript (Android's task runs in one of its own
- * when the app was killed) changes it there, not in this one's `deviceId()`. This one's own change wins while storage
- * still has the id it replaced (its write not landed yet, or failed), or can't be read; `deviceId()` when nothing is.
+ * when the app was killed) changes it there, not in this one's `deviceId()`. This one's newest id wins while storage
+ * still has any it replaced (its writes not landed yet, or failed), or can't be read; `deviceId()` when nothing is.
  */
 async function currentId() {
   const stored = await SecureStore.getItemAsync(DEVICE_ID, STORE_OPTIONS).catch(() => undefined);
-  if (rotated && (stored === undefined || stored === rotated.from)) {
+  if (rotated && (stored === undefined || rotated.from.has(stored ?? ""))) {
     return rotated.to;
   }
   return stored ?? deviceId();
@@ -244,8 +244,14 @@ export function lookAt(target: Target) {
 export function behaviourFor(notification: Notifications.Notification, signedOut = false): Notifications.NotificationBehavior {
   // The silent update a reply's notification gets before it's taken away (notification-actions.ts `remove`): posted
   // whatever is on screen, or Android keeps the reply's spinner, and never as a banner or a sound.
-  if ((notification.request.content.data as { sent?: unknown } | undefined)?.sent === true) {
+  const { sent, failed } = (notification.request.content.data ?? {}) as { sent?: unknown; failed?: unknown };
+  if (sent === true) {
     return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+  }
+  // Said when a Reply or Close on a notification didn't go (notification-actions.ts `tell`): always, also over its
+  // conversation or signed out, or a typed reply would be lost unsaid.
+  if (failed === true) {
+    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
   }
   const target = targetOf(notification.request.content.data);
   // Untitled: Android's pushes, data only, which the app shows itself (notification-actions.ts `present`).

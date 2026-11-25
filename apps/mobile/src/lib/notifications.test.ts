@@ -290,6 +290,16 @@ describe("a notification while the app is in front", () => {
     away();
   });
 
+  it("always shows that an action didn't go, also over its own conversation or signed out", async () => {
+    const { behaviourFor, lookAt } = await load();
+    const failed = { project: "acme", conversation: 12, failed: true };
+    const shown = { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
+    const away = lookAt({ project: "acme", number: 12 });
+    expect(behaviourFor(notification(failed))).toEqual(shown);
+    expect(behaviourFor(notification(failed), true)).toEqual(shown);
+    away();
+  });
+
   it("shows no banner over its own conversation, and one anywhere else", async () => {
     const { behaviourFor, lookAt } = await load();
     const shown = (data: unknown) => behaviourFor(notification(data)).shouldShowBanner;
@@ -359,9 +369,22 @@ describe("whether a notification is for this sign-in", () => {
     const now = await deviceId();
     expect(await forThisSignIn({ project: "acme", number: 7, device: old })).toBe(false);
     expect(await forThisSignIn({ project: "acme", number: 7, device: now })).toBe(true);
+    // A second sign-out whose write fails too: the newest id still wins over every one replaced, the first one included.
+    writes.fail = true;
+    try {
+      await removeDevice(api);
+    } finally {
+      writes.fail = false;
+    }
+    const newest = await deviceId();
+    expect(newest).not.toBe(now);
+    for (const replaced of [old, now]) {
+      expect(await forThisSignIn({ project: "acme", number: 7, device: replaced })).toBe(false);
+    }
+    expect(await forThisSignIn({ project: "acme", number: 7, device: newest })).toBe(true);
     // Then the other JavaScript signs out and in again: its id, stored, wins over this one's.
     stored.set("device-id", "id-from-the-other-javascript");
-    expect(await forThisSignIn({ project: "acme", number: 7, device: now })).toBe(false);
+    expect(await forThisSignIn({ project: "acme", number: 7, device: newest })).toBe(false);
     expect(await forThisSignIn({ project: "acme", number: 7, device: "id-from-the-other-javascript" })).toBe(true);
   });
 });
