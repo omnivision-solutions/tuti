@@ -16,6 +16,9 @@ const light = {
   error: "#be1218", // --destructive-foreground
   soft: "#e8f5ec",
   onSoft: "#0f5e37",
+  customer: "#f8f4f1", // --inbox-customer: a user's message
+  note: "#ffefe2", // --inbox-note: the team's internal note
+  onNote: "#9a3b06", // --highlight-foreground
   // People's faces where they have no picture (the Inbox's rows), one colour per person, and their initials.
   faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
   onFace: "#ffffff",
@@ -35,6 +38,9 @@ const dark: Colors = {
   error: "#ff8d8b",
   soft: "#173323",
   onSoft: "#8fe6b3",
+  customer: "#252e29",
+  note: "#312012",
+  onNote: "#ffb27a",
   faces: ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"],
   onFace: "#ffffff",
 };

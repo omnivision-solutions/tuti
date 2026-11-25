@@ -32,6 +32,7 @@ function Navigator() {
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="index" options={{ title: "Inbox" }} />
           <Stack.Screen name="inbox/projects" options={{ title: "Projects", presentation: "formSheet", sheetAllowedDetents: "fitToContents", sheetGrabberVisible: true, sheetCornerRadius: Platform.OS === "android" ? 28 : undefined, headerShown: false }} />
+          <Stack.Screen name="conversation/[number]" options={{ title: "" }} />
         </Stack.Protected>
       </Stack>
       <StatusBar style="auto" />

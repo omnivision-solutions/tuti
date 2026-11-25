@@ -24,6 +24,8 @@ export function appConfig(env: Env): ExpoConfig {
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
+      // Photos for replies come from the system's picker: no camera or microphone, so the app never asks for them.
+      ["expo-image-picker", { photosPermission: "Tuti attaches the photos you choose to your replies.", cameraPermission: false, microphonePermission: false }],
       [
         "expo-splash-screen",
         { image: "./assets/splash-icon.png", imageWidth: 96, backgroundColor: "#fbf9f3", dark: { backgroundColor: "#0f1411" } },

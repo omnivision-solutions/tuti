@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
+import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
@@ -31,6 +32,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setSession(null);
+    forgetDrafts();
     await inTurn(() => forgetSession());
   }, [inTurn]);
 
@@ -55,7 +57,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // teammate who signed out and back in meanwhile stays signed in.
   const ended = useCallback(async (which: Session) => {
     setSession((now) => afterEnded(now, which));
-    await inTurn(() => forgetSession(which));
+    // What was being written goes with the session, so whoever signs in next never sees or sends it.
+    await inTurn(async () => {
+      if (draftsGoWith(await readSession(), which)) {
+        forgetDrafts();
+      }
+      await forgetSession(which);
+    });
   }, [inTurn]);
 
   // Reading the session keeps it going (API calls don't): at launch, and on coming back to the foreground twice a day, as

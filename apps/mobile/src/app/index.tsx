@@ -1,9 +1,10 @@
-import { router, Stack } from "expo-router";
+import { router, Stack, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
 import { InboxRow } from "@/components/inbox-row";
+import { onRead } from "@/lib/conversation";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { useApi, useSession } from "@/lib/session";
@@ -263,7 +264,30 @@ export default function Inbox() {
       void setProject(slug).catch((e: Error) => setError(`Couldn't keep that choice: ${e.message}`));
     }
   };
-  const open = useCallback((row: Row) => router.push(`/conversation/${row.number}`), []);
+  // Back from a conversation: its row and the counts again, as its stream would after a change. Reading it there sends no
+  // live change (unread is the teammate's own), so it would stay bold and counted till something else changed.
+  const opened = useRef<number | null>(null);
+  const open = useCallback((row: Row) => {
+    opened.current = row.number;
+    router.push(`/conversation/${row.number}`);
+  }, []);
+  const [returned, setReturned] = useState<{ number: number } | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      if (opened.current !== null) {
+        setReturned({ number: opened.current });
+        opened.current = null;
+      }
+    }, []),
+  );
+  useEffect(() => {
+    if (returned) {
+      onLive(false, [returned.number]);
+    }
+  }, [returned]);
+  // A conversation marked read (in its screen, its read maybe answering after the fetch above): its row and the counts
+  // again, whether the Inbox is in front or not.
+  useEffect(() => onRead((number) => onLive(false, [number])), []);
 
   const current = projects?.find((p) => p.slug === project);
   const searching = !!q;
