@@ -96,6 +96,11 @@ test("a phone registers under its session, registering again replaces it, and it
   // Not a push token: refused.
   expect(await api(owner, "POST", "/devices", { deviceId: "x", token: "not-a-token", platform: "ios" })).toMatchObject({ status: 400 });
 
+  // Someone else's phone, by its id: not theirs to remove, and left as it is.
+  const other = await addMember(project.id, "MEMBER");
+  expect(await api(other, "DELETE", "/devices/reinstalled-id")).toEqual({ status: 200, body: { removed: false } });
+  expect(await prisma.device.count({ where: { userId: owner.id, deviceId: "reinstalled-id" } })).toBe(1);
+
   expect(await api(owner, "DELETE", "/devices/reinstalled-id")).toEqual({ status: 200, body: { removed: true } });
   expect(await api(owner, "DELETE", "/devices/reinstalled-id")).toEqual({ status: 200, body: { removed: false } });
   expect(await prisma.device.count({ where: { userId: owner.id } })).toBe(0);
