@@ -4,7 +4,7 @@ import { AccessibilityInfo, ActivityIndicator, AppState, FlatList, Platform, Pre
 
 import { confirmSignOut, openCount, type Project } from "@/app/inbox/projects";
 import { InboxRow } from "@/components/inbox-row";
-import { appendPage, type InboxView, latestOnly, listPath, type Page, PAGE_SIZE, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
+import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
@@ -44,6 +44,8 @@ export default function Inbox() {
   const [now, setNow] = useState(Date.now);
   const [loads] = useState(latestOnly);
   const paging = useRef(false);
+  // The latest load of everything: the list it shows once it's in (null if a newer one replaced it, or it failed).
+  const reload = useRef<Promise<List | null>>(Promise.resolve(null));
   // A new project, view or search starts from nothing shown.
   const key = `${project}\n${view}\n${q}`;
   const list = loaded?.for === key ? loaded : null;
@@ -79,23 +81,33 @@ export default function Inbox() {
     void loadProjects();
   }, [loadProjects]);
 
-  // Everything shown: the views' counts and the list from its start (`keep`: as many rows as are shown, so a refresh keeps them).
+  // The views' counts, unless a newer load of everything started meanwhile.
+  const loadCounts = useCallback(
+    (mine = loads.current()) => api<{ views: InboxView[] }>("/inbox/views").then((answer) => loads.isLatest(mine) && setViews(answer.views)),
+    [api, loads],
+  );
+
+  // Everything shown: the views' counts and the list from its start (`keep`: as many rows as are shown, so a reload keeps
+  // them all, however many pages that is).
   const loadAll = useCallback(
     (keep = 0) => {
       if (!project) {
         return Promise.resolve();
       }
       const mine = loads.start();
-      const limit = Math.min(100, Math.max(PAGE_SIZE, keep));
       // The counts show as they come, without waiting on the list.
-      const counts = api<{ views: InboxView[] }>("/inbox/views").then((answer) => loads.isLatest(mine) && setViews(answer.views));
-      const rows = api<Page>(listPath({ view, q, limit })).then((page) => {
+      const counts = loadCounts(mine);
+      const rows = firstRows(api, view, q, keep).then((page) => {
         if (loads.isLatest(mine)) {
-          setList({ for: key, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 });
+          const fresh = { for: key, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
+          setList(fresh);
           setError(null);
           setNow(Date.now());
+          return fresh;
         }
+        return null;
       });
+      reload.current = rows.catch(() => null);
       return Promise.all([counts, rows]).then(
         () => {},
         (e: Error) => {
@@ -105,7 +117,7 @@ export default function Inbox() {
         },
       );
     },
-    [api, project, view, q, key, loads],
+    [api, project, view, q, key, loads, loadCounts],
   );
   useEffect(() => {
     void loadAll();
@@ -116,16 +128,18 @@ export default function Inbox() {
     void Promise.all([loadAll(list?.rows.length), loadProjects()]).finally(() => setRefreshing(false));
   };
 
-  const loadMore = async () => {
-    if (!list?.next || paging.current) {
+  // The next page after `from` (the list shown, unless a reload's).
+  const loadMore = async (from = list): Promise<void> => {
+    if (!from?.next || paging.current) {
       return;
     }
     paging.current = true;
     const mine = loads.current();
-    const moved = list.moved;
+    const moved = from.moved;
+    let again: List | null = null;
     setError(null);
     try {
-      const page = await api<Page>(listPath({ view, q, cursor: list.next }));
+      const page = await api<Page>(listPath({ view, q, cursor: from.next }));
       if (loads.isLatest(mine)) {
         // Rows a live change added or removed while it loaded move the next page's start too.
         setList(
@@ -137,6 +151,11 @@ export default function Inbox() {
               total: page.total,
             },
         );
+      } else {
+        // A reload replaced the list meanwhile. Of this same list, it brings back as many rows, so the list won't ask
+        // for the page itself (its length is as it was): asked again once it's in.
+        const fresh = await reload.current;
+        again = fresh?.for === from.for ? fresh : null;
       }
     } catch (e) {
       if (loads.isLatest(mine)) {
@@ -145,10 +164,13 @@ export default function Inbox() {
     } finally {
       paging.current = false;
     }
+    if (again) {
+      return loadMore(again);
+    }
   };
 
-  // One conversation changed: its row (in place, moved up, or gone from the view) and the counts. Of two fetches of one
-  // row, only the later one's answer is taken.
+  // One conversation changed: its row (in place, moved up, or gone from the view). Of two fetches of one row, only the
+  // later one's answer is taken. The counts are the caller's, once for several rows.
   const [rowLoads] = useState(() => new Map<number, number>());
   const loadRow = useCallback(
     async (number: number) => {
@@ -156,7 +178,7 @@ export default function Inbox() {
       const turn = (rowLoads.get(number) ?? 0) + 1;
       rowLoads.set(number, turn);
       try {
-        const [page, answer] = await Promise.all([api<Page>(rowPath(view, number)), api<{ views: InboxView[] }>("/inbox/views")]);
+        const page = await api<Page>(rowPath(view, number));
         if (loads.isLatest(mine) && rowLoads.get(number) === turn) {
           const found = page.conversations.find((row) => row.number === number);
           setList((now) => {
@@ -168,7 +190,6 @@ export default function Inbox() {
             const moved = rows.length - now.rows.length;
             return { ...now, rows, next: now.next && String(Number(now.next) + moved), moved: now.moved + moved };
           });
-          setViews(answer.views);
           setNow(Date.now());
         }
       } catch {
@@ -185,6 +206,7 @@ export default function Inbox() {
       void loadAll(list?.rows.length);
     } else {
       numbers.forEach((number) => void loadRow(number));
+      void loadCounts().catch(() => {});
     }
   });
   const [awake, setAwake] = useState(0);
@@ -264,7 +286,7 @@ export default function Inbox() {
               <Pressable
                 onPress={() => router.push("/inbox/projects")}
                 accessibilityRole="button"
-                accessibilityLabel={`${current?.name ?? "Projects"}, switch project`}
+                accessibilityLabel={`${current?.name ?? "Inbox"}, switch project`}
                 hitSlop={8}
                 style={styles.titleButton}
               >

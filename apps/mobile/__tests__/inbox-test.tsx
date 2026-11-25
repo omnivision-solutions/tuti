@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 
 import Inbox from "@/app/index";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
@@ -32,9 +32,11 @@ jest.mock("@/lib/session", () => ({
 }));
 // The stream is tested on its own (src/lib/live.test.ts): here the test sends its updates.
 let mockLive: ((update: { kind: "all" } | { kind: "conversation"; number: number }) => void) | null = null;
+let mockOpened = 0;
 jest.mock("@/lib/live", () => ({
   openLive: (_session: unknown, onUpdate: typeof mockLive) => {
     mockLive = onUpdate;
+    mockOpened++;
     return () => (mockLive = null);
   },
 }));
@@ -264,6 +266,128 @@ describe("the Inbox", () => {
     expect(await screen.findByText("2m")).toBeTruthy();
     await act(() => jest.advanceTimersByTimeAsync(3 * 60_000));
     expect(screen.getByText("5m")).toBeTruthy();
+  });
+
+  it("reopens the stream on coming back to the foreground", async () => {
+    let onChange!: (state: string) => void;
+    jest.spyOn(AppState, "addEventListener").mockImplementation((_type, listener) => {
+      onChange = listener as (state: string) => void;
+      return { remove: () => {} };
+    });
+    serve({ "/conversations?view=open": page([row("Invite link expired")]) });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    const opened = mockOpened;
+
+    await act(async () => onChange("background"));
+    expect(mockOpened).toBe(opened);
+    await act(async () => onChange("active"));
+    expect(mockOpened).toBe(opened + 1);
+  });
+
+  it("searches again when a conversation changes during a search", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]), "/conversations?q=export": page([row("Invoices as PDF")]) });
+    await render(<Inbox />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Search"), "export");
+    await act(() => jest.advanceTimersByTimeAsync(300));
+    await screen.findByText("Invoices as PDF");
+    const searches = () => mockApi.mock.calls.filter(([path]) => path.startsWith("/conversations?q=export")).length;
+    const before = searches();
+
+    await act(async () => mockLive!({ kind: "conversation", number: 99 }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(searches()).toBe(before + 1);
+    expect(mockApi).not.toHaveBeenCalledWith(rowPath("open", 99));
+  });
+
+  it("fetches the counts once for several conversations changed together", async () => {
+    const [a, b] = [row("Invite link expired"), row("CSV export stops at 500 rows")];
+    serve({ "/conversations?view=open&limit": page([a, b]) });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    const counts = () => mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length;
+    const before = counts();
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) => (path.includes("q=%23") ? Promise.resolve(page([])) : served(path)));
+
+    await act(async () => {
+      mockLive!({ kind: "conversation", number: a.number });
+      mockLive!({ kind: "conversation", number: b.number });
+    });
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(mockApi).toHaveBeenCalledWith(rowPath("open", a.number));
+    expect(mockApi).toHaveBeenCalledWith(rowPath("open", b.number));
+    expect(counts()).toBe(before + 1);
+  });
+
+  it("keeps as many rows as are shown when pulled to refresh", async () => {
+    const first = Array.from({ length: 25 }, (_, i) => row(`First page ${i}`));
+    const added = row("New conversation", { lastMessageAt: new Date().toISOString() });
+    serve({ "/conversations?view=open&limit=25&cursor=0": page(first, { nextCursor: "25", total: 30 }) });
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) =>
+      path === rowPath("open", added.number) ? Promise.resolve(page([added])) : path.includes("limit=26&cursor=0") ? Promise.resolve(page([added, ...first], { nextCursor: "26" })) : served(path),
+    );
+    await render(<Inbox />);
+    await screen.findByText("First page 0");
+    // A new conversation makes 26 shown.
+    await act(async () => mockLive!({ kind: "conversation", number: added.number }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    await screen.findByText("New conversation");
+
+    const refreshControl = screen.getByTestId("inbox-list").children[0]!;
+    await fireEvent(refreshControl as never, "refresh");
+    expect(mockApi).toHaveBeenCalledWith("/conversations?view=open&limit=26&cursor=0");
+  });
+
+  it("fetches every row shown on reloading a list longer than the server's page", async () => {
+    const many = Array.from({ length: 130 }, (_, i) => row(`Row ${i}`));
+    serve({
+      "/conversations?view=open&limit=25&cursor=0": page(many, { nextCursor: "130", total: 140 }),
+      "/conversations?view=open&limit=100&cursor=0": page(many.slice(0, 100), { nextCursor: "100", total: 140 }),
+      "/conversations?view=open&limit=30&cursor=100": page(many.slice(100), { nextCursor: "130", total: 140 }),
+    });
+    await render(<Inbox />);
+    await screen.findByText("Row 0");
+
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    expect(mockApi).toHaveBeenCalledWith("/conversations?view=open&limit=100&cursor=0");
+    expect(mockApi).toHaveBeenCalledWith("/conversations?view=open&limit=30&cursor=100");
+  });
+
+  it("asks again for a page that a reload of the same list dropped", async () => {
+    const first = Array.from({ length: 5 }, (_, i) => row(`First page ${i}`));
+    let answerPage!: (page: Page) => void;
+    serve({ "/conversations?view=open&limit=25&cursor=0": page(first, { nextCursor: "25", total: 6 }) });
+    const served = mockApi.getMockImplementation()!;
+    let pages = 0;
+    mockApi.mockImplementation((path) => {
+      if (!path.includes("cursor=25")) {
+        return served(path);
+      }
+      pages++;
+      return pages === 1 ? new Promise((resolve) => (answerPage = resolve)) : Promise.resolve(page([row("Next page")]));
+    });
+    await render(<Inbox />);
+    await screen.findByText("First page 0");
+
+    const list = screen.getByTestId("inbox-list");
+    await fireEvent(list, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } });
+    await fireEvent(list, "contentSizeChange", 400, 2400);
+    await act(() => jest.advanceTimersByTimeAsync(100));
+    await fireEvent.scroll(list, {
+      nativeEvent: { contentOffset: { x: 0, y: 2000 }, contentSize: { width: 400, height: 2400 }, layoutMeasurement: { width: 400, height: 800 } },
+    });
+    expect(pages).toBe(1);
+
+    // The stream reopens while the page loads: everything is fetched again, then the page answers, too late.
+    await act(async () => mockLive!({ kind: "all" }));
+    await act(() => jest.advanceTimersByTimeAsync(200));
+    await act(async () => answerPage(page([row("Stale page")])));
+    expect(await screen.findByText("Next page")).toBeTruthy();
+    expect(pages).toBe(2);
+    expect(screen.queryByText("Stale page")).toBeNull();
   });
 
   it("opens the teammate's first project when none is chosen yet", async () => {

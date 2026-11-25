@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ageOf, appendPage, initialsOf, latestOnly, lineOf, listPath, type Row, rowPath, searchAgeOf, spokenAgeOf, withRow } from "./inbox";
+import { ageOf, appendPage, firstRows, initialsOf, latestOnly, lineOf, listPath, type Page, type Row, rowPath, searchAgeOf, spokenAgeOf, withRow } from "./inbox";
 
 const NOW = Date.parse("2026-11-25T12:00:00Z");
 const row = (number: number, minutesAgo: number, more: Partial<Row> = {}): Row => ({
@@ -23,6 +23,33 @@ describe("the list's requests", () => {
     expect(listPath({ view: "mine" })).toBe("/conversations?view=mine&limit=25&cursor=0");
     expect(listPath({ view: "mine", q: "refund & tax", cursor: "25" })).toBe("/conversations?q=refund%20%26%20tax&limit=25&cursor=25");
     expect(rowPath("open", 12)).toBe("/conversations?view=open&q=%2312&limit=100");
+  });
+});
+
+describe("firstRows", () => {
+  const page = (numbers: number[], nextCursor: string | null): Page => ({ conversations: numbers.map((n) => row(n, n)), nextCursor, total: 300 });
+
+  it("fetches one page for a list of a page or less, and as many pages of up to 100 as a longer list shown needs", async () => {
+    const asked: string[] = [];
+    const get = async <T,>(path: string) => {
+      asked.push(path);
+      const cursor = Number(/cursor=(\d+)/.exec(path)![1]);
+      const limit = Number(/limit=(\d+)/.exec(path)![1]);
+      return page(Array.from({ length: limit }, (_, i) => cursor + i), String(cursor + limit)) as T;
+    };
+    expect((await firstRows(get, "open", "")).conversations).toHaveLength(25);
+    expect(asked).toEqual(["/conversations?view=open&limit=25&cursor=0"]);
+
+    asked.length = 0;
+    const longer = await firstRows(get, "open", "", 230);
+    expect(asked).toEqual(["/conversations?view=open&limit=100&cursor=0", "/conversations?view=open&limit=100&cursor=100", "/conversations?view=open&limit=30&cursor=200"]);
+    expect(longer.conversations).toHaveLength(230);
+    expect(longer.nextCursor).toBe("230");
+  });
+
+  it("stops at the list's end", async () => {
+    const get = async <T,>() => page([1, 2, 3], null) as T;
+    expect(await firstRows(get, "open", "", 130)).toMatchObject({ nextCursor: null });
   });
 });
 
@@ -53,7 +80,7 @@ describe("a row's text", () => {
 
   it("makes initials of a name or an address", () => {
     expect(initialsOf("Maya Chen")).toBe("MC");
-    expect(initialsOf("sam@example.com")).toBe("SE");
+    expect(initialsOf("e2e-sam@example.com")).toBe("EE");
     expect(initialsOf("Élodie")).toBe("É");
     expect(initialsOf("  ")).toBe("?");
   });

@@ -92,6 +92,24 @@ export const initialsOf = (name: string) =>
     .map((word) => [...word][0]!.toUpperCase())
     .join("") || "?";
 
+/**
+ * The list from its start, at least `keep` rows (so a reload keeps as many as are shown), in pages of up to 100, the
+ * server's most.
+ */
+export async function firstRows(get: <T>(path: string) => Promise<T>, view: ViewName, q: string, keep = 0): Promise<Page> {
+  const want = Math.max(PAGE_SIZE, keep);
+  let asked = Math.min(100, want);
+  let page = await get<Page>(listPath({ view, q, limit: asked }));
+  let rows = page.conversations;
+  while (asked < want && page.nextCursor) {
+    const limit = Math.min(100, Math.max(PAGE_SIZE, want - asked));
+    page = await get<Page>(listPath({ view, q, cursor: page.nextCursor, limit }));
+    rows = appendPage(rows, page.conversations);
+    asked += limit;
+  }
+  return { conversations: rows, nextCursor: page.nextCursor, total: page.total };
+}
+
 /** A page after the rows already shown, without those it repeats (offset pages shift as conversations move up). */
 export const appendPage = (rows: Row[], page: Row[]) => [...rows, ...page.filter((row) => !rows.some((shown) => shown.number === row.number))];
 
