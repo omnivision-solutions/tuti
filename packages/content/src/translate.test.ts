@@ -261,3 +261,22 @@ test("at most 4 requests run at once", async () => {
   });
   expect(most).toBe(4);
 });
+
+test("two links can't be nested, a URL keeps its closing parenthesis, an image description may have >", () => {
+  const a = { type: "link", attrs: { href: "https://a.example" } };
+  const b = { type: "link", attrs: { href: "https://b.example" } };
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "first", marks: [a] }, { type: "text", text: " and " }, { type: "text", text: "second", marks: [b] }] }] });
+  expect(check("1", "<a1>erste <a2>zweite</a2></a1> und")).toBe("<a2> is inside another <a…> tag");
+  expect(segmentOfText("See https://en.wikipedia.org/wiki/Function_(mathematics) now").segment.text).toBe("See <x1/> now");
+  const image = segmentsOf({ type: "doc", content: [{ type: "image", attrs: { mediaId: "m", alt: "Settings, then Billing", w: 1, h: 1 } }] });
+  expect(image.check("1", "Einstellungen > Abrechnung")).toBeNull();
+  expect(image.check("1", "Einstellungen <b1>x</b1>")).toBe("an image's description can't have tags");
+});
+
+test("a provider error a retry made up for isn't reported; a line break keeps its attributes", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Votes are added up here." }, { type: "hardBreak", attrs: { soft: true } }, { type: "text", text: "Comments are kept." }] }] };
+  const replies: (() => Promise<string>)[] = [() => Promise.reject(new Error("timeout")), async () => '{"segments": {"1": "Stimmen werden addiert.<br/>Kommentare bleiben."}}'];
+  const out = await translateDoc(one, { from: "English", to: "German", ask: () => replies.shift()!() });
+  expect(out.providerError).toBeUndefined();
+  expect(out.doc.content![0]!.content![1]).toEqual({ type: "hardBreak", attrs: { soft: true } });
+});

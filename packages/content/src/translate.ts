@@ -84,6 +84,7 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
   close(0);
 
   const breaks = (value: string) => (value.match(/<br\s*\/?>/g) ?? []).length;
+  const sourceBreaks = nodes.filter((node) => node.type === "hardBreak");
   const decode = (text: string): JSONContent[] | string => {
     if (breaks(text) !== breaks(out)) return "its line breaks don't match the source's";
     const result: JSONContent[] = [];
@@ -110,7 +111,8 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
       last = match.index + match[0].length;
       if (match[0].startsWith("<br")) {
         fill();
-        result.push({ type: "hardBreak" });
+        // The source's own break, in order (the counts match: checked above), attributes and all.
+        result.push(structuredClone(sourceBreaks[result.filter((node) => node.type === "hardBreak").length] ?? { type: "hardBreak" }));
       } else if (match[4]) {
         const id = Number(match[4]);
         if (!kept.has(id) || seenKept.has(id)) return `placeholder x${id} is unknown or repeated`;
@@ -127,6 +129,8 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
         } else {
           const mark = tags.get(id);
           if (!mark || TAG_LETTER[mark.type!] !== letter || seenTags.has(id)) return `<${letter}${id}> is unknown or repeated`;
+          // Two links (or two bolds) can't be one inside the other: a text has one mark of each kind.
+          if (stack.some((open) => open.letter === letter)) return `<${letter}${id}> is inside another <${letter}…> tag`;
           seenTags.add(id);
           stack.push({ id, letter, filled: false });
         }
@@ -180,7 +184,7 @@ export function segmentsOf(doc: Doc): {
         id,
         source: escape(node.attrs.alt),
         check: (translated) =>
-          /[<>]/.test(translated)
+          /<[a-z/]/i.test(translated)
             ? "an image's description can't have tags"
             : unescape(translated).trim().length > MAX_ALT_LENGTH
               ? `an image's description must be at most ${MAX_ALT_LENGTH} characters`
@@ -218,8 +222,16 @@ export function segmentsOf(doc: Doc): {
 /** Plain text (an Inbox message) as one segment: line breaks, URLs, email addresses and `code` kept as they are. */
 export function segmentOfText(text: string): { segment: Segment; apply: (translated: string) => string | Problem; check: (id: string, translated: string) => string | null } {
   const kept: string[] = [];
-  const tagged = text
-    .split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8})/)
+  const parts = text.split(/(`[^`\n]+`|https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"]|[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8})/);
+  // A URL's closing parenthesis is left out unless the URL opened one (".../Function_(mathematics)"): take it back.
+  for (let i = 1; i < parts.length; i += 2) {
+    const url = parts[i]!;
+    if (/^https?:/.test(url) && (url.match(/\(/g) ?? []).length > (url.match(/\)/g) ?? []).length && parts[i + 1]!.startsWith(")")) {
+      parts[i] = `${url})`;
+      parts[i + 1] = parts[i + 1]!.slice(1);
+    }
+  }
+  const tagged = parts
     .map((part, i) => {
       if (i % 2 === 0) return escape(part).replace(/\r?\n/g, "<br/>");
       kept.push(part);
@@ -404,6 +416,8 @@ export async function translateSegments(segments: Segment[], options: TranslateO
       else translations[segment.id] = retried[segment.id]!;
     }
   }
+  // A provider error a retry made up for isn't one.
+  if (segments.every((segment) => translations[segment.id] !== undefined)) providerError = undefined;
   const learned = { ...memory };
   for (const segment of segments) {
     if (translations[segment.id] !== undefined) learned[segment.text] = translations[segment.id]!;
