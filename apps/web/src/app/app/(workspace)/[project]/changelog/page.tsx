@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
+import { aiPaused, autopilotLines, onlyPullRequestTitles } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { PlusIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
@@ -72,9 +73,20 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     listed.filter((e) => e.publishedAt),
     (e) => formatMonth(e.publishedAt!),
   );
+  // Draft with AI is the way into the draft whose notes wait while AI can run and its text is still its pull requests'
+  // titles or Autopilot's lines (as its editor decides, where Draft with AI then leads); Write it otherwise.
+  const draftWithAi =
+    ready &&
+    aiEnabled() &&
+    !(await aiPaused(projectId)) &&
+    (await prisma.changelogEntry
+      .findUniqueOrThrow({
+        where: { projectId_number: { projectId, number: ready.number } },
+        select: { content: true, pullRequests: { select: { repo: true, number: true, title: true, url: true } } },
+      })
+      .then(async (draft) => onlyPullRequestTitles(draft.content, draft.pullRequests, await autopilotLines(projectId, draft.pullRequests.map((pr) => pr.url)))));
   const base = `/app/${slug}/changelog`;
-  const ai = aiEnabled();
-  const view = (t: typeof tag, search = q) => {
+  const view = (t: typeof tag, search: string | undefined) => {
     const query = new URLSearchParams({ ...(search && { q: search }), ...(t && { tag: t.toLowerCase() }) }).toString();
     return query ? `${base}?${query}` : base;
   };
@@ -132,10 +144,10 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                 <img src={cover} alt="" loading="lazy" className="aspect-[1200/630] w-19 shrink-0 rounded-md border object-cover @max-[48rem]/app:w-15" />
               )}
               {writeIt && (
-                // Its release notes wait: the editor, where Draft with AI leads while it's still the pull requests' titles. Round on phones.
-                <Link href={href} className={buttonVariants({ variant: "outline", size: "sm", className: "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" })}>
-                  {ai && <SparklesIcon aria-hidden />}
-                  <span className={ai ? "@max-[48rem]/app:sr-only" : undefined}>{ai ? "Draft with AI" : "Write it"}</span>
+                // Its release notes wait: its editor. Draft with AI round on phones.
+                <Link href={href} className={buttonVariants({ variant: "outline", size: "sm", className: draftWithAi ? "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" : undefined })}>
+                  {draftWithAi && <SparklesIcon aria-hidden />}
+                  <span className={draftWithAi ? "@max-[48rem]/app:sr-only" : undefined}>{draftWithAi ? "Draft with AI" : "Write it"}</span>
                 </Link>
               )}
             </>
@@ -164,9 +176,9 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
             tags.length > 0 && (
               <FilterPills
                 label="Tags"
-                current={view(tag)}
+                current={view(tag, q)}
                 items={[undefined, ...tags].map((t) => ({
-                  href: view(t),
+                  href: view(t, q),
                   title: t ? TAG_LABELS[t] : "All",
                   count: t ? found.filter((e) => e.tags.includes(t)).length : found.length,
                 }))}
@@ -203,13 +215,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
               <EmptyState
                 title={q ? "No entries match your search" : "No entries match"}
                 description="Try other words, or another tag."
-                // The search taken off, the tag kept.
+                // The search taken off, the tag kept; or, with no search, the tag (no pills to pick another: none has it).
                 action={
-                  q && (
-                    <Link href={view(tag, undefined)} className={buttonVariants({ variant: "outline" })}>
-                      Clear search
-                    </Link>
-                  )
+                  <Link href={view(q ? tag : undefined, undefined)} className={buttonVariants({ variant: "outline" })}>
+                    {q ? "Clear search" : "Show all entries"}
+                  </Link>
                 }
               />
             )

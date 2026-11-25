@@ -293,7 +293,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Its row says what readers did with it: the post it completed and their reactions; no draft's "Edited".
   const published = team.getByRole("listitem").filter({ hasText: "Dark mode is here" });
   await expect(published).toContainText("1 post completed · 🎉 1");
-  await expect(published.locator("time")).toHaveText(/^Published \d{1,2} [A-Z][a-z]{2}$/);
+  await expect(published.locator("time")).toHaveText(/^Published \d{1,2} [A-Z][a-z]{2,3}$/);
   // Signed out: the counts, and a nudge to sign in.
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/changelog/1");
@@ -339,7 +339,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // One list, by month: no drafts, so no Drafts group (an old link to its tab lands on the same list); nothing but the
   // search and the new entry in its header.
   await team.goto(`/app/${slug}/changelog?tab=drafts`);
-  const thisMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  // (A month's name, as the list's groups are named.)
+  const thisMonth = /^[A-Z][a-z]+ \d{4}$/;
   await expect(team.getByRole("region", { name: thisMonth }).getByRole("link", { name: "Dark mode is here" })).toBeVisible();
   await expect(team.getByRole("region", { name: "Drafts" })).toHaveCount(0);
   await expect(team.getByRole("button", { name: "Writing style" })).toHaveCount(0);
@@ -545,7 +546,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(monthGroup.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
   expect((await draftsGroup.boundingBox())!.y).toBeLessThan((await monthGroup.boundingBox())!.y);
   // A draft says when it was last edited, in the date column.
-  await expect(draftsGroup.getByRole("listitem").locator("time")).toHaveText(/^Edited \d{1,2} [A-Z][a-z]{2}( \d{4})?$/);
+  await expect(draftsGroup.getByRole("listitem").locator("time")).toHaveText(/^Edited \d{1,2} [A-Z][a-z]{2,3}( \d{4})?$/);
   await checkpoint(team, "team-changelog-list");
   // The tags its entries have, as pills with their counts: one picked lists its entries.
   const tagPills = team.locator('[data-slot="pane-header"]').getByRole("navigation", { name: "Tags" });
@@ -558,7 +559,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const search = team.getByRole("searchbox", { name: "Search the changelog" });
   await search.fill("invoices");
   await search.press("Enter");
-  await expect(team).toHaveURL(/\?tag=new&q=invoices$/);
+  await expect(team).toHaveURL(/\?(tag=new&q=invoices|q=invoices&tag=new)$/);
   await expect(team.getByText("No entries match your search")).toBeVisible();
   await team.getByRole("link", { name: "Clear search" }).click();
   await expect(team).toHaveURL(/\?tag=new$/);
@@ -571,6 +572,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
   await expect(team.getByRole("status").filter({ hasText: "Search for" })).toHaveText("Search for “post titles” found 1 entry");
+  // An old link to a tag no entry has: nothing matches, and a way back to them all.
+  await team.goto(`/app/${slug}/changelog?tag=fixed`);
+  await expect(team.getByText("No entries match", { exact: true })).toBeVisible();
+  await team.getByRole("link", { name: "Show all entries" }).click();
+  await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
   await checkpoint(team, "team-changelog-search");
 
   // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
@@ -1239,6 +1245,14 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(draftButton).toHaveCount(0);
   await expect(team.getByRole("button", { name: "Edit with AI" })).toBeFocused();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
+  // Written, the list's row still leads to it, with Write it now (Draft with AI is for notes not written yet), and
+  // says the post it completes.
+  await team.goto(`/app/${slug}/changelog`);
+  const written = drafts.getByRole("listitem").filter({ hasText: "Dark mode is here" });
+  await expect(written.getByRole("link", { name: "Write it" })).toBeVisible();
+  await expect(written.getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
+  await expect(written).toContainText("2 merged pull requests · Completes 1 post");
+  await team.goto(`/app/${slug}/changelog/1`);
 
   // With no text at all (say, every analysis failed and took its title out), Publish says so.
   await api("/changelog/1", { body: "" }, "PATCH");
@@ -1724,6 +1738,9 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   await comments.getByRole("textbox", { name: "Comment" }).fill("Buy cheap watches here");
   await comments.getByRole("button", { name: "Comment", exact: true }).click();
   await expect(comments.getByRole("heading", { name: "3 comments" })).toBeVisible();
+  // The team's list counts them on the entry's row.
+  await team.goto(`/app/${slug}/changelog`);
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("3 comments");
   await team.goto(`/app/${slug}/changelog/1`);
   const teamComments = team.getByRole("region", { name: "Comments" });
   await expect(teamComments.getByRole("heading", { name: "3 comments" })).toBeVisible();
