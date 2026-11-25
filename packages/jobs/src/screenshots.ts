@@ -513,7 +513,7 @@ const signInLink = (settings: Pick<Settings, "signIn" | "signInLink">) => (setti
 /**
  * `text` without the sign-in link, nor the parts of it that may be its token: what the agent says is kept and shown to
  * the team, and the link must never come back. Its token is a query value or fragment of 8 characters or more, or a
- * path segment that long with a digit in it (a page like "dashboard" stays); a fragment of `key=value` pairs is read
+ * path segment that looks like a token (tokenLike: a page like "dashboard" stays); a fragment of `key=value` pairs is read
  * as a query. A value that's itself an address
  * (`redirect_to=https://…`, a hash route `#/verify?token=…`) isn't taken out whole: it's looked into the same way.
  * ponytail: the agent is told never to repeat it, and this catches it verbatim; a link it rewrote (encoded, split)
@@ -540,9 +540,15 @@ function tokensIn(address: string, depth: number): string[] {
   return [
     ...values.filter((value) => !isAddress(value)),
     ...values.filter(isAddress).flatMap((value) => tokensIn(value, depth + 1)),
-    ...url.pathname.split("/").filter((part) => part.length >= 8 && /\d/.test(part)),
+    ...url.pathname.split("/").filter(tokenLike),
   ];
 }
+
+/**
+ * A path segment that looks like a token, not a page: 16 characters or more, or 8 or more with a digit, a `-` or `_`, or
+ * both cases (`qwertyuiopasdfgh`, `AbcdEfgh`, `a1b2c3d4`; not `dashboard` or `settings`).
+ */
+const tokenLike = (part: string) => part.length >= 16 || (part.length >= 8 && (/[\d_-]/.test(part) || (/[a-z]/.test(part) && /[A-Z]/.test(part))));
 
 /** The agent's answer, from its output (by the schema) or its text, the sign-in link taken out; null when there's none to read. */
 function readAnswer(summary: RunSummary, link: string | null): Omit<Answer, "files"> | null {

@@ -562,6 +562,9 @@ test("only the link and the token-like parts of it are taken out, not ordinary w
   // A token inside an address-like value is still found: a hash route's, a `next=` address's.
   expect(withoutLink("Token abc123def456", "https://app.example.com/#/verify?token=abc123def456")).toBe("Token [sign-in link]"); // gitleaks:allow
   expect(withoutLink("Code zyxwvutsrqpo", "https://app.example.com/login?next=/accept%3Fcode%3Dzyxwvutsrqpo")).toBe("Code [sign-in link]");
+  // A token of letters only in the path: a long one, or one in both cases; a page's name beside it stays.
+  expect(withoutLink("On dashboard with qwertyuiopasdfgh", "https://app.example.com/dashboard/qwertyuiopasdfgh")).toBe("On dashboard with [sign-in link]");
+  expect(withoutLink("Used AbcdEfghIjkl", "https://app.example.com/magic/AbcdEfghIjkl")).toBe("Used [sign-in link]");
   // And one in a fragment of key=value pairs.
   expect(withoutLink("Used qwertyuiopas", "https://site.example.com/#recovery_token=qwertyuiopas&type=recovery")).toBe("Used [sign-in link]");
 });
