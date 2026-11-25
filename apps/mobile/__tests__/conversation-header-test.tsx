@@ -29,7 +29,8 @@ jest.mock("@/lib/session", () => ({
   useApi: () => mockApi,
   useSession: () => ({ session: mockSession }),
 }));
-jest.mock("@/lib/live", () => ({ openLive: () => () => {} }));
+// The screen's stream (watchLive) is tested on its own: here it never opens.
+jest.mock("@/lib/conversation", () => ({ ...jest.requireActual<object>("@/lib/conversation"), watchLive: () => () => {} }));
 
 const CONVERSATION: Conversation = {
   number: 12,
