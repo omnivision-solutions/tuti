@@ -57,3 +57,12 @@ export const afterEnded = <T extends { token: string }>(now: T | null | undefine
 /** Whether coming back to the foreground reads the session again: signed in, and RECHECK_MS since it was last read. */
 export const recheckOnForeground = (state: string, signedIn: boolean, lastChecked: number, now: number) =>
   state === "active" && signedIn && dueForRecheck(lastChecked, now);
+
+/**
+ * Saves a session, then shows it: only once it's stored, so a failed write (a keystore invalidated by a backup restore)
+ * rejects with nothing shown as signed in or chosen, and the caller's error path says so.
+ */
+export async function keepSession<T>(next: T, show: (next: T) => void, write: (next: T) => Promise<unknown>) {
+  await write(next);
+  show(next);
+}

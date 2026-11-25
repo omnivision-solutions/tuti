@@ -81,7 +81,7 @@ export default function Projects() {
         const chosen = item.slug === session?.project;
         return (
           <Pressable
-            onPress={() => void setProject(item.slug)}
+            onPress={() => setProject(item.slug).catch((e: Error) => setError(`Couldn't keep that choice: ${e.message}`))}
             accessibilityRole="button"
             accessibilityState={{ selected: chosen }}
             android_ripple={{ color: colors.border }}

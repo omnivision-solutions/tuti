@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { afterEnded, dueForRecheck, forgetSession, readSession, RECHECK_MS, recheckOnForeground, sessionHolds, writeSession } from "./session-store";
+import { afterEnded, dueForRecheck, forgetSession, keepSession, readSession, RECHECK_MS, recheckOnForeground, sessionHolds, writeSession } from "./session-store";
 
 const stored = new Map<string, string>();
 const store = vi.hoisted(() => ({ failReads: false }));
@@ -71,6 +71,17 @@ describe("an app left open", () => {
     expect(dueForRecheck(checked, checked + RECHECK_MS)).toBe(true);
     // Better Auth extends a session read a day or more after it was last: twice a day is always in time.
     expect(RECHECK_MS).toBeLessThan(24 * 60 * 60 * 1000);
+  });
+});
+
+describe("keeping a session", () => {
+  it("shows it only once it's stored: a failed write leaves nothing shown", async () => {
+    const shown: unknown[] = [];
+    await expect(keepSession(session, (next) => shown.push(next), () => Promise.reject(new Error("Keystore unavailable")))).rejects.toThrow("Keystore unavailable");
+    expect(shown).toEqual([]);
+    await keepSession(session, (next) => shown.push(next), writeSession);
+    expect(shown).toEqual([session]);
+    expect(await readSession()).toEqual(session);
   });
 });
 

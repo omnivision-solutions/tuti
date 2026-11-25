@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { AppState } from "react-native";
 
 import { type Api, createApi } from "./api";
-import { afterEnded, forgetSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
+import { afterEnded, forgetSession, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
 
 export type { Session };
@@ -22,13 +22,7 @@ const Context = createContext<SessionContext | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
-  const save = useCallback(
-    async (next: Session | null) => {
-      setSession(next);
-      await writeSession(next);
-    },
-    [],
-  );
+  const save = useCallback((next: Session | null) => keepSession(next, setSession, writeSession), []);
 
   const signOut = useCallback(async () => {
     setSession(null);
