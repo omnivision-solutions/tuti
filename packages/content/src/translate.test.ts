@@ -360,3 +360,13 @@ test("the memory keeps only the current segments; entities Postgres can't store 
   expect(out.memory).toEqual({ "Readers vote on new posts.": "Leser stimmen ab." });
   expect(segmentOfText("Hi there").apply("Hallo&#0;&#xD800;&#7; zusammen")).toBe("Hallo zusammen");
 });
+
+test("characters Postgres can't store in the reply's JSON never get in", async () => {
+  const out = await translateText("Hello there, the export is broken", { from: "English", to: "German", ask: async () => '{"segments": {"1": "Hallo\\u0000 zusammen\\ud800, der Export ist kaputt"}}' });
+  expect(out.text).toBe("Hallo zusammen, der Export ist kaputt");
+});
+
+test("raw <h1> or <br> the source has as text are taken as text, not markup", async () => {
+  const out = await translateText("My <h1> heading is too big, use a <br> instead", { from: "English", to: "German", ask: async () => '{"segments": {"1": "Meine <h1> Überschrift ist zu groß, nimm ein <br> stattdessen"}}' });
+  expect(out).toEqual({ text: "Meine <h1> Überschrift ist zu groß, nimm ein <br> stattdessen" });
+});

@@ -379,6 +379,14 @@ export function translationPrompt({ from, to, glossary = [], instructions, about
 }
 
 /**
+ * A reply's tag-shaped text the source has only as text ("&lt;h1&gt;", "&lt;br&gt;") escaped back, so a model that
+ * forgot to escape it isn't taken for changing the markup.
+ */
+function asText(segment: Segment, reply: string | undefined): string | undefined {
+  return reply?.replace(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi, (tag) => (!segment.text.includes(tag) && segment.text.includes(escape(tag)) ? escape(tag) : tag));
+}
+
+/**
  * Translates segments: in batches, each translation checked (`fits`: whether it can go back into its document), and
  * failed ones asked again once with the reasons. Only translations that passed every check are returned and remembered.
  */
@@ -422,7 +430,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
   const failed = new Map<string, string>();
   for (const [i, batch] of runs.entries()) {
     for (const segment of batch) {
-      const text = results[i]![segment.id];
+      const text = asText(segment, results[i]![segment.id]);
       const reason = check(segment, text, true);
       if (reason) failed.set(segment.id, reason);
       else translations[segment.id] = text!;
@@ -436,6 +444,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
       ...(await inTurn(batches(again, batchChars), (batch) => request(batch, new Map(batch.map((segment) => [segment.id, failed.get(segment.id)!]))).catch(unanswered))),
     ) as Record<string, string>;
     for (const segment of again) {
+      retried[segment.id] = asText(segment, retried[segment.id])!;
       const reason = check(segment, retried[segment.id]);
       if (reason) problems.push({ id: segment.id, reason });
       else translations[segment.id] = retried[segment.id]!;
@@ -474,7 +483,12 @@ function parseReply(reply: string): { language?: string; segments: Record<string
     const segments = parsed.segments && typeof parsed.segments === "object" ? (parsed.segments as Record<string, unknown>) : {};
     return {
       language: typeof parsed.language === "string" ? parsed.language : undefined,
-      segments: Object.fromEntries(Object.entries(segments).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+      // Characters Postgres can't store (a NUL or half a surrogate pair, from the JSON's escapes) never get in.
+      segments: Object.fromEntries(
+        Object.entries(segments)
+          .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+          .map(([id, text]) => [id, Array.from(text).filter((character) => storable(character.codePointAt(0)!)).join("")]),
+      ),
     };
   } catch {
     return { segments: {} };
