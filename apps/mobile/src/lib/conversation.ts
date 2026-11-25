@@ -260,8 +260,11 @@ export function editUnsent(draft: Draft, unsent: Unsent, now = Date.now()): Draf
   };
 }
 
+/** What the server says of a reply sent: `closed` with Send and close, `keptOpen` when the user wrote after what it answered. */
+export type Sent = { id?: string; closed?: boolean; keptOpen?: boolean };
+
 export const sendReply = (api: Api, number: number, unsent: Unsent) =>
-  api<{ id: string; closed?: boolean }>(`/conversations/${number}/messages`, {
+  api<Sent & { id: string }>(`/conversations/${number}/messages`, {
     method: "POST",
     body: {
       body: unsent.body,
@@ -449,7 +452,7 @@ export function attach(api: Api, key: string, picked: Picked): Promise<void> {
     .finally(() => setUploading(key, (now) => now.filter((one) => one.id !== pick.id)));
 }
 
-const sends = new Map<string, { same: string; send: Promise<{ closed?: boolean } | null> }>();
+const sends = new Map<string, { same: string; send: Promise<Sent | null> }>();
 export const isSending = (id: string) => sends.has(id);
 
 /**
@@ -483,7 +486,7 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
   const kept = () => since === generation && getDraft(key).unsent.some((one) => one.id === unsent.id);
   const mark = (error: string | undefined) => (draft: Draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error } : one)) });
   // Out of `sends` before the draft changes, so what's shown then says it isn't sending any more.
-  const send = (async (): Promise<{ closed?: boolean } | null> => {
+  const send = (async (): Promise<Sent | null> => {
     await Promise.all(before);
     if (retry) {
       const failed = await fetched();
@@ -502,7 +505,7 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
       sends.delete(unsent.id);
       return null;
     }
-    let sent: { id: string; closed?: boolean };
+    let sent: Sent & { id: string };
     try {
       sent = await sendReply(api, number, unsent);
     } catch (error) {
@@ -524,7 +527,15 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
 }
 
 /** Whether a send and close that answered takes the teammate back: only from the conversation they're still looking at, never from a screen opened over it since. */
-export const leavesAfter = (sent: { closed?: boolean } | null, focused: boolean) => !!sent?.closed && focused;
+/**
+ * What a reply's answer means on the screen: back to the Inbox once it's closed, only from the conversation still looked at
+ * (never from a screen opened over it since); and, kept open as the user wrote again since, the web's words for it, so
+ * nobody leaves thinking it's done or waiting on them.
+ */
+export const afterSend = (sent: Sent | null, focused: boolean) => ({
+  leave: !!sent?.closed && focused,
+  notice: sent?.keptOpen ? "Sent, and kept open: they wrote again since" : null,
+});
 
 /** Whether a session that ended takes the drafts with it: only the one still in use (not one replaced meanwhile). */
 export const draftsGoWith = (stored: { token: string } | null, ended: { token: string }) => !!stored && stored.token === ended.token;

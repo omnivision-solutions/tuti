@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "./api";
 import {
+  afterSend,
   attach,
   clearUploadFailure,
   composerInset,
@@ -18,7 +19,6 @@ import {
   getUploading,
   getDraft,
   isSending,
-  leavesAfter,
   linkParts,
   markReadIfLooking,
   type Message,
@@ -592,10 +592,19 @@ describe("telling which reply arrived", () => {
 });
 
 it("goes back after Send and close only from the conversation still looked at", () => {
-  expect(leavesAfter({ closed: true }, true)).toBe(true);
-  expect(leavesAfter({ closed: true }, false)).toBe(false);
-  expect(leavesAfter({ closed: false }, true)).toBe(false);
-  expect(leavesAfter(null, true)).toBe(false);
+  expect(afterSend({ closed: true }, true)).toEqual({ leave: true, notice: null });
+  expect(afterSend({ closed: true }, false)).toEqual({ leave: false, notice: null });
+  expect(afterSend({ closed: false }, true)).toEqual({ leave: false, notice: null });
+  expect(afterSend(null, true)).toEqual({ leave: false, notice: null });
+});
+
+it("stays, and says so in the web's words, when Send and close is kept open as the user wrote again", async () => {
+  const key = "https://tuti.example.com|acme|12";
+  const unsent: Unsent = { id: "u1", body: "Fixed now", note: false, close: true, files: [], seen: "2026-11-25T09:00:00.000Z" };
+  updateDraft(key, (draft) => ({ ...draft, unsent: [unsent] }));
+  const { api } = fakeApi({ "/conversations/12/messages": () => ({ id: "m9", keptOpen: true }) });
+  const sent = await sendUnsent(api, key, 12, unsent, async () => []);
+  expect(afterSend(sent, true)).toEqual({ leave: false, notice: "Sent, and kept open: they wrote again since" });
 });
 
 describe("a file uploading", () => {

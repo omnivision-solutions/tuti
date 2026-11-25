@@ -32,6 +32,7 @@ import {
   draftsGeneration,
   draftWithAi,
   editUnsent,
+  afterSend,
   attach as attachFile,
   clearUploadFailure,
   getDraft,
@@ -44,7 +45,6 @@ import {
   isOnline,
   composerInset,
   isSending,
-  leavesAfter,
   linkParts,
   markReadIfLooking,
   type Message,
@@ -172,6 +172,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     () => getUploading(draftKey),
   );
   const [drafting, setDrafting] = useState(false);
+  // Draft with AI's answer, or what a send's answer says (kept open).
   const [aiNotice, setNotice] = useState<string | null>(null);
   // Why the latest upload failed, whichever screen picked the file: said here till the next pick or a send.
   const uploadFailure = useSyncExternalStore(
@@ -192,9 +193,15 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       if (IOS) {
         AccessibilityInfo.announceForAccessibility("Not sent");
       }
-    } else if (leavesAfter(sent, focused.current) && router.canGoBack()) {
-      // Answered and closed: done with, back to the Inbox.
-      router.back();
+    } else {
+      const { leave, notice } = afterSend(sent, focused.current);
+      if (leave && router.canGoBack()) {
+        // Answered and closed: done with, back to the Inbox.
+        router.back();
+      } else if (notice) {
+        // Not closed after all: said here (and announced), as the web does.
+        setNotice(notice);
+      }
     }
   };
 
