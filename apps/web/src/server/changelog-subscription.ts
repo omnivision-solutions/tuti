@@ -270,7 +270,7 @@ export async function findSubscription(projectSlug: string, token: string) {
     paused: await projectEmailWaits(subscriber.projectId),
     /**
      * Any confirmation link still out goes too: it can't sign them up again (asking again on the portal can). A confirmed
-     * one is marked unsubscribed (the team can't add it back), and webhooks hear changelog.unsubscribed if it was being
+     * one, or one emailed an entry once, is marked unsubscribed (the team can't add it back), and webhooks hear changelog.unsubscribed if it was being
      * emailed (changelogReach): not again for one already ended, nor where all of the project's emails were off already.
      * `by`: the account that did it, where one did (the Account switch), named in the event.
      */
@@ -278,7 +278,12 @@ export async function findSubscription(projectSlug: string, token: string) {
       const deliveries = await prisma.$transaction(async (tx) => {
         const stops = await emailedNow(tx, subscriber.projectId, subscriber.email);
         const { count } = await tx.changelogSubscriber.updateMany({
-          where: { id: subscriber.id, token, confirmedAt: { not: null } },
+          // Confirmed, or emailed an entry once (removed by the team since): theirs to end either way.
+          where: {
+            id: subscriber.id,
+            token,
+            OR: [{ confirmedAt: { not: null } }, { unsubscribedAt: null, emails: { some: { sentAt: { not: null } } } }],
+          },
           data: { unsubscribedAt: new Date() },
         });
         await tx.changelogSubscriber.updateMany({

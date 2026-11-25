@@ -1762,9 +1762,14 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     expect(entryEmailsTo(kim)).toEqual([]);
     expect((await row(kim))!.unsubscribedAt).toBeNull();
     expect((await call(addChangelogSubscribers, key(), { emails: [kim] })).subscribed).toEqual([kim]);
+    // Removed by the team, then their own unsubscribe from an entry emailed before: theirs, the team can't undo it.
+    await publishEntry("Back");
+    await call(removeChangelogSubscribers, key(), { emails: [kim] });
+    await unsubscribe(await tokenOf(kim));
+    expect((await call(addChangelogSubscribers, key(), { emails: [kim] })).skipped).toEqual([{ email: kim, user: null, reason: "unsubscribed" }]);
     // Removing again: nobody was subscribed, nothing told.
     await call(removeChangelogSubscribers, key(), { emails: [lee] });
-    expect(await told()).toHaveLength(2);
+    expect(await told()).toHaveLength(3);
   });
 
   test("users.sync's subscribedToChangelog: true adds their address (the one just synced), false removes it", async () => {
