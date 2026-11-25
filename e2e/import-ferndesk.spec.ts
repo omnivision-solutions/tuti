@@ -149,7 +149,7 @@ test("changelog entries published in Ferndesk come as drafts by default; publish
 
   // Published in Ferndesk on 2 April 2024: old news, so it keeps that date and goes out quietly.
   await owner.goto(`/app/${slug}/changelog/1`);
-  await expect(owner.getByText("Published before you imported it, so it's published with that date (2 April 2024) without announcing: not emailed to subscribers, not marked new.")).toBeVisible();
+  await expect(owner.getByText("Published before you imported it: it keeps that date (2 April 2024) and isn't emailed or marked new.")).toBeVisible();
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const dialog = owner.getByRole("alertdialog");
   await expect(dialog).toContainText("It goes on your portal and in your widget. Published before you imported it, it keeps that date (2 April 2024) and isn't announced.");

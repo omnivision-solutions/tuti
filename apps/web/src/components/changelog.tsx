@@ -5,7 +5,7 @@ import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
-import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
+import { CheckIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import {
   createContext,
@@ -30,6 +30,7 @@ import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell"
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { PullRequestChip } from "@/components/pull-request-chip";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import {
@@ -43,7 +44,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -302,20 +303,19 @@ function FeaturedImage({
           </div>
         </div>
       ) : (
+        // One row, not a tall empty band pushing the text down: the cover takes its room once there is one.
         <div
           {...drop}
           className={cn(
-            "flex h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 transition-colors",
+            "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-dashed px-3 py-2 transition-colors",
             dragging && "border-primary bg-soft",
           )}
         >
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Button type="button" variant="outline" size="sm" className="rounded-full" ref={add} disabled={uploading} focusableWhenDisabled onClick={pick}>
-              <ImageIcon />
-              Add featured image
-            </Button>
-            {make}
-          </div>
+          <Button type="button" variant="ghost" size="sm" className="-ml-1.5" ref={add} disabled={uploading} focusableWhenDisabled onClick={pick}>
+            <ImageIcon />
+            Add featured image
+          </Button>
+          {make}
           {status || <span className="text-xs text-muted-foreground">or drop one here · 1200×630 works best</span>}
         </div>
       )}
@@ -505,7 +505,7 @@ export function ChangelogForm({
   projectSlug,
   entry,
   posts,
-  readerUrl,
+  standing,
   mediaUrls,
   covers = null,
   canEditWithAi = false,
@@ -523,8 +523,8 @@ export function ChangelogForm({
   subscribers?: number | null;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
   posts: PostOption[];
-  /** The entry on the portal: null while it isn't published. */
-  readerUrl: string | null;
+  /** Where it stands ("Draft", "Published 25 November"), first in the sidebar, as a post's status is; none for a new one. */
+  standing?: ReactNode;
   mediaUrls: MediaUrls | null;
   /** AI is set up on this server and the text is written (not still pull-request titles): the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
@@ -566,7 +566,7 @@ export function ChangelogForm({
       id={CHANGELOG_FORM}
       {...keepingFields(action)}
       onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}
-      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start"
+      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start"
     >
       {/* Written as it's published: the title, then the text, no boxes. */}
       <FieldGroup className="min-w-0">
@@ -627,10 +627,20 @@ export function ChangelogForm({
         </div>
       </FieldGroup>
 
-      {/* Beside the text, held in view as the pane scrolls, no taller than it (its PaneBody, a size container), under it on phones. */}
-      <aside aria-label="Entry settings" className="flex flex-col gap-5 rounded-xl border p-4 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100cqh-3rem)] lg:overflow-y-auto">
+      {/* Beside the text with a line on its left, as a post's sidebar is: held in view as the pane scrolls, no taller than
+          it (its PaneBody, a size container); under it on phones, after a line. */}
+      <aside
+        aria-label="Entry settings"
+        className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100cqh-3rem)] lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      >
+        {standing && (
+          <section aria-label="Status" className="flex flex-col gap-2">
+            <h2 className="group-label">Status</h2>
+            <p>{standing}</p>
+          </section>
+        )}
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-xs font-medium text-muted-foreground">Tags</legend>
+          <legend className="group-label mb-2">Tags</legend>
           {/* Chips: each its checkbox, unseen, laid over it. */}
           <div className="flex flex-wrap gap-2">
             {(Object.keys(TAG_LABELS) as ChangelogTag[]).map((tag) => (
@@ -665,25 +675,6 @@ export function ChangelogForm({
         />
         {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
         {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
-        <section aria-label="On your portal" className="flex flex-col gap-2">
-          <h2 className="text-xs font-medium text-muted-foreground">On your portal</h2>
-          {readerUrl ? (
-            <a href={readerUrl} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "self-start")}>
-              <ExternalLinkIcon />
-              View as reader
-            </a>
-          ) : (
-            <>
-              <Button type="button" variant="outline" size="sm" disabled aria-describedby="reader-hint" className="self-start">
-                <ExternalLinkIcon />
-                View as reader
-              </Button>
-              <p id="reader-hint" className="text-muted-foreground">
-                Readers see it once it&apos;s published.
-              </p>
-            </>
-          )}
-        </section>
       </aside>
     </form>
   );
@@ -768,7 +759,7 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
   return (
     // Not the entry's fields: picking doesn't make it unsaved.
     <fieldset className="flex flex-col gap-3" onInput={(event) => event.stopPropagation()}>
-      <legend className="mb-2 text-xs font-medium text-muted-foreground">How it&apos;s announced</legend>
+      <legend className="group-label mb-2">How it&apos;s announced</legend>
       {entry.published ? (
         <>
           <p>
@@ -780,42 +771,42 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 ? `Being emailed to subscribers: ${entry.subscribersLeft} still to go.`
                 : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
           </p>
-          <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
-          {/* Nobody told yet (still being emailed, say): the line above says so. */}
-          {entry.told !== null && entry.told.asked + entry.told.subscribers > 0 && <p className="text-muted-foreground">{toldText(entry.told)}</p>}
+          <p>{entry.announced ? "Marked new in your widget." : "Not marked new."}</p>
+          {/* The subscribers are the line above: here only the people who asked for its posts. */}
+          {entry.told !== null && entry.told.asked > 0 && <p>{toldText({ asked: entry.told.asked, subscribers: 0 })}</p>}
         </>
       ) : entry.sample ? (
         // changelog.publish: a sample entry is never announced or emailed.
-        <p>Sample updates are published without announcing: not emailed to subscribers, not marked new.</p>
+        <p>Sample updates aren&apos;t emailed or marked new.</p>
       ) : entry.importedOn ? (
         // changelog.publish: nor is an imported one, the first time.
-        <p>Published before you imported it, so it&apos;s published with that date ({entry.importedOn}) without announcing: not emailed to subscribers, not marked new.</p>
+        <p>Published before you imported it: it keeps that date ({entry.importedOn}) and isn&apos;t emailed or marked new.</p>
       ) : (
         <>
           {entry.emailedSubscribers ? (
             <p>
               {entry.emailedFrom
-                ? `Emailed to your subscribers from ${entry.emailedFrom}: it isn't sent again.`
+                ? `Emailed from ${entry.emailedFrom} before: not sent again.`
                 : entry.subscribersLeft > 0
-                ? `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published, not to all of them yet. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
+                ? `Emailed to ${subscriberCountText(entry.subscribersSent)}. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
                 : subscribers === null
-                  ? `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published. Your portal is private now: it isn't emailed to anyone else.`
-                  : `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published: it isn't sent again.`}
+                  ? `Emailed to ${subscriberCountText(entry.subscribersSent)} before. Your portal is private now: nobody else gets it.`
+                  : `Emailed to ${subscriberCountText(entry.subscribersSent)} when first published: not sent again.`}
             </p>
           ) : (
             choice(
               "Email subscribers",
               entry.emailPaused
-                ? "Your project's email is paused, so subscribers aren't emailed."
+                ? "Your project's email is paused."
                 : subscribers === null
-                ? "Your portal is private: its changelog isn't emailed."
+                ? "Your portal is private, so it isn't emailed."
                 : subscribers === 0
-                  ? "Nobody has subscribed yet: people subscribe on your portal's changelog."
-                  : `${people(subscribers)} subscribed on your portal's changelog.`,
+                  ? "Nobody has subscribed yet."
+                  : `${people(subscribers)} subscribed.`,
               { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}
-          {choice("Mark it new", "It's in your widget's What's new either way. Marked new, the widget shows a dot and your portal's Changelog tab says New to signed-in readers, until they see it.", {
+          {choice("Mark it new", "A dot in your widget until readers see it.", {
             checked: announce.markNew,
             onChange: (event) => pick({ markNew: event.target.checked }),
           })}
@@ -858,7 +849,7 @@ function CompletedPosts({
 
   return (
     <section aria-label="Posts it completes" className="flex flex-col gap-2">
-      <h2 className="text-xs font-medium text-muted-foreground">Posts it completes</h2>
+      <h2 className="group-label">Posts it completes</h2>
       {editable && <input type="hidden" name="postsEditable" value="1" />}
       {/* The ones shown: a linked post merged away since isn't (saving drops it; it can't be listed). */}
       {editable && shown.map((post) => <input key={post.number} type="hidden" name="posts" value={post.number} />)}
@@ -936,8 +927,8 @@ function CompletedPosts({
 }
 
 export type EntryPullRequestsProps = {
-  /** The pull requests it has. */
-  list: { repo: string; number: number; url: string; title: string }[];
+  /** The pull requests it has; `id`, `author` and `mergedAt` where Autopilot read it (PullRequestChip). */
+  list: { id?: string; repo: string; number: number; url: string; title: string; author?: string; mergedAt?: string }[];
   /** GitHub is connected: a draft has "Add changes…". */
   canAdd: boolean;
   /** Where adding puts them: null for this entry (the running draft), else the running draft's title (one that would be started). */
@@ -1002,11 +993,7 @@ function EntryPullRequests({
 
   return (
     <section aria-labelledby={PULL_REQUESTS_HEADING} className="flex flex-col gap-2">
-      <h2
-        id={PULL_REQUESTS_HEADING}
-        tabIndex={-1}
-        className="text-xs font-medium text-muted-foreground outline-none"
-      >
+      <h2 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
         Pull requests
       </h2>
       {list.length === 0 ? (
@@ -1015,12 +1002,12 @@ function EntryPullRequests({
         <ul className="flex flex-col gap-2">
           {list.map((pr) => (
             <li key={pr.url} className="flex items-start gap-2">
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <a href={pr.url} target="_blank" rel="noreferrer" className="break-words hover:underline">
+              {/* As Autopilot shows them: "PR #41", its title, and a link to GitHub on hover or a press. */}
+              <div className="flex min-w-0 flex-1 items-start gap-2">
+                <PullRequestChip projectSlug={projectSlug} pr={pr} />
+                {/* The chip's name says it already ("PR #41: <title>"): read once. */}
+                <span aria-hidden className="min-w-0 line-clamp-2 break-words">
                   {pr.title}
-                </a>
-                <span className="text-xs break-all text-muted-foreground">
-                  {pr.repo}#{pr.number}
                 </span>
               </div>
               {!published && (
