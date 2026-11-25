@@ -1794,8 +1794,17 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
   await expect(team.getByText("Save your changes first: pull requests change the saved text.")).toBeVisible();
   await team.reload();
-  // It leaves the list and the text, focus on the section's heading.
+  // Asked first: what the team wrote in its line goes with it. Cancel leaves it all as it was.
+  const takingOut = team.getByRole("alertdialog", { name: `Take out ${repo}#12?` });
   await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
+  await expect(takingOut).toHaveAccessibleDescription("Its line leaves the text, with any changes you made to it. Add changes… puts it back with Autopilot's line or its title.");
+  await takingOut.getByRole("button", { name: "Cancel" }).click();
+  await expect(takingOut).toBeHidden();
+  await expect(section.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(text).toContainText("Export to CSV");
+  // Taken out: it leaves the list and the text, focus on the section's heading.
+  await section.getByRole("button", { name: `Take out ${repo}#12` }).click();
+  await takingOut.getByRole("button", { name: "Take out" }).click();
   await expect(team.getByText("Taken out")).toBeVisible();
   await expect(section.getByRole("link", { name: "Export to CSV" })).toHaveCount(0);
   await expect(text).not.toContainText("Export to CSV");

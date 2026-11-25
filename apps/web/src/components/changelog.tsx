@@ -966,9 +966,12 @@ function EntryPullRequests({
     }
     return !dirty;
   };
+  // Asked first (docs/design.md): its line leaves the text, with whatever the team wrote in it, and adding it back
+  // brings Autopilot's line or its title.
+  const [confirming, setConfirming] = useState<{ url: string; ref: string } | null>(null);
   const takeOut = (url: string) =>
-    saved() &&
     startTransition(async () => {
+      setConfirming(null);
       // Its button goes (disabled meanwhile, then gone): focus goes to the section's heading.
       focusPullRequests.next = true;
       const result = await removeChangelogPullRequest(projectSlug, number, url);
@@ -1012,7 +1015,7 @@ function EntryPullRequests({
                   title="Take out"
                   disabled={pending}
                   focusableWhenDisabled
-                  onClick={() => takeOut(pr.url)}
+                  onClick={() => saved() && setConfirming({ url: pr.url, ref: `${pr.repo}#${pr.number}` })}
                 >
                   <XIcon />
                 </Button>
@@ -1022,6 +1025,22 @@ function EntryPullRequests({
         </ul>
       )}
       {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
+      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Take out {confirming?.ref}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its line leaves the text, with any changes you made to it. Add changes… puts it back with Autopilot&apos;s line or its title.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={pending} focusableWhenDisabled onClick={() => confirming && takeOut(confirming.url)}>
+              Take out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
