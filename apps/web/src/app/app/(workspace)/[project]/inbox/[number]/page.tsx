@@ -198,7 +198,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const read = (await conversationReads([conversation.id], membership.userId)).get(conversation.id);
   conversation.messages.reverse();
   // Signed as the page renders: an image is shown, any other file is saved under its name.
-  // Out of AI credits: the AI's buttons show, disabled (the layout says why).
+  // Out of credits: the AI's buttons show, disabled (the layout says why).
   const paused = aiEnabled() && (await aiPaused(projectId));
   const [signed, related] = await Promise.all([
     attachmentLinks(conversation.messages.flatMap((m) => m.attachments)),

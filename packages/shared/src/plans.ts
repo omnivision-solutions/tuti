@@ -94,7 +94,7 @@ export function planSalesEnabled(): boolean {
   return plansEnabled() && Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
 }
 
-/** AI credits a plan gives each month it's paid for (its monthlyCredits); none without plans. */
+/** Credits a plan gives each month it's paid for (its monthlyCredits); none without plans. */
 export function planCredits(plan: PlanKey): number {
   return plansEnabled() ? terms(plan).monthlyCredits : 0;
 }
@@ -277,7 +277,7 @@ export const articleVersionsStored = () => Math.max(...(billingConfig()?.plans.m
 /** The plan AppSumo's tier `tier` gives (the billing file's `licenses.appsumo.tiers`), or null where the file names none. */
 export const appsumoTierPlan = (tier: number): string | null => billingConfig()?.licenses?.appsumo?.tiers[String(tier)] ?? null;
 
-/** The billing file's free trial (plan, days, AI credits, emails), or null where it has none or billing is off. */
+/** The billing file's free trial (plan, days, credits, emails), or null where it has none or billing is off. */
 export const trialTerms = () => billingConfig()?.trial ?? null;
 
 /**

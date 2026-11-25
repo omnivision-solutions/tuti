@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { log } from "@tuti/shared";
 
 /**
- * Stripe, for AI credit top-ups and plans (docs/plan.md, AI usage per project and Plans): Checkout
+ * Stripe, for credit top-ups and plans (docs/plan.md, AI usage per project and Plans): Checkout
  * Sessions to pay, the customer portal, reading subscriptions and invoices, and webhooks' signatures.
  * A handful of requests to Stripe's API, so no SDK.
  */
@@ -216,7 +216,7 @@ export const getCharge = (id: string) => stripe<StripeCharge>("GET", `/v1/charge
 
 const query = (params: Record<string, string>) => new URLSearchParams(params).toString();
 
-/** The Checkout Session a payment paid (an AI credit top-up), or null. */
+/** The Checkout Session a payment paid (a credit top-up), or null. */
 export async function checkoutOf(paymentIntent: string): Promise<string | null> {
   const list = await stripe<{ data: { id: string }[] }>("GET", `/v1/checkout/sessions?${query({ payment_intent: paymentIntent, limit: "1" })}`);
   return list.data[0]?.id ?? null;

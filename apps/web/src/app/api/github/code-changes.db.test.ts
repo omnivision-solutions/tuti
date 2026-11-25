@@ -1510,7 +1510,7 @@ describe("deciding", () => {
   });
 });
 
-describe("out of AI credits", () => {
+describe("out of credits", () => {
   beforeEach(() => {
     vi.stubEnv("TUTI_CONFIG", creditsOn());
   });
@@ -1520,7 +1520,7 @@ describe("out of AI credits", () => {
   test("a merge is paused: nothing read or asked, its running draft bullet kept; resuming waits for credits", async () => {
     github.pullRequest(repo, pullRequest(40));
     expect(await merge(40)).toBe(200);
-    expect(await changes()).toEqual([expect.objectContaining({ number: 40, state: "PAUSED", reason: "The project ran out of AI credits." })]);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 40, state: "PAUSED", reason: "The project ran out of credits." })]);
     expect(readsOf(40)).toEqual([]);
     expect(model.decisions).toEqual([]);
     expect(await inRunningDraft()).toBe(1);
@@ -1585,7 +1585,7 @@ describe("out of AI credits", () => {
   test("already paused, then picked for the changelog: resumed past the gate once there are credits", async () => {
     github.pullRequest(repo, pullRequest(46));
     await prisma.codeChange.create({
-      data: { projectId: project.id, repoId: installationId, repo, number: 46, url: `https://github.com/${repo}/pull/46`, title: "Dark mode 46", author: "octo", mergedAt: new Date(), state: "PAUSED", reason: "The project ran out of AI credits." },
+      data: { projectId: project.id, repoId: installationId, repo, number: 46, url: `https://github.com/${repo}/pull/46`, title: "Dark mode 46", author: "octo", mergedAt: new Date(), state: "PAUSED", reason: "The project ran out of credits." },
     });
     await call(addChangelogPullRequests, team(), { pullRequests: [{ repo, number: 46 }] });
     await addedPullRequestsAnalysed();
@@ -2085,7 +2085,7 @@ describe("retries when the AI provider didn't answer", () => {
     expect(await sweep(81)).toEqual({ due: 0, queued: 0, dropped: 0, waiting: 0 });
   });
 
-  test("out of AI credits, a retry waits until there are some; then it runs, and what it asks is charged like any analysis", async () => {
+  test("out of credits, a retry waits until there are some; then it runs, and what it asks is charged like any analysis", async () => {
     vi.stubEnv("TUTI_CONFIG", creditsOn());
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     github.pullRequest(repo, pullRequest(71));

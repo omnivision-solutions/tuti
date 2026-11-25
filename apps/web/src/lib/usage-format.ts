@@ -19,6 +19,6 @@ export const count = (n: number) => n.toLocaleString("en");
 export const costOf = (feature: { requests: number; cost: number; unpriced: number }) =>
   feature.unpriced === feature.requests ? "No price" : money(feature.cost);
 
-/** AI credits: whole ones from 100 up, else up to two places, or "under 0.01" for a sliver. */
+/** Credits: whole ones from 100 up, else up to two places, or "under 0.01" for a sliver. */
 export const credits = (n: number) =>
   n > 0 && n < 0.01 ? "under 0.01" : n.toLocaleString("en", { maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 2 });

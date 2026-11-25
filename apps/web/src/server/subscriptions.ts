@@ -8,7 +8,7 @@ import { cancelSubscription, getInvoice, getSubscription, type StripeSubscriptio
 
 /**
  * Plans through Stripe (docs/plan.md, Plans): Stripe's webhook brings each project's plan in step with
- * its subscription, and each paid invoice gives that period's AI credits.
+ * its subscription, and each paid invoice gives that period's credits.
  */
 
 /** Statuses in which a subscription's plan holds: past_due too, while Stripe retries a failed payment. Any other is the free plan. */
@@ -209,7 +209,7 @@ async function syncLicense(
 export const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cycle"]);
 
 /**
- * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,
+ * A paid invoice for a plan's period gives the project that period's credits (a month's for a month,
  * twelve for a year), a PLAN grant lasting until the period ends: once per invoice, however often and in
  * whatever order Stripe says it's paid. Every paid period gets its credits, a second subscription's too:
  * it was paid for, and refunding it (as its log asks) takes them back (refunds, docs/plan.md), so no guess
@@ -233,7 +233,7 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   }
   try {
     await grantCredits(projectId, "PLAN", credits, { expiresAt: at(line.period.end), note: `${planDisplay(paid.plan).name} plan`, stripeInvoiceId: invoice.id });
-    log.info("A plan's AI credits given", { projectId, invoice: invoice.id, credits });
+    log.info("A plan's credits given", { projectId, invoice: invoice.id, credits });
   } catch (error) {
     // Given already (Stripe delivered it again), or the project is gone.
     if (!(error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2002" || error.code === "P2003"))) {

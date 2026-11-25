@@ -16,7 +16,7 @@ async function stripePage(projectSlug: string, denied: string, open: (context: {
 
 /** "Buy credits" (see credits.topUp). */
 export async function buyCredits(projectSlug: string, dollars: number): Promise<{ error?: string; url?: string }> {
-  return stripePage(projectSlug, "Only project owners and admins can buy AI credits", async (context) => (await call(topUpCredits, context, { dollars: Number(dollars) })).url);
+  return stripePage(projectSlug, "Only project owners and admins can buy credits", async (context) => (await call(topUpCredits, context, { dollars: Number(dollars) })).url);
 }
 
 /** "Upgrade" to a plan (see plan.subscribe). */

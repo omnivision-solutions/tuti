@@ -283,7 +283,7 @@ async function verifyOne(input: JobInput<"verifyArticle">, log: JobLogger): Prom
     };
   } catch (error) {
     if (error instanceof OutOfCredits) {
-      return fail("The project ran out of AI credits.");
+      return fail("The project ran out of credits.");
     }
     // Tried once: the run says it failed rather than staying "running".
     await fail("The AI provider couldn't be reached.");
@@ -425,7 +425,7 @@ async function emailOwners(
 /**
  * Verify all (docs/plan.md, V7): takes up its next article, one at a time, starting its run and queuing its job (whose
  * end calls this again). An article unpublished or deleted since it started, or being verified by hand already, is left
- * out. With AI credits on and none left, it stops there, saying how far it got; past the last article it's done. Either
+ * out. With credits on and none left, it stops there, saying how far it got; past the last article it's done. Either
  * way owners get one email for the whole run. Under the project's lock, and only while none of its runs is running, so
  * calling it again (a redelivered job, a look at its progress) starts nothing more. With `wait: false` the article's
  * job isn't waited for: with JOBS_DRIVER=inline it runs here, and so does the rest of the chain after it.
@@ -530,7 +530,7 @@ async function whyNotNow(projectId: string): Promise<string | null> {
   if ((await prisma.githubRepository.count({ where: { connection: { projectId } } })) === 0) {
     return "the project has no repository any more (Settings → Integrations → GitHub).";
   }
-  return (await aiPaused(projectId)) ? "the project ran out of AI credits." : null;
+  return (await aiPaused(projectId)) ? "the project ran out of credits." : null;
 }
 
 /** One email for a whole Verify all, at its end, to the owners Verify emails (emailOwners), when it left fixes waiting. */

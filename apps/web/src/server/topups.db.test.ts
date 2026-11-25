@@ -8,7 +8,7 @@ import { topUpCredits } from "@/server/operations/credits";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-/** Buying AI credits (docs/plan.md, AI usage per project): a Stripe Checkout page, and its paid webhook giving the credits once. */
+/** Buying credits (docs/plan.md, AI usage per project): a Stripe Checkout page, and its paid webhook giving the credits once. */
 
 let stripe: StripeFake;
 let owner: TestUser;
@@ -44,7 +44,7 @@ test("a top-up opens Stripe Checkout for the amount, at the top-up rate of the t
     mode: "payment",
     amount_total: 1000,
     currency: "usd",
-    product: `500 AI credits for ${project.slug}`,
+    product: `500 credits for ${project.slug}`,
     metadata: { projectId: project.id, credits: "500", days: "365" },
     client_reference_id: project.id,
     customer_email: owner.email,

@@ -1557,7 +1557,7 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Do you have a status page?");
   await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
 
-  // On, with Messages shown, but the project is out of AI credits (its AI paused): a message goes to the team, not to an
+  // On, with Messages shown, but the project is out of credits (its AI paused): a message goes to the team, not to an
   // assistant that would only say it's unavailable.
   await api("/widget", { hidden: [] }, "PATCH");
   await spendCredits(slug);

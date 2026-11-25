@@ -148,7 +148,7 @@ export function VerifyAll({
             <p className="text-sm">
               {cost ? (
                 <>
-                  It will cost up to about <strong>{credits(cost.total)} AI credits</strong>: about {credits(cost.each)} an article,{" "}
+                  It will cost up to about <strong>{credits(cost.total)} credits</strong>: about {credits(cost.each)} an article,{" "}
                   {cost.measured ? "what Verify has cost here lately" : "what a typical article costs"}. You have {credits(cost.balance)}.
                   {cost.total > cost.balance && " That's more than you have: it stops when they run out, saying how far it got."}
                 </>

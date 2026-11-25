@@ -11,7 +11,7 @@ import { buyCredits } from "@/server/credits";
 
 const AMOUNTS = [10, 25, 50, 100];
 
-/** "Buy AI credits", a row of Settings → Billing: an amount in dollars, then Stripe's payment page. */
+/** "Buy credits", a row of Settings → Billing: an amount in dollars, then Stripe's payment page. */
 export function BuyCredits({
   projectSlug,
   perDollar,
@@ -43,10 +43,10 @@ export function BuyCredits({
 
   return (
     <SettingRow
-      label="Buy AI credits"
+      label="Buy credits"
       description={
         <>
-          {valid ? `${(dollars * perDollar).toLocaleString("en")} AI credits` : `From $${min} to $${max.toLocaleString("en")}`}
+          {valid ? `${(dollars * perDollar).toLocaleString("en")} credits` : `From $${min} to $${max.toLocaleString("en")}`}
           {days === null ? ", for good." : `, lasting ${days.toLocaleString("en")} days.`}
         </>
       }

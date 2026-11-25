@@ -92,14 +92,14 @@ test("an article unpublished while the AI wrote isn't in a draft: no draft then"
   expect(await call(suggestReply, team, { number: 1 })).toEqual({ status: "no_answer", draft: null });
 });
 
-test("out of AI credits: no draft, and summaries are refused saying so", async () => {
+test("out of credits: no draft, and summaries are refused saying so", async () => {
   vi.stubEnv("TUTI_CONFIG", creditsOn());
   const { team } = await setup();
   await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
   await call(createConversation, team, { email: "e2e-sam@example.com", body: QUESTION });
   openai.setVector(QUESTION, along(1));
   expect(await call(suggestReply, team, { number: 1 })).toEqual({ status: "unavailable", draft: null });
-  await expect(call(summarizeConversation, team, { number: 1 })).rejects.toMatchObject({ status: 402, message: "This project is out of AI credits" });
+  await expect(call(summarizeConversation, team, { number: 1 })).rejects.toMatchObject({ status: 402, message: "This project is out of credits" });
   expect(model.requests).toEqual([]);
 });
 

@@ -4,14 +4,14 @@ import { AI_ROLES, type Ai, type AiRole, type AiUsage, creditsEnabled, creditsPe
 import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } from "./credits";
 
 /**
- * The AI for a piece of work in `projectId`, by the role it's done in: the model its level gives that role (roleModel), and a meter for its requests, recorded as the role's feature. With AI credits on, it throws OutOfCredits once the balance is 0 or
+ * The AI for a piece of work in `projectId`, by the role it's done in: the model its level gives that role (roleModel), and a meter for its requests, recorded as the role's feature. With credits on, it throws OutOfCredits once the balance is 0 or
  * below: checked here, once per piece of work, so what already started finishes (and a balance can end
  * a little below 0, which the next credits cover first).
  */
 export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
   if (await aiPaused(projectId)) {
     // Also where credits that expired (no charge) first stop the AI.
-    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that AI credits are out failed", { projectId, error }));
+    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that credits are out failed", { projectId, error }));
     throw new OutOfCredits(projectId);
   }
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
@@ -19,7 +19,7 @@ export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
 }
 
 /**
- * The meter for duplicate detection's requests in `projectId`, recorded and charged as `duplicates`; or null with AI
+ * The meter for duplicate detection's requests in `projectId`, recorded and charged as `duplicates`; or null with
  * credits on and the balance at 0 or below, when duplicates are found by similarity alone.
  */
 export async function duplicatesMeter(projectId: string): Promise<Meter | null> {
@@ -28,7 +28,7 @@ export async function duplicatesMeter(projectId: string): Promise<Meter | null> 
 
 /**
  * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project),
- * and with AI credits on charges its cost in credits, at the rate of the time (a request with no
+ * and with credits on charges its cost in credits, at the rate of the time (a request with no
  * cost is charged 0, and stays flagged by its missing cost). A failed write is logged, never thrown:
  * the feature already has its answer, which the provider already charged for (failing the feature too
  * would only waste it). The log has what the row would have, so a missed charge can be made by hand.
@@ -52,6 +52,6 @@ function meter(projectId: string, feature: UsageFeature): Meter {
       log.error("Recording AI usage failed", { projectId, feature, ...usage, credits: credits?.toNumber() ?? null, error });
       return;
     }
-    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that AI credits are low failed", { projectId, error }));
+    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that credits are low failed", { projectId, error }));
   };
 }

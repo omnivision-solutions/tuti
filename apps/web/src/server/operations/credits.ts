@@ -10,9 +10,9 @@ import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
 /** What the team is told when the project's AI is paused for want of credits. */
-export const NO_CREDITS = "This project is out of AI credits. See Settings → Billing.";
+export const NO_CREDITS = "This project is out of credits. See Settings → Billing.";
 
-/** aiFor, for an operation a team member is waiting on: out of AI credits, it's refused (402) with the reason. */
+/** aiFor, for an operation a team member is waiting on: out of credits, it's refused (402) with the reason. */
 export async function aiOrRefuse(projectId: string, role: AiRole): Promise<Ai> {
   try {
     return await aiFor(projectId, role);
@@ -26,8 +26,8 @@ export async function aiOrRefuse(projectId: string, role: AiRole): Promise<Ai> {
 
 export const getCredits = defineOperation({
   name: "credits.get",
-  title: "Get AI credits",
-  summary: "The project's AI credits: the balance and each grant with credits left, soonest-expiring first.",
+  title: "Get credits",
+  summary: "The project's credits: the balance and each grant with credits left, soonest-expiring first.",
   method: "GET",
   path: "/credits",
   scope: "read",
@@ -35,7 +35,7 @@ export const getCredits = defineOperation({
   input: z.object({}),
   output: z
     .object({
-      enabled: z.boolean().describe("Whether this server uses AI credits; when it doesn't, the balance is 0 and there are no grants").meta({ examples: [true] }),
+      enabled: z.boolean().describe("Whether this server uses credits; when it doesn't, the balance is 0 and there are no grants").meta({ examples: [true] }),
       balance: z
         .number()
         .describe("Credits left: below 0 when a request ran past it, and the next credits cover that first")
@@ -58,7 +58,7 @@ export const getCredits = defineOperation({
         )
         .describe("Each grant with credits left, soonest-expiring first"),
     })
-    .describe("The project's AI credits"),
+    .describe("The project's credits"),
   run: async ({ projectId }) => (creditsEnabled() ? { enabled: true, ...(await creditBalance(projectId)) } : { enabled: false, balance: 0, grants: [] }),
 });
 
@@ -67,8 +67,8 @@ export const TOPUP_DOLLARS = { min: 5, max: 1000 } as const;
 
 export const topUpCredits = defineOperation({
   name: "credits.topUp",
-  title: "Buy AI credits",
-  summary: "Buy AI credits: a Stripe Checkout page to pay on. The credits are added once Stripe says it's paid. Off (503) where top-ups aren't set up.",
+  title: "Buy credits",
+  summary: "Buy credits: a Stripe Checkout page to pay on. The credits are added once Stripe says it's paid. Off (503) where top-ups aren't set up.",
   method: "POST",
   path: "/credits/top-up",
   scope: "write",
@@ -93,7 +93,7 @@ export const topUpCredits = defineOperation({
   example: { dollars: 25 },
   run: async ({ actor, projectId }, { dollars }) => {
     if (!topupsEnabled()) {
-      throw new OperationError(503, "topups_unavailable", "Buying AI credits isn't set up on this server");
+      throw new OperationError(503, "topups_unavailable", "Buying credits isn't set up on this server");
     }
     // At the rate of the time: what the page says is what the payment gives.
     const credits = dollars * creditsPerTopupDollar();
@@ -105,7 +105,7 @@ export const topUpCredits = defineOperation({
     try {
       const session = await createCheckout({
         cents: dollars * 100,
-        product: `${credits.toLocaleString("en")} AI credits for ${slug}`,
+        product: `${credits.toLocaleString("en")} credits for ${slug}`,
         metadata: { projectId, credits: String(credits), days: String(topupExpiryDays() ?? 0) },
         successUrl: `${billing}?paid=1`,
         cancelUrl: billing.toString(),

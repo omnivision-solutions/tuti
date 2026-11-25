@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 
 import pg from "pg";
 
-/** Spends what's left of the project's AI credits, as if its AI had used them (journeys have no other way to). */
+/** Spends what's left of the project's credits, as if its AI had used them (journeys have no other way to). */
 export async function spendCredits(slug: string) {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();

@@ -64,7 +64,7 @@ export const suggestReply = defineOperation({
     .object({
       status: z
         .enum(["suggested", "no_answer", "unavailable", "failed"])
-        .describe("suggested: `draft` has it; no_answer: the docs don't cover what they asked; unavailable: the project is out of AI credits; failed: the AI didn't answer, try again")
+        .describe("suggested: `draft` has it; no_answer: the docs don't cover what they asked; unavailable: the project is out of credits; failed: the AI didn't answer, try again")
         .meta({ examples: ["suggested"] }),
       draft: z
         .string()
@@ -171,7 +171,7 @@ export const summarizeConversation = defineOperation({
       ai = await aiFor(projectId, "support_summary");
     } catch (error) {
       if (error instanceof OutOfCredits) {
-        throw new OperationError(402, "out_of_credits", "This project is out of AI credits");
+        throw new OperationError(402, "out_of_credits", "This project is out of credits");
       }
       throw error;
     }

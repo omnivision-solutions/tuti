@@ -8,6 +8,8 @@ test("every reason the check stores is one checksSay knows, so it's worked out a
   expect(reasons).toContain(review.CHECK_LARGER);
   expect(reasons.filter((reason) => !checksSay(reason))).toEqual([]);
   expect(checksSay(review.checkFailed("It names the wrong button."))).toBe(true);
+  // Out of credits, as stored before credits were renamed.
+  expect(checksSay("It wasn't checked: AI credits ran out when it was written")).toBe(true);
   // A failed apply's message is kept.
   expect(checksSay("GitHub didn't answer")).toBe(false);
 });

@@ -177,11 +177,11 @@ function Tip({ label, title, children }: { label: string; title: string; childre
   );
 }
 
-/** "AI credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. */
+/** "Credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. */
 function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: number | null }) {
   const rows: [string, number][] = buy ? [["AI answers", buy.answers], ...(buy.changes !== null ? [["Or checked changes", buy.changes] as [string, number]] : [])] : [];
   return (
-    <Tip label="AI credits a month" title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
+    <Tip label="Credits a month" title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
       {rows.length > 0 ? (
         <>
           <dl className="grid gap-2 text-sm">
@@ -328,7 +328,7 @@ function NotIncluded() {
   );
 }
 
-/** A plan's AI credits as the card and table show them: a month's, "By quote", the free plan's to start with, or false for none. */
+/** A plan's credits as the card and table show them: a month's, "By quote", the free plan's to start with, or false for none. */
 function creditsCell({ byQuote, facts }: Plan): string | false {
   if (byQuote) return "By quote";
   if (facts.credits !== null) return number(facts.credits);
