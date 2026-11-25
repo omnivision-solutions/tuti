@@ -24,12 +24,6 @@ import { getMembership } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Changelog" };
 
-/**
- * Since then publishing records which posts it completed (PostEvent.changelogEntryId); an entry written before (by when
- * it was made: publishing again resets its date and records nothing for posts already completed), its completed posts.
- */
-const RECORDED_SINCE = new Date("2026-11-03T00:00:00Z");
-
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 /**
@@ -61,11 +55,13 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         releasedAt: true,
         sample: true,
         updatedAt: true,
-        createdAt: true,
         cover: { select: { id: true, status: true, width: true, height: true } },
-        // A draft's posts, not merged ones (the editor leaves them out), and the posts publishing it completed.
-        posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { status: true } } } },
-        postEvents: { where: { to: "COMPLETED" }, select: { postId: true } },
+        // Its posts, not merged ones (the editor leaves them out), with the entries whose publishing completed each, where
+        // that was recorded (PostEvent.changelogEntryId; not before it was, nor for one completed by hand).
+        posts: {
+          where: { post: { duplicateOfId: null } },
+          select: { post: { select: { status: true, events: { where: { to: "COMPLETED", changelogEntryId: { not: null } }, select: { changelogEntryId: true } } } } },
+        },
         _count: { select: { pullRequests: true, comments: true } },
       },
     }),
@@ -114,13 +110,13 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
-    // Published: the posts publishing it completed (each once, if it was published again), or before that was recorded
-    // its posts that are completed. A draft: those publishing will complete (as it does: not the Completed or Closed).
-    const posts = entry.publishedAt
-      ? entry.createdAt < RECORDED_SINCE && entry.postEvents.length === 0
-        ? entry.posts.filter(({ post }) => post.status === "COMPLETED").length
-        : new Set(entry.postEvents.map((e) => e.postId)).size
-      : entry.posts.filter(({ post }) => post.status !== "COMPLETED" && post.status !== "CLOSED").length;
+    // Published: its posts that are completed, not those another entry's publishing completed. A draft: those
+    // publishing will complete (as it does: not the Completed or Closed).
+    const posts = entry.posts.filter(({ post }) =>
+      entry.publishedAt
+        ? post.status === "COMPLETED" && (post.events.length === 0 || post.events.some((e) => e.changelogEntryId === entry.id))
+        : post.status !== "COMPLETED" && post.status !== "CLOSED",
+    ).length;
     return (
       <ItemRow
         key={entry.number}

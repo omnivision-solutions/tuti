@@ -265,7 +265,7 @@ the list picks none to approve at once.
   "Write it"; then the running draft), then the published entries
   under their months. Each row leads with a date column (when it went out, or a draft's last edit), its cover small at
   the end only where it has one, and under its title what it holds or what readers did (pull requests, posts completed,
-  reactions, comments; a published entry's posts are those its publishing completed), saying nothing for none.
+  reactions, comments; a published entry's completed posts, not those another entry's publishing completed), saying nothing for none.
   A changelog entry's editor has a sidebar
   beside the text with a line on its left, as a post's has (under it on phones, after a line; no card), its groups
   under group labels: its status first (Draft, or Published and the date), its tags as chips, the posts it completes
