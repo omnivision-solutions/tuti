@@ -56,7 +56,9 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         sample: true,
         updatedAt: true,
         cover: { select: { id: true, status: true, width: true, height: true } },
-        _count: { select: { posts: true, pullRequests: true, comments: true } },
+        // Its posts' statuses, not merged ones (their votes moved; the editor leaves them out): what it completes.
+        posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { status: true } } } },
+        _count: { select: { pullRequests: true, comments: true } },
       },
     }),
     q ? prisma.changelogEntry.count({ where: { projectId } }) : null,
@@ -104,6 +106,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
+    // Published: its posts that are completed. A draft: those publishing will complete (as it does, not the Completed or Closed).
+    const posts = entry.posts.filter(({ post }) => (entry.publishedAt ? post.status === "COMPLETED" : post.status !== "COMPLETED" && post.status !== "CLOSED")).length;
     return (
       <ItemRow
         key={entry.number}
@@ -129,7 +133,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         meta={
           [
             !entry.publishedAt && entry._count.pullRequests > 0 && plural(entry._count.pullRequests, "merged pull request"),
-            entry._count.posts > 0 && (entry.publishedAt ? `${plural(entry._count.posts, "post")} completed` : `Completes ${plural(entry._count.posts, "post")}`),
+            posts > 0 && (entry.publishedAt ? `${plural(posts, "post")} completed` : `Completes ${plural(posts, "post")}`),
             entry.publishedAt && reactionSummary(reactions(entry.id)),
             entry._count.comments > 0 && plural(entry._count.comments, "comment"),
           ]

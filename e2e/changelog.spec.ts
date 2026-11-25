@@ -605,6 +605,9 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await api("/changelog", { title: "Dark mode is here", posts: [1, 2] });
   // Exports is merged away after the entry listed it: the editor leaves it out, and saving drops it.
   await api("/posts/2/merge", { into: 3 });
+  // The list counts only what publishing will complete: not the merged post.
+  await team.goto(`/app/${slug}/changelog`);
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("Completes 1 post");
   await team.goto(`/app/${slug}/changelog/1`);
   const completes = team.getByRole("region", { name: "Posts it completes" });
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
@@ -710,6 +713,16 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.getByRole("button", { name: "Publish" }).click();
   await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget.");
   await expect(team.getByRole("alertdialog")).not.toContainText("completes");
+  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  // Its post completed, the list says so; a closed one it lists isn't counted.
+  await api("/posts", { board: "feature-requests", title: "Old idea" });
+  await api("/posts/106", { status: "planned" }, "PATCH");
+  await api("/changelog", { title: "Old idea, dropped", posts: [106] });
+  await api("/posts/106", { status: "closed" }, "PATCH");
+  await team.goto(`/app/${slug}/changelog`);
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
+  await expect(team.getByRole("listitem").filter({ hasText: "Old idea, dropped" })).not.toContainText("post");
 });
 
 test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {
