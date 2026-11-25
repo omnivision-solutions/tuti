@@ -1098,8 +1098,8 @@ Screens (mocked 2026-11-25; the mockups are the templates):
 - [ ] L7. The portal reads them: translated articles, collections and tabs' names; the not-yet-translated line (the content in the default language's `lang`, canonical to its address); search with each language's stemmer (`simple` where Postgres has none); sections and embeddings per language, so AI answers cite the reader's language
 - [ ] L8. The article editor's language pill: editing a version, Keep up to date, Update those sections
 - [ ] L9. Glossary and instructions: the screen, the check, retranslating the versions kept up to date that a changed term touches (the others marked behind)
-- [ ] L10. Labels: collection and tab settings' Translations (the `translations` data for labels, and the collection settings screen; the tab's follows in the same shape)
-- [ ] L11. Labels: boards' and statuses' Translations
+- [ ] L10. Labels: collection and tab settings' Translations (the `translations` data for labels with the collection settings screen, then the tab's: a PR per screen)
+- [ ] L11. Labels: boards' and statuses' Translations (a PR per screen)
 - [ ] L12. Labels: navigation, docs home and widget text's Translations, each on its own settings screen (a PR each)
 - [ ] L13. Changelog: `changelog_translation`, the editor's pill and sidebar, translated before it's announced, subscribers emailed in their language
 - [ ] L14. API references: the spec's words translated on sync, only what changed; paths, names, code and examples never
