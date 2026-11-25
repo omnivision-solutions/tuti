@@ -28,11 +28,15 @@ const TASK = "notification-action";
 
 const OPTIONS = { opensAppToForeground: false, isAuthenticationRequired: true };
 
-/** The category's actions, set at every start: the system keeps them, and an update may change them. */
+/**
+ * The category's actions, set at every start: the system keeps them, and an update may change them. Close not before
+ * Android 12, which has no unlock requirement for an action: it'd close a conversation from a locked phone (a reply
+ * there asks to unlock before it's typed). It stays in the app.
+ */
 export const setCategory = () =>
   Notifications.setNotificationCategoryAsync(CATEGORY, [
     { identifier: REPLY, buttonTitle: "Reply", textInput: { submitButtonTitle: "Send", placeholder: "Reply" }, options: OPTIONS },
-    { identifier: CLOSE, buttonTitle: "Close", options: OPTIONS },
+    ...(Platform.OS === "android" && Number(Platform.Version) < 31 ? [] : [{ identifier: CLOSE, buttonTitle: "Close", options: OPTIONS }]),
   ]);
 
 /** Responses acted on in this JavaScript: the listener and the last response can both tell of one. */

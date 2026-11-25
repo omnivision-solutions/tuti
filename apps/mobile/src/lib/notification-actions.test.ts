@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // The phone: its stored session, its files, the system's notifications and the server, all faked.
 const phone = vi.hoisted(() => ({
   os: "ios" as "ios" | "android",
+  version: 33 as number | string,
+  /** How long after it's asked for a notification is shown. */
+  postMs: 200,
   appState: "active",
   stored: new Map<string, string>(),
   files: new Map<string, string>(),
@@ -20,6 +23,9 @@ vi.mock("react-native", () => ({
   Platform: {
     get OS() {
       return phone.os;
+    },
+    get Version() {
+      return phone.version;
     },
   },
   AppState: {
@@ -76,7 +82,7 @@ vi.mock("expo-notifications", () => ({
     phone.shown.push(request);
     setTimeout(() => {
       phone.presented = [...phone.presented.filter((one) => one.request.identifier !== request.identifier), { request: { identifier: request.identifier, content: request.content } }];
-    }, 200);
+    }, phone.postMs);
   },
 }));
 
@@ -110,7 +116,7 @@ const load = () => import("./notification-actions");
 
 beforeEach(() => {
   vi.resetModules();
-  Object.assign(phone, { os: "ios", appState: "active", dismissed: [], shown: [], categories: [], listener: null, last: null, task: null, registered: [], presented: [] });
+  Object.assign(phone, { os: "ios", version: 33, postMs: 200, appState: "active", dismissed: [], shown: [], categories: [], listener: null, last: null, task: null, registered: [], presented: [] });
   phone.stored.clear();
   phone.files.clear();
   calls.length = 0;
@@ -131,6 +137,13 @@ describe("the notification's actions", () => {
         ],
       },
     ]);
+  });
+
+  it("are Reply only before Android 12, which can't ask to unlock for Close", async () => {
+    phone.os = "android";
+    phone.version = 30;
+    await (await load()).setCategory();
+    expect(phone.categories[0]!.actions.map((action) => action.identifier)).toEqual(["reply"]);
   });
 });
 
@@ -329,12 +342,22 @@ describe("on Android", () => {
   it("after a reply, updates the notification before taking it away, or the system keeps it for the reply's history", async () => {
     phone.os = "android";
     phone.presented = [{ request: { identifier: "push-1", content: { data: { project: "acme", conversation: 7 } } } }];
-    const { act } = await load();
-    const acting = act(response("reply", { userText: "On it!" }));
-    // Not taken away until the update is shown: a cancel before it would leave the update behind.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(phone.dismissed).toEqual([]);
-    await acting;
+    // The update shown late, past the wait for the system to redraw it.
+    phone.postMs = 2500;
+    vi.useFakeTimers();
+    try {
+      const acting = (await load()).act(response("reply", { userText: "On it!" }));
+      await vi.advanceTimersByTimeAsync(2400);
+      // Not taken away until the update shows: a cancel before it would leave the update behind for good.
+      expect(phone.dismissed).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(phone.dismissed).toEqual([]);
+      // Then a moment for the system to take the reply's spinner off.
+      await vi.advanceTimersByTimeAsync(1000);
+      await acting;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(phone.shown).toEqual([{ identifier: "push-1", content: { title: "Ada · Acme", body: "Hi", data: { project: "acme", conversation: 7, at: AT, sent: true }, sound: false }, trigger: { channelId: "default" } }]);
     expect(phone.dismissed).toEqual(["push-1"]);
   });
