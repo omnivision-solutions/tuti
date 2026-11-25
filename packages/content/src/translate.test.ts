@@ -299,3 +299,10 @@ test("a tag that is only a space in the source may be only a space in the transl
   const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Open" }, { type: "text", text: " ", marks: [{ type: "italic" }] }, { type: "text", text: "the settings page" }] }] });
   expect(check("1", "Öffne<i1> </i1>die Einstellungen")).toBeNull();
 });
+
+test("a reply of only entities isn't a translation", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readers vote on posts." }] }] };
+  const out = await translateDoc(one, { from: "English", to: "German", ask: async () => '{"segments": {"1": "&nbsp;&#32;"}}' });
+  expect(out.problems).toEqual([{ id: "1", reason: "no translation" }]);
+  expect(out.doc).toEqual(one);
+});
