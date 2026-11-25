@@ -62,28 +62,34 @@ export const UNCHECKED_SERVER = "Couldn't check this server's version just now. 
 /**
  * Before anything is sent (docs/plan.md, M10): the server's API spec, which every Tuti server serves with no session,
  * must have `conversations.reply` take a `requestId`, or a Retry after a lost answer could send a reply twice. No shim
- * for an older server: it isn't signed in to. A Tuti server whose spec can't be read just now isn't signed in to either,
- * unchecked; a server that can't be reached, or another site, is left to the sign-in's own request, and its error.
+ * for an older server (one whose spec lacks it, or that has none): it isn't signed in to. A Tuti server whose spec can't
+ * be read just now isn't signed in to either, unchecked; a server that can't be reached, or another site, is left to the
+ * sign-in's own request, and its error.
  */
 export async function checkServer(server: string) {
-  let spec: unknown;
+  let status = 0;
+  let spec: unknown = null;
   try {
     // Not the cached one: it's served for five minutes, and a server just updated would be refused meanwhile.
     const response = await fetch(`${server}/api/v1/openapi.json`, { credentials: "omit", cache: "no-store", headers: { accept: "application/json" } });
+    status = response.status;
     spec = response.ok ? await response.json() : null;
   } catch {
     spec = null;
   }
   const { openapi, paths } = (spec ?? {}) as { openapi?: unknown; paths?: unknown };
-  if (typeof openapi !== "string" || !paths || typeof paths !== "object") {
-    if (await isTuti(server)) {
-      throw new Error(UNCHECKED_SERVER);
-    }
+  const isSpec = typeof openapi === "string" && !!paths && typeof paths === "object";
+  if (isSpec && replyTakesRequestId(spec as OpenApi)) {
     return;
   }
-  if (!replyTakesRequestId(spec as OpenApi)) {
-    throw new Error(OUTDATED_SERVER);
+  // The rest is said only of a Tuti server: another site (one serving an API of its own there too) keeps the sign-in's
+  // own error, the wrong address.
+  if (!(await isTuti(server))) {
+    return;
   }
+  // A spec without it, or none at all (a server from before the spec): older. Anything else (a 5xx, a broken answer):
+  // not read just now.
+  throw new Error(isSpec || status === 404 ? OUTDATED_SERVER : UNCHECKED_SERVER);
 }
 
 type Schema = { $ref?: string; properties?: Record<string, unknown> };

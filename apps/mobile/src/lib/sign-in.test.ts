@@ -208,8 +208,9 @@ describe("the server, checked before anything is sent", () => {
       },
     },
   });
+  // A Tuti server (its `ok`) serving this spec.
   const serving = (body: unknown, otherwise = () => Response.json({ token: "token-1", cookie: "c" })) =>
-    vi.fn(async (url: string) => (url.endsWith("/api/v1/openapi.json") ? Response.json(body) : otherwise()));
+    vi.fn(async (url: string) => (url.endsWith("/api/v1/openapi.json") ? Response.json(body) : url.endsWith("/api/auth/ok") ? Response.json({ ok: true }) : otherwise()));
 
   it("signs in to a server whose reply takes a requestId, inline or as a component", async () => {
     vi.stubGlobal("fetch", serving(spec({ body: {}, requestId: {} })));
@@ -234,7 +235,9 @@ describe("the server, checked before anything is sent", () => {
     stored.delete("pending-sign-in");
     await expect(continueWith("google", "https://tuti.example.com")).rejects.toThrow(outdated);
     // Only the spec was asked for: nothing else reached the server, and no sign-in was started.
-    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://tuti.example.com/api/v1/openapi.json", "https://tuti.example.com/api/v1/openapi.json"]);
+    const specUrl = "https://tuti.example.com/api/v1/openapi.json";
+    const ok = "https://tuti.example.com/api/auth/ok";
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([specUrl, ok, specUrl, ok]);
     expect(stored.has("pending-sign-in")).toBe(false);
     // A spec with no reply at all is older still.
     vi.stubGlobal("fetch", serving({ openapi: "3.1.0", paths: {} }));
@@ -250,6 +253,27 @@ describe("the server, checked before anything is sent", () => {
     await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x")).rejects.toThrow("Couldn't check this server's version just now. Try again in a moment.");
     // The password was never sent.
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://tuti.example.com/api/v1/openapi.json", "https://tuti.example.com/api/auth/ok"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("says a Tuti server with no spec at all is older, not one to try again", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => (url.endsWith("/api/v1/openapi.json") ? new Response(null, { status: 404 }) : url.endsWith("/api/auth/ok") ? Response.json({ ok: true }) : Response.json({}))),
+    );
+    await expect(checkServer("https://tuti.example.com")).rejects.toThrow("This server runs an older Tuti than the app needs. Ask whoever runs it to update Tuti, then sign in here.");
+    vi.unstubAllGlobals();
+  });
+
+  it("says nothing of Tuti versions to another site serving an API of its own there: the sign-in reports the address", async () => {
+    // Its own OpenAPI, with no Tuti reply in it; no Tuti `ok`; and its 404 for the sign-in.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => (url.endsWith("/api/v1/openapi.json") ? Response.json({ openapi: "3.0.0", paths: { "/pets": {} } }) : new Response("<html>Not found</html>", { status: 404 }))),
+    );
+    await expect(signInWithPassword("https://acme.example.com", "e2e-olive@example.com", "x")).rejects.toThrow(
+      "acme.example.com didn't answer like a Tuti server (404). Check the address and your connection.",
+    );
     vi.unstubAllGlobals();
   });
 
