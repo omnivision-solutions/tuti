@@ -3456,11 +3456,11 @@ test("on a public portal, an announcement for some reader groups lights the laun
 
   // On another plan, Sam isn't in the group: nothing new for them.
   await api("/users", { users: [{ id: "app-user-7", properties: { plan: "free" } }] });
+  // Once their own answer is back (the launcher shows before it), nothing is new.
   const other = await (await browser.newContext()).newPage();
+  const asked = other.waitForResponse((response) => response.url().includes("/api/widget/seen") && response.request().method() === "GET");
   await other.goto(site);
-  await expect(other.getByRole("button", { name: "Feedback" })).toBeVisible();
-  await expect(async () => {
-    await other.reload();
-    await expect(other.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback", { timeout: 5_000 });
-  }).toPass();
+  expect(((await (await asked).json()) as { latest: string | null }).latest).toBeNull();
+  await expect(other.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback");
+  expect(await other.evaluate(() => (window as unknown as { Tuti: { unseen(): boolean } }).Tuti.unseen())).toBe(false);
 });
