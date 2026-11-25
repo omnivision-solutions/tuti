@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { prisma } from "@tuti/db";
+
 import { ChangelogForm, ChangelogSaveButton, ChangelogSaving } from "@/components/changelog";
 import { PageActions } from "@/components/page-actions";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
@@ -31,7 +33,7 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
             }
           />
           <PaneBody className="lg:[container-type:size] p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
-            <ChangelogForm projectSlug={slug} entry={null} posts={[]} mediaUrls={await mediaUrls()} />
+            <ChangelogForm projectSlug={slug} entry={null} posts={[]} mediaUrls={await mediaUrls()} groups={await prisma.readerGroup.findMany({ where: { projectId: membership.project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } })} />
           </PaneBody>
         </Pane>
       </PaneLayout>

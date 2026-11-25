@@ -30,6 +30,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
 import { lastingImage, lastingMediaUrl, mediaUrls } from "@/server/media-urls";
 import { pageTitle } from "@/lib/page-title";
+import { claimsOf, groupClaims } from "@/lib/reader-groups";
 
 /** The tab: the entry's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/changelog/[number]">): Promise<Metadata> {
@@ -59,6 +60,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       body: true,
       content: true,
       tags: true,
+      groups: groupClaims,
       updatedAt: true,
       publishedAt: true,
       announced: true,
@@ -228,6 +230,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 title: entry.title,
                 content: displayDoc(entry) as Doc,
                 tags: entry.tags.map((t) => t.toLowerCase() as TagName),
+                groups: claimsOf(entry),
                 posts: listed,
                 published: entry.publishedAt !== null,
                 cover,
@@ -243,6 +246,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 emailPaused: await projectEmailWaits(membership.project.id),
               }}
               subscribers={subscribers}
+              groups={await prisma.readerGroup.findMany({ where: { projectId: membership.project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } })}
               posts={posts}
               standing={
                 <>

@@ -16,7 +16,7 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
   return `${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`;
 }
 
-test("an entry for some groups only: their readers see it on the changelog, everyone else doesn't, nor its page", async ({ browser }, testInfo) => {
+test("an entry for some groups only: their readers see it on the changelog, everyone else doesn't, nor its page; the editor picks them", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -88,6 +88,23 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(newDot(bea)).toHaveCount(0);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
+  // The team makes Dark mode for enterprise customers too, in the editor's "Who sees it": now Bea has none.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  const whoSees = owner.getByRole("group", { name: "Who sees it" });
+  await expect(whoSees.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
+  await whoSees.getByRole("checkbox", { name: "Enterprise" }).check();
+  await checkpoint(owner, "editor-who-sees-it");
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.reload();
+  await expect(owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
+  await bea.goto("/changelog");
+  await expect(titles(bea)).toHaveCount(0);
+  await owner.goto(`/app/${slug}/changelog/1`);
+  await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).uncheck();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+
   // Her What's new has nothing announced for her, so it marks nothing seen (not the time of the one she can't read).
   await bea.goto("/widget?tab=whats-new");
   await expect(bea.getByRole("heading", { level: 2 })).toHaveText(["Dark mode"]);

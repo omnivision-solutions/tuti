@@ -55,6 +55,8 @@ export async function saveChangelogEntry(
     content: formData.get("content") || undefined,
     body: formData.get("content") ? undefined : "",
     tags: formData.getAll("tags").map(String) as ("new" | "improved" | "fixed" | "breaking")[],
+    // Only where the form offers groups (the project has some), so a save never clears ones set by the API otherwise.
+    groups: formData.has("groupsEditable") ? formData.getAll("groups").map(String) : undefined,
     // Published entries show their posts read-only, so the form doesn't send them.
     posts: formData.has("postsEditable") ? formData.getAll("posts").map(Number) : undefined,
     // The cover's upload id, empty once removed (no field: uploads aren't set up, so it stays as it is).

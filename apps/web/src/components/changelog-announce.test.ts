@@ -27,6 +27,7 @@ const sidebar = (
         title: "Dark mode",
         content: { type: "doc", content: [] },
         tags: [],
+        groups: [],
         posts: [],
         cover: null,
         told: null,
@@ -83,7 +84,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
   test("a draft on a private portal (subscribers null: nothing is emailed from one) offers no email: the checkbox off and disabled, and says why", () => {
     const html = renderToStaticMarkup(
       createElement(HowAnnounced, {
-        entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
+        entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], groups: [], posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
         subscribers: null,
       }),
     );

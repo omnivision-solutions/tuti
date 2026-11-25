@@ -84,6 +84,8 @@ type Entry = {
   title: string;
   content: Doc;
   tags: TagName[];
+  /** The keys of the reader groups it's for; none: everyone. */
+  groups: string[];
   posts: number[];
   published: boolean;
   /** Its cover (the featured image): a link to its thumbnail size. */
@@ -512,9 +514,12 @@ export function ChangelogForm({
   aiPaused = false,
   subscribers = 0,
   pullRequests = null,
+  groups = [],
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** The project's reader groups, for "Who sees it" (not shown without any). */
+  groups?: { key: string; name: string }[];
   /** The cover designs "Make a cover" offers (a saved entry, where uploads are set up). */
   covers?: CoverChoices | null;
   /** Its merged pull requests, in their section; null for none (GitHub isn't connected and it has none). */
@@ -664,6 +669,31 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
+        {groups.length > 0 && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="group-label mb-2">Who sees it</legend>
+            <input type="hidden" name="groupsEditable" value="1" />
+            <div className="flex flex-wrap gap-2">
+              {groups.map((group) => (
+                <label
+                  key={group.key}
+                  className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+                >
+                  <input
+                    type="checkbox"
+                    name="groups"
+                    value={group.key}
+                    defaultChecked={entry?.groups.includes(group.key)}
+                    className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
+                  />
+                  <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
+                  {group.name}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
+          </fieldset>
+        )}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
