@@ -259,6 +259,23 @@ test("on a queue that refuses it, a pull request the gate had ruled out is added
   expect((await entry(1)).pullRequests).toEqual([{ repo, number: 3, url: url(3), title: "Bump dependencies" }]);
 });
 
+test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  github.pullRequest(repo, { number: 3, title: "Bump dependencies", mergedAt: days(2) });
+  const ruledOut = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId, repo, number: 3, url: url(3), title: "Bump dependencies", author: "a", mergedAt: new Date(days(2)), state: "NOTHING_TO_DO", reason: "Only dependencies changed." },
+  });
+  // While this run is being queued, another claims the code change (a later run, analysing it now); then queueing fails.
+  queue.enqueue.mockImplementationOnce(async () => {
+    await prisma.codeChange.update({ where: { id: ruledOut.id }, data: { updatedAt: new Date(Date.now() + 60_000) } });
+    throw new Error("Hatchet is unreachable");
+  });
+
+  await add(3);
+
+  expect(await prisma.codeChange.findUniqueOrThrow({ where: { id: ruledOut.id }, select: { state: true } })).toEqual({ state: "ANALYSING" });
+});
+
 test("one taken out of a draft goes with its line, is missing again, and can go into the next; a published entry's stay", async () => {
   github.pullRequest(repo, { number: 2, title: "Add a dark theme", mergedAt: days(3) });
   github.pullRequest(repo, { number: 3, title: "Speed up search", mergedAt: days(2) });

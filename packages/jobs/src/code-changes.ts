@@ -100,7 +100,8 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
     if (count > 0) {
       return {
         run: { codeChangeId: change.id, force: true, pastGate: true, resume: false },
-        unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING" }, data: was }),
+        // Only this claim: one made since (and still running) isn't put back.
+        unclaim: () => prisma.codeChange.updateMany({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt }, data: was }),
         current: async () => (await prisma.codeChange.count({ where: { id: change.id, state: "ANALYSING", updatedAt: claimedAt } })) > 0,
       };
     }

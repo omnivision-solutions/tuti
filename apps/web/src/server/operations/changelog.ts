@@ -1202,9 +1202,12 @@ export const listMissingChanges = defineOperation({
       }),
       prisma.changelogDecision.findMany({ where: keys, select: { repoId: true, number: true, url: true } }),
     ]);
-    const of = <T extends { repoId: number; number: number }>(rows: T[], pr: { repoId: number; number: number }) => rows.find((row) => row.repoId === pr.repoId && row.number === pr.number);
+    // Indexed once: a busy repository lists thousands.
+    const key = (pr: { repoId: number; number: number }) => `${pr.repoId}#${pr.number}`;
+    const byKey = <T extends { repoId: number; number: number }>(rows: T[]) => new Map(rows.map((row) => [key(row), row]));
+    const [changeOf, decisionOf] = [byKey(changes), byKey(decisions)];
     // Every page the project knows each by: an entry's row keeps the one it was written with, a renamed repository's old one.
-    const urls = (pr: { repoId: number; number: number; url: string }) => [pr.url, of(changes, pr)?.url, of(decisions, pr)?.url].filter((url): url is string => url !== undefined);
+    const urls = (pr: { repoId: number; number: number; url: string }) => [pr.url, changeOf.get(key(pr))?.url, decisionOf.get(key(pr))?.url].filter((url): url is string => url !== undefined);
     const inEntries = await prisma.changelogEntryPullRequest.findMany({ where: { entry: { projectId }, url: { in: all.flatMap(urls) } }, select: { url: true } });
     const known = new Set(inEntries.map((pr) => pr.url));
     return {
@@ -1212,7 +1215,7 @@ export const listMissingChanges = defineOperation({
       pullRequests: all
         .filter((pr) => !urls(pr).some((url) => known.has(url)))
         .map(({ repoId, ...pr }) => {
-          const change = of(changes, { repoId, number: pr.number });
+          const change = changeOf.get(key({ repoId, number: pr.number }));
           // The gate's word, as its analysis saved it. One analysed before that was saved: for users if a changelog
           // line was written for it (ready with none, only docs to fix, is no more for users than nothing to do).
           const analysed = change?.state === "READY" || change?.state === "NOTHING_TO_DO";
