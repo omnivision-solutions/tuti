@@ -1515,6 +1515,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(dialog.getByText(`<button type="button" data-tuti-article="${id}">Help</button>`, { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy article ID" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy help button" })).toBeVisible();
+  await expect(dialog.getByText("Open this article in the widget from your app.")).not.toContainText("It opens once");
   await dialog.getByRole("button", { name: "Copy help button" }).scrollIntoViewIfNeeded();
   await checkpoint(team, "team-docs-article-settings-embed", { fullPage: false });
   // The inset reaches 77rem with the collapsed rail: the shared card takes 330px beside the text.

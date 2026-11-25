@@ -318,7 +318,13 @@ function SavedSettings({
         </FieldSet>
         <FieldSet>
           <FieldLegend>Embed</FieldLegend>
-          <FieldDescription>Open this article in the widget from your app. Its ID never changes, so links keep working if you rename it.</FieldDescription>
+          <FieldDescription>
+            Open this article in the widget from your app. Its ID never changes, so links keep working if you rename it.
+            {/* The widget opens only an article with a page: published, listed Everywhere or Unlisted (as saved). */}
+            {!article.published
+              ? " It opens once the article is published."
+              : (article.listing === "hidden" || article.listing === "ai_only") && ` It doesn't open while the article is ${LISTING_LABELS[article.listing]}.`}
+          </FieldDescription>
           <CopyField label="Article ID" value={article.id} name="article ID" />
           <CopyField label="Help button" value={`<button type="button" data-tuti-article="${article.id}">Help</button>`} name="help button" />
         </FieldSet>
