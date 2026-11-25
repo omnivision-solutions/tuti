@@ -411,6 +411,20 @@ test("runs whose leftovers keep failing back off and are given up, never blockin
   expect(await prisma.aiUsage.count({ where: { projectId: project.id, cost: { not: null } } })).toBe(1);
 });
 
+test("a browser that stopped by itself before it's stopped (a 404) still leaves its session charged once and its files deleted", async () => {
+  await setUp();
+  browserUse.goneNext = 1;
+  const run = await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const { sessionId, workspaceId } = browserUse.runs.at(-1)!;
+  expect(browserUse.goneNext).toBe(0);
+  expect(run).toMatchObject({ state: "done", cost: 0.0419 });
+  expect(browserUse.costsRead).toContain(sessionId);
+  expect(browserUse.files.get(workspaceId)!.size).toBe(0);
+  expect(await prisma.screenshotRun.findUniqueOrThrow({ where: { id: run.id }, select: { sessionId: true, workspaceId: true } })).toEqual({ sessionId: null, workspaceId: null });
+  await call(getScreenshots, as(), { id: run.id });
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(1);
+});
+
 test("a session or workspace Browser Use no longer has is done with: its ids cleared, nothing charged", async () => {
   await setUp();
   const run = await prisma.screenshotRun.create({

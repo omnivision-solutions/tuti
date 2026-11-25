@@ -411,7 +411,12 @@ async function chargeSession(client: BrowserUse, sessionId: string, { projectId,
   };
   try {
     for (const browser of (await client.activeBrowsers(sessionId)).items) {
-      await client.stopBrowser(browser.id);
+      // A browser gone by now (it stopped or timed out since it was listed) is as good as stopped: the session isn't.
+      await client.stopBrowser(browser.id).catch((error: unknown) => {
+        if (!gone(error)) {
+          throw error;
+        }
+      });
     }
   } catch (error) {
     if (gone(error)) {

@@ -48,6 +48,8 @@ export type BrowserUseFake = {
   costsRead: string[];
   /** How many of the next requests of each kind fail (500): deleting a file, reading a session's cost, stopping a browser. */
   failNext: { deletes: number; costs: number; stops: number };
+  /** How many of the next browser stops answer 404, as for a browser that stopped by itself since it was listed (it is stopped). */
+  goneNext: number;
   /** Lets every stuck run end. */
   release(): void;
   close(): Promise<void>;
@@ -95,6 +97,7 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
     costsRead: [],
     events: [],
     failNext: { deletes: 0, costs: 0, stops: 0 },
+    goneNext: 0,
     files,
     release: () => {
       for (const run of runs.values()) {
@@ -229,6 +232,14 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         return answer(200, { items, totalItems: items.length, pageNumber: 1, pageSize: 100 });
       }
       const stop = /^\/browsers\/([^/]+)$/.exec(path);
+      if (stop && req.method === "PATCH" && fake.goneNext > 0) {
+        fake.goneNext--;
+        const browser = [...fake.browsers.values()].find((one) => one.id === stop[1]);
+        if (browser) {
+          browser.status = "stopped";
+        }
+        return answer(404, { detail: "Session not found" });
+      }
       if (stop && req.method === "PATCH" && fake.failNext.stops > 0) {
         fake.failNext.stops--;
         return answer(500, { detail: "The fake was told to fail this stop" });
