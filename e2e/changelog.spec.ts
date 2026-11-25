@@ -290,9 +290,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect.poll(() => emoji(tada)).not.toContain("grayscale");
   await checkpoint(ada, "portal-changelog-reacted");
   await team.goto(`/app/${slug}/changelog`);
-  // Its row says what readers did with it: the post it completed and their reactions; no draft's "Edited".
+  // Its row says what it holds and what readers did with it: the post it lists and their reactions; no draft's "Edited".
   const published = team.getByRole("listitem").filter({ hasText: "Dark mode is here" });
-  await expect(published).toContainText("1 post completed · 🎉 1");
+  await expect(published).toContainText("1 post · 🎉 1");
   await expect(published.locator("time")).toHaveText(/^Published \d{1,2} [A-Z][a-z]{2,3}$/);
   // Signed out: the counts, and a nudge to sign in.
   const reader = await newPerson(browser, portalUrl(slug));
@@ -596,8 +596,6 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 });
 
 test("an entry's posts in the editor: a merged one doesn't block saving, and unpublishing shows the saved ones", async ({ browser }, testInfo) => {
-  // A hundred posts made, then the list's counts checked: more than the default 30 s on a busy machine.
-  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -610,9 +608,10 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await api("/changelog", { title: "Dark mode is here", posts: [1, 2] });
   // Exports is merged away after the entry listed it: the editor leaves it out, and saving drops it.
   await api("/posts/2/merge", { into: 3 });
-  // The list counts only what publishing will complete: not the merged post.
+  // The list counts the posts it lists as its editor does: not the merged one.
   await team.goto(`/app/${slug}/changelog`);
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("Completes 1 post");
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("1 post");
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).not.toContainText("2 posts");
   await team.goto(`/app/${slug}/changelog/1`);
   const completes = team.getByRole("region", { name: "Posts it completes" });
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
@@ -718,45 +717,6 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.getByRole("button", { name: "Publish" }).click();
   await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget.");
   await expect(team.getByRole("alertdialog")).not.toContainText("completes");
-  await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(team.getByText("Published", { exact: true })).toBeVisible();
-  // Its post completed, the list says so; a closed one it lists isn't counted.
-  await api("/posts", { board: "feature-requests", title: "Old idea" });
-  await api("/posts/106", { status: "planned" }, "PATCH");
-  const { number: dropped } = (await api("/changelog", { title: "Old idea, dropped", posts: [106] })) as unknown as { number: number };
-  await api("/posts/106", { status: "closed" }, "PATCH");
-  await team.goto(`/app/${slug}/changelog`);
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
-  await expect(team.getByRole("listitem").filter({ hasText: "Old idea, dropped" })).not.toContainText("post");
-  // Published, it completed nothing: still no count.
-  await api(`/changelog/${dropped}/publish`, {});
-  // Another entry listing that completed post: a draft that will complete nothing, then published, completed nothing.
-  const { number: again } = (await api("/changelog", { title: "Dark mode, polished", posts: [1] })) as unknown as { number: number };
-  await team.reload();
-  await expect(team.getByRole("listitem").filter({ hasText: "Old idea, dropped" })).not.toContainText("post");
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
-  await api(`/changelog/${again}/publish`, {});
-  await team.reload();
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
-  // Published before publishing recorded what it completed: its completed posts are counted (another entry's aren't).
-  const first = `(SELECT e.id FROM changelog_entry e JOIN project p ON p.id = e."projectId" WHERE p.slug = $1 AND e.number = 1)`;
-  await query(`UPDATE post_event SET "changelogEntryId" = NULL WHERE "changelogEntryId" = ${first}`, [slug]);
-  await query(`UPDATE changelog_entry SET "publishedAt" = '2026-10-15' WHERE id = ${first}`, [slug]);
-  await team.reload();
-  await expect(team.getByRole("region", { name: "October 2026" }).getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
-  // Published again (today, completing nothing new: its post is Completed already), it still counts it.
-  await api("/changelog/1/unpublish", {});
-  await api("/changelog/1/publish", {});
-  await team.reload();
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
-  // Nor does a later entry count it (its completion is older than the entry), nor a post completed by hand before it was written.
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
-  await api("/posts/4", { status: "completed" }, "PATCH");
-  const { number: byHand } = (await api("/changelog", { title: "Calendar sync is out", posts: [4] })) as unknown as { number: number };
-  await api(`/changelog/${byHand}/publish`, {});
-  await team.reload();
-  await expect(team.getByRole("listitem").filter({ hasText: "Calendar sync is out" })).not.toContainText("post");
 });
 
 test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {
@@ -1293,12 +1253,12 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(team.getByRole("button", { name: "Edit with AI" })).toBeFocused();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
   // Written, the list's row still leads to it, with Write it now (Draft with AI is for notes not written yet), and
-  // says the post it completes.
+  // says the post it lists.
   await team.goto(`/app/${slug}/changelog`);
   const written = drafts.getByRole("listitem").filter({ hasText: "Dark mode is here" });
   await expect(written.getByRole("link", { name: "Write it" })).toBeVisible();
   await expect(written.getByRole("link", { name: "Draft with AI" })).toHaveCount(0);
-  await expect(written).toContainText("2 merged pull requests · Completes 1 post");
+  await expect(written).toContainText("2 merged pull requests · 1 post");
   await team.goto(`/app/${slug}/changelog/1`);
 
   // With no text at all (say, every analysis failed and took its title out), Publish says so.

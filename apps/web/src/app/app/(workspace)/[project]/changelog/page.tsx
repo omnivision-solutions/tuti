@@ -55,15 +55,9 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         releasedAt: true,
         sample: true,
         updatedAt: true,
-        createdAt: true,
         cover: { select: { id: true, status: true, width: true, height: true } },
-        // Its posts, not merged ones (the editor leaves them out), with when each was completed and by which entry's
-        // publishing, where that was recorded (PostEvent.changelogEntryId: null before it was, and when done by hand).
-        posts: {
-          where: { post: { duplicateOfId: null } },
-          select: { post: { select: { status: true, events: { where: { to: "COMPLETED" }, select: { changelogEntryId: true, createdAt: true } } } } },
-        },
-        _count: { select: { pullRequests: true, comments: true } },
+        // Its posts as its editor lists them (not merged ones: their votes moved to the post they were merged into).
+        _count: { select: { posts: { where: { post: { duplicateOfId: null } } }, pullRequests: true, comments: true } },
       },
     }),
     q ? prisma.changelogEntry.count({ where: { projectId } }) : null,
@@ -111,14 +105,6 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
-    // Published: the posts it completed: its publishing recorded doing so, or (before that was recorded) they were completed
-    // after it was written, not before (by hand, or by an older entry). A draft: those publishing will complete (as it
-    // does: not the Completed or Closed).
-    const posts = entry.posts.filter(({ post }) =>
-      entry.publishedAt
-        ? post.status === "COMPLETED" && post.events.some((e) => e.changelogEntryId === entry.id || (e.changelogEntryId === null && e.createdAt > entry.createdAt))
-        : post.status !== "COMPLETED" && post.status !== "CLOSED",
-    ).length;
     return (
       <ItemRow
         key={entry.number}
@@ -144,7 +130,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         meta={
           [
             !entry.publishedAt && entry._count.pullRequests > 0 && plural(entry._count.pullRequests, "merged pull request"),
-            posts > 0 && (entry.publishedAt ? `${plural(posts, "post")} completed` : `Completes ${plural(posts, "post")}`),
+            entry._count.posts > 0 && plural(entry._count.posts, "post"),
             entry.publishedAt && reactionSummary(reactions(entry.id)),
             entry._count.comments > 0 && plural(entry._count.comments, "comment"),
           ]
