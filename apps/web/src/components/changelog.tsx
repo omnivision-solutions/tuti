@@ -7,6 +7,9 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
 import { CheckIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
+
+import { UpgradeDialog } from "@/components/upgrade-dialog";
+import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import {
   createContext,
   type ReactNode,
@@ -515,11 +518,14 @@ export function ChangelogForm({
   subscribers = 0,
   pullRequests = null,
   groups = [],
+  groupsUpgrade = null,
 }: {
   projectSlug: string;
   entry: Entry | null;
   /** The project's reader groups, for "Who sees it" (not shown without any). */
   groups?: { key: string; name: string }[];
+  /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking always works). */
+  groupsUpgrade?: UpgradePrompt | null;
   /** The cover designs "Make a cover" offers (a saved entry, where uploads are set up). */
   covers?: CoverChoices | null;
   /** Its merged pull requests, in their section; null for none (GitHub isn't connected and it has none). */
@@ -669,31 +675,7 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        {groups.length > 0 && (
-          <fieldset className="flex flex-col gap-2">
-            <legend className="group-label mb-2">Who sees it</legend>
-            <input type="hidden" name="groupsEditable" value="1" />
-            <div className="flex flex-wrap gap-2">
-              {groups.map((group) => (
-                <label
-                  key={group.key}
-                  className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
-                >
-                  <input
-                    type="checkbox"
-                    name="groups"
-                    value={group.key}
-                    defaultChecked={entry?.groups.includes(group.key)}
-                    className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
-                  />
-                  <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
-                  {group.name}
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
-          </fieldset>
-        )}
+        {groups.length > 0 && <WhoSeesIt groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => setDirty(true)} />}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
@@ -707,6 +689,72 @@ export function ChangelogForm({
         {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
       </aside>
     </form>
+  );
+}
+
+/**
+ * "Who sees it": the reader groups an entry is for, as chips (none picked: everyone). Sent with the form only once a
+ * pick changed, so a save of the text never touches groups set meanwhile (by the API, or a teammate), nor needs the
+ * plan for ones it already has.
+ */
+export function WhoSeesIt({
+  groups,
+  picked,
+  upgrade,
+  onChange,
+}: {
+  groups: { key: string; name: string }[];
+  picked: string[];
+  upgrade: UpgradePrompt | null;
+  onChange: () => void;
+}) {
+  const [changed, setChanged] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  const needsId = useId();
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="group-label mb-2">Who sees it</legend>
+      {changed && <input type="hidden" name="groupsEditable" value="1" />}
+      <div className="flex flex-wrap gap-2">
+        {groups.map((group) => (
+          <label
+            key={group.key}
+            className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+          >
+            <input
+              type="checkbox"
+              name="groups"
+              value={group.key}
+              defaultChecked={picked.includes(group.key)}
+              aria-describedby={upgrade ? needsId : undefined}
+              onClick={(event) => {
+                // Picking one needs the plan: the prompt opens and it stays unpicked.
+                if (upgrade && event.currentTarget.checked) {
+                  event.preventDefault();
+                  setUpgrading(true);
+                }
+              }}
+              onChange={() => {
+                setChanged(true);
+                onChange();
+              }}
+              className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
+            />
+            <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
+            {group.name}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
+      {upgrade && (
+        <>
+          <span id={needsId} hidden>
+            {upgrade.title}
+          </span>
+          <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />
+        </>
+      )}
+    </fieldset>
   );
 }
 

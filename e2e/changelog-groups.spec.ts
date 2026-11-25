@@ -104,6 +104,14 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).uncheck();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  // Groups set meanwhile (by the API here; a teammate alike) stay when the open editor saves something else.
+  await api("/changelog/1", { groups: ["enterprise"] }, "PATCH");
+  await owner.getByRole("checkbox", { name: "Fixed" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  const saved = async () => (await api("/changelog/1", undefined, "GET")) as unknown as { groups: string[]; tags: string[] };
+  await expect.poll(async () => (await saved()).tags).toEqual(["fixed"]);
+  expect((await saved()).groups).toEqual(["enterprise"]);
+  await api("/changelog/1", { groups: [] }, "PATCH");
 
   // Her What's new has nothing announced for her, so it marks nothing seen (not the time of the one she can't read).
   await bea.goto("/widget?tab=whats-new");

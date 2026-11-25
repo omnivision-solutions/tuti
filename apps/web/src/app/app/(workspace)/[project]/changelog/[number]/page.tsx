@@ -6,7 +6,7 @@ import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
-import { aiEnabled } from "@tuti/shared";
+import { aiEnabled, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cn } from "cn";
 import { ExternalLinkIcon } from "lucide-react";
@@ -27,7 +27,8 @@ import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
 import { portalAddress } from "@/server/custom-domains";
-import { getMembership } from "@/server/membership";
+import { upgradePrompt } from "@/lib/upgrade-prompt";
+import { getMembership, isAdminRole } from "@/server/membership";
 import { lastingImage, lastingMediaUrl, mediaUrls } from "@/server/media-urls";
 import { pageTitle } from "@/lib/page-title";
 import { claimsOf, groupClaims } from "@/lib/reader-groups";
@@ -246,6 +247,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 emailPaused: await projectEmailWaits(membership.project.id),
               }}
               subscribers={subscribers}
+              groupsUpgrade={planIncludes(membership.project.plan, "privatePortal") ? null : upgradePrompt("privatePortal", slug, isAdminRole(membership.role))}
               groups={await prisma.readerGroup.findMany({ where: { projectId: membership.project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } })}
               posts={posts}
               standing={

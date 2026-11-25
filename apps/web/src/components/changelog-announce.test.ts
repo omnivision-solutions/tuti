@@ -7,7 +7,7 @@ vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
 
-const { HowAnnounced, publishSummary } = await import("./changelog");
+const { HowAnnounced, publishSummary, WhoSeesIt } = await import("./changelog");
 
 /** The Publish dialog's line, as text (the count's popover aside). */
 const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
@@ -150,5 +150,24 @@ describe("the Publish dialog's line", () => {
 
   test("nobody to email: no count", () => {
     expect(line({ posts: 1 })).toBe("It goes on your portal and in your widget, completes 1 post.");
+  });
+});
+
+describe("Who sees it", () => {
+  const groups = [{ key: "enterprise", name: "Enterprise" }];
+  const picker = (upgrade: { title: string; billingHref: string | null; note: string | null } | null) =>
+    renderToStaticMarkup(createElement(WhoSeesIt, { groups, picked: ["enterprise"], upgrade, onChange: () => {} }));
+
+  test("the groups are sent only once a pick changes: a save of the text keeps the ones set meanwhile, and needs no plan for them", () => {
+    expect(picker(null)).toMatch(/<input type="checkbox"[^>]*name="groups" checked="" value="enterprise"/);
+    expect(picker(null)).not.toContain("groupsEditable");
+  });
+
+  test("on a plan without reader groups, each group's description names the plan it needs", () => {
+    const html = picker({ title: "Reader groups need the Business plan", billingHref: null, note: null });
+    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeTruthy();
+    expect(html).toContain(`id="${id}" hidden="">Reader groups need the Business plan</span>`);
+    expect(picker(null)).not.toContain("aria-describedby");
   });
 });
