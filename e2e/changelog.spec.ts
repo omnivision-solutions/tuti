@@ -720,13 +720,18 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   // Its post completed, the list says so; a closed one it lists isn't counted.
   await api("/posts", { board: "feature-requests", title: "Old idea" });
   await api("/posts/106", { status: "planned" }, "PATCH");
-  await api("/changelog", { title: "Old idea, dropped", posts: [106] });
+  const { number: dropped } = (await api("/changelog", { title: "Old idea, dropped", posts: [106] })) as unknown as { number: number };
   await api("/posts/106", { status: "closed" }, "PATCH");
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here at last" })).toContainText("1 post completed");
   await expect(team.getByRole("listitem").filter({ hasText: "Old idea, dropped" })).not.toContainText("post");
-  // Another entry listing that completed post, published, completed nothing: no count.
+  // Published, it completed nothing: still no count.
+  await api(`/changelog/${dropped}/publish`, {});
+  // Another entry listing that completed post: a draft that will complete nothing, then published, completed nothing.
   const { number: again } = (await api("/changelog", { title: "Dark mode, polished", posts: [1] })) as unknown as { number: number };
+  await team.reload();
+  await expect(team.getByRole("listitem").filter({ hasText: "Old idea, dropped" })).not.toContainText("post");
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
   await api(`/changelog/${again}/publish`, {});
   await team.reload();
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode, polished" })).not.toContainText("post");
