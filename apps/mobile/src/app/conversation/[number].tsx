@@ -1,6 +1,6 @@
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { router, Stack, useLocalSearchParams } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { openBrowserAsync } from "expo-web-browser";
@@ -13,6 +13,7 @@ import {
   AppState,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -37,9 +38,10 @@ import {
   getConversation,
   isImage,
   isOnline,
+  composerInset,
   isSending,
   linkParts,
-  markRead,
+  markReadIfLooking,
   type Message,
   personName,
   type Picked,
@@ -94,22 +96,22 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     },
     [],
   );
-  // The newest fetch wins: an older one answering late doesn't put back what it had.
+  // On screen (not under another one pushed over it): it's read only while it's looked at.
+  const focused = useRef(false);
+  // The newest fetch wins: an older one answering late doesn't put back what it had. Its messages are still answered
+  // (a send drops what arrived from them), and a reply that arrived is dropped from any fetch: that's never stale.
   const asked = useRef(0);
-  const load = useCallback(() => {
+  const load = useCallback((): Promise<Message[] | void> => {
     const ask = ++asked.current;
     return getConversation(api, number).then(
       (loaded) => {
-        if (ask !== asked.current) {
-          return;
-        }
-        setConversation(loaded);
-        setError(null);
-        // A reply whose answer was lost but that the server saved is in the conversation: not offered again.
         setDraft((now) => withoutArrived(now, loaded.messages));
-        if (loaded.unread) {
-          markRead(api, loaded).catch(() => {});
+        if (ask === asked.current) {
+          setConversation(loaded);
+          setError(null);
+          markReadIfLooking(api, loaded, focused.current && AppState.currentState === "active");
         }
+        return loaded.messages;
       },
       (e: Error) => {
         if (ask === asked.current) {
@@ -141,10 +143,27 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       }
     });
   }, [active, session, number, load]);
-  // The first fetch doesn't wait for the stream.
+  // Fetched as it comes on screen, the first time and when a screen over it closes (the stream may have said nothing
+  // since): what's unread then is read, as it's looked at.
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      void load();
+      return () => {
+        focused.current = false;
+      };
+    }, [load]),
+  );
+  // The keyboard covers the home indicator: no space kept for it under the composer then.
+  const [keyboard, setKeyboard] = useState(false);
   useEffect(() => {
-    void load();
-  }, [load]);
+    const shown = Keyboard.addListener(IOS ? "keyboardWillShow" : "keyboardDidShow", () => setKeyboard(true));
+    const hidden = Keyboard.addListener(IOS ? "keyboardWillHide" : "keyboardDidHide", () => setKeyboard(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
 
   const [kind, setKind] = useState<Kind>("reply");
   const [uploading, setUploading] = useState<{ id: number; name: string }[]>([]);
@@ -310,7 +329,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         />
       )}
 
-      <View style={{ paddingBottom: insets.bottom + 8 }}>
+      <View style={{ paddingBottom: composerInset(insets.bottom, keyboard) + 8 }}>
       <View style={[IOS ? styles.composerIos : styles.composerAndroid, IOS ? { borderColor: colors.border, backgroundColor: kind === "note" ? colors.note : colors.card } : { backgroundColor: kind === "note" ? colors.note : colors.secondary }]}>
         <View style={[styles.tabs, { borderBottomColor: colors.border }]} accessibilityRole="tablist">
           {(["reply", "note"] as const).map((tab) => (
@@ -494,18 +513,17 @@ function UnsentBubble({ unsent, sending, colors, onRetry, onEdit, onDiscard }: {
           </Text>
         ))}
       </View>
-      {sending ? (
-        <Text style={[styles.meta, styles.by, { color: colors.muted }]}>Sending…</Text>
-      ) : (
-        <View style={styles.unsentStatus} accessibilityLiveRegion="polite">
-          <Text style={[styles.meta, { color: colors.error, textAlign: "right" }]}>{unsent.error ? `Not sent: ${unsent.error}` : "Not sent"}</Text>
-          <View style={styles.unsentActions}>
-            <TextButton colors={colors} label="Retry" onPress={onRetry} />
-            <TextButton colors={colors} label="Edit" onPress={onEdit} />
-            <TextButton colors={colors} label="Delete" onPress={onDiscard} muted />
-          </View>
+      {/* The buttons stay while it sends, off, so a keyboard or screen reader keeps its place on Retry. */}
+      <View style={styles.unsentStatus} accessibilityLiveRegion="polite">
+        <Text style={[styles.meta, { color: sending ? colors.muted : colors.error, textAlign: "right" }]}>
+          {sending ? "Sending…" : unsent.error ? `Not sent: ${unsent.error}` : "Not sent"}
+        </Text>
+        <View style={styles.unsentActions}>
+          <TextButton colors={colors} label="Retry" onPress={onRetry} disabled={sending} />
+          <TextButton colors={colors} label="Edit" onPress={onEdit} disabled={sending} />
+          <TextButton colors={colors} label="Delete" onPress={onDiscard} disabled={sending} muted />
         </View>
-      )}
+      </View>
     </View>
   );
 }
@@ -588,9 +606,16 @@ function IconButton({ label, icon, colors, onPress }: { label: string; icon: Sym
   );
 }
 
-function TextButton({ colors, label, onPress, muted }: { colors: Colors; label: string; onPress: () => void; muted?: boolean }) {
+function TextButton({ colors, label, onPress, muted, disabled = false }: { colors: Colors; label: string; onPress: () => void; muted?: boolean; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+    // Not `disabled`, which would drop focus: a press is ignored while it's off.
+    <Pressable
+      onPress={() => !disabled && onPress()}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      hitSlop={8}
+      style={({ pressed }) => ({ opacity: disabled ? 0.4 : pressed ? 0.6 : 1 })}
+    >
       <Text style={[styles.textButton, { color: muted ? colors.muted : colors.primary }]}>{label}</Text>
     </Pressable>
   );

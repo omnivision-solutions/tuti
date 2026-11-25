@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "./api";
 import {
   arrived,
+  composerInset,
+  type Conversation,
   delivery,
   draftsGoWith,
   draftsGeneration,
@@ -14,6 +16,7 @@ import {
   getDraft,
   isSending,
   linkParts,
+  markReadIfLooking,
   type Message,
   parseEvents,
   readDraft,
@@ -117,7 +120,7 @@ describe("a message", () => {
   it("says who wrote it: You for your own, a Cc'd sender by their address, the person otherwise", () => {
     expect(writer(message({ author: "team", name: "Olive", fromYou: true }), "Maya")).toBe("You");
     expect(writer(message({ author: "team", name: "Ravi" }), "Maya")).toBe("Ravi");
-    expect(writer(message({ fromAddress: "boss@northwind.example" }), "Maya")).toBe("boss@northwind.example");
+    expect(writer(message({ fromAddress: "e2e-boss@example.com" }), "Maya")).toBe("e2e-boss@example.com");
     expect(writer(message({}), "Maya")).toBe("Maya");
   });
 
@@ -394,4 +397,49 @@ describe("a send whose answer was lost", () => {
     expect(calls).toHaveLength(1);
     expect(getDraft(key).unsent).toEqual([]);
   });
+});
+
+describe("a send's own fetch", () => {
+  const key = "https://tuti.example.com|acme|12";
+  const unsent: Unsent = { id: "u1", body: "Fixed now", note: false, close: false, files: [], seen: "2026-11-25T09:00:00.000Z" };
+  const saved = [message({ author: "team", fromYou: true, body: "Fixed now", createdAt: "2026-11-25T09:05:00.000Z" })];
+  // The screen kept a newer fetch's result instead of this one's: only the answered messages say what arrived.
+  const answers = (messages: Message[]) => async () => messages;
+
+  it("drops a reply it shows arrived, though the screen kept another fetch's result: Retry posts nothing", async () => {
+    updateDraft(key, (draft) => ({ ...draft, unsent: [{ ...unsent, error: "Couldn't reach tuti.example.com" }] }));
+    const { api, calls } = fakeApi({ "/conversations/12/messages": () => ({ id: "m9" }) });
+    expect(await sendUnsent(api, key, 12, unsent, answers(saved), true)).toEqual({});
+    expect(calls).toEqual([]);
+    expect(getDraft(key).unsent).toEqual([]);
+  });
+
+  it("drops a reply whose answer was lost when the fetch after the failure shows it", async () => {
+    updateDraft(key, (draft) => ({ ...draft, unsent: [unsent] }));
+    const { api } = fakeApi({
+      "/conversations/12/messages": () => {
+        throw new Error("Couldn't reach tuti.example.com");
+      },
+    });
+    expect(await sendUnsent(api, key, 12, unsent, answers(saved))).toBeNull();
+    expect(getDraft(key).unsent).toEqual([]);
+  });
+});
+
+describe("reading", () => {
+  const conversation = (unread: boolean) => ({ number: 12, unread, messages: [message({ createdAt: "2026-11-25T09:00:00.000Z" })] }) as Conversation;
+
+  it("marks it read only while the teammate is looking: never from a fetch after they've left", async () => {
+    const { api, calls } = fakeApi({ "/conversations/12/read": () => ({}) });
+    markReadIfLooking(api, conversation(true), false);
+    markReadIfLooking(api, conversation(false), true);
+    expect(calls).toEqual([]);
+    markReadIfLooking(api, conversation(true), true);
+    expect(calls).toEqual([{ path: "/conversations/12/read", method: "POST", body: { seen: "2026-11-25T09:00:00.000Z" } }]);
+  });
+});
+
+it("keeps no space under the composer for the home indicator while the keyboard covers it", () => {
+  expect(composerInset(34, false)).toBe(34);
+  expect(composerInset(34, true)).toBe(0);
 });

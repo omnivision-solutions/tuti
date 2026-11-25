@@ -50,6 +50,22 @@ export const getConversation = (api: Api, number: number) => api<Conversation>(`
 export const markRead = (api: Api, conversation: Conversation) =>
   api(`/conversations/${conversation.number}/read`, { method: "POST", body: { seen: conversation.messages.at(-1)?.createdAt ?? null } });
 
+/**
+ * Marks it read when it has something unread and the teammate is `looking` (the screen focused, the app in front), as
+ * the web reads only while its page is visible and focused: never from a fetch that runs after they've left (a send's).
+ */
+export function markReadIfLooking(api: Api, conversation: Conversation, looking: boolean) {
+  if (conversation.unread && looking) {
+    markRead(api, conversation).catch(() => {});
+  }
+}
+
+/**
+ * The space under the composer for the home indicator or navigation bar: none while the keyboard is up, as the keyboard
+ * covers that area and the keyboard-avoiding padding already counts it.
+ */
+export const composerInset = (bottomInset: number, keyboardShown: boolean) => (keyboardShown ? 0 : bottomInset);
+
 /** Who it's with, as the web's Inbox names them. */
 export const personName = (user: Conversation["user"]) => user.name ?? user.email ?? "Unknown";
 
@@ -338,23 +354,30 @@ const sends = new Map<string, Promise<{ closed?: boolean } | null>>();
 export const isSending = (id: string) => sends.has(id);
 
 /**
- * Sends an unsent reply or note kept in the draft at `key`. `saved` fetches the conversation (its fetch drops unsent ones
- * that arrived, `withoutArrived`): once the server has it, so it's there before the unsent one goes; after a failure,
- * as the server may have saved it though its answer was lost; and before a `retry`, which posts only if it still isn't
- * there. The answer (`{}` when it was there already), or null when it failed.
+ * Sends an unsent reply or note kept in the draft at `key`. `saved` fetches the conversation and answers its messages:
+ * once the server has it, so it's there before the unsent one goes; after a failure, as the server may have saved it
+ * though its answer was lost; and before a `retry`, which posts only if it still isn't there. Unsent ones a fetch shows
+ * arrived are dropped here, from what that fetch answered (the screen may keep a newer fetch's result instead). The
+ * answer (`{}` when it was there already), or null when it failed.
  */
-export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent, saved: () => Promise<unknown>, retry = false) {
+export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent, saved: () => Promise<Message[] | void>, retry = false) {
   const going = sends.get(unsent.id);
   if (going) {
     return going;
   }
   const since = generation;
+  const fetched = async () => {
+    const messages = await saved().catch(() => undefined);
+    if (messages) {
+      updateDraft(key, (draft) => withoutArrived(draft, messages), since);
+    }
+  };
   const kept = () => since === generation && getDraft(key).unsent.some((one) => one.id === unsent.id);
   const mark = (error: string | undefined) => (draft: Draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error } : one)) });
   // Out of `sends` before the draft changes, so what's shown then says it isn't sending any more.
   const send = (async (): Promise<{ closed?: boolean } | null> => {
     if (retry) {
-      await saved().catch(() => {});
+      await fetched();
       if (!kept()) {
         sends.delete(unsent.id);
         return {};
@@ -364,12 +387,12 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
     try {
       sent = await sendReply(api, number, unsent);
     } catch (error) {
-      await saved().catch(() => {});
+      await fetched();
       sends.delete(unsent.id);
       updateDraft(key, mark(error instanceof Error ? error.message : String(error)), since);
       return null;
     }
-    await saved().catch(() => {});
+    await fetched();
     sends.delete(unsent.id);
     updateDraft(key, (draft) => ({ ...draft, unsent: draft.unsent.filter((one) => one.id !== unsent.id) }), since);
     return sent;
