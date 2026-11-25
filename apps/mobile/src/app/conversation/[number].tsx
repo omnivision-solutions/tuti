@@ -61,6 +61,7 @@ import {
   writer,
   writtenAt,
 } from "@/lib/conversation";
+import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -74,7 +75,7 @@ export default function ConversationRoute() {
   const { number } = useLocalSearchParams<{ number: string }>();
   const { session } = useSession();
   // One screen per conversation: its draft is read once, and goes with it.
-  const key = `${session!.server}|${session!.project ?? ""}|${number}`;
+  const key = screenKey(session!, number);
   return <ConversationScreen key={key} number={Number(number)} draftKey={key} />;
 }
 
@@ -101,11 +102,14 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   // Answers the messages, or rejects when it can't (a send's check needs to know): the screen's own calls go through `refresh`.
   const load = useCallback((): Promise<Message[]> => {
     const ask = ++asked.current;
+    const since = triageChanges(draftKey);
     return getConversation(api, number).then(
       (loaded) => {
         setDraft((now) => withoutArrived(now, loaded.messages));
         if (ask === asked.current) {
           setConversation(loaded);
+          // Not over a change the details sheet made while this was on its way.
+          showTriage(draftKey, loaded, since);
           setError(null);
           markReadIfLooking(api, loaded, focused.current && AppState.currentState === "active");
         }
@@ -118,7 +122,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         throw e;
       },
     );
-  }, [api, number, setDraft]);
+  }, [api, number, setDraft, draftKey]);
   const refresh = useCallback(() => void load().catch(() => {}), [load]);
   // VoiceOver has no live regions: a failed fetch is announced (TalkBack reads the live region).
   useEffect(() => {
@@ -164,6 +168,11 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       hidden.remove();
     };
   }, []);
+
+  // Its status and assignee, as the details sheet over it changes them too.
+  const triage = useSyncExternalStore(subscribeTriage, () => getTriage(draftKey));
+  useEffect(() => holdTriage(draftKey), [draftKey]);
+  const details = () => router.push(`/conversation/${number}/details`);
 
   const [kind, setKind] = useState<Kind>("reply");
   // Files uploading, also those started before the screen was opened again.
@@ -288,7 +297,9 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
           headerLargeTitleEnabled: false,
           headerStyle: { backgroundColor: colors.card },
           headerShadowVisible: true,
-          headerTitle: conversation ? () => <Person conversation={conversation} colors={colors} /> : "",
+          headerTitle: conversation ? () => <Person conversation={conversation} colors={colors} onPress={details} /> : "",
+          // Once this screen's fetch has answered: what's kept from an earlier visit may be out of date.
+          headerRight: triage && conversation ? () => <Standing triage={triage} colors={colors} onPress={details} /> : undefined,
         }}
       />
       {!conversation ? (
@@ -441,13 +452,20 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   );
 }
 
-/** Who it's with, in the header: their initial, name, and Online and their company under it. */
-function Person({ conversation, colors }: { conversation: Conversation; colors: Colors }) {
+/** Who it's with, in the header: their initial, name, and Online and their company under it. Opens the details. */
+function Person({ conversation, colors, onPress }: { conversation: Conversation; colors: Colors; onPress: () => void }) {
   const name = personName(conversation.user);
   const online = isOnline(conversation.onlineUntil);
   const about = [online && "Online", conversation.company].filter(Boolean).join(" · ");
   return (
-    <View style={styles.person} accessible accessibilityRole="header" accessibilityLabel={[name, about].filter(Boolean).join(", ")}>
+    <Pressable
+      onPress={onPress}
+      style={styles.person}
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel={[name, about].filter(Boolean).join(", ")}
+      accessibilityHint="Shows who they are"
+    >
       <View style={[styles.avatar, { backgroundColor: colors.soft }]}>
         <Text style={[styles.avatarText, { color: colors.onSoft }]}>{name.slice(0, 1).toUpperCase()}</Text>
       </View>
@@ -464,7 +482,32 @@ function Person({ conversation, colors }: { conversation: Conversation; colors: 
           </View>
         ) : null}
       </View>
-    </View>
+    </Pressable>
+  );
+}
+
+/** Where it stands and who has it, in the header (the status a Send and close or a kept-open reply changes). Opens the details. */
+function Standing({ triage, colors, onPress }: { triage: Triage; colors: Colors; onPress: () => void }) {
+  const word = standing(triage);
+  const assignee = triage.assignee?.name;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${word}, ${assignee ? `assigned to ${assignee}` : "unassigned"}, details`}
+      hitSlop={6}
+      style={({ pressed }) => [styles.standing, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <View style={[styles.dot, { backgroundColor: word === "Open" ? colors.onNote : colors.muted }]} />
+      <Text style={[styles.standingText, { color: colors.text }]}>{word}</Text>
+      {assignee ? (
+        <View style={[styles.face, { backgroundColor: colors.soft }]}>
+          <Text style={[styles.faceText, { color: colors.onSoft }]}>{assignee.slice(0, 1).toUpperCase()}</Text>
+        </View>
+      ) : (
+        <Icon name={{ ios: "person.badge.plus", android: "person_add" }} size={18} color={colors.muted} />
+      )}
+    </Pressable>
   );
 }
 
@@ -670,6 +713,10 @@ const styles = StyleSheet.create({
   personName: { fontSize: 16, fontWeight: "600" },
   about: { flexDirection: "row", alignItems: "center", gap: 4 },
   dot: { width: 7, height: 7, borderRadius: 4 },
+  standing: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6, height: 36 },
+  standingText: { fontSize: 14, fontWeight: "500" },
+  face: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  faceText: { fontSize: 11, fontWeight: "600" },
   composerIos: { marginHorizontal: 10, marginTop: 6, borderWidth: 1, borderRadius: 20, overflow: "hidden" },
   composerAndroid: { marginHorizontal: 10, marginTop: 6, borderRadius: 24, overflow: "hidden" },
   tabs: { flexDirection: "row", gap: 18, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth },

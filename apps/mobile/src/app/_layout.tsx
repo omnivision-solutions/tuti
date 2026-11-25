@@ -33,6 +33,7 @@ function Navigator() {
           <Stack.Screen name="index" options={{ title: "Inbox" }} />
           <Stack.Screen name="inbox/projects" options={{ title: "Projects", presentation: "formSheet", sheetAllowedDetents: "fitToContents", sheetGrabberVisible: true, sheetCornerRadius: Platform.OS === "android" ? 28 : undefined, headerShown: false }} />
           <Stack.Screen name="conversation/[number]" options={{ title: "" }} />
+          <Stack.Screen name="conversation/[number]/details" options={{ title: "Details", presentation: "formSheet", sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, sheetCornerRadius: Platform.OS === "android" ? 28 : undefined, headerShown: false }} />
         </Stack.Protected>
       </Stack>
       <StatusBar style="auto" />
