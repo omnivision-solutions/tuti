@@ -110,7 +110,7 @@ export const updateLanguages = defineOperation({
     await prisma.$transaction(async (tx) => {
       // One change at a time per project: the limit and the default language's rule hold for what's saved.
       await lockProject(tx, projectId);
-      const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true } } } });
+      const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } } });
       const current = project.languages.map(({ code }) => code);
       const language = input.default ?? project.language;
       if (language !== project.language && current.length > 0) {
@@ -124,10 +124,15 @@ export const updateLanguages = defineOperation({
       if (clash) {
         throw new OperationError(400, "invalid_input", `${LANGUAGES[clash.code].name} is the default language`);
       }
-      // Past the limit (after a downgrade) a project keeps its languages and can change or remove them, but add none.
+      // Past the limit (after a downgrade) a project keeps its languages and can change or remove them, but add none,
+      // and only its oldest within the limit can go live.
       const limit = languageLimit(project.plan);
-      if (limit !== null && 1 + input.languages.length > limit && input.languages.some(({ code }) => !current.includes(code))) {
-        throw new OperationError(402, "plan_required", languagesFull(project.plan, limit));
+      if (limit !== null && 1 + input.languages.length > limit) {
+        const within = current.slice(0, limit - 1);
+        const wasLive = (code: string) => project.languages.some((language) => language.code === code && language.live);
+        if (input.languages.some(({ code, live }) => !current.includes(code) || (live && !wasLive(code) && !within.includes(code)))) {
+          throw new OperationError(402, "plan_required", languagesFull(project.plan, limit));
+        }
       }
       await tx.project.update({ where: { id: projectId }, data: { language } });
       await tx.projectLanguage.deleteMany({ where: { projectId, code: { notIn: input.languages.map(({ code }) => code) } } });

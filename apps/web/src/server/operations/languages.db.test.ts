@@ -68,7 +68,9 @@ test("the plan limits the languages, the default counted; past it (after a downg
     status: 402,
     message: "Projects on the Free plan have 1 language, the default included. Upgrade to Pro in Settings → Billing to add more.",
   });
-  await update({ languages: [{ code: "de", live: true }, { code: "fr" }, { code: "es" }] });
+  // Free has room for the default alone: none of the others goes live.
+  await expect(update({ languages: [{ code: "de", live: true }, { code: "fr" }, { code: "es" }] })).rejects.toMatchObject({ status: 402 });
+  await update({ languages: [{ code: "de", instructions: "Use du." }, { code: "fr" }, { code: "es" }] });
   await update({ languages: [{ code: "de" }] });
   await expect(update({ languages: [{ code: "de" }, { code: "fr" }] })).rejects.toMatchObject({ status: 402 });
 
@@ -76,4 +78,12 @@ test("the plan limits the languages, the default counted; past it (after a downg
   await update({ languages: [{ code: "de" }, { code: "fr" }] });
   await expect(update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es" }] })).rejects.toThrow("Projects on the Pro plan have up to 3 languages, the default included. Upgrade to Business");
   expect((await get()).languages.map(({ code }) => code)).toEqual(["de", "fr"]);
+
+  // Over Pro's limit (added without one): the oldest two can go live, the newest can't, and a live one stays live.
+  vi.stubEnv("BILLING_CONFIG", "");
+  await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: true }] });
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await update({ languages: [{ code: "de", live: true }, { code: "fr", live: true }, { code: "es", live: true }] });
+  await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: false }] });
+  await expect(update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es", live: true }] })).rejects.toMatchObject({ status: 402 });
 });
