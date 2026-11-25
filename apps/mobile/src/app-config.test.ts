@@ -18,6 +18,13 @@ describe("the app's Expo config", () => {
     expect(appConfig({}).updates).toBeUndefined();
   });
 
+  it("leaves out of the runtime version what differs between Expo's builders and where updates are published", async () => {
+    // On the builders the Firebase config is a secret file outside the project, and android/ and ios/ are generated there;
+    // left in, a build's runtime version differs from its updates' and EAS refuses the build.
+    const { ignorePaths } = (await import("../fingerprint.config.js")) as { ignorePaths: string[] };
+    expect(ignorePaths).toEqual(expect.arrayContaining(["../../../eas-environment-secrets/**", "android", "android/**", "ios", "ios/**"]));
+  });
+
   it("builds development, preview and store builds, each on its own update channel", () => {
     const eas = JSON.parse(readFileSync(new URL("../eas.json", import.meta.url), "utf8")) as {
       build: Record<string, { channel?: string; distribution?: string; developmentClient?: boolean; android?: { buildType?: string } }>;
