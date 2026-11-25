@@ -186,10 +186,10 @@ test("two accounts registering one phone at the same moment leave it registered 
   // The owner registers the same phone meanwhile: it waits for the other's to finish rather than miss its row.
   let done = false;
   const ownerRegistration = api(owner, "POST", "/devices", { deviceId: "owner-id", token, platform: "ios" }).then((response) => ((done = true), response));
-  // Until it's waiting on the token's lock (without the lock it never waits, and this fails).
   // This database's waiters on the device-token lock (class 13) only: other test files share the Postgres server.
   let waiting = 0;
-  for (const deadline = Date.now() + 3_000; waiting === 0 && Date.now() < deadline; ) {
+  // Until one of the two happens, with no clock: its registration waits on the lock, or (without the lock) it finishes.
+  while (waiting === 0 && !done) {
     [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
       SELECT count(*)::int AS waiting FROM pg_locks
       WHERE locktype = 'advisory' AND NOT granted AND classid = 13
