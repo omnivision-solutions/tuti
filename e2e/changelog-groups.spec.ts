@@ -125,6 +125,24 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect.poll(async () => (await saved()).tags).toEqual(["improved", "fixed"]);
   expect((await saved()).groups).toEqual(["enterprise"]);
   await api("/changelog/1", { groups: [] }, "PATCH");
+  // While a save runs (its answer held here), the picks wait: one made then would be dropped as the picker starts afresh after it.
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
+  await owner.getByRole("checkbox", { name: "Breaking" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(enterprise).toBeDisabled();
+  releaseSave();
+  await expect(enterprise).toBeEnabled();
+  await owner.unroute("**/*");
+
   // A draft: picking who sees it holds Publish until it's saved (Publish sends what's saved, to whoever that's for).
   await api("/changelog", { title: "Roles", body: "Give teammates roles." });
   await owner.goto(`/app/${slug}/changelog/3`);
