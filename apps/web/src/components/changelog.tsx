@@ -1733,7 +1733,7 @@ export function ChangelogEntryActions({
   markers?: string[];
   /** The entry has no cover and one can be composed: the Publish dialog offers its designs, with one picked. */
   covers?: CoverChoices | null;
-  /** How many posts it completes. */
+  /** How many posts publishing moves to Completed (not those Completed or Closed already). */
   postCount: number;
   /** How many people confirmed they want the changelog by email. */
   subscribers?: number;

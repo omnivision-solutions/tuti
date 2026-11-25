@@ -663,6 +663,10 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   await checkpoint(team, "team-changelog-saved-posts-after-unpublish");
+  // Published again, it completes nothing: its post is Completed already.
+  await team.getByRole("button", { name: "Publish" }).click();
+  await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget.");
+  await expect(team.getByRole("alertdialog")).not.toContainText("completes");
 });
 
 test("the changelog's tags filter it, a page further are older entries, and months jump through them", async ({ browser }, testInfo) => {
