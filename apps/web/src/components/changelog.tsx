@@ -546,6 +546,8 @@ export function ChangelogForm({
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
+  // Saves so far: "Who sees it" starts afresh after each (from the saved groups), its picks sent again only once changed.
+  const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
   const [published, setPublished] = useState(entry?.published);
   if (published !== entry?.published) {
@@ -558,6 +560,7 @@ export function ChangelogForm({
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
       setDirty(false);
+      setSaves((n) => n + 1);
       toast.success("Saved");
     }
     return result;
@@ -675,7 +678,7 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        {groups.length > 0 && <WhoSeesIt groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => setDirty(true)} />}
+        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => setDirty(true)} />}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
