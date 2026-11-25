@@ -1740,10 +1740,13 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     const asked = newAddress();
     await subscribe(asked);
     expect(await call(removeChangelogSubscribers, key(), { emails: [kim, never, asked], users: ["app-sam"] })).toEqual({ removed: [kim, lee] });
-    expect(await told()).toEqual([
-      { email: kim, userId: null, source: "api", allEmails: false },
-      { email: lee, userId: "app-sam", source: "api", allEmails: false },
-    ]);
+    // Told in one transaction: in no order.
+    expect(await told()).toEqual(
+      expect.arrayContaining([
+        { email: kim, userId: null, source: "api", allEmails: false },
+        { email: lee, userId: "app-sam", source: "api", allEmails: false },
+      ]),
+    );
     // The waiting request's link is gone too.
     expect((await row(asked))!.confirmTokenHash).toBeNull();
     await publishEntry("Gone");

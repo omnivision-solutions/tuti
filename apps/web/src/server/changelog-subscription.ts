@@ -18,6 +18,7 @@ import { log } from "@tuti/shared";
 
 import { hashSecret } from "@/lib/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
+import { withLockRetries } from "@/server/lock-retries";
 
 
 /**
@@ -142,12 +143,15 @@ const emailedNow = async (tx: Prisma.TransactionClient, projectId: string, email
  * or where all of the project's emails are off: those are returned, not added. One already subscribed stays as it was.
  */
 export async function addSubscribers(projectId: string, emails: string[]) {
-  return prisma.$transaction(
+  return withLockRetries(() =>
+    prisma.$transaction(
     async (tx) => {
       const optedOut = await optedOutOf(tx, projectId, emails);
       const rest = emails.filter((email) => !optedOut.has(email));
-      await tx.changelogSubscriber.createMany({ data: rest.map((email) => ({ projectId, email })), skipDuplicates: true });
-      // An unsubscribe meanwhile is waited for and seen (the row's lock): it's left.
+      // Made and then locked in lockSubscribers' order, so adds, removals and unsubscribes at once queue, not deadlock;
+      // an unsubscribe meanwhile is waited for and seen: it's left.
+      await tx.changelogSubscriber.createMany({ data: [...rest].sort().map((email) => ({ projectId, email })), skipDuplicates: true });
+      await lockSubscribers(tx, projectId, rest);
       await tx.changelogSubscriber.updateMany({
         where: { projectId, email: { in: rest }, confirmedAt: null, unsubscribedAt: null },
         data: { confirmedAt: new Date() },
@@ -162,6 +166,7 @@ export async function addSubscribers(projectId: string, emails: string[]) {
       };
     },
     { timeout: 60_000 },
+    ),
   );
 }
 
@@ -173,7 +178,8 @@ export async function addSubscribers(projectId: string, emails: string[]) {
  */
 export async function removeSubscribers(projectId: string, people: { email: string; by?: string }[]) {
   const emails = people.map((person) => person.email);
-  const { removed, deliveries } = await prisma.$transaction(
+  const { removed, deliveries } = await withLockRetries(() =>
+    prisma.$transaction(
     async (tx) => {
       const { confirmed, emailed } = await lockSubscribers(tx, projectId, emails);
       await tx.changelogSubscriber.updateMany({
@@ -189,6 +195,7 @@ export async function removeSubscribers(projectId: string, people: { email: stri
       return { removed: emails.filter((email) => confirmed.has(email)), deliveries };
     },
     { timeout: 60_000 },
+    ),
   );
   await queueDeliveries(deliveries);
   return removed;
