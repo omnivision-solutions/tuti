@@ -180,11 +180,14 @@ export default function Inbox() {
   // The next page after `from` (the list shown, unless a reload's).
   const loadMore = async (from = list): Promise<void> => {
     // Pages start at an offset, which a swipe the server has may have moved: the next page waits for the list's reload.
-    // That reload failed (the error says so): asked for again here, as Try again or scrolling to the end asks for more.
-    if (from?.next && swipesNow.current.size > 0) {
-      pagingAfterSwipes.current = true;
+    // That reload failed (the error says so): asked for again here, as Try again or scrolling to the end asks for more,
+    // whether or not there's a next page.
+    if (swipesNow.current.size > 0) {
+      if (from?.next) {
+        pagingAfterSwipes.current = true;
+      }
       if (error && [...swipesNow.current.values()].every((reload) => reload)) {
-        void loadAll(from.rows.length);
+        void loadAll(from?.rows.length);
       }
       return;
     }
@@ -531,8 +534,8 @@ export default function Inbox() {
           </View>
         }
         ListFooterComponent={
-          !list?.next ? undefined : error ? (
-            // A page that failed: tried again here (the error is at the top).
+          !list?.next && !(error && swipes.size > 0) ? undefined : error ? (
+            // A page, or the reload after a swipe, that failed: tried again here (the error is at the top).
             <Pressable onPress={() => void loadMore()} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.6 : 1 }]}>
               <Text style={[styles.retry, { color: colors.primary, textAlign: "center" }]}>Try again</Text>
             </Pressable>

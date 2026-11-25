@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
-import { ActionSheetIOS, Alert, AppState } from "react-native";
+import { AccessibilityInfo, ActionSheetIOS, Alert, AppState } from "react-native";
 
 import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
@@ -637,10 +637,14 @@ describe("swiping a row", () => {
   // The actions behind a row (drawn beside it under Jest), hidden from screen readers: the row has them as its actions.
   const pressAction = (label: string, i = 0) => fireEvent.press(screen.getAllByText(label, { includeHiddenElements: true })[i]!);
   const chooseView = async (name: RegExp) => fireEvent.press(screen.getByRole("tab", { name }));
+  // What's said to a screen reader when a change is made, in the details sheet's words.
+  // (React Native's own Jest setup mocks it already: cleared of earlier tests' calls.)
+  const announced = () => jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => {}).mockClear();
 
   it("hides it at once, and once the server has it loads the list and the counts again", async () => {
     const closing = row("Invite link expired");
     const { changes } = fakeServer({ acme: [row("CSV export stops at 500 rows"), closing] });
+    const announce = announced();
     await render(<Inbox />);
     await screen.findByText("Invite link expired");
 
@@ -650,6 +654,7 @@ describe("swiping a row", () => {
 
     const counted = mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length;
     await act(async () => changes[0]!.answer(true));
+    expect(announce).toHaveBeenCalledWith("Closed");
     expect(mockApi).toHaveBeenLastCalledWith("/conversations?view=open&limit=25&cursor=0");
     expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
     expect(mockApi.mock.calls.filter(([path]) => path === "/inbox/views").length).toBe(counted + 1);
@@ -658,6 +663,7 @@ describe("swiping a row", () => {
   it("puts it back, saying why in an alert (it may be far down the list), when the server refuses", async () => {
     const { changes } = fakeServer({ acme: [row("Invite link expired")] });
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const announce = announced();
     await render(<Inbox />);
     await screen.findByText("Invite link expired");
 
@@ -666,6 +672,8 @@ describe("swiping a row", () => {
     await act(async () => changes[0]!.answer(false, "You can't change this conversation."));
     expect(screen.getByText("Invite link expired")).toBeTruthy();
     expect(alert).toHaveBeenCalledWith(`Couldn't close "Invite link expired"`, "You can't change this conversation.");
+    // Said by the alert, never as done.
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it("ignores the row's own live changes while its swipe waits: the reload after the answer brings it", async () => {
@@ -700,6 +708,24 @@ describe("swiping a row", () => {
     server.holdWhen(() => false);
     await act(async () => server.held.forEach((one) => one.release()));
     expect(subjects()).toEqual(["Invite link expired", "CSV export stops at 500 rows"]);
+  });
+
+  it("reloads from Try again when the reload after a swipe failed, with no next page", async () => {
+    const rows = [row("Invite link expired"), row("CSV export stops at 500 rows")];
+    const server = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Invite link expired");
+    await pressAction("Close");
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(["CSV export stops at 500 rows"]);
+    expect(screen.queryByText("Something went wrong on the server.")).toBeNull();
   });
 
   it("reloads from the end's Try again when the reload after a swipe failed, then pages on", async () => {
@@ -780,6 +806,7 @@ describe("swiping a row", () => {
     jest.setSystemTime(new Date("2026-11-25T14:00:00"));
     const { changes } = fakeServer({ acme: [row("Invite link expired")] });
     const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    const announce = announced();
     await render(<Inbox />);
     await screen.findByText("Invite link expired");
 
@@ -794,6 +821,7 @@ describe("swiping a row", () => {
     expect(screen.queryByText("Invite link expired")).toBeNull();
     expect(changes[0]!.body).toEqual({ snoozedUntil: new Date("2026-11-26T09:00:00").toISOString() });
     await act(async () => changes[0]!.answer(true));
+    expect(announce).toHaveBeenCalledWith("Snoozed till Thu 26 Nov, 09:00");
     expect(subjects()).toEqual([]);
   });
 
@@ -801,6 +829,7 @@ describe("swiping a row", () => {
     const waking = row("Invite link expired");
     const { changes } = fakeServer({ acme: [waking, row("Still asleep"), row("Old one", { status: "closed" })] }, { snoozed: [1, 2] });
     const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    const announce = announced();
     await render(<Inbox />);
     await chooseView(/^Snoozed/);
     await screen.findByText("Invite link expired");
@@ -812,6 +841,22 @@ describe("swiping a row", () => {
     expect(changes.map(({ path, body }) => ({ path, body }))).toEqual([{ path: `/conversations/${waking.number}`, body: { snoozedUntil: null } }]);
     await act(async () => changes[0]!.answer(true));
     expect(subjects()).toEqual(["Still asleep"]);
+    expect(announce).toHaveBeenCalledWith("Back in the inbox");
+  });
+
+  it("says why a wake was refused", async () => {
+    const { changes } = fakeServer({ acme: [row("Invite link expired")] }, { snoozed: [1] });
+    const sheet = jest.spyOn(ActionSheetIOS, "showActionSheetWithOptions").mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    await render(<Inbox />);
+    await chooseView(/^Snoozed/);
+    await screen.findByText("Invite link expired");
+
+    await pressAction("Snooze");
+    await act(async () => sheet.mock.calls[0]![1](3));
+    await act(async () => changes[0]!.answer(false, "Spam isn't snoozed."));
+    expect(alert).toHaveBeenCalledWith(`Couldn't wake "Invite link expired"`, "Spam isn't snoozed.");
+    expect(screen.getByText("Invite link expired")).toBeTruthy();
   });
 
   it("has nothing for a closed one, and Close but not Snooze in Spam, as the details sheet", async () => {
