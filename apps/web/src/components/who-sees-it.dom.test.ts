@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement as h } from "react";
+import { act, createElement as h, useContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -8,7 +8,7 @@ vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
 
-const { WhoSeesIt } = await import("./changelog");
+const { ChangelogSaving, ChangelogSavingContext, WhoSeesIt } = await import("./changelog");
 
 afterEach(() => document.body.replaceChildren());
 
@@ -52,4 +52,19 @@ test("on such a plan, a group the entry is saved with can be ticked again after 
   expect(box("enterprise").checked).toBe(true);
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(onChange).toHaveBeenCalledTimes(2);
+});
+
+test("Publish is told of an unsaved pick only while the picker that has it is there: once the form is replaced (new saved text), the pick and the hold go together", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  const root = createRoot(box);
+  const Held = () => h("output", null, String(useContext(ChangelogSavingContext)?.groupsChanged));
+  const render = (picker: boolean) =>
+    act(async () => root.render(h(ChangelogSaving, null, h(Held), picker && h(WhoSeesIt, { groups, picked: [], upgrade: null, onChange: () => {} }))));
+  await render(true);
+  expect(box.querySelector("output")?.textContent).toBe("false");
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
+  expect(box.querySelector("output")?.textContent).toBe("true");
+  await render(false);
+  expect(box.querySelector("output")?.textContent).toBe("false");
 });

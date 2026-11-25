@@ -119,7 +119,7 @@ type PostOption = PickablePost & { status: PostStatus };
 const CHANGELOG_FORM = "changelog-form";
 /** AiHelpers' menu button: Draft with AI's dialog gives the keyboard's focus back to it once the text is written. */
 const EDIT_WITH_AI = "edit-with-ai";
-const ChangelogSavingContext = createContext<{
+export const ChangelogSavingContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
   /** Publish, Unpublish or Draft with AI is running: Save waits for it, as they wait for a save (one would undo the other). */
@@ -566,7 +566,6 @@ export function ChangelogForm({
     if (!result.error) {
       setDirty(false);
       setSaves((n) => n + 1);
-      saving?.setGroupsChanged(false);
       toast.success("Saved");
     }
     return result;
@@ -683,10 +682,7 @@ export function ChangelogForm({
             ))}
           </div>
         </fieldset>
-        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => {
-          setDirty(true);
-          saving?.setGroupsChanged(true);
-        }} />}
+        {groups.length > 0 && <WhoSeesIt key={`${saves}:${entry?.groups.join() ?? ""}`} groups={groups} picked={entry?.groups ?? []} upgrade={groupsUpgrade} onChange={() => setDirty(true)} />}
         {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
         <CompletedPosts
           projectSlug={projectSlug}
@@ -721,6 +717,13 @@ export function WhoSeesIt({
 }) {
   const [changed, setChanged] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  // Told to Publish, which waits for it: while this picker has a change it hasn't saved, and no longer once it's gone
+  // (started afresh after a save, or with the form when new saved text replaces it, which drops the picks too).
+  const saving = useContext(ChangelogSavingContext);
+  useEffect(() => {
+    saving?.setGroupsChanged(changed);
+    return () => saving?.setGroupsChanged(false);
+  }, [saving, changed]);
   const needsId = useId();
   return (
     <fieldset className="flex flex-col gap-2">

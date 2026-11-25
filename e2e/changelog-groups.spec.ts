@@ -112,6 +112,19 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect.poll(async () => (await saved()).tags).toEqual(["fixed"]);
   expect((await saved()).groups).toEqual(["enterprise"]);
   await api("/changelog/1", { groups: [] }, "PATCH");
+  // Ticked and unticked again, then saved: nothing changed, so the next save (of its tags) still keeps groups set meanwhile.
+  await owner.reload();
+  const enterprise = owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" });
+  await enterprise.check();
+  await enterprise.uncheck();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await api("/changelog/1", { groups: ["enterprise"] }, "PATCH");
+  await owner.getByRole("checkbox", { name: "Improved" }).check();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => (await saved()).tags).toEqual(["improved", "fixed"]);
+  expect((await saved()).groups).toEqual(["enterprise"]);
+  await api("/changelog/1", { groups: [] }, "PATCH");
   // A draft: picking who sees it holds Publish until it's saved (Publish sends what's saved, to whoever that's for).
   await api("/changelog", { title: "Roles", body: "Give teammates roles." });
   await owner.goto(`/app/${slug}/changelog/3`);
