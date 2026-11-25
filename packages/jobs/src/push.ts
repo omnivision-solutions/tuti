@@ -154,15 +154,22 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }));
   let sent = 0;
   let gone = 0;
-  // ponytail: a request that fails after earlier ones went through retries them all (a second notification for those
-  // phones); only for a team with over 100 phones on one message. What's saved after a send never fails the job, so it
-  // isn't sent again.
+  // A request that fails doesn't fail the job once another went through (as a project's within one: sendBatch): a retry
+  // would push those phones again. The rest still go; only when nothing went through does the job fail, to try again.
+  let failure: unknown;
   for (let i = 0; i < messages.length; i += MESSAGES_PER_REQUEST) {
     const batch = messages.slice(i, i + MESSAGES_PER_REQUEST);
     // Before the send: what Expo answers is about the registrations as they were then, so a phone that registers again
     // while the request or its receipt is pending isn't dropped for it.
     const sentAt = new Date();
-    const data = await sendBatch(batch);
+    let data: Outcome[];
+    try {
+      data = await sendBatch(batch);
+    } catch (error) {
+      failure ??= error;
+      log.warn(`Couldn't push ${batch.length} phones about conversation #${conversation.number}: ${String(error).slice(0, 300)}`);
+      continue;
+    }
     const tickets = batch.flatMap((m, j) => (data[j]?.status === "ok" ? [{ id: (data[j] as { id: string }).id, token: m.to, createdAt: sentAt }] : []));
     const unregistered = batch.filter((_, j) => isGone(data[j])).map((m) => m.to);
     const failed = batch.length - tickets.length - unregistered.length;
@@ -178,6 +185,9 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     }
     sent += tickets.length;
     gone += unregistered.length;
+  }
+  if (failure && sent === 0 && gone === 0) {
+    throw failure;
   }
   return { pushed: sent, ...(gone > 0 && { unregistered: gone }) };
 }

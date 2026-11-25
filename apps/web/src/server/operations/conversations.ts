@@ -878,18 +878,17 @@ export const createConversation = defineOperation({
  * (conversation-push); never fails or holds up the request.
  */
 async function tellTeam(messageId: string) {
-  try {
-    await enqueue("conversationMessage", { messageId });
-  } catch (error) {
-    // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
-    log.error("Enqueueing the team's email about a message failed", { error, messageId });
-  }
-  try {
-    await enqueue("conversationPush", { messageId });
-  } catch (error) {
-    // Not queued again: a notification is for now, and the email still tells them.
-    log.error("Enqueueing the team's push about a message failed", { error, messageId });
-  }
+  // Side by side: with jobs inline (JOBS_DRIVER=inline) each runs as it's queued, so the push doesn't wait on the email.
+  await Promise.all([
+    enqueue("conversationMessage", { messageId }).catch((error: unknown) => {
+      // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
+      log.error("Enqueueing the team's email about a message failed", { error, messageId });
+    }),
+    enqueue("conversationPush", { messageId }).catch((error: unknown) => {
+      // Not queued again: a notification is for now, and the email still tells them.
+      log.error("Enqueueing the team's push about a message failed", { error, messageId });
+    }),
+  ]);
 }
 
 /** A new conversation as the API shows it, told to the project's webhooks and team. */

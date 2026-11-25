@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { checkPushReceipts, enqueue, RECEIPT_AFTER_MS } from "@tuti/jobs";
+import { checkPushReceipts, enqueue, handlers, RECEIPT_AFTER_MS } from "@tuti/jobs";
 import { deviceNotRegistered, type ExpoPushFake, startExpoPushFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -34,6 +34,8 @@ beforeEach(async () => {
   expo.unregistered.clear();
   expo.projects.clear();
   expo.failing.clear();
+  expo.failSends.clear();
+  expo.sends = 0;
   vi.stubEnv("EXPO_ACCESS_TOKEN", "");
   // Each test's own tickets and phones: the file shares one database.
   await prisma.pushTicket.deleteMany();
@@ -163,11 +165,34 @@ test("when one Expo project's send fails, the others' pushes stand: kept, and no
 test("two accounts registering one phone at the same moment leave it registered once", async () => {
   const other = await addMember(project.id, "MEMBER");
   const token = "ExponentPushToken[raced]";
-  await Promise.all([
-    api(owner, "POST", "/devices", { deviceId: "owner-id", token, platform: "ios" }),
-    api(other, "POST", "/devices", { deviceId: "other-id", token, platform: "ios" }),
-  ]);
-  expect(await prisma.device.count({ where: { token } })).toBe(1);
+  // Another registration of the token, held open: it has its row in and the token's lock, and hasn't committed.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let locked!: () => void;
+  const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+  const otherRegistration = prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(13, hashtext(${token}))`;
+      const session = await tx.session.findFirstOrThrow({ where: { userId: other.id } });
+      await tx.device.create({ data: { userId: other.id, deviceId: "other-id", token, platform: "ios", sessionId: session.id } });
+      locked();
+      await held;
+    },
+    { timeout: 30_000 },
+  );
+  await lockTaken;
+  // The owner registers the same phone meanwhile: it waits for the other's to finish rather than miss its row.
+  let done = false;
+  const ownerRegistration = api(owner, "POST", "/devices", { deviceId: "owner-id", token, platform: "ios" }).then((response) => ((done = true), response));
+  for (let i = 0; i < 20; i++) {
+    await prisma.$queryRaw`SELECT 1`;
+  }
+  expect(done).toBe(false);
+  release();
+  await otherRegistration;
+  expect(await ownerRegistration).toMatchObject({ status: 200 });
+  // The owner's came last: it's the only row for the token.
+  expect(await prisma.device.findMany({ where: { token }, select: { userId: true } })).toEqual([{ userId: owner.id }]);
 });
 
 test("a token on two accounts' rows at once (two registrations racing) is told once, about the newer", async () => {
@@ -328,6 +353,28 @@ test("a receipt that's fine keeps the device, and a ticket past a day is let go"
   await checkPushReceipts({}, console, new Date(Date.now() + 25 * 60 * 60 * 1000));
   expect(await prisma.pushTicket.count()).toBe(0);
   expect(expo.asked).toEqual([]);
+});
+
+test("a request that fails after another went through doesn't fail the job, and the rest still go", async () => {
+  await phone(owner, "owner");
+  const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
+  await prisma.device.createMany({
+    data: Array.from({ length: 200 }, (_, i) => ({ userId: owner.id, deviceId: `many-${i}`, token: `ExponentPushToken[many-${i}]`, platform: "android", sessionId: session.id })),
+  });
+  // The message's own push runs as it's written (jobs inline); this test runs that job again, with a request failing.
+  const { number } = await userWrites();
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversation: { projectId: project.id, number } } });
+  await prisma.pushTicket.deleteMany();
+  // Three requests of up to 100; the second fails.
+  expo.sends = 0;
+  expo.failSends.add(2);
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).resolves.toMatchObject({ pushed: 101 });
+  expect(await prisma.pushTicket.count()).toBe(101);
+  // Only when nothing went through does it fail, for the job to try again.
+  await prisma.pushTicket.deleteMany();
+  expo.sends = 0;
+  expo.failSends = new Set([1, 2, 3]);
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("500");
 });
 
 test("pushes go 100 a request, and receipts are read 1,000 at a time", async () => {

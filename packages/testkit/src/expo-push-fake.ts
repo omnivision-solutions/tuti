@@ -20,6 +20,10 @@ export type ExpoPushFake = {
   projects: Map<string, string>;
   /** Projects whose sends fail with a 500 (a request of one project's tokens only). */
   failing: Set<string>;
+  /** Which /send requests fail with a 500, counted from 1 since the fake started or `sends` was last set to 0. */
+  failSends: Set<number>;
+  /** How many /send requests have come in. */
+  sends: number;
   /** The status to answer every request with instead (e.g. 500), or 200. */
   status: number;
   close(): Promise<void>;
@@ -38,7 +42,7 @@ export const deviceNotRegistered = (token: string): Outcome => ({
  */
 export async function startExpoPushFake(): Promise<ExpoPushFake> {
   let tickets = 0;
-  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), status: 200, close: async () => {} };
+  const fake: ExpoPushFake = { env: { EXPO_PUSH_URL: "" }, sent: [], unregistered: new Set(), receipts: {}, asked: [], projects: new Map(), failing: new Set(), failSends: new Set(), sends: 0, status: 200, close: async () => {} };
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -49,6 +53,9 @@ export async function startExpoPushFake(): Promise<ExpoPushFake> {
       }
       const body = JSON.parse(raw) as unknown;
       if (req.url === "/send") {
+        if (fake.failSends.has(++fake.sends)) {
+          return answer(500, { errors: [{ code: "INTERNAL_SERVER_ERROR", message: "The fake was told to fail this request" }] });
+        }
         const messages = (Array.isArray(body) ? body : [body]) as ExpoPushMessage[];
         if (messages.length > 100) {
           return answer(400, { errors: [{ code: "PUSH_TOO_MANY_NOTIFICATIONS", message: "Up to 100 a request" }] });
