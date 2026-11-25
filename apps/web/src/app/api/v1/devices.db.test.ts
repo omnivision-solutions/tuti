@@ -311,8 +311,9 @@ test("an Android phone gets data only, which its app shows with Reply and Close 
   expect(await api(owner, "POST", "/devices", { deviceId: "android-id", token: "ExponentPushToken[android]", platform: "android" })).toMatchObject({ status: 200 });
   const { number } = await userWrites("The export button\n\ndoes nothing");
   expect(expo.sent).toHaveLength(1);
-  const { ticket, headers, ...sent } = expo.sent[0]!;
-  expect(sent).toEqual({
+  expect(expo.sent[0]).toEqual({
+    ticket: expect.any(String),
+    headers: expect.any(Object),
     to: "ExponentPushToken[android]",
     priority: "high",
     data: {
