@@ -112,7 +112,7 @@ test("only segments the memory doesn't have are sent; a broken reply is asked ag
   });
   expect(asked).toHaveLength(2);
   expect(asked[0]).not.toContain("Import events");
-  expect(asked[1]).toContain("- 2: its tags and placeholders don't match the source's");
+  expect(asked[1]).toContain("- 2: its tags, placeholders and line breaks don't match the source's");
   expect(result.problems).toEqual([]);
   expect(result.doc.content![0]!.content![0]!.text).toBe("Termine importieren");
   expect(result.memory["Import events"]).toBe("Termine importieren");
@@ -200,4 +200,22 @@ test("an image's description translated past the length limit is asked again", (
   const { check } = segmentsOf({ type: "doc", content: [{ type: "image", attrs: { mediaId: "m", alt: "A long description", w: 1, h: 1 } }] });
   expect(check("1", "x".repeat(301))).toBe("an image's description must be at most 300 characters");
   expect(check("1", "Eine lange Beschreibung")).toBeNull();
+});
+
+test("two tags joined into one word aren't empty", () => {
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Export", marks: [{ type: "bold" }] }, { type: "text", text: " " }, { type: "text", text: "settings", marks: [{ type: "bold" }] }] }] });
+  expect(check("1", "<b1>Export</b1><b2>einstellungen</b2>")).toBeNull();
+});
+
+test("a dropped line break is asked again; text left as it was is taken the second time", async () => {
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Votes are added up." }, { type: "hardBreak" }, { type: "text", text: "Comments are kept." }] }, { type: "paragraph", content: [{ type: "text", text: "Slack, GitHub, Linear and Jira" }] }] };
+  const replies = [
+    '{"segments": {"1": "Stimmen werden addiert. Kommentare bleiben.", "2": "Slack, GitHub, Linear and Jira"}}',
+    '{"segments": {"1": "Stimmen werden addiert.<br/>Kommentare bleiben.", "2": "Slack, GitHub, Linear and Jira"}}',
+  ];
+  const asked: string[] = [];
+  const out = await translateDoc(one, { from: "English", to: "German", ask: async (_, user) => (asked.push(user), replies.shift()!) });
+  expect(asked[1]).toContain("- 1: its tags, placeholders and line breaks don't match the source's");
+  expect(out.problems).toEqual([]);
+  expect(out.memory["Slack, GitHub, Linear and Jira"]).toBe("Slack, GitHub, Linear and Jira");
 });

@@ -75,13 +75,16 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
 
   const decode = (text: string): JSONContent[] | string => {
     const result: JSONContent[] = [];
-    const stack: { id: number; letter: string; length: number }[] = [];
+    const stack: { id: number; letter: string; filled: boolean }[] = [];
     const seenTags = new Set<number>();
     const seenKept = new Set<number>();
     let last = 0;
+    // A tag is empty unless something comes inside it (two bold words joined may share one text node).
+    const fill = () => stack.forEach((tag) => (tag.filled = true));
     const pushText = (raw: string) => {
       const value = unescape(raw);
       if (!value) return;
+      fill();
       const marks = stack.map((tag) => tags.get(tag.id)!);
       const prev = result.at(-1);
       if (prev?.type === "text" && !prev.marks?.some((m) => !(m.type! in TAG_LETTER)) && JSON.stringify(prev.marks ?? []) === JSON.stringify(marks)) {
@@ -94,11 +97,13 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
       pushText(text.slice(last, match.index));
       last = match.index + match[0].length;
       if (match[0].startsWith("<br")) {
+        fill();
         result.push({ type: "hardBreak" });
       } else if (match[4]) {
         const id = Number(match[4]);
         if (!kept.has(id) || seenKept.has(id)) return `placeholder x${id} is unknown or repeated`;
         seenKept.add(id);
+        fill();
         result.push(structuredClone(kept.get(id)!));
       } else {
         const id = Number(match[3]);
@@ -106,12 +111,12 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
         if (match[1]) {
           const top = stack.pop();
           if (!top || top.id !== id || top.letter !== letter) return `</${letter}${id}> closes a tag that isn't the innermost open one`;
-          if (result.length === top.length) return `<${letter}${id}> is empty`;
+          if (!top.filled) return `<${letter}${id}> is empty`;
         } else {
           const mark = tags.get(id);
           if (!mark || TAG_LETTER[mark.type!] !== letter || seenTags.has(id)) return `<${letter}${id}> is unknown or repeated`;
           seenTags.add(id);
-          stack.push({ id, letter, length: result.length });
+          stack.push({ id, letter, filled: false });
         }
       }
     }
@@ -312,14 +317,15 @@ export function translationPrompt({ from, to, glossary = [], instructions, about
 export async function translateSegments(segments: Segment[], options: TranslateOptions, fits?: (id: string, text: string) => string | null): Promise<Translated> {
   const { ask, glossary = [], memory = {}, batchChars = 6000 } = options;
   const translations: Record<string, string> = {};
-  const check = (segment: Segment, text: string | undefined) => {
+  // `firstTry`: text left as it was is asked about once; asked again, it's taken as meant (names, lists of products).
+  const check = (segment: Segment, text: string | undefined, firstTry = false) => {
     if (typeof text !== "string" || text.trim() === "") return "no translation";
-    const tagged = (value: string) => [...value.matchAll(/<\/?[a-z]\d+>|<x\d+\/>/g)].map((m) => m[0]).sort().join();
-    if (tagged(segment.text) !== tagged(text)) return "its tags and placeholders don't match the source's";
+    const tagged = (value: string) => [...value.matchAll(/<\/?[a-z]\d+>|<x\d+\/>|<br\s*\/?>/g)].map((m) => (m[0].startsWith("<br") ? "<br/>" : m[0])).sort().join();
+    if (tagged(segment.text) !== tagged(text)) return "its tags, placeholders and line breaks don't match the source's";
     const misfit = fits?.(segment.id, text);
     if (misfit) return misfit;
     // Left in the source language: only when the source's is known (a message may already be in the target's).
-    if (options.from && text.trim() === segment.text.trim() && (segment.text.match(/\p{L}{2,}/gu) ?? []).length >= 4) return "it isn't translated";
+    if (firstTry && options.from && text.trim() === segment.text.trim() && (segment.text.match(/\p{L}{2,}/gu) ?? []).length >= 4) return "it isn't translated";
     return glossaryProblems(segment.text, text, glossary).join("; ") || null;
   };
   // A remembered translation is reused only while it still passes the checks (a glossary term added since, say).
@@ -343,7 +349,7 @@ export async function translateSegments(segments: Segment[], options: TranslateO
   for (const [i, batch] of runs.entries()) {
     for (const segment of batch) {
       const text = results[i]![segment.id];
-      const reason = check(segment, text);
+      const reason = check(segment, text, true);
       if (reason) failed.set(segment.id, reason);
       else translations[segment.id] = text!;
     }
