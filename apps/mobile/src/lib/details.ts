@@ -72,8 +72,12 @@ export function showTriage(key: string, { status, assignee, spam, snoozedUntil }
   listeners.forEach((listener) => listener());
 }
 export const getTriage = (key: string) => shown.get(key) ?? null;
-/** Gone with what fetched it. The change count stays, so a fetch still on its way is still checked against it. */
+/**
+ * Gone with what fetched it. Counted as a change, so a fetch still on its way (its screen or sheet closed before it
+ * answered) is dropped rather than putting back an entry nothing open would forget.
+ */
 export function forgetTriage(key: string) {
+  changes.set(key, triageChanges(key) + 1);
   shown.delete(key);
   listeners.forEach((listener) => listener());
 }

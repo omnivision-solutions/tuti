@@ -334,4 +334,26 @@ describe("the details sheet", () => {
     await act(async () => void handlers.at(-1)?.({} as Parameters<Handler>[0]));
     expect(focused()).toBe("focus: Assignee, Olive Owner");
   });
+
+  it("opened by a link and closed before its fetch answers, fetches again the next time", async () => {
+    mockNumber = "13";
+    const asked: ((value: unknown) => void)[] = [];
+    mockApi.mockImplementation((path) => {
+      if (path === "/conversations/13") {
+        return new Promise((resolve) => asked.push(resolve));
+      }
+      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY);
+    });
+    const first = await render(<Details />);
+    await first.unmount();
+    // The first opening's fetch answers after it closed: open, as it was then.
+    await act(async () => asked[0]!({ ...OPEN, number: 13 }));
+    expect(getTriage(screenKey(mockSession, 13))).toBeNull();
+
+    // Closed on the web meanwhile: opened again, it fetches.
+    await render(<Details />);
+    expect(asked).toHaveLength(2);
+    await act(async () => asked[1]!({ ...OPEN, status: "closed", number: 13 }));
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+  });
 });
