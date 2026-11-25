@@ -368,7 +368,7 @@ test("an admin picks the changelog's style examples: published entries from a se
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests"]);
 });
 
-test("an admin sets the changelog's cover defaults: a background of their own, then Your background as the design picked first, saved by Save changes", async ({ browser }, testInfo) => {
+test("an admin picks the cover drawn first from the designs drawn with the portal's branding: Your background uploads one and is picked, saved by Save changes", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -376,25 +376,33 @@ test("an admin sets the changelog's cover defaults: a background of their own, t
   const saved = async () => (await query(`SELECT "changelogCoverDesign" AS design, "changelogCoverBackgroundId" AS background FROM project WHERE slug = $1`, [slug]))[0];
   await team.goto(`/app/${slug}/settings/changelog`);
   const save = team.getByRole("button", { name: "Save changes" });
-  const design = team.getByLabel("Cover design");
-  const backgroundRow = team.locator('[data-slot="setting-row"]').filter({ hasText: "Cover background" });
+  const cover = team.getByRole("group", { name: "Cover picked first" });
+  const design = (name: string) => cover.getByRole("radio", { name, exact: true });
 
-  // Automatic until the team picks; Your background isn't offered without a background.
-  await expect(design).toContainText("Automatic");
-  await expect(team.getByText("Picked first when you publish an entry without a cover or make one.")).toBeVisible();
-  await expect(backgroundRow.getByText("An image of your own to put the title on, for the Your background design.")).toBeVisible();
-  await design.click();
-  await expect(team.getByRole("option")).toHaveText(["Automatic", "Title", "Screenshot", "Sections", "Pattern"]);
-  await team.keyboard.press("Escape");
-
-  // Uploaded (the S3 fake, processed inline), it shows, and Your background is offered, last.
-  await team.getByLabel("Cover background", { exact: true }).setInputFiles({ name: "background.png", mimeType: "image/png", buffer: png(1600, 840) });
-  await expect(backgroundRow.getByRole("img", { name: "Cover background preview" })).toBeVisible();
+  // Two titled cards; in the menu, with the portal's pages.
+  await expect(team.getByRole("region", { name: "Changelog" }).getByRole("heading", { level: 2 })).toHaveText(["Drafting with AI", "Cover"]);
+  await expect(team.getByRole("navigation", { name: "Settings" }).getByRole("group", { name: "Portal", exact: true }).getByRole("link", { name: "Changelog" })).toHaveAttribute("aria-current", "page");
+  // Automatic until the team picks; each design a picture drawn for this project; Your background is an upload till there's one.
+  await expect(cover.locator("label")).toHaveText(["Automatic", "Title", "Screenshot", "Sections", "Pattern"]);
+  await expect(design("Automatic")).toBeChecked();
+  await expect(cover).toHaveAccessibleDescription("Automatic is Screenshot when the entry has an image, else Title. Your background puts the title on an image of your own.");
+  for (const each of ["title", "screenshot", "sections", "pattern"]) {
+    const picture = cover.locator(`img[src="/app/${slug}/settings/changelog/cover/${each}"]`);
+    await expect(picture).toHaveJSProperty("complete", true);
+    expect(await picture.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(800);
+  }
+  await design("Pattern").check();
   await expect(save).toBeEnabled();
-  await design.click();
-  await expect(team.getByRole("option")).toHaveText(["Automatic", "Title", "Screenshot", "Sections", "Pattern", "Your background"]);
-  await team.getByRole("option", { name: "Your background" }).click();
-  await expect(design).toContainText("Your background");
+  await design("Automatic").check();
+  await expect(save).toBeDisabled();
+
+  // Uploaded (the S3 fake, processed inline), it's offered, drawn, and picked.
+  await team.getByLabel("Cover background", { exact: true }).setInputFiles({ name: "background.png", mimeType: "image/png", buffer: png(1600, 840) });
+  await expect(design("Your background")).toBeChecked();
+  await expect(cover.getByRole("button", { name: "Upload cover background" })).toHaveCount(0);
+  const drawn = cover.locator(`img[src^="/app/${slug}/settings/changelog/cover/background?background="]`);
+  await expect(drawn).toHaveJSProperty("complete", true);
+  expect(await drawn.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(800);
   await checkpoint(team, "team-settings-changelog-cover");
 
   await save.click();
@@ -402,15 +410,14 @@ test("an admin sets the changelog's cover defaults: a background of their own, t
   await expect(save).toBeDisabled();
   expect(await saved()).toEqual({ design: "background", background: expect.any(String) });
   await team.reload();
-  await expect(design).toContainText("Your background");
-  await expect(backgroundRow.getByRole("img", { name: "Cover background preview" })).toBeVisible();
+  await expect(design("Your background")).toBeChecked();
   await expect(save).toBeDisabled();
 
   // Removed, the background takes its design with it: Automatic again, saved as both.
-  await team.getByRole("button", { name: "Remove cover background" }).click();
-  await expect(backgroundRow.getByRole("img", { name: "Cover background preview" })).toHaveCount(0);
-  await expect(team.getByRole("button", { name: "Upload cover background" })).toBeFocused();
-  await expect(design).toContainText("Automatic");
+  await cover.getByRole("button", { name: "Remove cover background" }).click();
+  await expect(design("Your background")).toHaveCount(0);
+  await expect(cover.getByRole("button", { name: "Upload cover background" })).toBeFocused();
+  await expect(design("Automatic")).toBeChecked();
   await save.click();
   await expect(team.getByText("Changelog saved")).toBeVisible();
   expect(await saved()).toEqual({ design: "", background: null });

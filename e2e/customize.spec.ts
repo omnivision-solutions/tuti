@@ -28,7 +28,7 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await owner.goto(`/app/${slug}/customize`);
   await owner.waitForURL(`**/app/${slug}/settings/branding`);
   const rail = owner.getByRole("navigation", { name: "Settings" }).getByRole("group", { name: "Portal", exact: true });
-  await expect(rail.getByRole("link")).toHaveText(["Branding", "Navigation", "Docs home", "Content actions", "Widget", "SEO", "Custom code"]);
+  await expect(rail.getByRole("link")).toHaveText(["Branding", "Navigation", "Docs home", "Content actions", "Changelog", "Widget", "SEO", "Custom code"]);
   await expect(rail.getByRole("link", { name: "Branding" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByRole("region", { name: "Branding" }).getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
   // Each of Customize's old addresses lands on its page.

@@ -30,7 +30,7 @@ import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
-import { SettingBlock, SettingRow } from "@/components/settings-card";
+import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,7 +48,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { plural } from "@/lib/autopilot-words";
@@ -348,6 +347,10 @@ export type CoverChoices = { designs: CoverDesign[]; automatic: CoverDesign; ver
 
 const COVER_DESIGN_NAMES: Record<CoverDesign, string> = { title: "Title", screenshot: "Screenshot", sections: "Sections", pattern: "Pattern", background: "Your background" };
 
+/** A cover design to pick (the Publish dialog's, Make a cover's, Settings'): its picture, then its name. */
+const coverOption = "relative flex cursor-pointer flex-col gap-1 text-xs text-muted-foreground has-checked:text-foreground";
+const coverPicture = "aspect-[1600/840] w-full rounded-md border bg-muted peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring";
+
 /**
  * The cover designs to pick from, each a picture of this entry's own cover in it (the team's preview route: the saved
  * title or `headline`, tag, headings and image, with the portal's branding), and "No cover" with `none`.
@@ -374,9 +377,9 @@ function CoverDesigns({
 }) {
   const name = useId();
   const query = new URLSearchParams({ v: String(covers.version), ...(headline.trim() && { headline: headline.trim() }) });
-  // `relative`: each radio (out of sight) stays within its own option, so focus and a click on it land there.
-  const option = "relative flex cursor-pointer flex-col gap-1 text-xs text-muted-foreground has-checked:text-foreground";
-  const picture = "aspect-[1600/840] w-full rounded-md border bg-muted peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring";
+  // `relative` (coverOption): each radio (out of sight) stays within its own option, so focus and a click on it land there.
+  const option = coverOption;
+  const picture = coverPicture;
   return (
     <fieldset className={cn("grid gap-3", className)}>
       <legend className="mb-2 text-sm font-medium">Cover</legend>
@@ -1395,11 +1398,14 @@ function AiHelpers({
 const MAX_EXAMPLES = 3;
 
 /**
- * Settings → Changelog: the team's instructions for AI drafts (stored as tone notes), and up to 3 published entries as
- * examples, and the covers' defaults, as rows of the page's card, saved by the page's "Save changes".
+ * Settings → Changelog, saved by the page's "Save changes": "Drafting with AI" (with `model`, where the server has AI),
+ * the AI model, the team's instructions (stored as tone notes), up to 3 published entries as examples and the
+ * screenshots' markers; then "Cover", the design picked first, each drawn on a sample entry, the team's own background
+ * one of them.
  */
 export function ChangelogStyleForm({
   projectSlug,
+  model,
   tone,
   examples,
   screenshotMarkers,
@@ -1408,6 +1414,8 @@ export function ChangelogStyleForm({
   published,
 }: {
   projectSlug: string;
+  /** The AI model's setting; null where the server has no AI, which shows the covers only. */
+  model: ReactNode;
   tone: string;
   /** AI drafts mark where a screenshot belongs. */
   screenshotMarkers: boolean;
@@ -1456,21 +1464,27 @@ export function ChangelogStyleForm({
       setDesign(coverDesign);
     }
   }
-  const designField = useRef<HTMLInputElement>(null);
+  const designField = useRef<HTMLFieldSetElement>(null);
   useFieldChanged(designField, design);
   const backgroundId = useId();
   const uploadBackground = useRef<HTMLButtonElement>(null);
-  const background = useImageUpload({ projectSlug, name: "coverBackground", id: backgroundId, image: coverBackground, onBusy: () => {} });
+  const background = useImageUpload({ projectSlug, name: "coverBackground", id: backgroundId, label: "Cover background", image: coverBackground, onBusy: () => {} });
   const [backgroundWas, setBackgroundWas] = useState(coverBackground);
+  // The background shown last: one uploaded here since is picked as the design.
+  const [shownWas, setShownWas] = useState(coverBackground?.id);
   if (backgroundWas?.id !== coverBackground?.id) {
     setBackgroundWas(coverBackground);
     // Untouched, or the one just saved (its link as the server gives it, so the form matches what's saved).
     if (background.image?.id === backgroundWas?.id || background.image?.id === coverBackground?.id) {
       background.setImage(coverBackground);
+      setShownWas(coverBackground?.id);
+    }
+  } else if (shownWas !== background.image?.id) {
+    setShownWas(background.image?.id);
+    if (background.image) {
+      setDesign("background");
     }
   }
-  // In the picker's order; Your background once there's one.
-  const designs = (Object.keys(COVER_DESIGN_NAMES) as CoverDesign[]).filter((each) => each !== "background" || background.image);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
@@ -1478,9 +1492,14 @@ export function ChangelogStyleForm({
   const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
     saved: [
-      ["tone", tone],
-      ...examples.map((number): [string, string] => ["examples", String(number)]),
-      ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : []),
+      // Without AI, the form has the cover only.
+      ...(model
+        ? [
+            ["tone", tone] as [string, string],
+            ...examples.map((number): [string, string] => ["examples", String(number)]),
+            ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : []),
+          ]
+        : []),
       ["coverDesign", coverDesign ?? ""],
       ["coverBackground", coverBackground?.id ?? ""],
       ["coverBackgroundUrl", coverBackground?.url ?? ""],
@@ -1509,163 +1528,199 @@ export function ChangelogStyleForm({
   return (
     // Locked while saving: an edit made then wouldn't be in what's saved. `inert`, not disabled fields: those would
     // drop out of what the form holds, which "Save changes" compares with what's saved.
-    <form {...form} inert={pending} className="flex flex-col divide-y">
-      <SettingBlock className="gap-2">
-        <label htmlFor="style-tone" className="font-medium">
-          Instructions
-        </label>
-        <Textarea
-          ref={toneField}
-          id="style-tone"
-          name="tone"
-          defaultValue={tone}
-          maxLength={4000}
-          placeholder="Friendly, short sentences, no jargon. Address the reader as you."
-          aria-invalid={state.error ? true : undefined}
-          aria-describedby={state.error ? "style-error" : undefined}
-        />
-        {state.error && <FieldError id="style-error">{state.error}</FieldError>}
-      </SettingBlock>
-      <SettingRow
-        label={
-          <>
-            Style examples{" "}
-            {published.length > 0 && (
-              <span className="font-normal text-muted-foreground tabular-nums">
-                {chosen.length}/{MAX_EXAMPLES}
-              </span>
-            )}
-          </>
-        }
-        description={published.length === 0 ? "Publish an entry to use it as an example." : "Entries that read the way you like."}
-        // What drafts follow meanwhile (writingStyle): said only where there's an entry of the team's own to follow.
-        info={chosen.length === 0 && published.some((entry) => !entry.sample) ? "With none picked, AI follows your three latest published entries." : undefined}
-      >
-        {published.length > 0 && (
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
-            <ul aria-label="Style examples" className="contents">
-              {chosen.map((entry) => (
-                <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-lg bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
-                  <input type="hidden" name="examples" value={entry.number} />
-                  {/* A long title wraps: cut short, two that start alike would read the same. */}
-                  <span className="min-w-0 break-words">{entry.title}</span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${entry.title}`}
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                    onClick={() => {
-                      // From what still shows: an example unpublished meanwhile is gone for good, republished or not.
-                      setPicked(chosen.filter((other) => other.number !== entry.number).map((other) => other.number));
-                      // Its button is gone: focus goes to Pick, not to the top of the page.
-                      pick.current?.focus();
-                    }}
-                  >
-                    <XIcon aria-hidden className="size-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <Button
-              ref={pick}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              aria-label="Pick a style example"
-              // Focusable all the same (removing a chip sends focus here).
-              disabled={full}
-              focusableWhenDisabled
-              onClick={() => {
-                done.current = false;
-                setQuery("");
-                setPicking(true);
-              }}
-            >
-              <PlusIcon />
-              Pick
-            </Button>
-          </div>
-        )}
-      </SettingRow>
-      <SettingRow
-        label="Mark where screenshots go"
-        htmlFor="style-screenshots"
-        description="A draft leaves a line where a picture belongs, to replace before publishing."
-        info="AI can't take screenshots. With this on, a draft has a line like [Screenshot: the new theme menu] where one would help, and the entry can't be published while such a line is left."
-        inline
-      >
-        <Switch id="style-screenshots" aria-describedby="style-screenshots-description" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
-      </SettingRow>
-      <SettingRow label={<span id="style-cover-design-label">Cover design</span>} description="Picked first when you publish an entry without a cover or make one." inline>
-        <Select name="coverDesign" items={[{ value: null, label: "Automatic" }, ...designs.map((each) => ({ value: each, label: COVER_DESIGN_NAMES[each] }))]} value={design} onValueChange={(next) => setDesign(next as CoverDesign | null)} inputRef={designField}>
-          <SelectTrigger className="w-40" aria-labelledby="style-cover-design-label">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={null}>Automatic</SelectItem>
-            {designs.map((each) => (
-              <SelectItem key={each} value={each}>
-                {COVER_DESIGN_NAMES[each]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </SettingRow>
-      <div {...background.drop} className={cn("transition-colors", background.dragging && "bg-soft")}>
-        <SettingRow label="Cover background" description="An image of your own to put the title on, for the Your background design." htmlFor={backgroundId} inline>
-          {background.image ? (
-            // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-            <img src={background.image.url} alt="Cover background preview" className="h-9 w-[4.25rem] rounded-lg border object-cover @max-[20rem]/settings:w-9" />
-          ) : (
-            <span className="flex size-9 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-muted-foreground">
-              <ImageIcon aria-hidden className="size-4" />
-            </span>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label="Upload cover background"
-            // Off while one uploads, yet focusable: focus stays here through the upload, "Uploading…" read below.
-            disabled={background.uploading}
-            focusableWhenDisabled
-            ref={uploadBackground}
-            onClick={background.pick}
+    <form {...form} inert={pending} className="flex flex-col gap-7">
+      {model && (
+        <SettingsCard title="Drafting with AI">
+          {model}
+          <SettingBlock className="gap-2">
+            <label htmlFor="style-tone" className="font-medium">
+              Instructions
+            </label>
+            <Textarea
+              ref={toneField}
+              id="style-tone"
+              name="tone"
+              defaultValue={tone}
+              maxLength={4000}
+              placeholder="Friendly, short sentences, no jargon. Address the reader as you."
+              aria-invalid={state.error ? true : undefined}
+              aria-describedby={state.error ? "style-error" : undefined}
+            />
+            {state.error && <FieldError id="style-error">{state.error}</FieldError>}
+          </SettingBlock>
+          <SettingRow
+            label={
+              <>
+                Style examples{" "}
+                {published.length > 0 && (
+                  <span className="font-normal text-muted-foreground tabular-nums">
+                    {chosen.length}/{MAX_EXAMPLES}
+                  </span>
+                )}
+              </>
+            }
+            description={published.length === 0 ? "Publish an entry to use it as an example." : "Entries that read the way you like."}
+            // What drafts follow meanwhile (writingStyle): said only where there's an entry of the team's own to follow.
+            info={chosen.length === 0 && published.some((entry) => !entry.sample) ? "With none picked, AI follows your three latest published entries." : undefined}
           >
-            <UploadIcon />
-            <span className={background.image ? "@max-[23rem]/settings:sr-only" : "@max-[18rem]/settings:sr-only"}>Upload</span>
-          </Button>
-          {background.image && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Remove cover background"
-              title="Remove"
-              disabled={background.uploading}
-              focusableWhenDisabled
-              onClick={() => {
-                // Remove goes with the image: focus moves to Upload, not out of the row.
-                uploadBackground.current?.focus();
-                background.setImage(null);
-                // Its design goes with it.
-                if (design === "background") {
-                  setDesign(null);
-                }
-              }}
-            >
-              <XIcon />
-            </Button>
-          )}
+            {published.length > 0 && (
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[34rem]/settings:max-w-[26rem] @min-[34rem]/settings:justify-end">
+                <ul aria-label="Style examples" className="contents">
+                  {chosen.map((entry) => (
+                    <li key={entry.number} className="flex max-w-full items-center gap-0.5 rounded-lg bg-muted py-0.5 pr-0.5 pl-2.5 text-sm">
+                      <input type="hidden" name="examples" value={entry.number} />
+                      {/* A long title wraps: cut short, two that start alike would read the same. */}
+                      <span className="min-w-0 break-words">{entry.title}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${entry.title}`}
+                        className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        onClick={() => {
+                          // From what still shows: an example unpublished meanwhile is gone for good, republished or not.
+                          setPicked(chosen.filter((other) => other.number !== entry.number).map((other) => other.number));
+                          // Its button is gone: focus goes to Pick, not to the top of the page.
+                          pick.current?.focus();
+                        }}
+                      >
+                        <XIcon aria-hidden className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  ref={pick}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  aria-label="Pick a style example"
+                  // Focusable all the same (removing a chip sends focus here).
+                  disabled={full}
+                  focusableWhenDisabled
+                  onClick={() => {
+                    done.current = false;
+                    setQuery("");
+                    setPicking(true);
+                  }}
+                >
+                  <PlusIcon />
+                  Pick
+                </Button>
+              </div>
+            )}
+          </SettingRow>
+          <SettingRow
+            label="Mark where screenshots go"
+            htmlFor="style-screenshots"
+            description="A draft leaves a line where a picture belongs, to replace before publishing."
+            info="AI can't take screenshots. With this on, a draft has a line like [Screenshot: the new theme menu] where one would help, and the entry can't be published while such a line is left."
+            inline
+          >
+            <Switch id="style-screenshots" aria-describedby="style-screenshots-description" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
+          </SettingRow>
+        </SettingsCard>
+      )}
+      <SettingsCard title="Cover" description="Picked first when you publish an entry without a cover or make one. You can still change it there.">
+        <SettingBlock>
+          <fieldset ref={designField} aria-describedby="style-cover-automatic" className="grid grid-cols-2 gap-x-3 gap-y-4 @min-[34rem]/settings:grid-cols-3">
+            <legend className="sr-only">Cover picked first</legend>
+            {([null, "title", "screenshot", "sections", "pattern", ...(background.image ? (["background"] as const) : [])] as const).map((each) => (
+              <div key={each ?? "automatic"} {...(each === "background" && background.drop)} className="flex min-w-0 flex-col gap-1.5">
+                <label className={cn(coverOption, "text-sm")}>
+                  <input type="radio" name="coverDesign" value={each ?? ""} className="peer sr-only" checked={design === each} onChange={() => setDesign(each)} />
+                  {each === null ? (
+                    <span aria-hidden className={cn(coverPicture, "flex items-center justify-center text-muted-foreground")}>
+                      <SparklesIcon className="size-5" />
+                    </span>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element -- drawn for this project by Settings' preview route
+                    <img
+                      src={`/app/${projectSlug}/settings/changelog/cover/${each}${each === "background" ? `?background=${background.image!.id}` : ""}`}
+                      alt=""
+                      width={800}
+                      height={420}
+                      className={coverPicture}
+                    />
+                  )}
+                  {each === null ? "Automatic" : COVER_DESIGN_NAMES[each]}
+                </label>
+                {each === "background" && (
+                  <div className="-mt-1 flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0"
+                      aria-label="Replace cover background"
+                      disabled={background.uploading}
+                      focusableWhenDisabled
+                      onClick={background.pick}
+                    >
+                      {background.uploading ? "Uploading…" : "Replace"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Remove cover background"
+                      title="Remove"
+                      disabled={background.uploading}
+                      focusableWhenDisabled
+                      onClick={() => {
+                        // Its design goes with it, and focus to Upload, which takes its place.
+                        flushSync(() => {
+                          background.setImage(null);
+                          if (design === "background") {
+                            setDesign(null);
+                          }
+                        });
+                        uploadBackground.current?.focus();
+                      }}
+                    >
+                      <XIcon />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {!background.image && (
+              <div {...background.drop} className="flex min-w-0 flex-col gap-1.5">
+                <button
+                  ref={uploadBackground}
+                  type="button"
+                  aria-label="Upload cover background"
+                  // Off while one uploads, yet focusable: focus stays here through the upload, "Uploading…" read below.
+                  aria-disabled={background.uploading || undefined}
+                  onClick={() => !background.uploading && background.pick()}
+                  className={cn(coverOption, "text-left text-sm")}
+                >
+                  <span
+                    className={cn(
+                      coverPicture,
+                      "flex items-center justify-center gap-1.5 border-dashed bg-transparent text-muted-foreground transition-colors hover:bg-muted",
+                      background.dragging && "bg-soft",
+                    )}
+                  >
+                    <UploadIcon className="size-4" />
+                    {background.uploading ? "Uploading…" : "Upload"}
+                  </span>
+                  Your background
+                </button>
+              </div>
+            )}
+          </fieldset>
           {background.inputs}
-        </SettingRow>
-        {background.uploading && (
-          <p role="status" className="px-4 pb-3.5 text-sm text-muted-foreground">
-            Uploading…
+          <p id="style-cover-automatic" className="text-sm text-muted-foreground">
+            Automatic is Screenshot when the entry has an image, else Title. Your background puts the title on an image of your own.
           </p>
-        )}
-        {background.error && <FieldError className="px-4 pb-3.5">{background.error}</FieldError>}
-      </div>
+          {background.uploading && (
+            <p role="status" className="sr-only">
+              Uploading…
+            </p>
+          )}
+          {background.error && <FieldError>{background.error}</FieldError>}
+        </SettingBlock>
+      </SettingsCard>
       {/* Outside the form in the page (a portal): typing in its search isn't a change to save. */}
       <Dialog open={picking} onOpenChange={setPicking}>
         {/* Closed, by a pick or without one, focus goes back to Pick. */}

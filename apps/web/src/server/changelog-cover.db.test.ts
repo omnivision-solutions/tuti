@@ -6,7 +6,7 @@ import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { composeChangelogCover as composeAction, publishChangelogEntry as publishAction } from "@/server/changelog";
+import { composeChangelogCover as composeAction, publishChangelogEntry as publishAction, saveChangelogStyle } from "@/server/changelog";
 import * as coverCard from "@/server/cover-card";
 import {
   composeChangelogCover,
@@ -309,4 +309,14 @@ test("the cover's design and background are saved and checked, each on its own: 
     await expect(setStyle({ coverDesign: "title", coverBackground: id })).rejects.toMatchObject({ status: 409, code: "media_gone" });
   }
   expect(await call(getChangelogStyle, team(), {})).toMatchObject({ coverDesign: "pattern", coverBackground: null });
+});
+
+test("Settings' form without AI (the cover only) saves the cover and leaves what drafts follow as it is", async () => {
+  await setStyle({ tone: "Short and plain.", screenshotMarkers: true });
+  actAs(owner);
+  const form = new FormData();
+  form.set("coverDesign", "pattern");
+  form.set("coverBackground", "");
+  expect(await saveChangelogStyle(project.slug, {}, form)).toEqual({});
+  expect(await call(getChangelogStyle, team(), {})).toMatchObject({ tone: "Short and plain.", screenshotMarkers: true, coverDesign: "pattern" });
 });
