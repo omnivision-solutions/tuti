@@ -1446,6 +1446,7 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
   });
   afterAll(() => receiver.close());
   beforeEach(async () => {
+    receiver.received.length = 0; // each test counts its own
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"); // the receiver is local
     await prisma.webhook.create({
       data: { projectId: project.id, url: receiver.url, secret: "whsec_x", events: ["changelog.unsubscribed"], createdById: owner.id },
