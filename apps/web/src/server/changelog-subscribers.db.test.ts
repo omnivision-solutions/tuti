@@ -156,7 +156,7 @@ async function page(query: { token: string; sent?: string } | { confirm: string 
  * database only (other test files share the server), and only the claim's statement (it reads "portalAccess" FOR SHARE),
  * or another `statement` (an ILIKE pattern).
  */
-async function waitingOnALock(statement = '%"portalAccess"%FOR SHARE%') {
+async function waitingOnALock(statement = '%FROM "project"%FOR SHARE%') {
   for (let tries = 0; tries < 300; tries++) {
     const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
       SELECT count(*)::int AS waiting FROM pg_stat_activity
@@ -903,6 +903,58 @@ describe("publishing with Email subscribers", () => {
     await prisma.changelogEntry.update({ where: { id: sample.id }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
     expect(await handlers.changelogEmailed({ entryId: sample.id }, log)).toEqual({ skipped: true });
     expect(entryEmailsTo(kim)).toEqual([]);
+  });
+
+  test("due on a portal made private before it's sent: it goes to those who may read it (its readers, by address or domain, people its app named, its team), not to the rest, and isn't let go", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    const domain = `e2e-${randomUUID().slice(0, 8)}.example.com`;
+    const [kim, lee, viaDomain, sso] = [newAddress(), newAddress(), `e2e-${randomUUID()}@${domain}`, newAddress()];
+    const member = await signUp("Mo Member");
+    await prisma.user.update({ where: { id: member.id }, data: { emailVerified: true } });
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
+    await ssoUser(sso);
+    for (const address of [kim, lee, viaDomain, sso, member.email]) {
+      await confirmed(address);
+    }
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    const jobs = await import("@tuti/jobs");
+    const enqueue = vi.spyOn(jobs, "enqueue").mockResolvedValue(undefined);
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    enqueue.mockRestore();
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    await prisma.portalReader.createMany({ data: [{ projectId: project.id, email: lee }, { projectId: project.id, email: `@${domain}` }] });
+    const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await handlers.changelogEmailed({ entryId }, log)).toEqual({ emailed: 4 });
+    expect([kim, lee, viaDomain, sso, member.email].map((to) => entryEmailsTo(to).length)).toEqual([0, 1, 1, 1, 1]);
+    // Done: nobody left (the others aren't its audience).
+    expect(await subscribersLeft(entryId)).toBe(0);
+  });
+
+  test("due on a private portal whose plan has no private portals: only its team (verified) gets it, not its readers or people its app named", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    const domain = `e2e-${randomUUID().slice(0, 8)}.example.com`;
+    const [lee, viaDomain, sso] = [newAddress(), `e2e-${randomUUID()}@${domain}`, newAddress()];
+    const [member, unverified] = [await signUp("Mo Member"), await signUp("Una Unverified")];
+    await prisma.user.update({ where: { id: member.id }, data: { emailVerified: true } });
+    for (const user of [member, unverified]) {
+      await prisma.teamMember.create({ data: { projectId: project.id, userId: user.id, role: "MEMBER" } });
+    }
+    await prisma.user.update({ where: { id: unverified.id }, data: { emailVerified: false } });
+    await ssoUser(sso);
+    for (const address of [lee, viaDomain, sso, member.email, unverified.email]) {
+      await confirmed(address);
+    }
+    const entry = await call(createChangelogEntry, team(), { title: "Dark mode", body: "x" });
+    const jobs = await import("@tuti/jobs");
+    const enqueue = vi.spyOn(jobs, "enqueue").mockResolvedValue(undefined);
+    await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
+    enqueue.mockRestore();
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "pro" } });
+    await prisma.portalReader.createMany({ data: [{ projectId: project.id, email: lee }, { projectId: project.id, email: `@${domain}` }] });
+    const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await handlers.changelogEmailed({ entryId }, log)).toEqual({ emailed: 1 });
+    expect([lee, viaDomain, sso, member.email, unverified.email].map((to) => entryEmailsTo(to).length)).toEqual([0, 0, 0, 1, 0]);
   });
 
   test("never from a private portal", async () => {
