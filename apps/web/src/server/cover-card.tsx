@@ -44,7 +44,7 @@ type Image = { id: string; width: number; height: number };
 
 type Site = { project: { name: string }; brand: Branding };
 type Logo = Awaited<ReturnType<typeof logoImage>>;
-type Picture = { src: string; width: number; height: number } | null;
+export type Picture = { src: string; width: number; height: number } | null;
 
 /**
  * The most of a title a cover draws: a longer one is cut there with an ellipsis, so it's also the longest headline to
@@ -110,14 +110,20 @@ export class CoverPictureUnread extends Error {}
 /**
  * The cover as a PNG, `width` pixels wide (the stored one at its full size, a preview smaller). `asAsked`: the design
  * was asked for by name, so Screenshot whose image can't be read is refused (CoverPictureUnread) rather than drawn as
- * another design.
+ * another design. `screenshot`: a picture to draw in Screenshot's frame instead of the entry's image (Settings' sample).
  */
-export async function drawCover(site: Site, content: CoverContent, design: CoverDesign, width: number = COVER_SIZE.width, { asAsked = false } = {}): Promise<Buffer> {
+export async function drawCover(
+  site: Site,
+  content: CoverContent,
+  design: CoverDesign,
+  width: number = COVER_SIZE.width,
+  { asAsked = false, screenshot }: { asAsked?: boolean; screenshot?: Picture } = {},
+): Promise<Buffer> {
   const dark = site.brand.colorScheme === "dark";
   const pictured = design === "screenshot" || design === "background";
   const [logo, picture] = await Promise.all([
     logoImage(dark ? (site.brand.logoDark ?? site.brand.logo) : site.brand.logo),
-    design === "screenshot" ? pictureOf(content.image) : design === "background" ? pictureOf(content.background, true) : null,
+    design === "screenshot" ? (screenshot ?? pictureOf(content.image)) : design === "background" ? pictureOf(content.background, true) : null,
   ]);
   if (pictured && !picture && asAsked) {
     throw new CoverPictureUnread();

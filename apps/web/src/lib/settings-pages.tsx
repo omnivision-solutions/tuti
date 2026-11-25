@@ -23,7 +23,11 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
     },
     {
       title: "Portal",
-      pages: PORTAL_PAGES.map(({ slug: page, title, icon: Icon }) => ({ title, href: at(page), icon: <Icon aria-hidden /> })),
+      // Changelog (how entries are drafted and their covers) after the docs' pages: no preview beside it, so not one of PORTAL_PAGES.
+      pages: PORTAL_PAGES.flatMap(({ slug: page, title, icon: Icon }) => [
+        { title, href: at(page), icon: <Icon aria-hidden /> },
+        ...(page === "content-actions" ? [{ title: "Changelog", href: at("changelog"), icon: <PenLineIcon aria-hidden /> }] : []),
+      ]),
     },
     {
       title: "Users",
@@ -47,7 +51,6 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         ...(aiEnabled()
           ? [
               { title: "Inbox", href: at("inbox-ai"), icon: <MessagesSquareIcon aria-hidden /> },
-              { title: "Changelog", href: at("changelog"), icon: <PenLineIcon aria-hidden /> },
               // Analysing merged pull requests needs AI too (codeChangesEnabled).
               ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot"), icon: <GitPullRequestArrowIcon aria-hidden /> }] : []),
             ]

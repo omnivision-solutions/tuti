@@ -203,12 +203,16 @@ export async function removeChangelogPullRequest(projectSlug: string, number: nu
   return asTeam(projectSlug, DENIED, (context) => call(removePullRequestOperation, context, { number: Number(number), url: String(url) }));
 }
 
-/** Saves Settings → Changelog's form: instructions (stored as tone notes) and the published entries picked as examples (see changelogStyle.update). */
+/** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */
 export async function saveChangelogStyle(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  // Without AI, the form has the cover only: what drafts follow stays as it is.
+  const drafting = formData.has("tone");
   const input = {
-    tone: String(formData.get("tone") ?? ""),
-    examples: formData.getAll("examples").map(Number),
-    screenshotMarkers: formData.get("screenshotMarkers") === "on",
+    ...(drafting && {
+      tone: String(formData.get("tone")),
+      examples: formData.getAll("examples").map(Number),
+      screenshotMarkers: formData.get("screenshotMarkers") === "on",
+    }),
     coverDesign: String(formData.get("coverDesign") ?? "") as CoverDesign | "",
     coverBackground: String(formData.get("coverBackground") ?? "") || null,
   };

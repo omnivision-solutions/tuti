@@ -334,7 +334,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("No drafts")).toBeVisible();
   await expect(team.getByRole("button", { name: "Writing style" })).toHaveCount(0);
 
-  // The changelog's AI settings (Settings → AI → Changelog): instructions, and the published entry as an example.
+  // The changelog's AI settings (Settings → Portal → Changelog): instructions, and the published entry as an example.
   const tone = `Friendly, short sentences, no jargon (${slug}).`;
   await team.goto(`/app/${slug}/settings`);
   await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Changelog" }).click();
