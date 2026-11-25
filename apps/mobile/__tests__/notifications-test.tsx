@@ -277,6 +277,24 @@ describe("the notifications' settings", () => {
     expect(screen.getByRole("switch", { name: "Show message text" })).toHaveProp("value", false);
   });
 
+  it("moves a screen reader's focus to the switch once Try again has gone with its error", async () => {
+    let fail = true;
+    mockApi.mockImplementation(async () => {
+      if (fail) {
+        throw new Error("Couldn't reach tuti.example.com.");
+      }
+      return { showMessageText: true };
+    });
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    await render(<NotificationSettings />);
+    fail = false;
+    await fireEvent.press(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Show message text" })).toHaveProp("value", true));
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(focus).toHaveBeenCalledWith(expect.objectContaining({ props: expect.anything() }), "focus");
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
   it("announces a failed change to VoiceOver, which has no live regions", async () => {
     const os = Platform.OS;
     Platform.OS = "ios";

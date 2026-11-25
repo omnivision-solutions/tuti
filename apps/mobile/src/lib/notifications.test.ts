@@ -167,9 +167,10 @@ describe("registering the device", () => {
   it("is removed on signing out without waiting for the server, and registered again on signing back in", async () => {
     const { registerDevice, removeDevice, deviceId } = await load();
     await registerDevice(api, session, "ios");
+    const registeredAs = await deviceId();
     const hanging = vi.fn(() => new Promise<never>(() => {})) as unknown as Api;
     await removeDevice(hanging);
-    expect(hanging).toHaveBeenCalledWith(`/devices/${encodeURIComponent(stored.get("device-id")!)}`, { method: "DELETE" });
+    expect(hanging).toHaveBeenCalledWith(`/devices/${encodeURIComponent(registeredAs)}`, { method: "DELETE" });
     // A removal that fails throws nowhere.
     await removeDevice((async () => {
       throw new Error("offline");
@@ -196,6 +197,24 @@ describe("registering the device", () => {
     // Something other than the server answered (a Wi-Fi login page).
     await removeDevice(failing(new ApiError(200, "not_tuti", "wifi.example.com didn't answer like a Tuti server (200).")));
     await vi.waitFor(() => expect(system.unregistered).toBe(2));
+  });
+
+  it("registers a sign-in after a slow removal under a new id, so the removal can only reach the old registration", async () => {
+    const { registerDevice, removeDevice, deviceId } = await load();
+    await registerDevice(api, session, "ios");
+    const old = await deviceId();
+    const slow = vi.fn(() => new Promise<never>(() => {})) as unknown as Api;
+    await removeDevice(slow);
+
+    // Signed in again to the same account, the removal still on its way.
+    await registerDevice(api, session, "ios");
+    const fresh = await deviceId();
+    expect(fresh).not.toBe(old);
+    expect(slow).toHaveBeenCalledWith(`/devices/${old}`, { method: "DELETE" });
+    expect(calls.at(-1)!.init!.body).toMatchObject({ deviceId: fresh });
+    // And it's the one kept on the phone for the next launch.
+    vi.resetModules();
+    expect(await (await load()).deviceId()).toBe(fresh);
   });
 
   it("keeps the token of a sign-in that registered while the removal before it was still failing", async () => {
@@ -242,9 +261,17 @@ describe("a notification while the app is in front", () => {
     // Signed out, nothing shows in front.
     expect(behaviourFor(notification({ project: "acme", conversation: 13 }), true).shouldShowBanner).toBe(false);
 
+    // Its details sheet focusing as the conversation's screen blurs: the screen's release leaves the sheet's mark.
+    const sheet = lookAt({ project: "acme", number: 12 });
+    away();
+    expect(shown(twelve)).toBe(false);
+    sheet();
+    expect(shown(twelve)).toBe(true);
+    const again = lookAt({ project: "acme", number: 12 });
+
     // Another conversation opened over it, then that one closed: the first one's leaving doesn't unmark the second.
     const other = lookAt({ project: "acme", number: 13 });
-    away();
+    again();
     expect(shown({ project: "acme", conversation: 13 })).toBe(false);
     other();
     expect(shown({ project: "acme", conversation: 13 })).toBe(true);

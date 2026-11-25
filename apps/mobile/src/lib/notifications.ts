@@ -24,7 +24,10 @@ const asked = () => new File(Paths.document, "notifications-asked");
 /** Where pushes without a channel of their own go: Expo's push service sends to `default` when none is named. */
 const CHANNEL = "default";
 
-/** This install's id, made up once and kept on the phone, so registering again replaces its row rather than adding one. */
+/**
+ * This install's id, kept on the phone, so registering again replaces its row rather than adding one. A new one with
+ * each sign-out (removeDevice).
+ */
 let keptId: Promise<string> | null = null;
 export function deviceId() {
   keptId ??= SecureStore.getItemAsync(DEVICE_ID, STORE_OPTIONS).then(async (kept) => {
@@ -129,6 +132,11 @@ export async function removeDevice(api: Api) {
         return Notifications.unregisterForNotificationsAsync().catch(() => {});
       }
     });
+    // A new id from here on: a sign-in that registers while this is still on its way gets a row of its own, which this
+    // late removal can't reach. Kept in memory if storage fails (the next launch then reads the old one, as before).
+    const made = randomUUID();
+    keptId = Promise.resolve(made);
+    void SecureStore.setItemAsync(DEVICE_ID, made, STORE_OPTIONS).catch(() => {});
   }
 }
 
@@ -177,14 +185,17 @@ export const tapped = (response: Notifications.NotificationResponse | null | und
   response?.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER ? targetOf(response.notification.request.content.data) : null;
 
 /** The conversation on screen, while it's focused (the handler below is asked only while the app is in front). */
-let looking: string | null = null;
+let looking: { key: string } | null = null;
 const keyOf = (target: Target) => `${target.project}\n${target.number}`;
-/** Marks the conversation as the one on screen; the function returned unmarks it. */
+/**
+ * Marks the conversation as the one on screen; the function returned undoes this mark only, never a newer one (of the
+ * same conversation too: its details sheet focusing as the conversation's screen blurs).
+ */
 export function lookAt(target: Target) {
-  const key = keyOf(target);
-  looking = key;
+  const mark = { key: keyOf(target) };
+  looking = mark;
   return () => {
-    if (looking === key) {
+    if (looking === mark) {
       looking = null;
     }
   };
@@ -196,7 +207,7 @@ export function lookAt(target: Target) {
  */
 export function behaviourFor(notification: Notifications.Notification, signedOut = false): Notifications.NotificationBehavior {
   const target = targetOf(notification.request.content.data);
-  const show = !signedOut && (!target || keyOf(target) !== looking);
+  const show = !signedOut && (!target || keyOf(target) !== looking?.key);
   return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
 }
 

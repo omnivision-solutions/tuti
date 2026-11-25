@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { AccessibilityInfo, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, AppState, type HostInstance, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
 import { allow } from "@/components/notifications";
 import { permission, registerAgain } from "@/lib/notifications";
@@ -47,10 +47,22 @@ export default function NotificationSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+  // Try again goes with the error it's under: a screen reader's focus moves to the switch it loads, rather than being lost.
+  const showText = useRef<HostInstance>(null);
+  const retried = useRef(false);
   const retry = () => {
+    retried.current = true;
     setError(null);
     void load();
   };
+  useEffect(() => {
+    if (!error && retried.current) {
+      retried.current = false;
+      if (showText.current) {
+        AccessibilityInfo.sendAccessibilityEvent(showText.current, "focus");
+      }
+    }
+  }, [error]);
 
   const turn = () => {
     if (allowed?.canAsk) {
@@ -100,6 +112,7 @@ export default function NotificationSettings() {
             <Text style={[styles.detail, { color: colors.muted }]}>Off, a notification says who wrote and in which project, not what.</Text>
           </View>
           <Switch
+            ref={showText}
             value={settings?.showMessageText ?? false}
             disabled={!settings || saving}
             accessibilityState={{ disabled: !settings || saving }}

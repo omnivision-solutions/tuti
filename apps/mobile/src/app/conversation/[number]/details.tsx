@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, type HostInstance, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -43,7 +43,7 @@ export default function Details() {
   const key = screenKey(session!, number);
   // The conversation's still what's on screen: its notifications don't show over its details either.
   const project = session?.project;
-  useEffect(() => (project ? lookAt({ project, number }) : undefined), [project, number]);
+  useFocusEffect(useCallback(() => (project ? lookAt({ project, number }) : undefined), [project, number]));
   const triage = useSyncExternalStore(subscribeTriage, () => getTriage(key));
   const [person, setPerson] = useState<Person | null>(null);
   const [assignees, setAssignees] = useState<Assignee[] | null>(null);

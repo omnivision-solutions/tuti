@@ -3,15 +3,26 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo, BackHandler } from "react-native";
 
 import Details from "@/app/conversation/[number]/details";
-import { behaviourFor } from "@/lib/notifications";
+import { behaviourFor, lookAt } from "@/lib/notifications";
 import { type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage, triageChanges } from "@/lib/details";
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
-jest.mock("expo-router", () => ({
-  router: { back: () => mockBack(), push: (href: string) => mockPush(href) },
-  useLocalSearchParams: () => ({ number: mockNumber }),
-}));
+// The sheet's focus as the test says (`mockSetFocused`): a screen opened over it takes it.
+jest.mock("expo-router", () => {
+  const React = require("react");
+  const useFocusEffect = (effect: () => (() => void) | void) => {
+    const [focused, setFocused] = React.useState(true);
+    mockSetFocused = setFocused;
+    React.useEffect(() => (focused ? effect() : undefined), [focused, effect]);
+  };
+  return {
+    router: { back: () => mockBack(), push: (href: string) => mockPush(href) },
+    useLocalSearchParams: () => ({ number: mockNumber }),
+    useFocusEffect,
+  };
+});
+let mockSetFocused: (focused: boolean) => void = () => {};
 
 let mockNumber = "12";
 const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
@@ -120,6 +131,25 @@ describe("the details sheet", () => {
     expect(banner()).toBe(false);
     await screen.unmount();
     expect(banner()).toBe(true);
+  });
+
+  it("marks its conversation while in focus, also again after a conversation opened over it closes", async () => {
+    serve(SAM);
+    const banner = () => behaviourFor({ request: { content: { data: { project: "acme", conversation: 12 } } } } as never).shouldShowBanner;
+    // The conversation's screen under it had marked it, and blurs as the sheet focuses: its release leaves the sheet's mark.
+    const conversation = lookAt({ project: "acme", number: 12 });
+    await render(<Details />);
+    await screen.findByText("Sam Lee");
+    conversation();
+    expect(banner()).toBe(false);
+
+    // A notification's conversation opened over the sheet, then closed.
+    await act(async () => mockSetFocused(false));
+    const over = lookAt({ project: "acme", number: 30 });
+    over();
+    expect(banner()).toBe(true);
+    await act(async () => mockSetFocused(true));
+    expect(banner()).toBe(false);
   });
 
   it("shows one of the project's users as the web's panel does, and opens another of their conversations", async () => {
