@@ -36,6 +36,7 @@ const system = vi.hoisted(() => ({
   token: "ExponentPushToken[one]",
   channels: [] as string[],
   asked: 0,
+  unregistered: 0,
 }));
 vi.mock("expo-notifications", () => ({
   AndroidImportance: { HIGH: 4 },
@@ -43,6 +44,7 @@ vi.mock("expo-notifications", () => ({
   PermissionStatus: { UNDETERMINED: "undetermined" },
   DEFAULT_ACTION_IDENTIFIER: "expo.modules.notifications.actions.DEFAULT",
   getPermissionsAsync: async () => system.permissions,
+  unregisterForNotificationsAsync: async () => void system.unregistered++,
   requestPermissionsAsync: async () => {
     system.asked++;
     system.permissions = { granted: true, status: "granted", canAskAgain: true };
@@ -71,6 +73,7 @@ beforeEach(() => {
   system.token = "ExponentPushToken[one]";
   system.channels = [];
   system.asked = 0;
+  system.unregistered = 0;
 });
 
 describe("the device's id", () => {
@@ -175,6 +178,22 @@ describe("registering the device", () => {
     expect(calls).toHaveLength(2);
     expect(calls[1]!.init!.body).toMatchObject({ deviceId: await deviceId() });
   });
+
+  it("gives up the phone's push token when the removal can't reach the server, which may not have heard the sign-out either", async () => {
+    const { removeDevice } = await load();
+    // The same module the one under test has (each test loads them afresh).
+    const { ApiError } = await import("./api");
+    const failing = (error: Error) =>
+      (async () => {
+        throw error;
+      }) as Api;
+    await removeDevice(failing(new ApiError(401, "unauthorized", "Signed out")));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(system.unregistered).toBe(0);
+
+    await removeDevice(failing(new ApiError(0, "unreachable", "Couldn't reach tuti.example.com.")));
+    await vi.waitFor(() => expect(system.unregistered).toBe(1));
+  });
 });
 
 const notification = (data: unknown) => ({ request: { content: { data } } }) as never;
@@ -205,6 +224,8 @@ describe("a notification while the app is in front", () => {
     expect(shown({ project: "acme", conversation: 13 })).toBe(true);
     expect(shown({ project: "kite", conversation: 12 })).toBe(true);
     expect(shown({})).toBe(true);
+    // Signed out, nothing shows in front.
+    expect(behaviourFor(notification({ project: "acme", conversation: 13 }), true).shouldShowBanner).toBe(false);
 
     // Another conversation opened over it, then that one closed: the first one's leaving doesn't unmark the second.
     const other = lookAt({ project: "acme", number: 13 });

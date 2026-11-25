@@ -14,13 +14,14 @@ const mockSystem = {
   onTap: null as ((response: Response) => void) | null,
   onToken: null as ((token: { type: string; data: string }) => void) | null,
   asked: 0,
+  handler: null as { handleNotification: (notification: unknown) => Promise<{ shouldShowBanner: boolean }> } | null,
 };
 jest.mock("expo-notifications", () => ({
   AndroidImportance: { HIGH: 4 },
   IosAuthorizationStatus: { PROVISIONAL: 3 },
   PermissionStatus: { UNDETERMINED: "undetermined" },
   DEFAULT_ACTION_IDENTIFIER: "expo.modules.notifications.actions.DEFAULT",
-  setNotificationHandler: () => {},
+  setNotificationHandler: (handler: typeof mockSystem.handler) => (mockSystem.handler = handler),
   getPermissionsAsync: async () => mockSystem.permissions,
   requestPermissionsAsync: async () => {
     mockSystem.asked++;
@@ -174,6 +175,18 @@ describe("a tapped notification", () => {
   });
 });
 
+describe("a notification while the app is in front", () => {
+  it("shows a banner signed in, and nothing signed out", async () => {
+    const arriving = { request: { content: { data: { project: "acme", conversation: 12 } } } };
+    await render(<Harness />);
+    expect((await mockSystem.handler!.handleNotification(arriving)).shouldShowBanner).toBe(true);
+
+    mockSession = null;
+    await screen.rerender(<Harness />);
+    expect((await mockSystem.handler!.handleNotification(arriving)).shouldShowBanner).toBe(false);
+  });
+});
+
 describe("registering the phone", () => {
   it("registers at launch while signed in, never asking, and again when the token changes", async () => {
     newSession();
@@ -251,6 +264,17 @@ describe("the notifications' settings", () => {
     await fireEvent(await screen.findByRole("switch", { name: "Show message text" }), "valueChange", false);
     expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Show message text" })).toHaveProp("value", true);
+  });
+
+  it("takes one change at a time: the switch waits for the server's answer", async () => {
+    let answer: (settings: unknown) => void = () => {};
+    mockApi.mockImplementation((path, init) => (init?.method === "PATCH" ? new Promise((resolve) => (answer = resolve)) : Promise.resolve({ showMessageText: true })));
+    await render(<NotificationSettings />);
+    await fireEvent(await screen.findByRole("switch", { name: "Show message text" }), "valueChange", false);
+    expect(screen.getByRole("switch", { name: "Show message text" })).toBeDisabled();
+    await act(async () => answer({ showMessageText: false }));
+    expect(screen.getByRole("switch", { name: "Show message text" })).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "Show message text" })).toHaveProp("value", false);
   });
 
   it("announces a failed change to VoiceOver, which has no live regions", async () => {

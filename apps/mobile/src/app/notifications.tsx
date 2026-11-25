@@ -16,6 +16,8 @@ export default function NotificationSettings() {
   const [allowed, setAllowed] = useState<{ allowed: boolean; canAsk: boolean } | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One change at a time: an answer to an older one can't put the switch back over a newer one.
+  const [saving, setSaving] = useState(false);
 
   // Read again on coming back from the system's settings, and the phone registered if they were turned on there.
   const check = useCallback(
@@ -62,10 +64,13 @@ export default function NotificationSettings() {
   const setShowText = (showMessageText: boolean) => {
     setSettings({ showMessageText });
     setError(null);
-    api<Settings>("/notifications", { method: "PATCH", body: { showMessageText } }).then(setSettings, (e: Error) => {
-      setSettings({ showMessageText: !showMessageText });
-      setError(e.message);
-    });
+    setSaving(true);
+    api<Settings>("/notifications", { method: "PATCH", body: { showMessageText } })
+      .then(setSettings, (e: Error) => {
+        setSettings({ showMessageText: !showMessageText });
+        setError(e.message);
+      })
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -96,7 +101,8 @@ export default function NotificationSettings() {
           </View>
           <Switch
             value={settings?.showMessageText ?? false}
-            disabled={!settings}
+            disabled={!settings || saving}
+            accessibilityState={{ disabled: !settings || saving }}
             onValueChange={setShowText}
             accessibilityLabel="Show message text"
             trackColor={{ true: colors.primary }}

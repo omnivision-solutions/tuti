@@ -6,7 +6,7 @@ import { AndroidImportance, IosAuthorizationStatus } from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useEffectEvent } from "react";
 
-import type { Api } from "./api";
+import { type Api, ApiError } from "./api";
 import type { Session } from "./session-store";
 import { STORE_OPTIONS } from "./sign-in";
 
@@ -111,14 +111,19 @@ export async function registerDevice(api: Api, session: { token: string }, platf
 
 /**
  * Stops this phone's notifications for the session signing out (`devices.remove`). Done once the request is sent (the
- * id is read on the phone): its answer is never waited for, and its failure is no one's, as signing out ends the
- * session, and with it the server's rows for it, anyway.
+ * id is read on the phone): its answer is never waited for. A server that answered at all ends the session, and with it
+ * its rows, if this didn't; one that couldn't be reached (offline) may not have heard the sign-out either, so the phone
+ * gives up its push token: Expo then calls it unregistered, and the server drops it. The next sign-in gets a new one.
  */
 export async function removeDevice(api: Api) {
   registered = null;
   const id = await deviceId().catch(() => null);
   if (id) {
-    void api(`/devices/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+    void api(`/devices/${encodeURIComponent(id)}`, { method: "DELETE" }).catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 0) {
+        return Notifications.unregisterForNotificationsAsync().catch(() => {});
+      }
+    });
   }
 }
 
@@ -180,10 +185,13 @@ export function lookAt(target: Target) {
   };
 }
 
-/** How a notification arriving while the app is in front shows: not at all over its own conversation, as a banner elsewhere. */
-export function behaviourFor(notification: Notifications.Notification): Notifications.NotificationBehavior {
+/**
+ * How a notification arriving while the app is in front shows: not at all over its own conversation, or signed out (one
+ * a sign-out that didn't reach the server left coming), as a banner elsewhere.
+ */
+export function behaviourFor(notification: Notifications.Notification, signedOut = false): Notifications.NotificationBehavior {
   const target = targetOf(notification.request.content.data);
-  const show = !target || keyOf(target) !== looking;
+  const show = !signedOut && (!target || keyOf(target) !== looking);
   return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
 }
 

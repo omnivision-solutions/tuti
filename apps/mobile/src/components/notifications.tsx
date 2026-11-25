@@ -8,9 +8,6 @@ import { useSession } from "@/lib/session";
 
 const platform = Platform.OS === "ios" ? "ios" : "android";
 
-// While the app is in front: a banner, except over the conversation it's about.
-Notifications.setNotificationHandler({ handleNotification: async (notification) => behaviourFor(notification) });
-
 /**
  * For the root layout: keeps the phone registered while signed in, and opens a tapped notification's conversation, the
  * app running or launched by the tap (once it knows whether anyone's signed in).
@@ -18,6 +15,12 @@ Notifications.setNotificationHandler({ handleNotification: async (notification) 
 export function useNotifications() {
   const { session, api, setProject } = useSession();
   usePushRegistration(session, api, platform);
+
+  // While the app is in front: a banner, except over the conversation it's about, and nothing signed out.
+  const signedOut = session === null;
+  useEffect(() => {
+    Notifications.setNotificationHandler({ handleNotification: async (notification) => behaviourFor(notification, signedOut) });
+  }, [signedOut]);
 
   // The tap waiting for the session to be read (a launch by the tap), then opened once.
   const waiting = useRef<Target | null>(null);
