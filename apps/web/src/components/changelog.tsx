@@ -47,6 +47,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -359,6 +360,7 @@ function CoverDesigns({
   onChange,
   headline = "",
   none = false,
+  className = "grid-cols-2",
 }: {
   projectSlug: string;
   number: number;
@@ -367,6 +369,8 @@ function CoverDesigns({
   onChange: (value: CoverDesign | "none") => void;
   headline?: string;
   none?: boolean;
+  /** Its columns. */
+  className?: string;
 }) {
   const name = useId();
   const query = new URLSearchParams({ v: String(covers.version), ...(headline.trim() && { headline: headline.trim() }) });
@@ -374,7 +378,7 @@ function CoverDesigns({
   const option = "relative flex cursor-pointer flex-col gap-1 text-xs text-muted-foreground has-checked:text-foreground";
   const picture = "aspect-[1600/840] w-full rounded-md border bg-muted peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring";
   return (
-    <fieldset className="grid grid-cols-2 gap-3">
+    <fieldset className={cn("grid gap-3", className)}>
       <legend className="mb-2 text-sm font-medium">Cover</legend>
       {covers.designs.map((design) => (
         <label key={design} className={option}>
@@ -697,30 +701,39 @@ const toldText = ({ asked, subscribers }: { asked: number; subscribers: number }
 const stillToEmail = (n: number) => (n === 1 ? "the subscriber who hasn't had it yet" : `the ${n} subscribers who haven't had it yet`);
 
 /**
- * What the Publish dialog says happens: on the portal, marked new or not, and who's emailed (the subscribers, the
- * first time; publishing again, those it's still to go to).
+ * What the Publish dialog says happens, in one line: on the portal and in the widget, the posts it completes, and how
+ * many people it emails (`emails`, said as `count`), named in `who` for the count's popover: the subscribers (the first
+ * time; publishing again, those it's still to go to) and the people who asked for its posts.
  */
 export function publishSummary({
-  markNew,
   email,
   subscribers,
   emailedSubscribers,
   subscribersLeft,
+  posts,
+  asked,
 }: {
-  markNew: boolean;
   email: boolean;
   subscribers: number;
   emailedSubscribers: boolean;
   subscribersLeft: number;
-}): string {
-  const emailed = emailedSubscribers
-    ? subscribersLeft > 0
-      ? `, and it's sent to ${stillToEmail(subscribersLeft)}`
-      : ""
-    : email && subscribers > 0
-      ? `, and it's emailed to your ${subscribers === 1 ? "subscriber" : `${subscribers} subscribers`}`
-      : "";
-  return `It appears on your portal's changelog${markNew ? ", marked new in your widget" : ""}${emailed}.`;
+  /** How many posts it completes. */
+  posts: number;
+  /** How many people who asked for them it emails. */
+  asked: number;
+}): { start: string; count: string | null; who: string } {
+  const toSubscribers = emailedSubscribers ? subscribersLeft : email ? subscribers : 0;
+  const emails = toSubscribers + asked;
+  const where = `It goes on your portal and in your widget${posts > 0 ? `, completes ${plural(posts, "post")}` : ""}`;
+  const who = [
+    toSubscribers > 0 && (emailedSubscribers ? stillToEmail(toSubscribers) : `your ${toSubscribers === 1 ? "subscriber" : `${toSubscribers} subscribers`}`),
+    asked > 0 && `${asked === 1 ? "the person" : `the ${asked} people`} who asked for ${posts === 1 ? "the post" : "the posts"} it completes`,
+  ]
+    .filter(Boolean)
+    .join(", and ");
+  return emails > 0
+    ? { start: `${where}${posts > 0 ? "" : ","} and emails `, count: plural(emails, "person", "people"), who: `${who[0]!.toUpperCase()}${who.slice(1)}.` }
+    : { start: where, count: null, who: "" };
 }
 
 /**
@@ -1759,6 +1772,15 @@ export function ChangelogEntryActions({
   // Text this release's editor can't show isn't rewritten by AI either (ChangelogForm's onUnreadable).
   const locked = saving?.locked ?? false;
   const aiFirst = unwritten !== undefined && canDraftWithAi && !aiPaused && !locked;
+  // Sample and imported entries go out without announcing (changelog.publish): no subscriber is emailed.
+  const summary = publishSummary({
+    email: !sample && !importedOn && announce.email,
+    subscribers,
+    emailedSubscribers: !sample && !importedOn && emailedSubscribers,
+    subscribersLeft: sample || importedOn ? 0 : subscribersLeft,
+    posts: postCount,
+    asked: emails,
+  });
   // The cover Publish adds (the entry's own design until they pick), or "none".
   const [pickedCover_, setPickedCover] = useState<CoverDesign | "none">();
   // Not over a featured image the form has and hasn't saved yet: Publish publishes what's saved, and theirs stays theirs.
@@ -1850,21 +1872,12 @@ export function ChangelogEntryActions({
     <AlertDialog key="publish">
       {/* Off while busy, but keeping the keyboard's focus. */}
       <AlertDialogTrigger render={<Button variant={aiFirst ? "outline" : "default"} disabled={busy} focusableWhenDisabled />}>Publish</AlertDialogTrigger>
-      {/* With the cover's designs it can be taller than a phone's screen: it scrolls, so Publish is in reach. */}
-      <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      {/* With the cover's designs it can be taller than a phone's screen: it scrolls, so Publish is in reach. Wider with
+          them, so the designs fit in one row. */}
+      <AlertDialogContent className={cn("max-h-[calc(100dvh-2rem)] overflow-y-auto", covers && "sm:max-w-md")}>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {markers.length > 0
-              ? markers.length === 1
-                ? "Replace a line before publishing"
-                : `Replace ${markers.length} lines before publishing`
-              : unwritten === "titles"
-                ? "Publish the pull requests' titles?"
-                : unwritten === "lines"
-                  ? "Publish Autopilot's lines as they are?"
-                  : unwritten === "empty"
-                    ? "Publish it without text?"
-                    : `Publish “${title}”?`}
+            {markers.length > 0 ? (markers.length === 1 ? "Replace a line before publishing" : `Replace ${markers.length} lines before publishing`) : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
           <AlertDialogDescription className={cn(markers.length > 0 && "wrap-anywhere")}>
@@ -1873,28 +1886,46 @@ export function ChangelogEntryActions({
               `“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`
             ) : (
               <>
-                {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
-                {unwritten === "lines" && `“${title}” still lists its pull requests a line each, as they came in, not release notes. `}
-                {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
-                {aiFirst && "Draft with AI writes release notes from them. "}
-                {sample || importedOn
-                  ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
-                  : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
-                {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
-                {sample && " Sample updates are published without announcing."}
+                {summary.start}
+                {summary.count && (
+                  <Popover>
+                    <PopoverTrigger openOnHover className="rounded-sm text-foreground underline decoration-dotted underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      {summary.count}
+                    </PopoverTrigger>
+                    <PopoverContent className="max-w-72 p-3 text-sm">{summary.who}</PopoverContent>
+                  </Popover>
+                )}
+                .{sample && " Sample updates are published without announcing."}
                 {importedOn && ` Published before you imported it, it keeps that date (${importedOn}) and isn't announced.`}
               </>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {/* Not written yet: said in one tinted line, with Draft with AI beside it (it closes this dialog and opens its own, which says what it replaces). */}
+        {unwritten && markers.length === 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-highlight px-3 py-2 text-sm text-highlight-foreground">
+            <p className="flex-1">
+              {unwritten === "titles"
+                ? "Its text is still the pull requests' titles."
+                : unwritten === "lines"
+                  ? "Its text is still Autopilot's lines, one per pull request."
+                  : "It has no text yet, only its pull requests."}
+            </p>
+            {aiFirst && (
+              <AlertDialogCancel variant="link" className="h-auto p-0 font-medium text-highlight-foreground underline" onClick={() => setDrafting(true)}>
+                Draft with AI first
+              </AlertDialogCancel>
+            )}
+          </div>
+        )}
         {/* No cover yet: its designs, drawn for this entry, with one picked already (not while lines are left to fill in: it can't be published). */}
-        {covers && cover && markers.length === 0 && <CoverDesigns projectSlug={projectSlug} number={number} covers={covers} value={cover} onChange={setPickedCover} none />}
+        {covers && cover && markers.length === 0 && (
+          <CoverDesigns projectSlug={projectSlug} number={number} covers={covers} value={cover} onChange={setPickedCover} none className="grid-cols-3 sm:grid-cols-4" />
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
           <AlertDialogAction
-            variant={aiFirst ? "outline" : "default"}
             // Off while lines are left to fill in, but in the keyboard's reach: the description says why.
             disabled={busy || markers.length > 0}
             focusableWhenDisabled
@@ -1904,14 +1935,8 @@ export function ChangelogEntryActions({
                 : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing, withCover), "Published")
             }
           >
-            {unwritten ? "Publish anyway" : "Publish"}
+            Publish
           </AlertDialogAction>
-          {/* Closes this dialog and opens Draft with AI's, which says what it replaces. */}
-          {aiFirst && (
-            <AlertDialogCancel variant="default" onClick={() => setDrafting(true)}>
-              Draft with AI
-            </AlertDialogCancel>
-          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

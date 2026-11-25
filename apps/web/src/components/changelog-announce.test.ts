@@ -9,6 +9,12 @@ vi.mock("@/server/media", () => ({}));
 
 const { HowAnnounced, publishSummary } = await import("./changelog");
 
+/** The Publish dialog's line, as text (the count's popover aside). */
+const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
+  const { start, count } = publishSummary({ email: true, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0, posts: 0, asked: 0, ...input });
+  return `${start}${count ?? ""}.`;
+};
+
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
   entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean },
@@ -44,9 +50,11 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 1 })).toContain(
       "Publishing sends it to the subscriber who hasn't had it yet.",
     );
-    expect(publishSummary({ markNew: true, email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 300 })).toBe(
-      "It appears on your portal's changelog, marked new in your widget, and it's sent to the 300 subscribers who haven't had it yet.",
-    );
+    expect(publishSummary({ email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 300, posts: 0, asked: 0 })).toEqual({
+      start: "It goes on your portal and in your widget, and emails ",
+      count: "300 people",
+      who: "The 300 subscribers who haven't had it yet.",
+    });
   });
 
   test("published, it says some are still to go", () => {
@@ -57,12 +65,8 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 3 })).toContain(
       "Emailed to 3 subscribers when it was first published: it isn't sent again.",
     );
-    expect(publishSummary({ markNew: false, email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 0 })).toBe(
-      "It appears on your portal's changelog.",
-    );
-    expect(publishSummary({ markNew: true, email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe(
-      "It appears on your portal's changelog, marked new in your widget, and it's emailed to your 2 subscribers.",
-    );
+    expect(line({ email: true, subscribers: 500, emailedSubscribers: true, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget.");
+    expect(line({ email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget, and emails 2 people.");
   });
 
   test("on a portal gone private (nobody's left to email: subscribersLeft is 0 there), the draft says the rest won't get it", () => {
@@ -86,9 +90,7 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     expect(html).toMatch(/<input type="checkbox"[^>]*disabled=""[^>]*\/>[\s\S]*Email subscribers/);
     expect(html).not.toMatch(/<input type="checkbox"[^>]*checked=""[^>]*disabled=""/);
     expect(html).toContain("Your portal is private: its changelog isn&#x27;t emailed.");
-    expect(publishSummary({ markNew: true, email: true, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })).toBe(
-      "It appears on your portal's changelog, marked new in your widget.",
-    );
+    expect(line({ email: true, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget.");
   });
 });
 
@@ -123,4 +125,22 @@ test("an entry emailed from the tool it was imported from says so, not that it w
   expect(sidebar({ ...imported, published: true })).toContain("Emailed to your subscribers from Featurebase.");
   expect(sidebar({ ...imported, published: false })).toContain("Emailed to your subscribers from Featurebase: it isn't sent again.");
   expect(sidebar({ ...imported, published: true })).not.toContain("0 subscribers");
+});
+
+describe("the Publish dialog's line", () => {
+  test("one line: where it goes, the posts it completes, and how many people it emails, who they are in the count's popover", () => {
+    const summary = publishSummary({ email: true, subscribers: 1, emailedSubscribers: false, subscribersLeft: 0, posts: 1, asked: 3 });
+    expect(`${summary.start}${summary.count}.`).toBe("It goes on your portal and in your widget, completes 1 post and emails 4 people.");
+    expect(summary.who).toBe("Your subscriber, and the 3 people who asked for the post it completes.");
+  });
+
+  test("with Email subscribers off, only the people who asked are emailed", () => {
+    const summary = publishSummary({ email: false, subscribers: 40, emailedSubscribers: false, subscribersLeft: 0, posts: 2, asked: 1 });
+    expect(`${summary.start}${summary.count}.`).toBe("It goes on your portal and in your widget, completes 2 posts and emails 1 person.");
+    expect(summary.who).toBe("The person who asked for the posts it completes.");
+  });
+
+  test("nobody to email: no count", () => {
+    expect(line({ posts: 1 })).toBe("It goes on your portal and in your widget, completes 1 post.");
+  });
 });

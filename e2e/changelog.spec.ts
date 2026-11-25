@@ -162,9 +162,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(completes.getByRole("button", { name: "Link post…" })).toBeFocused();
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
-  await expect(dialog).toContainText("The post it completes becomes Completed");
-  // As the sidebar has it: marked new in the widget; nobody has subscribed, so nobody's emailed.
-  await expect(dialog).toContainText("It appears on your portal's changelog, marked new in your widget.");
+  // One line: where it goes and the post it completes; nobody has subscribed, so no subscriber is emailed.
+  await expect(dialog).toContainText("It goes on your portal and in your widget, completes 1 post");
   await dialog.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
@@ -631,7 +630,7 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   const announced = team.getByRole("group", { name: "How it's announced" });
   await announced.getByRole("checkbox", { name: "Mark it new" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
-  await expect(team.getByRole("alertdialog")).toContainText("It appears on your portal's changelog.");
+  await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(announced).toContainText("In your widget's What's new, not marked new.");
@@ -1144,10 +1143,12 @@ test("the next release waits to be written; its entry gets a featured image read
   expect(await left("Save")).toBeLessThan(await left("Publish"));
   expect(await left("Publish")).toBeLessThan(await left("Draft with AI"));
   await team.getByRole("button", { name: "Publish" }).click();
-  const titles = team.getByRole("alertdialog", { name: "Publish the pull requests' titles?" });
-  await expect(titles).toContainText("“Dark mode is here” still lists what the pull requests were called, not what changed for your users.");
+  const titles = team.getByRole("alertdialog", { name: "Publish “Dark mode is here”?" });
+  await expect(titles).toContainText("Its text is still the pull requests' titles.");
+  // Publish is still the dialog's main action; Draft with AI is offered beside what it's about.
+  await expect(titles.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
   await checkpoint(team, "team-changelog-publish-titles");
-  await titles.getByRole("button", { name: "Draft with AI" }).click();
+  await titles.getByRole("button", { name: "Draft with AI first" }).click();
   const replace = team.getByRole("alertdialog", { name: "Replace the text with an AI draft?" });
   await expect(replace).toBeVisible();
   await expect(titles).toBeHidden();
@@ -1187,12 +1188,12 @@ test("the next release waits to be written; its entry gets a featured image read
   await api("/changelog/1", { body: "" }, "PATCH");
   await team.reload();
   await team.getByRole("button", { name: "Publish" }).click();
-  const empty = team.getByRole("alertdialog", { name: "Publish it without text?" });
-  await expect(empty).toContainText("“Dark mode is here” has no text yet, only its pull requests. Draft with AI writes release notes from them.");
+  const empty = team.getByRole("alertdialog", { name: "Publish “Dark mode is here”?" });
+  await expect(empty).toContainText("It has no text yet, only its pull requests.");
   await checkpoint(team, "team-changelog-publish-empty");
 
   // Published anyway, Ada hears it shipped, and the sidebar says how many people were told.
-  await empty.getByRole("button", { name: "Publish anyway" }).click();
+  await empty.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
@@ -1545,7 +1546,13 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await checkpoint(team, "team-changelog-how-announced");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
-  await expect(dialog).toContainText("It appears on your portal's changelog, marked new in your widget, and it's emailed to your subscriber.");
+  await expect(dialog).toContainText("It goes on your portal and in your widget, and emails 1 person.");
+  // Who that is, behind the count.
+  await dialog.getByRole("button", { name: "1 person" }).click();
+  await expect(team.getByText("Your subscriber.", { exact: true })).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(team.getByText("Your subscriber.", { exact: true })).toBeHidden();
+  await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
 
