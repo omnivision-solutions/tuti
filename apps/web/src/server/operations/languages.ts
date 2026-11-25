@@ -32,7 +32,7 @@ const languagesOutput = z
 
 const languageSelect = { code: true, automatic: true, instructions: true, productAvailable: true, live: true } as const;
 
-async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
+export async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
     select: { plan: true, language: true, sendToLanguage: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
@@ -56,7 +56,8 @@ async function projectLanguages(projectId: string): Promise<z.output<typeof lang
   };
 }
 
-const languagesFull = (plan: PlanKey, limit: number) =>
+/** Said when a project on `plan` has as many languages as its plan's `limit` allows (also Settings' upgrade prompt). */
+export const languagesFull = (plan: PlanKey, limit: number) =>
   [
     `Projects on the ${planDisplay(plan).name} plan have ${limit === 1 ? "1 language" : `up to ${limit} languages`}, the default included.`,
     upgradeFor(plan, languageLimit, " in Settings → Billing to add more."),
