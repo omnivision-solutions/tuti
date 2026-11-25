@@ -10,6 +10,7 @@ import { onRead } from "@/lib/conversation";
 import { type Change, snoozeTime, updateConversation } from "@/lib/details";
 import { appendPage, firstRows, type InboxView, latestOnly, listPath, type Page, type Row, rowPath, type ViewName, withRow } from "@/lib/inbox";
 import { type LiveUpdate, openLive } from "@/lib/live";
+import { cached, cacheGeneration, inboxKey, isOffline, keep as remember, offlineNote, projectsKey, useMinutes, viewsKey } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -17,7 +18,17 @@ import { type Colors, useColors } from "@/lib/theme";
  * The list shown, and what it lists (`for`: the project, view and search it was loaded for). `moved`: rows live changes
  * have added (or, below zero, removed) since, which move where the next page starts.
  */
-type List = { for: string; rows: Row[]; next: string | null; total: number; moved: number };
+type List = { for: string; rows: Row[]; next: string | null; total: number; moved: number } & Kept;
+
+/**
+ * Where a list came from: the server, with the cache's generation as its load started (`since`, kept for reading
+ * offline unless everything was forgotten since) and when it landed (`loadedAt`); or, with no connection, the cache or
+ * the list already shown (`savedAt`: when it was last loaded).
+ */
+type Kept = { since: number; loadedAt: number; savedAt?: undefined } | { since?: undefined; loadedAt?: undefined; savedAt: number };
+
+/** A view's list as it's kept to read offline: its first rows, up to the server's most for a page. */
+type Saved = { rows: Row[]; total: number };
 
 /** Swipes are by project and number: numbers start again in each project. */
 const swipeKey = (project: string | undefined, number: number) => `${project}#${number}`;
@@ -41,14 +52,21 @@ export default function Inbox() {
   const project = session?.project;
 
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [views, setViews] = useState<InboxView[] | null>(null);
+  const projectsShown = useRef(false);
+  useEffect(() => {
+    projectsShown.current = !!projects;
+  }, [projects]);
+  // The views' counts, for the project they're of: another project's never show under this one's (offline, its own kept
+  // counts or none).
+  const [counts, setCounts] = useState<{ for: string | undefined; views: InboxView[] } | null>(null);
+  const views = counts !== null && counts.for === project ? counts.views : null;
   const [view, setView] = useState<ViewName>("open");
   const [typed, setTyped] = useState("");
   const [q, setQ] = useState("");
   const [loaded, setList] = useState<List | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [now, setNow] = useState(Date.now);
+  const [now, setNow] = useMinutes();
   const [loads] = useState(latestOnly);
   /**
    * Swiped rows, hidden from the list: while the server hasn't answered (null), then until a load of the list that
@@ -73,16 +91,15 @@ export default function Inbox() {
   // A new project, view or search starts from nothing shown.
   const key = `${project}\n${view}\n${q}`;
   const list = loaded?.for === key ? loaded : null;
+  // The list as last drawn, for a load's answer to see.
+  const shown = useRef<List | null>(null);
+  useEffect(() => {
+    shown.current = list;
+  }, [list]);
 
   // Notifications are offered here, where they make sense, rather than at launch: once on this phone.
   useEffect(() => {
     void offerNotifications();
-  }, []);
-
-  // The rows' ages move on while nothing else changes.
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(tick);
   }, []);
 
   // The search waits for typing to pause. A search's error isn't the next one's; the same search keeps it.
@@ -98,28 +115,45 @@ export default function Inbox() {
   }, [typed, q]);
 
   // The teammate's projects, for the switcher. None chosen yet (or no longer theirs): the first.
-  const loadProjects = useCallback(
-    () =>
-      api<{ projects: Project[] }>("/projects").then(
+  const loadProjects = useCallback(() => {
+    const since = cacheGeneration();
+    return api<{ projects: Project[] }>("/projects").then(
         (answer) => {
           setProjects(answer.projects);
+          remember(projectsKey(session!), answer.projects, since, session!.owner);
           const first = answer.projects[0];
           if (first && !answer.projects.some((p) => p.slug === project)) {
             void setProject(first.slug).catch((e: Error) => setError(`Couldn't open ${first.name}: ${e.message}`));
           }
         },
-        (e: Error) => setError(e.message),
-      ),
-    [api, project, setProject],
-  );
+        (e: Error) => {
+          // No connection: the projects last loaded, for the switcher. Nothing said when the switcher has them already,
+          // or the list shows what was kept (its note says it's offline).
+          const saved = isOffline(e) ? cached<Project[]>(projectsKey(session!), session!.owner) : null;
+          if (saved) {
+            setProjects((now) => now ?? saved.data);
+          } else if (!(isOffline(e) && (projectsShown.current || shown.current?.savedAt !== undefined))) {
+            setError(e.message);
+          }
+        },
+      );
+  }, [api, project, setProject, session]);
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
 
   // The views' counts, unless a newer load of everything started meanwhile.
   const loadCounts = useCallback(
-    (mine = loads.current()) => api<{ views: InboxView[] }>("/inbox/views").then((answer) => loads.isLatest(mine) && setViews(answer.views)),
-    [api, loads],
+    (mine = loads.current()) => {
+      const since = cacheGeneration();
+      return api<{ views: InboxView[] }>("/inbox/views").then((answer) => {
+        if (loads.isLatest(mine)) {
+          setCounts({ for: session!.project, views: answer.views });
+          remember(viewsKey(session!), answer.views, since, session!.owner);
+        }
+      });
+    },
+    [api, loads, session],
   );
 
   // Everything shown: the views' counts and the list from its start (`keep`: as many rows as are shown, so a reload keeps
@@ -130,11 +164,23 @@ export default function Inbox() {
         return Promise.resolve();
       }
       const mine = loads.start();
-      // The counts show as they come, without waiting on the list.
-      const counts = loadCounts(mine);
+      const since = cacheGeneration();
+      // The counts show as they come, without waiting on the list. With no connection, the list's failure says so.
+      const counts = loadCounts(mine).catch((e: unknown) => {
+        if (!isOffline(e)) {
+          throw e;
+        }
+        // Not once a newer load (another project's, say) has started.
+        if (!loads.isLatest(mine)) {
+          return;
+        }
+        // The chips as they were last kept.
+        const kept = cached<InboxView[]>(viewsKey(session!), session!.owner)?.data;
+        setCounts((now) => (now?.for === session!.project || !kept ? now : { for: session!.project, views: kept }));
+      });
       const rows = firstRows(api, view, q, keep).then((page) => {
         if (loads.isLatest(mine)) {
-          const fresh = { for: key, rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
+          const fresh = { for: key, since, loadedAt: Date.now(), rows: page.conversations, next: page.nextCursor, total: page.total, moved: 0 };
           setList(fresh);
           // Swipes it has: those answered before it started.
           if ([...swipesNow.current.values()].some((reload) => reload && reload <= mine)) {
@@ -155,13 +201,32 @@ export default function Inbox() {
       return Promise.all([counts, rows]).then(
         () => {},
         (e: Error) => {
-          if (loads.isLatest(mine)) {
+          if (!loads.isLatest(mine)) {
+            return;
+          }
+          // No connection: what's shown of the view stays (however many pages), or it's as it was last kept (a search
+          // never is), saying so rather than the error.
+          const showing = shown.current?.for === key;
+          const saved = !q && isOffline(e) ? cached<Saved>(inboxKey(session!, view), session!.owner) : null;
+          if (!q && isOffline(e) && (showing || saved)) {
+            setList((now) =>
+              now?.for === key
+                ? now.savedAt !== undefined
+                  ? now
+                  : { ...now, since: undefined, loadedAt: undefined, savedAt: now.loadedAt }
+                : saved
+                  ? { for: key, savedAt: saved.at, rows: saved.data.rows, next: null, total: saved.data.total, moved: 0 }
+                  : now,
+            );
+            setError(null);
+            setNow(Date.now());
+          } else {
             setError(e.message);
           }
         },
       );
     },
-    [api, project, view, q, key, loads, loadCounts, changeSwipes],
+    [api, project, view, q, key, loads, loadCounts, changeSwipes, session, setNow],
   );
   useEffect(() => {
     void loadAll();
@@ -200,7 +265,8 @@ export default function Inbox() {
       }
       return;
     }
-    if (!from?.next || paging.current) {
+    // Offline, a list's next page waits for the connection (pull to refresh, or the stream's reconnecting).
+    if (!from?.next || from.savedAt !== undefined || paging.current) {
       return;
     }
     paging.current = true;
@@ -266,7 +332,7 @@ export default function Inbox() {
         // The next change, or the stream's next opening, fetches it again.
       }
     },
-    [api, project, view, loads, rowLoads],
+    [api, project, view, loads, rowLoads, setNow],
   );
 
   // A swipe's change: the row is hidden at once. When the server answers, either way, the list shown then is loaded again
@@ -361,12 +427,19 @@ export default function Inbox() {
     };
   }, [session, awake]);
 
-  // VoiceOver has no live regions: an error is announced (TalkBack reads the live regions below).
+  // VoiceOver has no live regions: an error is announced (TalkBack reads the live regions below), and so is the list
+  // turning to what was kept.
   useEffect(() => {
     if (error && Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(error);
     }
   }, [error]);
+  const savedAt = list?.savedAt;
+  useEffect(() => {
+    if (savedAt !== undefined && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(offlineNote(savedAt));
+    }
+  }, [savedAt]);
 
   const choose = (slug: string) => {
     if (slug !== project) {
@@ -401,6 +474,14 @@ export default function Inbox() {
   const current = projects?.find((p) => p.slug === project);
   // The list without the rows swiped.
   const rows = (list?.rows ?? []).filter((row) => !swipes.has(swipeKey(project, row.number)));
+  // What's shown of a view, as it changes (pages, live changes, the reload after a swipe), kept to read offline. Not
+  // while a swipe waits: what's kept stays as the server last had it till the reload brings the change, or the swipe is
+  // refused.
+  useEffect(() => {
+    if (list?.since !== undefined && !q && session && swipes.size === 0) {
+      remember(inboxKey(session, view), { rows: list.rows.slice(0, 100), total: list.total } satisfies Saved, list.since, session.owner);
+    }
+  }, [list, swipes, q, view, session]);
   const searching = !!q;
   const noProjects = projects?.length === 0;
 
@@ -508,6 +589,12 @@ export default function Inbox() {
                 />
               )
             )}
+            {/* Kept from when it was last loaded: said quietly, with when. */}
+            {list?.savedAt !== undefined && (
+              <Text style={[styles.total, { color: colors.muted }]} accessibilityLiveRegion="polite">
+                {offlineNote(list.savedAt, now)}
+              </Text>
+            )}
             {/* A refresh that failed says so above the list it couldn't update. */}
             {error && rows.length > 0 && (
               <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
@@ -552,7 +639,7 @@ export default function Inbox() {
             <Pressable onPress={() => void loadMore()} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.6 : 1 }]}>
               <Text style={[styles.retry, { color: colors.primary, textAlign: "center" }]}>Try again</Text>
             </Pressable>
-          ) : list?.next ? (
+          ) : list?.next && list.savedAt === undefined ? (
             <ActivityIndicator style={styles.more} color={colors.muted} />
           ) : undefined
         }
