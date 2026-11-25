@@ -42,6 +42,10 @@ export async function signInWithPassword(server: string, email: string, password
       // One answer for a wrong password and an address with no account, as the server gives.
       throw new Error("That email and password don't match. Try again, or reset your password.");
     }
+    if (error instanceof ApiError && error.status === 404) {
+      // A server from before the app's password sign-in.
+      throw new Error("This server doesn't take passwords from the app yet. Continue with Google or GitHub, or ask whoever runs it to update Tuti.");
+    }
     if (error instanceof ApiError && error.code === "EMAIL_NOT_VERIFIED") {
       throw new Error("Your email address isn't verified yet. Tuti has sent you the verification email again: open its link, then sign in here.");
     }

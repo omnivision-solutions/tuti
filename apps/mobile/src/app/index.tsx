@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useApi, useSession } from "@/lib/session";
 import { useColors } from "@/lib/theme";
@@ -29,6 +29,12 @@ export default function Projects() {
   useEffect(() => {
     void load();
   }, [load]);
+  // VoiceOver has no live regions: an error is announced (TalkBack reads the live regions below).
+  useEffect(() => {
+    if (error && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(error);
+    }
+  }, [error]);
 
   // As the platforms do it: the last row, in the error colour, confirmed first (never one tap in the header).
   const confirmSignOut = () =>
@@ -48,9 +54,9 @@ export default function Projects() {
         void load().finally(() => setRefreshing(false));
       }}
       // A refresh that failed says so above the list it couldn't update.
-      ListHeaderComponent={error && projects?.length ? <Text style={[styles.stale, { color: colors.error }]}>{error}</Text> : undefined}
+      ListHeaderComponent={error && projects?.length ? <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">{error}</Text> : undefined}
       ListEmptyComponent={
-        <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]}>
+        <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]} accessibilityLiveRegion="polite">
           {error ?? (projects ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web." : "Loading…")}
         </Text>
       }

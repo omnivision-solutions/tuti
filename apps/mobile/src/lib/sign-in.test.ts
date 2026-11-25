@@ -155,6 +155,11 @@ describe("signing in with a password", () => {
     await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "right")).rejects.toThrow(
       "Your email address isn't verified yet. Tuti has sent you the verification email again: open its link, then sign in here.",
     );
+    // A server from before the app's password sign-in answers its router's empty 404.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+    await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x")).rejects.toThrow(
+      "This server doesn't take passwords from the app yet. Continue with Google or GitHub, or ask whoever runs it to update Tuti.",
+    );
     // Anything else in the server's words.
     vi.stubGlobal("fetch", answering(429, { code: "TOO_MANY_REQUESTS", message: "Too many requests. Please try again later." }));
     await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x")).rejects.toThrow("Too many requests. Please try again later.");

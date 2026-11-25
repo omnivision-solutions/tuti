@@ -61,13 +61,20 @@ export default function SignIn() {
     }
     return address;
   };
+  // One sign-in at a time: the keyboard's Go works while the buttons are off.
   const provider = (which: "google" | "github") => () => {
+    if (busy) {
+      return;
+    }
     const address = server();
     if (address) {
       void run(which, () => continueWith(which, address));
     }
   };
   const signInWith = () => {
+    if (busy) {
+      return;
+    }
     const address = server();
     if (!address) {
       return;

@@ -1,11 +1,10 @@
-import * as SecureStore from "expo-secure-store";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { type Api, authRequest, createApi } from "./api";
-import { type SignedIn, STORE_OPTIONS } from "./sign-in";
+import { type Api, createApi } from "./api";
+import { forgetSession, readSession, type Session, sessionHolds, writeSession } from "./session-store";
+import type { SignedIn } from "./sign-in";
 
-/** The signed-in teammate's session: the server, its token for /api/v1, its cookie for /api/auth, and the project they chose. */
-export type Session = SignedIn & { project?: string };
+export type { Session };
 
 type SessionContext = {
   /** undefined while it's read from storage. */
@@ -18,44 +17,26 @@ type SessionContext = {
 };
 
 const Context = createContext<SessionContext | null>(null);
-const KEY = "session";
-
-/** The stored session; none if there's none, or it can't be read (signed out, rather than stuck on the splash screen). */
-const readSession = () =>
-  SecureStore.getItemAsync(KEY, STORE_OPTIONS)
-    .then((stored) => (stored ? (JSON.parse(stored) as Session) : null))
-    .catch(() => null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   const save = useCallback(async (next: Session | null) => {
     setSession(next);
-    await (next ? SecureStore.setItemAsync(KEY, JSON.stringify(next), STORE_OPTIONS) : SecureStore.deleteItemAsync(KEY, STORE_OPTIONS));
+    await writeSession(next);
   }, []);
 
   const signOut = useCallback(async () => {
-    const stored = await readSession();
-    await save(null);
-    if (stored) {
-      // Ends the session on the server too; signed out here either way.
-      await authRequest(stored.server, "/sign-out", { body: {}, cookie: stored.cookie }).catch(() => {});
-    }
-  }, [save]);
+    setSession(null);
+    await forgetSession();
+  }, []);
 
   useEffect(() => {
-    void readSession().then((restored) => {
+    void readSession().then(async (restored) => {
       setSession(restored);
-      // Reading the session keeps it going (API calls don't); one that ended elsewhere signs out here.
-      if (restored) {
-        void authRequest<unknown>(restored.server, "/get-session", { cookie: restored.cookie }).then(
-          (current) => {
-            if (current === null) {
-              void signOut();
-            }
-          },
-          () => {},
-        );
+      // One that ended elsewhere signs out here.
+      if (restored && !(await sessionHolds(restored))) {
+        await signOut();
       }
     });
   }, [signOut]);
