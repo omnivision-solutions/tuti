@@ -185,9 +185,12 @@ test("two accounts registering one phone at the same moment leave it registered 
   // The owner registers the same phone meanwhile: it waits for the other's to finish rather than miss its row.
   let done = false;
   const ownerRegistration = api(owner, "POST", "/devices", { deviceId: "owner-id", token, platform: "ios" }).then((response) => ((done = true), response));
-  for (let i = 0; i < 20; i++) {
-    await prisma.$queryRaw`SELECT 1`;
+  // Until it's waiting on the token's lock (without the lock it never waits, and this fails).
+  let waiting = 0;
+  for (let i = 0; i < 200 && waiting === 0; i++) {
+    [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
   }
+  expect(waiting).toBe(1);
   expect(done).toBe(false);
   release();
   await otherRegistration;
@@ -391,6 +394,10 @@ test("when Expo turns every push away for now (MessageRateExceeded), the job fai
   const { number } = await userWrites();
   const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversation: { projectId: project.id, number } } });
   expo.rateExceeded.add("ExponentPushToken[owner]");
+  await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("refused every push");
+  // Nor does a gone phone beside it make that a push told: the other is still owed one.
+  await prisma.device.create({ data: { userId: owner.id, deviceId: "gone-id", token: "ExponentPushToken[gone]", platform: "ios", sessionId: (await prisma.session.findFirstOrThrow({ where: { userId: owner.id } })).id } });
+  expo.unregistered.add("ExponentPushToken[gone]");
   await expect(handlers.conversationPush({ messageId: message.id }, console)).rejects.toThrow("refused every push");
   // One that went through is enough not to: the rest aren't pushed twice by a retry.
   const other = await addMember(project.id, "MEMBER");

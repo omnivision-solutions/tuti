@@ -191,7 +191,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   // Tickets past a day are pruned here too, not only by the receipts' cron: with jobs inline the cron never runs.
   await prisma.pushTicket.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RECEIPTS_KEPT_MS) } } }).catch(() => undefined);
-  if (sent === 0 && gone === 0 && (failure || refused > 0)) {
+  // A gone device dropped doesn't count as told: the rest still need their push, so it's tried again.
+  if (sent === 0 && (failure || refused > 0)) {
     throw failure ?? new Error(`Expo refused every push about conversation #${conversation.number}`);
   }
   return { pushed: sent, ...(gone > 0 && { unregistered: gone }) };
