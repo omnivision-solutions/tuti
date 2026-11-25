@@ -751,11 +751,38 @@ describe("swiping a row", () => {
     server.failWhen((path) => path.startsWith("/conversations?view=open"));
     await act(async () => server.changes[0]!.answer(true));
     expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(1);
+    // Said once, by the empty view: there are no rows for the line above them.
+    expect(screen.getAllByText("Something went wrong on the server.")).toHaveLength(1);
 
     server.failWhen(() => false);
     await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
     await act(() => jest.advanceTimersByTimeAsync(0));
     expect(await screen.findByText("No replies waiting. You're up to date.")).toBeTruthy();
+  });
+
+  it("reloads from the view's chip, tapped again, when the reload after a swipe failed, then pages on", async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => row(`Conversation ${i + 1}`));
+    const server = fakeServer({ acme: rows });
+    await render(<Inbox />);
+    await screen.findByText("Conversation 1");
+    await pressAction("Close", 2);
+
+    server.failWhen((path) => path.startsWith("/conversations?view=open"));
+    await act(async () => server.changes[0]!.answer(true));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    // The same search typed again changes nothing, and keeps the error.
+    await fireEvent.changeText(screen.getByPlaceholderText("Search"), " ");
+    await act(() => jest.advanceTimersByTimeAsync(300));
+    expect(screen.getByText("Something went wrong on the server.")).toBeTruthy();
+
+    server.failWhen(() => false);
+    await fireEvent.press(screen.getByRole("tab", { name: /^Needs reply/ }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByText("Something went wrong on the server.")).toBeNull();
+    await fireEvent(screen.getByTestId("inbox-list"), "endReached");
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(subjects()).toEqual(rows.filter((_, i) => i !== 2).map((r) => r.subject));
   });
 
   it("reloads from the end's Try again when the reload after a swipe failed, then pages on", async () => {

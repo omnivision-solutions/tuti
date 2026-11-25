@@ -85,11 +85,17 @@ export default function Inbox() {
     return () => clearInterval(tick);
   }, []);
 
-  // The search waits for typing to pause.
+  // The search waits for typing to pause. A search's error isn't the next one's; the same search keeps it.
   useEffect(() => {
-    const soon = setTimeout(() => setQ(typed.trim()), 300);
+    const soon = setTimeout(() => {
+      const next = typed.trim();
+      if (next !== q) {
+        setError(null);
+        setQ(next);
+      }
+    }, 300);
     return () => clearTimeout(soon);
-  }, [typed]);
+  }, [typed, q]);
 
   // The teammate's projects, for the switcher. None chosen yet (or no longer theirs): the first.
   const loadProjects = useCallback(
@@ -450,10 +456,7 @@ export default function Inbox() {
         headerIconColor={colors.text}
         tintColor={colors.primary}
         autoCapitalize="none"
-        onChangeText={(event) => {
-          setError(null);
-          setTyped(event.nativeEvent.text);
-        }}
+        onChangeText={(event) => setTyped(event.nativeEvent.text)}
         onCancelButtonPress={() => setTyped("")}
         onClose={() => setTyped("")}
       />
@@ -492,8 +495,12 @@ export default function Inbox() {
                 <Chips
                   views={views}
                   view={view}
-                  // A view's error isn't the next one's.
+                  // A view's error isn't the next one's. The view shown, tapped again, is loaded again, as pulling it does.
                   onPress={(next) => {
+                    if (next === view) {
+                      refresh();
+                      return;
+                    }
                     setError(null);
                     setView(next);
                   }}
@@ -502,7 +509,7 @@ export default function Inbox() {
               )
             )}
             {/* A refresh that failed says so above the list it couldn't update. */}
-            {error && !!list?.rows.length && (
+            {error && rows.length > 0 && (
               <Text style={[styles.stale, { color: colors.error }]} accessibilityLiveRegion="polite">
                 {error}
               </Text>
