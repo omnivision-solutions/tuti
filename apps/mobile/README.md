@@ -16,7 +16,13 @@ on an Android emulator, forward the port with `adb reverse tcp:3100 tcp:3100`).
 Where things are: routes in `src/app` (signed out: `sign-in`; signed in: everything else, guarded in `_layout.tsx`),
 the API client in `src/lib/api.ts`, the session in `src/lib/session.tsx` (`useSession()`, and `useApi()` for a
 signed-in screen: `await api<{ conversations: … }>("/conversations?view=mine")` calls the operation as the teammate,
-in their chosen project), signing in in `src/lib/sign-in.ts`, and the colours in `src/lib/theme.ts` (`useColors()`).
+in their chosen project), signing in in `src/lib/sign-in.ts`, the colours in `src/lib/theme.ts` (`useColors()`), the Inbox's
+list in `src/lib/inbox.ts` (`src/app/index.tsx` is the Inbox, `src/app/inbox/projects.tsx` its project sheet on Android),
+and the live stream in `src/lib/live.ts`. Components that aren't routes go in `src/components`.
+
+Tests: `src/lib` with Vitest (`*.test.ts`, the repository's `pnpm test`); screens with React Native Testing Library
+under Jest and `jest-expo` (`__tests__/*-test.tsx`, `pnpm --filter @tuti/mobile test`, which `pnpm test` also runs). A
+screen test mocks the native header (`expo-router`'s `Stack`) and the session as `__tests__/inbox-test.tsx` does.
 
 React, React Native and the Expo packages stay on the versions the app's Expo release supports: `pnpm lint` fails
 when one drifts, and `pnpm --filter @tuti/mobile exec expo install --fix` puts them back.

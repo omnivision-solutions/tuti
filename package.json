@@ -15,7 +15,7 @@
     "db:generate": "turbo run db:generate",
     "db:migrate": "pnpm --filter @tuti/db db:migrate",
     "db:studio": "pnpm --filter @tuti/db db:studio",
-    "test": "vitest run --project unit",
+    "test": "vitest run --project unit && pnpm --filter @tuti/mobile test",
     "test:db": "vitest run --project db",
     "test:live": "vitest run --project live",
     "test:e2e": "turbo run build --filter=@tuti/web && playwright test",

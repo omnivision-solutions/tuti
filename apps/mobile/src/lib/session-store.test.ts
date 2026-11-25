@@ -134,6 +134,15 @@ describe("signing out", () => {
     expect(await readSession()).toBeNull();
   });
 
+  it("doesn't wait for the server's answer", async () => {
+    await writeSession(session);
+    const fetch = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetch);
+    await forgetSession();
+    expect(await readSession()).toBeNull();
+    expect(fetch).toHaveBeenCalled();
+  });
+
   it("forgets the session even when the server can't be reached", async () => {
     await writeSession(session);
     vi.stubGlobal("fetch", vi.fn(async () => {

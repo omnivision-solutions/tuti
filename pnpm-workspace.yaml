@@ -18,6 +18,7 @@ allowBuilds:
   cpu-features: false
   ssh2: false
   core-js: false
+  "@parcel/watcher": false
 
 minimumReleaseAgeExclude:
   - "@next/env@16.3.8"

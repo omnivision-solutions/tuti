@@ -1,5 +1,6 @@
 import { SplashScreen, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { Platform } from "react-native";
 
 import { SessionProvider, useSession } from "@/lib/session";
 import { useNavigationTheme } from "@/lib/theme";
@@ -29,7 +30,8 @@ function Navigator() {
           <Stack.Screen name="sign-in" options={{ headerShown: false }} />
         </Stack.Protected>
         <Stack.Protected guard={!!session}>
-          <Stack.Screen name="index" options={{ title: "Projects" }} />
+          <Stack.Screen name="index" options={{ title: "Inbox" }} />
+          <Stack.Screen name="inbox/projects" options={{ title: "Projects", presentation: "formSheet", sheetAllowedDetents: "fitToContents", sheetGrabberVisible: true, sheetCornerRadius: Platform.OS === "android" ? 28 : undefined, headerShown: false }} />
         </Stack.Protected>
       </Stack>
       <StatusBar style="auto" />
