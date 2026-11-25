@@ -229,8 +229,12 @@ export function withoutArrived(draft: Draft, messages: Message[], waiting: (id: 
   return left.length === draft.unsent.length ? draft : withUnsent(draft, left, [...taken]);
 }
 
-/** The draft with these unsent ones; what's taken is kept only while there are unsent ones it could be mistaken for. */
-const withUnsent = (draft: Draft, unsent: Unsent[], taken = draft.taken): Draft => ({ ...draft, unsent, taken: unsent.length > 0 ? taken : [] });
+/**
+ * The draft with these unsent ones. What's taken stays when none are left: a reply sent next may say the same and answer
+ * a fetch that hasn't shown this one's message yet. The latest 50; kept while the app runs (a draft with nothing else
+ * isn't written), as a reply after a restart answers a conversation fetched since, with them all.
+ */
+const withUnsent = (draft: Draft, unsent: Unsent[], taken = draft.taken): Draft => ({ ...draft, unsent, taken: taken.slice(-50) });
 
 /** An unsent reply or note back into the composer, with its files still young enough to send, to change what the server refused. */
 export function editUnsent(draft: Draft, unsent: Unsent, now = Date.now()): Draft {
@@ -439,7 +443,7 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
       return null;
     }
     // The message it made is this one's: no other unsent one is matched to it.
-    updateDraft(key, (draft) => ({ ...draft, taken: [...draft.taken, sent.id] }), since);
+    updateDraft(key, (draft) => withUnsent(draft, draft.unsent, [...draft.taken, sent.id]), since);
     await fetched(true);
     sends.delete(unsent.id);
     updateDraft(key, (draft) => withUnsent(draft, draft.unsent.filter((one) => one.id !== unsent.id)), since);

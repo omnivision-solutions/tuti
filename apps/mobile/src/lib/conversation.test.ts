@@ -514,7 +514,8 @@ describe("telling which reply arrived", () => {
     const first = sendUnsent(api, key, 12, thanks, async () => []);
     const second = sendUnsent(api, key, 12, again, async () => []);
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Everything waiting to run has run (no clock involved): the second still waits for the first's answer.
+    await new Promise((resolve) => setImmediate(resolve));
     expect(calls).toHaveLength(1);
     answers[0]!({ id: "m1" });
     await first;
@@ -522,6 +523,23 @@ describe("telling which reply arrived", () => {
     answers[1]!({ id: "m2" });
     await second;
     expect(getDraft(key).unsent).toEqual([]);
+  });
+
+  it("remembers a send's message after the last unsent one leaves: a failed reply saying the same, sent next, stays", async () => {
+    updateDraft(key, (draft) => ({ ...draft, unsent: [thanks] }));
+    // Sent; the fetch after it hadn't shown its message yet.
+    expect(await sendUnsent(fakeApi({ "/conversations/12/messages": () => ({ id: "m1" }) }).api, key, 12, thanks, async () => [])).toEqual({ id: "m1" });
+    expect(getDraft(key).unsent).toEqual([]);
+    // The same again, answering what was seen before m1; it fails, and the fetch after shows only m1.
+    const again = { ...thanks, id: "u2" };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [again] }));
+    const failing = fakeApi({
+      "/conversations/12/messages": () => {
+        throw new Error("Couldn't reach tuti.example.com");
+      },
+    });
+    expect(await sendUnsent(failing.api, key, 12, again, async () => [mine("m1")])).toBeNull();
+    expect(getDraft(key).unsent).toEqual([{ ...again, error: "Couldn't reach tuti.example.com" }]);
   });
 
   it("isn't posted again by Retry after a check that failed: it stays unsent with why", async () => {
