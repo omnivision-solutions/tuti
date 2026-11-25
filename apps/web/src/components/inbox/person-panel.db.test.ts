@@ -7,7 +7,9 @@ import { deleteUser, userAccounts } from "@/server/operations/users";
 import { upsertProjectUser } from "@/server/project-users";
 import { createProject, signUp } from "@/test/helpers";
 
-import { maybeUser, PersonPanel } from "./person-panel";
+import { maybeUser } from "@/server/operations/conversation-person";
+
+import { PersonPanel } from "./person-panel";
 
 test("the hint finds the project's user whatever the capitals in their saved address, and only in that project", async () => {
   const project = await createProject(await signUp());

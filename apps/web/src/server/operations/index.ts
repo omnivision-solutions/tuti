@@ -18,6 +18,7 @@ import {
   unlinkConversationPost,
   updateConversation,
 } from "./conversations";
+import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
 import { suggestReply, summarizeConversation } from "./support-ai";
@@ -108,6 +109,7 @@ const all = [
   updateNotificationSettings,
   listArticlesToInsert,
   getConversation,
+  getConversationPerson,
   createConversation,
   replyToConversation,
   updateConversation,

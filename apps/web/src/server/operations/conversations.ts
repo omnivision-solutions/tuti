@@ -21,7 +21,7 @@ import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStat
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
 
 export const CONVERSATION_STATUSES = ["open", "waiting", "closed"] as const;
-const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typeof CONVERSATION_STATUSES)[number];
+export const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typeof CONVERSATION_STATUSES)[number];
 
 export const MAX_MESSAGE_LENGTH = 10_000;
 const MAX_SUBJECT_LENGTH = 200;

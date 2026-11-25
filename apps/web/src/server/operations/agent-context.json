@@ -79,6 +79,7 @@
   "conversations.linkPost": ["along","conversation","link","merging","post","takes"],
   "conversations.list": ["asked","conversations","false","first","latest","leaves","left","list","lists","message","snoozed","spam","true","unless"],
   "conversations.markRead": ["cannot","conversation","else","inbox","keys","mark","read","signed","someone","teammate"],
+  "conversations.person": ["beside","conversation","conversations","groups","latest","many","panel","posts","properties","shows","tuti","votes"],
   "conversations.reply": ["author","close","closed","conversation","internal","keptopen","never","note","open","reply","says","seen","sees","sent","stays","team","unanswered","user","waiting","whether","write","wrote"],
   "conversations.suggestReply": ["answer","asked","asking","cover","docs","drafted","edit","nothing","otherwise","reply","send","sent","team","user"],
   "conversations.summarize": ["adds","conversation","done","note","open","sees","summary","team","user","wants"],
