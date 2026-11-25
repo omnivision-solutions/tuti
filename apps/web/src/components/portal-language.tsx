@@ -1,6 +1,6 @@
 "use client";
 
-import { type Language, LANGUAGES } from "@tuti/shared";
+import { type Language, LANGUAGES } from "@tuti/shared/languages";
 import type { Messages } from "@tuti/shared/messages";
 import { CheckIcon, ChevronDownIcon, GlobeIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -57,10 +57,11 @@ export function LanguageSwitcher({ languages, current }: { languages: Language[]
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="sm" className="max-sm:hidden" disabled={pending} aria-label={t("language", { language: LANGUAGES[current].native })} />}
+        // In the page's language (its name is the messages'), until <html lang> follows the reader (L3). Focusable while it saves, so focus stays on it.
+        render={<Button variant="ghost" size="sm" className="max-sm:hidden" lang={current} disabled={pending} focusableWhenDisabled aria-label={t("language", { language: LANGUAGES[current].native })} />}
       >
         <GlobeIcon aria-hidden="true" />
-        <span lang={current}>{LANGUAGES[current].native}</span>
+        {LANGUAGES[current].native}
         <ChevronDownIcon aria-hidden="true" className="opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-40">
@@ -81,7 +82,7 @@ export function LanguageList({ languages, current }: { languages: Language[]; cu
   const t = useTranslations("header");
   const { choose, pending } = useChooseLanguage();
   return (
-    <div role="group" aria-label={t("languages")} className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
+    <div role="group" lang={current} aria-label={t("languages")} className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
       <p aria-hidden="true" className="flex items-center gap-2 px-2 py-1 font-heading font-semibold">
         <GlobeIcon className="size-4" />
         {t("languages")}
@@ -92,8 +93,9 @@ export function LanguageList({ languages, current }: { languages: Language[]; cu
           type="button"
           lang={code}
           aria-pressed={code === current}
-          disabled={pending}
-          onClick={() => code !== current && choose(code)}
+          // Not disabled while it saves: the button pressed keeps focus.
+          aria-disabled={pending || undefined}
+          onClick={() => !pending && code !== current && choose(code)}
           className="flex items-center justify-between rounded-md px-2 py-2 text-left text-base text-muted-foreground hover:text-foreground aria-pressed:font-medium aria-pressed:text-foreground"
         >
           {LANGUAGES[code].native}

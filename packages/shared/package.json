@@ -21,6 +21,7 @@
     "./config": "./src/config/index.ts",
     "./plans": "./src/plans.ts",
     "./messages": "./src/messages/index.ts",
+    "./languages": "./src/languages.ts",
     "./colors": "./src/colors.ts",
     "./status-emails": "./src/status-emails.ts",
     "./dates": "./src/dates.ts",

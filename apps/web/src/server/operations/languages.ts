@@ -26,7 +26,7 @@ const languagesOutput = z
   .object({
     default: z.object({ code: code.describe("Its code").meta({ examples: ["en"] }), name: z.string().describe("Its name in English").meta({ examples: ["English"] }) }).describe("The language the team writes in"),
     languages: z.array(languageOutput).describe("The other languages, in the order they were added"),
-    sendVisitors: z.boolean().describe("“Send visitors to their language”: a first visit to the portal's home goes to the live language the browser asks for").meta({ examples: [false] }),
+    sendVisitors: z.boolean().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (saved; not acted on until pages have an address per language)").meta({ examples: [false] }),
   })
   .describe("The portal's languages");
 
@@ -109,7 +109,7 @@ export const updateLanguages = defineOperation({
         .max(LANGUAGE_CODES.length - 1)
         .optional()
         .describe("The other languages, in full"),
-      sendVisitors: z.boolean().optional().describe("“Send visitors to their language”: a first visit to the portal's home goes to the live language the browser asks for (off by default)"),
+      sendVisitors: z.boolean().optional().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (off by default; saved, not acted on until pages have an address per language)"),
     })
     .refine((input) => input.default !== undefined || input.languages !== undefined || input.sendVisitors !== undefined, "Send default, languages or sendVisitors")
     .refine((input) => new Set(input.languages?.map(({ code }) => code)).size === (input.languages?.length ?? 0), "Each language once")

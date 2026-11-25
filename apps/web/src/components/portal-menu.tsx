@@ -1,9 +1,9 @@
 "use client";
 
-import type { Language } from "@tuti/shared";
+import type { Language } from "@tuti/shared/languages";
 import { MenuIcon, XIcon } from "lucide-react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
@@ -83,6 +83,8 @@ export function PortalMenu({
   language?: Language;
 }) {
   const t = useTranslations("header");
+  // Its own text's language (the page's is English until <html lang> follows the reader, L3).
+  const lang = useLocale();
   const [open, setOpen] = useState(false);
   const path = usePortalPath();
   const at = usePortalHref();
@@ -124,7 +126,7 @@ export function PortalMenu({
   };
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button variant="ghost" size="icon" aria-label={t("menu")} className={cn("md:hidden", !part && headerLinks.length === 0 && "sm:hidden")} />}>
+      <SheetTrigger render={<Button variant="ghost" size="icon" lang={lang} aria-label={t("menu")} className={cn("md:hidden", !part && headerLinks.length === 0 && "sm:hidden")} />}>
         <MenuIcon />
       </SheetTrigger>
       {/* The whole screen wherever it shows (below tablet width), whatever's selected in it closing it if it's a link. */}
@@ -135,10 +137,10 @@ export function PortalMenu({
         className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none"
       >
         <div className="flex items-center justify-between gap-2 border-b px-6 py-2">
-          <SheetTitle className="sr-only">{t("menu")}</SheetTitle>
+          <SheetTitle lang={lang} className="sr-only">{t("menu")}</SheetTitle>
           <SheetDescription className="sr-only">{name}: where to go from here.</SheetDescription>
           <PortalLogo name={name} href={homeHref} />
-          <SheetClose render={<Button variant="ghost" size="icon-sm" aria-label={t("closeMenu")} />}>
+          <SheetClose render={<Button variant="ghost" size="icon-sm" lang={lang} aria-label={t("closeMenu")} />}>
             <XIcon />
           </SheetClose>
         </div>
