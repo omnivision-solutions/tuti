@@ -256,6 +256,23 @@ describe("the server, checked before anything is sent", () => {
     vi.unstubAllGlobals();
   });
 
+  it("knows Tuti's own spec without asking its ok, which a proxy can block: an older one isn't signed in to", async () => {
+    const fetch = vi.fn(async (url: string) =>
+      url.endsWith("/api/v1/openapi.json")
+        ? Response.json({ ...spec({ body: {} }), info: { title: "Tuti API", version: "1" } })
+        : url.endsWith("/api/auth/ok")
+          ? new Response("Forbidden", { status: 403 })
+          : Response.json({ token: "token-1", cookie: "c" }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x")).rejects.toThrow(
+      "This server runs an older Tuti than the app needs. Ask whoever runs it to update Tuti, then sign in here.",
+    );
+    // Nothing else asked: neither its ok nor the sign-in.
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://tuti.example.com/api/v1/openapi.json"]);
+    vi.unstubAllGlobals();
+  });
+
   it("says a Tuti server with no spec at all is older, not one to try again", async () => {
     vi.stubGlobal(
       "fetch",

@@ -83,8 +83,10 @@ export async function checkServer(server: string) {
     return;
   }
   // The rest is said only of a Tuti server: another site (one serving an API of its own there too) keeps the sign-in's
-  // own error, the wrong address.
-  if (!(await isTuti(server))) {
+  // own error, the wrong address. Tuti's own spec says so (apps/web openapi.ts's title), whether or not its `ok` can be
+  // reached (a proxy can block it); without one, `ok` tells.
+  const tutiSpec = isSpec && (spec as { info?: { title?: unknown } }).info?.title === "Tuti API";
+  if (!tutiSpec && !(await isTuti(server))) {
     return;
   }
   // A spec without it, or none at all (a server from before the spec): older. Anything else (a 5xx, a broken answer):

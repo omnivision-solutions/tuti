@@ -410,6 +410,8 @@ describe("OpenAPI", () => {
     expect(spec.paths["/portal/readers"].get.tags).toEqual(["Users"]);
     // The mobile app refuses a server whose reply takes no requestId, reading it from this spec in exactly this shape
     // (apps/mobile src/lib/sign-in.ts `replyTakesRequestId`): changing the shape would make every app refuse this server.
+    // It also knows a Tuti server by the spec's title, even where a proxy blocks /api/auth/ok.
+    expect(spec.info.title).toBe("Tuti API");
     const reply = spec.paths["/conversations/{number}/messages"].post;
     expect(reply.operationId).toBe("conversations.reply");
     expect(reply.requestBody.content["application/json"].schema.properties).toHaveProperty("requestId");
