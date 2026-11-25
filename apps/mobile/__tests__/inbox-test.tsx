@@ -390,6 +390,66 @@ describe("the Inbox", () => {
     expect(screen.queryByText("Stale page")).toBeNull();
   });
 
+  it.each(["fails", "answers while two reloads run, one after the other"])("asks again for a page that %s as the same list reloads", async (how) => {
+    const first = Array.from({ length: 5 }, (_, i) => row(`First page ${i}`));
+    let answerPage!: (page: Page) => void;
+    let failPage!: (error: Error) => void;
+    const reloads: (() => void)[] = [];
+    let loadsOfFirst = 0;
+    let pages = 0;
+    serve({});
+    const served = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path) => {
+      if (path.includes("limit=25&cursor=0")) {
+        // The first load answers at once; reloads wait for the test.
+        loadsOfFirst++;
+        const answer = page(first, { nextCursor: "25", total: 6 });
+        return loadsOfFirst === 1 ? Promise.resolve(answer) : new Promise((resolve) => reloads.push(() => resolve(answer)));
+      }
+      if (!path.includes("cursor=25")) {
+        return served(path);
+      }
+      pages++;
+      return pages === 1
+        ? new Promise((resolve, reject) => {
+            answerPage = resolve;
+            failPage = reject;
+          })
+        : Promise.resolve(page([row("Next page")]));
+    });
+    await render(<Inbox />);
+    await screen.findByText("First page 0");
+
+    const list = screen.getByTestId("inbox-list");
+    await fireEvent(list, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } });
+    await fireEvent(list, "contentSizeChange", 400, 2400);
+    await act(() => jest.advanceTimersByTimeAsync(100));
+    await fireEvent.scroll(list, {
+      nativeEvent: { contentOffset: { x: 0, y: 2000 }, contentSize: { width: 400, height: 2400 }, layoutMeasurement: { width: 400, height: 800 } },
+    });
+    expect(pages).toBe(1);
+
+    const reload = async () => {
+      await act(async () => mockLive!({ kind: "all" }));
+      await act(() => jest.advanceTimersByTimeAsync(200));
+    };
+    await reload();
+    if (how === "fails") {
+      await act(async () => failPage(new Error("Couldn't reach tuti.example.com.")));
+      await act(async () => reloads.shift()!());
+    } else {
+      // The page answers while the first reload runs; a second starts before the first is in.
+      await act(async () => answerPage(page([row("Stale page")])));
+      await reload();
+      await act(async () => reloads.shift()!());
+      expect(pages).toBe(1);
+      await act(async () => reloads.shift()!());
+    }
+    expect(await screen.findByText("Next page")).toBeTruthy();
+    expect(pages).toBe(2);
+    expect(screen.queryByText("Couldn't reach tuti.example.com.")).toBeNull();
+  });
+
   it("opens the teammate's first project when none is chosen yet", async () => {
     serve({ "/conversations?view=open": page([]) });
     mockSession.project = "gone";

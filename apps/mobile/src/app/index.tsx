@@ -128,6 +128,17 @@ export default function Inbox() {
     void Promise.all([loadAll(list?.rows.length), loadProjects()]).finally(() => setRefreshing(false));
   };
 
+  // The list the latest reload shows, once it's in: waiting again for one that starts meanwhile.
+  const latestReload = async () => {
+    let waited: Promise<List | null>;
+    let fresh: List | null;
+    do {
+      waited = reload.current;
+      fresh = await waited;
+    } while (waited !== reload.current);
+    return fresh;
+  };
+
   // The next page after `from` (the list shown, unless a reload's).
   const loadMore = async (from = list): Promise<void> => {
     if (!from?.next || paging.current) {
@@ -136,7 +147,6 @@ export default function Inbox() {
     paging.current = true;
     const mine = loads.current();
     const moved = from.moved;
-    let again: List | null = null;
     setError(null);
     try {
       const page = await api<Page>(listPath({ view, q, cursor: from.next }));
@@ -151,11 +161,6 @@ export default function Inbox() {
               total: page.total,
             },
         );
-      } else {
-        // A reload replaced the list meanwhile. Of this same list, it brings back as many rows, so the list won't ask
-        // for the page itself (its length is as it was): asked again once it's in.
-        const fresh = await reload.current;
-        again = fresh?.for === from.for ? fresh : null;
       }
     } catch (e) {
       if (loads.isLatest(mine)) {
@@ -164,8 +169,13 @@ export default function Inbox() {
     } finally {
       paging.current = false;
     }
-    if (again) {
-      return loadMore(again);
+    // A reload replaced the list meanwhile, whether the page came or failed. Of this same list, it brings back as many
+    // rows, so the list won't ask for the page itself (its length is as it was): asked again once the latest reload is in.
+    if (!loads.isLatest(mine)) {
+      const fresh = await latestReload();
+      if (fresh?.for === from.for) {
+        return loadMore(fresh);
+      }
     }
   };
 
