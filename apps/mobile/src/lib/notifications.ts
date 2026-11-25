@@ -24,7 +24,7 @@ const DEVICE_ID = "device-id";
  */
 const asked = () => new File(Paths.cache, "notifications-asked");
 /** The channel the server's pushes name (packages/jobs push.ts): unnamed, they'd go to Expo's own "Miscellaneous". */
-const CHANNEL = "default";
+export const CHANNEL = "default";
 
 /**
  * This install's id, kept on the phone, so registering again replaces its row rather than adding one. A new one with
@@ -143,10 +143,28 @@ export async function removeDevice(api: Api) {
       }
     });
     // A new id from here on: a sign-in that registers while this is still on its way gets a row of its own, which this
-    // late removal can't reach. Kept in memory if storage fails (the next launch then reads the old one, as before).
-    const made = randomUUID();
-    keptId = Promise.resolve(made);
-    void SecureStore.setItemAsync(DEVICE_ID, made, STORE_OPTIONS).catch(() => {});
+    // late removal can't reach.
+    rotate(id);
+  }
+}
+
+/** A new id for this install, in place of `from`. Kept in memory if storage fails (the next launch then reads the old one). */
+function rotate(from: string) {
+  const made = randomUUID();
+  keptId = Promise.resolve(made);
+  rotated = { from: new Set([...(rotated?.from ?? []), from]), to: made };
+  void SecureStore.setItemAsync(DEVICE_ID, made, STORE_OPTIONS).catch(() => {});
+}
+
+/**
+ * A new id for this install when the server ends the session in use (a 401, a check): no removal to send, as its rows
+ * went with it, but a push sent before and delivered after (a phone offline meanwhile) still names the old id, which
+ * `forThisSignIn` then refuses, as after a sign-out.
+ */
+export async function forgetDeviceId() {
+  const id = await deviceId().catch(() => null);
+  if (id) {
+    rotate(id);
   }
 }
 
@@ -162,14 +180,40 @@ export function onRegisterAgain(register: () => void) {
 /** Takes the notifications shown off the phone (signing out): they'd show the last account's customers' messages. */
 export const dismissDelivered = () => Notifications.dismissAllNotificationsAsync().catch(() => {});
 
-/** A notification's conversation: `data` as the server sends it, checked, since anything on the phone can post one. */
-export type Target = { project: string; number: number };
+/**
+ * A notification's conversation: `data` as the server sends it, checked, since anything on the phone can post one. With
+ * the id of the phone's registration it was pushed to (`device`, packages/jobs push.ts), when it says.
+ */
+export type Target = { project: string; number: number; device?: string };
 export function targetOf(data: unknown): Target | null {
-  const { project, conversation } = (data ?? {}) as { project?: unknown; conversation?: unknown };
+  const { project, conversation, device } = (data ?? {}) as { project?: unknown; conversation?: unknown; device?: unknown };
   if (typeof project !== "string" || !/^[a-z0-9][a-z0-9-]{0,99}$/.test(project) || !Number.isSafeInteger(conversation) || (conversation as number) < 1) {
     return null;
   }
-  return { project, number: conversation as number };
+  return { project, number: conversation as number, ...(typeof device === "string" && { device }) };
+}
+
+/**
+ * Whether a notification is for this phone's sign-in now: pushed to the id it registered under (`deviceId`), which
+ * changes on every sign-out. One for a session since left, on any server (another can have a project of the same slug),
+ * isn't; one for this one is, whichever of its server's addresses the teammate signed in with. One that names no id isn't.
+ */
+export const forThisSignIn = async (target: Target) => !!target.device && target.device === (await currentId().catch(() => null));
+
+/** The id this JavaScript last changed to on a sign-out (`removeDevice`), and every one it replaced. */
+let rotated: { from: Set<string>; to: string } | null = null;
+
+/**
+ * The id as stored now, read each time: a sign-out in the app's other JavaScript (Android's task runs in one of its own
+ * when the app was killed) changes it there, not in this one's `deviceId()`. This one's newest id wins while storage
+ * still has any it replaced (its writes not landed yet, or failed), or can't be read; `deviceId()` when nothing is.
+ */
+async function currentId() {
+  const stored = await SecureStore.getItemAsync(DEVICE_ID, STORE_OPTIONS).catch(() => undefined);
+  if (rotated && (stored === undefined || rotated.from.has(stored ?? ""))) {
+    return rotated.to;
+  }
+  return stored ?? deviceId();
 }
 
 /** The conversation a tap opens: a tap on the notification itself (not one of its actions), with a conversation in it. */
@@ -194,20 +238,39 @@ export function lookAt(target: Target) {
 }
 
 /**
- * How a notification arriving while the app is in front shows: not at all over its own conversation, or signed out (one
- * a sign-out that didn't reach the server left coming), as a banner elsewhere.
+ * How a notification arriving while the app is in front shows: not at all over its own conversation, signed out (one
+ * a sign-out that didn't reach the server left coming), or untitled, as a banner elsewhere.
  */
 export function behaviourFor(notification: Notifications.Notification, signedOut = false): Notifications.NotificationBehavior {
+  // The silent update a reply's notification gets before it's taken away (notification-actions.ts `remove`): posted
+  // whatever is on screen, or Android keeps the reply's spinner, and never as a banner or a sound.
+  const { sent, failed } = (notification.request.content.data ?? {}) as { sent?: unknown; failed?: unknown };
+  if (sent === true) {
+    return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false };
+  }
+  // Said when a Reply or Close on a notification didn't go (notification-actions.ts `tell`): always, also over its
+  // conversation or signed out, or a typed reply would be lost unsaid.
+  if (failed === true) {
+    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
+  }
   const target = targetOf(notification.request.content.data);
-  const show = !signedOut && (!target || keyOf(target) !== looking?.key);
+  // Untitled: Android's pushes, data only, which the app shows itself (notification-actions.ts `present`).
+  const show = !signedOut && !!notification.request.content.title && (!target || keyOf(target) !== looking?.key);
   return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
 }
+
+/**
+ * Whether a notification's project is one of the signed-in teammate's: the session's own, or one of `projects` (their
+ * slugs). A notification left from another account, or posted by something else, is for none of theirs.
+ */
+export const isTheirs = async (target: Target, session: Session, projects: () => Promise<string[]>) =>
+  session.project === target.project || (await projects()).includes(target.project);
 
 /**
  * Opens a tapped notification's conversation, in its project, over the Inbox: the screens open go first (`leave`), so
  * it never opens over a sheet, and a conversation open can't show another project's of its number. Another project: only
  * one of the teammate's (`projects`, their slugs; a notification left from another account, or posted by something else,
- * opens nothing), switched to before it opens. Signed out, nothing (sign-in is all there is).
+ * opens nothing), switched to before it opens. Signed out, or for a sign-in since left, nothing (sign-in is all there is).
  */
 export async function openTarget(
   target: Target,
@@ -215,11 +278,13 @@ export async function openTarget(
   setProject: (slug: string) => Promise<void>,
   { leave, open, projects }: { leave: () => void; open: (path: string) => void; projects: () => Promise<string[]> },
 ) {
-  if (!session) {
+  // A tap only opens, in the teammate's own projects: one that names no registration (posted by the app before pushes
+  // named one) still does; one for a sign-in since left doesn't.
+  if (!session || (target.device !== undefined && !(await forThisSignIn(target)))) {
     return;
   }
   const other = session.project !== target.project;
-  if (other && !(await projects().catch(() => [] as string[])).includes(target.project)) {
+  if (!(await isTheirs(target, session, () => projects().catch(() => [] as string[])))) {
     return;
   }
   // Back to the Inbox first, also in the same project: never over a sheet (the details, Android's projects).

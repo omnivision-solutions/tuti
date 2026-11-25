@@ -2,7 +2,21 @@
   "name": "@tuti/mobile",
   "version": "0.0.0",
   "private": true,
-  "main": "expo-router/entry",
+  "main": "index.ts",
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-notifications"
+        ]
+      },
+      "ios": {
+        "buildFromSource": [
+          "expo-notifications"
+        ]
+      }
+    }
+  },
   "scripts": {
     "start": "expo start",
     "ios": "expo start --ios",
@@ -29,6 +43,7 @@
     "expo-status-bar": "~58.0.5",
     "expo-symbols": "~58.0.5",
     "expo-system-ui": "~58.0.7",
+    "expo-task-manager": "~58.0.14",
     "expo-web-browser": "~58.1.0",
     "react": "19.3.0",
     "react-native": "0.88.1",

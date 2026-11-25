@@ -1,0 +1,81 @@
+diff --git a/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+index 769b5522b9e20caba4b4bebd50a7817759be1eff..2bf85d8e0e89b85c444d3039c2435ba31338715d 100644
+--- a/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
++++ b/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+@@ -76,7 +76,8 @@ open class ExpoNotificationBuilder(
+ 
+   protected fun buildButtonAction(action: NotificationAction): NotificationCompat.Action {
+     val intent = createNotificationResponseIntent(context, notification, action)
+-    return NotificationCompat.Action.Builder(icon, action.title, intent).build()
++    // Tuti: an action needs the phone unlocked, as iOS's isAuthenticationRequired (apps/mobile src/lib/notification-actions.ts).
++    return NotificationCompat.Action.Builder(icon, action.title, intent).setAuthenticationRequired(true).build()
+   }
+ 
+   protected fun buildTextInputAction(action: TextInputNotificationAction): NotificationCompat.Action {
+@@ -86,7 +87,7 @@ open class ExpoNotificationBuilder(
+       .build()
+ 
+     return NotificationCompat.Action.Builder(icon, action.title, intent)
+-      .addRemoteInput(remoteInput).build()
++      .addRemoteInput(remoteInput).setAuthenticationRequired(true).build()
+   }
+ 
+   override suspend fun build(): Notification {
+diff --git a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
+index 5e3a9023667ee639a4a612ebb38c28f16a4a5c72..3300e0e2d8c632766024b2de4dc12e559cb1be5c 100644
+--- a/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
++++ b/ios/ExpoNotifications/Notifications/NotificationCenterManager.swift
+@@ -2,6 +2,7 @@
+ 
+ import ExpoModulesCore
+ import Foundation
++import UIKit
+ import UserNotifications
+ 
+ /**
+@@ -227,6 +228,7 @@ public class NotificationCenterManager: NSObject,
+     didReceive response: UNNotificationResponse,
+     withCompletionHandler completionHandler: @escaping () -> Void
+   ) {
++    keepRunningForAction(response)
+     var handled = false
+     for delegate in delegates {
+       handled = delegate.didReceive(response, completionHandler: completionHandler) || handled
+@@ -238,6 +240,37 @@ public class NotificationCenterManager: NSObject,
+     completionHandler()
+   }
+ 
++  /**
++   Tuti: an action that doesn't open the app (Reply, Close) is acted on by the app's JavaScript, which sends a request
++   (apps/mobile src/lib/notification-actions.ts). iOS suspends a background app as soon as the completion handler below
++   is called, and a killed one is launched only to answer it, before the JavaScript has even started: a background task
++   keeps it running meanwhile, ended after 25 seconds (past the JavaScript's 18-second limit for its requests) or when iOS
++   says its time is up.
++   */
++  private func keepRunningForAction(_ response: UNNotificationResponse) {
++    guard response.actionIdentifier != UNNotificationDefaultActionIdentifier,
++          response.actionIdentifier != UNNotificationDismissActionIdentifier else {
++      return
++    }
++    // Begun before this returns, so before the completion handler: begun later, iOS could suspend the app first.
++    let begin = {
++      var task = UIBackgroundTaskIdentifier.invalid
++      let end = {
++        if task != .invalid {
++          UIApplication.shared.endBackgroundTask(task)
++          task = .invalid
++        }
++      }
++      task = UIApplication.shared.beginBackgroundTask(withName: "notification-action", expirationHandler: end)
++      DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: end)
++    }
++    if Thread.isMainThread {
++      begin()
++    } else {
++      DispatchQueue.main.sync(execute: begin)
++    }
++  }
++
+   public func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?) {
+     for delegate in delegates {
+       delegate.openSettings(notification)

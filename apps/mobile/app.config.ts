@@ -7,6 +7,11 @@ type Env = Record<string, string | undefined>;
 export function appConfig(env: Env): ExpoConfig {
   // `||`: a variable that is set but empty (an unset CI variable) means the default too.
   const appId = env.APP_ID || "so.tuti.app";
+  // Expo's builders read this file again, with only the EAS environment's variables: a build made without the project
+  // gets no push token, so it notifies nothing. Set EAS_PROJECT_ID (and EXPO_OWNER) in each EAS environment.
+  if (env.EAS_BUILD === "true" && !env.EAS_PROJECT_ID) {
+    throw new Error("EAS_PROJECT_ID isn't set in this build's EAS environment: without it the app gets no push token");
+  }
   return {
     name: "Tuti",
     slug: "tuti",

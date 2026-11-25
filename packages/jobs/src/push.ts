@@ -100,6 +100,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     select: {
       author: true,
       body: true,
+      createdAt: true,
       fromAddress: true,
       conversation: {
         select: {
@@ -121,7 +122,7 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   const told = await prisma.device.findMany({
     where: { user: { teamMemberships: { some: teamToTell(conversation) } }, session: { expiresAt: { gt: new Date() } } },
-    select: { id: true, token: true, user: { select: { pushShowsText: true } } },
+    select: { id: true, deviceId: true, token: true, platform: true, user: { select: { pushShowsText: true } } },
   });
   // A token goes to the account that registered it last, across everyone's: a phone someone signed out of offline (their
   // session and row left on the server) and then signed in to as someone else is told only the latter's. It registers
@@ -144,16 +145,24 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
   }
   const title = `${whoWrote(message, conversation)} · ${conversation.project.name}`;
   const text = pushText(message.body);
-  const messages = devices.map((device) => ({
-    to: device.token,
-    title,
-    ...(device.user.pushShowsText && text && { body: text }),
-    sound: "default",
-    priority: "high",
-    // Android: the app's own channel ("Messages", apps/mobile src/lib/notifications.ts); unnamed, Expo's "Miscellaneous".
-    channelId: "default",
-    data: { project: conversation.project.slug, conversation: conversation.number },
-  }));
+  // What opens the conversation, and `at`, the message's time, which a reply from the notification says it saw
+  // (conversations.reply's `seen`), so a message after it keeps the conversation waiting on the team.
+  const opens = { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString() };
+  const messages = devices.map((device) => {
+    // `device`: the id the phone registered this row under, which it changes on every sign-out. The app shows and acts on
+    // a push only while it's still its id, so one for a session it has left (on any server: another can have a project
+    // of the same slug) does nothing, whichever of the server's addresses it signed in with.
+    const data = { ...opens, device: device.deviceId };
+    const shown = { title, ...(device.user.pushShowsText && text && { text }) };
+    // Android: data only, which the app shows itself (apps/mobile src/lib/notification-actions.ts) with its Reply and
+    // Close: a push with a title is shown by Firebase while the app isn't in front, without them. High priority, so it
+    // wakes the phone.
+    if (device.platform === "android") {
+      return { to: device.token, priority: "high", data: { ...data, ...shown } };
+    }
+    // iOS shows it with the `conversation` category's Reply and Close.
+    return { to: device.token, title, ...(shown.text && { body: shown.text }), sound: "default", priority: "high", categoryId: "conversation", data };
+  });
   let sent = 0;
   let gone = 0;
   // A request that fails doesn't fail the job once another went through (as a project's within one: sendBatch): a retry

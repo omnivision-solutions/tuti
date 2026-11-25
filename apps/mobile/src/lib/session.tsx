@@ -4,7 +4,7 @@ import { AppState } from "react-native";
 import { type Api, createApi } from "./api";
 import { draftsGoWith, forgetDrafts } from "./conversation";
 import { latestOnly } from "./inbox";
-import { dismissDelivered, removeDevice } from "./notifications";
+import { dismissDelivered, forgetDeviceId, removeDevice } from "./notifications";
 import { forgetCached, startCache } from "./offline";
 import { afterChanged, afterEnded, forgetSession, inOrder, keepSession, readSession, recheckOnForeground, type Session, sessionHolds, writeSession } from "./session-store";
 import type { SignedIn } from "./sign-in";
@@ -74,8 +74,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (draftsGoWith(await readSession(), which)) {
         forgetDrafts();
         forgetCached();
-        // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too.
+        // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too. And the
+        // phone's id, as a sign-out changes it: a push sent before and delivered after names the old one.
         void dismissDelivered();
+        await forgetDeviceId();
       }
       await forgetSession(which);
     });
