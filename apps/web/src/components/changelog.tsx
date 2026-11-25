@@ -4,7 +4,7 @@ import type { Editor } from "@tiptap/react";
 import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { cn } from "cn";
-import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import {
   createContext,
@@ -47,6 +47,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -336,7 +337,7 @@ function FeaturedImage({
 /** The cover designs with something to show for an entry as it's saved, the one picked when nobody picks, and `version`, which changes with each save (its previews are drawn again). */
 export type CoverChoices = { designs: CoverDesign[]; automatic: CoverDesign; version: number };
 
-const COVER_DESIGN_NAMES: Record<CoverDesign, string> = { title: "Title", screenshot: "Screenshot", sections: "Sections", pattern: "Pattern" };
+const COVER_DESIGN_NAMES: Record<CoverDesign, string> = { title: "Title", screenshot: "Screenshot", sections: "Sections", pattern: "Pattern", background: "Your background" };
 
 /**
  * The cover designs to pick from, each a picture of this entry's own cover in it (the team's preview route: the saved
@@ -1099,19 +1100,25 @@ const MAX_EXAMPLES = 3;
 
 /**
  * Settings → Changelog: the team's instructions for AI drafts (stored as tone notes), and up to 3 published entries as
- * examples, as rows of the page's card, saved by the page's "Save changes".
+ * examples, and the covers' defaults, as rows of the page's card, saved by the page's "Save changes".
  */
 export function ChangelogStyleForm({
   projectSlug,
   tone,
   examples,
   screenshotMarkers,
+  coverDesign,
+  coverBackground,
   published,
 }: {
   projectSlug: string;
   tone: string;
   /** AI drafts mark where a screenshot belongs. */
   screenshotMarkers: boolean;
+  /** The cover design picked first; null for the automatic pick. */
+  coverDesign: CoverDesign | null;
+  /** The team's image for the Your background design. */
+  coverBackground: { id: string; url: string } | null;
   /** The entries picked as examples, by number. */
   examples: number[];
   /** Published entries, newest first; `sample`: one of Home's sample updates, which AI never follows unpicked. */
@@ -1144,13 +1151,45 @@ export function ChangelogStyleForm({
       setMarking(screenshotMarkers);
     }
   }
+  // …and the cover's design and background.
+  const [design, setDesign] = useState(coverDesign);
+  const [designWas, setDesignWas] = useState(coverDesign);
+  if (designWas !== coverDesign) {
+    setDesignWas(coverDesign);
+    if (design === designWas) {
+      setDesign(coverDesign);
+    }
+  }
+  const designField = useRef<HTMLInputElement>(null);
+  useFieldChanged(designField, design);
+  const backgroundId = useId();
+  const uploadBackground = useRef<HTMLButtonElement>(null);
+  const background = useImageUpload({ projectSlug, name: "coverBackground", id: backgroundId, image: coverBackground, onBusy: () => {} });
+  const [backgroundWas, setBackgroundWas] = useState(coverBackground);
+  if (backgroundWas?.id !== coverBackground?.id) {
+    setBackgroundWas(coverBackground);
+    // Untouched, or the one just saved (its link as the server gives it, so the form matches what's saved).
+    if (background.image?.id === backgroundWas?.id || background.image?.id === coverBackground?.id) {
+      background.setImage(coverBackground);
+    }
+  }
+  // In the picker's order; Your background once there's one.
+  const designs = (Object.keys(COVER_DESIGN_NAMES) as CoverDesign[]).filter((each) => each !== "background" || background.image);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const pick = useRef<HTMLButtonElement>(null);
   // The dialog, opened, has had its pick.
   const done = useRef(false);
   const { state, pending, form } = useCustomizeForm({
-    saved: [["tone", tone], ...examples.map((number): [string, string] => ["examples", String(number)]), ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : [])],
+    saved: [
+      ["tone", tone],
+      ...examples.map((number): [string, string] => ["examples", String(number)]),
+      ...(screenshotMarkers ? [["screenshotMarkers", "on"] as [string, string]] : []),
+      ["coverDesign", coverDesign ?? ""],
+      ["coverBackground", coverBackground?.id ?? ""],
+      ["coverBackgroundUrl", coverBackground?.url ?? ""],
+    ],
+    busy: background.uploading,
     save: async (prev, formData) => {
       const result = await saveChangelogStyle(projectSlug, prev, formData);
       if (result.error) {
@@ -1261,6 +1300,76 @@ export function ChangelogStyleForm({
       >
         <Switch id="style-screenshots" aria-describedby="style-screenshots-description" name="screenshotMarkers" checked={marking} onChange={(event) => setMarking(event.target.checked)} />
       </SettingRow>
+      <SettingRow label={<span id="style-cover-design-label">Cover design</span>} description="Picked first when you publish an entry without a cover or make one." inline>
+        <Select name="coverDesign" items={[{ value: null, label: "Automatic" }, ...designs.map((each) => ({ value: each, label: COVER_DESIGN_NAMES[each] }))]} value={design} onValueChange={(next) => setDesign(next as CoverDesign | null)} inputRef={designField}>
+          <SelectTrigger className="w-40" aria-labelledby="style-cover-design-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={null}>Automatic</SelectItem>
+            {designs.map((each) => (
+              <SelectItem key={each} value={each}>
+                {COVER_DESIGN_NAMES[each]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      <div {...background.drop} className={cn("transition-colors", background.dragging && "bg-soft")}>
+        <SettingRow label="Cover background" description="An image of your own to put the title on, for the Your background design." htmlFor={backgroundId} inline>
+          {background.image ? (
+            // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+            <img src={background.image.url} alt="Cover background preview" className="h-9 w-[4.25rem] rounded-lg border object-cover @max-[20rem]/settings:w-9" />
+          ) : (
+            <span className="flex size-9 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-muted-foreground">
+              <ImageIcon aria-hidden className="size-4" />
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Upload cover background"
+            // Off while one uploads, yet focusable: focus stays here through the upload, "Uploading…" read below.
+            disabled={background.uploading}
+            focusableWhenDisabled
+            ref={uploadBackground}
+            onClick={background.pick}
+          >
+            <UploadIcon />
+            <span className={background.image ? "@max-[23rem]/settings:sr-only" : "@max-[18rem]/settings:sr-only"}>Upload</span>
+          </Button>
+          {background.image && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Remove cover background"
+              title="Remove"
+              disabled={background.uploading}
+              focusableWhenDisabled
+              onClick={() => {
+                // Remove goes with the image: focus moves to Upload, not out of the row.
+                uploadBackground.current?.focus();
+                background.setImage(null);
+                // Its design goes with it.
+                if (design === "background") {
+                  setDesign(null);
+                }
+              }}
+            >
+              <XIcon />
+            </Button>
+          )}
+          {background.inputs}
+        </SettingRow>
+        {background.uploading && (
+          <p role="status" className="px-4 pb-3.5 text-sm text-muted-foreground">
+            Uploading…
+          </p>
+        )}
+        {background.error && <FieldError className="px-4 pb-3.5">{background.error}</FieldError>}
+      </div>
       {/* Outside the form in the page (a portal): typing in its search isn't a change to save. */}
       <Dialog open={picking} onOpenChange={setPicking}>
         {/* Closed, by a pick or without one, focus goes back to Pick. */}

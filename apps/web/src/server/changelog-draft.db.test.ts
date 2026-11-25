@@ -347,10 +347,10 @@ test("publishing reads the text as it is under its lock: a marker saved while it
 test("each writing style setting is saved on its own: the screenshots' switch keeps the tone and the examples, and they keep it", async () => {
   const example = await call(createChangelogEntry, team(), { title: "Faster search", body: "Search is quicker now." });
   await call(publishChangelogEntry, team(), { number: example.number });
-  const set = { tone: "Short sentences.", examples: [{ number: example.number, title: "Faster search" }] };
+  const set = { tone: "Short sentences.", examples: [{ number: example.number, title: "Faster search" }], coverDesign: "", coverBackground: null };
   await setStyle({ tone: set.tone, examples: [example.number], screenshotMarkers: true });
   expect(await setStyle({ tone: "Plain words." })).toEqual({ ...set, tone: "Plain words.", screenshotMarkers: true });
-  expect(await setStyle({ examples: [] })).toEqual({ tone: "Plain words.", examples: [], screenshotMarkers: true });
+  expect(await setStyle({ examples: [] })).toEqual({ ...set, tone: "Plain words.", examples: [], screenshotMarkers: true });
   await setStyle({ tone: set.tone, examples: [example.number] });
   expect(await setStyle({ screenshotMarkers: false })).toEqual({ ...set, screenshotMarkers: false });
 });
@@ -359,7 +359,7 @@ const setStyle = (input: { tone?: string; examples?: number[]; screenshotMarkers
 const getStyle = () => call(getChangelogStyle, team(), {});
 
 test("the writing style is saved and checked: tone notes up to 4,000 characters, up to 3 of the project's published entries", async () => {
-  expect(await getStyle()).toEqual({ tone: "", examples: [], screenshotMarkers: false });
+  expect(await getStyle()).toEqual({ tone: "", examples: [], screenshotMarkers: false, coverDesign: "", coverBackground: null });
   const published = await call(createChangelogEntry, team(), { title: "Faster search", body: "Search is quicker now." });
   await call(publishChangelogEntry, team(), { number: published.number });
   const draft = await call(createChangelogEntry, team(), { title: "Not out yet" });
@@ -368,6 +368,8 @@ test("the writing style is saved and checked: tone notes up to 4,000 characters,
     tone: "Friendly, no jargon.",
     examples: [{ number: published.number, title: "Faster search" }],
     screenshotMarkers: false,
+    coverDesign: "",
+    coverBackground: null,
   });
   // Each field is optional: changing one keeps the other.
   expect(await setStyle({ tone: "Short sentences." })).toMatchObject({ examples: [{ number: published.number }] });
@@ -392,13 +394,13 @@ test("the writing style is saved and checked: tone notes up to 4,000 characters,
   }
   await call(publishChangelogEntry, theirs, { number: 3 });
   await expect(setStyle({ examples: [3] })).rejects.toMatchObject({ status: 400, message: "There's no published entry #3" });
-  expect(await call(getChangelogStyle, { ...team(), projectId: other.id }, {})).toEqual({ tone: "", examples: [] , screenshotMarkers: false });
+  expect(await call(getChangelogStyle, { ...team(), projectId: other.id }, {})).toEqual({ tone: "", examples: [], screenshotMarkers: false, coverDesign: "", coverBackground: null });
   // Refused changes left it as it was.
-  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [{ number: published.number, title: "Faster search" }] , screenshotMarkers: false });
+  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [{ number: published.number, title: "Faster search" }], screenshotMarkers: false, coverDesign: "", coverBackground: null });
 
   // An example that's deleted drops out.
   await call(deleteChangelogEntry, team(), { number: published.number });
-  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [] , screenshotMarkers: false });
+  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [], screenshotMarkers: false, coverDesign: "", coverBackground: null });
 });
 
 test("drafts follow the tone notes and the examples, marked as style only", async () => {
