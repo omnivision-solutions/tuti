@@ -408,6 +408,11 @@ describe("OpenAPI", () => {
     expect(spec.paths["/posts"].get.tags).toEqual(["Feedback"]);
     expect(spec.paths["/code-change-actions/{id}/stop"].post.tags).toEqual(["Autopilot"]);
     expect(spec.paths["/portal/readers"].get.tags).toEqual(["Users"]);
+    // The mobile app refuses a server whose reply takes no requestId, reading it from this spec in exactly this shape
+    // (apps/mobile src/lib/sign-in.ts `replyTakesRequestId`): changing the shape would make every app refuse this server.
+    const reply = spec.paths["/conversations/{number}/messages"].post;
+    expect(reply.operationId).toBe("conversations.reply");
+    expect(reply.requestBody.content["application/json"].schema.properties).toHaveProperty("requestId");
     // The overview: getting a key, signing requests (with how the mobile app's session is accepted), errors, paging and rate limits.
     expect(spec.info.description.match(/^## .+/gm)).toEqual(["## Getting a key", "## Authentication", "## Errors", "## Paging", "## Rate limits"]);
     expect(spec.info.description).toContain("Up to 600 requests a minute per key");

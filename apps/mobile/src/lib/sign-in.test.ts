@@ -19,6 +19,14 @@ vi.mock("expo-secure-store", () => ({
 const browser = vi.hoisted(() => ({ openAuthSessionAsync: vi.fn() }));
 vi.mock("expo-web-browser", () => browser);
 
+/** A current server's spec, as the sign-in reads it first; `answer` for everything else. */
+const CURRENT_SPEC = {
+  openapi: "3.1.0",
+  paths: { "/conversations/{number}/messages": { post: { operationId: "conversations.reply", requestBody: { content: { "application/json": { schema: { properties: { requestId: {} } } } } } } } },
+};
+const withSpec = (answer: (url: string) => Response | Promise<Response>) =>
+  vi.fn(async (url: string) => (url.endsWith("/api/v1/openapi.json") ? Response.json(CURRENT_SPEC) : answer(url)));
+
 describe("PKCE", () => {
   it("makes RFC 7636's challenge from its verifier (appendix B)", async () => {
     expect(await challengeOf("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
@@ -113,7 +121,7 @@ describe("starting a sign-in", () => {
   };
 
   it("opens Google in the browser sheet through the server's proxy, and exchanges the code it comes back with", async () => {
-    const fetch = vi.fn(async (url: string) =>
+    const fetch = withSpec((url) =>
       url.endsWith("/sign-in/social") ? Response.json({ url: "https://accounts.example.com/auth?a=1&b=2" }) : Response.json({ token: "token-1", cookie: "c" }),
     );
     vi.stubGlobal("fetch", fetch);
@@ -135,7 +143,7 @@ describe("starting a sign-in", () => {
   });
 
   it("is nothing when the teammate closes the browser sheet", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ url: "https://accounts.example.com/auth" })));
+    vi.stubGlobal("fetch", withSpec(() => Response.json({ url: "https://accounts.example.com/auth" })));
     browser.openAuthSessionAsync.mockImplementation(async () => ({ type: "cancel" }));
     expect(await continueWith("github", "https://tuti.example.com")).toBeNull();
     vi.unstubAllGlobals();
@@ -143,7 +151,7 @@ describe("starting a sign-in", () => {
 });
 
 describe("signing in with a password", () => {
-  const answering = (status: number, body: unknown) => vi.fn(async () => Response.json(body, { status }));
+  const answering = (status: number, body: unknown) => withSpec(() => Response.json(body, { status }));
 
   it("posts the email and password with the app's scheme, and keeps the session it answers with", async () => {
     const fetch = answering(200, { token: "token-1", cookie: "tuti.session_token=s" });
@@ -170,7 +178,7 @@ describe("signing in with a password", () => {
       "Your email address isn't verified yet. Tuti has sent you the verification email again: open its link, then sign in here.",
     );
     // A Tuti server from before the app's password sign-in answers its router's empty 404, and its `ok`.
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (url.endsWith("/api/auth/ok") ? Response.json({ ok: true }) : new Response(null, { status: 404 }))));
+    vi.stubGlobal("fetch", withSpec((url) => (url.endsWith("/api/auth/ok") ? Response.json({ ok: true }) : new Response(null, { status: 404 }))));
     await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x")).rejects.toThrow(
       "This server doesn't take passwords from the app yet. Continue with Google or GitHub, or ask whoever runs it to update Tuti.",
     );
@@ -231,6 +239,25 @@ describe("the server, checked before anything is sent", () => {
     // A spec with no reply at all is older still.
     vi.stubGlobal("fetch", serving({ openapi: "3.1.0", paths: {} }));
     await expect(checkServer("https://tuti.example.com")).rejects.toThrow(outdated);
+    vi.unstubAllGlobals();
+  });
+
+  it("doesn't sign in to a Tuti server whose spec can't be read just now, unchecked", async () => {
+    const fetch = vi.fn(async (url: string) =>
+      url.endsWith("/api/v1/openapi.json") ? new Response("Bad gateway", { status: 502 }) : url.endsWith("/api/auth/ok") ? Response.json({ ok: true }) : Response.json({ token: "token-1", cookie: "c" }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "x")).rejects.toThrow("Couldn't check this server's version just now. Try again in a moment.");
+    // The password was never sent.
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://tuti.example.com/api/v1/openapi.json", "https://tuti.example.com/api/auth/ok"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("reads the spec as it is now, not a cached one: a server just updated is signed in to", async () => {
+    const fetch = serving(spec({ requestId: {} }));
+    vi.stubGlobal("fetch", fetch);
+    await checkServer("https://tuti.example.com");
+    expect((fetch.mock.calls[0] as unknown as [string, RequestInit])[1]).toMatchObject({ cache: "no-store", credentials: "omit" });
     vi.unstubAllGlobals();
   });
 

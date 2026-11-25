@@ -56,26 +56,29 @@ export async function signInWithPassword(server: string, email: string, password
 
 /** Said of a server too old for the app: one whose `conversations.reply` takes no `requestId` (#1070). */
 export const OUTDATED_SERVER = "This server runs an older Tuti than the app needs. Ask whoever runs it to update Tuti, then sign in here.";
+/** Said of a Tuti server whose spec couldn't be read just now (a 5xx, a broken answer): not signed in to unchecked. */
+export const UNCHECKED_SERVER = "Couldn't check this server's version just now. Try again in a moment.";
 
 /**
  * Before anything is sent (docs/plan.md, M10): the server's API spec, which every Tuti server serves with no session,
  * must have `conversations.reply` take a `requestId`, or a Retry after a lost answer could send a reply twice. No shim
- * for an older server: it isn't signed in to. A server that can't be reached, or answers with no spec, is left to the
- * sign-in's own request, and its error.
+ * for an older server: it isn't signed in to. A Tuti server whose spec can't be read just now isn't signed in to either,
+ * unchecked; a server that can't be reached, or another site, is left to the sign-in's own request, and its error.
  */
 export async function checkServer(server: string) {
   let spec: unknown;
   try {
-    const response = await fetch(`${server}/api/v1/openapi.json`, { credentials: "omit", headers: { accept: "application/json" } });
-    if (!response.ok) {
-      return;
-    }
-    spec = await response.json();
+    // Not the cached one: it's served for five minutes, and a server just updated would be refused meanwhile.
+    const response = await fetch(`${server}/api/v1/openapi.json`, { credentials: "omit", cache: "no-store", headers: { accept: "application/json" } });
+    spec = response.ok ? await response.json() : null;
   } catch {
-    return;
+    spec = null;
   }
   const { openapi, paths } = (spec ?? {}) as { openapi?: unknown; paths?: unknown };
   if (typeof openapi !== "string" || !paths || typeof paths !== "object") {
+    if (await isTuti(server)) {
+      throw new Error(UNCHECKED_SERVER);
+    }
     return;
   }
   if (!replyTakesRequestId(spec as OpenApi)) {
