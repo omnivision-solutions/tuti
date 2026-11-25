@@ -97,10 +97,17 @@ describe("choosing a project", () => {
   });
 });
 
+/** Something kept by "owner-0", checked to be there (the cache started before the load's generation is read). */
+function keepFixture() {
+  const owner = startCache("owner-0");
+  keep("kept", { rows: [] }, cacheGeneration(), owner);
+  expect(cached("kept", owner)).not.toBeNull();
+}
+
 describe("signing in", () => {
   it("starts with nothing kept, however the last session went (a restored phone, a lost keystore)", async () => {
     // Kept by an earlier session that never signed out here.
-    keep("kept", { rows: [] }, cacheGeneration(), startCache("owner-0"));
+    keepFixture();
     await render(
       <SessionProvider>
         <Harness />
@@ -121,7 +128,7 @@ describe("signing in", () => {
 
 describe("signing out", () => {
   // Something kept to read offline, from this account.
-  beforeEach(() => keep("kept", { rows: [] }, cacheGeneration(), startCache("owner-0")));
+  beforeEach(keepFixture);
 
   it("removes the phone's registration first, without waiting for it", async () => {
     mockStored.set("session", JSON.stringify(session));
