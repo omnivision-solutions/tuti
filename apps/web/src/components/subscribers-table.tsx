@@ -17,7 +17,8 @@ const PER_PAGE = 50;
 type Status = (typeof SUBSCRIBER_STATUSES)[number];
 const STATUS: Record<Status, { label: string; dot: string; tint: string }> = {
   subscribed: { label: "Subscribed", dot: "bg-primary", tint: "bg-soft" },
-  pending: { label: "Not confirmed", dot: "bg-status-under-review", tint: "bg-highlight" },
+  // Waiting on them, not the team: no orange (docs/design.md).
+  pending: { label: "Not confirmed", dot: "bg-status-under-review", tint: "bg-muted" },
   unsubscribed: { label: "Unsubscribed", dot: "bg-muted-foreground", tint: "bg-muted" },
   opted_out: { label: "All emails off", dot: "bg-muted-foreground", tint: "bg-muted" },
   removed: { label: "Removed", dot: "bg-muted-foreground", tint: "bg-muted" },
@@ -115,7 +116,7 @@ export async function SubscribersTable({
                   </td>
                   <td>
                     {/* A tint, a dot, sentence case (docs/design.md), like an article's state. */}
-                    <Badge variant="outline" className={cn("border-transparent", subscriber.status === "pending" ? "text-highlight-foreground" : "text-foreground", STATUS[subscriber.status].tint)}>
+                    <Badge variant="outline" className={cn("border-transparent text-foreground", STATUS[subscriber.status].tint)}>
                       <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATUS[subscriber.status].dot)} />
                       {STATUS[subscriber.status].label}
                     </Badge>

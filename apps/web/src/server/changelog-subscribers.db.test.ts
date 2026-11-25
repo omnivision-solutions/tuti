@@ -1953,6 +1953,9 @@ describe("the list (changelogSubscribers.list, Users → Subscribers)", () => {
     expect(await subscribe(at("pat"))).toEqual({ sentTo: at("pat") });
     expect((await list({ q: `${tag}-pat` })).subscribers).toEqual([expect.objectContaining({ status: "opted_out", subscribedAt: null, removable: true })]);
     await prisma.changelogSubscriber.delete({ where: { projectId_email: { projectId: project.id, email: at("pat") } } });
+    // Unsubscribed, then asking again on the portal: waiting on their new link.
+    expect(await subscribe(at("left"))).toEqual({ sentTo: at("left") });
+    expect((await list({ q: `${tag}-left` })).subscribers).toEqual([expect.objectContaining({ status: "pending", removable: true })]);
     expect((await list({ q: `${tag}-PEND` })).subscribers.map((s) => s.email)).toEqual([at("pending")]);
     // "_" is a character, not a wildcard.
     expect((await list({ q: `${tag}_pend` })).total).toBe(0);

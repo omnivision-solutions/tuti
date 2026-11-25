@@ -558,7 +558,7 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
 
   // Remove asks first; then they're removed, and Subscribed no longer lists them.
   await rows.filter({ hasText: "e2e-reader@example.com" }).getByRole("button", { name: "Remove e2e-reader@example.com" }).click();
-  await expect(owner.getByRole("alertdialog")).toContainText("They stop getting your changelog by email.");
+  await expect(owner.getByRole("alertdialog")).toContainText("They stop getting your changelog by email, and any link to confirm it stops working.");
   await owner.getByRole("button", { name: "Remove subscriber" }).click();
   await expect(owner.getByText("e2e-reader@example.com removed")).toBeVisible();
   // Its row has no Remove now: focus goes to the search box, not the page's top.

@@ -30,7 +30,7 @@ export function RemoveSubscriberButton({ projectSlug, email }: { projectSlug: st
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-anywhere">Remove {email}?</AlertDialogTitle>
           <AlertDialogDescription>
-            They stop getting your changelog by email. Your app can add them back with the API.
+            They stop getting your changelog by email, and any link to confirm it stops working.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

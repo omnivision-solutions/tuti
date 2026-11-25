@@ -193,7 +193,8 @@ export const listChangelogSubscribers = defineOperation({
       SELECT s."email", s."confirmedAt", s."createdAt", s."id",
         (s."confirmedAt" IS NOT NULL OR s."confirmTokenHash" IS NOT NULL) AS "removable",
         CASE
-          WHEN s."unsubscribedAt" IS NOT NULL THEN 'unsubscribed'
+          -- Unsubscribed and asking again: their new link is out (pending, below).
+          WHEN s."unsubscribedAt" IS NOT NULL AND s."confirmTokenHash" IS NULL THEN 'unsubscribed'
           WHEN ${optedOutSql(projectId, Prisma.raw(`s."email"`))} THEN 'opted_out'
           WHEN s."confirmedAt" IS NOT NULL THEN 'subscribed'
           WHEN s."confirmTokenHash" IS NOT NULL THEN 'pending'
