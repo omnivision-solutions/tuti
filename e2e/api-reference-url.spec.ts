@@ -161,8 +161,9 @@ test("An API reference read from a URL: added from its address, Sync now brings 
   // Its button went with it: focus is on the header's Sync now, not lost.
   await expect(team.getByRole("button", { name: "Sync now" })).toBeFocused();
 
-  // Settings' Source: where it's read from and how its syncs went, and the address changed there.
-  await team.getByRole("navigation", { name: "API reference" }).getByRole("link", { name: "Settings" }).click();
+  // Settings' Source: where it's read from and how its syncs went, and the address changed there. Its tab from the
+  // keyboard: the syncs' toasts are stacked over the tabs, and spread out under a pointer coming to it, taking its click.
+  await team.getByRole("navigation", { name: "API reference" }).getByRole("link", { name: "Settings" }).press("Enter");
   await team.waitForURL(`**/docs/references/acme-api/settings`);
   const source = team.getByRole("region", { name: "Source" });
   await expect(source).toContainText("A URL");

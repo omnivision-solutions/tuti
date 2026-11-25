@@ -15,6 +15,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { LauncherIcon } from "@/components/widget-preview";
+import { onRefresh, type Pending, pendingAfterSave, pickedSince } from "@/lib/follow-stored";
 import { linksFrom } from "@/lib/forms";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
@@ -101,18 +102,38 @@ export function WidgetSettings({
   aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
-  // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it.
+  // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it. Not to the one this
+  // page sent if the person has picked since: its refresh lands after "Widget saved", and would undo that pick (Remove
+  // right after saving).
   const [loaded, setLoaded] = useState(initialIcon);
+  const [sent, setSent] = useState<Pending<FormDataEntryValue | null>>(null);
   if (loaded !== initialIcon) {
     setLoaded(initialIcon);
-    setIcon(initialIcon);
+    const refreshed = onRefresh<FormDataEntryValue | null>(sent, initialIcon);
+    setSent(refreshed.pending);
+    if (refreshed.follow) {
+      setIcon(initialIcon);
+    }
   }
+  // The person's own choice (not a refresh followed): a save waiting for its refresh keeps it.
+  const pick = (value: WidgetIcon) => {
+    setIcon(value);
+    setSent((now) => pickedSince(now));
+  };
   const [upgrading, setUpgrading] = useState(false);
   const iconChoices = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
-    save: (prev, formData) => saveWidgetSettings(projectSlug, prev, formData),
+    save: async (prev, formData) => {
+      setSent(pendingAfterSave<FormDataEntryValue | null>(formData.get("icon"), initialIcon));
+      const result = await saveWidgetSettings(projectSlug, prev, formData);
+      // Not saved: no refresh of its own is coming, so the next one (a teammate's) is followed.
+      if (result.error) {
+        setSent(null);
+      }
+      return result;
+    },
     onSaved: () => {
       toast.success("Widget saved");
       preview.reload();
@@ -187,7 +208,7 @@ export function WidgetSettings({
                 if (upgrade && value !== "chat" && value !== initialIcon) {
                   setUpgrading(true);
                 } else {
-                  setIcon(value);
+                  pick(value);
                 }
               }}
               options={ICONS}
@@ -205,7 +226,7 @@ export function WidgetSettings({
               // Without its image, the launcher shows the chat bubble: so does the picker (and what's saved).
               // Its row hides with it, so focus goes to that choice (not the Upload button hidden along with it).
               onRemove={() => {
-                setIcon("chat");
+                pick("chat");
                 iconChoices.current?.querySelector<HTMLInputElement>('input[value="chat"]')?.focus();
               }}
             />
