@@ -101,3 +101,8 @@ test("published with Email subscribers, it's emailed in full, linking to no page
   expect(email!.text).not.toContain(`/changelog/${entry.number}`);
   expect(email!.text).not.toContain("Read the update");
 });
+
+test("published through the API with an announcement, an email-only entry still isn't announced (it's in no widget)", async () => {
+  const number = await published("Pricing change", true);
+  expect((await call(getChangelogEntry, as(owner), { number })).announced).toBe(false);
+});

@@ -1708,9 +1708,9 @@ export const publishChangelogEntry = defineOperation({
       // draft left for the team to fill in ("[Check: …]", "[Screenshot: …]") doesn't go out to readers, or by email,
       // which can't be taken back.
       await tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
-      const { sample, importedPublishedAt, publishedAt, ...text } = await tx.changelogEntry.findUniqueOrThrow({
+      const { sample, importedPublishedAt, publishedAt, emailOnly, ...text } = await tx.changelogEntry.findUniqueOrThrow({
         where: { id: entry.id },
-        select: { sample: true, importedPublishedAt: true, publishedAt: true, body: true, content: true },
+        select: { sample: true, importedPublishedAt: true, publishedAt: true, emailOnly: true, body: true, content: true },
       });
       const markers = publishedAt ? [] : markersIn(displayDoc(text));
       if (markers.length > 0) {
@@ -1723,7 +1723,7 @@ export const publishChangelogEntry = defineOperation({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
         // Its release's notes are written: it no longer waits on the list ("Next release is ready to write").
-        data: { publishedAt: importedPublishedAt ?? new Date(), importedPublishedAt: null, collecting: false, releasedAt: null, announced: announce && !quiet },
+        data: { publishedAt: importedPublishedAt ?? new Date(), importedPublishedAt: null, collecting: false, releasedAt: null, announced: announce && !quiet && !emailOnly },
       });
       if (count === 0) {
         return null;
