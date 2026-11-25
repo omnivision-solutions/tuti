@@ -1718,10 +1718,16 @@ describe("the team's own subscribers: changelogSubscribers.add and .remove, user
     // A request still waiting to be confirmed is the team's to confirm.
     const asked = newAddress();
     await subscribe(asked);
-    expect(await call(addChangelogSubscribers, key(), { emails: [left, quiet, asked] })).toEqual({
+    // Two of the app's users at one address: each is named.
+    for (const id of ["app-left-1", "app-left-2"]) {
+      await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: id, userId: (await signUp("Left")).id, email: left } });
+    }
+    expect(await call(addChangelogSubscribers, key(), { emails: [left, quiet, asked], users: ["app-left-1", "app-left-2"] })).toEqual({
       subscribed: [asked],
       skipped: [
         { email: left, user: null, reason: "unsubscribed" },
+        { email: left, user: "app-left-1", reason: "unsubscribed" },
+        { email: left, user: "app-left-2", reason: "unsubscribed" },
         { email: quiet, user: null, reason: "opted_out" },
       ],
     });
