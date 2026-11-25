@@ -89,10 +89,10 @@ async function entryGroups(entryId: string, db: Prisma.TransactionClient = prism
 
 /**
  * SQL: a subscriber (`s`) is in one of `groups`: the project's user the project's app (SSO, the API) gave their address
- * is. One with no such user (subscribed with an address the app never named) is in none.
+ * is (kept lowercase, so its index finds them). One with no such user (subscribed with an address the app never named) is in none.
  */
 const inGroupsSql = (projectId: string, groups: GroupRule[]) => Prisma.sql`EXISTS (
-  SELECT 1 FROM "sso_identity" si WHERE si."projectId" = ${projectId} AND lower(si."email") = lower(s."email")
+  SELECT 1 FROM "sso_identity" si WHERE si."projectId" = ${projectId} AND si."email" = lower(s."email")
     AND (${groups.length > 0 ? Prisma.join(groups.map((rule) => inGroupSql(rule, Prisma.raw("si"))), " OR ") : Prisma.sql`FALSE`})
 )`;
 
