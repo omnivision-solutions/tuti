@@ -1460,6 +1460,13 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
         return { event, email, userId, source, allEmails };
       },
     );
+  /** Someone the project's SSO emails at `address`, known by an id of the app's own (not Tuti's): `appId`. */
+  const appUser = async (address: string) => {
+    const user = await ssoUser(address);
+    const appId = `app-${randomUUID()}`;
+    await prisma.ssoIdentity.update({ where: { userId: user.id }, data: { externalId: appId } });
+    return Object.assign(user, { appId });
+  };
   const unsubscribedAt = async (email: string) =>
     (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).unsubscribedAt;
 
@@ -1497,48 +1504,48 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
 
     const email = newAddress();
-    const sam = await ssoUser(email);
+    const sam = await appUser(email);
     actAs(sam);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
-    await call(updateEmailPreferences, key, { changelog: false, author: { id: sam.id } });
+    await call(updateEmailPreferences, key, { changelog: false, author: { id: sam.appId } });
 
     expect(await told()).toEqual([
       { event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: false },
       { event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: false },
-      { event: "changelog.unsubscribed", email, userId: sam.id, source: "api", allEmails: false },
+      { event: "changelog.unsubscribed", email, userId: sam.appId, source: "api", allEmails: false },
     ]);
     expect(await unsubscribedAt(email)).toEqual(expect.any(Date));
   });
 
   test("turning all of the project's emails off stops the changelog too (allEmails): not again, nor once its own unsubscribe follows, nor for someone not subscribed", async () => {
     const email = newAddress();
-    const sam = await ssoUser(email);
+    const sam = await appUser(email);
     actAs(sam);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     await optOut(sam.id);
     await optOut(sam.id);
     await unsubscribe(await tokenOf(email));
-    const other = await ssoUser(newAddress());
+    const other = await appUser(newAddress());
     await optOut(other.id);
 
-    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email, userId: sam.id, source: "email", allEmails: true }]);
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email, userId: sam.appId, source: "email", allEmails: true }]);
     // The opt-out leaves the subscription as it was (turning emails back on restarts it); its own unsubscribe ended it.
     expect(await unsubscribedAt(email)).toEqual(expect.any(Date));
   });
 
   test("the person who acted is named, not another of the app's users at the same address; an unsubscribe link names nobody when several share it", async () => {
     const email = newAddress();
-    const [first, second] = [await ssoUser(email), await ssoUser(email)];
+    const [first, second] = [await appUser(email), await appUser(email)];
     actAs(second);
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
     const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
-    await call(updateEmailPreferences, key, { changelog: false, author: { id: second.id } });
+    await call(updateEmailPreferences, key, { changelog: false, author: { id: second.appId } });
     await confirmed(email);
     await unsubscribe(await tokenOf(email));
     await optOut(first.id);
     expect(await told()).toEqual([
-      { event: "changelog.unsubscribed", email, userId: second.id, source: "api", allEmails: false },
+      { event: "changelog.unsubscribed", email, userId: second.appId, source: "api", allEmails: false },
       { event: "changelog.unsubscribed", email, userId: null, source: "email", allEmails: false },
     ]);
   });
