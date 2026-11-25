@@ -306,3 +306,13 @@ test("a reply of only entities isn't a translation", async () => {
   expect(out.problems).toEqual([{ id: "1", reason: "no translation" }]);
   expect(out.doc).toEqual(one);
 });
+
+test("whitespace around a model's newline collapses; a whitespace entity isn't a word; a message with no words isn't sent", async () => {
+  expect(segmentOfText("Hi there").apply("Hallo \t\n\t zusammen")).toBe("Hallo zusammen");
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readers vote on posts." }] }] };
+  const out = await translateDoc(one, { from: "English", to: "German", ask: async () => '{"segments": {"1": "&#x20;"}}' });
+  expect(out.problems).toEqual([{ id: "1", reason: "no translation" }]);
+  let asked = 0;
+  expect(await translateText("https://acme.example/export 👍 42", { to: "English", ask: async () => (asked++, "{}") })).toEqual({ text: "https://acme.example/export 👍 42" });
+  expect(asked).toBe(0);
+});

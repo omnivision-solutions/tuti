@@ -26,7 +26,7 @@ const TAG_LETTER: Record<string, string> = { link: "a", bold: "b", italic: "i", 
 const MARK_ORDER = Object.keys(TAG_LETTER);
 
 /** A newline the model wrote itself is a space: only the source's own breaks (<br/>) become line breaks. */
-const flat = (text: string) => text.replace(/ ?\r?\n ?/g, " ");
+const flat = (text: string) => (text.includes("\n") ? text.split(/\r?\n/).map((line, i, lines) => (i === 0 ? line.trimEnd() : i === lines.length - 1 ? line.trimStart() : line.trim())).join(" ") : text);
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** Back to text: our three escapes, and the other entities models write by imitation (&quot;, &#39;, &nbsp;); &amp; last. */
 const ENTITIES: Record<string, string> = { lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
@@ -42,7 +42,7 @@ const MARKUP = /<\/?[a-z]\d{1,4}>|<x\d{1,4}\/>|<br\s?\/?>/g;
 type Mark = NonNullable<JSONContent["marks"]>[number];
 const key = (mark: Mark) => JSON.stringify([mark.type, mark.attrs ?? {}]);
 /** Whether text has anything to translate: a letter outside tags and placeholders. */
-const hasWords = (tagged: string) => /\p{L}/u.test(tagged.replace(MARKUP, "").replace(/&\w{1,8};/g, ""));
+const hasWords = (tagged: string) => /\p{L}/u.test(unescape(tagged.replace(MARKUP, "")));
 
 /** A segment in the document: `check` says why a translation can't go back in (null: it can), `apply` puts it there. */
 type Slot = { id: string; source: string; check: (text: string) => string | null; apply: (text: string) => void };
@@ -478,6 +478,8 @@ export async function translateDoc(doc: Doc, options: TranslateOptions): Promise
 /** Plain text (an Inbox message) in another language, and the language it was in when `from` isn't given. */
 export async function translateText(text: string, options: TranslateOptions): Promise<{ text: string; detected?: string; problem?: Problem; providerError?: string }> {
   const { segment, apply, check } = segmentOfText(text);
+  // Nothing to translate (a link, code, numbers, emoji): the message is already readable as it is.
+  if (!hasWords(segment.text)) return { text };
   const result = await translateSegments([segment], { ...options, batchChars: Infinity }, check);
   const translated = result.translations["1"];
   if (translated === undefined) return { text, detected: result.detected, problem: result.problems[0] ?? { id: "1", reason: "no translation" }, providerError: result.providerError };
