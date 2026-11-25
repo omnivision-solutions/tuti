@@ -881,9 +881,14 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 ? "Your project's email is paused."
                 : subscribers === null
                 ? "Your portal is private, so it isn't emailed."
-                : subscribers === 0
-                  ? "Nobody has subscribed yet."
-                  : `${people(subscribers)} subscribed.`,
+                : entry.groups.length > 0
+                  ? // Counted in its groups only (changelogEmailed sends it to no one else).
+                    subscribers === 0
+                    ? "Nobody in its groups has subscribed."
+                    : `${people(subscribers)} in its groups subscribed.`
+                  : subscribers === 0
+                    ? "Nobody has subscribed yet."
+                    : `${people(subscribers)} subscribed.`,
               { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}

@@ -17,7 +17,7 @@ const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
 
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
-  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean },
+  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean; groups?: string[] },
   subscribers: number | null = 3,
 ) =>
   renderToStaticMarkup(
@@ -154,6 +154,12 @@ describe("the Publish dialog's line", () => {
 });
 
 describe("Who sees it", () => {
+  test("a draft for some groups counts, and says it counts, only the subscribers in them", () => {
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 0)).toContain("Nobody in its groups has subscribed.");
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 1)).toContain("1 person in its groups subscribed.");
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 0)).toContain("Nobody has subscribed yet.");
+  });
+
   const groups = [{ key: "enterprise", name: "Enterprise" }];
   const picker = (upgrade: { title: string; billingHref: string | null; note: string | null } | null) =>
     renderToStaticMarkup(createElement(WhoSeesIt, { groups, picked: ["enterprise"], upgrade, onChange: () => {} }));
