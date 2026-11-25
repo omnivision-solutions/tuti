@@ -23,6 +23,9 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 // The analysis a pull request gets has its own tests (code-changes.db.test.ts, where it runs): here it's queued and never run.
 // `claimFails`: pull requests whose code change can't be saved (the database refusing it).
+// The page reloading after an action (refresh), watched.
+const page = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/cache", () => ({ refresh: page.refresh, revalidatePath: () => {} }));
 const queue = vi.hoisted(() => ({ enqueue: vi.fn<(name: string, input: unknown) => Promise<undefined>>(async () => undefined), claimFails: new Set<number>() }));
 vi.mock("@tuti/jobs", async (importOriginal) => {
   const jobs = await importOriginal<typeof import("@tuti/jobs")>();
@@ -512,6 +515,8 @@ test("in the app, a later batch refused is an error, saying so though the batche
   const result = await addAction(project.slug, [...numbers, 999].map((number) => ({ repo, number })));
 
   expect(result).toMatchObject({ error: expect.any(String), number: 1, added: 50 });
+  // The 50 are in the draft: the page reloads with them, so its form doesn't save the text from before over them.
+  expect(page.refresh).toHaveBeenCalled();
 });
 
 test("in the app, Add changes takes one pull request at least and 500 at most", async () => {

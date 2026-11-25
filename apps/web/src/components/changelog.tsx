@@ -1026,6 +1026,9 @@ function EntryPullRequests({
 }
 
 /** "Add changes…": the merged pull requests no entry has, those Autopilot found nothing for users in unticked, added to the running draft. */
+/** The most one Add changes takes: addChangelogPullRequests' own limit (server/changelog.ts). */
+const MAX_PICKED_PULL_REQUESTS = 500;
+
 function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsTo: string | null; saved: () => boolean }) {
   const [open, setOpen] = useState(false);
   const [found, setFound] = useState<{ error?: string; missing?: MissingChanges } | null>(null);
@@ -1041,7 +1044,9 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
     startTransition(async () => {
       const result = await findMissingChanges(projectSlug);
       setFound(result);
-      setUnticked(new Set(result.missing?.pullRequests.filter((pr) => pr.forUsers === false).map(key)));
+      // Ticked: what Autopilot didn't find nothing for users in, up to what one Add takes (the action's limit).
+      let ticked = 0;
+      setUnticked(new Set(result.missing?.pullRequests.filter((pr) => pr.forUsers === false || ++ticked > MAX_PICKED_PULL_REQUESTS).map(key)));
     });
   const add = () =>
     // Into this draft's text: what isn't saved would be lost (adding to another draft leaves this one alone).
@@ -1052,8 +1057,11 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
         projectSlug,
         picked.map(({ repo, number }) => ({ repo, number })),
       );
-      if (result.error) {
+      // Nothing added (all in an entry by now): the list doesn't change, so nothing would clear the flag.
+      if (result.error || !result.added) {
         focusPullRequests.next = false;
+      }
+      if (result.error) {
         // Some were added before a later batch was refused: said, so the list isn't taken for what's missing still.
         setFound({ ...found, error: result.added ? `Added ${plural(result.added, "pull request")}, then: ${result.error}` : result.error });
         return;

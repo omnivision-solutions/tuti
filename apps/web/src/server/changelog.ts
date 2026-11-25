@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 
 import type { Reaction } from "@/lib/reactions";
@@ -188,7 +189,11 @@ export async function addChangelogPullRequests(
       added = { number: done.number ?? added?.number ?? null, added: (added?.added ?? 0) + done.added.length };
     }
   });
-  // A later batch refused: said, with what the ones before it added (they stay).
+  // A later batch refused: said, with what the ones before it added (they stay, so the page reloads with them, as it
+  // does after a success: its form would otherwise save the text from before over them).
+  if (result.error && added?.added) {
+    refresh();
+  }
   return result.error ? { ...result, ...(added && { number: added.number, added: added.added }) } : (added ?? result);
 }
 
