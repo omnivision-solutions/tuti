@@ -294,3 +294,8 @@ test("a moved break takes the open tags' marks, a tag around a space is empty, n
   expect(apply({ "1": "<b1>Fette Wörter</b1><br/>normale Wörter" }).doc.content![0]!.content![1]).toEqual({ type: "hardBreak" });
   expect(segmentOfText("See https://example.com/Foo_(bar_(baz)) now").segment.text).toBe("See <x1/> now");
 });
+
+test("a tag that is only a space in the source may be only a space in the translation", () => {
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Open" }, { type: "text", text: " ", marks: [{ type: "italic" }] }, { type: "text", text: "the settings page" }] }] });
+  expect(check("1", "Öffne<i1> </i1>die Einstellungen")).toBeNull();
+});

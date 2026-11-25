@@ -26,7 +26,7 @@ const TAG_LETTER: Record<string, string> = { link: "a", bold: "b", italic: "i", 
 const MARK_ORDER = Object.keys(TAG_LETTER);
 
 /** A newline the model wrote itself is a space: only the source's own breaks (<br/>) become line breaks. */
-const flat = (text: string) => text.replace(/[ \t]*\r?\n[ \t]*/g, " ");
+const flat = (text: string) => text.replace(/ ?\r?\n ?/g, " ");
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** Back to text: our three escapes, and the other entities models write by imitation (&quot;, &#39;, &nbsp;); &amp; last. */
 const ENTITIES: Record<string, string> = { lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
@@ -50,6 +50,8 @@ type Slot = { id: string; source: string; check: (text: string) => string | null
 /** A text block's inline content as tagged text, and how to read a translation of it back into inline content. */
 function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: string) => JSONContent[] | string } {
   const tags = new Map<number, Mark>(); // tag number → its mark
+  const worded = new Set<number>(); // tags with more than whitespace in the source: they must have it in a translation too
+  const holdsWords = (has: boolean) => has && open.forEach((tag) => worded.add(tag.id));
   const kept = new Map<number, JSONContent>(); // placeholder number → the node, as it was
   let n = 0;
   let out = "";
@@ -74,12 +76,15 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
     }
     const whole = node.type !== "text" || (node.marks ?? []).some((mark) => !(mark.type! in TAG_LETTER));
     if (node.type === "hardBreak") {
+      holdsWords(true);
       out += "<br/>";
     } else if (whole) {
       const id = ++n;
       kept.set(id, node);
+      holdsWords(true);
       out += `<x${id}/>`;
     } else {
+      holdsWords(Boolean(node.text?.trim()));
       out += escape(node.text ?? "");
     }
   }
@@ -131,7 +136,7 @@ function encodeInline(nodes: JSONContent[]): { text: string; decode: (text: stri
         if (match[1]) {
           const top = stack.pop();
           if (!top || top.id !== id || top.letter !== letter) return `</${letter}${id}> closes a tag that isn't the innermost open one`;
-          if (!top.filled) return `<${letter}${id}> is empty`;
+          if (!top.filled && worded.has(id)) return `<${letter}${id}> is empty`;
         } else {
           const mark = tags.get(id);
           if (!mark || TAG_LETTER[mark.type!] !== letter || seenTags.has(id)) return `<${letter}${id}> is unknown or repeated`;
