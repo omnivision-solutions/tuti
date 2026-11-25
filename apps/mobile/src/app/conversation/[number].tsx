@@ -218,10 +218,11 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
   const deliver = async (unsent: Unsent) => {
     const sent = await sendUnsent(api, draftKey, number, unsent, load);
     if (!sent) {
-      // An edit kept as its first version had gone out is said by the effect below, with why.
-      const kept = getDraft(draftKey).unsent.some((one) => unsentKey(one) === unsentKey(unsent) && one.error === FIRST_SENT);
-      if (IOS && !kept) {
-        AccessibilityInfo.announceForAccessibility("Not sent");
+      // An edit kept as its first version had gone out is said by the effect below, with why; a reply that went but
+      // wasn't closed says so (its error), never "Not sent".
+      const left = getDraft(draftKey).unsent.find((one) => unsentKey(one) === unsentKey(unsent));
+      if (IOS && left?.error !== FIRST_SENT) {
+        AccessibilityInfo.announceForAccessibility(left?.closeOnly && left.error ? left.error : "Not sent");
       }
     } else {
       const { leave, notice } = afterSend(sent, focused.current);

@@ -547,7 +547,7 @@ describe("a reply's requestId", () => {
         later.push(message({ id: `m-team-${later.length}`, author: "team", name: "Ravi", body: "Also fixed", createdAt }));
         teamWrote(seen, false);
       },
-      closeFails: () => (closeFails = true),
+      closeFails: (fails = true) => (closeFails = fails),
       closes: () => patches,
     };
   }
@@ -682,10 +682,9 @@ describe("a reply's requestId", () => {
     expect(afterSend(await sendUnsent(api, key, 12, closing, fetch), true)).toEqual({ leave: false, notice: "Sent, and kept open: they wrote again since" });
     failFetches();
     updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
-    expect(afterSend(await sendUnsent(api, key, 12, closing, fetch), true)).toEqual({
-      leave: false,
-      notice: "Sent, but not closed: Couldn't reach tuti.example.com. Check the address and your connection.",
-    });
+    // The fetch can't tell: kept as close-only, with why, for Retry.
+    expect(await sendUnsent(api, key, 12, closing, fetch)).toBeNull();
+    expect(getDraft(key).unsent).toEqual([{ ...closing, closeOnly: true, error: "Sent, but not closed: Couldn't reach tuti.example.com. Check the address and your connection." }]);
     expect(closes()).toBe(0);
   });
 
@@ -819,16 +818,38 @@ describe("a reply's requestId", () => {
     expect(getDraft(key).unsent).toEqual([]);
   });
 
-  it("says why when closing a repeated Send and close fails", async () => {
-    const { api, fetch, loseAnswer, closeFails } = server();
+  it("keeps a repeated Send and close whose close fails as close-only, with why: a Retry closes it with no second message", async () => {
+    const { api, saved, fetch, loseAnswer, closeFails, closes } = server();
     // A plain Send first, its answer lost; then the same words with Send and close.
     updateDraft(key, (draft) => ({ ...draft, unsent: [thanks] }));
     loseAnswer();
     await sendUnsent(api, key, 12, thanks, nothing);
     const closing: Unsent = { ...thanks, close: true };
     updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
-    closeFails();
-    expect(afterSend(await sendUnsent(api, key, 12, closing, fetch), true)).toEqual({ leave: false, notice: "Sent, but not closed: tuti.example.com answered 500. Try again." });
+    closeFails(true);
+    expect(await sendUnsent(api, key, 12, closing, fetch)).toBeNull();
+    expect(getDraft(key).unsent).toEqual([{ ...closing, closeOnly: true, error: "Sent, but not closed: tuti.example.com answered 500. Try again." }]);
+    // Retry, the close working now: no second message, and it's closed.
+    closeFails(false);
+    expect(afterSend(await sendUnsent(api, key, 12, getDraft(key).unsent[0]!, fetch), true)).toEqual({ leave: true, notice: null });
+    expect(saved.size).toBe(1);
+    expect(closes()).toBe(1);
+    expect(getDraft(key).unsent).toEqual([]);
+  });
+
+  it("says an id clash plainly on a close-only reply, so Edit gives it a new id", async () => {
+    const closing: Unsent = { ...thanks, close: true, closeOnly: true, error: CLOSE_LEFT };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
+    const { api } = fakeApi({
+      "/conversations/12/messages": () => {
+        throw new ApiError(409, "request_id_used", "This requestId was already used for another reply");
+      },
+    });
+    // The conversation doesn't show its id: an id clash, said as such, no longer close-only.
+    expect(await sendUnsent(api, key, 12, closing, nothing)).toBeNull();
+    expect(getDraft(key).unsent).toEqual([{ ...closing, closeOnly: undefined, error: ID_CLASH }]);
+    updateDraft(key, (draft) => editUnsent(draft, draft.unsent[0]!));
+    expect(unsentId(getDraft(key), "reply")).not.toBe("u1");
   });
 
   it("keeps an edit a fetch finds under its first version's id, though the edit's own send failed: said, and sendable", async () => {

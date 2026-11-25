@@ -144,4 +144,28 @@ describe("a Send and close whose reply arrived, the conversation still waiting o
     expect(screen.queryByText(/^Not sent/)).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
+
+  it("announces a failed Retry as sent but not closed, never as Not sent", async () => {
+    const closing: Unsent = { id: "u1", body: "Thanks!", note: false, close: true, files: [], seen: "2026-11-25T09:00:00.000Z", error: NETWORK };
+    updateDraft(key, (draft) => ({ ...draft, unsent: [closing] }));
+    let online = true;
+    mockApi.mockImplementation((path, init) => {
+      if (path === "/conversations/12") {
+        return Promise.resolve(conversation([message({}), first], "waiting"));
+      }
+      if (path === "/conversations/12/messages" && init?.method === "POST" && !online) {
+        return Promise.reject(new ApiError(0, "unreachable", NETWORK));
+      }
+      return Promise.resolve({});
+    });
+    await render(<ConversationRoute />);
+    await screen.findByText(CLOSE_LEFT);
+    online = false;
+
+    await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText(`Sent, but not closed: ${NETWORK}`)).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(`Sent, but not closed: ${NETWORK}`);
+    expect(announce).not.toHaveBeenCalledWith("Not sent");
+  });
 });

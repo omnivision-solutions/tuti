@@ -308,7 +308,7 @@ const sameMessage = (message: Message, unsent: Unsent) =>
 
 /**
  * What the server says of a reply sent: `closed` with Send and close, `keptOpen` when the user wrote after what it
- * answered. `notClosed`: sent, but Send and close couldn't close it (why). An edit whose first version had already been
+ * answered. `notClosed` (closeRepeat's): sent, but not closed (why), which keeps it as a close-only reply. An edit whose first version had already been
  * sent stays unsent, said (`withoutSent`).
  */
 export type Sent = { id?: string; closed?: boolean; keptOpen?: boolean; notClosed?: string };
@@ -544,7 +544,12 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
   const mark = (error: string | undefined) => (draft: Draft) => ({
     ...draft,
     unsent: draft.unsent.map((one) =>
-      one.id !== unsent.id ? one : error && closeOnly ? { ...one, error: `Sent, but not closed: ${error}`, closeOnly: true } : { ...one, error, closeOnly: undefined },
+      one.id !== unsent.id
+        ? one
+        : // An id clash says only that (Edit gives it a new id by it), never as close-only.
+          error && closeOnly && error !== ID_CLASH
+          ? { ...one, error: `Sent, but not closed: ${error}`, closeOnly: true }
+          : { ...one, error, closeOnly: undefined },
     ),
   });
   const drop = (draft: Draft) => ({ ...draft, unsent: draft.unsent.filter((one) => one.id !== unsent.id) });
@@ -585,6 +590,11 @@ export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent
     );
     const answer = unsent.close && sent.closed === undefined && sent.keptOpen === undefined ? await closeRepeat(api, number, fetched) : sent;
     sends.delete(unsent.id);
+    if (answer.notClosed !== undefined) {
+      // Sent, but the close couldn't be done or told: kept for Retry, whose repeat only closes.
+      updateDraft(key, (draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, closeOnly: true, error: `Sent, but not closed: ${answer.notClosed}` } : one)) }), since);
+      return null;
+    }
     updateDraft(key, drop, since);
     return answer;
   })();
@@ -624,7 +634,7 @@ async function closeRepeat(api: Api, number: number, fetched: Fetched | { why: s
  */
 export const afterSend = (sent: Sent | null, focused: boolean) => ({
   leave: !!sent?.closed && focused,
-  notice: sent?.keptOpen ? "Sent, and kept open: they wrote again since" : sent?.notClosed ? `Sent, but not closed: ${sent.notClosed}` : null,
+  notice: sent?.keptOpen ? "Sent, and kept open: they wrote again since" : null,
 });
 
 /** Said on an edit kept unsent as its first version had already gone out (a 409, or a fetch: `withoutSent`). */
