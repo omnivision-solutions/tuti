@@ -42,6 +42,11 @@ test("only the launch languages, each once, never the default one", async () => 
   await expect(update({ languages: [{ code: "sv" as "de" }] })).rejects.toMatchObject({ status: 400 });
   await expect(update({ languages: [{ code: "de" }, { code: "de" }] })).rejects.toThrow("Each language once");
   await expect(update({ languages: [{ code: "en" }] })).rejects.toThrow("English is the default language");
+  await expect(update({})).rejects.toMatchObject({ status: 400 });
+  await expect(update({ languages: [{ code: "de", instructions: "a".repeat(2001) }] })).rejects.toThrow("Keep the instructions under 2,000 characters");
+  // The limit counts after trimming.
+  const saved = await update({ languages: [{ code: "de", instructions: `  ${"a".repeat(2000)}  ` }] });
+  expect(saved.languages[0]?.instructions).toHaveLength(2000);
 });
 
 test("the default language changes only while it's the only one", async () => {
