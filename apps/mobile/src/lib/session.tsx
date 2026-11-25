@@ -70,6 +70,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await inTurn(async () => {
       if (draftsGoWith(await readSession(), which)) {
         forgetDrafts();
+        // And what's on the lock screen, as on signing out: ended by the server (removed, a password reset) too.
+        void dismissDelivered();
       }
       await forgetSession(which);
     });

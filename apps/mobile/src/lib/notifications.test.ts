@@ -11,7 +11,7 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("expo-web-browser", () => ({}));
 const files = new Map<string, string>();
 vi.mock("expo-file-system", () => ({
-  Paths: { document: "documents" },
+  Paths: { document: "documents", cache: "cache" },
   File: class {
     constructor(
       readonly dir: string,
@@ -98,6 +98,8 @@ describe("asking for permission", () => {
     const { shouldOffer } = await load();
     expect(await shouldOffer()).toBe(true);
     expect(await shouldOffer()).toBe(false);
+    // Marked in the cache, which backups leave out: a new Android phone restores its documents, not the permission.
+    expect([...files.keys()]).toEqual(["cache/notifications-asked"]);
     vi.resetModules();
     expect(await (await load()).shouldOffer()).toBe(false);
   });

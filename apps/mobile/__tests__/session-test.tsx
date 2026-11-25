@@ -32,7 +32,7 @@ async function landWrites() {
 }
 
 function Harness() {
-  const { session, setProject, signOut } = useSession();
+  const { session, setProject, signOut, api } = useSession();
   return (
     <>
       <Text testID="project">{session === null ? "signed out" : (session?.project ?? "")}</Text>
@@ -44,6 +44,9 @@ function Harness() {
       </Pressable>
       <Pressable onPress={() => void signOut()}>
         <Text>Sign out</Text>
+      </Pressable>
+      <Pressable onPress={() => void api?.("/projects").catch(() => {})}>
+        <Text>Call</Text>
       </Pressable>
     </>
   );
@@ -115,6 +118,24 @@ describe("signing out", () => {
     expect(removal).toBeGreaterThan(-1);
     expect(removal).toBeLessThan(asked.indexOf("POST https://tuti.example.com/api/auth/sign-out"));
     // The notifications shown go too.
+    expect(mockDismissed).toHaveBeenCalled();
+  });
+
+  it("takes the notifications shown off when the server ends the session too", async () => {
+    mockStored.set("session", JSON.stringify(session));
+    mockDismissed.mockClear();
+    jest.mocked(globalThis.fetch).mockImplementation(async (url) => (String(url).endsWith("/projects") ? new Response("{}", { status: 401 }) : new Response("{}")));
+    await render(
+      <SessionProvider>
+        <Harness />
+      </SessionProvider>,
+    );
+    await screen.findByText("acme");
+
+    await fireEvent.press(screen.getByText("Call"));
+    await landWrites();
+
+    expect(await screen.findByText("signed out")).toBeTruthy();
     expect(mockDismissed).toHaveBeenCalled();
   });
 });

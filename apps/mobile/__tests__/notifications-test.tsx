@@ -55,7 +55,7 @@ jest.mock("expo-crypto", () => ({ randomUUID: () => "phone-1" }));
 // The app's own files: whether it has asked.
 const mockFiles = new Set<string>();
 jest.mock("expo-file-system", () => ({
-  Paths: { document: "documents" },
+  Paths: { document: "documents", cache: "cache" },
   File: class {
     mockName: string;
     constructor(_dir: unknown, mockName: string) {

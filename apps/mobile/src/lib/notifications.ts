@@ -18,8 +18,11 @@ import { STORE_OPTIONS } from "./sign-in";
 type Platform = "ios" | "android";
 
 const DEVICE_ID = "device-id";
-/** Asked already, in a file rather than the keychain: iOS forgets the permission on reinstalling, and so does this. */
-const asked = () => new File(Paths.document, "notifications-asked");
+/**
+ * Asked already, in a file rather than the keychain: iOS forgets the permission on reinstalling, and so does this. In
+ * the cache, which backups leave out: Android restores its documents on a new phone, not the permission.
+ */
+const asked = () => new File(Paths.cache, "notifications-asked");
 /** The channel the server's pushes name (packages/jobs push.ts): unnamed, they'd go to Expo's own "Miscellaneous". */
 const CHANNEL = "default";
 
