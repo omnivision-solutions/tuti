@@ -511,12 +511,13 @@ test("in the app, a later batch refused is an error, saying so though the batche
   }
   actAs(owner);
 
+  page.refresh.mockClear();
   // The 51st isn't a merged pull request of the project's: its batch is refused.
   const result = await addAction(project.slug, [...numbers, 999].map((number) => ({ repo, number })));
 
   expect(result).toMatchObject({ error: expect.any(String), number: 1, added: 50 });
   // The 50 are in the draft: the page reloads with them, so its form doesn't save the text from before over them.
-  expect(page.refresh).toHaveBeenCalled();
+  expect(page.refresh).toHaveBeenCalledTimes(1);
 });
 
 test("in the app, Add changes takes one pull request at least and 500 at most", async () => {
