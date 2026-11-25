@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   if (!found) {
     return new NextResponse("This unsubscribe link doesn't work.", { status: 404 });
   }
-  await found.unsubscribe();
+  await found.unsubscribe("email");
   const form = await request.formData().catch(() => null);
   if (form?.get("List-Unsubscribe") === "One-Click") {
     return new NextResponse("Unsubscribed.");

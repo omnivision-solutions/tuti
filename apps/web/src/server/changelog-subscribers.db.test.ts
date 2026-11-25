@@ -1,11 +1,11 @@
-import { billingFile, configFile } from "@tuti/testkit";
+import { billingFile, configFile, startWebhookReceiver } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { changelogReach, type ChangelogReach, handlers, projectUnsubscribeToken, reached, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import AccountPage from "@/app/portal/[project]/(site)/account/page";
 import SubscriptionPage from "@/app/portal/[project]/(site)/changelog/subscription/page";
@@ -1436,5 +1436,97 @@ describe("the Account's changelog switch", () => {
     expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: true });
     expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
     await check("unconfirmed");
+  });
+});
+
+describe("the changelog.unsubscribed webhook: once whenever the changelog stops being emailed to an address", () => {
+  let receiver: Awaited<ReturnType<typeof startWebhookReceiver>>;
+  beforeAll(async () => {
+    receiver = await startWebhookReceiver();
+  });
+  afterAll(() => receiver.close());
+  beforeEach(async () => {
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"); // the receiver is local
+    await prisma.webhook.create({
+      data: { projectId: project.id, url: receiver.url, secret: "whsec_x", events: ["changelog.unsubscribed"], createdById: owner.id },
+    });
+  });
+  /** What the project's webhooks were told, in order. */
+  const told = async () =>
+    (await prisma.webhookDelivery.findMany({ where: { webhook: { projectId: project.id } }, orderBy: { createdAt: "asc" }, select: { event: true, payload: true } })).map(
+      ({ event, payload }) => {
+        const { email, userId, source, allEmails, unsubscribedAt } = (payload as { data: Record<string, unknown> }).data;
+        expect(unsubscribedAt).toEqual(expect.any(String));
+        return { event, email, userId, source, allEmails };
+      },
+    );
+  const unsubscribedAt = async (email: string) =>
+    (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).unsubscribedAt;
+
+  test("the email's link and one click from a mail app: once each, never again for one ended, nor for one never confirmed; confirming again clears it", async () => {
+    const [kim, lee, asked] = [newAddress(), newAddress(), newAddress()];
+    const [kimToken, leeToken] = [await confirmed(kim), await confirmed(lee)];
+    await subscribe(asked);
+    expect((await unsubscribe(kimToken)).status).toBe(303);
+    expect((await unsubscribe(leeToken, true)).status).toBe(200);
+    await unsubscribe(kimToken);
+    await unsubscribe(await tokenOf(asked));
+    const event = { event: "changelog.unsubscribed", userId: null, source: "email", allEmails: false };
+    expect(await told()).toEqual([
+      { ...event, email: kim },
+      { ...event, email: lee },
+    ]);
+    expect(receiver.received.filter((r) => r.headers["tuti-event-type"] === "changelog.unsubscribed")).toHaveLength(2);
+    expect(await unsubscribedAt(kim)).toEqual(expect.any(Date));
+    expect(await unsubscribedAt(asked)).toBeNull();
+
+    await confirmed(kim);
+    expect(await unsubscribedAt(kim)).toBeNull();
+  });
+
+  test("the Account's switch (account), or the team's app turning it off for someone (api, with their id in the app)", async () => {
+    const ada = await signUp("Ada");
+    await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await setEmailPreference(project.slug, "changelog", false)).toEqual({});
+
+    const email = newAddress();
+    const sam = await ssoUser(email);
+    actAs(sam);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+    await call(updateEmailPreferences, key, { changelog: false, author: { id: sam.id } });
+
+    expect(await told()).toEqual([
+      { event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: false },
+      { event: "changelog.unsubscribed", email, userId: sam.id, source: "api", allEmails: false },
+    ]);
+    expect(await unsubscribedAt(email)).toEqual(expect.any(Date));
+  });
+
+  test("turning all of the project's emails off stops the changelog too (allEmails): not again, nor once its own unsubscribe follows, nor for someone not subscribed", async () => {
+    const email = newAddress();
+    const sam = await ssoUser(email);
+    actAs(sam);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    await optOut(sam.id);
+    await optOut(sam.id);
+    await unsubscribe(await tokenOf(email));
+    const other = await ssoUser(newAddress());
+    await optOut(other.id);
+
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email, userId: sam.id, source: "email", allEmails: true }]);
+    // The opt-out leaves the subscription as it was (turning emails back on restarts it); its own unsubscribe ended it.
+    expect(await unsubscribedAt(email)).toEqual(expect.any(Date));
+  });
+
+  test("from the Account's Stop emails (account), once", async () => {
+    const ada = await signUp("Ada");
+    await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });
+    actAs(ada);
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "account", allEmails: true }]);
   });
 });
