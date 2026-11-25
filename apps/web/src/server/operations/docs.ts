@@ -39,7 +39,7 @@ import { type Access, ACCESSES, fromNoAccess, fromReadAccess, type Level, NO_ACC
 import { claimsOf, levelSelect, MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { inTreeOrder, listedArticle, readableArticle, readingOrder } from "../docs-queries";
+import { ARTICLE_ID, inTreeOrder, listedArticle, readableArticle, readingOrder } from "../docs-queries";
 import { searchDocs } from "../docs-search";
 import { actorReader } from "../portal-access";
 import { isTeam } from "./changelog";
@@ -166,6 +166,10 @@ const collectionRef = z
 /** articleView's result. */
 const articleOutput = z
   .object({
+    id: z
+      .string()
+      .describe("Its ID: made once and never changed, so embeds and the API can refer to it whatever its slug becomes")
+      .meta({ examples: ["a_7k2m9x4p"] }),
     slug: z
       .string()
       .describe("Its slug: the end of its address, /docs/<slug>. A draft's follows its title unless the team set it; a published one keeps it")
@@ -287,6 +291,7 @@ function checkIcon(icon: string | null | undefined, current: string | null = nul
 
 const articleSelect = {
   id: true,
+  publicId: true,
   slug: true,
   title: true,
   body: true,
@@ -314,6 +319,7 @@ const portalOf = async (projectId: string) => portalAddress(await projectSlug(pr
 
 function articleView({ changes, ...article }: ArticleRow, portal: string, team: boolean) {
   return {
+    id: article.publicId,
     slug: article.slug,
     title: article.title,
     status: article.publishedAt ? ("published" as const) : ("draft" as const),
@@ -356,6 +362,20 @@ function articleView({ changes, ...article }: ArticleRow, portal: string, team: 
 /** A live (not deleted) article. */
 const findArticle = (projectId: string, slug: string) =>
   prisma.article.findFirst({ where: { projectId, slug, deletedAt: null }, select: articleSelect });
+
+/**
+ * A live article by its ID or slug: an ID (a shape no slug has) by its ID; a slug as the current one,
+ * else the article that had it before (its redirect).
+ */
+async function articleByRef(projectId: string, ref: string) {
+  if (ARTICLE_ID.test(ref)) {
+    return prisma.article.findFirst({ where: { projectId, publicId: ref, deletedAt: null }, select: articleSelect });
+  }
+  return (
+    (await findArticle(projectId, ref)) ??
+    prisma.article.findFirst({ where: { projectId, deletedAt: null, redirects: { some: { projectId, slug: ref } } }, select: articleSelect })
+  );
+}
 
 async function teamArticle(projectId: string, slug: string) {
   const article = await findArticle(projectId, slug);
@@ -939,15 +959,20 @@ export const listArticles = defineOperation({
 export const getArticle = defineOperation({
   name: "articles.get",
   title: "Get an article",
-  summary: "Get a docs article by its slug. Drafts, hidden and AI-only articles only for the team, which also gets its unpublished `changes`",
+  summary:
+    "Get a docs article by its ID or its slug (an old slug too). Drafts, hidden and AI-only articles only for the team, which also gets its unpublished `changes`",
   method: "GET",
   path: "/articles/{slug}",
   scope: "read",
   access: "anyone",
-  input: z.object({ slug: articleSlug }),
+  input: z.object({
+    slug: slug
+      .describe("The article's ID (`a_…`, from its `id`), or its slug: the end of its address, /docs/<slug>, or one it had before")
+      .meta({ examples: ["a_7k2m9x4p", "getting-started"] }),
+  }),
   output: articleOutput.describe("The article"),
   run: async ({ actor, projectId }, input) => {
-    const [article, team] = await Promise.all([findArticle(projectId, input.slug), isTeam(actor, projectId)]);
+    const [article, team] = await Promise.all([articleByRef(projectId, input.slug), isTeam(actor, projectId)]);
     // An article without a page (a draft, hidden or AI only) is as good as missing to everyone but the team.
     const served = article?.publishedAt && SERVED.includes(article.listing);
     // Nor one that isn't for them (see articles.list).

@@ -1493,7 +1493,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page." });
+  const { id } = await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page." });
   await api("/articles/inviting-your-team/publish", {});
 
   await team.goto(`/app/${slug}/docs/inviting-your-team`);
@@ -1510,6 +1510,13 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
   await expect(dialog.getByRole("checkbox", { name: /^Show the updated date/ })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
+  // Embed: the article's ID, and a help button that opens it in the widget by it, each with Copy.
+  await expect(dialog.getByText(id, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(`<button type="button" data-tuti-article="${id}">Help</button>`, { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Copy article ID" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Copy help button" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Copy help button" }).scrollIntoViewIfNeeded();
+  await checkpoint(team, "team-docs-article-settings-embed", { fullPage: false });
   // The inset reaches 77rem with the collapsed rail: the shared card takes 330px beside the text.
   await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();
   await expect.poll(async () => Math.round((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width)).toBe(330);

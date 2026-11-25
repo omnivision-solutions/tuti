@@ -586,6 +586,18 @@ export async function isArticleSlug(projectSlug: string, slug: string): Promise<
 }
 
 /** Where an article that had `slug` is now (its current slug), for its .md and the widget: as movedPage. */
+/** An article's ID (Article.publicId): `a_` and 8 lowercase letters and digits, which no slug can be (they have no `_`). */
+export const ARTICLE_ID = /^a_[a-z0-9]{8}$/;
+
+/** The slug of the live article with ID `id` in the project (null for none, or for a slug), for the widget to open it by. */
+export async function articleById(projectSlug: string, id: string): Promise<string | null> {
+  if (!ARTICLE_ID.test(id)) {
+    return null;
+  }
+  const article = await prisma.article.findFirst({ where: { publicId: id, deletedAt: null, project: { slug: projectSlug } }, select: { slug: true } });
+  return article?.slug ?? null;
+}
+
 export async function movedArticle(projectSlug: string, slug: string): Promise<string | null> {
   return (await movedPage(projectSlug, slug))?.article ?? null;
 }

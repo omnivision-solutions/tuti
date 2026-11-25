@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { ToolsContext } from "@/components/article-tools";
 import { CollectionSelect } from "@/components/collection-select";
+import { CopyField } from "@/components/copy-button";
 import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -139,6 +140,8 @@ export function ArticleSettings({ saved, inline = false }: { saved?: Saved; inli
 type Saved = {
   projectSlug: string;
   article: {
+    /** Its ID (`a_…`), for embeds and the API. */
+    id: string;
     slug: string;
     published: boolean;
     /** Its collection as saved last (its unpublished changes', if it has some). */
@@ -312,6 +315,12 @@ function SavedSettings({
               description="Asks search engines not to list this article."
             />
           </FieldGroup>
+        </FieldSet>
+        <FieldSet>
+          <FieldLegend>Embed</FieldLegend>
+          <FieldDescription>Open this article in the widget from your app. Its ID never changes, so links keep working if you rename it.</FieldDescription>
+          <CopyField label="Article ID" value={article.id} name="article ID" />
+          <CopyField label="Help button" value={`<button type="button" data-tuti-article="${article.id}">Help</button>`} name="help button" />
         </FieldSet>
         {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}
       </FieldGroup>

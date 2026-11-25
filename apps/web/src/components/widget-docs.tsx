@@ -14,7 +14,7 @@ import { WidgetLocked } from "@/components/widget-locked";
 import { WIDGET_LABEL, WIDGET_ROW, WIDGET_TILE } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
-import { articleCount, articleTabs, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { articleById, articleCount, articleTabs, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
 import { portalHref, portalLinks } from "@/server/portal-base";
@@ -202,8 +202,9 @@ async function WidgetArticle({
   from?: string;
 }) {
   const link = await portalLinks();
-  // An old slug of an article that has since moved opens it where it is now.
-  const moved = (await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked);
+  // An article's ID opens it at its slug; an old slug of one that has since moved, where it is now.
+  const byId = await articleById(projectSlug, asked);
+  const moved = byId ?? ((await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked));
   const slug = moved ?? asked;
   // One locked for this reader: its title, and what to do.
   const article = (await publishedArticle(projectSlug, slug)) ?? (await lockedForReader(projectSlug, slug));
