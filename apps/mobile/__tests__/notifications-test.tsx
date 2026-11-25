@@ -14,6 +14,7 @@ const mockSystem = {
   onTap: null as ((response: Response) => void) | null,
   onToken: null as ((token: { type: string; data: string }) => void) | null,
   asked: 0,
+  tokenReads: 0,
   handler: null as { handleNotification: (notification: unknown) => Promise<{ shouldShowBanner: boolean }> } | null,
 };
 jest.mock("expo-notifications", () => ({
@@ -28,7 +29,10 @@ jest.mock("expo-notifications", () => ({
     mockSystem.permissions = { granted: true, status: "granted", canAskAgain: true };
   },
   setNotificationChannelAsync: async () => {},
-  getExpoPushTokenAsync: async ({ devicePushToken }: { devicePushToken?: { data: string } }) => ({ data: `ExponentPushToken[${devicePushToken?.data ?? "one"}]` }),
+  getExpoPushTokenAsync: async ({ devicePushToken }: { devicePushToken?: { data: string } }) => {
+    mockSystem.tokenReads++;
+    return { data: `ExponentPushToken[${devicePushToken?.data ?? "one"}]` };
+  },
   getLastNotificationResponse: () => mockSystem.last,
   clearLastNotificationResponse: () => (mockSystem.last = null),
   addNotificationResponseReceivedListener: (listener: (response: Response) => void) => {
@@ -159,12 +163,13 @@ describe("a tapped notification", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("opens a conversation of the same project over the screens open", async () => {
+  it("goes back to the Inbox before opening a conversation of the same project: never over a sheet", async () => {
     mockOpen = true;
     await render(<Harness />);
     await act(async () => mockSystem.onTap!(tap({ project: "acme", conversation: 4 })));
-    expect(mockDismissAll).not.toHaveBeenCalled();
+    expect(mockSetProject).not.toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith("/conversation/4");
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockPush.mock.invocationCallOrder[0]!);
   });
 
   it("opens nothing signed out, where sign-in is all there is", async () => {
@@ -231,6 +236,23 @@ describe("registering the phone", () => {
     await act(async () => front.forEach((listener) => listener("active")));
     await act(async () => {});
     expect(mockApi).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads no token again on coming to the foreground once registered for the session", async () => {
+    newSession();
+    const front: ((state: string) => void)[] = [];
+    jest.spyOn(AppState, "addEventListener").mockImplementation((_type, listener) => {
+      front.push(listener as (state: string) => void);
+      return { remove: () => {} } as never;
+    });
+    await render(<Harness />);
+    await waitFor(() => expect(mockApi).toHaveBeenCalledWith("/devices", expect.objectContaining({ method: "POST" })));
+    const reads = mockSystem.tokenReads;
+
+    await act(async () => front.forEach((listener) => listener("active")));
+    await act(async () => {});
+    expect(mockSystem.tokenReads).toBe(reads);
+    expect(mockApi).toHaveBeenCalledTimes(1);
   });
 
   it("registers nothing signed out, or before a project is chosen", async () => {

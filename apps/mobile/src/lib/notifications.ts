@@ -87,6 +87,8 @@ const projectId = () => (Constants.expoConfig?.extra?.eas?.projectId as string |
 
 /** The session and Expo token last registered (or being registered): the same pair isn't sent twice. */
 let registered: string | null = null;
+/** Whether this phone is registered (or being registered) for the session: cleared when a registration fails. */
+export const registeredFor = (session: { token: string }) => !!registered?.startsWith(`${session.token}\n`);
 /** Moves on with each registration and removal: a removal's late failure leaves a registration started since alone. */
 let turn = 0;
 
@@ -194,10 +196,10 @@ export function behaviourFor(notification: Notifications.Notification, signedOut
 }
 
 /**
- * Opens a tapped notification's conversation, in its project. Another project: only one of the teammate's (`projects`,
- * their slugs; a notification left from another account, or posted by something else, opens nothing), and the screens
- * open go first (`leave`, back to the Inbox), as a conversation open would show the other project's of its number, then
- * the project switches. Signed out, nothing (sign-in is all there is).
+ * Opens a tapped notification's conversation, in its project, over the Inbox: the screens open go first (`leave`), so
+ * it never opens over a sheet, and a conversation open can't show another project's of its number. Another project: only
+ * one of the teammate's (`projects`, their slugs; a notification left from another account, or posted by something else,
+ * opens nothing), switched to before it opens. Signed out, nothing (sign-in is all there is).
  */
 export async function openTarget(
   target: Target,
@@ -208,11 +210,13 @@ export async function openTarget(
   if (!session) {
     return;
   }
-  if (session.project !== target.project) {
-    if (!(await projects().catch(() => [] as string[])).includes(target.project)) {
-      return;
-    }
-    leave();
+  const other = session.project !== target.project;
+  if (other && !(await projects().catch(() => [] as string[])).includes(target.project)) {
+    return;
+  }
+  // Back to the Inbox first, also in the same project: never over a sheet (the details, Android's projects).
+  leave();
+  if (other) {
     await setProject(target.project);
   }
   open(`/conversation/${target.number}`);

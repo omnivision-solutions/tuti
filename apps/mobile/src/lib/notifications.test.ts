@@ -294,8 +294,9 @@ describe("opening a tapped notification", () => {
     const leave = vi.fn();
     await openTarget({ project: "acme", number: 7 }, signedIn, setProject, { leave, open, projects });
     expect(setProject).not.toHaveBeenCalled();
-    expect(leave).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith("/conversation/7");
+    // Back to the Inbox first, so it never opens over a sheet.
+    expect(leave.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0]!);
   });
 
   it("leaves the screens open, then switches to its project", async () => {

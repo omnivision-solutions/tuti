@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import { Alert, AppState, Platform } from "react-native";
 
 import type { Api } from "@/lib/api";
-import { askPermission, behaviourFor, onRegisterAgain, openTarget, registerAgain, registerDevice, shouldOffer, type Target, tapped } from "@/lib/notifications";
+import { askPermission, behaviourFor, onRegisterAgain, openTarget, registerAgain, registerDevice, registeredFor, shouldOffer, type Target, tapped } from "@/lib/notifications";
 import { type Session, useSession } from "@/lib/session";
 
 const platform = Platform.OS === "ios" ? "ios" : "android";
@@ -21,13 +21,19 @@ function usePushRegistration(session: Session | null | undefined, api: Api | nul
       void registerDevice(api, session, platform, devicePushToken).catch(() => {});
     }
   });
+  const registerUnlessDone = useEffectEvent(() => {
+    if (session && !registeredFor(session)) {
+      register();
+    }
+  });
   useEffect(() => {
     if (!signedIn) {
       return;
     }
     register();
     const changed = Notifications.addPushTokenListener((token) => register(token));
-    const front = AppState.addEventListener("change", (state) => state === "active" && register());
+    // A phone already registered for the session reads no token again; the token listener covers a new one.
+    const front = AppState.addEventListener("change", (state) => state === "active" && registerUnlessDone());
     const stop = onRegisterAgain(() => register());
     return () => {
       changed.remove();
