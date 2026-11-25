@@ -152,8 +152,14 @@ describe("Reply", () => {
     phone.dismissed = [];
     await (await load()).act(response("reply", { userText: "On it!", project: "initech", id: "push-2" }));
     expect(calls.map((call) => call.url)).toEqual([`${SERVER}/api/v1/projects`]);
-    expect(phone.dismissed).toEqual([]);
-    expect(phone.shown).toEqual([]);
+    // Not sent, and said so, rather than left spinning.
+    expect(phone.dismissed).toEqual(["push-2"]);
+    expect(phone.shown.map((shown) => shown.content)).toEqual([
+      { title: "Your reply didn't send", body: "Ada · Acme: It's in a project you're not on.", data: { project: "initech", conversation: 7 } },
+    ]);
+    const { getDraft } = await import("./conversation");
+    const { screenKey } = await import("./details");
+    expect(getDraft(screenKey({ server: SERVER, project: "initech" }, 7)).unsent).toEqual([]);
   });
 
   it("that can't check the project (offline) is kept too, never lost", async () => {
@@ -169,12 +175,12 @@ describe("Reply", () => {
     expect(getDraft(screenKey({ server: SERVER, project: "globex" }, 7)).unsent.map((one) => one.body)).toEqual(["On it!"]);
   });
 
-  it("does nothing signed out", async () => {
+  it("signed out, sends nothing and says so", async () => {
     phone.stored.clear();
     await (await load()).act(response("reply", { userText: "On it!" }));
     expect(calls).toEqual([]);
-    expect(phone.dismissed).toEqual([]);
-    expect(phone.shown).toEqual([]);
+    expect(phone.dismissed).toEqual(["push-1"]);
+    expect(phone.shown.map((shown) => [shown.content.title, shown.content.body])).toEqual([["Your reply didn't send", "Ada · Acme: You're signed out of Tuti."]]);
   });
 
   it("that didn't send is kept in the conversation with Retry, and a notification says so and opens it", async () => {
