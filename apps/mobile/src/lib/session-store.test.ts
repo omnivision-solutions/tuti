@@ -87,6 +87,18 @@ describe("signing out", () => {
     );
   });
 
+  it("leaves a newer session alone when told to forget an older one (a late check or 401)", async () => {
+    await writeSession({ ...session, token: "new", cookie: "tuti.session_token=new" });
+    const fetch = vi.fn(async () => Response.json({ success: true }));
+    vi.stubGlobal("fetch", fetch);
+    await forgetSession(session);
+    expect(await readSession()).toMatchObject({ token: "new" });
+    expect(fetch).not.toHaveBeenCalled();
+    // The one it's told about, it forgets.
+    await forgetSession({ ...session, token: "new" });
+    expect(await readSession()).toBeNull();
+  });
+
   it("forgets the session even when the server can't be reached", async () => {
     await writeSession(session);
     vi.stubGlobal("fetch", vi.fn(async () => {

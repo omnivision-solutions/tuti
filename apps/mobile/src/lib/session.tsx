@@ -22,14 +22,24 @@ const Context = createContext<SessionContext | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
-  const save = useCallback(async (next: Session | null) => {
-    setSession(next);
-    await writeSession(next);
-  }, []);
+  const save = useCallback(
+    async (next: Session | null) => {
+      setSession(next);
+      await writeSession(next);
+    },
+    [],
+  );
 
   const signOut = useCallback(async () => {
     setSession(null);
     await forgetSession();
+  }, []);
+
+  // A session found ended (a check, a 401, which can answer late): signed out only if it's still the one in use, so a
+  // teammate who signed out and back in meanwhile stays signed in.
+  const ended = useCallback(async (which: Session) => {
+    setSession((now) => (now?.token === which.token ? null : now));
+    await forgetSession(which);
   }, []);
 
   // Reading the session keeps it going (API calls don't): at launch, and on coming back to the foreground twice a day, as
@@ -39,10 +49,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (stored: Session) => {
       lastChecked.current = Date.now();
       if (!(await sessionHolds(stored))) {
-        await signOut();
+        await ended(stored);
       }
     },
-    [signOut],
+    [ended],
   );
   useEffect(() => {
     void readSession().then((restored) => {
@@ -67,9 +77,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signIn: (signedIn) => save(signedIn),
       signOut,
       setProject: (project) => save(session ? { ...session, project } : null),
-      api: session ? createApi(session, () => void signOut()) : null,
+      api: session ? createApi(session, () => void ended(session)) : null,
     }),
-    [session, save, signOut],
+    [session, save, signOut, ended],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

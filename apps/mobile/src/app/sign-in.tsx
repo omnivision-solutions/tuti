@@ -195,9 +195,10 @@ export default function SignIn() {
 
 function Button({ colors, label, primary, busy, disabled, onPress, children }: { colors: Colors; label: string; primary?: boolean; busy: boolean; disabled: boolean; onPress: () => void; children: ReactNode }) {
   return (
+    // Not `disabled`: a disabled Pressable can't hold focus, so a keyboard or switch-control user would lose their place
+    // while the sign-in runs. A press is ignored instead, and accessibilityState says it's off.
     <Pressable
-      onPress={onPress}
-      disabled={disabled}
+      onPress={() => !disabled && onPress()}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled, busy }}

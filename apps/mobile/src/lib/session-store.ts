@@ -33,8 +33,15 @@ export const RECHECK_MS = 12 * 60 * 60 * 1000;
 export const dueForRecheck = (lastChecked: number, now: number) => now - lastChecked >= RECHECK_MS;
 
 /** Signing out: the stored session is forgotten, then ended on the server (signed out here either way). */
-export async function forgetSession() {
+/**
+ * Signs out: forgets the session here and ends it on the server. `only`: only if it's still that session (a check or a
+ * 401 that answers late, about a session someone has since signed out of and back in after, leaves the new one alone).
+ */
+export async function forgetSession(only?: Session) {
   const stored = await readSession();
+  if (only && stored?.token !== only.token) {
+    return;
+  }
   await writeSession(null);
   if (stored) {
     await authRequest(stored.server, "/sign-out", { body: {}, cookie: stored.cookie }).catch(() => {});

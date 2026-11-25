@@ -65,9 +65,10 @@ export default function Projects() {
           {error && (
             // Pull to refresh isn't there for TalkBack or a keyboard.
             <Pressable
-              onPress={refresh}
-              disabled={refreshing}
+              // Not `disabled`, which would drop focus while it loads: a press is ignored then.
+              onPress={() => !refreshing && refresh()}
               accessibilityRole="button"
+              accessibilityState={{ busy: refreshing }}
               hitSlop={8}
               style={({ pressed }) => ({ opacity: pressed || refreshing ? 0.6 : 1 })}
             >
