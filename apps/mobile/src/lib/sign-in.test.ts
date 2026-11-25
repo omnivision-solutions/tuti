@@ -153,7 +153,7 @@ describe("signing in with a password", () => {
     );
     vi.stubGlobal("fetch", answering(403, { code: "EMAIL_NOT_VERIFIED", message: "Email not verified" }));
     await expect(signInWithPassword("https://tuti.example.com", "e2e-olive@example.com", "right")).rejects.toThrow(
-      "Verify your email address first: open the link in the email Tuti sent you, then sign in.",
+      "Your email address isn't verified yet. Tuti has sent you the verification email again: open its link, then sign in here.",
     );
     // Anything else in the server's words.
     vi.stubGlobal("fetch", answering(429, { code: "TOO_MANY_REQUESTS", message: "Too many requests. Please try again later." }));

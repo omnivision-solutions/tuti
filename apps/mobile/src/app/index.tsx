@@ -1,6 +1,5 @@
-import { Stack } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useApi, useSession } from "@/lib/session";
 import { useColors } from "@/lib/theme";
@@ -31,64 +30,69 @@ export default function Projects() {
     void load();
   }, [load]);
 
+  // As the platforms do it: the last row, in the error colour, confirmed first (never one tap in the header).
+  const confirmSignOut = () =>
+    Alert.alert("Sign out of Tuti?", undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Sign out", style: "destructive", onPress: () => void signOut() },
+    ]);
+
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable onPress={() => void signOut()} accessibilityRole="button" hitSlop={8}>
-              <Text style={[styles.action, { color: colors.primary }]}>Sign out</Text>
-            </Pressable>
-          ),
-        }}
-      />
-      <FlatList
-        data={projects ?? []}
-        keyExtractor={(project) => project.slug}
-        contentInsetAdjustmentBehavior="automatic"
-        refreshing={refreshing}
-        onRefresh={() => {
-          setRefreshing(true);
-          void load().finally(() => setRefreshing(false));
-        }}
-        // A refresh that failed says so above the list it couldn't update.
-        ListHeaderComponent={error && projects?.length ? <Text style={[styles.stale, { color: colors.error }]}>{error}</Text> : undefined}
-        ListEmptyComponent={
-          <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]}>
-            {error ?? (projects ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web." : "Loading…")}
-          </Text>
-        }
-        renderItem={({ item }) => {
-          const chosen = item.slug === session?.project;
-          return (
-            <Pressable
-              onPress={() => void setProject(item.slug)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: chosen }}
-              android_ripple={{ color: colors.border }}
-              style={({ pressed }) => [styles.row, { backgroundColor: Platform.OS === "ios" && pressed ? colors.secondary : chosen ? colors.soft : undefined }]}
-            >
-              <View style={[styles.rowBody, Platform.OS === "ios" && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
-                <View style={styles.rowText}>
-                  <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.detail, { color: colors.muted }]}>
-                    {item.openConversations === 1 ? "1 open conversation" : `${item.openConversations} open conversations`}
-                  </Text>
-                </View>
-                {chosen && <Text style={[styles.check, { color: colors.primary }]}>✓</Text>}
+    <FlatList
+      data={projects ?? []}
+      keyExtractor={(project) => project.slug}
+      contentInsetAdjustmentBehavior="automatic"
+      refreshing={refreshing}
+      onRefresh={() => {
+        setRefreshing(true);
+        void load().finally(() => setRefreshing(false));
+      }}
+      // A refresh that failed says so above the list it couldn't update.
+      ListHeaderComponent={error && projects?.length ? <Text style={[styles.stale, { color: colors.error }]}>{error}</Text> : undefined}
+      ListEmptyComponent={
+        <Text style={[styles.empty, { color: error ? colors.error : colors.muted }]}>
+          {error ?? (projects ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web." : "Loading…")}
+        </Text>
+      }
+      renderItem={({ item }) => {
+        const chosen = item.slug === session?.project;
+        return (
+          <Pressable
+            onPress={() => void setProject(item.slug)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: chosen }}
+            android_ripple={{ color: colors.border }}
+            style={({ pressed }) => [styles.row, { backgroundColor: Platform.OS === "ios" && pressed ? colors.secondary : chosen ? colors.soft : undefined }]}
+          >
+            <View style={[styles.rowBody, Platform.OS === "ios" && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={[styles.detail, { color: colors.muted }]}>
+                  {item.openConversations === 1 ? "1 open conversation" : `${item.openConversations} open conversations`}
+                </Text>
               </View>
-            </Pressable>
-          );
-        }}
-      />
-    </>
+              {chosen && <Text style={[styles.check, { color: colors.primary }]}>✓</Text>}
+            </View>
+          </Pressable>
+        );
+      }}
+      ListFooterComponent={
+        <Pressable
+          onPress={confirmSignOut}
+          accessibilityRole="button"
+          android_ripple={{ color: colors.border }}
+          style={({ pressed }) => [styles.signOut, Platform.OS === "ios" && pressed && { backgroundColor: colors.secondary }]}
+        >
+          <Text style={[styles.name, { color: colors.error }]}>Sign out</Text>
+        </Pressable>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  action: { fontSize: 17, fontWeight: Platform.OS === "ios" ? "400" : "500" },
   stale: { fontSize: 14, lineHeight: 19, paddingHorizontal: 16, paddingVertical: 8 },
   empty: { fontSize: 15, lineHeight: 21, textAlign: "center", padding: 32 },
   row: { paddingLeft: 16 },
@@ -97,4 +101,5 @@ const styles = StyleSheet.create({
   name: { fontSize: 17, fontWeight: "500" },
   detail: { fontSize: 14 },
   check: { fontSize: 18, fontWeight: "600" },
+  signOut: { marginTop: 32, paddingHorizontal: 16, paddingVertical: 12 },
 });

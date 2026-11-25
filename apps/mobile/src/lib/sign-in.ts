@@ -28,7 +28,11 @@ async function begin(server: string) {
   return { state: pending.state, challenge: await challengeOf(pending.verifier) };
 }
 
-/** Email and password: the session, or an Error in words. Needs the server's `/app/sign-in/email` (mobile/app-password). */
+/**
+ * Email and password: the session, or an Error in words. 401 is a wrong password or an unknown address alike; 403
+ * `EMAIL_NOT_VERIFIED` comes with the verification email sent again; anything else (429, a 403 for a request that isn't
+ * the app's) in the server's words.
+ */
 export async function signInWithPassword(server: string, email: string, password: string): Promise<SignedIn> {
   try {
     const { token, cookie } = await authRequest<{ token: string; cookie: string }>(server, "/app/sign-in/email", { body: { email, password } });
@@ -39,7 +43,7 @@ export async function signInWithPassword(server: string, email: string, password
       throw new Error("That email and password don't match. Try again, or reset your password.");
     }
     if (error instanceof ApiError && error.code === "EMAIL_NOT_VERIFIED") {
-      throw new Error("Verify your email address first: open the link in the email Tuti sent you, then sign in.");
+      throw new Error("Your email address isn't verified yet. Tuti has sent you the verification email again: open its link, then sign in here.");
     }
     throw error;
   }
