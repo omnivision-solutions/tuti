@@ -127,12 +127,12 @@ test("two updates at once keep both: a new password and new notes", async () => 
     await held;
   });
   await taken;
-  let done = false;
-  const updates = Promise.all([call(updateScreenshotSettings, as(), { password: "the-new-password" }), call(updateScreenshotSettings, as(), { about: "New notes." })]).then(() => {
-    done = true;
-  });
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  expect(done).toBe(false);
+  const updates = Promise.all([call(updateScreenshotSettings, as(), { password: "the-new-password" }), call(updateScreenshotSettings, as(), { about: "New notes." })]);
+  // Both waiting on a lock, as Postgres sees them (this file's own database): without the project's lock they'd never
+  // wait, and this times out, failing the test.
+  const waiting = async () =>
+    (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n;
+  await vi.waitFor(async () => expect(await waiting()).toBe(2), { timeout: 10_000, interval: 50 });
   release();
   await holding;
   await updates;
