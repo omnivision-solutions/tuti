@@ -274,13 +274,3 @@ export const deleteGroup = defineOperation({
     return { deleted: input.group };
   },
 });
-
-/** Links to the project's groups with these keys, for a tab, collection, article or changelog entry; one that isn't there is refused. Call it with the project locked. */
-export async function groupLinks(tx: Prisma.TransactionClient, projectId: string, keys: string[]) {
-  const groups = await tx.readerGroup.findMany({ where: { projectId, key: { in: keys } }, select: { id: true, key: true } });
-  const missing = keys.find((key) => !groups.some((group) => group.key === key));
-  if (missing !== undefined) {
-    throw new OperationError(400, "invalid_input", `There's no group “${missing}”: add it in Settings → Groups first`);
-  }
-  return groups.map((group) => ({ groupId: group.id }));
-}

@@ -1,5 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
@@ -24,14 +26,29 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText();
 
-  // The team's app: two users, a group for enterprise customers, and two entries, one for them only.
+  // The team's app: two users, a group for enterprise customers, and two entries, one for them only (set in the database:
+  // the API sets an entry's groups in a later release), which completes a post.
   const api = await apiFor(owner, slug);
   await api("/users", { users: [{ id: "user-1", properties: { plan: "enterprise" } }, { id: "user-2", properties: { plan: "free" } }] });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
+  await api("/posts", { board: "feature-requests", title: "Audit logs" });
   await api("/changelog", { title: "Dark mode", body: "Switch themes from your profile menu." });
-  await api("/changelog", { title: "Audit log export", body: "Download your audit log as CSV.", groups: ["enterprise"] });
+  await api("/changelog", { title: "Audit log export", body: "Download your audit log as CSV.", posts: [1] });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(
+      `INSERT INTO changelog_entry_group ("entryId", "groupId")
+       SELECT e.id, g.id FROM changelog_entry e JOIN project p ON p.id = e."projectId" JOIN reader_group g ON g."projectId" = p.id
+       WHERE p.slug = $1 AND e.number = 2 AND g.key = 'enterprise'`,
+      [slug],
+    );
+  } finally {
+    await db.end();
+  }
   await api("/changelog/1/publish", {});
   await api("/changelog/2/publish", {});
+  const shippedIn = (page: typeof owner) => page.getByRole("main").getByRole("link", { name: "Audit log export" });
 
   const titles = (page: typeof owner) => page.getByRole("main").getByRole("heading", { level: 2 });
 
@@ -42,6 +59,15 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await visitor.goto("/changelog/2");
   await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await checkpoint(visitor, "changelog-signed-out");
+  // The post it completed is done, without saying what shipped it; nor does the roadmap, or the widget's What's new.
+  await visitor.goto("/feedback/feature-requests/audit-logs-1");
+  await expect(visitor.getByRole("heading", { level: 1, name: "Audit logs" })).toBeVisible();
+  await expect(shippedIn(visitor)).toHaveCount(0);
+  await visitor.goto("/roadmap");
+  await expect(visitor.getByRole("main").getByText("Audit logs")).toBeVisible();
+  await expect(shippedIn(visitor)).toHaveCount(0);
+  await visitor.goto("/widget?tab=whats-new");
+  await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Dark mode"]);
 
   // An enterprise customer, signed in by the team's app: both, and its page.
   const ada = await newPerson(browser, portalUrl(slug));
@@ -51,6 +77,10 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await ada.getByRole("link", { name: "Audit log export" }).click();
   await expect(ada.getByRole("heading", { level: 1, name: "Audit log export" })).toBeVisible();
   await expect(ada.getByText("Download your audit log as CSV.")).toBeVisible();
+  await ada.goto("/feedback/feature-requests/audit-logs-1");
+  await expect(shippedIn(ada)).toBeVisible();
+  await ada.goto("/widget?tab=whats-new");
+  await expect(ada.getByRole("heading", { level: 2 })).toHaveText(["Audit log export", "Dark mode"]);
 
   // A customer on another plan: only everyone's.
   const bea = await newPerson(browser, portalUrl(slug));
