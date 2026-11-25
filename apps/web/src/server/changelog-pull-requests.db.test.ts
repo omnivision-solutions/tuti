@@ -259,6 +259,20 @@ test("on a queue that refuses it, a pull request the gate had ruled out is added
   expect((await entry(1)).pullRequests).toEqual([{ repo, number: 3, url: url(3), title: "Bump dependencies" }]);
 });
 
+test("on a queue that refuses it, one with no code change before is failed for the retry sweep, not left analysing", async () => {
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  github.pullRequest(repo, { number: 6, title: "Add a dark theme", mergedAt: days(2) });
+  queue.enqueue.mockRejectedValueOnce(new Error("Hatchet is unreachable"));
+
+  expect(await add(6)).toMatchObject({ added: [{ repo, number: 6 }] });
+
+  expect(await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 6 }, select: { state: true, retryAt: true, retryPastGate: true } })).toEqual({
+    state: "FAILED",
+    retryAt: expect.any(Date),
+    retryPastGate: true,
+  });
+});
+
 test("a queue that refuses puts back only its own claim: one made meanwhile, still running, stays", async () => {
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   github.pullRequest(repo, { number: 3, title: "Bump dependencies", mergedAt: days(2) });

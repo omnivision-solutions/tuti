@@ -76,14 +76,28 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   if (!(await analysisOn(projectId))) {
     return null;
   }
+  const key = { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } };
+  // Made here (no merge or earlier pick made it): if its run can't be queued, nothing else ever will.
+  const made = (await prisma.codeChange.count({ where: key.projectId_repoId_number })) === 0;
   const change = await prisma.codeChange.upsert({
-    where: { projectId_repoId_number: { projectId, repoId: pr.repoId, number: pr.number } },
+    where: key,
     create: { projectId, repoId: pr.repoId, repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, author: pr.author, mergedAt: new Date(pr.mergedAt) },
     update: {},
     select: { id: true, state: true, reason: true },
   });
   if (change.state === "ANALYSING" || change.state === "FAILED") {
-    return { run: { codeChangeId: change.id, force: false, pastGate, resume: false } };
+    return {
+      run: { codeChangeId: change.id, force: false, pastGate, resume: false },
+      // Failed, to be tried again by the retry sweep in a few minutes (past the gate, as asked), rather than analysing
+      // with no run. One that was there already is left to the run it has.
+      ...(made && {
+        unclaim: () =>
+          prisma.codeChange.updateMany({
+            where: { id: change.id, state: "ANALYSING" },
+            data: { state: "FAILED", reason: "Its analysis couldn't be queued: it's tried again in a few minutes.", retryAt: new Date(Date.now() + QUEUE_RETRY_MS), retryPastGate: pastGate },
+          }),
+      }),
+    };
   }
   // The gate found nothing for users, and the team chose it all the same: analysed again past it, as "Analyse anyway"
   // does (once: a second request finds it analysing). Nothing to do, or ready with only docs to fix: either way no
@@ -108,6 +122,9 @@ export async function claimCodeChange(projectId: string, pr: MergedPullRequest, 
   }
   return {};
 }
+
+/** How long a code change whose run couldn't be queued waits for the retry sweep. */
+const QUEUE_RETRY_MS = 5 * 60_000;
 
 /**
  * Queues a claimed code change's run (`queue`: the caller's own `enqueue`, where it has one). On Hatchet, if queueing
