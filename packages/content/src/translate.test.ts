@@ -370,3 +370,8 @@ test("raw <h1> or <br> the source has as text are taken as text, not markup", as
   const out = await translateText("My <h1> heading is too big, use a <br> instead", { from: "English", to: "German", ask: async () => '{"segments": {"1": "Meine <h1> Überschrift ist zu groß, nimm ein <br> stattdessen"}}' });
   expect(out).toEqual({ text: "Meine <h1> Überschrift ist zu groß, nimm ein <br> stattdessen" });
 });
+
+test("a made-up tag with attributes is caught too", () => {
+  const { check } = segmentsOf({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Open the settings page now" }] }] });
+  expect(check("1", 'Öffne <span lang="de">die Einstellungen</span>')).toBe("it has a tag that isn't in the source");
+});

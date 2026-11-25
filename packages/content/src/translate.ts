@@ -44,7 +44,7 @@ const storable = (code: number) => (code >= 0x20 || code === 0x09 || code === 0x
  * a bare < or > is text. Our own markup is taken out first.
  */
 const madeUpTag = (reply: string, source: string): boolean =>
-  [...reply.replace(MARKUP, "").matchAll(/<\/?[a-z][\w-]{0,30}\s?\/?>/gi)].some((m) => !unescape(source).includes(m[0]));
+  [...reply.replace(MARKUP, "").matchAll(/<\/?[a-z][\w-]{0,30}(?:\s[^<>]{0,200})?\/?>/gi)].some((m) => !unescape(source).includes(m[0]));
 /** Our tags, placeholders and line breaks: the only markup segments have (never a generic `<…>`, which a reply may fake). */
 const MARKUP = /<\/?[a-z]\d{1,4}>|<x\d{1,4}\/>|<br\s?\/?>/g;
 type Mark = NonNullable<JSONContent["marks"]>[number];
