@@ -31,7 +31,16 @@ import {
   type Draft,
   draftsGeneration,
   draftWithAi,
+  canEdit,
+  EDIT_FIRST,
+  FIRST_SENT,
+  newlyKept,
+  unsentKey,
+  queueUnsent,
+  typed,
+  unsentId,
   editUnsent,
+  afterFetch,
   afterSend,
   attach as attachFile,
   clearUploadFailure,
@@ -57,7 +66,6 @@ import {
   updateDraft,
   watchLive,
   withDraft,
-  withoutArrived,
   writer,
   writtenAt,
 } from "@/lib/conversation";
@@ -94,26 +102,37 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     () => getDraft(draftKey),
   );
   const setDraft = useCallback((change: (draft: Draft) => Draft, since?: number) => updateDraft(draftKey, change, since), [draftKey]);
+  // An edit kept because its first version had already gone out (a 409, or a fetch), said with why on both platforms: "Not
+  // sent" alone sounds like the network, and Retry would send a second reply. TalkBack's live region doesn't speak it.
+  const shownUnsent = useRef(draft.unsent);
+  useEffect(() => {
+    if (newlyKept(shownUnsent.current, draft.unsent).length > 0) {
+      AccessibilityInfo.announceForAccessibility(`Not sent: ${FIRST_SENT}`);
+    }
+    shownUnsent.current = draft.unsent;
+  }, [draft.unsent]);
   // On screen (not under another one pushed over it): it's read only while it's looked at.
   const focused = useRef(false);
-  // The newest fetch wins: an older one answering late doesn't put back what it had. Its messages are still answered
-  // (a send drops what arrived from them), and a reply that arrived is dropped from any fetch: that's never stale.
+  // The newest fetch wins: an older one answering late doesn't put back what it had. Rejects when it can't (the screen's
+  // own calls go through `refresh`).
   const asked = useRef(0);
-  // Answers the messages, or rejects when it can't (a send's check needs to know): the screen's own calls go through `refresh`.
-  const load = useCallback((): Promise<Message[]> => {
+  const load = useCallback((): Promise<Conversation> => {
     const ask = ++asked.current;
-    const since = triageChanges(draftKey);
+    const since = draftsGeneration();
+    const triageSince = triageChanges(draftKey);
     return getConversation(api, number).then(
       (loaded) => {
-        setDraft((now) => withoutArrived(now, loaded.messages));
+        // A reply whose id a message has arrived (its answer lost): gone, from any fetch (that's never stale), but not
+        // into the next teammate's drafts if they signed out meanwhile.
+        afterFetch(draftKey, loaded, since);
         if (ask === asked.current) {
           setConversation(loaded);
           // Not over a change the details sheet made while this was on its way.
-          showTriage(draftKey, loaded, since);
+          showTriage(draftKey, loaded, triageSince);
           setError(null);
           markReadIfLooking(api, loaded, focused.current && AppState.currentState === "active");
         }
-        return loaded.messages;
+        return loaded;
       },
       (e: Error) => {
         if (ask === asked.current) {
@@ -122,7 +141,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         throw e;
       },
     );
-  }, [api, number, setDraft, draftKey]);
+  }, [api, number, draftKey]);
   const refresh = useCallback(() => void load().catch(() => {}), [load]);
   // VoiceOver has no live regions: a failed fetch is announced (TalkBack reads the live region).
   useEffect(() => {
@@ -196,11 +215,14 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     }
   }, [notice]);
 
-  const deliver = async (unsent: Unsent, retry = false) => {
-    const sent = await sendUnsent(api, draftKey, number, unsent, load, retry);
+  const deliver = async (unsent: Unsent) => {
+    const sent = await sendUnsent(api, draftKey, number, unsent, load);
     if (!sent) {
-      if (IOS) {
-        AccessibilityInfo.announceForAccessibility("Not sent");
+      // An edit kept as its first version had gone out is said by the effect below, with why; a reply that went but
+      // wasn't closed says so (its error), never "Not sent".
+      const left = getDraft(draftKey).unsent.find((one) => unsentKey(one) === unsentKey(unsent));
+      if (IOS && left?.error !== FIRST_SENT) {
+        AccessibilityInfo.announceForAccessibility(left?.closeOnly && left.error ? left.error : "Not sent");
       }
     } else {
       const { leave, notice } = afterSend(sent, focused.current);
@@ -222,7 +244,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
       return;
     }
     const unsent: Unsent = {
-      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      id: unsentId(draft, kind),
       body: text.trim(),
       note: kind === "note",
       close: close && kind === "reply",
@@ -231,12 +253,16 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
     };
     setNotice(null);
     clearUploadFailure(draftKey);
-    setDraft((now) => ({ ...now, [kind]: "", files: [], unsent: [...now.unsent, unsent] }));
+    setDraft((now) => queueUnsent(now, kind, unsent));
     void deliver(unsent);
   };
   const discard = (unsent: Unsent) => setDraft((now) => ({ ...now, unsent: now.unsent.filter((one) => one.id !== unsent.id) }));
   // Back into the composer, with its files, to change what the server refused (too many files, one gone).
   const edit = (unsent: Unsent) => {
+    if (!canEdit(draft, unsent, uploading.length)) {
+      setNotice(EDIT_FIRST);
+      return;
+    }
     setDraft((now) => editUnsent(now, unsent));
     setKind(unsent.note ? "note" : "reply");
   };
@@ -313,7 +339,8 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         <FlatList
           inverted
           data={rows}
-          keyExtractor={(row) => ("unsent" in row ? row.unsent.id : row.message.id)}
+          // An unsent reply by its first id: given a new one (an edit kept), it's the same bubble, and keeps a reader's place.
+          keyExtractor={(row) => ("unsent" in row ? unsentKey(row.unsent) : row.message.id)}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.messages}
@@ -339,7 +366,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
                 unsent={item.unsent}
                 sending={isSending(item.unsent.id)}
                 colors={colors}
-                onRetry={() => void deliver(item.unsent, true)}
+                onRetry={() => void deliver(item.unsent)}
                 onEdit={() => edit(item.unsent)}
                 onDiscard={() => discard(item.unsent)}
               />
@@ -395,7 +422,7 @@ function ConversationScreen({ number, draftKey }: { number: number; draftKey: st
         )}
         <TextInput
           value={text}
-          onChangeText={(typed) => setDraft((now) => ({ ...now, [kind]: typed }))}
+          onChangeText={(text) => setDraft((now) => typed(now, kind, text))}
           placeholder={kind === "note" ? "Write a note only your team sees…" : "Write a reply…"}
           placeholderTextColor={colors.muted}
           accessibilityLabel={kind === "note" ? "Note" : "Reply"}
@@ -567,9 +594,11 @@ function UnsentBubble({ unsent, sending, colors, onRetry, onEdit, onDiscard }: {
         ))}
       </View>
       {/* The buttons stay while it sends, off, so a keyboard or screen reader keeps its place on Retry. */}
-      <View style={styles.unsentStatus} accessibilityLiveRegion="polite">
+      {/* An edit kept as its first version had gone out is announced, on both platforms: not read twice here. */}
+      <View style={styles.unsentStatus} accessibilityLiveRegion={unsent.error === FIRST_SENT ? "none" : "polite"}>
         <Text style={[styles.meta, { color: sending ? colors.muted : colors.error, textAlign: "right" }]}>
-          {sending ? "Sending…" : unsent.error ? `Not sent: ${unsent.error}` : "Not sent"}
+          {/* A Send and close that went out but didn't close says so as it is, not as "Not sent". */}
+          {sending ? "Sending…" : unsent.closeOnly ? unsent.error : unsent.error ? `Not sent: ${unsent.error}` : "Not sent"}
         </Text>
         <View style={styles.unsentActions}>
           <TextButton colors={colors} label="Retry" onPress={onRetry} disabled={sending} />

@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from "expo-file-system";
 
-import type { Api } from "./api";
+import { type Api, ApiError } from "./api";
 
 /**
  * One conversation: what `conversations.get` answers, replying, uploading, Draft with AI, the drafts kept on the phone,
@@ -24,6 +24,8 @@ export type Message = {
   seenAt: string | null;
   emailStatus: "sent" | "delivered" | "bounced" | "complained" | "failed" | null;
   emailError: string | null;
+  /** The id your reply was sent with (`requestId`), on your own messages only; null on others' (and from a server before #1074: absent). */
+  requestId?: string | null;
 };
 
 export type Conversation = {
@@ -199,72 +201,117 @@ export function linkParts(text: string): string[] {
 /** A file uploaded for the next reply or note. */
 export type Attached = { id: string; name: string; contentType: string; size: number; at: number };
 
-/** A reply or note sent from here that hasn't arrived: kept with Retry. `error` once it failed (none: sending, or the app closed while it was). */
-export type Unsent = { id: string; body: string; note: boolean; close: boolean; files: Attached[]; seen: string | null; error?: string };
+/**
+ * A reply or note sent from here that hasn't arrived: kept with Retry. `error` once it failed (none: sending, or the app
+ * closed while it was). Its `id` goes with every post of it as `requestId`: a post again after a lost answer gets the
+ * reply already saved, never a second one (conversations.reply).
+ */
+/** `closeOnly`: a Send and close whose reply arrived, only the close left (`error` says so, `CLOSE_LEFT`). */
+export type Unsent = { id: string; body: string; note: boolean; close: boolean; files: Attached[]; seen: string | null; error?: string; key?: string; closeOnly?: boolean };
 
-/** Whether a message of the server's is this unsent one: yours, the same kind and text, its very files (an upload's id is its attachment's), written after what was seen when it was sent. */
-const isSent = (message: Message, unsent: Unsent) =>
-  !!unsent.seen &&
-  message.fromYou &&
-  message.note === unsent.note &&
-  message.body === unsent.body &&
-  Date.parse(message.createdAt) > Date.parse(unsent.seen) &&
-  message.attachments.length === unsent.files.length &&
-  unsent.files.every((file) => message.attachments.some((attachment) => attachment.id === file.id));
+/** Said on a Send and close whose reply went out but whose close didn't: Retry closes it. */
+export const CLOSE_LEFT = "Sent, but not closed: tap Retry to close it.";
 
-/** Replies the server can't tell apart (the same kind, text and files): which of them a message is, only its send's answer says. */
-const sameAs = (unsent: Unsent) => JSON.stringify([unsent.note, unsent.body, unsent.files.map((file) => file.id).sort()]);
+/** Which bubble an unsent reply is, for the list: the id it was first made with, kept when an edit is given a new id. */
+export const unsentKey = (unsent: Unsent) => unsent.key ?? unsent.id;
 
 /**
- * The draft once a fetch shows what arrived: an unsent reply or note the server saved though its answer was lost (the
- * app closed, the screen left, the connection dropped) is gone. Each of the server's messages accounts for one unsent
- * one, and never for one already accounted for (`taken`: those matched before, and those a send got back), so of two
- * replies saying the same, the one that didn't arrive stays. One still `waiting` on its send's answer is left to it,
- * and a message that may be its own isn't given to another saying the same; `done`: a send whose answer took its
- * message, left for it to remove. The same draft when none arrived.
- * ponytail: matched by text and files; an idempotency key on conversations.reply would make it exact.
+ * Edits kept since `before` because their first version had already gone out (`FIRST_SENT`): to say, as a screen reader
+ * would otherwise hear only "Not sent". By `unsentKey`, so a bubble given a new id is the same one.
  */
-export function withoutArrived(draft: Draft, messages: Message[], waiting: (id: string) => boolean = isSending, done?: string): Draft {
-  const taken = new Set(draft.taken);
-  const kept = new Map<string, number>();
-  for (const unsent of draft.unsent) {
-    if (unsent.id !== done && waiting(unsent.id)) {
-      kept.set(sameAs(unsent), (kept.get(sameAs(unsent)) ?? 0) + 1);
-    }
-  }
-  const left = draft.unsent.filter((unsent) => {
-    if (unsent.id === done || waiting(unsent.id)) {
-      return true;
-    }
-    const free = messages.filter((message) => !taken.has(message.id) && isSent(message, unsent));
-    if (free.length <= (kept.get(sameAs(unsent)) ?? 0)) {
-      return true;
-    }
-    taken.add(free[0]!.id);
-    return false;
-  });
-  return left.length === draft.unsent.length ? draft : withUnsent(draft, left, [...taken]);
-}
+export const newlyKept = (before: Unsent[], after: Unsent[]) =>
+  after.filter((one) => one.error === FIRST_SENT && !before.some((was) => unsentKey(was) === unsentKey(one) && was.error === FIRST_SENT));
 
 /**
- * The draft with these unsent ones. What's taken stays when none are left: a reply sent next may say the same and answer
- * a fetch that hasn't shown this one's message yet. The latest 50; kept while the app runs (a draft with nothing else
- * isn't written), as a reply after a restart answers a conversation fetched since, with them all.
+ * Whether Edit can put an unsent reply or note back into its composer: only an empty one, with no files attached or
+ * `uploading` (one finishing after would join it). It
+ * keeps the reply's id (see `editUnsent`), so nothing else may go out under it: words or files already there would be
+ * dropped with it if its first version turns out sent, or send another's words twice.
  */
-const withUnsent = (draft: Draft, unsent: Unsent[], taken = draft.taken): Draft => ({ ...draft, unsent, taken: taken.slice(-50) });
+export const canEdit = (draft: Draft, unsent: Unsent, uploading: number) =>
+  !draft[unsent.note ? "note" : "reply"].trim() && draft.files.length === 0 && uploading === 0;
 
-/** An unsent reply or note back into the composer, with its files still young enough to send, to change what the server refused. */
+/** Said when Edit can't, as the composer has something in it. */
+export const EDIT_FIRST = "Send or clear what's being written first, then Edit.";
+
+/**
+ * An unsent reply or note back into its composer (an empty one: `canEdit`), with its files still young enough to send,
+ * to change what the server refused. Its id goes with it till it's sent: if its first post arrived though its answer was
+ * lost, the server knows the id (a repeat, or `request_id_used` for changed words), so an edit can't post a second reply.
+ * One the server knows from another reply's words (`ID_CLASH`) gets a new id, or it could never go out.
+ */
 export function editUnsent(draft: Draft, unsent: Unsent, now = Date.now()): Draft {
   const into = unsent.note ? "note" : "reply";
   return {
-    ...withUnsent(draft, draft.unsent.filter((one) => one.id !== unsent.id)),
-    [into]: withDraft(draft[into], unsent.body),
-    files: [...draft.files, ...unsent.files.filter((file) => now - file.at < FILES_LAST_MS)],
+    ...draft,
+    unsent: draft.unsent.filter((one) => one.id !== unsent.id),
+    [into]: unsent.body,
+    files: unsent.files.filter((file) => now - file.at < FILES_LAST_MS),
+    keep: { ...draft.keep, [into]: unsent.error === ID_CLASH ? undefined : unsent.id },
   };
 }
 
-/** What the server says of a reply sent: `closed` with Send and close, `keptOpen` when the user wrote after what it answered. */
-export type Sent = { id?: string; closed?: boolean; keptOpen?: boolean };
+/** What's typed into a composer; emptied, an edited reply's kept id goes with its words, so what's typed next is a new reply. */
+export const typed = (draft: Draft, kind: "reply" | "note", text: string): Draft => ({
+  ...draft,
+  [kind]: text,
+  ...(!text && { keep: { ...draft.keep, [kind]: undefined } }),
+});
+
+/** The draft once a composer's words are sent: they and the files leave it as `unsent`, and an id kept for them is used up. */
+export const queueUnsent = (draft: Draft, kind: "reply" | "note", unsent: Unsent): Draft => ({
+  ...draft,
+  [kind]: "",
+  files: [],
+  unsent: [...draft.unsent, unsent],
+  keep: { ...draft.keep, [kind]: undefined },
+});
+
+/**
+ * The draft once a fetch shows what arrived: an unsent reply whose id is a fetched message's `requestId` was saved
+ * though its answer was lost, whenever that's noticed (a later fetch, the screen opened again). The same reply as saved
+ * goes; a different one (an edit, which kept the id) stays, with a new id and `FIRST_SENT` as its error, so the teammate
+ * can Delete it or send it on purpose as a follow-up, never retyping it (without the files the first version took). One still `sending` is left to its own send.
+ */
+export function withoutSent(draft: Draft, fetched: Fetched, sending: (id: string) => boolean = isSending): Draft {
+  const sent = new Map(fetched.messages.flatMap((message) => (message.requestId ? [[message.requestId, message] as const] : [])));
+  let changed = false;
+  const unsent = draft.unsent.flatMap((one) => {
+    const first = sent.get(one.id);
+    if (sending(one.id) || !first) {
+      return [one];
+    }
+    // A Send and close that arrived, the conversation still waiting on the user: sent, only the close is left, for Retry
+    // (its repeat closes it, `closeRepeat`). Open or closed, the server already did all it would (kept it open for a
+    // waiting user, or the user opened it again): it goes, as any reply that arrived.
+    if (one.close && fetched.status === "waiting" && sameMessage(first, one)) {
+      if (one.closeOnly) {
+        return [one];
+      }
+      changed = true;
+      return [{ ...one, closeOnly: true, error: CLOSE_LEFT }];
+    }
+    changed = true;
+    // Its files already on the first version went with it (a file goes with one message): the follow-up has the rest.
+    const files = one.files.filter((file) => !first.attachments.some((attachment) => attachment.id === file.id));
+    return sameMessage(first, one) ? [] : [{ ...one, key: unsentKey(one), id: newUnsentId(), files, error: FIRST_SENT }];
+  });
+  return changed ? { ...draft, unsent } : draft;
+}
+
+/** Whether a saved message is this unsent reply as written: the same kind, words and files. */
+const sameMessage = (message: Message, unsent: Unsent) =>
+  message.note === unsent.note &&
+  message.body === unsent.body &&
+  message.attachments.length === unsent.files.length &&
+  unsent.files.every((file) => message.attachments.some((attachment) => attachment.id === file.id));
+
+/**
+ * What the server says of a reply sent: `closed` with Send and close, `keptOpen` when the user wrote after what it
+ * answered. `notClosed` (closeRepeat's): sent, but not closed (why), which keeps it as a close-only reply. An edit whose first version had already been
+ * sent stays unsent, said (`withoutSent`).
+ */
+export type Sent = { id?: string; closed?: boolean; keptOpen?: boolean; notClosed?: string };
 
 export const sendReply = (api: Api, number: number, unsent: Unsent) =>
   api<Sent & { id: string }>(`/conversations/${number}/messages`, {
@@ -275,6 +322,7 @@ export const sendReply = (api: Api, number: number, unsent: Unsent) =>
       ...(unsent.close && { close: true }),
       ...(unsent.seen && { seen: unsent.seen }),
       ...(unsent.files.length > 0 && { attachments: unsent.files.map((file) => file.id) }),
+      requestId: unsent.id,
     },
   });
 
@@ -327,10 +375,21 @@ export async function draftWithAi(api: Api, number: number): Promise<{ draft: st
 export const withDraft = (reply: string, draft: string) => (reply.trim() ? `${reply.trimEnd()}\n\n${draft}` : draft);
 
 /** What's typed in a conversation and not sent yet, kept on the phone: nothing is lost when the app closes or a send fails. */
-/** `taken`: the server's messages known to be sends from here (by id), never matched to another unsent one. */
-export type Draft = { reply: string; note: string; files: Attached[]; unsent: Unsent[]; taken: string[] };
+/** `keep`: the id an edited reply or note keeps till it's sent (see `editUnsent`), by composer. */
+export type Draft = { reply: string; note: string; files: Attached[]; unsent: Unsent[]; keep?: { reply?: string; note?: string } };
 
-export const EMPTY_DRAFT: Draft = { reply: "", note: "", files: [], unsent: [], taken: [] };
+export const EMPTY_DRAFT: Draft = { reply: "", note: "", files: [], unsent: [] };
+
+/**
+ * What a fetch of the conversation at `key` does to its draft (`withoutSent`), begun in the drafts' generation `since`:
+ * a fetch that answers after a sign-out changes nothing, so it can't touch the next teammate's drafts.
+ */
+export const afterFetch = (key: string, fetched: Fetched, since: number) => updateDraft(key, (draft) => withoutSent(draft, fetched), since);
+
+const newUnsentId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+
+/** A new reply's id (its `requestId`): one an edit kept, or a new one. */
+export const unsentId = (draft: Draft, kind: "reply" | "note") => draft.keep?.[kind] ?? newUnsentId();
 
 /** An upload the server hasn't been sent with a reply is deleted after a day: one kept longer can't be sent. */
 export const FILES_LAST_MS = 23 * 60 * 60_000;
@@ -455,88 +514,119 @@ export function attach(api: Api, key: string, picked: Picked): Promise<void> {
     .finally(() => setUploading(key, (now) => now.filter((one) => one.id !== pick.id)));
 }
 
-const sends = new Map<string, { same: string; send: Promise<Sent | null> }>();
+const sends = new Map<string, Promise<Sent | null>>();
 export const isSending = (id: string) => sends.has(id);
 
+/** Said for a reply whose id the server knows from another reply (`request_id_used`): an app bug, as each unsent one has its own id. */
+export const ID_CLASH = "Another reply was sent with this one's id. Edit it to send it as a new one.";
+
 /**
- * Sends an unsent reply or note kept in the draft at `key`. `saved` fetches the conversation and answers its messages,
- * or rejects when it can't: once the server has it, so it's there before the unsent one goes; after a failure, as the
- * server may have saved it though its answer was lost; and before a `retry`, which posts only after a check that
- * worked, and only if it still isn't there (a check that failed keeps it unsent with why). Unsent ones a fetch shows
- * arrived are dropped here, from what that fetch answered (the screen may keep a newer fetch's result instead). The
- * answer (`{}` when it was there already: found before a retry, or after a failure), or null when it wasn't sent.
+ * Sends an unsent reply or note kept in the draft at `key`, with its id as `requestId`. Once the server has it, `saved`
+ * fetches the conversation (so it's there before the unsent one goes), and it leaves the draft; failing, it stays with
+ * why, and Retry posts it again with the same id: one whose answer was lost comes back as the reply already saved,
+ * without `closed` or `keptOpen` (a repeat's answer doesn't say what the first did). `request_id_used` (an edit whose
+ * first version was sent): `saved` fetches the conversation, answering its messages or rejecting, to tell which. The
+ * answer, or null when it wasn't sent.
  */
-export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent, saved: () => Promise<Message[]>, retry = false) {
+/** What a send's fetch of the conversation answers: its messages, and its status (a Send and close repeated needs it). */
+export type Fetched = Pick<Conversation, "messages" | "status">;
+
+export function sendUnsent(api: Api, key: string, number: number, unsent: Unsent, saved: () => Promise<Fetched>) {
   const going = sends.get(unsent.id);
   if (going) {
-    return going.send;
+    return going;
   }
-  // Replies saying the same in one conversation are sent one at a time: each answer says which message is its own.
-  // Another conversation's never wait on them.
-  const same = `${key}\u0000${sameAs(unsent)}`;
-  const before = [...sends.values()].filter((other) => other.same === same).map((other) => other.send);
   const since = generation;
-  // What arrived, from the fetch's own answer; its error when it failed.
-  // `sent`: this one's answer took its message. Otherwise this one is looked for too, as it may have arrived.
-  const fetched = (sent = false) =>
-    saved().then(
-      (messages) => {
-        updateDraft(key, (draft) => withoutArrived(draft, messages, (id) => id !== unsent.id && isSending(id), sent ? unsent.id : undefined), since);
-        return null;
-      },
-      (error: unknown) => (error instanceof Error ? error.message : String(error)),
-    );
-  const kept = () => since === generation && getDraft(key).unsent.some((one) => one.id === unsent.id);
-  const mark = (error: string | undefined) => (draft: Draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, error } : one)) });
+  // Sending again, it's no longer "only the close left" till a fetch says so.
+  // Only the close left (a Send and close whose reply arrived): cleared while it sends, and kept if it fails, as its reply
+  // went all the same.
+  const closeOnly = getDraft(key).unsent.find((one) => one.id === unsent.id)?.closeOnly ?? unsent.closeOnly;
+  const mark = (error: string | undefined) => (draft: Draft) => ({
+    ...draft,
+    unsent: draft.unsent.map((one) =>
+      one.id !== unsent.id
+        ? one
+        : // An id clash says only that (Edit gives it a new id by it), never as close-only.
+          error && closeOnly && error !== ID_CLASH
+          ? { ...one, error: `Sent, but not closed: ${error}`, closeOnly: true }
+          : { ...one, error, closeOnly: undefined },
+    ),
+  });
+  const drop = (draft: Draft) => ({ ...draft, unsent: draft.unsent.filter((one) => one.id !== unsent.id) });
   // Out of `sends` before the draft changes, so what's shown then says it isn't sending any more.
   const send = (async (): Promise<Sent | null> => {
-    await Promise.all(before);
-    if (retry) {
-      const failed = await fetched();
-      if (failed !== null) {
-        sends.delete(unsent.id);
-        updateDraft(key, mark(failed), since);
-        return null;
-      }
-      if (!kept()) {
-        sends.delete(unsent.id);
-        return {};
-      }
-    }
-    // Signed out while it waited (behind a reply saying the same, or a retry's check): it's gone with the drafts.
-    if (since !== generation) {
-      sends.delete(unsent.id);
-      return null;
-    }
     let sent: Sent & { id: string };
     try {
       sent = await sendReply(api, number, unsent);
     } catch (error) {
-      await fetched();
-      sends.delete(unsent.id);
-      if (since !== generation) {
+      if (error instanceof ApiError && error.code === "request_id_used") {
+        // The server knows this id from other words. Its first version is in the conversation (an edit after a lost
+        // answer): kept as a follow-up to Delete or send. Otherwise an app bug: said as such. Asked each time: nothing is stored.
+        let fetched: Fetched;
+        try {
+          fetched = await saved();
+        } catch (failed) {
+          sends.delete(unsent.id);
+          updateDraft(key, mark(failed instanceof Error ? failed.message : String(failed)), since);
+          return null;
+        }
+        sends.delete(unsent.id);
+        if (fetched.messages.some((message) => message.requestId === unsent.id)) {
+          // Its first version is there: kept under a new id, said, as a fetch does (`withoutSent`).
+          updateDraft(key, (draft) => withoutSent(draft, fetched), since);
+          return null;
+        }
+        updateDraft(key, mark(ID_CLASH), since);
         return null;
       }
-      // The fetch shows it arrived though its answer was lost: sent, said as nothing (no "Not sent").
-      if (!kept()) {
-        return {};
-      }
+      sends.delete(unsent.id);
+      // The reply's other 409 (an attachment just sent with another message) and the rest say their own words.
       updateDraft(key, mark(error instanceof Error ? error.message : String(error)), since);
       return null;
     }
-    // The message it made is this one's: no other unsent one is matched to it.
-    updateDraft(key, (draft) => withUnsent(draft, draft.unsent, [...draft.taken, sent.id]), since);
-    await fetched(true);
+    const fetched = await saved().then(
+      (conversation) => conversation,
+      (error: unknown) => ({ why: error instanceof Error ? error.message : String(error) }),
+    );
+    const answer = unsent.close && sent.closed === undefined && sent.keptOpen === undefined ? await closeRepeat(api, number, fetched) : sent;
     sends.delete(unsent.id);
-    updateDraft(key, (draft) => withUnsent(draft, draft.unsent.filter((one) => one.id !== unsent.id)), since);
-    return sent;
+    if (answer.notClosed !== undefined) {
+      // Sent, but the close couldn't be done or told: kept for Retry, whose repeat only closes.
+      updateDraft(key, (draft) => ({ ...draft, unsent: draft.unsent.map((one) => (one.id === unsent.id ? { ...one, closeOnly: true, error: `Sent, but not closed: ${answer.notClosed}` } : one)) }), since);
+      return null;
+    }
+    updateDraft(key, drop, since);
+    return answer;
   })();
-  sends.set(unsent.id, { same, send });
+  sends.set(unsent.id, send);
   updateDraft(key, mark(undefined), since);
   return send;
 }
 
-/** Whether a send and close that answered takes the teammate back: only from the conversation they're still looking at, never from a screen opened over it since. */
+/**
+ * Send and close answered as a repeat (an edit or a retry whose first post arrived, which may not have closed it): the
+ * server doesn't say what the first did, but the conversation's status is its answer. Closed: closed. Open: kept open, as
+ * the server leaves it open exactly while a user's message is unanswered (and the user writing opens it again). Waiting
+ * on the user: closed here. Said when that can't be told or done.
+ */
+async function closeRepeat(api: Api, number: number, fetched: Fetched | { why: string }): Promise<Sent> {
+  if ("why" in fetched) {
+    return { notClosed: fetched.why };
+  }
+  if (fetched.status === "closed") {
+    return { closed: true };
+  }
+  if (fetched.status === "open") {
+    return { keptOpen: true };
+  }
+  try {
+    await api(`/conversations/${number}`, { method: "PATCH", body: { status: "closed" } });
+    return { closed: true };
+  } catch (error) {
+    return { notClosed: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /**
  * What a reply's answer means on the screen: back to the Inbox once it's closed, only from the conversation still looked at
  * (never from a screen opened over it since); and, kept open as the user wrote again since, the web's words for it, so
@@ -546,6 +636,9 @@ export const afterSend = (sent: Sent | null, focused: boolean) => ({
   leave: !!sent?.closed && focused,
   notice: sent?.keptOpen ? "Sent, and kept open: they wrote again since" : null,
 });
+
+/** Said on an edit kept unsent as its first version had already gone out (a 409, or a fetch: `withoutSent`). */
+export const FIRST_SENT = "Your first version was already sent, so this edited one wasn't.";
 
 /** Whether a session that ended takes the drafts with it: only the one still in use (not one replaced meanwhile). */
 export const draftsGoWith = (stored: { token: string } | null, ended: { token: string }) => !!stored && stored.token === ended.token;
