@@ -186,6 +186,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     sent += tickets.length;
     gone += unregistered.length;
   }
+  // Tickets past a day are pruned here too, not only by the receipts' cron: with jobs inline the cron never runs.
+  await prisma.pushTicket.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RECEIPTS_KEPT_MS) } } }).catch(() => undefined);
   if (failure && sent === 0 && gone === 0) {
     throw failure;
   }

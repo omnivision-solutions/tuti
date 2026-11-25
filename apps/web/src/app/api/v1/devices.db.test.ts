@@ -338,6 +338,14 @@ test("a token Expo no longer has loses its device, when sending and from a recei
   expect(await prisma.pushTicket.count()).toBe(0);
 });
 
+test("a push prunes tickets past a day too: with jobs inline the receipts' cron never runs", async () => {
+  await phone(owner, "owner");
+  await prisma.pushTicket.create({ data: { id: "old", token: "ExponentPushToken[owner]", createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) } });
+  await userWrites();
+  expect(await prisma.pushTicket.findMany({ select: { token: true } })).toEqual([{ token: "ExponentPushToken[owner]" }]);
+  expect(await prisma.pushTicket.count({ where: { id: "old" } })).toBe(0);
+});
+
 test("a receipt that's fine keeps the device, and a ticket past a day is let go", async () => {
   await phone(owner, "owner");
   await userWrites();
