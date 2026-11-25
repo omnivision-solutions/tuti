@@ -143,12 +143,16 @@ async function audienceSize(...args: Parameters<typeof audienceSql>) {
 
 /**
  * How many people publishing an entry with Email subscribers would email now: the editor's count (audienceSql, so
- * changelogReach). Null on a private portal, which emails nobody its changelog.
+ * changelogReach), of `entryId`'s groups' subscribers when it's for some. Null on a private portal, which emails nobody its changelog.
  */
-export async function subscriberCount(projectId: string): Promise<number | null> {
+export async function subscriberCount(projectId: string, entryId?: string): Promise<number | null> {
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
   // While the project's email is paused nothing is: the resume lets what it held go.
-  return portalAccess !== "PUBLIC" ? null : (await projectEmailWaits(projectId)) ? 0 : audienceSize(projectId, new Date());
+  return portalAccess !== "PUBLIC"
+    ? null
+    : (await projectEmailWaits(projectId))
+      ? 0
+      : audienceSize(projectId, new Date(), undefined, entryId ? await entryGroups(entryId) : null);
 }
 
 /**

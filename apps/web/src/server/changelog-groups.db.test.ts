@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
 
 import { prisma } from "@tuti/db";
-import { handlers, subscribersLeft } from "@tuti/jobs";
+import { handlers, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { billingFile } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
-import { afterAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { GET as entryMarkdown } from "@/app/portal/[project]/(site)/changelog/[number]/md/route";
 import { GET as rss } from "@/app/portal/[project]/(site)/changelog/rss.xml/route";
@@ -215,12 +216,33 @@ describe("email", () => {
     // Published with Email subscribers but not sent yet (the job runs inline on publishing): the editor's count, then the job.
     await prisma.changelogEntry.update({ where: { id }, data: { publishedAt: new Date(), subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
 
+    // The editor's counts: all three for an entry for everyone, one for this.
+    expect(await subscriberCount(project.id)).toBe(3);
+    expect(await subscriberCount(project.id, id)).toBe(1);
     expect(await subscribersLeft(id)).toBe(1);
     expect(await handlers.changelogEmailed({ entryId: id }, log)).toEqual({ emailed: 1 });
     expect(entryEmailsTo(kim)).toHaveLength(1);
     expect([...entryEmailsTo(lee), ...entryEmailsTo(anon)]).toEqual([]);
     // Done: all it's for have it.
     expect(await prisma.changelogEntry.findUniqueOrThrow({ where: { id }, select: { subscribersEmailDueAt: true } })).toEqual({ subscribersEmailDueAt: null });
+  });
+
+  test("on a plan without reader groups, an entry for some is emailed to nobody (its groups don't count there)", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    try {
+      const kim = address();
+      await reader(["enterprise"], kim);
+      await call(addChangelogSubscribers, as(owner), { emails: [kim] });
+      await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
+      const entry = await call(createChangelogEntry, as(owner), { title: "Enterprise news", body: "Hi.", groups: ["enterprise"] });
+      await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+      const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: entry.number } });
+      expect(await subscriberCount(project.id, id)).toBe(0);
+      await call(publishChangelogEntry, as(owner), { number: entry.number, emailSubscribers: true });
+      expect(entryEmailsTo(kim)).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test("an entry for everyone is emailed to every subscriber, whatever their groups", async () => {
