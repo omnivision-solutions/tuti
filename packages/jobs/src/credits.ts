@@ -1,6 +1,6 @@
 import { type CreditKind, type CreditSource, Prisma, prisma } from "@tuti/db";
 import { creditsEmail, sendEmail } from "@tuti/email";
-import { creditsEnabled, freeCredits, log, lowCreditsAt, topupExpiryDays } from "@tuti/shared";
+import { creditsEnabled, emailsSpendCredits, freeCredits, log, lowCreditsAt, topupExpiryDays } from "@tuti/shared";
 
 import { lockProject } from "./running-draft";
 
@@ -150,14 +150,49 @@ export async function aiPaused(projectId: string): Promise<boolean> {
  * own transaction, on the project's row) would wait on. A project not given them yet reads as paused.
  */
 export async function aiPausedIn(tx: Prisma.TransactionClient, projectId: string): Promise<boolean> {
-  if (!creditsEnabled()) {
-    return false;
-  }
+  return creditsEnabled() && (await balanceIn(tx, projectId)).lte(0);
+}
+
+/** The project's balance read in `tx` alone (creditBalance's, giving no free credits). */
+export async function balanceIn(tx: Prisma.TransactionClient, projectId: string): Promise<Prisma.Decimal> {
   const [{ _sum }, project] = await Promise.all([
     tx.creditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
     tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiCreditDebt: true } }),
   ]);
-  return (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt).lte(0);
+  return (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt);
+}
+
+/**
+ * Gives `credits` a charge took back, in `tx` under its lock: first off the project's debt (a refunded grant it came from
+ * made it debt: takeBackCredits), then to its grants, latest-expiring first (for good first), so what's given back never
+ * lasts less than what paid, each only up to what it can hold (what it gave, less what a refund took back: never more
+ * than was paid for). What no grant has room for (they expired since) is lost.
+ */
+export async function giveBackCredits(tx: Prisma.TransactionClient, projectId: string, credits: Prisma.Decimal): Promise<void> {
+  await lockProject(tx, projectId);
+  const { aiCreditDebt } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiCreditDebt: true } });
+  const owed = Prisma.Decimal.min(aiCreditDebt, credits);
+  if (owed.gt(0)) {
+    await tx.project.update({ where: { id: projectId }, data: { aiCreditDebt: aiCreditDebt.minus(owed) } });
+  }
+  let left = credits.minus(Prisma.Decimal.max(owed, 0));
+  if (left.lte(0)) {
+    return;
+  }
+  for (const grant of await tx.creditGrant.findMany({
+    where: { ...spendable(projectId, new Date()).where, remaining: undefined },
+    orderBy: [{ expiresAt: { sort: "desc", nulls: "first" } }, { createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, credits: true, remaining: true, takenBack: true },
+  })) {
+    const take = Prisma.Decimal.min(left, grant.credits.minus(grant.takenBack).minus(grant.remaining));
+    if (take.gt(0)) {
+      await tx.creditGrant.update({ where: { id: grant.id }, data: { remaining: grant.remaining.plus(take) } });
+      left = left.minus(take);
+    }
+    if (left.lte(0)) {
+      return;
+    }
+  }
 }
 
 /**
@@ -189,6 +224,9 @@ export async function emailIfCreditsLow(projectId: string): Promise<void> {
           aiCreditDebt: true,
           aiCreditsLowEmailedAt: true,
           aiCreditsOutEmailedAt: true,
+          // As stored (trialEndsAt selected: see @tuti/db), for whether its emails spend credits.
+          plan: true,
+          trialEndsAt: true,
           team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
         },
       }),
@@ -209,7 +247,7 @@ export async function emailIfCreditsLow(projectId: string): Promise<void> {
   const url = `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`;
   const left = balance.toLocaleString("en", { maximumFractionDigits: balance >= 1 ? 0 : 2 });
   const sent = await Promise.allSettled(
-    project.team.map(({ user }) => sendEmail({ to: user.email, ...creditsEmail({ projectName: project.name, out, left, url }) })),
+    project.team.map(({ user }) => sendEmail({ to: user.email, ...creditsEmail({ projectName: project.name, out, left, url, emails: emailsSpendCredits(project.plan) }) })),
   );
   for (const result of sent) {
     if (result.status === "rejected") {

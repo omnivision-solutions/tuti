@@ -1,5 +1,5 @@
 import { Text } from "@react-email/components";
-import { CREDIT_FEATURES } from "@tuti/shared";
+import { creditFeatures } from "@tuti/shared";
 
 import { Buttons, Eyebrow, Layout, textStyle, Title } from "./layout";
 
@@ -11,13 +11,15 @@ type CreditsProps = {
   left: string;
   /** The project's Settings → Billing. */
   url: string;
+  /** Its emails past its plan's allowance spend credits too (emailsSpendCredits), so they wait as well. */
+  emails?: boolean;
 };
 
 /** "120 credits left", "1 credit left" (`left` as the app shows it: "0.5" stays plural). */
 const creditsLeft = (left: string) => `${left} ${left === "1" ? "credit" : "credits"} left`;
 
 /** To a project's owners and admins: its credits are running low, or out (docs/plan.md, AI usage per project). */
-export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
+export function CreditsEmail({ projectName, out, left, url, emails = false }: CreditsProps) {
   return (
     <Layout
       label="Billing"
@@ -33,12 +35,12 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
       <Text style={textStyle}>
         {out ? (
           <>
-            <strong>{projectName}</strong> is out of credits, so {CREDIT_FEATURES} are paused until it has
+            <strong>{projectName}</strong> is out of credits, so {creditFeatures(emails)} are paused until it has
             more. Nothing is lost: merged pull requests wait as Paused for you to resume them.
           </>
         ) : (
           <>
-            <strong>{projectName}</strong> has {creditsLeft(left)}. When they run out, {CREDIT_FEATURES} pause until it
+            <strong>{projectName}</strong> has {creditsLeft(left)}. When they run out, {creditFeatures(emails)} pause until it
             has more.
           </>
         )}

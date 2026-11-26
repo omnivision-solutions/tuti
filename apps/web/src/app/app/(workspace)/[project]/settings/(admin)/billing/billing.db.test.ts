@@ -193,7 +193,7 @@ test("on a license, This month has what's left of its month's emails and credits
   // Named for what gave them, not "Plan".
   expect(table).toContain(">Starter trial</td>");
   expect(page).not.toContain("emails left until");
-  expect(await claimProjectEmail(projectId)).toBe(true);
+  expect(await claimProjectEmail(projectId)).toBeTruthy();
   await prisma.creditGrant.update({ where: { id: month.id }, data: { remaining: 1 } });
   page = await billing();
   expect(page).toMatch(meter("Emails", "9,999 of 10,000 left"));

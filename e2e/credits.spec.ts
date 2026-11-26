@@ -127,7 +127,7 @@ test("an owner buys credits on Stripe; they're added once it's paid", async ({ b
   // A self-hosted server sells no plans: its credits (none left here) and buying more, in one card, then its AI use.
   await expect(owner.getByRole("heading", { name: "Credits", exact: true })).toBeVisible();
   await expect(owner.getByRole("group", { name: "Balance" })).toContainText("No credits left.");
-  await expect(owner.getByText("No AI use yet.")).toBeVisible();
+  await expect(owner.getByText("No usage yet.")).toBeVisible();
   await expect(owner.getByRole("heading", { name: "Plan", exact: true })).toHaveCount(0);
   // An amount from the presets, or Other for one of its own (not both at once), beside the button that buys it.
   const amounts = owner.getByRole("radiogroup", { name: "Amount" });
