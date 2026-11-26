@@ -89,7 +89,7 @@ import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, upd
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
-import { getLanguages, updateLanguages } from "./languages";
+import { getLanguages, retranslateLanguage, updateLanguages } from "./languages";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
@@ -285,6 +285,7 @@ const all = [
   deleteRedirect,
   getLanguages,
   updateLanguages,
+  retranslateLanguage,
   // Before screenshots.get: /screenshots/settings isn't a run's id.
   getScreenshotSettings,
   updateScreenshotSettings,
