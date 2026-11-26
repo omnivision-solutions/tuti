@@ -401,12 +401,12 @@ describe("a conversation the AI has", () => {
     startCache(mockSession.owner);
   });
 
-  it("says the AI is answering in place of the reply box; Take over makes it the team's, and then the reply box is there", async () => {
+  it("says the AI has it in place of the reply box; Take over makes it the team's, and then the reply box is there", async () => {
     const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
     serve(withAi);
     await render(<ConversationRoute />);
 
-    expect(await screen.findByText("The AI is answering.")).toBeTruthy();
+    expect(await screen.findByText("The AI has this conversation.")).toBeTruthy();
     // No composer to type a reply or a note into: taking over comes before typing.
     expect(screen.queryByLabelText("Reply")).toBeNull();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
@@ -414,7 +414,7 @@ describe("a conversation the AI has", () => {
     await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
     expect(patches()).toEqual([{ handledBy: "team" }]);
     expect(await screen.findByLabelText("Reply")).toBeTruthy();
-    expect(screen.queryByText("The AI is answering.")).toBeNull();
+    expect(screen.queryByText("The AI has this conversation.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
     expect(announce).toHaveBeenCalledWith("Taken over");
     // A screen reader's focus, on the button that's gone, is on the reply field.
@@ -427,7 +427,7 @@ describe("a conversation the AI has", () => {
     const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
     serve(withAi);
     await render(<ConversationRoute />);
-    await screen.findByText("The AI is answering.");
+    await screen.findByText("The AI has this conversation.");
     // The change is made on the server, its answer still on its way, when the stream's fetch answers.
     let answer!: (conversation: Conversation) => void;
     const taken: Conversation = { ...withAi, handledBy: "team" };
@@ -442,7 +442,7 @@ describe("a conversation the AI has", () => {
     // Later the AI gets it and a teammate elsewhere takes it over: focus stays where it is.
     serve(withAi);
     await act(async () => mockFocus!());
-    await screen.findByText("The AI is answering.");
+    await screen.findByText("The AI has this conversation.");
     serve(taken);
     await act(async () => mockFocus!());
     await screen.findByLabelText("Reply");
@@ -454,13 +454,13 @@ describe("a conversation the AI has", () => {
     serve({ ...withAi, handledBy: "team" });
     await render(<ConversationRoute />);
     expect(await screen.findByLabelText("Reply")).toBeTruthy();
-    expect(screen.queryByText("The AI is answering.")).toBeNull();
+    expect(screen.queryByText("The AI has this conversation.")).toBeNull();
   });
 
   it("puts the reply box back when a teammate elsewhere takes it over, and takes it away when the AI gets one", async () => {
     serve(withAi);
     await render(<ConversationRoute />);
-    await screen.findByText("The AI is answering.");
+    await screen.findByText("The AI has this conversation.");
 
     // Fetched again (the stream said it changed): the team's now.
     serve({ ...withAi, handledBy: "team" });
@@ -468,14 +468,14 @@ describe("a conversation the AI has", () => {
     expect(await screen.findByLabelText("Reply")).toBeTruthy();
     serve(withAi);
     await act(async () => mockFocus!());
-    expect(await screen.findByText("The AI is answering.")).toBeTruthy();
+    expect(await screen.findByText("The AI has this conversation.")).toBeTruthy();
     expect(screen.queryByLabelText("Reply")).toBeNull();
   });
 
   it("says why Take over didn't happen, in the server's words, and offers it still", async () => {
     serve(withAi);
     await render(<ConversationRoute />);
-    await screen.findByText("The AI is answering.");
+    await screen.findByText("The AI has this conversation.");
     mockApi.mockImplementation((path, init) =>
       init?.method === "PATCH" ? Promise.reject(new ApiError(403, "forbidden", "You can't change this conversation.")) : Promise.resolve(path === "/conversations/12" ? withAi : {}),
     );
@@ -512,12 +512,12 @@ describe("a conversation the AI has", () => {
     it("is shown as it was kept, the AI's and priority, and Take over says why it can't", async () => {
       serve({ ...withAi, priority: true });
       const opened = await render(<ConversationRoute />);
-      await screen.findByText("The AI is answering.");
+      await screen.findByText("The AI has this conversation.");
       await opened.unmount();
 
       offline();
       await render(<ConversationRoute />);
-      expect(await screen.findByText("The AI is answering.")).toBeTruthy();
+      expect(await screen.findByText("The AI has this conversation.")).toBeTruthy();
       expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
       expect(screen.getByText("Priority")).toBeTruthy();
       expect(screen.queryByLabelText("Reply")).toBeNull();
@@ -536,7 +536,7 @@ describe("a conversation the AI has", () => {
       expect(await screen.findByText("Hi! The export stops at 500 rows.")).toBeTruthy();
       expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
       expect(screen.getByLabelText("Reply")).toBeTruthy();
-      expect(screen.queryByText("The AI is answering.")).toBeNull();
+      expect(screen.queryByText("The AI has this conversation.")).toBeNull();
       expect(screen.queryByText("Priority")).toBeNull();
     });
   });

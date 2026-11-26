@@ -285,7 +285,7 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
     }
   }, [notice]);
 
-  // The AI has it: "The AI is answering. Take over" in place of the composer, so taking over comes before typing (a
+  // The AI has it: "The AI has this conversation. Take over" in place of the composer, so taking over comes before typing (a
   // teammate's reply would take it over too, and the AI could answer mid-draft). Closed too: it's still the AI's.
   const withAi = !!conversation && triage?.handledBy === "ai";
   const [taking, setTaking] = useState(false);
@@ -511,7 +511,7 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
       <View style={{ paddingBottom: composerInset(insets.bottom, keyboard) + 8 }}>
       {withAi ? (
         <View style={[IOS ? styles.composerIos : styles.composerAndroid, styles.takeOver, IOS ? { borderColor: colors.border, backgroundColor: colors.card } : { backgroundColor: colors.secondary }]}>
-          <Text style={[styles.body, styles.answering, { color: colors.muted }]}>The AI is answering.</Text>
+          <Text style={[styles.body, styles.answering, { color: colors.muted }]}>The AI has this conversation.</Text>
           <Pressable
             // Not `disabled`, which would drop focus while it's asked: a press is ignored then.
             onPress={() => void takeOver()}
