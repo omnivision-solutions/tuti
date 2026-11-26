@@ -13,7 +13,7 @@ const toast = vi.fn();
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
 
-const { RichEditor } = await import("./rich-editor");
+const { forgetPageTries, RichEditor } = await import("./rich-editor");
 
 const ORIGINAL = "origimage00000000000a";
 const MADE = "madeimage00000000000b";
@@ -26,6 +26,7 @@ const roots: Root[] = [];
 afterEach(async () => {
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
   document.body.replaceChildren();
+  forgetPageTries();
 });
 
 const doc = {
@@ -167,7 +168,7 @@ test("out of credits, Edit with AI says why when pressed (a tap: no tooltip on t
   await vi.waitFor(() => expect(document.body.textContent).toContain("Edit with AI · This project is out of credits"), { timeout: 3000 });
 });
 
-test("each image keeps its tries while the editor is open: back from another image, they're there", async () => {
+test("the page's tries show on every image's dialog: another image has them, and back on the first they're there", async () => {
   const OTHER = "otherimage0000000000c";
   const two = {
     type: "doc",
@@ -190,7 +191,7 @@ test("each image keeps its tries while the editor is open: back from another ima
   await close();
   await act(async () => ref.current!.commands.setNodeSelection(9));
   await click("Edit with AI");
-  expect(button("Try 1")).toBeUndefined();
+  expect(button("Try 1")).toBeTruthy();
   await close();
   await act(async () => ref.current!.commands.setNodeSelection(8));
   await click("Edit with AI");
@@ -254,51 +255,6 @@ test("Replace image again after an undo keeps tries the replaced image got meanw
   await closed();
   await pick();
   await click("Edit with AI");
-  await vi.waitFor(() => expect(button("Try 3")).toBeTruthy());
-});
-
-test("Replace image again while the image it becomes is still making a try keeps that try going, one at a time", async () => {
-  let made = 0;
-  let release: (() => void) | undefined;
-  generateImage.mockImplementation(async () => {
-    const n = ++made;
-    // The third (made on the replacing image) waits.
-    if (n === 3) {
-      await new Promise<void>((resolve) => (release = resolve));
-    }
-    return { image: { id: `madeimage0000000000${n}x`, url: `https://media.example/made${n}.png`, width: 1000, height: 500 } };
-  });
-  const { ref, pick, generate, button, click } = await editor();
-  const closed = () => vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
-  const escape = () => act(async () => document.querySelector<HTMLElement>('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  await pick();
-  await generate();
-  await click("Try again");
-  await click("Try 1");
-  await click("Replace image");
-  await closed();
-  await pick();
-  await click("Edit with AI");
-  const prompt = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Orange sky");
-    prompt.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await click("Try again");
-  await vi.waitFor(() => expect(document.body.textContent).toContain("Generating, up to half a minute…"));
-  await escape();
-  await closed();
-  await act(async () => ref.current!.commands.undo());
-  await pick();
-  await click("Edit with AI");
-  await click("Try 1");
-  await click("Replace image");
-  await closed();
-  // Back on the image it became: still making its try.
-  await pick();
-  await click("Edit with AI");
-  expect(document.body.textContent).toContain("Generating, up to half a minute…");
-  await act(async () => release!());
   await vi.waitFor(() => expect(button("Try 3")).toBeTruthy());
 });
 
@@ -381,9 +337,18 @@ test("a try failing after its dialog was made again (another image edited meanwh
   await act(async () => finish({ error: "This project is out of credits" }));
   expect(button("Generating…")).toBeUndefined();
   expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe("This project is out of credits");
-  // Not the other image's: its dialog has no error.
-  await close();
-  await act(async () => ref.current!.commands.setNodeSelection(9));
-  await click("Edit with AI");
-  expect(document.querySelector('[role="dialog"] [role="alert"]')).toBeNull();
+});
+
+test("the page's tries outlive the editor: drawn again (as a save does), Edit with AI still has them", async () => {
+  const first = await editor();
+  await first.pick();
+  await first.generate();
+  await vi.waitFor(() => expect(first.button("Try 1")).toBeTruthy());
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  // The editor made again on the same page, as after a save.
+  const second = await editor();
+  await second.pick();
+  await second.click("Edit with AI");
+  expect(second.button("Try 1")).toBeTruthy();
 });

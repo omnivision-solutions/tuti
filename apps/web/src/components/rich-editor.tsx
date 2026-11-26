@@ -105,6 +105,15 @@ export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
 /** An editor's placeholder as its props say it now (see "placeholderNow"). */
 const PLACEHOLDER_NOW = new PluginKey<null>("placeholderNow");
 
+type PageTries = { tries: Try[]; generating: boolean; error: string | null };
+/**
+ * The AI tries made on each page (by its path) since it loaded, and whether one is being made: outside the editor, so a
+ * save that draws the editor again keeps them, and one list for all of a page's images (each was paid for).
+ */
+const pageTries = new Map<string, PageTries>();
+/** For tests: every page's tries forgotten. */
+export const forgetPageTries = () => pageTries.clear();
+
 export function RichEditor({
   profile,
   name,
@@ -229,17 +238,14 @@ export function RichEditor({
   // Paste and drop handlers are set up with the editor, before `editor` below has a value.
   const editorRef = useRef<Editor | null>(null);
 
-  // "Edit with AI": the image picked (where it was, as it was). Its dialog stays while the editor does, keeping its tries,
-  // and starts afresh for another image.
-  // Each image's tries, by its media id, while the editor is open, and whether one is being made: editing another image
-  // and coming back finds them, a try landing meanwhile too. Drawn again as they change.
-  type Kept = { tries: Try[]; generating: boolean; error: string | null };
-  const [triesFor] = useState(() => new Map<string, Kept>());
+  // "Edit with AI": the image picked (where it was, as it was). Its dialog starts afresh for each image, with the page's
+  // tries (pageTries): one list for every image here, so a try is never lost to which image it was made for.
   const [, redraw] = useState(0);
-  const keptFor = (id: string): KeptTries => {
-    const now = (): Kept => triesFor.get(id) ?? { tries: [], generating: false, error: null };
-    const set = (next: Kept) => {
-      triesFor.set(id, next);
+  const pageKey = typeof window === "undefined" ? "" : window.location.pathname;
+  const keptTries = (): KeptTries => {
+    const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: false, error: null };
+    const set = (next: PageTries) => {
+      pageTries.set(pageKey, next);
       redraw((n) => n + 1);
     };
     return {
@@ -291,15 +297,6 @@ export function RichEditor({
     if (node) {
       const image = { mediaId: made.id, w: made.width, h: made.height };
       const at = replace ? pos : pos + node.nodeSize;
-      // The image it becomes keeps the tries (and Edit with AI on it again picks the one placed); undone, the old one has its own still.
-      if (replace) {
-        // Merged, not overwritten: tries made on that image before (edited, undone, replaced again) stay.
-        const from = triesFor.get(edited.image.id)?.tries ?? [];
-        const was = triesFor.get(made.id);
-        const had = was?.tries ?? [];
-        // Its own state kept too: a try still being made on it stays the one at a time.
-        triesFor.set(made.id, { tries: [...from, ...had.filter((one) => !from.some((each) => each.id === one.id))], generating: was?.generating ?? false, error: was?.error ?? null });
-      }
       editor
         .chain()
         .command(({ tr }) => {
@@ -616,7 +613,7 @@ export function RichEditor({
         {editor && uploads && imageEditing && edited && (
           <ImageGenerator
             key={edited.image.id}
-            kept={keptFor(edited.image.id)}
+            kept={keptTries()}
             projectSlug={uploads.projectSlug}
             open={editingImage}
             onOpenChange={setEditingImage}
