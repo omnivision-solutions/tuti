@@ -1,0 +1,9 @@
+{
+  "header": {
+    "signIn": "登录",
+    "menu": "菜单",
+    "closeMenu": "关闭菜单",
+    "language": "语言：{language}",
+    "languages": "语言"
+  }
+}

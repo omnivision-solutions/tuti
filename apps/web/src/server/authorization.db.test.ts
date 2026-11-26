@@ -50,6 +50,7 @@ import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
 import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
+import * as readerLanguage from "./reader-language";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
@@ -104,6 +105,7 @@ const modules = {
   posts,
   "project-settings": projectSettings,
   projects,
+  "reader-language": readerLanguage,
   screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
@@ -342,6 +344,10 @@ const matrix: Matrix = {
       call: (slug, f) => withEnv(githubFake.env, () => apiReferences.changeApiReferenceGithub(slug, "matrix-github-api", { repoId: f.specRepoId, path: "openapi-2.json", ref: "main" })),
     },
     deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },
+  },
+  // Anyone may choose the portal's language (its default here), signed in or not: a private portal's sign-in page has the switcher.
+  "reader-language": {
+    chooseLanguage: { allowed: "public", call: (slug) => readerLanguage.chooseLanguage(slug, "en") },
   },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
   "docs-readers": {
