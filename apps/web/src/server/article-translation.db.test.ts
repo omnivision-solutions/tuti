@@ -308,6 +308,14 @@ test("a job lost from the queue is queued again only after the longest the queue
   expect((await translation()).retryAt).toEqual(newer);
 });
 
+test("without AI on the server, pages wait and say why", async () => {
+  await draft();
+  await publish();
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await languages({ languages: [{ code: "de" }] });
+  expect((await call(getLanguages, as(), {})).languages[0]!.articles).toMatchObject({ translated: 0, waiting: 1, why: "AI isn't set up on this server" });
+});
+
 test("pages a language queues all get their safety net before the first is translated, so a restart partway strands none", async () => {
   await draft();
   await publish();

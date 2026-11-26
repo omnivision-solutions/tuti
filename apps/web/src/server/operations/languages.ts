@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { lockProject, markProductSettingBehind, queueLanguageTranslations } from "@tuti/jobs";
-import { isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
+import { aiEnabled, isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
 import { forgetLanguages } from "../language-addresses";
@@ -39,6 +39,9 @@ const languagesOutput = z
   })
   .describe("The portal's languages");
 
+/** Why pages wait on a server with no AI set up: nothing translates them until it is. */
+export const NO_AI = "AI isn't set up on this server";
+
 const languageSelect = { code: true, automatic: true, instructions: true, productAvailable: true, live: true } as const;
 
 export async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
@@ -68,7 +71,7 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
     }).map(({ automatic, live, ...rest }, index) => ({
       ...rest,
       // The most common reason first.
-      articles: { translated: count(translated, rest.code), waiting: count(waiting, rest.code), why: reasons.find((row) => row.language === rest.code)?.error ?? null },
+      articles: { translated: count(translated, rest.code), waiting: count(waiting, rest.code), why: reasons.find((row) => row.language === rest.code)?.error ?? (count(waiting, rest.code) > 0 && !aiEnabled() ? NO_AI : null) },
       newPages: automatic ? ("automatic" as const) : ("manual" as const),
       // Counted among those offered only.
       live: live && (limit === null || index < limit - 1),
