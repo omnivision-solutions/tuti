@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 
@@ -148,4 +148,44 @@ test("a customer's message that couldn't be translated shows as written, with Tr
   await expect(messages).toContainText(english);
   await expect(messages).toContainText("Translated from Deutsch");
   await expect(messages.getByRole("button", { name: "Try again" })).toBeHidden();
+});
+
+test("in the widget, a German customer gets the team's reply in German, with what the team wrote under Show original", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/support", { inbox: true, translate: true }, "PATCH");
+
+  // A reader signed in on the portal writes in German from the widget's Messages.
+  const kai = await signUp(browser, portalUrl(slug), "Kai");
+  const german = `Wo finde ich meine Rechnungen (${slug})?`;
+  await nextModelReply(translated(`Where do I find my invoices (${slug})?`, "de"), slug);
+  await kai.goto(`${portalUrl(slug)}/widget?tab=messages`);
+  await kai.getByRole("button", { name: "New message" }).click();
+  await kai.getByRole("textbox", { name: "Message" }).fill(german);
+  await kai.getByRole("button", { name: "Send" }).click();
+  const thread = kai.getByRole("list", { name: "Messages" });
+  await expect(thread).toContainText(german);
+
+  // The team replies in English, sent in German.
+  const reply = `In Billing → Invoices (${slug}).`;
+  const inGerman = `Unter Abrechnung → Rechnungen (${slug}).`;
+  await nextModelReply(translated(inGerman), reply);
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.getByRole("textbox", { name: "Reply" }).fill(reply);
+  await expect(owner.locator(".inbox-reply-translation")).toContainText(inGerman);
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("list", { name: "Messages" })).toContainText("Sent in Deutsch");
+
+  // The customer reads the German; what the team wrote is a click away.
+  await expect(thread).toContainText(inGerman);
+  await expect(thread).not.toContainText(reply);
+  await thread.getByText("Show original").click();
+  await expect(thread).toContainText(reply);
+  await expect(thread.getByText("Hide original")).toBeVisible();
+  await checkpoint(kai, "widget-show-original");
+  await kai.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(kai, "widget-show-original-phone");
 });

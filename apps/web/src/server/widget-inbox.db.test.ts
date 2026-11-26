@@ -486,3 +486,21 @@ test("a signed-out visitor who types someone else's address never reads that per
     { number: 3, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details.", "Still private-details."] },
   ]);
 });
+
+test("a translated reply reaches them in their language, with what the team wrote as its original; their own message's translation stays the team's", async () => {
+  const { project, team, auth } = await setup();
+  await widgetStartConversation(project.slug, auth, "Wo finde ich meine Rechnung?");
+  // As Translate conversations leaves them (docs/plan.md L22): their message translated for the team, the reply for them.
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, author: "USER" }, data: { teamText: "Where do I find my invoice?", language: "de" } });
+  await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices." });
+  await prisma.conversationMessage.updateMany({
+    where: { projectId: project.id, author: "TEAM" },
+    data: { body: "Unter Abrechnung → Rechnungen.", teamText: "In Billing → Invoices.", language: "de" },
+  });
+  expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({
+    messages: [
+      { fromTeam: false, body: "Wo finde ich meine Rechnung?", original: null, language: null },
+      { fromTeam: true, body: "Unter Abrechnung → Rechnungen.", original: "In Billing → Invoices.", language: "de" },
+    ],
+  });
+});

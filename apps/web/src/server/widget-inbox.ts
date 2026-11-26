@@ -141,6 +141,12 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       fromTeam: boolean;
       name: string | null;
       body: string;
+      /**
+       * The team's reply as they wrote it, where it was translated into the customer's language (docs/plan.md L22):
+       * `body` is the translation, `language` its language. Null otherwise (their own messages' translations are the team's).
+       */
+      original: string | null;
+      language: string | null;
       attachments: { id: string; filename: string; contentType: string; size: number; image: boolean; url: string | null }[];
       /** Imported from another tool, attachments that weren't brought across (shown, so no message is an empty bubble). */
       dropped: number;
@@ -168,6 +174,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         id: true,
         author: true,
         body: true,
+        teamText: true,
+        language: true,
         createdAt: true,
         authorUser: { select: { name: true } },
         attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
@@ -191,6 +199,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       fromTeam: m.author !== "USER",
       name: m.author === "USER" ? null : (m.authorUser?.name ?? null),
       body: m.body,
+      original: m.author !== "USER" ? m.teamText : null,
+      language: m.author !== "USER" && m.teamText !== null ? m.language : null,
       attachments: m.attachments.map((a) => links.get(a.id)!),
       // A received email's files dropped for want of storage are the team's to know (its server), not the user's.
       dropped: m.importId ? m.attachmentsDropped : 0,
