@@ -307,6 +307,20 @@ test("a job lost from the queue is queued again after the longest it may wait; a
   expect((await translation()).retryAt!.getTime()).toBeGreaterThan(Date.now() + 30 * 60_000);
 });
 
+test("inline, the retry job takes no page while a language's pages are still being queued, so none is translated twice", async () => {
+  await draft();
+  await publish();
+  let during: unknown;
+  // An hour into translating the language one page at a time: every page's net is due, and the retry job runs.
+  model.reply(reply(), async () => {
+    await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+    during = await handlers.retryArticleTranslations({}, log);
+  });
+  await languages({ languages: [{ code: "de" }] });
+  expect(during).toEqual({ skipped: "translations still being queued" });
+  expect(model.requests).toHaveLength(1);
+});
+
 test("without AI on the server, pages wait and say why", async () => {
   await draft();
   await publish();

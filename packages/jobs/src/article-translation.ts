@@ -371,6 +371,11 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   if (!aiEnabled()) {
     return { skipped: NO_AI };
   }
+  // Inline, pages still being queued here are on their way (one at a time, maybe past their hour's net): taking them
+  // now would translate, and pay for, them twice. A restart empties this, so what it cut off comes back within the hour.
+  if (process.env.JOBS_DRIVER === "inline" && inBackground.size > 0) {
+    return { skipped: "translations still being queued" };
+  }
   // Claimed in one update, so a run that overlaps a slow one (inline, each runs as it's queued) takes none of its pages;
   // the claim is the safety net's next time, so pages a restart keeps this run from reaching come back too.
   const due = await prisma.articleTranslation.updateManyAndReturn({
