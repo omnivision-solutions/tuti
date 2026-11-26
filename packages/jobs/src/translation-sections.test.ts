@@ -133,3 +133,19 @@ test("a section the team deletes from the middle is recorded as taken out: the j
   const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v2), { removed: new Set(removed) });
   expect(texts(docOfSections(next))).toEqual(["Einleitung", "Abrechnung", "Per Rechnung"]);
 });
+
+test("an intro edited in the same save as a section added keeps its source section: nothing taken out, nothing detached", () => {
+  const source = sourceSections(v1);
+  const { sections: edited, removed } = editedSections(versionSections(de1, [], source), doc(["", "Hallo zusammen"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"], ["FAQ", "Fragen"]), source);
+  expect(removed).toEqual([]);
+  expect(edited.map(({ meta }) => [meta.key?.split("\u001f")[0] ?? null, !!meta.own])).toEqual([
+    ["", true],
+    ["Setup", false],
+    ["Billing", false],
+    [null, true],
+  ]);
+  // A heading reworded in the same save as a section added: still the same section.
+  const reworded = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlung", "Mit Karte zahlen!"], ["FAQ", "Fragen"]), source);
+  expect(reworded.sections.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing", null]);
+  expect(reworded.removed).toEqual([]);
+});

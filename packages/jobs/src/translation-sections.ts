@@ -94,8 +94,8 @@ const headingOf = (blocks: Block[]) => (blocks[0]?.type === "heading" ? JSON.str
 
 /**
  * The team's edit of `base` (the draft, else the published text) as sections. Each edited section is known again as the base
- * section it was: one with the same text, else the same heading, else (as many sections as before) the one in its place;
- * one that is none of them is one the team added. A section as it was keeps what it stands for. A changed one is the team's,
+ * section it was: one with the same text, else the same heading; between those, the ones left over pair in order; one that
+ * is none of them is one the team added. A section as it was keeps what it stands for. A changed one is the team's,
  * and counts as updated against the source as it is now, unless it wasn't shown as behind when it was edited (a section of a
  * version kept up to date that the team didn't own, maybe translated from older source text): that one keeps the hash it had,
  * so an edit of an old translation is still behind. `removed`: the base's sections the edit took out.
@@ -116,8 +116,20 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
     const heading = headingOf(blocks[n]!);
     matched[n] = heading ? take(base.findIndex((other, i) => !used.has(i) && headingOf(other.blocks) === heading)) : undefined;
   });
-  if (blocks.length === base.length) {
-    matched.forEach((was, n) => (matched[n] = was ?? take(n)));
+  // Those matched are fixed points: between two of them (and before the first, after the last), the sections left over pair
+  // with the base's left over there, in order, however many were added or taken out elsewhere. (An intro, with no heading,
+  // pairs with the base's.)
+  const anchors = [
+    { n: -1, i: -1 },
+    ...matched.flatMap((was, n) => (was ? [{ n, i: base.indexOf(was) }] : [])),
+    { n: blocks.length, i: base.length },
+  ];
+  for (const [k, from] of anchors.slice(0, -1).entries()) {
+    const to = anchors[k + 1]!;
+    const free = base.map((_, i) => i).filter((i) => i > from.i && i < to.i && !used.has(i));
+    for (let n = from.n + 1, f = 0; n < to.n && f < free.length; n++) {
+      if (!matched[n]) matched[n] = take(free[f++]!);
+    }
   }
   const out = blocks.map((section, i): Section => {
     const was = matched[i];
