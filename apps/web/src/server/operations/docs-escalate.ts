@@ -268,7 +268,7 @@ async function toConversation(
       // The portal's Messages are the widget's.
       channel: "widget" in from ? "WIDGET" : "API",
       // The spam filter, as in Messages: by who's signed in, never by an address typed or given.
-      filter: async (tx) => spamVerdict(tx, await arrivalOf(tx, projectId, who.userId)),
+      filter: async (tx, first) => spamVerdict(tx, { ...(await arrivalOf(tx, projectId, who.userId)), ...first }),
       then: [
         ...(question.answer ? [{ author: "AI" as const, body: sources.length > 0 ? `${question.answer}\n\nSources: ${sources.join(", ")}` : question.answer }] : []),
         ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),

@@ -24,6 +24,7 @@ import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
 import { suggestReply, summarizeConversation } from "./support-ai";
+import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./spam";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
@@ -134,6 +135,9 @@ const all = [
   unlinkConversationPost,
   suggestReply,
   summarizeConversation,
+  getSpamSettings,
+  updateSpamSettings,
+  trySpamFilter,
   getSupportSettings,
   updateSupportSettings,
   setEmailDomain,

@@ -351,6 +351,9 @@ model Project {
   assistantLength                AnswerLength @default(MEDIUM)
   assistantInstructions          String       @default("")
   assistantOffLimits             String[]     @default([])
+  /// The spam filter's phrases (check 5, server/spam.ts): a new conversation whose subject or first message has one, as
+  /// whole words in any case, is filed as spam.
+  spamPhrases                    String[]     @default([])
   /// Unused: where "Ask a person" emailed questions before it started conversations in the
   /// inbox. Kept while the previous release reads them; dropped in a later one.
   supportEmail                   String?
@@ -1193,6 +1196,8 @@ model Conversation {
   /// Why the spam filter filed it (the check's reason, server/spam.ts): written by the filter alone. Null on one a teammate
   /// marked, on one from before the filter, and once "Not spam" has cleared it.
   spamReason    String?
+  /// With the reason "phrase": the team's phrase that matched, as it was written then.
+  spamPhrase    String?
   /// When a teammate last marked it Spam or Not spam (`spam` says which way).
   spamMarkedAt  DateTime?
   /// Who has it. The AI's are out of the team's views, counts, emails and pushes, in "With AI"; a teammate's reply (not a

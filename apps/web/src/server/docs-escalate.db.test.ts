@@ -399,6 +399,19 @@ describe("from the widget", () => {
     expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(1);
   });
 
+  test("a question with one of the team's phrases is filed as spam, unless one of the project's own users asks it", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { spamPhrases: ["Crypto"] } });
+    model.reply("They want to pay in crypto.");
+    const typed = await asked(asReader(), { source: "WIDGET" });
+    expect(await escalateDocs(project.slug, typed.id, "e2e-sam-9@example.com", "", "widget", {})).toMatchObject({ conversation: 1 });
+    // Trusted, so spared the phrases.
+    const userId = await upsertProjectUser(project.id, "user-9", { name: "Sam", email: "e2e-sam-9@example.com" });
+    model.reply("They want to pay in crypto.");
+    const signedIn = await asked(asReader(), { source: "WIDGET" });
+    expect(await escalateDocs(project.slug, signedIn.id, "e2e-sam-9@example.com", "", "widget", { token: widgetToken(project.id, userId) })).toEqual({ conversation: 2 });
+    expect((await conversations()).map((c) => [c.spam, c.spamReason, c.spamPhrase])).toEqual([[true, "phrase", "Crypto"], [false, null, null]]);
+  });
+
   test("once the conversation is started, the question stays passed on even if announcing it fails", async () => {
     const reader = asReader();
     const question = await asked(reader, { source: "WIDGET" });
