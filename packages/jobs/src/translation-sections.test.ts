@@ -185,3 +185,24 @@ test("a source intro added under the team's section at the top goes first: the t
     ["Billing", false],
   ]);
 });
+
+test("the team's own intro at the top stands for an intro the source adds later: one section, theirs, behind it; their other edits kept", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  const de = doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  // The team writes an intro (no heading) and rewrites Billing.
+  const edited: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...doc(["Einrichtung", "Installieren"], ["Abrechnung", "Unsere Abrechnung"]).content!] };
+  const { sections: ours } = editedSections(versionSections(de, [], source), edited, source);
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source2 = sourceSections(v2);
+  const next = withTranslation(ours, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), source2);
+  expect(texts(docOfSections(next))).toEqual(["Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Unsere Abrechnung"]);
+  // Read back as written: their intro behind the source's, their Billing still theirs.
+  const back = versionSections(docOfSections(next), metaOf(next), source2);
+  expect(back.map(({ meta }) => [meta.key?.split("\u001f")[0] ?? null, !!meta.own])).toEqual([
+    ["", true],
+    ["Setup", false],
+    ["Billing", true],
+  ]);
+  expect(behindSections(back, source2).map((key) => key.split("\u001f")[0])).toEqual([""]);
+});

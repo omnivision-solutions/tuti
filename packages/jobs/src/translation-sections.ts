@@ -92,6 +92,14 @@ export function withTranslation(
   if (intro > 0) {
     out.unshift(...out.splice(intro, 1));
   }
+  // Only a text's first section has no heading: two in a row would read back as one. The team's, at the top, stands for the
+  // source's intro then: still theirs, and behind it (the source's intro is new to it).
+  const headless = (section: Section | undefined) => !!section && section.blocks[0]?.type !== "heading";
+  if (headless(out[0]) && headless(out[1])) {
+    const [first, second] = [out[0]!, out[1]!];
+    const theirs = first.meta.key === null || first.meta.own ? first : second;
+    out.splice(0, 2, { blocks: theirs.blocks, meta: { key: first.meta.key ?? second.meta.key, hash: null, own: true } });
+  }
   return out;
 }
 
