@@ -137,8 +137,8 @@ test("past the hourly uploads or the quota, it's refused (409) before the model 
   // The quota: a teammate with uploads to spare, in a project with no space left.
   await prisma.media.deleteMany({ where: { projectId: project.id } });
   vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 1 } }));
-  // 100 KB left: not enough for a 300×300 PNG at its largest (270 KB).
-  await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1024 * 1024 - 100 * 1024, status: "READY" } });
+  // 300 KB left: enough for a 300×300 PNG at three bytes a pixel (264 KB), not for one that keeps transparency (356 KB).
+  await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1024 * 1024 - 300 * 1024, status: "READY" } });
   await expect(generate({ width: 300, height: 300 })).rejects.toMatchObject({ status: 409, code: "no_room" });
   expect(model.images).toHaveLength(0);
   expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(0);
