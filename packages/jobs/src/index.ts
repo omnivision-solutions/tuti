@@ -24,7 +24,7 @@ import { imageUploaded } from "./images";
 import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
-import { retryArticleTranslations, translateArticle } from "./article-translation";
+import { retryArticleTranslations, translateArticle, translateChangelogEntry } from "./article-translation";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
@@ -58,7 +58,7 @@ export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
-export { behindKey, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
+export { ANNOUNCEMENT_WAITS_MS, behindKey, entryTranslationsPending, languageTranslationsDone, queueChangelogTranslations, translateChangelogEntry, lostAfterMs, PRODUCT_SETTING_CHANGED, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, sameLanguage, translateMessage, translationFailed, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { MAX_SHOW, placeChangelogScreenshots, screenshotsAsked } from "./changelog-screenshots";
@@ -106,6 +106,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   conversationPush,
   translateMessage,
   translateArticle,
+  translateChangelogEntry,
   retryArticleTranslations: () => retryArticleTranslations(),
   checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,

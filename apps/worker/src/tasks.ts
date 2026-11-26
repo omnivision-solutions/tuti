@@ -1,5 +1,5 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { codeChange, handlers, importStep, translateArticle, translateMessage } from "@tuti/jobs";
+import { codeChange, handlers, importStep, translateArticle, translateChangelogEntry, translateMessage } from "@tuti/jobs";
 import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tuti/shared";
 
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
@@ -72,7 +72,8 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     // A long article is several requests of up to a minute each, and one more round for segments that failed their
     // checks (Hatchet's default is 60 seconds); a whole language queued at once waits its turn rather than being dropped.
     // A few at once on the whole server, so one project's language (hundreds of pages) never takes every worker slot.
-    ...(key === "translateArticle" && {
+    // A changelog entry's the same, in the same server-wide group: they share the translation provider and the slots.
+    ...((key === "translateArticle" || key === "translateChangelogEntry") && {
       executionTimeout: "10m" as const,
       scheduleTimeout: "24h" as const,
       concurrency: [...(own ? [own] : []), { expression: "'translate-article'", maxRuns: TRANSLATE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
@@ -104,6 +105,8 @@ export function taskFn(key: JobKey, retries: number, stopping: () => boolean) {
         ? translateMessage(input as JobInput<"translateMessage">, log, { lastTry: ctx.retryCount() >= retries })
         : key === "translateArticle"
           ? translateArticle(input as JobInput<"translateArticle">, log, { lastTry: ctx.retryCount() >= retries })
+          : key === "translateChangelogEntry"
+            ? translateChangelogEntry(input as JobInput<"translateChangelogEntry">, log, { lastTry: ctx.retryCount() >= retries })
         : key === "importStep"
         ? importStep(input as JobInput<"importStep">, log, () => stopping() || ctx.cancelled)
         : handlers[key](input as never, log);
