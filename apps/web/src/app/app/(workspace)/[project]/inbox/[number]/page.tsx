@@ -396,6 +396,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                                 language={message.language}
                                 error={message.translationError}
                                 fromTeam={fromTeam}
+                                // Try again runs only where it can: translation on, and AI on the server.
+                                canRetry={translate && aiEnabled()}
                                 projectSlug={slug}
                                 number={conversation.number}
                               />

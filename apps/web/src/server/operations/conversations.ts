@@ -1396,7 +1396,7 @@ export const retryTranslation = defineOperation({
       return { retried: 0 };
     }
     if (!(await translationSettings(projectId)).translate) {
-      throw new OperationError(409, "translation_off", "This project doesn't translate conversations (Settings → Inbox)");
+      throw new OperationError(409, "translation_off", "This project doesn't translate conversations");
     }
     if (!aiEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");

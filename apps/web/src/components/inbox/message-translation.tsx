@@ -13,9 +13,24 @@ const LINE = "inbox-translation mt-1 flex flex-wrap items-center gap-x-1 text-xs
 const TOGGLE = "cursor-pointer font-medium underline underline-offset-2";
 
 /**
+ * Which line a message has under it: its translation's, its failure's, "Translating…" once Try again has queued it
+ * (until the live refresh brings the result), or none.
+ */
+export function translationLine({ teamText, error, fromTeam, retried }: { teamText: string | null; error: string | null; fromTeam: boolean; retried: boolean }) {
+  if (teamText !== null) {
+    return "translated";
+  }
+  if (fromTeam) {
+    return null;
+  }
+  return error ? "failed" : retried ? "translating" : null;
+}
+
+/**
  * A message's text where the conversation is translated (docs/plan.md L22). The customer's message: its translation into
  * the team's language, "Translated from Deutsch · Show original" under it; one whose translation failed shows as written,
- * with Try again. The team's reply: as they wrote it, "Sent in Deutsch · Show translation" (what the customer got).
+ * with why and Try again. The team's reply: as they wrote it, "Sent in Deutsch · Show translation" (what the customer got).
+ * Always one wrapper around the text, so the text (and the keyboard's focus on it) stays as the line under it changes.
  */
 export function MessageTranslation({
   body,
@@ -23,6 +38,7 @@ export function MessageTranslation({
   language,
   error,
   fromTeam,
+  canRetry,
   projectSlug,
   number,
 }: {
@@ -34,26 +50,28 @@ export function MessageTranslation({
   /** Why the customer's message couldn't be translated. */
   error: string | null;
   fromTeam: boolean;
+  /** Try again can run: the project translates conversations and the server has AI. */
+  canRetry: boolean;
   projectSlug: string;
   number: number;
 }) {
   const [other, setOther] = useState(false);
   const [retrying, startRetry] = useTransition();
+  // Queued again: "Translating…" until the result is in.
+  const [retried, setRetried] = useState(false);
   // Where the keyboard's focus goes once Try again's line is gone.
   const textRef = useRef<HTMLParagraphElement>(null);
   const bodyShown = teamText === null || other;
-  const text = (
-    // `body` is in `language` (the customer's) where it's what's shown.
-    <p ref={textRef} tabIndex={-1} lang={bodyShown ? (language ?? undefined) : undefined} className="text-sm leading-normal break-words whitespace-pre-wrap outline-none">
-      <MessageText text={teamText !== null && !other ? teamText : body} ugc={!fromTeam} />
-    </p>
-  );
-  // Always with its line: the original is a click away, its language named where it's known.
-  if (teamText !== null) {
-    const name = language && nativeLanguageName(language);
-    return (
-      <div>
-        {text}
+  const line = translationLine({ teamText, error, fromTeam, retried: retried || retrying });
+  const name = language && nativeLanguageName(language);
+  return (
+    <div>
+      {/* `body` is in `language` (the customer's) where it's what's shown. */}
+      <p ref={textRef} tabIndex={-1} lang={bodyShown ? (language ?? undefined) : undefined} className="text-sm leading-normal break-words whitespace-pre-wrap outline-none">
+        <MessageText text={teamText !== null && !other ? teamText : body} ugc={!fromTeam} />
+      </p>
+      {line === "translated" && (
+        // Always with its line: the original is a click away, its language named where it's known.
         <p className={LINE}>
           <LanguagesIcon aria-hidden />
           <span>{fromTeam ? (name ? `Sent in ${name}` : "Sent translated") : name ? `Translated from ${name}` : "Translated"} ·</span>
@@ -61,39 +79,46 @@ export function MessageTranslation({
             {other ? (fromTeam ? "Show yours" : "Show translation") : fromTeam ? "Show translation" : "Show original"}
           </button>
         </p>
-      </div>
-    );
-  }
-  if (!fromTeam && error) {
-    return (
-      <div>
-        {text}
+      )}
+      {line === "translating" && (
+        <p className={LINE} role="status">
+          <LanguagesIcon aria-hidden />
+          Translating…
+        </p>
+      )}
+      {line === "failed" && (
         <p className={LINE}>
           <LanguagesIcon aria-hidden />
-          <span title={error}>Couldn&apos;t translate it ·</span>
-          <button
-            type="button"
-            className={TOGGLE}
-            // Not disabled: it keeps the keyboard's focus while it works.
-            aria-disabled={retrying || undefined}
-            onClick={() =>
-              !retrying &&
-              startRetry(async () => {
-                const result = await retryTranslation(projectSlug, number).catch(() => ({ error: "Couldn't ask for it again: try again in a moment" }));
-                if (result.error) {
-                  toast.error(result.error);
-                } else {
-                  textRef.current?.focus();
-                }
-              })
-            }
-          >
-            {retrying ? "Translating…" : "Try again"}
-          </button>
-          <span className="sr-only">{error}</span>
+          {/* Why, in words: a phone can't hover for it. */}
+          <span>
+            {/* Some reasons say it already ("Couldn't queue its translation"). */}
+            {error?.startsWith("Couldn't") ? error : `Couldn't translate it: ${error}`}
+            {canRetry && " ·"}
+          </span>
+          {canRetry && (
+            <button
+              type="button"
+              className={TOGGLE}
+              // Not disabled: it keeps the keyboard's focus while it works.
+              aria-disabled={retrying || undefined}
+              onClick={() =>
+                !retrying &&
+                startRetry(async () => {
+                  const result = await retryTranslation(projectSlug, number).catch(() => ({ error: "Couldn't ask for it again: try again in a moment" }));
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    setRetried(true);
+                    textRef.current?.focus();
+                  }
+                })
+              }
+            >
+              {retrying ? "Translating…" : "Try again"}
+            </button>
+          )}
         </p>
-      </div>
-    );
-  }
-  return text;
+      )}
+    </div>
+  );
 }

@@ -364,3 +364,23 @@ test("Try again twice at once translates the message once", async () => {
   expect(model.requests).toHaveLength(4);
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: "I haven't been able to sign in since yesterday.", translationError: null });
 });
+
+test("Try again is refused with translation off or without AI, and the message keeps why it failed", async () => {
+  const { owner, project, team, conversation } = await german();
+  actAs(owner);
+  model.fail(500);
+  model.fail(500);
+  const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+  const why = failed.translationError;
+  expect(why).not.toBeNull();
+
+  await call(updateSupportSettings, team, { translate: false });
+  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({ error: "This project doesn't translate conversations" });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
+
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  vi.stubEnv("OPENAI_API_KEY", "");
+  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({ error: "AI isn't set up on this server, so conversations can't be translated" });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
+  expect(model.requests).toHaveLength(3);
+});
