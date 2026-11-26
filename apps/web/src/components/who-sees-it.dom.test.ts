@@ -85,3 +85,30 @@ test("while a save runs the picks wait: one made then would be dropped as the pi
   expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
   expect(onChange).not.toHaveBeenCalled();
 });
+
+test("Email only is sent only once it changes, and holds Publish until saved; with no groups, it's all there is", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  const root = createRoot(box);
+  const Held = () => h("output", null, String(useContext(ChangelogSavingContext)?.groupsChanged));
+  await act(async () => root.render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups: [], picked: [], emailOnly: true, upgrade: null, onChange: () => {} }))));
+  expect(box.querySelector('input[name="groups"]')).toBeNull();
+  const only = box.querySelector<HTMLInputElement>('input[name="emailOnly"]')!;
+  expect(only.checked).toBe(true);
+  expect(box.querySelector('input[name="emailOnlyEditable"]')).toBeNull();
+  await act(async () => only.click());
+  expect(only.checked).toBe(false);
+  expect(box.querySelector('input[name="emailOnlyEditable"]')).not.toBeNull();
+  expect(box.querySelector("output")?.textContent).toBe("true");
+});
+
+test("Email only says what happens where no email can go (published without it, or a private portal): listed nowhere, the team's only", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  const root = createRoot(box);
+  await act(async () => root.render(h(WhoSeesIt, { groups: [], picked: [], emailable: false, upgrade: null, onChange: () => {} })));
+  expect(box.textContent).toContain("Listed nowhere: only your team sees it.");
+  expect(box.textContent).not.toContain("Emailed to subscribers");
+  await act(async () => root.render(h(WhoSeesIt, { groups: [], picked: [], upgrade: null, onChange: () => {} })));
+  expect(box.textContent).toContain("Emailed to subscribers and listed nowhere.");
+});
