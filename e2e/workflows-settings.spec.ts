@@ -46,7 +46,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   const replied = main.getByRole("list", { name: "When a user replies" });
   await expect(replied.getByRole("listitem")).toHaveCount(1);
   await expect(replied.getByRole("listitem")).toContainText("Enterprise repliesIn Enterprise: mark priority");
-  const names = () => started.getByRole("listitem").locator("label");
+  const names = () => started.getByRole("listitem").locator("[id$=-name]");
   await expect(names()).toHaveText(["First", "Second", "Third"]);
   await checkpoint(owner, "workflows");
 
@@ -70,6 +70,10 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(menu("First")).toBeFocused();
   await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
+
+  // A click on a row's name is a click on its title: it turns nothing off.
+  await started.getByText("Second", { exact: true }).click();
+  await expect(owner.getByRole("switch", { name: "Second" })).toBeChecked();
 
   // Turned off from the keyboard: it saves at once, and keeps the focus.
   await owner.getByRole("switch", { name: "Second" }).focus();

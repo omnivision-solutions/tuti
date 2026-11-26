@@ -31,7 +31,13 @@ export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { pro
   const settings = (page: string) => `/app/${projectSlug}/settings/${page}`;
   return (
     <ol className="flex flex-col gap-6">
-      <BuiltIn name="Spam filter" description="Stops spam before anything else runs">
+      {/* First for now: it answers in the widget before there is a conversation. Once the AI answers in conversations (W12), it moves after the triggers. */}
+      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, where it answers before a conversation starts, once you've published articles" : "Off in the widget"}>
+        <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Widget
+        </Link>
+      </BuiltIn>
+      <BuiltIn name="Spam filter" description="Stops spam before your workflows run">
         <Link href={settings("spam")} aria-label="Spam filter settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Settings
         </Link>
@@ -41,11 +47,6 @@ export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { pro
           <Group projectSlug={projectSlug} trigger={trigger} workflows={workflows.filter((workflow) => workflow.trigger === trigger)} groupNames={groupNames} />
         </li>
       ))}
-      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, where it answers before a conversation starts, once you've published articles" : "Off in the widget"}>
-        <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
-          Widget
-        </Link>
-      </BuiltIn>
       <BuiltIn name="Hand to the team" description="Moves the conversation to your inbox and notifies you" />
     </ol>
   );
@@ -110,6 +111,8 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
         setMoved(null);
       } else {
         toast.success(`Moved ${byId.get(id)?.name ?? "the workflow"}`);
+        // The page has it now (the action refreshed it in this transition): its order, whatever the rows show.
+        setMoved(null);
       }
     });
   };
@@ -222,15 +225,17 @@ function Row({
       {/* Only a hint that the row drags: the menu's Move up and Move down do it from a keyboard, and on phones. */}
       <GripVerticalIcon aria-hidden className="hidden size-4 shrink-0 text-muted-foreground @min-[34rem]/settings:block" />
       <div className="flex min-w-0 flex-1 flex-col">
-        <label htmlFor={switchId} className="font-medium break-words">
+        {/* The row's title, not the switch's label: a click on it mustn't turn a live workflow off. */}
+        <span id={`${switchId}-name`} className="font-medium break-words">
           {workflow.name}
-        </label>
+        </span>
         <span id={`${switchId}-description`} className="text-sm break-words text-muted-foreground">
           {summary}
         </span>
       </div>
       <Switch
         id={switchId}
+        aria-labelledby={`${switchId}-name`}
         aria-describedby={`${switchId}-description`}
         checked={turned ?? workflow.enabled}
         onChange={(event) => {
