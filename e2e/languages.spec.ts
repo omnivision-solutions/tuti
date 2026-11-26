@@ -290,7 +290,8 @@ test("Docs in German: the docs tabs' lock and the sidebar's links, named in Germ
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
+  // Written by the team (Manual): nothing asks the model to translate its article.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
   await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
   // Two tabs; Enterprise is for signed-in readers, shown to others with a lock.
   await api("/tabs", { name: "Guides" });
