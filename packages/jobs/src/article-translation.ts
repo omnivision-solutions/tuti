@@ -1,6 +1,6 @@
 import { type Doc, fromPlainText, keyed, sections, segmentsOf, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
-import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
+import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
@@ -582,9 +582,19 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   await prisma.articleTranslation.updateMany({ where: { retryAt: null, NOT: { updateSections: { equals: [] } }, article: translatable }, data: { retryAt: new Date() } });
   // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
   const named = await nameUnnamed();
-  // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.
+  // Without AI nothing can translate them: their times stay, so they're taken once AI is set up. Only search data can be
+  // written (embeddings on, chat off): the versions the team writes that need no more than that are queued, the job embeds them.
   if (!aiEnabled()) {
-    return { skipped: NO_AI, ...(named > 0 && { named }) };
+    if (!embeddingsEnabled()) {
+      return { skipped: NO_AI, ...(named > 0 && { named }) };
+    }
+    const due = await prisma.articleTranslation.updateManyAndReturn({
+      where: { retryAt: { lte: new Date() }, automatic: false, publishedAt: { not: null }, tries: { gt: 0 }, updateSections: { equals: [] }, article: translatable },
+      data: { retryAt: new Date(Date.now() + lostAfterMs()) },
+      select: { articleId: true, language: true },
+    });
+    await queueEach(due);
+    return { skipped: NO_AI, queued: due.length, ...(named > 0 && { named }) };
   }
   // Pages a batch here will still queue (its own runs' too) are left to it; the rest is claimed in one update, so a run
   // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
