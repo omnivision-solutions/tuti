@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { handlers, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, queueArticleTranslations, retryDelay, translateArticle, translationSource } from "@tuti/jobs";
+import { handlers, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, queueArticleTranslations, retryBatch, retryDelay, translateArticle, translationSource } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -337,6 +337,35 @@ test("inline, a retry run takes no page an earlier run is still translating", as
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   expect(second).toEqual({ queued: 0 });
   expect(model.requests).toHaveLength(1);
+});
+
+test("inline, a batch holding many due pages doesn't keep the retry job from others past them", async () => {
+  await draft();
+  await publish();
+  // French couldn't be queued (Hatchet unreachable, say): it waits, due.
+  const unreachable = vi.spyOn(handlers, "translateArticle").mockRejectedValue(new Error("Hatchet unreachable"));
+  try {
+    await languages({ languages: [{ code: "fr" }] });
+  } finally {
+    unreachable.mockRestore();
+  }
+  // German's batch holds its page; that page is due and older than French's, and a run reads one page at a time.
+  retryBatch.size = 1;
+  let during: unknown;
+  model.reply(reply(), async () => {
+    await prisma.articleTranslation.updateMany({ where: { projectId: project.id, language: "de" }, data: { retryAt: new Date(Date.now() - 2000) } });
+    await prisma.articleTranslation.updateMany({ where: { projectId: project.id, language: "fr" }, data: { retryAt: new Date(Date.now() - 1000) } });
+    model.reply(reply("fr"));
+    during = await handlers.retryArticleTranslations({}, log);
+  });
+  try {
+    await languages({ languages: [{ code: "fr" }, { code: "de" }] });
+  } finally {
+    retryBatch.size = 500;
+  }
+  // French was taken, past German's held page.
+  expect(during).toEqual({ queued: 1 });
+  expect(await translation("fr")).toMatchObject({ title: "[fr] Getting started", error: null });
 });
 
 test("without AI on the server, pages wait and say why", async () => {

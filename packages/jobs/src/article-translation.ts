@@ -265,8 +265,8 @@ async function queue(articleId: string, language: string) {
 // How many batches hold each page: one finishing leaves it marked while another still holds it.
 const onTheirWay = new Map<string, number>();
 const pageKey = (articleId: string, language: string) => `${articleId}:${language}`;
-/** At most this many pages per retry run (the oldest due first); the next run takes the rest. */
-const RETRY_BATCH = 500;
+/** At most this many pages per retry run (the oldest due first); the next run takes the rest. Tests lower it. */
+export const retryBatch = { size: 500 };
 
 /** Queues pages one after another, each counted as on its way until its turn has been queued. */
 async function queueEach(pages: { articleId: string; language: string }[]) {
@@ -396,11 +396,20 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
   // this run from reaching come back too.
   const now = new Date();
-  const ready = (
-    await prisma.articleTranslation.findMany({ where: { retryAt: { lte: now }, automatic: true }, orderBy: { retryAt: "asc" }, take: RETRY_BATCH, select: { id: true, articleId: true, language: true } })
-  ).filter(
-    ({ articleId, language }) => !onTheirWay.has(pageKey(articleId, language)),
-  );
+  // Read a page at a time past those held here, so a big batch's pages never crowd out everything else's.
+  const ready: { id: string; articleId: string; language: string }[] = [];
+  for (let cursor: string | undefined; ready.length < retryBatch.size; ) {
+    const page = await prisma.articleTranslation.findMany({
+      where: { retryAt: { lte: now }, automatic: true },
+      orderBy: [{ retryAt: "asc" }, { id: "asc" }],
+      take: retryBatch.size,
+      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+      select: { id: true, articleId: true, language: true },
+    });
+    ready.push(...page.filter(({ articleId, language }) => !onTheirWay.has(pageKey(articleId, language))).slice(0, retryBatch.size - ready.length));
+    if (page.length < retryBatch.size) break;
+    cursor = page.at(-1)!.id;
+  }
   const due = await prisma.articleTranslation.updateManyAndReturn({
     where: { id: { in: ready.map(({ id }) => id) }, retryAt: { lte: now }, automatic: true },
     data: { retryAt: new Date(Date.now() + lostAfterMs()) },
