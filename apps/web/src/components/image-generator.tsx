@@ -234,7 +234,7 @@ export function ImageGenerator({
                           aria-label="Add a reference"
                           disabled={full || uploading}
                           focusableWhenDisabled
-                          className="size-16 rounded-lg border border-dashed text-muted-foreground hover:text-foreground [&_svg:not([class*='size-'])]:size-5"
+                          className="size-16 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground [&_svg:not([class*='size-'])]:size-5"
                         />
                       }
                     >
