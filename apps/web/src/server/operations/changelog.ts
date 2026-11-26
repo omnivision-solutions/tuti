@@ -1731,8 +1731,7 @@ export const publishChangelogEntry = defineOperation({
       // Emailed to subscribers once per entry: never again when it's unpublished and published again (a private
       // portal's, to those who may read it: changelogEmailed), and never a sample entry (Home's sample content is for
       // the team to try things with) or a quiet imported one.
-      // ponytail: while a deploy runs the previous release's worker beside this one, a private portal's entry it picks
-      // up is let go (as that release always did): emailed to nobody, as before S5. A release apart if that matters.
+      // (The previous release, part one, already emails a private portal's due entry to its readers: safe during a deploy.)
       if (emailSubscribers && !quiet) {
         await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
       }

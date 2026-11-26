@@ -297,7 +297,8 @@ describe("subscribing", () => {
     expect((await confirm(leeLink)).status).toBe(403);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
     expect((await unsubscribe(kimToken)).status).toBe(303);
-    expect(await page({ token: kimToken })).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+    // A private portal's box is its readers': the way back is the same, through signing in.
+    expect(await page({ token: kimToken })).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore. To get it again, subscribe on the changelog .`);
   });
 
   test("a confirmation link confirms only its own request: not once a newer one replaced it, nor after unsubscribing, used or expired", async () => {
@@ -344,10 +345,10 @@ describe("subscribing", () => {
     expect(await page({ confirm: late })).toContain("To get updates by email, ask again on the changelog");
     expect((await confirm(late)).status).toBe(404);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
-    // On a portal gone private there's nowhere to ask again: the page doesn't say to.
+    // On a private portal too: its box is its readers' (the link has them sign in first).
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
     await dead(late);
-    expect(await page({ confirm: late })).not.toContain("ask again");
+    expect(await page({ confirm: late })).toContain("To get updates by email, ask again on the changelog");
   });
 
   test("a link sent before the address turned the project's emails off can't turn them back on: the newer word stands", async () => {

@@ -37,8 +37,8 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
           <h1 className={heading}>This link doesn&apos;t work any more</h1>
           <p className={text}>
             A confirmation link works once, for {CONFIRM_LINK_HOURS} hours, and only the latest one you were sent.
-            {/* Only where anyone may ask: a private portal's box is for its readers, signed in. */}
-            {project?.portalAccess === "PUBLIC" && <> To get updates by email, ask again on the {changelogLink}.</>}
+            {/* A private portal's box is its readers': the link has them sign in first. */}
+            {project && <> To get updates by email, ask again on the {changelogLink}.</>}
           </p>
         </Message>
       );
@@ -117,7 +117,7 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
           <h1 className={heading}>You&apos;re unsubscribed</h1>
           <p className={text}>
             {name}&apos;s changelog won&apos;t be emailed to {found.email} anymore.
-            {found.project.portalAccess === "PUBLIC" && <> To get it again, subscribe on the {changelogLink}.</>}
+            <> To get it again, subscribe on the {changelogLink}.</>
           </p>
         </Message>
       );
