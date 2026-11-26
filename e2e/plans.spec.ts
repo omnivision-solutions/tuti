@@ -8,6 +8,7 @@ import { expect, test } from "./fixtures";
 
 import { seedArticles } from "./articles";
 import { checkpoints } from "./checkpoint";
+import { spendCredits } from "./credits";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
@@ -31,6 +32,8 @@ test("an owner starts Pro on Stripe, gets its month's credits, hides \"Powered b
   // Its email to its users this month, against its plan's limit; its credits (the free ones, which last longer) in
   // their own card, with buying more.
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("1,000 of 1,000 left")).toBeVisible();
+  // The free plan's email waits at its limit: no credits for more.
+  await expect(owner.getByText(/credits each\.$/)).toHaveCount(0);
   await expect(owner.getByRole("heading", { name: "Credits", exact: true })).toBeVisible();
   await expect(owner.getByRole("group", { name: "Balance" }).getByText("1,000 of 1,000 left")).toBeVisible();
   // The badge's card has a way to the plans on the free plan too, billed as picked there.
@@ -122,6 +125,8 @@ test("an owner starts Pro on Stripe, gets its month's credits, hides \"Powered b
   // A paid plan is managed in Stripe: no Upgrade.
   await expect(owner.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("10,000 of 10,000 left")).toBeVisible();
+  // Past them, a paid plan's emails spend its credits (credits.perEmail).
+  await expect(owner.getByText("Then 0.2 credits each.", { exact: true })).toBeVisible();
   await expect(owner.getByText("$49 a month, added to this project's plan.", { exact: true })).toBeVisible();
   await expect(owner.getByRole("table", { name: "Credits left" }).getByRole("row", { name: /Pro plan/ })).toContainText("1,000");
   await checkpoint(owner, "team-settings-billing-pro-plan");
@@ -606,4 +611,16 @@ test("Tuti's cloud serves its plans to its marketing site; a self-hosted server 
   expect((await own.request.get("/api/plans")).status()).toBe(404);
   await own.goto("/");
   await own.waitForURL("**/app/auth/sign-in");
+});
+
+// The free plan's email waits at its limit whatever its credits: out of them, the banner names only what they pay for there.
+test("out of credits on the free plan, the banner leaves emails out of what's paused", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await spendCredits(slug);
+  await owner.goto(`/app/${slug}/settings/billing`);
+  const banner = owner.getByRole("alert").filter({ hasText: "This project is out of credits" });
+  await expect(banner).toContainText("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot and Verify are paused until it has more.");
+  await expect(banner).not.toContainText("emails");
 });

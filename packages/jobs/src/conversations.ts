@@ -235,13 +235,14 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
   let sent = 0;
   for (const { conversationId, projectId } of due) {
     // A send that then doesn't happen keeps its slot in the daily cap (it errs low), not in the month's count.
-    if (!(await claimProjectEmail(projectId, now))) {
+    const claimed = await claimProjectEmail(projectId, now);
+    if (!claimed) {
       continue;
     }
     if (await sendReplies(conversationId, domain, now, log)) {
       sent++;
     } else {
-      await releaseProjectEmail(projectId, now);
+      await releaseProjectEmail(projectId, claimed);
     }
   }
   return { emails: sent };

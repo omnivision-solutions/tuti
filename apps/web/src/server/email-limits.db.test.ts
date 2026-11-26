@@ -274,7 +274,7 @@ test("if telling the operator fails, SNS's next try tells them; a check that did
 test("a project paused mid-run stops there; without an operator to resume it, nothing is paused", async () => {
   const { project } = await setup();
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
-  expect(await claimProjectEmail(project.id)).toBe(false);
+  expect(await claimProjectEmail(project.id)).toBeNull();
 
   const other = await setup();
   vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { owner: "" } }));

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { aiPaused } from "@tuti/jobs";
-import { CREDIT_FEATURES, trialState } from "@tuti/shared";
+import { creditFeatures, emailsSpendCredits, trialState } from "@tuti/shared";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -51,15 +51,14 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
     ...settingsGroups(project, admin).flatMap((group) => group.pages.map((page) => ({ title: page.title, group: "Settings" as const, section: "settings" as const, href: page.href }))),
   ];
   // The plan as stored (trialEndsAt selected: see @tuti/db).
-  const trial = trialState(
-    await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, planStatus: true, trialEndsAt: true } }),
-  );
+  const stored = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, planStatus: true, trialEndsAt: true } });
+  const trial = trialState(stored);
   return (
     <>
       <CommandMenu projectSlug={project} items={commands} />
       {trial && <TrialNotice projectSlug={project} trial={trial} admin={admin} />}
       {(await aiPaused(membership.project.id)) && (
-        <AiPaused projectSlug={project} stops={`${CREDIT_FEATURES} are paused`} admin={admin} />
+        <AiPaused projectSlug={project} stops={`${creditFeatures(emailsSpendCredits(stored.plan))} are paused`} admin={admin} />
       )}
       <LiveRefresh projectSlug={project} />
       {children}

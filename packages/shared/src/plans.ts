@@ -1,4 +1,5 @@
 import { type BillingPlan, billingConfig, PLAN_FEATURES } from "./billing";
+import { creditsEnabled } from "./credits";
 
 /** Plans (docs/plan.md, Plans): on where this server has a billing file (billing.ts), so a self-hosted server sells nothing and keeps every feature. */
 export function plansEnabled(): boolean {
@@ -19,6 +20,13 @@ function terms(plan: PlanKey): BillingPlan {
   const config = billingConfig()!;
   return listed(plan) ?? config.plans.find(({ key }) => key === config.defaultPlan)!;
 }
+
+/**
+ * Whether a project on `plan` (as stored: not a trial's) spends its credits on emails past its plan's allowance
+ * (packages/jobs/src/email-limits.ts): with plans and credits on, on a plan of its own with an allowance (a plan with no
+ * email limit never pays for one), never the default (free) plan. A licensed project's stored plan is its license's.
+ */
+export const emailsSpendCredits = (plan: PlanKey): boolean => plansEnabled() && creditsEnabled() && !onDefaultPlan(plan) && emailsPerMonth(plan) !== null;
 
 /** Whether a plan can be bought (it has a price): the only ones an upgrade names. */
 const sold = (plan: BillingPlan) => Object.values(plan.prices).some((price) => price.sold);

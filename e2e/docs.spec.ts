@@ -1823,11 +1823,11 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // What the AI cost the project this month, in credits (Usage, on Settings → Billing; its old address lands there)…
   await team.goto(`/app/${slug}/settings/usage`);
   await team.waitForURL(`**/app/${slug}/settings/billing#usage`);
-  const spent = team.getByRole("table", { name: /^AI use in / });
+  const spent = team.getByRole("table", { name: /^Use in / });
   await expect(spent.getByRole("columnheader", { name: "Credits" })).toBeVisible();
   await expect(spent.getByRole("row", { name: /AI answers/ })).toBeVisible();
   // The month's card: named for it, with what it came to at the title's right.
-  await expect(team.getByRole("heading", { name: /^AI usage · [A-Z][a-z]+ \d{4}$/ })).toBeVisible();
+  await expect(team.getByRole("heading", { name: /^Usage · [A-Z][a-z]+ \d{4}$/ })).toBeVisible();
   await expect(team.locator("#usage").getByText(/^[\d,.]+ credits$|^under 0\.01 credits$/)).toBeVisible();
   await checkpoint(team, "team-settings-usage");
   // …taken from the free credits every project starts with, on the same page.

@@ -8,14 +8,25 @@ export function creditsEnabled(): boolean {
   return config().credits.enabled;
 }
 
-/** Everything that spends credits, as one phrase for Billing, Usage, the out-of-credits banner and the credits emails. */
-export const CREDIT_FEATURES = "AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot and Verify";
+const FEATURES = ["AI answers", "Ask a person summaries", "inbox drafts and summaries", "changelog drafts", "Autopilot", "Verify"];
+
+/**
+ * Everything that spends credits, as one phrase for the out-of-credits banner and the credits emails: with `emails`, for
+ * a project whose emails past its plan's allowance spend them too (emailsSpendCredits).
+ */
+export function creditFeatures(emails = false): string {
+  const all = emails ? [...FEATURES, "emails past the plan's monthly allowance"] : FEATURES;
+  return `${all.slice(0, -1).join(", ")} and ${all.at(-1)}`;
+}
 
 /** Credits a dollar paid buys (credits.perTopupDollar). */
 export const creditsPerTopupDollar = () => config().credits.perTopupDollar;
 
 /** Credits a dollar of model cost spends (credits.perUsageDollar). */
 export const creditsPerUsageDollar = () => config().credits.perUsageDollar;
+
+/** Credits each email past the plan's monthly allowance spends (credits.perEmail). */
+export const creditsPerEmail = () => config().credits.perEmail;
 
 /** Whole days a top-up's credits last (credits.topupExpiryDays); null: for good (0). */
 export function topupExpiryDays(): number | null {
