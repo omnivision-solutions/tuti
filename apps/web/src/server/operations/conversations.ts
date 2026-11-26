@@ -85,7 +85,7 @@ const conversationFields = {
   priority: z.boolean().describe("Marked priority: the Inbox's list says so on its row").meta({ examples: [false] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
   waitingSince: at("Since when the user has waited on the team: their oldest unanswered message; null when they aren't waiting").nullable(),
-  snoozedUntil: at("Out of the inbox's views till then, or till the user writes; null when not snoozed (closed and spam ones never are)")
+  snoozedUntil: at("Out of the inbox's views till then, or till the user writes (one the AI has stays in With AI); null when not snoozed (closed and spam ones never are)")
     .nullable()
     .meta({ examples: [null] }),
   createdAt: at("When it started"),
@@ -591,7 +591,7 @@ export const listConversations = defineOperation({
       .enum(VIEW_NAMES)
       .optional()
       .describe(
-        "Only those in this view of the Inbox, as conversations.views counts them: open (needs a reply), mine (assigned to the signed-in teammate, or to whoever created the API key; not closed), unassigned (and open), waiting (on the user), ai (those the AI has, till they're closed or spam: they're in none of the others before), snoozed, closed or spam. Snoozed ones are only in snoozed. It decides spam: `spam` isn't read with it",
+        "Only those in this view of the Inbox, as conversations.views counts them: open (needs a reply), mine (assigned to the signed-in teammate, or to whoever created the API key; not closed), unassigned (and open), waiting (on the user), ai (those the AI has, till they're closed or spam: they're in none of the others before), snoozed, closed or spam. The team's snoozed ones are only in snoozed; the AI's stay in ai. It decides spam: `spam` isn't read with it",
       )
       .meta({ examples: ["open"] }),
     status: z.enum(CONVERSATION_STATUSES).optional().describe("Only those with this status").meta({ examples: ["open"] }),

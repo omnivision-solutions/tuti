@@ -64,6 +64,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
           number: true,
           subject: true,
           spam: true,
+          sample: true,
           handledBy: true,
           email: true,
           name: true,
@@ -76,8 +77,9 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     },
   });
   const conversation = message?.conversation;
-  // Nor one the AI has (docs/plan.md, Inbox automation): nothing about it reaches the team till it's theirs.
-  if (!message || !conversation || message.author !== "USER" || conversation.spam || conversation.handledBy === "AI") {
+  // Nor sample content (Home's "Add sample content": its person isn't real), nor one the AI has (docs/plan.md, Inbox
+  // automation): nothing about it reaches the team till it's theirs.
+  if (!message || !conversation || message.author !== "USER" || conversation.spam || conversation.sample || conversation.handledBy === "AI") {
     return { skipped: "nothing to tell" };
   }
   const team = await prisma.teamMember.findMany({ where: teamToTell(conversation), select: { user: { select: { email: true } } } });

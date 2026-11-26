@@ -174,3 +174,16 @@ test("a conversation taken over without a reply, its user still waiting: the cro
   expect(await resubmit()).toEqual({ found: 1, queued: 1 });
   expect(to(owner.email)).toEqual(["New conversation: Export"]);
 });
+
+test("sample content emails nobody: the job that emails the team about a message skips a sample conversation's", async () => {
+  const { owner, project, key } = await setup();
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: conversation.id, author: "USER" } });
+  // As Home's "Add sample content" leaves one, and not told about yet: the team would be emailed were it real.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { sample: true, notifiedAt: null } });
+  mailbox.emails.length = 0;
+
+  expect(await handlers.conversationMessage({ messageId: message.id }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "nothing to tell" });
+  expect(to(owner.email)).toEqual([]);
+});
