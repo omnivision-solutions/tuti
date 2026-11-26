@@ -739,7 +739,7 @@ const screenshotsDone = { next: false };
 function EntryScreenshotsSection({
   projectSlug,
   number,
-  screenshots: { savedAt, asked, available, running, ran, failed, estimate, credits: spendsCredits },
+  screenshots: { savedAt, asked, lines: asked_lines, available, running, ran, failed, estimate, credits: spendsCredits },
   canTake,
   dirty,
 }: {
@@ -755,6 +755,8 @@ function EntryScreenshotsSection({
   // Done while the form had changes not saved: the form isn't started afresh with the screenshots (that would lose
   // them), it says so instead.
   const [doneUnsaved, setDoneUnsaved] = useState(false);
+  // The lines the confirm step lists, as they were when it opened: exactly these are sent.
+  const [confirming, setConfirming] = useState<string[] | null>(null);
   const unsaved = useRef(dirty);
   const shownSavedAt = useRef(savedAt);
   useEffect(() => {
@@ -833,16 +835,11 @@ function EntryScreenshotsSection({
                     toast.error("Save your changes first: screenshots go into the saved text.");
                     return;
                   }
-                  startTransition(async () => {
-                    const result = await takeChangelogScreenshots(projectSlug, number);
-                    if (result.error) {
-                      toast.error(result.error);
-                    }
-                  });
+                  setConfirming(asked_lines);
                 }}
               >
                 <ImageIcon />
-                {busy ? "Taking screenshots…" : "Take screenshots"}
+                {busy ? "Taking screenshots…" : "Take screenshots…"}
               </Button>
               {spendsCredits && (
                 <p className="text-xs text-muted-foreground">
@@ -851,6 +848,44 @@ function EntryScreenshotsSection({
               )}
             </div>
           )}
+          {/* The lines as sent, for the admin to read first: the agent is signed in to the app, and a line can be anyone's. */}
+          <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && !starting && setConfirming(null)}>
+            <AlertDialogContent closeDisabled={starting}>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{`Take ${confirming?.length === 1 ? "this screenshot" : `these ${confirming?.length ?? 0} screenshots`}?`}</AlertDialogTitle>
+                <AlertDialogDescription render={<div />} className="flex flex-col gap-3 wrap-anywhere">
+                  <p>The agent signs in to your app and does what each line asks, as written. Check that each one only says what to show.</p>
+                  <ol className="flex list-decimal flex-col gap-1 pl-5 text-foreground">
+                    {confirming?.map((line, index) => (
+                      <li key={index}>{line}</li>
+                    ))}
+                  </ol>
+                  {asked > (confirming?.length ?? 0) && <p>{`The other ${asked - (confirming?.length ?? 0)} can be taken once these are in.`}</p>}
+                  {spendsCredits && <p>{estimate === null ? "Screenshots spend credits." : `About ${credits(estimate)} credits, from recent screenshots.`}</p>}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={starting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={starting}
+                  focusableWhenDisabled
+                  onClick={() => {
+                    const shows = confirming ?? [];
+                    startTransition(async () => {
+                      const result = await takeChangelogScreenshots(projectSlug, number, shows);
+                      if (result.error) {
+                        toast.error(result.error);
+                      } else {
+                        setConfirming(null);
+                      }
+                    });
+                  }}
+                >
+                  {starting ? "Starting…" : confirming?.length === 1 ? "Take 1 screenshot" : `Take ${confirming?.length ?? 0} screenshots`}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <p role="status" className={cn("text-muted-foreground", running === null && !doneUnsaved && "sr-only")}>
             {doneUnsaved
               ? "The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots."

@@ -63,6 +63,8 @@ export type BrowserUseFake = {
   failNext: { deletes: number; costs: number; stops: number };
   /** How many of the next browser stops answer 404, as for a browser that stopped by itself since it was listed (it is stopped). */
   goneNext: number;
+  /** Network policies by id (POST/PATCH /network-policies): every run must be given one it has (Screenshots confines its browser to the team's app). */
+  policies: Map<string, { name: string; defaultAction: "allow" | "block"; allow: { domains: string[] } }>;
   /** Lets every stuck run end. */
   release(): void;
   close(): Promise<void>;
@@ -112,6 +114,7 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
     failNext: { deletes: 0, costs: 0, stops: 0 },
     goneNext: 0,
     files,
+    policies: new Map(),
     release: () => {
       for (const run of runs.values()) {
         run.script.stuck = false;
@@ -144,6 +147,21 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         return answer(401, { detail: "Invalid API key" });
       }
       const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      if (path === "/network-policies" && req.method === "POST") {
+        const policy = { name: String(body.name), defaultAction: (body.defaultAction as "allow" | "block") ?? "allow", allow: (body.allow as { domains: string[] }) ?? { domains: [] } };
+        const policyId = id("e");
+        fake.policies.set(policyId, policy);
+        return answer(201, { id: policyId, ...policy });
+      }
+      const policyPath = /^\/network-policies\/([^/]+)$/.exec(path);
+      if (policyPath && req.method === "PATCH") {
+        const policy = fake.policies.get(policyPath[1]!);
+        if (!policy) {
+          return answer(404, { detail: "No such policy" });
+        }
+        Object.assign(policy, body.defaultAction && { defaultAction: body.defaultAction }, body.allow && { allow: body.allow });
+        return answer(200, { id: policyPath[1], ...policy });
+      }
       if (path === "/workspaces" && req.method === "POST") {
         const workspaceId = id("a");
         files.set(workspaceId, new Map());
@@ -153,9 +171,13 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         // A copy: release() changes it.
         // Browser Use's residential proxy is on by default (billed per GB): Tuti always says whether it wants it, so a run
         // that leaves it out is refused.
-        const settings = body.browserSettings as { proxyCountryCode?: unknown } | null | undefined;
+        const settings = body.browserSettings as { proxyCountryCode?: unknown; networkPolicyId?: unknown } | null | undefined;
         if (!settings || !("proxyCountryCode" in settings) || (settings.proxyCountryCode !== null && typeof settings.proxyCountryCode !== "string")) {
           return answer(422, { detail: "The fake refuses a run without browserSettings.proxyCountryCode (Browser Use's residential proxy is on by default)" });
+        }
+        // Screenshots confine every run's browser to the team's app: the fake refuses one without a policy it knows.
+        if (typeof settings.networkPolicyId !== "string" || !fake.policies.has(settings.networkPolicyId)) {
+          return answer(settings.networkPolicyId ? 404 : 422, { detail: "The fake refuses a run without a network policy it has (browserSettings.networkPolicyId)" });
         }
         const script = { ...(scripts.shift() ?? {}) };
         script.stuck ||= String(body.task).includes(FAKE_SLOW);

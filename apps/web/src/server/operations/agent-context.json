@@ -44,7 +44,7 @@
   "changelog.removePullRequest": ["added","addpullrequests","changelog","draft","entry","later","line","merged","next","published","pull","readers","request","ships","stay","still","take","written"],
   "changelog.rewrite": ["accept","changelog","content","developers","edit","entry","expectedupdatedat","explain","first","heading","instruction","number","optional","plain","propose","proposed","rewrite","saving","section","send","shorten","text","update","whole"],
   "changelog.seen": ["announced","back","behalf","changelog","creator","default","entries","mark","moves","never","published","seen","someone"],
-  "changelog.takeScreenshots": ["back","background","costs","credits","entry","holding","line","lines","publishing","reads","replaces","screenshot","screenshots","stays","still","take","taken","used"],
+  "changelog.takeScreenshots": ["background","confirm","costs","credits","entry","line","lines","reads","replaces","saved","screenshot","screenshots","shots","stays","still","take","taken","text","used"],
   "changelog.unpublish": ["back","changelog","draft","entry","keep","portal","posts","status","take"],
   "changelog.update": ["change","changelog","completes","cover","draft","entry","featured","image","link","list","null","posts","preview","remove","replace","tags","text","title","upload"],
   "changelogComments.create": ["behalf","changelog","comment","creator","draft","entry","none","published","someone","takes"],

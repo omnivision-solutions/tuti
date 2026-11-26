@@ -3417,6 +3417,10 @@ model ScreenshotSettings {
   window     ScreenshotWindow @default(DESKTOP)
   /// Runs go through Browser Use's residential proxy (billed per GB): only for an app that blocks cloud servers.
   residentialProxy Boolean    @default(false)
+  /// Its runs' network policy at Browser Use (only the app's host and the sign-in link's open), and the domains it
+  /// allows, space-separated: updated when they change.
+  networkPolicyId      String?
+  networkPolicyDomains String   @default("")
   updatedAt  DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

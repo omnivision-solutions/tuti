@@ -211,9 +211,10 @@ export async function removeChangelogPullRequest(projectSlug: string, number: nu
   return asTeam(projectSlug, DENIED, (context) => call(removePullRequestOperation, context, { number: Number(number), url: String(url) }));
 }
 
-/** The entry editor's "Take screenshots" (changelog.takeScreenshots): its "[Screenshot: …]" lines filled in the background. */
-export async function takeChangelogScreenshots(projectSlug: string, number: number): Promise<FormState> {
-  return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { number: Number(number) }));
+/** The entry editor's "Take screenshots" (changelog.takeScreenshots): the "[Screenshot: …]" lines it listed and the admin confirmed, filled in the background. */
+export async function takeChangelogScreenshots(projectSlug: string, number: number, shows: string[]): Promise<FormState> {
+  const shots = (Array.isArray(shows) ? shows : []).map((show) => ({ show: String(show) }));
+  return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { number: Number(number), shots }));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */

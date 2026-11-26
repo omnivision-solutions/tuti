@@ -249,7 +249,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshotSettings.test": () => ({}),
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
-  "changelog.takeScreenshots": () => ({ number: 3 }),
+  "changelog.takeScreenshots": () => ({ number: 3, shots: [{ show: "The dashboard" }] }),
 };
 
 let owner: TestUser;

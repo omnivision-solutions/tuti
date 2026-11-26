@@ -1449,10 +1449,15 @@ test("a draft's screenshot lines are filled with screenshots of the team's app; 
   await expect(section).toContainText("2 lines ask for a screenshot. Tuti can take them: set up your app in Settings → Screenshots.");
   await expect(section.getByRole("link", { name: "set up your app in Settings → Screenshots" })).toHaveAttribute("href", `/app/${slug}/settings/screenshots`);
 
-  // Set up: Take screenshots, and each one taken is in the text in place of its line.
+  // Set up: Take screenshots lists the lines it sends, to read first; each one taken is in the text in place of its line.
   await api("/screenshots/settings", { appUrl: "https://app.example.com", signIn: "none" }, "PATCH");
   await team.reload();
-  await section.getByRole("button", { name: "Take screenshots" }).click();
+  await section.getByRole("button", { name: "Take screenshots…" }).click();
+  const confirm = team.getByRole("alertdialog");
+  await expect(confirm.getByRole("heading")).toHaveText("Take these 2 screenshots?");
+  await expect(confirm.getByRole("listitem")).toHaveText(["the billing page", "a screen that isn't there, the reports page"]);
+  await checkpoint(team, "team-changelog-screenshots-confirm");
+  await confirm.getByRole("button", { name: "Take 2 screenshots" }).click();
   await expect(team.getByRole("textbox", { name: "What changed" }).getByRole("img", { name: "The screen: the billing page" })).toBeVisible();
   await expect(section).toContainText("1 line asks for a screenshot.");
   await expect(section.getByRole("listitem")).toHaveText("“a screen that isn't there, the reports page”: There's no such screen in the app.");
@@ -1493,7 +1498,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
   const section = team.getByRole("region", { name: "Screenshots" });
 
   // Started from the API (its job runs inline here, so the request ends with the run), the editor shows it running.
-  const first = api("/changelog/1/screenshots", {});
+  const first = api("/changelog/1/screenshots", { shots: [{ show: "a screen that takes a while, the dashboard" }] });
   await expect.poll(runs).toBe(1);
   await team.goto(`/app/${slug}/changelog/1`);
   await expect(section.getByRole("status")).toHaveText("Taking 1 screenshot. This takes a few minutes; you can leave this page.");
@@ -1514,7 +1519,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible();
 
   // Nothing typed: the screenshot comes in by itself, said, and focus goes to the section.
-  const second = api("/changelog/2/screenshots", {});
+  const second = api("/changelog/2/screenshots", { shots: [{ show: "a screen that takes a while, the dashboard" }] });
   await expect.poll(runs).toBe(2);
   await team.goto(`/app/${slug}/changelog/2`);
   await expect(section.getByRole("status")).toHaveText(/^Taking 1 screenshot\./);
@@ -1526,7 +1531,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await expect(section).toContainText("No lines left to fill with a screenshot.");
 
   // Typed meanwhile, but nothing went in: the form stays as it is, with no notice, and says why.
-  const third = api("/changelog/3/screenshots", {});
+  const third = api("/changelog/3/screenshots", { shots: [{ show: "a screen that takes a while, a screen that isn't there" }] });
   await expect.poll(runs).toBe(3);
   await team.goto(`/app/${slug}/changelog/3`);
   await expect(section.getByRole("status")).toHaveText(/^Taking 1 screenshot\./);

@@ -349,33 +349,55 @@ export const getScreenshots = defineOperation({
 export const takeChangelogScreenshots = defineOperation({
   name: "changelog.takeScreenshots",
   title: "Fill screenshot lines",
-  summary: `Take screenshots for the entry's "[Screenshot: …]" lines (up to ${MAX_SHOTS}), in the background (screenshots.get reads the run). Each one taken replaces its line if the line is still as it was; one not taken stays, holding publishing back. Costs credits where used`,
+  summary: `Take screenshots for the entry's "[Screenshot: …]" lines you confirm (\`shots\`, up to ${MAX_SHOTS}, each still in its saved text), in the background (screenshots.get reads the run). Each one taken replaces its line if still there as it was; one not taken stays. Costs credits where used`,
   method: "POST",
   path: "/changelog/{number}/screenshots",
   scope: "write",
   // As screenshots.take: what's asked for goes into the agent's task beside the sign-in.
   access: "admin",
   errors: [402, 404, 409, 503],
-  input: z.object({ number: z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] }) }),
+  input: z.object({
+    number: z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] }),
+    shots: z
+      .array(
+        z.object({
+          show: z
+            .string()
+            .trim()
+            .min(1, "Say what each screenshot shows")
+            .max(MAX_SHOW, `Keep each screenshot line under ${MAX_SHOW} characters`)
+            .describe("A line's text, between \"[Screenshot:\" and \"]\", as it is in the entry"),
+        }),
+      )
+      .min(1, "Pick a line to take")
+      .max(MAX_SHOTS, `Take up to ${MAX_SHOTS} screenshots at a time`)
+      .describe(`The lines to take, as you read them in the entry: only these are sent to the agent, and each must still be one of its "[Screenshot: …]" lines (a 409 otherwise)`),
+  }),
   output: runOutput.describe("The run, running"),
-  run: async ({ actor, projectId }, { number }) => {
+  example: { shots: [{ show: "The billing page with the invoices list" }] },
+  run: async ({ actor, projectId }, { number, shots }) => {
     const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, content: true, body: true } });
     if (!entry) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
     await refuseRun(projectId);
-    const asked = screenshotsAsked(displayDoc(entry));
-    if (asked.length === 0) {
+    // Only lines the caller confirmed, each one of the entry's own, one for one: what the agent is asked is what was
+    // read, never a line added since (by a member, or a draft written from outside text).
+    const left = screenshotsAsked(displayDoc(entry));
+    if (left.length === 0) {
       throw new OperationError(409, "no_markers", "This entry has no “[Screenshot: …]” lines to fill.");
     }
-    // Asked whole or not at all: one cut short could match another line alike up to the cut.
-    const long = asked.find((show) => show.length > MAX_SHOW);
-    if (long) {
-      throw new OperationError(400, "invalid_input", `Keep each screenshot line under ${MAX_SHOW} characters: “[Screenshot: ${long.slice(0, 60)}…]”`);
+    for (const { show } of shots) {
+      const at = left.indexOf(show);
+      if (at === -1) {
+        throw new OperationError(409, "changed", `“[Screenshot: ${show.slice(0, 80)}${show.length > 80 ? "…" : ""}]” isn't in the entry's saved text any more. Look at its lines again.`);
+      }
+      left.splice(at, 1);
     }
-    return start(projectId, actor, asked.slice(0, MAX_SHOTS).map((show) => ({ show })), false, entry.id);
+    return start(projectId, actor, shots, false, entry.id);
   },
 });
+
 
 /** Shots whose cost the estimate averages: the project's latest. */
 const ESTIMATE_SHOTS = 20;
@@ -416,6 +438,8 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
     // When the entry shown was saved: a run that ends without changing it changed nothing in the form.
     savedAt: entry.updatedAt.toISOString(),
     asked: asked.length,
+    // The lines, for Take screenshots to list before it sends them (the first MAX_SHOTS).
+    lines: asked.slice(0, MAX_SHOTS),
     available: screenshotsAvailable() && setUp ? true : screenshotsAvailable() ? ("not_set_up" as const) : false,
     running: run && going ? run.screenshots.length : null,
     // A run for it ended: the section stays (focus goes to it after one), saying when every line is filled.
