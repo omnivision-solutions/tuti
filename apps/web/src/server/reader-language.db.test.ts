@@ -71,3 +71,14 @@ test("past the plan's limit (after a downgrade) only the oldest languages within
   expect(await currentLanguage(project.id, null)).toEqual({ languages: { default: "en", live: ["de", "es"] }, language: "en" });
   expect(await chooseLanguage(project.slug, "fr")).toEqual({ error: "This portal isn't in that language" });
 });
+
+test("a language this release doesn't offer (a newer release's) takes none of the plan's room for readers", async () => {
+  const project = await portalIn("de", "es");
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "sv", live: true, createdAt: new Date(0) } });
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  actAs(null);
+  request.cookie = `${LANGUAGE_COOKIE}=es`;
+  expect(await currentLanguage(project.id, null)).toEqual({ languages: { default: "en", live: ["de", "es"] }, language: "es" });
+  expect(await chooseLanguage(project.slug, "es")).not.toHaveProperty("error");
+});
