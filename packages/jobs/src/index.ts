@@ -24,6 +24,7 @@ import { imageUploaded } from "./images";
 import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
+import { retryArticleTranslations, translateArticle } from "./article-translation";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
@@ -57,6 +58,7 @@ export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
+export { behindKey, PRODUCT_SETTING_CHANGED, productSettingChanged, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
 export { DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, translateMessage, translationFailed, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
@@ -102,6 +104,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   conversationMessage,
   conversationPush,
   translateMessage,
+  translateArticle,
+  retryArticleTranslations: () => retryArticleTranslations(),
   checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,
   checkEmailDomains,

@@ -46,6 +46,23 @@ export const jobs = {
     retries: 3,
     backoff: { factor: 4, maxSeconds: 300 },
   },
+  /**
+   * An article into one of the project's languages (docs/plan.md, Languages, L6): after a publish, a language added,
+   * Retranslate, Try again or "Our product is available in" changing. `fresh`: no segment's remembered translation reused.
+   */
+  translateArticle: {
+    name: "translate-article",
+    input: z.object({ articleId: z.string(), language: z.string(), fresh: z.boolean().optional() }),
+    // The provider not answering is tried again a few times; the last try keeps why, and retryArticleTranslations goes on.
+    retries: 3,
+    backoff: { factor: 4, maxSeconds: 300 },
+  },
+  /** Translations that couldn't be made (no credits, the provider failing) tried again on their own, backing off up to a day. */
+  retryArticleTranslations: {
+    name: "retry-article-translations",
+    input: z.object({}),
+    cron: "*/15 * * * *",
+  },
   /** Reads Expo's receipts for pushes sent 15 minutes ago or more, dropping devices whose token is no longer registered. */
   checkPushReceipts: {
     name: "check-push-receipts",

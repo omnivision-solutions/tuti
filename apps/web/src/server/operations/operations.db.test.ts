@@ -231,6 +231,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "redirects.delete": (f) => ({ id: f.redirectId }),
   "languages.get": () => ({}),
   "languages.update": () => ({ languages: [{ code: "de", instructions: "Use du." }] }),
+  // German, which the fixture adds (Manual for new pages, so nothing is asked of the model).
+  "languages.retranslate": () => ({ code: "de", waiting: true }),
   // Like the rest of Settings: admins only in the app. The agent is Browser Use's fake; the secret never comes back.
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
@@ -304,6 +306,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   ses.identities.set("matrix.example.com", { tags: { "tuti-project": project.id }, tokens: ["matrixtoken1"], configurationSet: "tuti-test", verified: true });
   await prisma.post.deleteMany({ where: { projectId: project.id } });
+  await prisma.projectLanguage.upsert({ where: { projectId_code: { projectId: project.id, code: "de" } }, create: { projectId: project.id, code: "de", automatic: false }, update: {} });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
   // Who's asking on `seats`, so companies.list has a total to return.
   await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2, askingProperty: "seats" } });
