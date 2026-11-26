@@ -70,7 +70,7 @@ test("the team's phrases are check 5, after the flood limit", () => {
 
 test("a phrase files a new conversation: whole words, any case, in the subject or the text, and the conversation keeps which", async () => {
   const { projectId, admin, update, mail, filed } = await setup();
-  expect(await update({ phrases: ["Facebook Admin", "crypto"] })).toMatchObject({ phrases: ["Facebook Admin", "crypto"] });
+  expect(await update({ addPhrases: ["Facebook Admin", "crypto"] })).toMatchObject({ phrases: ["Facebook Admin", "crypto"] });
   await mail("e2e-a@strangers.example", { subject: "FACEBOOK admin notice" }); // #1: the subject, any case
   await mail("e2e-b@strangers.example", { body: "We are the facebook-admin team.\nAct now." }); // #2: the text, whatever is between the words
   await mail("e2e-c@strangers.example", { body: "From the facebook administrators" }); // #3: not whole words
@@ -91,14 +91,14 @@ test("a phrase files a new conversation: whole words, any case, in the subject o
   await mail("e2e-g@strangers.example", { body: "crypto", auth: FAIL }); // #7
   expect((await filed())[6]).toBe("dmarc_failed");
   // With the phrase gone, the same mail arrives.
-  await update({ phrases: ["Facebook Admin"] });
+  expect(await update({ removePhrases: ["CRYPTO!"] })).toMatchObject({ phrases: ["Facebook Admin"] });
   await mail("e2e-f@strangers.example", { body: "Free crypto!" }); // #8
   expect((await filed())[7]).toBe("inbox");
 });
 
 test("an allow or trust spares the phrases, in the widget too; a stranger there isn't spared, and Not spam says what it leaves", async () => {
   const { project, projectId, admin, update, mail, filed } = await setup();
-  await update({ phrases: ["crypto"], allow: ["friends.example"] });
+  await update({ addPhrases: ["crypto"], allow: ["friends.example"] });
   await mail("e2e-kim@friends.example", { body: "About crypto" }); // #1: an allowed domain
   const sam = await upsertProjectUser(projectId, "user-42", { name: "Sam", email: "e2e-sam@example.com" });
   expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, sam) }, "Do you take crypto?")).toEqual({ number: 2 }); // one of the project's users
@@ -147,12 +147,24 @@ test("spam.update refuses what isn't an address or a domain, a suffix, a free-ma
   }
   await expect(update({ block: ["mail.gmail.com"] })).rejects.toThrow("Anyone can get an address at mail.gmail.com, so it isn't blocked: block its addresses");
   await expect(update({ block: ["acme.example"], allow: ["Acme.example"] })).rejects.toThrow("acme.example is there twice: block it, allow it or remove it");
-  await expect(update({ phrases: ["!!!"] })).rejects.toThrow("Each phrase needs a word in it");
+  await expect(update({ addPhrases: ["!!!"] })).rejects.toThrow("Each phrase needs a word in it");
   // An address there is one sender, and allowing the domain blocks nobody: both are taken.
   await update({ block: ["e2e-kim@gmail.com"], allow: ["gmail.com"] });
-  // Phrases that match the same text are one.
-  expect(await update({ phrases: ["Facebook admin", "facebook  ADMIN", "crypto"] })).toEqual({ blocked: ["e2e-kim@gmail.com"], allowed: ["gmail.com"], phrases: ["Facebook admin", "crypto"] });
+  // Phrases that match the same text are one, sent together or added later.
+  expect(await update({ addPhrases: ["Facebook admin", "facebook  ADMIN", "crypto"] })).toEqual({ blocked: ["e2e-kim@gmail.com"], allowed: ["gmail.com"], phrases: ["Facebook admin", "crypto"] });
+  expect(await update({ addPhrases: ["facebook-admin"] })).toMatchObject({ phrases: ["Facebook admin", "crypto"] });
   expect(await call(getSpamSettings, admin, {})).toMatchObject({ phrases: ["Facebook admin", "crypto"] });
+  // The list holds 50: adding past it is refused, and taking one out still works.
+  await update({ addPhrases: Array.from({ length: 48 }, (_, i) => `phrase ${i}`) });
+  await expect(update({ addPhrases: ["one too many"] })).rejects.toThrow(new OperationError(409, "too_many", "The list holds up to 50 phrases: remove some first"));
+  expect((await update({ removePhrases: ["crypto"], addPhrases: ["one too many"] })).phrases).toHaveLength(50);
+});
+
+test("two admins adding a phrase at the same moment both keep theirs", async () => {
+  const { admin, update } = await setup();
+  await update({ addPhrases: ["crypto"] });
+  await Promise.all(["facebook admin", "free followers", "seo services", "guest post"].map((phrase) => update({ addPhrases: [phrase] })));
+  expect((await call(getSpamSettings, admin, {})).phrases.sort()).toEqual(["crypto", "facebook admin", "free followers", "guest post", "seo services"]);
 });
 
 test("an address on the allowed list is spared the hourly limit too; a domain on it isn't", { timeout: 60_000 }, async () => {
@@ -170,7 +182,7 @@ test("an address on the allowed list is spared the hourly limit too; a domain on
 
 test("trying a message says what the free checks would do with it and why, and changes nothing", async () => {
   const { projectId, owner, admin, update } = await setup();
-  await update({ block: ["e2e-kim@spam.example", "junk.example"], phrases: ["Facebook Admin"] });
+  await update({ block: ["e2e-kim@spam.example", "junk.example"], addPhrases: ["Facebook Admin"] });
   const rows = () => Promise.all([prisma.conversation.count(), prisma.inboundEmail.count(), prisma.spamSender.count({ where: { projectId } })]);
   const before = await rows();
   const attempt = (sender: string, subject = "", text = "") => call(trySpamFilter, admin, { sender, subject, text });

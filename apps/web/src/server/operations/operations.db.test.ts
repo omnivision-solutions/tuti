@@ -169,7 +169,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "support.checkEmailDomain": () => ({}),
   "support.removeEmailDomain": () => ({}),
   "spam.get": () => ({}),
-  "spam.update": () => ({ block: ["spam.example"], allow: ["e2e-matrix-forms@example.com"], phrases: ["facebook admin"] }),
+  "spam.update": () => ({ block: ["spam.example"], allow: ["e2e-matrix-forms@example.com"], addPhrases: ["facebook admin"] }),
   "spam.try": () => ({ sender: "e2e-matrix-kim@example.com", subject: "Facebook Admin", text: "Your page will be disabled." }),
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),

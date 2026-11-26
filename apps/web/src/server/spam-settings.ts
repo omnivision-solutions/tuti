@@ -1,7 +1,7 @@
 "use server";
 
 import type { FormState } from "./form-state";
-import { spamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
+import { trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { asAdmin, call } from "./operations/run";
 
 /** Settings → Spam (see the spam.* operations): the lists, the phrases and the box to try a message. */
@@ -18,16 +18,9 @@ export async function removeSpamSender(projectSlug: string, sender: string): Pro
   return asAdmin(projectSlug, DENIED, (context) => call(updateSpamSettings, context, { remove: [String(sender)] }));
 }
 
-/**
- * Adds a phrase (`add`) or takes one out.
- * ponytail: the list is read, then written whole (spam.update replaces it), so two admins changing it in the same
- * instant can lose one change. Hold the project's row across both if that ever happens.
- */
+/** Adds a phrase (`add`) or takes one out. */
 export async function setSpamPhrase(projectSlug: string, phrase: string, add: boolean): Promise<FormState> {
-  return asAdmin(projectSlug, DENIED, async (context) => {
-    const { phrases } = await spamSettings(context.projectId);
-    await call(updateSpamSettings, context, { phrases: add ? [...phrases, String(phrase)] : phrases.filter((other) => other !== phrase) });
-  });
+  return asAdmin(projectSlug, DENIED, (context) => call(updateSpamSettings, context, add ? { addPhrases: [String(phrase)] } : { removePhrases: [String(phrase)] }));
 }
 
 export type SpamTry = { error?: string; spam?: boolean; why?: string };

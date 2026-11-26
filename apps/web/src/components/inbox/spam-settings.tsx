@@ -11,6 +11,7 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
+import { matchText } from "@/lib/match-text";
 import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
 import type { FormState } from "@/server/form-state";
 import type { SpamSettings as Settings } from "@/server/operations/spam";
@@ -18,8 +19,8 @@ import { listSpamSender, removeSpamSender, setSpamPhrase, type SpamTry, trySpam 
 
 const SENDER = "kim@acme.example or acme.example";
 const aboutSender = (entry: string) => (entry.includes("@") ? null : "and its subdomains");
-/** An entry as the lists compare them: any case, and "@acme.example" for the domain. */
-const same = (entry: string) => entry.trim().toLowerCase().replace(/^@/, "");
+/** An address or a domain as the lists keep it: lowercase, and "@acme.example" the domain. */
+const asSender = (entry: string) => entry.trim().toLowerCase().replace(/^@/, "");
 
 /**
  * Settings → Spam (docs/plan.md, Inbox automation, W2): the spam filter's blocked and allowed lists, the team's phrases,
@@ -37,6 +38,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
         empty="Nobody is blocked"
         entries={settings.blocked}
         about={aboutSender}
+        as={asSender}
         add={(entry) => listSpamSender(projectSlug, true, entry)}
         remove={(entry) => removeSpamSender(projectSlug, entry)}
       />
@@ -49,6 +51,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
         empty="Nobody is allowed by name"
         entries={settings.allowed}
         about={aboutSender}
+        as={asSender}
         add={(entry) => listSpamSender(projectSlug, false, entry)}
         remove={(entry) => removeSpamSender(projectSlug, entry)}
       />
@@ -61,6 +64,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
         maxLength={maxPhrase}
         empty="No phrases yet"
         entries={settings.phrases}
+        as={matchText}
         add={(entry) => setSpamPhrase(projectSlug, entry, true)}
         remove={(entry) => setSpamPhrase(projectSlug, entry, false)}
       />
@@ -71,7 +75,8 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
 
 /**
  * One list as a card: its count beside the title, one field and Add (as Redirects' two fields, in the card), then its
- * entries, each with Remove under its ⋯. `about`: a muted word after an entry.
+ * entries, each with Remove under its ⋯. `about`: a muted word after an entry. `as`: an entry as the server compares
+ * them, so one that's there already is said, not added.
  */
 function EntryList({
   id,
@@ -83,6 +88,7 @@ function EntryList({
   empty,
   entries,
   about,
+  as,
   add,
   remove,
 }: {
@@ -95,6 +101,7 @@ function EntryList({
   empty: string;
   entries: string[];
   about?: (entry: string) => string | null;
+  as: (entry: string) => string;
   add: (entry: string) => Promise<FormState>;
   remove: (entry: string) => Promise<FormState>;
 }) {
@@ -102,7 +109,7 @@ function EntryList({
   const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
     const typed = String(formData.get("entry") ?? "");
     // Said here: the server takes one that's there already as done, and "Added" would be wrong.
-    if (entries.some((entry) => same(entry) === same(typed))) {
+    if (entries.some((entry) => as(entry) === as(typed))) {
       return { error: `${typed.trim()} is already on the list` };
     }
     const result = await add(typed);

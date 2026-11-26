@@ -83,7 +83,7 @@ export const updateSpamSettings = defineOperation({
   name: "spam.update",
   title: "Update the spam filter",
   summary:
-    "Add addresses and domains to the spam filter's blocked or allowed list, take them off, and set the team's phrases. A list's address decides before every mark on its sender's conversations, and a domain's entry is for its subdomains too",
+    "Add addresses and domains to the spam filter's blocked or allowed list, take them off, and add or remove the team's phrases. A list's address decides before every mark on its sender's conversations, and a domain's entry is for its subdomains too",
   method: "PATCH",
   path: "/spam",
   scope: "write",
@@ -94,7 +94,7 @@ export const updateSpamSettings = defineOperation({
     allow: senders("Addresses and domains to put on the allowed list (one on the blocked list moves)"),
     // As it is on the list, whatever that is: nothing there can't be taken off.
     remove: z.array(z.string().trim().toLowerCase().max(320)).max(100, "Send up to 100 at a time").optional().describe("Addresses and domains to take off whichever list they're on"),
-    phrases: z
+    addPhrases: z
       .array(
         z
           .string()
@@ -105,12 +105,17 @@ export const updateSpamSettings = defineOperation({
       .max(MAX_SPAM_PHRASES, `Add up to ${MAX_SPAM_PHRASES} phrases`)
       .optional()
       .describe(
-        `Up to ${MAX_SPAM_PHRASES} phrases, each up to ${MAX_SPAM_PHRASE} characters; replaces the list. A new conversation whose subject or first message has one (as whole words, in any case) goes to Spam, unless its sender is allowed or trusted`,
+        `Phrases to add, each up to ${MAX_SPAM_PHRASE} characters; the list holds ${MAX_SPAM_PHRASES}. A new conversation whose subject or first message has one (as whole words, in any case) goes to Spam, unless its sender is allowed or trusted. One that matches the same text as a phrase already there ("Facebook admin", "facebook-admin") isn't added again`,
       ),
+    removePhrases: z
+      .array(z.string().trim().max(MAX_SPAM_PHRASE))
+      .max(MAX_SPAM_PHRASES)
+      .optional()
+      .describe("Phrases to take out, however they're cased or punctuated"),
   }),
   output: settingsOutput.describe("The spam filter's lists and phrases, as saved"),
-  example: { block: ["spam.example"], allow: ["forms@acme.example"], phrases: ["facebook admin"] },
-  run: async ({ projectId }, { block = [], allow = [], remove = [], phrases }) => {
+  example: { block: ["spam.example"], allow: ["forms@acme.example"], addPhrases: ["facebook admin"] },
+  run: async ({ projectId }, { block = [], allow = [], remove = [], addPhrases = [], removePhrases = [] }) => {
     const twice = [...block, ...allow].find((entry, i, all) => all.indexOf(entry) !== i) ?? remove.find((entry) => block.includes(entry) || allow.includes(entry));
     if (twice) {
       throw new OperationError(400, "invalid_input", `${twice} is there twice: block it, allow it or remove it`);
@@ -120,8 +125,9 @@ export const updateSpamSettings = defineOperation({
       throw new OperationError(400, "invalid_input", `Anyone can get an address at ${free}, so it isn't blocked: block its addresses`);
     }
     await prisma.$transaction(async (tx) => {
-      // The project's row is held, so two changes at once can't each fit under the limit.
-      await tx.$queryRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
+      // The project's row is held, so two changes at once can't each fit under a limit, and neither's phrase is lost:
+      // the phrases are read under it.
+      const [{ phrases }] = await tx.$queryRaw<[{ phrases: string[] }]>`SELECT "spamPhrases" AS phrases FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
       await tx.spamSender.deleteMany({ where: { projectId, conversationId: null, sender: { in: remove } } });
       for (const [entries, blocked] of [[block, true], [allow, false]] as const) {
         for (const entry of entries) {
@@ -132,9 +138,15 @@ export const updateSpamSettings = defineOperation({
       if (block.length + allow.length > 0 && (await tx.spamSender.count({ where: { projectId, conversationId: null } })) > MAX_SPAM_SENDERS) {
         throw new OperationError(409, "too_many", `The lists hold up to ${MAX_SPAM_SENDERS} addresses and domains: remove some first`);
       }
-      if (phrases) {
+      if (addPhrases.length + removePhrases.length > 0) {
+        const gone = new Set(removePhrases.map(matchText));
         // One of each, however it's written ("Facebook admin" and "facebook  admin" match the same text): the first kept.
-        const kept = phrases.filter((phrase, i) => phrases.findIndex((other) => matchText(other) === matchText(phrase)) === i);
+        const kept = [...phrases.filter((phrase) => !gone.has(matchText(phrase))), ...addPhrases].filter(
+          (phrase, i, all) => all.findIndex((other) => matchText(other) === matchText(phrase)) === i,
+        );
+        if (addPhrases.length > 0 && kept.length > MAX_SPAM_PHRASES) {
+          throw new OperationError(409, "too_many", `The list holds up to ${MAX_SPAM_PHRASES} phrases: remove some first`);
+        }
         await tx.project.update({ where: { id: projectId }, data: { spamPhrases: kept } });
       }
     });

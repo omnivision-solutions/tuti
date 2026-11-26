@@ -55,9 +55,9 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await expect(card("Phrases")).toContainText("A new conversation with one in its subject or first message goes to Spam. Whole words, any case.");
   await add("Phrases", "Phrase to add", "Facebook Admin");
   await expect(card("Phrases").getByRole("listitem")).toHaveText(["Facebook Admin"]);
-  // One that's there already, however it's cased, says so.
-  await add("Phrases", "Phrase to add", "facebook admin");
-  await expect(card("Phrases")).toContainText("facebook admin is already on the list");
+  // One that's there already, however it's written, says so.
+  await add("Phrases", "Phrase to add", "facebook-admin");
+  await expect(card("Phrases")).toContainText("facebook-admin is already on the list");
   await card("Phrases").getByLabel("Phrase to add").fill("");
 
   // Try a message: what the filter would do with it, and why. What was typed stays, to change and try again.
@@ -104,6 +104,8 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("spam-corp.example removed")).toBeVisible();
   await expect(card("Blocked")).toContainText("Nobody is blocked");
+  // Its row and menu are gone: the keyboard's focus is in the list's field.
+  await expect(card("Blocked").getByLabel("Address or domain to block")).toBeFocused();
   await receive(address, rawEmail("Lee Roe <e2e-lee@mail.spam-corp.example>", "Followers, again", "Last chance."));
   await owner.goto(`/app/${slug}/inbox`);
   await expectMoreView(owner, "Needs reply 2");
