@@ -388,6 +388,8 @@ export async function DocsArticle({
   // Its own words are in its version's language here, or the default language's (docs/plan.md, "A page not yet translated"),
   // with a line in the page's language saying so.
   const textLang = article.language ?? lang;
+  // Translated here: its search data is its address here (as its canonical is); a tab showing it keeps the tab's.
+  const ownPath = prefix && !article.untranslated && path === `/docs/${slug}` ? `${prefix}/docs/${own}` : path;
   const notTranslated = article.untranslated && pageLanguage ? createTranslator({ locale: pageLanguage, messages: MESSAGES[pageLanguage], namespace: "docs" })("notTranslated") : null;
   const readable = "doc" in article ? article : null;
   // Its tab and collection have pages for this reader when they have something to read (an unlisted
@@ -413,13 +415,13 @@ export async function DocsArticle({
       type: "TechArticle",
       title: readable.title,
       description: listing.description,
-      path,
+      path: ownPath,
       published: readable.publishedAt,
       modified: readable.updatedAt,
       // A tab showing it in its place is its own page: no step for it.
       breadcrumb: [
         ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }].filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path),
-        { name: readable.title, path },
+        { name: readable.title, path: ownPath },
       ],
     }));
   return (

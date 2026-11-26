@@ -74,6 +74,12 @@ test("at a language's address an article translated there reads in its version, 
   expect(text(elements.find(({ type }) => type === "h1")?.props.children)).toBe("Abrechnung");
   expect(toPlainText((elements.find(({ props }) => "doc" in props)?.props.doc as Doc) ?? { type: "doc" })).toContain("Mit Karte zahlen.");
   expect(elements.some(({ props }) => props.lang === "de" && text(props.children).includes("noch nicht"))).toBe(false);
+  // Its text in German too, its Markdown at its German address, and its search data there.
+  expect(elements.find(({ props }) => "doc" in props)?.props.lang).toBe("de");
+  expect(elements.find(({ props }) => "markdownUrl" in props)?.props.markdownUrl).toBe(`${portal}/de/docs/abrechnung.md`);
+  const jsonLd = elements.find(({ props }) => typeof (props.dangerouslySetInnerHTML as { __html?: string } | undefined)?.__html === "string");
+  const data = JSON.parse((jsonLd!.props.dangerouslySetInnerHTML as { __html: string }).__html) as { headline?: string; url?: string }[];
+  expect(data[0]).toMatchObject({ headline: "Abrechnung", url: `${portal}/de/docs/abrechnung` });
 });
 
 test("not translated: the default language's version, its `lang`, and a line in the page's language saying so", async () => {
@@ -106,9 +112,12 @@ test("hreflang and the canonical: the languages it's translated into, each at it
   });
   expect(translated.alternates?.languages).not.toHaveProperty("fr");
   expect(translated.title).toBe("Abrechnung");
+  // Its share card is made at its German address (its title translated there).
+  expect(translated.openGraph?.images).toMatchObject([{ url: `${portal}/de/og/docs/abrechnung` }]);
   at("fr");
   const fallback = await generateMetadata(params("billing"));
   expect(fallback.alternates?.canonical).toBe(`${portal}/docs/billing`);
+  expect(fallback.openGraph?.images).toMatchObject([{ url: `${portal}/og/docs/billing` }]);
   at(null);
   expect((await generateMetadata(params("billing"))).alternates?.languages).toMatchObject({ de: `${portal}/de/docs/abrechnung` });
 });
