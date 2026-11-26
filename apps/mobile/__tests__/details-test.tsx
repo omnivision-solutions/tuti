@@ -903,6 +903,18 @@ describe("the details sheet's Activity", () => {
     expect(screen.getByText("The spam filter")).toBeTruthy();
   });
 
+  it("reads again at most 100 rows, however many are shown", async () => {
+    const all = Array.from({ length: 105 }, (_, i) => event(`m${105 - i}`, "2026-11-25T10:00:00", { text: `closed it ${105 - i}` }));
+    serveActivity(({ before }) => Promise.resolve(before ? { events: all.slice(100), next: null } : { events: all.slice(0, 100), next: "m6" }));
+    await render(<Details />);
+    await screen.findByText(/ it 105$/);
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(await screen.findByText(/ it 1$/)).toBeTruthy();
+
+    await act(async () => showTriage(KEY, { ...OPEN, status: "closed" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=100");
+  });
+
   it("isn't shown by a server from before it", async () => {
     serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
     await render(<Details />);
