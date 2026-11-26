@@ -301,7 +301,8 @@ the list picks none to approve at once.
   and on phones the title shows once, the one to edit. The featured image (its cover, and its link
   preview) shows under the title across the text's column, as readers see it, with Replace and Remove over it on
   hover, focus and touch screens; without one, a dashed row there (one line high, not pushing the text down) adds one
-  (picked or dropped). One way into AI: while the text is still the pull requests'
+  (picked or dropped), and Make a cover and Generate (AI images, `ImageGenerator`: the prompt and references
+  on the left, the result and its tries on the right; stacked on phones) beside it. One way into AI: while the text is still the pull requests'
   titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
   toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.

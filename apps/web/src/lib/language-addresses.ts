@@ -22,6 +22,14 @@ export function splitLanguage(path: string): { code: Language; path: string } | 
 }
 
 /**
+ * Whether `path` is one of this portal's own paths, safe to go to: one "/" first (not "//" or "/\", which browsers read as
+ * another host), and no backslash, space or control character anywhere. For a path that came back over the network.
+ */
+export function isPortalPath(path: unknown): path is string {
+  return typeof path === "string" && /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/.test(path);
+}
+
+/**
  * `path` in the language whose prefix is `prefix` (/docs → /de/docs). Not the API or Next.js's files, which have no language,
  * nor a path already in one (a `next` to come back to after signing in keeps the page's).
  */

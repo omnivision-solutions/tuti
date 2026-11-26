@@ -1,10 +1,16 @@
 import { portalAddress } from "@/server/custom-domains";
-import { articleMarkdown, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { articleMarkdown, articleNamed, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { portalHref } from "@/server/portal-base";
 
 /** A published article as Markdown, at /docs/<slug>.md (proxy.ts sends it here), for AI tools. */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/docs/[slug]/md">) {
-  const { project, slug } = await params;
+  const { project, slug: asked } = await params;
+  // At a language's address, by its slug there: another of its slugs goes to that one, as its page does.
+  const named = await articleNamed(project, asked);
+  if (named && named.own !== asked) {
+    return new Response(null, { status: 308, headers: { location: await portalHref(`/docs/${named.own}.md`), "cache-control": "private, no-store" } });
+  }
+  const slug = named?.slug ?? asked;
   const article = await publishedArticle(project, slug);
   if (!article) {
     // An old slug of an article that has since moved: to its current .md.

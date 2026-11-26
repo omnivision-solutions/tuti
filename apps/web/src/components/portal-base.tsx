@@ -55,9 +55,10 @@ export function usePortalHere(): string {
 }
 
 /** This page's address in another language, by its prefix ("" for the default language's): the language switcher's. */
-export function useAddressIn(): (prefix: string) => string {
+export function useAddressIn(): (prefix: string, at?: string) => string {
   const { base } = useContext(PortalBase);
   const path = usePortalPath();
   const search = useSearchParams().toString();
-  return (prefix) => `${withBase(base, withLanguage(prefix, path))}${search ? `?${search}` : ""}`;
+  // `at`: another path for the page there (an article's slug in that language).
+  return (prefix, at = path) => `${withBase(base, withLanguage(prefix, at))}${search ? `?${search}` : ""}`;
 }
