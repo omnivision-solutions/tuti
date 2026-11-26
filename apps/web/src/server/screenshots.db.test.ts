@@ -87,7 +87,7 @@ test("moving the app to another host forgets the saved password and link, so the
   // With a new one, it moves, and the agent gets only that one, bound to the new host.
   expect(await call(updateScreenshotSettings, as(), { appUrl: "https://demo.example.net", password: "a-new-password" })).toMatchObject({ passwordSet: true });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
-  expect(browserUse.runs.at(-1)!.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: "a-new-password" }, allowedDomains: ["demo.example.net"] }]);
+  expect(browserUse.runs.at(-1)!.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: "a-new-password" }, allowedDomains: ["example.net"] }]);
   // A link too.
   await call(updateScreenshotSettings, as(), { signIn: "link", signInLink: LINK, appUrl: "https://app.example.com" });
   await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({ message: "Enter the sign-in link again: the app's address moved to another site" });
@@ -175,7 +175,7 @@ test("a run signs in once, takes every screenshot as an upload, stops its browse
     model: "bu-4.0-mini",
     maxCostUsd: 1,
     browserSettings: { screenWidth: 1440, screenHeight: 900, proxyCountryCode: null, networkPolicyId: expect.any(String) },
-    secretBindings: [{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["app.example.com"] }],
+    secretBindings: [{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["example.com"] }],
   });
   expect(sent.task).toContain("Open https://app.example.com/home.");
   expect(sent.task).toContain('the username "e2e-demo@example.com" and the password app_password');
@@ -735,4 +735,47 @@ test("the other domains the team lists are opened too: kept in the settings, in 
   // Saved without them, they stay; an empty list clears them.
   expect(await call(updateScreenshotSettings, as(), { about: "Close the tour." })).toMatchObject({ otherDomains: ["acme.auth0.com", "cdn.example.net"] });
   expect(await call(updateScreenshotSettings, as(), { otherDomains: [] })).toMatchObject({ otherDomains: [] });
+});
+
+test("the password is typed only on the domains the browser may open: a sign-in elsewhere the team listed gets it too", async () => {
+  await setUp({ otherDomains: ["acme.auth0.com"] });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const run = browserUse.runs.at(-1)!;
+  const policy = browserUse.policies.get((run.body.browserSettings as { networkPolicyId: string }).networkPolicyId)!;
+  expect(run.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["acme.auth0.com", "example.com"] }]);
+  expect(policy.allow.domains).toEqual(["acme.auth0.com", "example.com"]);
+});
+
+test("a shared suffix isn't another domain the browser may open: it'd open every site under it", async () => {
+  await setUp();
+  for (const suffix of ["vercel.app", "github.io", "co.uk"]) {
+    await expect(call(updateScreenshotSettings, as(), { otherDomains: [suffix] })).rejects.toMatchObject({ status: 400, message: `${suffix} is shared by many sites: enter your own domain under it, like acme.${suffix}` });
+  }
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["acme.vercel.app"] })).toMatchObject({ otherDomains: ["acme.vercel.app"] });
+});
+
+test("a run refused with a 404 for another reason keeps its policy: only one Browser Use no longer has is made again", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const saved = await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id }, select: { networkPolicyId: true } });
+  const policies = browserUse.policies.size;
+  // The first try refused (404, its policy still there); the retry goes, on the same policy.
+  browserUse.next({ createStatus: 404 });
+  expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "done" });
+  expect(await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id }, select: { networkPolicyId: true } })).toEqual(saved);
+  expect((browserUse.runs.at(-1)!.body.browserSettings as { networkPolicyId: string }).networkPolicyId).toBe(saved.networkPolicyId);
+  expect(browserUse.policies.size).toBe(policies);
+});
+
+test("a policy made while another run saved one keeps the saved one: the made one deleted, one left", async () => {
+  await setUp();
+  // Another run's, made and saved while this run makes its own.
+  const other = "00000000-0000-4000-8000-other0000001";
+  browserUse.policies.set(other, { name: `Tuti screenshots ${project.id}`, defaultAction: "block", allow: { domains: ["example.com"] } });
+  browserUse.beforePolicyCreate = async () => {
+    await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { networkPolicyId: other, networkPolicyDomains: "example.com" } });
+  };
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect((browserUse.runs.at(-1)!.body.browserSettings as { networkPolicyId: string }).networkPolicyId).toBe(other);
+  expect([...browserUse.policies.values()].filter((policy) => policy.name === `Tuti screenshots ${project.id}`)).toHaveLength(1);
 });

@@ -4,6 +4,7 @@ import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeCh
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
+import { getDomain } from "tldts";
 import { z } from "zod";
 
 import { displayDoc } from "../content";
@@ -209,7 +210,11 @@ export const updateScreenshotSettings = defineOperation({
           .string()
           .trim()
           .toLowerCase()
-          .regex(DOMAIN, "Enter each domain on its own, like cdn.example.com: no https://, path or port"),
+          .regex(DOMAIN, "Enter each domain on its own, like cdn.example.com: no https://, path or port")
+          // A shared suffix (vercel.app, github.io, com) would open every site under it: a domain of its own only.
+          .refine((domain) => getDomain(domain, { allowPrivateDomains: true }) !== null, {
+            error: (issue) => `${String(issue.input)} is shared by many sites: enter your own domain under it, like acme.${String(issue.input)}`,
+          }),
       )
       .max(MAX_OTHER_DOMAINS, `List up to ${MAX_OTHER_DOMAINS} other domains`)
       .optional()

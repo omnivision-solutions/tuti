@@ -370,6 +370,14 @@ async function networkPolicy(client: BrowserUse, projectId: string, settings: Se
   return networkPolicy(client, projectId, settings, tries - 1);
 }
 
+/** Whether Browser Use no longer has the policy: its update (to what it should allow anyway) answers 404. */
+async function policyGone(client: BrowserUse, id: string, settings: Settings): Promise<boolean> {
+  return client.updateNetworkPolicy(id, { defaultAction: "block", allow: { domains: policyDomains(settings) } }).then(
+    () => false,
+    (error: unknown) => gone(error),
+  );
+}
+
 /** Forgets a network policy Browser Use no longer has, unless another has taken its place meanwhile. */
 const forgetNetworkPolicy = (projectId: string, id: string) =>
   prisma.screenshotSettings.updateMany({ where: { projectId, networkPolicyId: id }, data: { networkPolicyId: null, networkPolicyDomains: "" } });
@@ -392,15 +400,17 @@ async function agentRun(
     workspaceId: workspace.id,
     maxCostUsd,
     outputSchema: OUTPUT_SCHEMA,
-    // ponytail: the app's own hostname (and its subdomains) only; a sign-in page on another domain (an identity provider) never gets the password.
-    ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: [new URL(settings.appUrl).hostname] }] }),
+    // Typed only on the domains its browser may open (policyDomains): the app's own, its sign-in link's, and the other
+    // domains the team listed, such as a sign-in page elsewhere.
+    ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: policyDomains(settings) }] }),
     // Always said: Browser Use's residential proxy is on by default and billed per GB at residential rates, so it's off
     // unless the project turned it on (an app that blocks cloud servers).
     browserSettings: { screenWidth: WINDOWS[settings.window].width, screenHeight: WINDOWS[settings.window].height, proxyCountryCode: settings.residentialProxy ? ("us" as const) : null, networkPolicyId },
   });
   const created = await client.createRun(runBody(networkPolicyId)).catch(async (error: unknown) => {
     // Its policy gone at Browser Use (removed there, the saved id out of date): forgotten, made again, tried once more.
-    if (!gone(error)) {
+    // A 404 for anything else leaves the policy: it's checked gone first (its update answers 404 too).
+    if (!gone(error) || !(await policyGone(client, networkPolicyId, settings))) {
       throw error;
     }
     await forgetNetworkPolicy(projectId, networkPolicyId);

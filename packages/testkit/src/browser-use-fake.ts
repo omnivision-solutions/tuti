@@ -65,6 +65,8 @@ export type BrowserUseFake = {
   goneNext: number;
   /** Network policies by id (POST/PATCH /network-policies): every run must be given one it has (Screenshots confines its browser to the team's app). */
   policies: Map<string, { name: string; defaultAction: "allow" | "block"; allow: { domains: string[] } }>;
+  /** Awaited as a policy is made, before it's answered: e.g. another run saving its own meanwhile. */
+  beforePolicyCreate?: () => Promise<void>;
   /** Lets every stuck run end. */
   release(): void;
   close(): Promise<void>;
@@ -148,10 +150,15 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
       }
       const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
       if (path === "/network-policies" && req.method === "POST") {
-        const policy = { name: String(body.name), defaultAction: (body.defaultAction as "allow" | "block") ?? "allow", allow: (body.allow as { domains: string[] }) ?? { domains: [] } };
-        const policyId = id("e");
-        fake.policies.set(policyId, policy);
-        return answer(201, { id: policyId, ...policy });
+        const make = () => {
+          const policy = { name: String(body.name), defaultAction: (body.defaultAction as "allow" | "block") ?? "allow", allow: (body.allow as { domains: string[] }) ?? { domains: [] } };
+          const policyId = id("e");
+          fake.policies.set(policyId, policy);
+          answer(201, { id: policyId, ...policy });
+        };
+        const hook = fake.beforePolicyCreate;
+        fake.beforePolicyCreate = undefined;
+        return hook ? void hook().then(make) : make();
       }
       const policyPath = /^\/network-policies\/([^/]+)$/.exec(path);
       if (policyPath && req.method === "DELETE") {

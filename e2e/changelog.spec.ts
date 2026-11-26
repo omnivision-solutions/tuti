@@ -1457,12 +1457,23 @@ test("a draft's screenshot lines are filled with screenshots of the team's app; 
   await expect(confirm.getByRole("heading")).toHaveText("Take these 2 screenshots?");
   await expect(confirm.getByRole("listitem")).toHaveText(["the billing page", "a screen that isn't there, the reports page"]);
   await checkpoint(team, "team-changelog-screenshots-confirm");
+  // A line reworded meanwhile (a teammate, the API): Take is refused, and the confirm lists the saved lines next time.
+  await api(
+    "/changelog/1",
+    { markdown: "Billing got a new look.\n\n[Screenshot: the billing page, with its invoices]\n\nReports moved too.\n\n[Screenshot: a screen that isn't there, the reports page]" },
+    "PATCH",
+  );
+  await confirm.getByRole("button", { name: "Take 2 screenshots" }).click();
+  await expect(team.getByText("“[Screenshot: the billing page]” isn't in the entry's saved text any more. Look at its lines again.")).toBeVisible();
+  await expect(confirm).toBeHidden();
+  await section.getByRole("button", { name: "Take screenshots…" }).click();
+  await expect(confirm.getByRole("listitem")).toHaveText(["the billing page, with its invoices", "a screen that isn't there, the reports page"]);
   await confirm.getByRole("button", { name: "Take 2 screenshots" }).click();
   await expect(team.getByRole("textbox", { name: "What changed" }).getByRole("img", { name: "The screen: the billing page" })).toBeVisible();
   await expect(section).toContainText("1 line asks for a screenshot.");
   await expect(section.getByRole("listitem")).toHaveText("“a screen that isn't there, the reports page”: There's no such screen in the app.");
   await expect(team.getByRole("textbox", { name: "What changed" })).toContainText("[Screenshot: a screen that isn't there, the reports page]");
-  await expect(team.getByRole("textbox", { name: "What changed" })).not.toContainText("[Screenshot: the billing page]");
+  await expect(team.getByRole("textbox", { name: "What changed" })).not.toContainText("[Screenshot: the billing page");
   await checkpoint(team, "team-changelog-screenshots");
   await team.setViewportSize({ width: 390, height: 844 });
   await section.scrollIntoViewIfNeeded();
