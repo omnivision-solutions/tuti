@@ -10,6 +10,10 @@ import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/r
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
   CODE_TABS_EDIT,
+  editorWidth,
+  imageKey,
+  isMediaId,
+  isPixelSize,
   newTabLabel,
   extensions,
   IMAGE_ALIGNMENTS,
@@ -52,6 +56,7 @@ import {
   MinusIcon,
   PaperclipIcon,
   QuoteIcon,
+  SparklesIcon,
   SquareCodeIcon,
   TableIcon,
   TableOfContentsIcon,
@@ -69,6 +74,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
+import { type GeneratedImage, ImageGenerator, type ImageEditing } from "@/components/image-generator";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
 
 /** What the file picker offers for attachments and videos (the server checks each file too). */
@@ -116,6 +122,7 @@ export function RichEditor({
   toolbarId,
   toolbarEnd,
   findings,
+  imageEditing,
 }: {
   profile: Profile;
   name: string;
@@ -148,6 +155,8 @@ export function RichEditor({
   toolbarId?: string;
   toolbarEnd?: ReactNode;
   findings?: VerificationFinding[];
+  /** "Edit with AI" on its images (AI images, the team's); null where the server can't make them. `title`: what it's in. */
+  imageEditing?: (ImageEditing & { title?: string }) | null;
 }) {
   const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -216,6 +225,66 @@ export function RichEditor({
   };
   // Paste and drop handlers are set up with the editor, before `editor` below has a value.
   const editorRef = useRef<Editor | null>(null);
+
+  // "Edit with AI": the image picked (where it was, as it was). Its dialog stays while the editor does, keeping its tries,
+  // and starts afresh for another image.
+  const [edited, setEdited] = useState<{ pos: number; image: { id: string; url: string; width: number; height: number } } | null>(null);
+  const [editingImage, setEditingImage] = useState(false);
+  // One of the project's finished uploads, shown here (one its own or another project's, never signed for it, isn't).
+  const editable = (attrs: Record<string, unknown>) => {
+    const { mediaId, w, h } = attrs;
+    const url = isMediaId(mediaId) && isPixelSize(w) && isPixelSize(h) && mediaUrls.get(imageKey(mediaId, editorWidth(w)));
+    return url ? { id: mediaId as string, url, width: w as number, height: h as number } : null;
+  };
+  const editImage =
+    uploads && imageEditing
+      ? {
+          paused: imageEditing.paused,
+          can: (attrs: Record<string, unknown>) => editable(attrs) !== null,
+          run: () => {
+            const image = editor && editable(editor.getAttributes("image"));
+            if (editor && image) {
+              setEdited({ pos: editor.state.selection.from, image });
+              setEditingImage(true);
+            }
+          },
+        }
+      : undefined;
+  /** The made image in the edited one's place (its alt text, size and alignment kept), or after it: one step to undo. */
+  const placeImage = (made: GeneratedImage, replace: boolean) => {
+    if (!editor || !edited) {
+      return;
+    }
+    Object.entries(made.urls).forEach(([key, url]) => mediaUrls.set(key, url));
+    const { doc } = editor.state;
+    const isEdited = (node: ProseMirrorNode | null | undefined) => node?.type.name === "image" && node.attrs.mediaId === edited.image.id;
+    // Where it was, or (moved since) the first of it.
+    let pos = isEdited(doc.nodeAt(edited.pos)) ? edited.pos : -1;
+    doc.descendants((node, at) => {
+      if (pos < 0 && isEdited(node)) {
+        pos = at;
+      }
+      return pos < 0;
+    });
+    const node = pos >= 0 ? doc.nodeAt(pos) : null;
+    if (node) {
+      const image = { mediaId: made.id, w: made.width, h: made.height };
+      const at = replace ? pos : pos + node.nodeSize;
+      editor
+        .chain()
+        .command(({ tr }) => {
+          if (replace) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...image });
+          } else {
+            tr.insert(at, node.type.create({ ...image, width: node.attrs.width, align: node.attrs.align }));
+          }
+          return true;
+        })
+        .setNodeSelection(at)
+        .run();
+    }
+    setEditingImage(false);
+  };
   // The editor reads its attributes on every update; the effect below keeps the error state current.
   const aria = useRef<Record<string, string>>({});
 
@@ -462,16 +531,16 @@ export function RichEditor({
         )}
       >
         {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
-        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} className="border-b px-1 py-1" />}
+        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} editImage={editImage} className="border-b px-1 py-1" />}
         {editor && toolbarHost && createPortal(<>
-          {!unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} expanded />}
+          {!unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} editImage={editImage} expanded />}
           {toolbarEnd}
         </>, toolbarHost)}
         <EditorContent editor={editor} />
         {editor && bare && !unreadable && (
           <>
             <div ref={menus} />
-            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
+            <SelectionBar editor={editor} onPrompt={setPrompt} editImage={editImage} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
             <SlashMenu
               editor={editor}
               host={menusHost}
@@ -514,6 +583,28 @@ export function RichEditor({
         )}
         <input type="hidden" name={name} value={value} />
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
+        {editor && uploads && imageEditing && edited && (
+          <ImageGenerator
+            key={`${edited.pos}/${edited.image.id}`}
+            projectSlug={uploads.projectSlug}
+            open={editingImage}
+            onOpenChange={setEditingImage}
+            title="Edit image"
+            subtitle={imageEditing.title?.trim() ? `In “${imageEditing.title.trim()}”` : undefined}
+            editing={edited.image}
+            defaultSize={{ label: "Same as original", width: edited.image.width, height: edited.image.height }}
+            logo={imageEditing.logo}
+            credits={imageEditing.credits}
+            useLabel="Replace image"
+            onUse={(made) => placeImage(made, true)}
+            alsoUse={{ label: "Insert as new", onUse: (made) => placeImage(made, false) }}
+            // Back to the text, the image (or the new one) picked.
+            finalFocus={() => {
+              editor.commands.focus();
+              return false;
+            }}
+          />
+        )}
       </div>
       {uploading > 0 &&
         (held ? (
@@ -787,7 +878,7 @@ function SlashMenu({
 }
 
 /** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
-function SelectionBar({ editor, onPrompt, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
+function SelectionBar({ editor, onPrompt, editImage, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; editImage?: EditImage; host: () => HTMLElement }) {
   // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
@@ -819,13 +910,16 @@ function SelectionBar({ editor, onPrompt, host, label }: { label: string; editor
       className="z-50"
       ref={bar}
     >
-      <Toolbar label={label} editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
+      <Toolbar label={label} editor={editor} onPrompt={onPrompt} editImage={editImage} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
     </BubbleMenu>
   );
 }
 
+/** "Edit with AI" on a picked image: whether it can be (one of the project's finished uploads), and opening its dialog. */
+type EditImage = { paused: boolean; can: (attrs: Record<string, unknown>) => boolean; run: () => void };
+
 /** `onImage`: picks images to upload (with uploads set up). */
-function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string; expanded?: boolean }) {
+function Toolbar({ editor, onPrompt, onImage, editImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; editImage?: EditImage; className?: string; expanded?: boolean }) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -837,7 +931,7 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label
       italic: editor.isActive("italic"),
       code: editor.isActive("code"),
       link: editor.isActive("link"),
-      image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string }) : null,
+      image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string; mediaId: unknown; w: unknown; h: unknown }) : null,
       table: editor.isActive("table"),
       codeBlock: namedCode(editor) ? { tabs: codeTab(editor)?.node(-1).childCount ?? 0 } : null,
     }),
@@ -918,6 +1012,16 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label
             />
           ))}
           <Tool icon={TextIcon} label="Alt text" active={false} onClick={() => onPrompt("alt")} />
+          {editImage?.can(active.image) && (
+            <Tool
+              icon={SparklesIcon}
+              label="Edit with AI"
+              active={false}
+              disabled={editImage.paused}
+              title={editImage.paused ? "This project is out of credits" : undefined}
+              onClick={editImage.run}
+            />
+          )}
         </div>
       )}
       {active.codeBlock && (
@@ -961,11 +1065,15 @@ function Tool({
   label,
   active,
   onClick,
+  disabled,
+  title,
 }: {
   icon: LucideIcon;
   label: string;
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <IconTooltip label={label}><Button
@@ -974,6 +1082,9 @@ function Tool({
       size="icon-sm"
       aria-label={label}
       aria-pressed={active}
+      disabled={disabled}
+      focusableWhenDisabled
+      title={title}
       // Keep focus (and the selection) in the text while clicking; keyboard users still reach it with Tab.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}

@@ -34,6 +34,8 @@ export type PickedImage = { id: string; url: string };
 export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
 /** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
 type Try = PickedImage & { width: number; height: number };
+/** What an editor needs for "Edit with AI" on its images: AI credits are on, the project is out of them, its logo. */
+export type ImageEditing = { credits: boolean; paused: boolean; logo: PickedImage | null };
 export type ImageSize = { label: string; width: number; height: number };
 
 const PRESETS: ImageSize[] = [
@@ -76,6 +78,8 @@ export function ImageGenerator({
   credits,
   useLabel,
   onUse,
+  alsoUse,
+  editing,
   finalFocus,
 }: {
   projectSlug: string;
@@ -97,6 +101,10 @@ export function ImageGenerator({
   /** The result's main action ("Use as cover"). */
   useLabel: string;
   onUse: (image: GeneratedImage) => void;
+  /** A second action on the result, beside the main one ("Insert as new"). */
+  alsoUse?: { label: string; onUse: (image: GeneratedImage) => void };
+  /** The image being edited ("Edit with AI"): the first reference, kept there, and shown beside each try. */
+  editing?: Try;
   finalFocus?: Parameters<typeof DialogContent>[0]["finalFocus"];
 }) {
   const id = useId();
@@ -109,7 +117,7 @@ export function ImageGenerator({
     openRef.current = open;
   }, [open]);
   const [prompt, setPrompt] = useState("");
-  const [references, setReferences] = useState(initialReferences);
+  const [references, setReferences] = useState(editing ? [editing, ...initialReferences.filter((each) => each.id !== editing.id)] : initialReferences);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const sizes = [defaultSize, ...PRESETS];
@@ -127,13 +135,19 @@ export function ImageGenerator({
   const preset = sizes.find((size) => size.label === sizeLabel);
   const size = preset ?? { width: Number(custom.width), height: Number(custom.height) };
   const sizeOk = fits(size.width) && fits(size.height);
-  const full = references.length >= MAX_IMAGE_REFERENCES;
+  // An upload still running counts: its image joins the list when it's done.
+  const full = references.length + (uploading ? 1 : 0) >= MAX_IMAGE_REFERENCES;
   const shown = tries[selected];
 
+  // The image being edited stays first: "first" is after it.
+  const pinned = editing ? 1 : 0;
   const add = (image: PickedImage, first = false) =>
     setReferences((list) => {
+      if (image.id === editing?.id) {
+        return list;
+      }
       const rest = list.filter((each) => each.id !== image.id);
-      return (first ? [image, ...rest] : [...rest, image]).slice(0, MAX_IMAGE_REFERENCES);
+      return (first ? [...rest.slice(0, pinned), image, ...rest.slice(pinned)] : [...rest, image]).slice(0, MAX_IMAGE_REFERENCES);
     });
   const upload = async (file: File | undefined) => {
     if (!file || uploading || full) {
@@ -205,10 +219,13 @@ export function ImageGenerator({
             void upload(file);
           }
         }}
-        onDragOver={(event) => event.preventDefault()}
+        // Only files: text dropped into the prompt stays the browser's to drop.
+        onDragOver={(event) => event.dataTransfer.types.includes("Files") && event.preventDefault()}
         onDrop={(event) => {
-          event.preventDefault();
-          void upload(event.dataTransfer.files[0]);
+          if (event.dataTransfer.types.includes("Files")) {
+            event.preventDefault();
+            void upload(event.dataTransfer.files[0]);
+          }
         }}
       >
         <DialogHeader>
@@ -221,7 +238,7 @@ export function ImageGenerator({
         <div className="grid gap-6 md:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <FieldLabel htmlFor={`${id}-prompt`}>Describe it</FieldLabel>
+              <FieldLabel htmlFor={`${id}-prompt`}>{editing ? "What to change" : "Describe it"}</FieldLabel>
               <Textarea id={`${id}-prompt`} ref={promptRef} value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={MAX_IMAGE_PROMPT} rows={4} />
             </div>
             <div className="flex flex-col gap-2" role="group" aria-labelledby={`${id}-references`}>
@@ -233,6 +250,9 @@ export function ImageGenerator({
                   <li key={image.id} className="relative size-16">
                     {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
                     <img src={image.url} alt={`Reference ${index + 1}`} className="size-16 rounded-lg border object-cover" />
+                    {index < pinned ? (
+                      <Badge className="absolute inset-x-0.5 bottom-0.5 h-4 px-1 text-[10px]">Editing</Badge>
+                    ) : (
                     <button
                       type="button"
                       aria-label={`Remove reference ${index + 1}`}
@@ -247,6 +267,7 @@ export function ImageGenerator({
                     >
                       <XIcon className="size-3" />
                     </button>
+                    )}
                   </li>
                 ))}
                 {uploading && (
@@ -375,6 +396,15 @@ export function ImageGenerator({
             <p role="status" className="sr-only">
               {pending ? "Generating, up to half a minute…" : said}
             </p>
+            <div className={cn(editing && shown && !pending && !error && "grid grid-cols-2 gap-2")}>
+            {editing && shown && !pending && !error && (
+              <figure className="flex min-w-0 flex-col gap-1">
+                {/* eslint-disable-next-line @next/next/no-img-element -- from media storage */}
+                <img src={editing.url} alt="Original" className="w-full rounded-xl border bg-muted object-contain" style={{ aspectRatio: `${editing.width} / ${editing.height}` }} />
+                <figcaption className="text-xs text-muted-foreground">Original</figcaption>
+              </figure>
+            )}
+            <figure className="flex min-w-0 flex-col gap-1">
             <div
               className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted"
               style={shown ? { aspectRatio: `${shown.width} / ${shown.height}` } : undefined}
@@ -394,6 +424,13 @@ export function ImageGenerator({
               ) : (
                 <ImageIcon className="size-8 text-muted-foreground" aria-hidden />
               )}
+            </div>
+            {editing && shown && !pending && !error && (
+              <figcaption className="text-xs text-muted-foreground">
+                Edited · {selected + 1} of {tries.length}
+              </figcaption>
+            )}
+            </figure>
             </div>
             {tries.length > 0 && (
               <>
@@ -443,6 +480,18 @@ export function ImageGenerator({
                       <DownloadIcon />
                       Download
                     </Button>
+                    {alsoUse && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={using}
+                        focusableWhenDisabled
+                        onClick={() => fresh(shown, ({ src, urls }) => alsoUse.onUse({ id: shown.id, url: src, width: shown.width, height: shown.height, urls }))}
+                      >
+                        {alsoUse.label}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -479,7 +528,7 @@ export function ImageGenerator({
             onClick={generate}
           >
             <SparklesIcon />
-            {pending ? "Generating…" : "Generate"}
+            {pending ? "Generating…" : editing && tries.length > 0 ? "Try again" : "Generate"}
           </Button>
         </DialogFooter>
       </DialogContent>

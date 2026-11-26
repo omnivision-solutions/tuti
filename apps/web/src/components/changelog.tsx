@@ -710,6 +710,7 @@ export function ChangelogForm({
             initial={entry?.content}
             uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
             editorRef={editor}
+            imageEditing={imageGenerator && { ...imageGenerator, title: entry?.title }}
             onChange={() => setDirty(true)}
             // Its AI helpers (here and Draft with AI in the top bar) would rewrite it without what it can't show; told on
             // every editor made, so text that's readable again (the form remounted with it) unlocks them.

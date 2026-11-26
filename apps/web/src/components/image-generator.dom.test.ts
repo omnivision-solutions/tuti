@@ -283,3 +283,76 @@ test("closed while Use as cover waits for its link, the cover isn't changed", as
   await act(async () => answer({ status: "READY", src: "https://media.example/made1-full.png", download: "x", urls: {}, width: 1200, height: 630 }));
   expect(onUse).not.toHaveBeenCalled();
 });
+
+test("text dropped into the prompt stays the browser's to drop; a dropped file is a reference", async () => {
+  uploadImage.mockResolvedValue({ mediaId: "up1", src: "https://media.example/up1.png" });
+  const { references } = await dialog();
+  const drop = (types: string[], files: File[] = []) => {
+    const event = new Event("drop", { bubbles: true, cancelable: true }) as Event & { dataTransfer: unknown };
+    event.dataTransfer = { types, files };
+    return event;
+  };
+  const text = drop(["text/plain"]);
+  await act(async () => document.querySelector("textarea")!.dispatchEvent(text));
+  expect(text.defaultPrevented).toBe(false);
+  expect(uploadImage).not.toHaveBeenCalled();
+  const file = drop(["Files"], [new File(["x"], "shot.png", { type: "image/png" })]);
+  await act(async () => document.querySelector("textarea")!.dispatchEvent(file));
+  expect(file.defaultPrevented).toBe(true);
+  expect(references()).toEqual(["https://media.example/up1.png"]);
+});
+
+test("an upload still running counts toward the 14: + and Refine this one are off with 13 and one uploading", async () => {
+  let finish!: (value: unknown) => void;
+  uploadImage.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+  const { button, click, type } = await dialog({ references: Array.from({ length: 13 }, (_, n) => image(n + 1)) });
+  await type("A parrot");
+  await click("Generate");
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", { value: [new File(["x"], "logo.png", { type: "image/png" })], configurable: true });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  expect(button("Refine this one")!.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => finish({ mediaId: "up1", src: "https://media.example/up1.png" }));
+  expect(disabled(button("Add a reference")!)).toBe(true);
+  expect(button("Refine this one")!.getAttribute("aria-disabled")).toBe("true");
+});
+
+const original = { id: "orig", url: "https://media.example/orig.png", width: 800, height: 600 };
+const editProps = {
+  title: "Edit image",
+  editing: original,
+  defaultSize: { label: "Same as original", width: 800, height: 600 },
+  useLabel: "Replace image",
+};
+
+test("editing: the image is the first reference, tagged and kept; its size is the default; others go after it", async () => {
+  const { button, click, type, references } = await dialog({ ...editProps, logo: image(9) });
+  expect(document.body.textContent).toContain("What to change");
+  expect(references()).toEqual([original.url]);
+  expect(document.querySelector('ul[aria-label="References"] li')!.textContent).toContain("Editing");
+  expect(button("Remove reference 1")).toBeUndefined();
+  expect(button("Same as original")!.getAttribute("aria-pressed")).toBe("true");
+  expect(document.body.textContent).toContain("800 × 600");
+  await type("Make the sky orange");
+  await click("Generate");
+  expect(generateImage).toHaveBeenLastCalledWith("acme", { prompt: "Make the sky orange", width: 800, height: 600, references: ["orig"] });
+  await click("Refine this one");
+  expect(references()).toEqual([original.url, "https://media.example/made1.png"]);
+});
+
+test("editing: the original beside the try; Try again makes another; Insert as new and Replace image pass the picked one", async () => {
+  const alsoUse = { label: "Insert as new", onUse: vi.fn() };
+  const { button, click, type, onUse } = await dialog({ ...editProps, alsoUse });
+  await type("Make the sky orange");
+  await click("Generate");
+  expect(document.querySelector<HTMLImageElement>('img[alt="Original"]')!.src).toBe(original.url);
+  expect(document.body.textContent).toContain("Edited · 1 of 1");
+  expect(button("Generate")).toBeUndefined();
+  await click("Try again");
+  expect(generateImage).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).toContain("Edited · 2 of 2");
+  await click("Insert as new");
+  expect(alsoUse.onUse).toHaveBeenCalledWith(expect.objectContaining({ id: "made2" }));
+  await click("Replace image");
+  expect(onUse).toHaveBeenCalledWith(expect.objectContaining({ id: "made2", url: "https://media.example/made2-full.png" }));
+});

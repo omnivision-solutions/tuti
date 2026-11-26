@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { CollectionSelect } from "@/components/collection-select";
 import { IconField } from "@/components/icon-field";
+import type { ImageEditing } from "@/components/image-generator";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { ScreenshotLines } from "@/components/screenshot-lines";
 import {
@@ -192,6 +193,7 @@ export function ArticleForm({
   findings,
   screenshots = null,
   canTakeScreenshots = false,
+  imageEditing,
 }: {
   findings?: import("@/components/verification-marks").VerificationFinding[];
   /** Its "[Screenshot: …]" lines and their runs (a saved article's). */
@@ -208,6 +210,8 @@ export function ArticleForm({
   sections?: boolean;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
+  /** "Edit with AI" on the text's images; null where the server can't make images. */
+  imageEditing?: ImageEditing | null;
 }) {
   const [wide] = useState(sections);
   // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
@@ -416,6 +420,7 @@ export function ArticleForm({
           // Every change counts, pasted or formatted too (they fire no input event).
           onChange={changed}
           uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
+          imageEditing={imageEditing && { ...imageEditing, title }}
         />
       </FieldGroup>
     </form>
