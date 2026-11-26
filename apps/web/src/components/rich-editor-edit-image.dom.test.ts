@@ -369,3 +369,47 @@ test("a try still being made when the editor is drawn again lands in the new one
   await vi.waitFor(() => expect(second.button("Try 1")).toBeTruthy());
   expect(document.body.textContent).not.toContain("Generating, up to half a minute…");
 });
+
+test("another image's dialog lists the page's tries but compares, picks and says errors only for its own", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  const { ref, generate, button, click } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  const close = async () => {
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  };
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await vi.waitFor(() => expect(button("Try 1")).toBeTruthy());
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await click("Edit with AI");
+  // A's try is there to pick, not picked, nor shown as B's edit; B has made nothing, so Generate.
+  expect(button("Try 1")!.getAttribute("aria-pressed")).toBe("false");
+  expect(document.body.textContent).not.toContain("Edited ·");
+  expect(button("Generate")).toBeTruthy();
+  // A failing try on B is B's: back on A, no error.
+  generateImage.mockResolvedValueOnce({ error: "This project is out of credits" });
+  const prompt = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Bluer");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Generate");
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe("This project is out of credits"));
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await click("Edit with AI");
+  expect(document.querySelector('[role="dialog"] [role="alert"]')).toBeNull();
+  expect(document.body.textContent).toContain("Edited · 1 of 1");
+});

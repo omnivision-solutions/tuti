@@ -32,11 +32,13 @@ import { uploadStatus } from "@/server/media";
 export type PickedImage = { id: string; url: string };
 /** An image made in the dialog, as used: its full size (a signed link, fresh when used), and every stored size (for an editor that inserts it). */
 export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
-/** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
-export type Try = PickedImage & { width: number; height: number };
+/** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it; `root`, the image it was made for (Edit with AI). */
+export type Try = PickedImage & { width: number; height: number; root?: string };
 /** Tries an owner keeps for one image (see ImageGenerator's `kept`). */
 export type KeptTries = {
   tries: Try[];
+  /** The image these tries are for: only tries made for it are picked and compared with it. */
+  root: string;
   generating: boolean;
   /** The last try's error, said where its try would be. */
   error: string | null;
@@ -145,16 +147,18 @@ export function ImageGenerator({
   const [said, setSaid] = useState("");
   const [using, startUsing] = useTransition();
   const [useError, setUseError] = useState<string | null>(null);
-  // The try the edited image is (one placed before), or the last.
+  // Made for this image (kept: others are the page's too, made for other images).
+  const ours = (each: Try | undefined) => !!each && (!kept || each.root === kept.root);
+  // The try the edited image is (one placed before), or the last made for it; none when nothing was.
   const [selected, setSelected] = useState(() => {
     const placed = tries.findIndex((each) => each.id === editing?.id);
-    return placed >= 0 ? placed : Math.max(0, tries.length - 1);
+    return placed >= 0 ? placed : tries.findLastIndex(ours);
   });
   // A new try, made here or landing from before (kept): picked and said.
   const [count, setCount] = useState(tries.length);
   if (tries.length !== count) {
     setCount(tries.length);
-    if (tries.length > count) {
+    if (tries.length > count && ours(tries.at(-1))) {
       setSelected(tries.length - 1);
       setSaid(`Try ${tries.length} is ready`);
     }
@@ -572,7 +576,7 @@ export function ImageGenerator({
             onClick={generate}
           >
             <SparklesIcon />
-            {pending ? "Generating…" : editing && tries.length > 0 ? "Try again" : "Generate"}
+            {pending ? "Generating…" : editing && tries.some(ours) ? "Try again" : "Generate"}
           </Button>
         </DialogFooter>
       </DialogContent>
