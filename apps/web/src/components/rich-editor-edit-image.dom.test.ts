@@ -84,7 +84,9 @@ test("Edit with AI is on a picked image only where the server makes images; out 
   shown = await editor({ imageEditing: { ...imageEditing, paused: true } });
   await shown.pick();
   expect(shown.button("Edit with AI")!.getAttribute("aria-disabled")).toBe("true");
-  expect(shown.button("Edit with AI")!.title).toBe("This project is out of credits");
+  // Its reason is its description, for keyboard, touch and screen reader users too (not a hover-only title).
+  const off = shown.button("Edit with AI")!;
+  expect(document.getElementById(off.getAttribute("aria-describedby")!)?.textContent).toBe("This project is out of credits");
 });
 
 test("Edit with AI isn't offered on an image that isn't one of the project's uploads shown here", async () => {

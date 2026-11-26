@@ -255,18 +255,26 @@ export function FeaturedImage({
   const [generating, setGenerating] = useState(false);
   const used = useRef(false);
   const generate = entry && generator && (
+    <>
     <Button
       type="button"
       variant="secondary"
       size="sm"
       disabled={uploading || generator.paused}
       focusableWhenDisabled
-      title={generator.paused ? "This project is out of credits" : undefined}
+      // Why it's off, read with it (not only on hover): the reason is in its description.
+      aria-describedby={generator.paused ? `${id}-paused` : undefined}
       onClick={() => setGenerating(true)}
     >
       <SparklesIcon />
       Generate
     </Button>
+    {generator.paused && (
+      <span id={`${id}-paused`} className="sr-only">
+        This project is out of credits
+      </span>
+    )}
+    </>
   );
   // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
   // (Only then, and only if focus went with Add: a file dropped with the mouse, or someone who moved on while it

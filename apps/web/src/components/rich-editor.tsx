@@ -1028,7 +1028,7 @@ function Toolbar({ editor, onPrompt, onImage, editImage, className, expanded = f
               label="Edit with AI"
               active={false}
               disabled={editImage.paused}
-              title={editImage.paused ? "This project is out of credits" : undefined}
+              reason={editImage.paused ? "This project is out of credits" : undefined}
               onClick={editImage.run}
             />
           )}
@@ -1076,17 +1076,20 @@ function Tool({
   active,
   onClick,
   disabled,
-  title,
+  reason,
 }: {
   icon: LucideIcon;
   label: string;
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
-  title?: string;
+  /** Why it's off: its description, read with it, and its tooltip (shown on hover and keyboard focus). */
+  reason?: string;
 }) {
+  const reasonId = useId();
   return (
-    <IconTooltip label={label}><Button
+    <>
+    <IconTooltip label={reason ?? label}><Button
       type="button"
       variant={active ? "secondary" : "ghost"}
       size="icon-sm"
@@ -1094,13 +1097,19 @@ function Tool({
       aria-pressed={active}
       disabled={disabled}
       focusableWhenDisabled
-      title={title}
+      aria-describedby={reason ? reasonId : undefined}
       // Keep focus (and the selection) in the text while clicking; keyboard users still reach it with Tab.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
       <Icon />
     </Button></IconTooltip>
+    {reason && (
+      <span id={reasonId} className="sr-only">
+        {reason}
+      </span>
+    )}
+    </>
   );
 }
 

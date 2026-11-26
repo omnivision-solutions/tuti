@@ -33,7 +33,8 @@ test("Generate is offered only where the server makes images; out of credits it 
   document.body.replaceChildren();
   const paused = (await band({ generator: { ...generator, paused: true } }))!;
   expect(paused.getAttribute("aria-disabled")).toBe("true");
-  expect(paused.title).toBe("This project is out of credits");
+  // Its reason is its description, for keyboard, touch and screen reader users too (not a hover-only title).
+  expect(document.getElementById(paused.getAttribute("aria-describedby")!)?.textContent).toBe("This project is out of credits");
 });
 
 test("From this entry lists the form's cover first, then the text's images, the cover once", async () => {
