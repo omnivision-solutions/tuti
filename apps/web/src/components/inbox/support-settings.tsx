@@ -97,8 +97,13 @@ export function TranslationSettings({
           id="translate-conversations"
           aria-describedby="translate-conversations-description"
           checked={on}
-          disabled={pending || (!ai && !on)}
+          // Not disabled while saving, which would drop keyboard focus: it takes no second change until then.
+          disabled={!ai && !on}
+          aria-disabled={pending || undefined}
           onChange={(event) => {
+            if (pending) {
+              return;
+            }
             const next = event.currentTarget.checked;
             setOn(next);
             save({ translate: next }, () => setOn(!next), next ? "Translation on" : "Translation off");
@@ -109,7 +114,8 @@ export function TranslationSettings({
         <Select
           items={items}
           value={language}
-          disabled={pending}
+          // Read-only while saving rather than disabled, so focus stays on it.
+          readOnly={pending}
           onValueChange={(next) => {
             if (typeof next !== "string" || next === language) {
               return;
