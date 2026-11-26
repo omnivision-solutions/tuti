@@ -14,7 +14,7 @@
     "@tuti/ui": "workspace:*",
     "cn": "^0.4.0",
     "lucide-react": "^1.49.0",
-    "next": "16.4.2",
+    "next": "16.4.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "shadcn": "^4.23.0",
@@ -26,7 +26,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.2",
+    "eslint-config-next": "16.4.5",
     "tailwindcss": "^4",
     "typescript": "^6.0.3"
   }
