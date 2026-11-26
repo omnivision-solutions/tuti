@@ -267,7 +267,9 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await comments.getByRole("button", { name: "Kommentieren" }).click();
   await expect(reader.locator("[data-sonner-toast]", { hasText: "Kommentar gepostet" })).toBeVisible();
   await expect(comments.getByRole("heading", { name: "1 Kommentar" })).toBeVisible();
-  await expect(comments.locator("time").first()).toHaveText("jetzt");
+  // The new comment's own time (the status change's comes first in the thread).
+  const posted = comments.getByRole("listitem").filter({ hasText: "Bitte auch für die App" });
+  await expect(posted.locator("time")).toHaveText(/^(jetzt|vor \d+ (Sekunden?|Minuten?))$/);
   await expect(comments.getByRole("button", { name: "Kommentar von Rita Reader gefällt mir (0 Likes)" })).toBeVisible();
   await checkpoint(reader, "post-in-german", { fullPage: false });
 
@@ -276,4 +278,38 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await reader.goto("/de/feedback/feature-requests");
   await expect(reader.getByRole("button", { name: "Neuer Beitrag" })).toBeVisible();
   await checkpoint(reader, "board-in-german-phone", { fullPage: false });
+});
+
+test("Docs in German: the docs tabs' lock and the sidebar's links, named in German, the team's links in theirs", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
+  // Two tabs; Enterprise is for signed-in readers, shown to others with a lock.
+  await api("/tabs", { name: "Guides" });
+  await api("/tabs", { name: "Enterprise", access: "signed_in", noAccess: "lock" });
+  await api("/collections", { name: "Basics", tab: "guides" });
+  await api("/collections", { name: "SAML", tab: "enterprise" });
+  const article = await api("/articles", { title: "Getting started", body: "Start here.", collection: "basics" });
+  await api(`/articles/${article.slug}/publish`, {});
+  const saml = await api("/articles", { title: "Setting up SAML", body: "SAML.", collection: "saml" });
+  await api(`/articles/${saml.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto(`/de/docs/${article.slug}`);
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("link", { name: /^Enterprise\s*Gesperrt$/ })).toBeVisible();
+  const links = reader.getByRole("list", { name: "Links" }).first();
+  await expect(links).toHaveAttribute("lang", "de");
+  await expect(links.getByRole("link", { name: "Status page" })).toHaveAttribute("lang", "en");
+
+  // On a phone the tree and the links are in the header's menu, a size up (data-sidebar-links).
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.getByRole("banner").getByRole("button", { name: "Menü" }).click();
+  const menuLinks = reader.getByRole("dialog").locator("ul[data-sidebar-links]");
+  await expect(menuLinks.getByRole("link", { name: "Status page" })).toBeVisible();
+  await expect(menuLinks).toHaveCSS("font-size", "16px");
 });
