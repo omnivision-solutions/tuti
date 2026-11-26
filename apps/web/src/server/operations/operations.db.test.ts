@@ -229,6 +229,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Like the rest of Customize: admins only in the app.
   "redirects.create": () => ({ from: "/hc/en-us/articles/1", to: "/docs" }),
   "redirects.delete": (f) => ({ id: f.redirectId }),
+  "languages.get": () => ({}),
+  "languages.update": () => ({ languages: [{ code: "de", instructions: "Use du." }] }),
   // Like the rest of Settings: admins only in the app. The agent is Browser Use's fake; the secret never comes back.
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
