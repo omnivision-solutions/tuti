@@ -48,6 +48,9 @@ const e2eConfig = {
   customDomains: { target: "customers.example.com", cloudflareZoneId: FAKE_CLOUDFLARE_ZONE },
   // Credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
   credits: { enabled: true, free: 1000 },
+  // The spam filter's model checks off: they'd ask the model fake about every new conversation, unscripted (they only
+  // write a note while watching; their tests are database tests).
+  spam: { decisions: { model: "off" }, chat: { model: "off" } },
 };
 
 export const serverEnv = {

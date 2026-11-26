@@ -6,12 +6,14 @@ import { SPAM_REASON_KEYS, spamWhy } from "@/lib/spam-reasons";
 
 import { userWithAddress } from "../inbound";
 import { blockableDomain, listSender, spamVerdict } from "../spam";
+import { MAX_SPAM_GUIDANCE } from "../spam-models";
 import { emailAddress, matchText } from "./assistant";
 import { defineOperation, OperationError } from "./define";
 
 /**
  * Settings → Spam (docs/plan.md, Inbox automation, W2): the spam filter's blocked and allowed lists (`spam_sender` rows
- * without a conversation, an owner's or admin's), the team's phrases (check 5), and trying a message against the filter.
+ * without a conversation, an owner's or admin's), the team's phrases (check 5), its guidance for the models (checks 6 and
+ * 7, W3), and trying a message against the filter.
  */
 
 /** Both lists together. */
@@ -19,16 +21,16 @@ export const MAX_SPAM_SENDERS = 500;
 export const MAX_SPAM_PHRASES = 50;
 export const MAX_SPAM_PHRASE = 80;
 
-export type SpamSettings = { blocked: string[]; allowed: string[]; phrases: string[] };
+export type SpamSettings = { blocked: string[]; allowed: string[]; phrases: string[]; guidance: string };
 
-/** A project's lists and phrases, as the page and the API read them: each list in alphabetical order. */
+/** A project's lists, phrases and guidance, as the page and the API read them: each list in alphabetical order. */
 export async function spamSettings(projectId: string): Promise<SpamSettings> {
-  const [senders, { spamPhrases }] = await Promise.all([
+  const [senders, { spamPhrases, spamGuidance }] = await Promise.all([
     prisma.spamSender.findMany({ where: { projectId, conversationId: null }, orderBy: { sender: "asc" }, select: { sender: true, blocked: true } }),
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { spamPhrases: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { spamPhrases: true, spamGuidance: true } }),
   ]);
   const on = (blocked: boolean) => senders.filter((row) => row.blocked === blocked).map((row) => row.sender);
-  return { blocked: on(true), allowed: on(false), phrases: spamPhrases };
+  return { blocked: on(true), allowed: on(false), phrases: spamPhrases, guidance: spamGuidance };
 }
 
 const ENTRY = "Enter an address or a domain, like kim@acme.example or acme.example";
@@ -63,19 +65,23 @@ const settingsOutput = z
       .array(z.string())
       .describe("The team's phrases: a new conversation whose subject or first message has one, as whole words in any case, goes to Spam, unless its sender is allowed, trusted (one of the project's users, a teammate, someone the team has replied to) or was marked Not spam before")
       .meta({ examples: [["facebook admin"]] }),
+    guidance: z
+      .string()
+      .describe("The team's guidance for the spam filter's models, in its own words: what is and isn't spam for this team. Empty when there's none")
+      .meta({ examples: ["Agencies offering SEO or design work are spam; questions about our API are not"] }),
   })
-  .meta({ id: "SpamSettings", description: "What the team told the spam filter: who's blocked, who's allowed, and its phrases" });
+  .meta({ id: "SpamSettings", description: "What the team told the spam filter: who's blocked, who's allowed, its phrases and its guidance for the models" });
 
 export const getSpamSettings = defineOperation({
   name: "spam.get",
   title: "Get the spam filter's lists",
-  summary: "Get the spam filter's blocked and allowed lists and the team's phrases",
+  summary: "Get the spam filter's blocked and allowed lists, the team's phrases and its guidance for the models",
   method: "GET",
   path: "/spam",
   scope: "read",
   access: "admin",
   input: z.object({}),
-  output: settingsOutput.describe("The spam filter's lists and phrases"),
+  output: settingsOutput.describe("The spam filter's lists, phrases and guidance"),
   run: ({ projectId }) => spamSettings(projectId),
 });
 
@@ -83,7 +89,7 @@ export const updateSpamSettings = defineOperation({
   name: "spam.update",
   title: "Update the spam filter",
   summary:
-    "Add addresses and domains to the spam filter's blocked or allowed list, take them off, and add or remove the team's phrases. A list's address decides before every mark on its sender's conversations, and a domain's entry is for its subdomains too",
+    "Add addresses and domains to the spam filter's blocked or allowed list, take them off, add or remove the team's phrases, and set its guidance for the models. A list's address decides before every mark on its sender's conversations, and a domain's entry is for its subdomains too",
   method: "PATCH",
   path: "/spam",
   scope: "write",
@@ -117,10 +123,18 @@ export const updateSpamSettings = defineOperation({
       .max(MAX_SPAM_PHRASES)
       .optional()
       .describe("Phrases to take out, however they're cased or punctuated"),
+    guidance: z
+      .string()
+      .trim()
+      .max(MAX_SPAM_GUIDANCE, `Keep the guidance under ${MAX_SPAM_GUIDANCE} characters`)
+      .optional()
+      .describe(
+        `The team's guidance for the spam filter's models, up to ${MAX_SPAM_GUIDANCE} characters: what is and isn't spam for this team, in its own words. The models read it with each new conversation no list, trust or phrase decided. Empty to clear it`,
+      ),
   }),
-  output: settingsOutput.describe("The spam filter's lists and phrases, as saved"),
+  output: settingsOutput.describe("The spam filter's lists, phrases and guidance, as saved"),
   example: { block: ["spam.example"], allow: ["forms@acme.example"], addPhrases: ["facebook admin"] },
-  run: async ({ projectId }, { block = [], allow = [], remove = [], addPhrases = [], removePhrases = [] }) => {
+  run: async ({ projectId }, { block = [], allow = [], remove = [], addPhrases = [], removePhrases = [], guidance }) => {
     const twice = [...block, ...allow].find((entry, i, all) => all.indexOf(entry) !== i) ?? remove.find((entry) => block.includes(entry) || allow.includes(entry));
     if (twice) {
       throw new OperationError(400, "invalid_input", `${twice} is there twice: block it, allow it or remove it`);
@@ -153,6 +167,9 @@ export const updateSpamSettings = defineOperation({
           throw new OperationError(409, "too_many", `The list holds up to ${MAX_SPAM_PHRASES} phrases: remove some first`);
         }
         await tx.project.update({ where: { id: projectId }, data: { spamPhrases: kept } });
+      }
+      if (guidance !== undefined) {
+        await tx.project.update({ where: { id: projectId }, data: { spamGuidance: guidance } });
       }
     });
     return spamSettings(projectId);

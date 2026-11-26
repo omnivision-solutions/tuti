@@ -4,7 +4,7 @@ import type { FormState } from "./form-state";
 import { trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { asAdmin, call } from "./operations/run";
 
-/** Settings → Spam (see the spam.* operations): the lists, the phrases and the box to try a message. */
+/** Settings → Spam (see the spam.* operations): the lists, the phrases, the guidance and the box to try a message. */
 
 const DENIED = "Only project owners and admins can change the spam filter";
 
@@ -21,6 +21,11 @@ export async function removeSpamSender(projectSlug: string, sender: string): Pro
 /** Adds a phrase (`add`) or takes one out. */
 export async function setSpamPhrase(projectSlug: string, phrase: string, add: boolean): Promise<FormState> {
   return asAdmin(projectSlug, DENIED, (context) => call(updateSpamSettings, context, add ? { addPhrases: [String(phrase)] } : { removePhrases: [String(phrase)] }));
+}
+
+/** Sets the team's guidance for the models (empty clears it). */
+export async function setSpamGuidance(projectSlug: string, guidance: string): Promise<FormState> {
+  return asAdmin(projectSlug, DENIED, (context) => call(updateSpamSettings, context, { guidance: String(guidance ?? "") }));
 }
 
 export type SpamTry = { error?: string; spam?: boolean; why?: string };

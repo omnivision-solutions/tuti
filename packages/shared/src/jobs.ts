@@ -277,6 +277,12 @@ export const jobs = {
     input: z.object({}),
     cron: "* * * * *",
   },
+  /** Runs what the inbox's path left behind (a deploy, a crash): the spam filter's model checks, through the web app. */
+  inboxDue: {
+    name: "inbox-due",
+    input: z.object({}),
+    cron: "* * * * *",
+  },
   /** Queues post-shipped again for posts whose emails are late (never queued, or the run died). */
   resubmitShippedEmails: {
     name: "shipped-emails-resubmit",

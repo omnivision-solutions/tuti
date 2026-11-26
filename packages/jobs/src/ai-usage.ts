@@ -30,6 +30,18 @@ export async function duplicatesMeter(projectId: string): Promise<Meter | null> 
 export const screenshotsMeter = (projectId: string): Meter => meter(projectId, "screenshots");
 
 /**
+ * The meter for the spam filter's model checks in `projectId`: recorded as `spam` (the day's cap counts these), never
+ * charged, as strangers could drain a project's credits by sending mail. A failed write is logged, never thrown.
+ */
+export const spamMeter =
+  (projectId: string): Meter =>
+  async (usage) => {
+    await prisma.aiUsage
+      .create({ data: { projectId, feature: "spam", ...usage, credits: creditsEnabled() ? 0 : null } })
+      .catch((error: unknown) => log.error("Recording AI usage failed", { projectId, feature: "spam", ...usage, error }));
+  };
+
+/**
  * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project),
  * and with credits on charges its cost in credits, at the rate of the time (a request with no
  * cost is charged 0, and stays flagged by its missing cost). A failed write is logged, never thrown:

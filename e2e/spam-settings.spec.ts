@@ -60,6 +60,15 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await expect(card("Phrases")).toContainText("facebook-admin is already on the list");
   await card("Phrases").getByLabel("Phrase to add").fill("");
 
+  // The guidance for the AI's checks: saved with the page's Save changes, and there again on the next visit.
+  const guidance = card("Guidance for the AI");
+  await expect(guidance).toContainText("For now it only leaves a note on what it would have filed.");
+  await guidance.getByLabel("Guidance for the AI").fill("Agencies offering SEO work are spam");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Guidance saved")).toBeVisible();
+  await owner.reload();
+  await expect(card("Guidance for the AI").getByLabel("Guidance for the AI")).toHaveValue("Agencies offering SEO work are spam");
+
   // Try a message: what the filter would do with it, and why. What was typed stays, to change and try again.
   const attempt = card("Try a message");
   await attempt.getByLabel("From").fill("e2e-kim@strangers.example");
@@ -68,7 +77,7 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await attempt.getByRole("button", { name: "Try it" }).click();
   await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: it has your phrase “Facebook Admin”.");
   // The whole screen in one picture: the pane scrolls inside the window, so the window is made tall enough for it.
-  await expect(owner.getByText("Added to Phrases")).toBeHidden({ timeout: 10_000 });
+  await expect(owner.getByText("Guidance saved")).toBeHidden({ timeout: 10_000 });
   await owner.setViewportSize({ width: 1440, height: 1300 });
   await checkpoint(owner, "spam-settings", { fullPage: false });
   await owner.setViewportSize({ width: 1440, height: 900 });

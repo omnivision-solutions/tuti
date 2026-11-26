@@ -123,6 +123,7 @@ test("the lists through spam.update: added in lowercase, a domain for its subdom
     blocked: ["e2e-kim@spam.example", "junk.example"],
     allowed: ["e2e-forms@relay.example"],
     phrases: [],
+    guidance: "",
   });
   expect(await call(getSpamSettings, admin, {})).toMatchObject({ blocked: ["e2e-kim@spam.example", "junk.example"] });
   await mail("e2e-kim@spam.example"); // #1
@@ -153,7 +154,7 @@ test("spam.update refuses what isn't an address or a domain, a suffix, a free-ma
   // An address there is one sender, and allowing the domain blocks nobody: both are taken.
   await update({ block: ["e2e-kim@gmail.com"], allow: ["gmail.com"] });
   // Phrases that match the same text are one, sent together or added later.
-  expect(await update({ addPhrases: ["Facebook admin", "facebook  ADMIN", "crypto"] })).toEqual({ blocked: ["e2e-kim@gmail.com"], allowed: ["gmail.com"], phrases: ["Facebook admin", "crypto"] });
+  expect(await update({ addPhrases: ["Facebook admin", "facebook  ADMIN", "crypto"] })).toEqual({ blocked: ["e2e-kim@gmail.com"], allowed: ["gmail.com"], phrases: ["Facebook admin", "crypto"], guidance: "" });
   expect(await update({ addPhrases: ["facebook-admin"] })).toMatchObject({ phrases: ["Facebook admin", "crypto"] });
   expect(await call(getSpamSettings, admin, {})).toMatchObject({ phrases: ["Facebook admin", "crypto"] });
   // The list holds 50: adding past it is refused, and taking one out still works.

@@ -715,6 +715,7 @@ const matrix: Matrix = {
     listSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.listSpamSender(slug, true, "spam.example") },
     removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "spam.example") },
     setSpamPhrase: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamPhrase(slug, "facebook admin", true) },
+    setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
     trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   },
   "sso-settings": {

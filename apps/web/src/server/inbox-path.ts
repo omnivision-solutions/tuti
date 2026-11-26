@@ -7,13 +7,15 @@ import { ACTIONS, storedWorkflow, type WorkflowAction, type WorkflowTrigger } fr
 
 import { notifyInbox } from "./live";
 import { announceConversation, announceUserMessage } from "./operations/conversations";
+import { spamChecksAfter, spamModelsOn } from "./spam-models";
 
 /**
  * The path a user's message takes once it's written (docs/plan.md, Inbox automation, "The path"): the spam filter has
  * answered where the conversation started (server/spam.ts), then the team's workflows for "A conversation starts" (the
  * first message) or "A user replies" (any later one), then the team is told (its email and push, the webhooks). Called
  * wherever a user's message arrives: email, the widget, "Ask a person", the API, and Not spam on what the filter filed.
- * A conversation in Spam runs nothing and tells nobody.
+ * A conversation in Spam runs nothing and tells nobody. The spam filter's model checks run once the request has answered
+ * (server/spam-models.ts), watching only for now: the conversation goes on as the free checks left it.
  */
 
 /** A conversation a user started, with its first message. */
@@ -27,6 +29,11 @@ export async function inboxPath(projectId: string, arrival: Started | Replied) {
   if ("started" in arrival) {
     const { started, message } = arrival;
     const changed = started.spam ? {} : await runWorkflows(projectId, started.id, message.id, "conversation_started");
+    if (!started.spam && spamModelsOn()) {
+      // The spam filter's model checks, watching only: they write a note, once the request has answered, where the
+      // free checks left it undecided (`pathDueAt`).
+      spamChecksAfter(started.id);
+    }
     // Told as the workflows left it (marked priority).
     return announceConversation(projectId, { ...started, ...changed }, message);
   }
