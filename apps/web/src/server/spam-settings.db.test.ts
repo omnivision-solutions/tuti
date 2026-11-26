@@ -137,6 +137,8 @@ test("the lists through spam.update: added in lowercase, a domain for its subdom
   expect(await update({ allow: ["junk.example"] })).toMatchObject({ blocked: [], allowed: ["e2e-forms@relay.example", "junk.example"] });
   await mail("e2e-lee@m2.junk.example"); // #5
   expect((await filed()).slice(3)).toEqual(["inbox", "inbox"]);
+  // A domain spelled with its "@", as block and allow take it, is taken off too.
+  expect(await update({ remove: ["@junk.example"] })).toMatchObject({ allowed: ["e2e-forms@relay.example"] });
 });
 
 test("spam.update refuses what isn't an address or a domain, a suffix, a free-mail domain on the blocked list, an entry sent twice, and a phrase without a word", async () => {

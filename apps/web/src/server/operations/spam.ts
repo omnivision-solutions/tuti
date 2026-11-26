@@ -93,7 +93,12 @@ export const updateSpamSettings = defineOperation({
     block: senders("Addresses and domains to put on the blocked list (one on the allowed list moves). Not a domain anyone can get an address at, like gmail.com: block its addresses"),
     allow: senders("Addresses and domains to put on the allowed list (one on the blocked list moves)"),
     // As it is on the list, whatever that is: nothing there can't be taken off.
-    remove: z.array(z.string().trim().toLowerCase().max(320)).max(100, "Send up to 100 at a time").optional().describe("Addresses and domains to take off whichever list they're on"),
+    remove: z
+      // Spelled as block and allow take them: "@acme.example" is the domain.
+      .array(z.string().trim().toLowerCase().max(320).transform((entry) => entry.replace(/^@/, "")))
+      .max(100, "Send up to 100 at a time")
+      .optional()
+      .describe("Addresses and domains to take off whichever list they're on"),
     addPhrases: z
       .array(
         z
