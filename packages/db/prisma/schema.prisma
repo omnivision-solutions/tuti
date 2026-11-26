@@ -2599,6 +2599,8 @@ model ArticleTranslation {
   draft            Json?
   /// Sections the team asked to translate again (Update those sections): the job's next run writes them, then clears this.
   updateSections   Json      @default("[]")
+  /// Source sections the team took out of the published text: the job doesn't put them back, nor count them as missing.
+  removedSections  Json      @default("[]")
   /// The team published its own title: the hash of the source's title then. A version kept up to date keeps it until the
   /// source's title changes.
   titleSource      String?

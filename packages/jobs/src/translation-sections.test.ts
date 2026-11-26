@@ -27,21 +27,21 @@ test("the new translation replaces every section but those the team owns and tho
   const source = sourceSections(v1);
   const version = versionSections(de1, [], source);
   // The team edits Setup and adds a section after it.
-  const edited = editedSections(version, doc(["", "Einleitung"], ["Einrichtung", "Selbst installieren"], ["Extra", "Von uns"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  const { sections: edited } = editedSections(version, doc(["", "Einleitung"], ["Einrichtung", "Selbst installieren"], ["Extra", "Von uns"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  // Known again by text, then heading: Setup edited, the new one added, Billing as it was.
   expect(edited.map(({ meta }) => [meta.key?.split("\u001f")[0] ?? null, !!meta.own])).toEqual([
     ["", false],
     ["Setup", true],
-    // ponytail: by position, Billing's place now holds the added section, so it's edited and the old Billing one is added.
-    ["Billing", true],
     [null, true],
+    ["Billing", false],
   ]);
   // English changes everywhere: the team's sections stay, the rest take the new translation.
   const v2 = doc(["", "Intro!"], ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]);
   const source2 = sourceSections(v2);
   const next = withTranslation(edited, doc(["", "Einleitung!"], ["Einrichtung", "Jetzt installieren"], ["Abrechnung", "Karte oder Rechnung"]), source2);
-  expect(texts(docOfSections(next))).toEqual(["Einleitung!", "Einrichtung", "Selbst installieren", "Extra", "Von uns", "Abrechnung", "Mit Karte zahlen"]);
+  expect(texts(docOfSections(next))).toEqual(["Einleitung!", "Einrichtung", "Selbst installieren", "Extra", "Von uns", "Abrechnung", "Karte oder Rechnung"]);
   // Those the team owns whose English changed are behind.
-  expect(behindSections(next, source2).map((key) => key.split("\u001f")[0])).toEqual(["Setup", "Billing"]);
+  expect(behindSections(next, source2).map((key) => key.split("\u001f")[0])).toEqual(["Setup"]);
 });
 
 test("`only`: just those sections take the new translation (a version the team writes, updating what it asked for)", () => {
@@ -54,7 +54,7 @@ test("`only`: just those sections take the new translation (a version the team w
 
 test("a section whose source section went goes, unless it's the team's", () => {
   const source = sourceSections(v1);
-  const version = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Unseres"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  const version = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Unseres"], ["Abrechnung", "Mit Karte zahlen"]), source).sections;
   const v2 = doc(["", "Intro"]);
   const next = withTranslation(version, doc(["", "Einleitung"]), sourceSections(v2));
   expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Unseres"]);
@@ -63,7 +63,7 @@ test("a section whose source section went goes, unless it's the team's", () => {
 
 test("published on a version kept up to date, the team's edits give way only where their source changed, kept ones never", () => {
   const source = sourceSections(v1);
-  const edited = editedSections(versionSections(de1, [], source), doc(["", "Hallo"], ["Einrichtung", "Unsere"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  const edited = editedSections(versionSections(de1, [], source), doc(["", "Hallo"], ["Einrichtung", "Unsere"], ["Abrechnung", "Mit Karte zahlen"]), source).sections;
   // Setup's edit kept over a newer translation.
   const published = edited.map((section, i) => (i === 1 ? { ...section, meta: { ...section.meta, kept: true as const } } : section));
   const v2 = doc(["", "Intro!"], ["Setup", "Install it now"], ["Billing", "Pay by card"]);
@@ -76,7 +76,7 @@ test("published on a version kept up to date, the team's edits give way only whe
 
 test("a draft written before the version's first translation lines up with the source by position", () => {
   const source = sourceSections(v1);
-  const drafted = editedSections([], de1, source);
+  const drafted = editedSections([], de1, source).sections;
   expect(drafted.map(({ meta }) => meta.key)).toEqual(source.map(({ key }) => key));
   // Translated later: no section twice.
   expect(texts(docOfSections(withTranslation(drafted, de1, source)))).toEqual(texts(de1));
@@ -93,7 +93,7 @@ test("`only`: a version the team writes keeps its sections whose source went, bu
 
 test("published on a version kept up to date, an edit whose source section was renamed or removed goes, unless kept", () => {
   const source = sourceSections(v1);
-  const edited = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Unsere Abrechnung"]), source);
+  const edited = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Unsere Abrechnung"]), source).sections;
   // English renames "Billing" to "Payments": its key is gone.
   const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Payments", "Pay by card"]);
   const translated = doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlungen", "Mit Karte zahlen"]);
@@ -109,6 +109,27 @@ test("an edit of a section translated from older source text is behind: it keeps
   const version = versionSections(de1, [], old);
   // English Billing changed since that translation (the new one not made yet).
   const now = sourceSections(doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]));
-  const edited = editedSections(version, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen!"]), now);
+  const edited = editedSections(version, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen!"]), now).sections;
   expect(behindSections(edited, now).map((key) => key.split("\u001f")[0])).toEqual(["Billing"]);
+});
+
+test("a section the team inserts in the middle is known as added: nothing after it shifts, nothing is lost or doubled", () => {
+  const source = sourceSections(v1);
+  const { sections: edited, removed } = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Hinweis", "Von uns"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  expect(removed).toEqual([]);
+  expect(edited.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", null, "Billing"]);
+  // English changes Billing: the new translation there, the team's section where it put it.
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by invoice"]);
+  const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v2));
+  expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren", "Hinweis", "Von uns", "Abrechnung", "Per Rechnung"]);
+});
+
+test("a section the team deletes from the middle is recorded as taken out: the job doesn't put it back", () => {
+  const source = sourceSections(v1);
+  const { sections: edited, removed } = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  expect(removed.map((key) => key.split("\u001f")[0])).toEqual(["Setup"]);
+  expect(edited.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Billing"]);
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by invoice"]);
+  const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v2), { removed: new Set(removed) });
+  expect(texts(docOfSections(next))).toEqual(["Einleitung", "Abrechnung", "Per Rechnung"]);
 });

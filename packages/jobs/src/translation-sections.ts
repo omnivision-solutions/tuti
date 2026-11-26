@@ -48,9 +48,14 @@ export const metaOf = (list: Section[]) => list.map((section) => section.meta);
  * a section whose source section is gone goes, unless it's the team's. `only`: just these sections take the new translation
  * (the rest stay, missing ones aren't added): a version the team writes, updating the sections it asked for. `published`:
  * the published text of a version kept up to date, where the team's edits (not those it kept) give way where their source
- * section changed; in a draft they never do.
+ * section changed; in a draft they never do. `removed`: source sections the team took out of it, which aren't put back.
  */
-export function withTranslation(current: Section[], translated: Doc, source: SourceSection[], { only, published = false }: { only?: Set<string>; published?: boolean } = {}): Section[] {
+export function withTranslation(
+  current: Section[],
+  translated: Doc,
+  source: SourceSection[],
+  { only, published = false, removed }: { only?: Set<string>; published?: boolean; removed?: Set<string> } = {},
+): Section[] {
   const fresh = sections(translated.content ?? []);
   const inSource = new Set(source.map((section) => section.key));
   const byKey = new Map<string, Section>();
@@ -72,7 +77,8 @@ export function withTranslation(current: Section[], translated: Doc, source: Sou
   for (const [i, { key, hash }] of source.entries()) {
     const had = byKey.get(key);
     const theirs = !!had?.meta.own && (!published || !!had.meta.kept || had.meta.hash === hash);
-    const keep = theirs || (only && !only.has(key));
+    // Not there because the team took it out (and didn't ask for it back): left out.
+    const keep = theirs || (only && !only.has(key)) || (!had && !!removed?.has(key) && !only?.has(key));
     if (keep) {
       if (had) out.push(had);
     } else if (fresh[i]) {
@@ -83,34 +89,63 @@ export function withTranslation(current: Section[], translated: Doc, source: Sou
   return out;
 }
 
+/** A section's heading text ("" for one with none), to know it again after the text around it moved. */
+const headingOf = (blocks: Block[]) => (blocks[0]?.type === "heading" ? JSON.stringify(blocks[0].content ?? []) : "");
+
 /**
- * The team's edit of `base` (the draft, else the published text) as sections: a section as it was keeps what it stands
- * for; a changed one is the team's, edited against the source as it is now; one past the base's is one they added.
- * ponytail: sections line up by position, so adding or taking out a heading in the middle marks the ones after it edited
- * too (kept, never lost); matching moved sections by their text is the upgrade if that matters.
+ * The team's edit of `base` (the draft, else the published text) as sections. Each edited section is known again as the base
+ * section it was: one with the same text, else the same heading, else (as many sections as before) the one in its place;
+ * one that is none of them is one the team added. A section as it was keeps what it stands for. A changed one is the team's,
+ * and counts as updated against the source as it is now, unless it wasn't shown as behind when it was edited (a section of a
+ * version kept up to date that the team didn't own, maybe translated from older source text): that one keeps the hash it had,
+ * so an edit of an old translation is still behind. `removed`: the base's sections the edit took out.
+ * ponytail: matching by text and heading, then position; a section both moved and rewritten (heading too) counts as added
+ * and its old one as removed.
  */
-export function editedSections(base: Section[], edited: Doc, source: SourceSection[]): Section[] {
+export function editedSections(base: Section[], edited: Doc, source: SourceSection[], { automatic = true }: { automatic?: boolean } = {}): { sections: Section[]; removed: string[] } {
   const hashes = new Map(source.map((section) => [section.key, section.hash]));
-  return sections(edited.content ?? []).map((blocks, i) => {
-    const was = base[i];
-    if (was && sameSection(was.blocks, blocks)) {
+  const blocks = sections(edited.content ?? []);
+  const used = new Set<number>();
+  const take = (i: number) => (i === -1 || used.has(i) ? undefined : (used.add(i), base[i]));
+  const matched = blocks.map((section) => {
+    const same = base.findIndex((was, i) => !used.has(i) && sameSection(was.blocks, section));
+    return same === -1 ? undefined : take(same);
+  });
+  matched.forEach((was, n) => {
+    if (was) return;
+    const heading = headingOf(blocks[n]!);
+    matched[n] = heading ? take(base.findIndex((other, i) => !used.has(i) && headingOf(other.blocks) === heading)) : undefined;
+  });
+  if (blocks.length === base.length) {
+    matched.forEach((was, n) => (matched[n] = was ?? take(n)));
+  }
+  const out = blocks.map((section, i): Section => {
+    const was = matched[i];
+    if (was && sameSection(was.blocks, section)) {
       return was;
     }
-    // Edited from what it was, which was made from the source as it was then (its hash): an edit of a translation of older
-    // source text is behind. Nothing to line up with yet (written before its first translation): the source's section in its
-    // place, as it is now.
     if (was) {
-      return { blocks, meta: { key: was.meta.key, hash: was.meta.hash, own: true } };
+      const behindUnseen = automatic && !was.meta.own;
+      return { blocks: section, meta: { key: was.meta.key, hash: behindUnseen || was.meta.key === null ? was.meta.hash : (hashes.get(was.meta.key) ?? null), own: true } };
     }
+    // Nothing to line up with yet (written before its first translation): the source's section in its place, as it is now.
     const key = base.length === 0 ? (source[i]?.key ?? null) : null;
-    return { blocks, meta: { key, hash: key === null ? null : (hashes.get(key) ?? null), own: true } };
+    return { blocks: section, meta: { key, hash: key === null ? null : (hashes.get(key) ?? null), own: true } };
   });
+  const removed = base.filter((_, i) => !used.has(i)).flatMap(({ meta }) => (meta.key === null ? [] : [meta.key]));
+  return { sections: out, removed };
 }
 
-/** The sections the team owns whose source section changed since they were translated or edited (or is gone). */
-export function behindSections(list: Section[], source: SourceSection[]): string[] {
+/**
+ * The sections the team owns whose source section changed since they were translated or edited (or is gone); with `missing`,
+ * also the source's sections the version doesn't have (a version the team writes: English added or renamed one), but those
+ * the team took out (`removed`).
+ */
+export function behindSections(list: Section[], source: SourceSection[], { missing = false, removed }: { missing?: boolean; removed?: Set<string> } = {}): string[] {
   const hashes = new Map(source.map((section) => [section.key, section.hash]));
-  return list.filter(({ meta }) => meta.own && meta.key !== null && hashes.get(meta.key) !== meta.hash).map(({ meta }) => meta.key!);
+  const stale = list.filter(({ meta }) => meta.own && meta.key !== null && hashes.get(meta.key) !== meta.hash).map(({ meta }) => meta.key!);
+  const has = new Set(list.map(({ meta }) => meta.key));
+  return [...stale, ...(missing ? source.filter(({ key }) => !has.has(key) && !removed?.has(key)).map(({ key }) => key) : [])];
 }
 
 /** A version the team writes (not kept up to date): every section is theirs, so each whose source section changed is behind. */

@@ -120,26 +120,41 @@ type Data = Prisma.ArticleTranslationUpdateManyMutationInput;
 type Locked = Prisma.ArticleTranslationGetPayload<{ select: typeof lockedSelect }>;
 /** `data`, or what to write made from the version as it is then (null: nothing). */
 type Settle = (data: Data | ((now: Locked) => Data | null)) => Promise<boolean>;
-const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
+const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
 
 /** A version's draft as stored (ArticleTranslation.draft). */
-export type Draft = { title: string; titleEdited: boolean; content: Doc; sections: SectionMeta[] };
+export type Draft = { title: string; titleEdited: boolean; content: Doc; sections: SectionMeta[]; /** Source sections the team took out of it. */ removed?: string[] };
+
+/** A version's text (published or its draft) for working out what's behind: on a version the team writes, every section is theirs and one the source has that it doesn't is behind too, but those it took out. */
+export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Iterable<string> };
 
 /**
  * Why each section is behind (`behind`): the team's sections whose source section changed since they were translated or
  * edited, in the published text or the draft ("English changed since this was edited."); `kept`, other reasons kept.
  */
-export function behindOf(sourceLanguage: string, source: ReturnType<typeof sourceSections>, lists: Section[][], kept: Record<string, string> = {}) {
-  const why = sourceChanged(sourceLanguage);
-  return { ...kept, ...Object.fromEntries(lists.flatMap((list) => behindSections(list, source)).map((key) => [key, why])) };
+export function behindOf(sourceLanguage: string, source: ReturnType<typeof sourceSections>, lists: BehindList[], kept: Record<string, string> = {}) {
+  const [changed, added] = [sourceChanged(sourceLanguage), sourceAdded(sourceLanguage)];
+  const out: Record<string, string> = { ...kept };
+  for (const { list, teamWrites, removed } of lists) {
+    const own = teamWrites ? ownedByTeam(list) : list;
+    for (const key of behindSections(own, source)) out[key] = changed;
+    if (teamWrites) {
+      const has = new Set(list.map(({ meta }) => meta.key));
+      for (const key of behindSections(own, source, { missing: true, removed: new Set(removed) })) if (!has.has(key)) out[key] ??= added;
+    }
+  }
+  return out;
 }
+
+/** Why a section is behind when the source has it and a version the team writes doesn't (added, or renamed). */
+export const sourceAdded = (sourceLanguage: string) => `${languageName(sourceLanguage)} has this section, and this version doesn't yet.`;
 
 /** Why a section is behind when its source section changed since the team's edit. */
 export const sourceChanged = (sourceLanguage: string) => `${languageName(sourceLanguage)} changed in this section since it was edited.`;
 
 /** `behind`'s reasons besides the source changing (the product setting's, the glossary's): kept as they are by a write that works that one out again. */
 export const otherReasons = (behind: unknown, sourceLanguage: string) =>
-  Object.fromEntries(Object.entries((behind ?? {}) as Record<string, string>).filter(([, why]) => why !== sourceChanged(sourceLanguage)));
+  Object.fromEntries(Object.entries((behind ?? {}) as Record<string, string>).filter(([, why]) => why !== sourceChanged(sourceLanguage) && why !== sourceAdded(sourceLanguage)));
 /** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
 type Started = { settle?: Settle; retryAt?: Date | null };
 
@@ -289,9 +304,9 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     }
     const only = now.automatic ? undefined : new Set(asked);
     // (Asking for sections already made them no longer the team's: an edit made since, in the draft or published, is theirs.)
-    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, published: now.automatic });
+    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, published: now.automatic, removed: new Set(now.removedSections as string[]) });
     const draft = now.draft as Draft | null;
-    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only });
+    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, removed: new Set(draft.removed) });
     const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
     more = waiting.length > 0;
     // The team's published title stays theirs until the source's title changes.
@@ -314,7 +329,15 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
           // Its title the team's while it's edited there, or while the published one is theirs.
           draft: { ...draft, title: draft.titleEdited || ownTitle || !now.automatic ? draft.title : text(0), content: docOfSections(drafted), sections: metaOf(drafted) } as Prisma.InputJsonValue,
         }),
-      behind: behindOf(article.project.language, parts, (draftOnly ? (drafted ? [drafted] : []) : drafted ? [published, drafted] : [published]).map((list) => (now.automatic ? list : ownedByTeam(list))), kept),
+      behind: behindOf(
+        article.project.language,
+        parts,
+        [
+          ...(draftOnly ? [] : [{ list: published, teamWrites: !now.automatic, removed: now.removedSections as string[] }]),
+          ...(drafted ? [{ list: drafted, teamWrites: !now.automatic, removed: draft.removed }] : []),
+        ],
+        kept,
+      ),
       updateSections: waiting,
       ...(!draftOnly && { publishedAt: now.publishedAt ?? new Date() }),
       productAvailable: setting.productAvailable,

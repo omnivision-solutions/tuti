@@ -471,3 +471,47 @@ test("a version the team writes remembers only what's usable: nothing from befor
   expect(Object.keys(memory as object)).not.toContain("Pay by card or invoice");
   expect(Object.keys(memory as object)).toContain("Pay by invoice");
 });
+
+test("a version the team writes: a behind section rewritten by hand is up to date, published as it is, nothing translated over it", async () => {
+  await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  const read = await call(getTranslation, as(), de);
+  expect(read.behind).toHaveLength(1);
+  const content = structuredClone(read.content) as Doc;
+  content.content!.at(-1)!.content![0]!.text = "Mit Karte oder auf Rechnung";
+  const saved = await call(saveTranslation, as(), { ...de, content, version: read.version });
+  expect(saved.draft!.behind).toEqual([]);
+  const published = await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(0);
+  expect(text(published.content)).toContain("Mit Karte oder auf Rechnung");
+  expect(published.behind).toEqual([]);
+});
+
+test("a version the team writes: a section English renames or adds is behind, and Update those sections translates it in", async () => {
+  await manualVersion();
+  // English renames Billing to Payments and adds Refunds.
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Payments", "Pay by card"], ["Refunds", "Ask us"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  const behind = (await call(getTranslation, as(), de)).behind;
+  expect(behind.map(({ section, reason }) => [section.split("\u001f")[0], reason])).toEqual([
+    ["Billing", "English changed in this section since it was edited."],
+    ["Payments", "English has this section, and this version doesn't yet."],
+    ["Refunds", "English has this section, and this version doesn't yet."],
+  ]);
+  model.reply(sectionsReply("de2", ["Payments", "Pay by card"], ["Refunds", "Ask us"]));
+  await call(updateTranslationSections, as(), de);
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content).split("\n").filter(Boolean)).toEqual([
+    "Hallo",
+    "Einrichtung",
+    "Unsere Installation",
+    "[de2] Payments",
+    "[de2] Pay by card",
+    "[de2] Refunds",
+    "[de2] Ask us",
+  ]);
+  expect(after.behind).toEqual([]);
+});
