@@ -14,7 +14,8 @@ import { portalAddress } from "../custom-domains";
 import { readerToSend, searchDocs } from "../docs-search";
 import { emitEvent } from "../events";
 import { conversationCompanies } from "../inbox-companies";
-import { notifyInbox } from "../live";
+import { inboxPath } from "../inbox-path";
+import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { blockDomainOf, recordMark } from "../spam";
@@ -932,7 +933,7 @@ export const createConversation = defineOperation({
       origin: "API",
       channel: "API",
     });
-    return announceConversation(projectId, conversation, message);
+    return inboxPath(projectId, { started: conversation, message });
   },
 });
 
@@ -962,11 +963,16 @@ async function tellTeam(projectId: string, messageId: string) {
   ]);
 }
 
-/** A new conversation as the API shows it, told to the project's webhooks and team. */
+/**
+ * A new conversation as the API shows it, told to the project's webhooks and team: the path's last step (server/inbox-path.ts,
+ * which every arrival goes through). Not one the spam filter filed, which tells nobody.
+ */
 export async function announceConversation(projectId: string, conversation: ConversationRow, message: MessageRow) {
   const result = { ...view(conversation, await projectSlug(projectId)), messages: [messageView(message)] };
-  await emitEvent(projectId, "conversation.created", result);
-  await tellTeam(projectId, message.id);
+  if (!conversation.spam) {
+    await emitEvent(projectId, "conversation.created", result);
+    await tellTeam(projectId, message.id);
+  }
   return result;
 }
 
@@ -1373,7 +1379,7 @@ export const replyToConversation = defineOperation({
       throw error;
     }
     if (message.author === "USER") {
-      return announceUserMessage(projectId, conversation.number, message);
+      return inboxPath(projectId, { conversation, message });
     }
     // What this reply did: closed it (when asked to), or kept it open and waiting on the team (the user wrote after what
     // the team saw, unanswered).
@@ -1453,20 +1459,28 @@ export const retryTranslation = defineOperation({
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
     }
     let retried = 0;
-    // One at a time, as each arrived: the job settles the conversation's language by the newest.
-    for (const { id, translationError } of failed) {
-      // Claimed by clearing why it failed: a second Try again meanwhile finds nothing to queue (no second paid translation),
-      // and the job sets it again if this one fails too.
-      const { count } = await prisma.conversationMessage.updateMany({ where: { id, teamText: null, translationError: { not: null } }, data: { translationError: null } });
-      if (count === 0) {
-        continue;
+    try {
+      // One at a time, as each arrived: the job settles the conversation's language by the newest.
+      for (const { id, translationError } of failed) {
+        // Claimed by clearing why it failed: a second Try again meanwhile finds nothing to queue (no second paid translation),
+        // and the job sets it again if this one fails too.
+        const { count } = await prisma.conversationMessage.updateMany({ where: { id, teamText: null, translationError: { not: null } }, data: { translationError: null } });
+        if (count === 0) {
+          continue;
+        }
+        retried++;
+        await enqueue("translateMessage", { messageId: id }).catch(async (error: unknown) => {
+          // Not queued: it shows its Try again again.
+          await translationFailed(id, translationError!);
+          throw error;
+        });
       }
-      retried++;
-      await enqueue("translateMessage", { messageId: id }).catch(async (error: unknown) => {
-        // Not queued: it shows its Try again again.
-        await translationFailed(id, translationError!);
-        throw error;
-      });
+    } finally {
+      // Open Inbox pages (other teammates' too) refresh, so an old failure goes, even when a later message couldn't be queued;
+      // only the clicking page says "Translating…" (it knows what it re-queued).
+      if (retried > 0) {
+        await notifyInboxNow({ projectId, conversationId: conversation.id, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
+      }
     }
     return { retried };
   },
@@ -1543,8 +1557,11 @@ export const updateConversation = defineOperation({
     const conversation = await findConversation(projectId, input.number);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
     let notice: string | undefined;
-    // The spam filter had filed it and a teammate says it isn't spam: told as a new conversation, once (its reason goes).
+    // The spam filter had filed it and a teammate says it isn't spam: it takes the rest of the path as a new conversation
+    // (its workflows, then told), once (its reason goes).
     let released = false;
+    // Whether a workflow marked it priority on the way.
+    let priority: boolean | undefined;
     // Marked Not spam: what its user wrote while it was in Spam, when nobody was told, oldest first.
     let unheard: MessageRow[] = [];
     const updated = await prisma.$transaction(async (tx) => {
@@ -1633,10 +1650,11 @@ export const updateConversation = defineOperation({
     });
     // It's unmarked whatever happens here, and saying it again would tell nobody: a failure is logged, not thrown.
     try {
-      // Filed by the filter: its first message is the new conversation's, told to the team too. The rest, to webhooks.
+      // Filed by the filter: its first message is the new conversation's, which runs "A conversation starts" and is
+      // told to the team too. The rest, to webhooks: written in Spam, they fire no trigger of their own.
       const first = released ? unheard.shift() : undefined;
       if (first) {
-        await announceConversation(projectId, updated, first);
+        ({ priority } = await inboxPath(projectId, { started: updated, message: first }));
       }
       for (const message of unheard) {
         await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
@@ -1644,7 +1662,7 @@ export const updateConversation = defineOperation({
     } catch (error) {
       log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
     }
-    return { ...view(updated, await projectSlug(projectId)), ...(notice && { notice }) };
+    return { ...view(updated, await projectSlug(projectId)), ...(priority !== undefined && { priority }), ...(notice && { notice }) };
   },
 });
 

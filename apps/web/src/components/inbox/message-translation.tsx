@@ -1,7 +1,7 @@
 "use client";
 
 import { LanguagesIcon } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { MessageText } from "@/components/inbox/message-text";
@@ -14,6 +14,30 @@ const LINE = "inbox-translation mt-1 flex flex-wrap items-center gap-x-1 text-xs
 const TOGGLE = "cursor-pointer font-medium underline underline-offset-2";
 /** How long "Translating…" shows after Try again, at most. */
 const RETRY_SHOWN_MS = 60_000;
+
+/**
+ * The conversation's messages Try again queued again: it re-queues every customer message whose translation failed, so
+ * each says "Translating…", not only the one clicked. Exported for tests.
+ */
+export const RetriedTranslations = createContext<{ retried: ReadonlySet<string>; markRetried: () => void }>({ retried: new Set(), markRetried: () => {} });
+
+/**
+ * Around a conversation's messages: `failed`, the ids of those whose translation failed as the page was rendered (what
+ * Try again re-queues). "Translating…" shows on them for a minute at most once Try again has queued them.
+ */
+export function TranslationRetries({ failed, children }: { failed: string[]; children: ReactNode }) {
+  const [retried, setRetried] = useState<ReadonlySet<string>>(new Set());
+  // ponytail: a minute, not the job's own word; a retry the job skips (nothing to translate after all) leaves no trace to
+  // wait on. A translation or failure later still shows through the live refresh.
+  useEffect(() => {
+    if (retried.size === 0) {
+      return;
+    }
+    const timer = setTimeout(() => setRetried(new Set()), RETRY_SHOWN_MS);
+    return () => clearTimeout(timer);
+  }, [retried]);
+  return <RetriedTranslations.Provider value={{ retried, markRetried: () => setRetried(new Set(failed)) }}>{children}</RetriedTranslations.Provider>;
+}
 
 /**
  * Which line a message has under it: its translation's, its failure's, "Translating…" once Try again has queued it
@@ -36,6 +60,7 @@ export function translationLine({ teamText, error, fromTeam, retried }: { teamTe
  * Always one wrapper around the text, so the text (and the keyboard's focus on it) stays as the line under it changes.
  */
 export function MessageTranslation({
+  id,
   body,
   teamText,
   language,
@@ -45,6 +70,8 @@ export function MessageTranslation({
   projectSlug,
   number,
 }: {
+  /** The message's id (Try again's "Translating…" goes by it). */
+  id: string;
   /** The customer's side: what they wrote, or the translation they got. */
   body: string;
   /** The team's side: the customer's message translated, or the reply as the team wrote it. */
@@ -60,21 +87,12 @@ export function MessageTranslation({
 }) {
   const [other, setOther] = useState(false);
   const [retrying, startRetry] = useTransition();
-  // Queued again: "Translating…" until the result is in.
-  const [retried, setRetried] = useState(false);
-  // ponytail: a minute, not the job's own word; a retry the job skips (nothing to translate after all) leaves no trace to
-  // wait on. A translation or failure later still shows through the live refresh.
-  useEffect(() => {
-    if (!retried) {
-      return;
-    }
-    const timer = setTimeout(() => setRetried(false), RETRY_SHOWN_MS);
-    return () => clearTimeout(timer);
-  }, [retried]);
+  // Queued again (this one or another's Try again): "Translating…" until the result is in.
+  const { retried, markRetried } = useContext(RetriedTranslations);
   // Where the keyboard's focus goes once Try again's line is gone.
   const textRef = useRef<HTMLParagraphElement>(null);
   const bodyShown = teamText === null || other;
-  const line = translationLine({ teamText, error, fromTeam, retried: retried || retrying });
+  const line = translationLine({ teamText, error, fromTeam, retried: retried.has(id) || retrying });
   const name = language && nativeLanguageName(language);
   return (
     <div>
@@ -122,7 +140,7 @@ export function MessageTranslation({
                   if (result.error) {
                     toast.error(result.error);
                   } else {
-                    setRetried(true);
+                    markRetried();
                     textRef.current?.focus();
                   }
                 })

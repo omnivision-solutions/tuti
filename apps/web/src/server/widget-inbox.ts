@@ -11,7 +11,8 @@ import { visitorHash } from "@/lib/visitor-session";
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
-import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
+import { inboxPath } from "./inbox-path";
+import { addMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
 import { arrivalOf, spamVerdict } from "./spam";
@@ -301,10 +302,8 @@ export async function widgetStartConversation(
     throw error;
   }
   const { conversation, message } = started;
-  // Filed as spam: theirs to see as any other (it never says so), and nobody is told.
-  if (!conversation.spam) {
-    await announceConversation(who.projectId, conversation, message);
-  }
+  // Filed as spam: theirs to see as any other (it never says so), and the path stops there: nobody is told.
+  await inboxPath(who.projectId, { started: conversation, message });
   return { number: conversation.number, ...(visitor && { visitor }) };
 }
 
@@ -384,6 +383,6 @@ export async function widgetSendMessage(projectSlug: string, auth: WidgetAuth, n
     }
     throw error;
   }
-  await announceUserMessage(who.projectId, conversation.number, message);
+  await inboxPath(who.projectId, { conversation, message });
   return {};
 }

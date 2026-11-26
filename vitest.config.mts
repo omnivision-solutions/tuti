@@ -21,7 +21,7 @@ export default defineConfig({
           name: "unit",
           include: [...sources, "vitest.setup.test.ts", ".claude/skills/*/*.test.ts", ".github/scripts/*.test.ts", "infra/*/*.test.ts"],
           exclude: [...dbTests, ...liveTests],
-          setupFiles: ["./vitest.setup.ts"],
+          setupFiles: ["./vitest.setup.ts", "./apps/web/src/test/next-intl-english.ts"],
         },
       },
       {
@@ -30,7 +30,7 @@ export default defineConfig({
           name: "db",
           include: dbTests,
           globalSetup: ["./vitest.db-global.ts"],
-          setupFiles: ["./vitest.setup.ts", "./vitest.db-setup.ts", "./apps/web/src/test/setup.ts"],
+          setupFiles: ["./vitest.setup.ts", "./vitest.db-setup.ts", "./apps/web/src/test/setup.ts", "./apps/web/src/test/next-intl-english.ts"],
         },
       },
       {

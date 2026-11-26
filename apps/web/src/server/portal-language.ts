@@ -1,9 +1,12 @@
 import { prisma } from "@tuti/db";
 import { DEFAULT_LANGUAGE, isLanguage, languageLimit } from "@tuti/shared";
+import { MESSAGES, type Messages } from "@tuti/shared/messages";
+import { createTranslator } from "next-intl";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { LANGUAGE_COOKIE, type PortalLanguages, readerLanguage } from "@/lib/reader-language";
+import { portalLanguage } from "@/server/portal-base";
 
 /**
  * A project's default language and its live others, in the order added (the header's switcher lists them so). Past the plan's
@@ -34,4 +37,15 @@ export async function currentLanguage(projectId: string, userId: string | null) 
     userId ? prisma.user.findUnique({ where: { id: userId }, select: { language: true } }) : null,
   ]);
   return { languages, language: readerLanguage(languages, [jar.get(LANGUAGE_COOKIE)?.value, user?.language]) };
+}
+
+/**
+ * The portal's messages under `namespace` in this page's language (its address's, L3; the project's default on its own
+ * addresses), for its server components (next-intl's hooks need its plugin there, which the portal doesn't use), and that
+ * `language` for dates and numbers (Intl). The same language the portal's layout gives its client components (PortalIntl).
+ */
+export async function portalTranslator<N extends keyof Messages>(projectId: string, namespace: N) {
+  const [{ language: address }, languages] = await Promise.all([portalLanguage(), portalLanguages(projectId)]);
+  const language = address && isLanguage(address) ? address : languages.default;
+  return { language, t: createTranslator({ locale: language, messages: MESSAGES[language], namespace }) };
 }

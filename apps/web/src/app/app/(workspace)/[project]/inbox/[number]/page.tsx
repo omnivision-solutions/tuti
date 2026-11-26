@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, sameLanguage, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, composerTranslation, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
-import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
+import { ListIcon, LockKeyholeIcon, MailIcon, SparklesIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,15 +19,17 @@ import {
   ConversationStatusMenu,
   CloseButton,
   MarkStatusButton,
+  PriorityButton,
   SnoozeMenu,
   SpamButton,
   SpamNotice,
   SummarizeButton,
+  TakeOver,
 } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageDay } from "@/components/inbox/message-day";
 import { MessageText } from "@/components/inbox/message-text";
-import { MessageTranslation } from "@/components/inbox/message-translation";
+import { MessageTranslation, TranslationRetries } from "@/components/inbox/message-translation";
 import { DetailSection } from "@/components/inbox/detail-section";
 import { ConversationMore } from "@/components/inbox/more-actions";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -37,6 +39,7 @@ import { ScrollToEnd } from "@/components/scroll-to-end";
 import { Pane, PaneBody, PaneHeader } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type ConversationStatusName } from "@/lib/conversation-statuses";
@@ -56,6 +59,7 @@ import { assignableTeam, conversationPerson } from "@/server/operations/conversa
 import { postsLikeConversation } from "@/server/post-lists";
 import { spamChoices } from "@/server/spam";
 import { pageTitle } from "@/lib/page-title";
+import { retriedByTryAgain } from "@/lib/translation-retries";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
 /** A team message's email, as its page says it (bounces and complaints from Amazon SES's events). */
@@ -132,6 +136,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         spamReason: true,
         spamPhrase: true,
         spamMarkedAt: true,
+        handledBy: true,
+        priority: true,
         sample: true,
         // The customer's language: replies are previewed and sent in it while the project translates (docs/plan.md L22).
         language: true,
@@ -285,6 +291,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
+  // The AI has it (docs/plan.md, Inbox automation): said under the title, and Take over is where the reply box would be.
+  const withAi = conversation.handledBy === "AI";
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = said?.author === "TEAM";
   // The column beside the messages, hidden or not as this browser left it (DetailsToggle).
@@ -293,8 +301,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const snoozedUntil = canSnooze && conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null;
   const posts = conversation.posts.map((link) => link.post);
   // Replies go out in the customer's language, previewed under the composer (docs/plan.md L22).
-  const { teamLanguage, translate } = await translationSettings(projectId);
-  const translated = translate && conversation.language && !sameLanguage(conversation.language, teamLanguage) ? { language: conversation.language, teamLanguage } : undefined;
+  const translation = await translationSettings(projectId);
+  // Without AI on the server, nothing is translated: no preview, and replies go as written (as the server sends them).
+  const translated = composerTranslation(translation, conversation.language, aiEnabled());
   type Message = (typeof conversation.messages)[number];
   // Someone else on the email (in Cc) shows as their address.
   const byName = (message: Message) =>
@@ -329,6 +338,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   <LinkPostButton projectSlug={slug} number={conversation.number} linked={posts.map((post) => post.number)} />
                   {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
                   {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
+                  <PriorityButton projectSlug={slug} number={conversation.number} priority={conversation.priority} />
                   {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
                   <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} {...marking} />
                 </ConversationMore>
@@ -354,10 +364,26 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   ·{" "}
                 </>
               )}
-              <span className={cn("inbox-conversation-state inline-flex items-center gap-1.25 rounded-full px-1.75 [&>span]:size-1.25 [&>span]:rounded-full", CONVERSATION_STATUS_STYLES[conversation.status].pill)}>
-                <span aria-hidden className={CONVERSATION_STATUS_STYLES[conversation.status].dot} />
-                {conversation.status === "OPEN" ? "Needs reply" : CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
-              </span>{" "}
+              {/* Who has it, while the AI does: the view's own icon and words, neutral (it isn't waiting on the team). */}
+              {withAi && (
+                <span className="inbox-conversation-owner inline-flex items-center gap-1.25 rounded-full bg-secondary px-1.75 text-secondary-foreground [&>svg]:size-3 [&>svg]:flex-none">
+                  <SparklesIcon aria-hidden />
+                  With AI
+                </span>
+              )}
+              {/* Needs reply is the team's to hear: never on one the AI has, as in the list. */}
+              {!(withAi && conversation.status === "OPEN") && (
+                <span className={cn("inbox-conversation-state inline-flex items-center gap-1.25 rounded-full px-1.75 [&>span]:size-1.25 [&>span]:rounded-full", CONVERSATION_STATUS_STYLES[conversation.status].pill)}>
+                  <span aria-hidden className={CONVERSATION_STATUS_STYLES[conversation.status].dot} />
+                  {conversation.status === "OPEN" ? "Needs reply" : CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
+                </span>
+              )}
+              {/* Marked priority, as its row in the list says it. */}
+              {conversation.priority && (
+                <Badge variant="outline" className="inbox-conversation-priority h-4 px-1.5 text-xs leading-none">
+                  Priority
+                </Badge>
+              )}{" "}
               <span>
                 #{conversation.number} · {personName}{person.email && !person.verified && " (not verified)"}
               </span>
@@ -382,6 +408,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 first={conversation.messages[0]?.id ?? ""}
                 more={conversation._count.messages > shown}
               />
+              {/* Try again re-queues each of these: each says "Translating…". */}
+              <TranslationRetries failed={retriedByTryAgain(conversation.messages)}>
               <ol className="inbox-messages flex flex-col gap-1 pb-2" aria-label="Messages">
                 {conversation.messages.map((message, index) => {
                   const fromTeam = message.author !== "USER";
@@ -422,13 +450,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </p>
                             ) : (
                               <MessageTranslation
+                                id={message.id}
                                 body={message.body}
                                 teamText={message.teamText}
                                 language={message.language}
                                 error={message.translationError}
                                 fromTeam={fromTeam}
                                 // Try again runs only where it can: translation on, and AI on the server.
-                                canRetry={translate && aiEnabled()}
+                                canRetry={translation.translate && aiEnabled()}
                                 projectSlug={slug}
                                 number={conversation.number}
                               />
@@ -482,28 +511,34 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   );
                 })}
               </ol>
+              </TranslationRetries>
 
               {/* Opens at the newest message, and follows new ones. */}
               <ScrollToEnd count={conversation._count.messages} within="conversation" />
               {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
                     Tuti's chat launcher isn't in the Inbox (AppWidget), so nothing sits over its buttons. */}
               <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 @max-[57rem]/app:-mx-0.5 @min-[77rem]/app:group-data-[details=hidden]/thread:-mx-2">
-                <ReplyForm
-                  recipient={personName}
-                  // Not for widget conversations: they're emailed only if unseen there for a minute, too fiddly to say here.
-                  emailed={!conversation.userId && !conversation.visitorHash && !waitsForPause && "to" in (await replyRecipient(conversation.id))}
-                  projectSlug={slug}
-                  number={conversation.number}
-                  userId={membership.userId}
-                  // An hour short of when the hourly cleanup may delete a file never sent.
-                  filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
-                  draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
-                  // "Insert article": once there's an article they can be sent (what its search finds).
-                  articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
-                  seen={conversation.messages.at(-1)?.createdAt.toISOString()}
-                  emailWaits={wait && { why: wait.why, warning: wait.warning, link: wait.link }}
-                  translated={translated}
-                />
+                <TakeOver projectSlug={slug} number={conversation.number} ai={withAi}>
+                  {/* Not while the AI has it: a reply would take it over mid-draft, and the note's tab comes back with the box. */}
+                  {!withAi && (
+                    <ReplyForm
+                      recipient={personName}
+                      // Not for widget conversations: they're emailed only if unseen there for a minute, too fiddly to say here.
+                      emailed={!conversation.userId && !conversation.visitorHash && !waitsForPause && "to" in (await replyRecipient(conversation.id))}
+                      projectSlug={slug}
+                      number={conversation.number}
+                      userId={membership.userId}
+                      // An hour short of when the hourly cleanup may delete a file never sent.
+                      filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
+                      draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
+                      // "Insert article": once there's an article they can be sent (what its search finds).
+                      articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
+                      seen={conversation.messages.at(-1)?.createdAt.toISOString()}
+                      emailWaits={wait && { why: wait.why, warning: wait.warning, link: wait.link }}
+                      translated={translated}
+                    />
+                  )}
+                </TakeOver>
               </div>
             </div>
           </div>
@@ -519,7 +554,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
             />
             <span>Status</span>
-            <ConversationStatusMenu projectSlug={slug} number={conversation.number} status={conversation.status} answered={answered} />
+            <ConversationStatusMenu projectSlug={slug} number={conversation.number} status={conversation.status} answered={answered} withAi={withAi} />
             <span>{snoozedUntil ? "Waiting until" : "Snooze"}</span>
             {canSnooze ? (
               <SnoozeMenu

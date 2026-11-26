@@ -1,9 +1,12 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { codeChange, handlers, importStep, translateMessage } from "@tuti/jobs";
+import { codeChange, handlers, importStep, translateArticle, translateMessage } from "@tuti/jobs";
 import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tuti/shared";
 
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
 type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: number; maxSeconds: number }; concurrencyKey?: string };
+
+/** Article translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. */
+const TRANSLATE_RUNS = 4;
 
 /** How long a queued code change may wait for its turn before Hatchet gives up on it (its default is 5 minutes). */
 const CODE_CHANGE_QUEUE = "24h" as const;
@@ -66,6 +69,14 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
       scheduleTimeout: IMPORT_QUEUE,
       concurrency: [...(own ? [own] : []), { expression: "'import-step'", maxRuns: IMPORT_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
     }),
+    // A long article is several requests of up to a minute each, and one more round for segments that failed their
+    // checks (Hatchet's default is 60 seconds); a whole language queued at once waits its turn rather than being dropped.
+    // A few at once on the whole server, so one project's language (hundreds of pages) never takes every worker slot.
+    ...(key === "translateArticle" && {
+      executionTimeout: "10m" as const,
+      scheduleTimeout: "24h" as const,
+      concurrency: [...(own ? [own] : []), { expression: "'translate-article'", maxRuns: TRANSLATE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+    }),
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
     ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
@@ -91,6 +102,8 @@ export function taskFn(key: JobKey, retries: number, stopping: () => boolean) {
       ? codeChange(input as JobInput<"codeChange">, log, { lastTry: ctx.retryCount() >= retries })
       : key === "translateMessage"
         ? translateMessage(input as JobInput<"translateMessage">, log, { lastTry: ctx.retryCount() >= retries })
+        : key === "translateArticle"
+          ? translateArticle(input as JobInput<"translateArticle">, log, { lastTry: ctx.retryCount() >= retries })
         : key === "importStep"
         ? importStep(input as JobInput<"importStep">, log, () => stopping() || ctx.cancelled)
         : handlers[key](input as never, log);

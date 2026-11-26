@@ -88,7 +88,7 @@ import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, upd
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
-import { getLanguages, updateLanguages } from "./languages";
+import { getLanguages, retranslateLanguage, updateLanguages } from "./languages";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
@@ -99,6 +99,7 @@ import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 import { getScreenshots, getScreenshotSettings, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
+import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
 
@@ -124,6 +125,12 @@ const all = [
   translateReply,
   retryTranslation,
   updateConversation,
+  listWorkflows,
+  getWorkflow,
+  createWorkflow,
+  updateWorkflow,
+  moveWorkflow,
+  deleteWorkflow,
   linkConversationPost,
   unlinkConversationPost,
   suggestReply,
@@ -276,6 +283,7 @@ const all = [
   deleteRedirect,
   getLanguages,
   updateLanguages,
+  retranslateLanguage,
   // Before screenshots.get: /screenshots/settings isn't a run's id.
   getScreenshotSettings,
   updateScreenshotSettings,

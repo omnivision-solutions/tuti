@@ -48,6 +48,15 @@ async function asker(projectId: string) {
   return (system: string, user: string) => complete({ system, user, timeoutMs: 30_000, ...ai });
 }
 
+/**
+ * What the conversation screen's composer translates replies into (its preview, and "Send in English"): the customer's
+ * language, where the project translates conversations, the server has AI, and their language is known and isn't the
+ * team's; undefined where replies go as written.
+ */
+export function composerTranslation(settings: { teamLanguage: string; translate: boolean }, language: string | null, ai: boolean) {
+  return settings.translate && ai && language && !sameLanguage(language, settings.teamLanguage) ? { language, teamLanguage: settings.teamLanguage } : undefined;
+}
+
 /** A project's team language and whether it translates conversations. */
 export async function translationSettings(projectId: string) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { language: true, teamLanguage: true, translateConversations: true } });

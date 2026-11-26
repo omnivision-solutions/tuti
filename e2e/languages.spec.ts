@@ -132,6 +132,9 @@ test("a signed-in reader's account menu, the changelog's New and the phone menu'
   await reader.setViewportSize({ width: 390, height: 844 });
   // The page's language is its address's (L3): Feedback in German is /de/feedback.
   await reader.goto("/de/feedback");
+  // Its description for search engines and shared links, in German too.
+  const description = reader.locator('meta[name="description"]');
+  await expect(description).toHaveAttribute("content", "Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.");
   await reader.getByRole("banner").getByRole("button", { name: "Menü" }).click();
   const menu = reader.getByRole("dialog", { name: "Menü" });
   await expect(menu).toHaveAccessibleDescription("Acme: Wohin als Nächstes?");
@@ -196,4 +199,127 @@ test("the landmarks of the team's links are named in the reader's language, and 
   await expect(row.getByRole("link", { name: "Pricing" })).toBeVisible();
   await expect(row).toHaveAttribute("lang", "fr");
   await expect(row.getByRole("link", { name: "Pricing" })).toHaveAttribute("lang", "en");
+});
+
+test("Feedback, a board and a post in German: their words, counts and times, and a comment posted in it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  // Its author's vote counts: 1. Planned, so the post's history has a status change.
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  // One shipped: the board's Recently shipped.
+  await api("/posts", { board: "feature-requests", title: "CSV export" });
+  await api("/posts/2", { status: "completed" }, "PATCH");
+  // A second board, so Feedback is the boards' overview.
+  await query(
+    `INSERT INTO board (id, "projectId", slug, name, "updatedAt") SELECT $2, id, 'bugs', 'Bugs', now() FROM project WHERE slug = $1`,
+    [slug, randomUUID()],
+  );
+
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/feedback");
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+
+  // The overview: the boards' pills and cards, how many ideas are still to come, and a board with none.
+  await expect(reader.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Alle Boards 1" })).toBeVisible();
+  await expect(reader.getByText("1 Idee steht noch aus")).toBeVisible();
+  await expect(reader.getByText("Noch keine Ideen. Teile die erste.")).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Board öffnen" })).toHaveCount(2);
+  await checkpoint(reader, "overview-in-german", { fullPage: false });
+  // Get updates, in its popover.
+  await reader.getByRole("button", { name: "Updates erhalten" }).click();
+  await expect(reader.getByRole("dialog", { name: "Updates erhalten" }).getByRole("link", { name: "Changelog lesen" })).toBeVisible();
+  await reader.keyboard.press("Escape");
+  await reader.getByRole("link", { name: "Board öffnen" }).first().click();
+  await expect(reader).toHaveURL(/\/de\/feedback\/feature-requests$/);
+  // Recently shipped, in German; the idea's title in the project's language.
+  const shipped = reader.getByRole("region", { name: "Kürzlich veröffentlicht" });
+  await expect(shipped).toContainText(/^Veröffentlicht am \d+\. \S+:/);
+  await expect(shipped.getByRole("link", { name: "CSV export" })).toHaveAttribute("lang", "en");
+
+  // The board: its description, sorts, status filter, search and the idea's vote, in German.
+  await expect(reader.getByText("Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.")).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Sortieren" }).getByRole("link")).toHaveText(["Im Trend", "Top", "Neu", "Meine"]);
+  await expect(reader.getByRole("button", { name: "Status: Noch nicht erledigt, 1 Idee" })).toBeVisible();
+  await expect(reader.getByRole("searchbox", { name: "Ideen durchsuchen" })).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Abstimmen (1 Stimme)" })).toBeVisible();
+  // The idea's title is the team's words, in the project's language.
+  await expect(reader.getByRole("link", { name: "Dark mode" })).toHaveAttribute("lang", "en");
+  await checkpoint(reader, "board-in-german", { fullPage: false });
+  await reader.getByRole("button", { name: "Neuer Beitrag" }).click();
+  await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeVisible();
+  await expect(reader.getByRole("textbox", { name: "Titel" })).toHaveAttribute("placeholder", "Kurzer, aussagekräftiger Titel");
+  await reader.keyboard.press("Escape");
+
+  // The post: its rail, a vote, and a comment posted with its time in German.
+  await reader.getByRole("link", { name: "Dark mode" }).click();
+  await expect(reader).toHaveURL(/\/de\/feedback\/feature-requests\/dark-mode-1$/);
+  const rail = reader.getByRole("complementary", { name: "Über diese Idee" });
+  await rail.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
+  await expect(rail.getByRole("button", { name: "Abgestimmt (2 Stimmen)" })).toBeVisible();
+  const comments = reader.getByRole("region", { name: "Kommentare" });
+  await expect(comments.getByRole("heading", { name: "0 Kommentare" })).toBeVisible();
+  // Its history: the status change, without who made it.
+  await expect(comments.getByText(/^Auf Geplant gesetzt · (jetzt|vor \d+ Minuten?)$/)).toBeVisible();
+  await comments.getByRole("textbox", { name: "Kommentieren" }).fill("Bitte auch für die App");
+  await comments.getByRole("button", { name: "Kommentieren" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "Kommentar gepostet" })).toBeVisible();
+  await expect(comments.getByRole("heading", { name: "1 Kommentar" })).toBeVisible();
+  // The new comment's own time (the status change's comes first in the thread).
+  const posted = comments.getByRole("listitem").filter({ hasText: "Bitte auch für die App" });
+  await expect(posted.locator("time")).toHaveText(/^(jetzt|vor \d+ (Sekunden?|Minuten?))$/);
+  await expect(comments.getByRole("button", { name: "Kommentar von Rita Reader gefällt mir (0 Likes)" })).toBeVisible();
+  await checkpoint(reader, "post-in-german", { fullPage: false });
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/de/feedback/feature-requests");
+  await expect(reader.getByRole("button", { name: "Neuer Beitrag" })).toBeVisible();
+  // A board with no description of its own: the German one, under the board's own name.
+  await expect(reader.locator('meta[name="description"]')).toHaveAttribute("content", "Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.");
+  await checkpoint(reader, "board-in-german-phone", { fullPage: false });
+});
+
+test("Docs in German: the docs tabs' lock and the sidebar's links, named in German, the team's links in theirs", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Written by the team (Manual): nothing asks the model to translate its article.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
+  await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
+  // Two tabs; Enterprise is for signed-in readers, shown to others with a lock.
+  await api("/tabs", { name: "Guides" });
+  await api("/tabs", { name: "Enterprise", access: "signed_in", noAccess: "lock" });
+  await api("/collections", { name: "Basics", tab: "guides" });
+  await api("/collections", { name: "SAML", tab: "enterprise" });
+  const article = await api("/articles", { title: "Getting started", body: "Start here.", collection: "basics" });
+  await api(`/articles/${article.slug}/publish`, {});
+  const saml = await api("/articles", { title: "Setting up SAML", body: "SAML.", collection: "saml" });
+  await api(`/articles/${saml.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto(`/de/docs/${article.slug}`);
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("link", { name: /^Enterprise\s*Gesperrt$/ })).toBeVisible();
+  const links = reader.getByRole("list", { name: "Links" }).first();
+  await expect(links).toHaveAttribute("lang", "de");
+  await expect(links.getByRole("link", { name: "Status page" })).toHaveAttribute("lang", "en");
+  // German's word is English's too: in French the list's name shows it's translated.
+  await reader.goto(`/fr/docs/${article.slug}`);
+  await expect(reader.getByRole("list", { name: "Liens" }).first()).toHaveAttribute("lang", "fr");
+  await reader.goto(`/de/docs/${article.slug}`);
+
+  // On a phone the tree and the links are in the header's menu, a size up (data-sidebar-links).
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.getByRole("banner").getByRole("button", { name: "Menü" }).click();
+  const menuLinks = reader.getByRole("dialog").locator("ul[data-sidebar-links]");
+  await expect(menuLinks.getByRole("link", { name: "Status page" })).toBeVisible();
+  await expect(menuLinks).toHaveCSS("font-size", "16px");
 });

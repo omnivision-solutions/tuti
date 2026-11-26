@@ -178,7 +178,7 @@ export function PortalMenu({
             </nav>
           )}
           {/* A size up from the sidebar: these are taps on a phone. */}
-          {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
+          {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[data-sidebar-links]]:text-base">{part}</div>}
           {languageList && <LanguageList languages={languages} current={language} />}
           {headerLinks.length > 0 && (
             <nav lang={lang} aria-label={t("links")} className="flex flex-col gap-0.5 px-4 py-5">

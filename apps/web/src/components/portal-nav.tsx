@@ -52,7 +52,6 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   return (
     <nav
       ref={nav}
-      // In the reader's language, until <html lang> follows it (L3).
       lang={useLocale()}
       aria-label={t("portal")}
       className={cn(
@@ -182,6 +181,7 @@ export function PartRow({
   links: { href: string; name: string; active: boolean; locked?: boolean }[];
 }) {
   const nav = useScrollingRow(links.find((link) => link.active)?.href, links);
+  const t = useTranslations("header");
   if (links.length < 2) {
     return null;
   }
@@ -205,7 +205,7 @@ export function PartRow({
             {locked && (
               <>
                 <LockIcon aria-hidden className="ml-1.5 inline-block size-3.5 align-[-0.1em]" />
-                <span className="sr-only"> Locked</span>
+                <span className="sr-only"> {t("locked")}</span>
               </>
             )}
           </Link>
