@@ -554,7 +554,7 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   for (const kind of KINDS) {
     queued += await retryKind(kind);
   }
-  return { queued };
+  return { queued, ...(named > 0 && { named }) };
 }
 
 async function retryKind(kind: Kind): Promise<number> {
