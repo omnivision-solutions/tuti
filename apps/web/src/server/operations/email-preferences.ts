@@ -4,6 +4,7 @@ import { reached } from "@tuti/jobs";
 import { z } from "zod";
 
 import { changelogAt, findSubscription, optOut, optOutsAt } from "@/server/changelog-subscription";
+import { subscriberLanguage } from "@/server/portal-language";
 
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
@@ -122,7 +123,9 @@ export const updateEmailPreferences = defineOperation({
     if (input.changelog && changelog?.email) {
       // Signed in with the address proven: confirmed at once, no link to email. Already confirmed, it stays as it was.
       const at = { projectId: context.projectId, email: changelog.email };
-      await prisma.changelogSubscriber.createMany({ data: at, skipDuplicates: true });
+      // In the reader's language (docs/plan.md L16): their saved one where it's one of the portal's others (the default's is null).
+      const language = await subscriberLanguage(context.projectId, userId);
+      await prisma.changelogSubscriber.createMany({ data: { ...at, language }, skipDuplicates: true });
       await prisma.changelogSubscriber.updateMany({ where: { ...at, confirmedAt: null }, data: { confirmedAt: new Date(), unsubscribedAt: null } });
     } else if (input.changelog === false && changelog?.subscriber) {
       // The unsubscribe link's own way.
@@ -132,3 +135,4 @@ export const updateEmailPreferences = defineOperation({
     return emailPreferences(context.projectId, userId);
   },
 });
+

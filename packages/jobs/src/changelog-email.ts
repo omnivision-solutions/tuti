@@ -322,7 +322,8 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       emailOnly: true,
       projectId: true,
       project: { select: { name: true, slug: true, brandColor: true } },
-      translations: { where: { publishedAt: { not: null } }, select: { language: true, automatic: true, title: true, body: true, content: true, sourceHash: true } },
+      // In a live language only: one taken offline is no reader's, here as on the portal.
+      translations: { where: { publishedAt: { not: null }, projectLanguage: { live: true } }, select: { language: true, automatic: true, title: true, body: true, content: true, sourceHash: true } },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -373,13 +374,18 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   const versions = new Map(
     entry.translations
       .filter((t) => !t.automatic || t.sourceHash === hash)
-      .map((t) => [t.language, { title: t.title, doc: (t.content as Doc | null) ?? fromPlainText(t.body) }]),
+      .map((t) => {
+        const version = (t.content as Doc | null) ?? fromPlainText(t.body);
+        // Its own images (one the team put in theirs, which the source hasn't), and the entry's cover.
+        return [t.language, { title: t.title, doc: version, ...entryImages(version, entry.cover?.status === "READY" ? entry.coverId : null, log) }];
+      }),
   );
   let emailed = 0;
   let failed = 0;
   let held = false;
   let stopped = false;
   for (const { id, email, token, language } of people) {
+    const version = language ? versions.get(language) : undefined;
     // Claimed before sending, so a retry or a second run doesn't email them twice.
     const claimedAt = await claim({ id: entryId, projectId, emailedAt }, id);
     if (claimedAt === "stop") {
@@ -403,11 +409,9 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
         to: email,
         ...changelogEmail({
           ...brand,
-          entryTitle: versions.get(language ?? "")?.title ?? entry.title,
+          ...(version ? { entryTitle: version.title, doc: version.doc, coverUrl: version.coverUrl, mediaUrls: version.mediaUrls, lang: language! } : { entryTitle: entry.title, doc, ...images }),
           entryUrl,
           publishedAt,
-          doc: versions.get(language ?? "")?.doc ?? doc,
-          ...images,
           unsubscribeUrl: `${origin}/changelog/subscription?${query}`,
         }),
         ...sender,

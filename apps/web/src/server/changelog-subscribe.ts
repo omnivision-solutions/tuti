@@ -11,6 +11,8 @@ import { emailConfirmation } from "./changelog-subscription";
 import { mayRead } from "./portal-access";
 import { countEmailedLink } from "./email-link-limits";
 import { portalLanguage } from "./portal-base";
+import { subscriberLanguage } from "./portal-language";
+import { sessionIn } from "./session";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
 
@@ -51,10 +53,11 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   if (!sends) {
     return { sentTo: email };
   }
-  // The language of the page they subscribed on (docs/plan.md L16): a language's own address ("/de/changelog"), else the
-  // default language's (null). Their emails come in it where the entry is translated.
+  // The language of the page they subscribed on (docs/plan.md L16): a language's own address ("/de/changelog"); on the
+  // default language's, a signed-in reader's saved one, else the default's (null). Their emails come in it where the entry is translated.
   const { language: address, prefix } = await portalLanguage();
-  const language = prefix && address && isLanguage(address) ? address : null;
+  const session = prefix ? null : await sessionIn(project.id);
+  const language = prefix && address && isLanguage(address) ? address : session ? await subscriberLanguage(project.id, session.user.id) : null;
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email, language },

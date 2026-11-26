@@ -324,3 +324,9 @@ test("the card itself wraps long words, so text in any email's body (an Autopilo
   const html = await render(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url: "https://tuti.example/i" }).body);
   expect(html).toMatch(/border-radius:16px[^"]*overflow-wrap:anywhere/);
 });
+
+test("a translated changelog email marks its title and text with their language", async () => {
+  const props = { projectName: "Acme", entryTitle: "Dunkler Modus", entryUrl: null, publishedAt: new Date("2026-11-15T12:00:00Z"), doc: { type: "doc" as const, content: [] }, unsubscribeUrl: "https://acme.example/u" };
+  expect(await render(changelogEmail({ ...props, lang: "de" }).body)).toContain('lang="de"');
+  expect(await render(changelogEmail(props).body)).not.toContain('lang="de"');
+});
