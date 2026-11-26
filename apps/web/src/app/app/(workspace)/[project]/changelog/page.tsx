@@ -110,7 +110,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
-    const reacted = entry.publishedAt ? REACTIONS.reduce((sum, r) => sum + reactions(entry.id)[r], 0) : 0;
+    const counts = entry.publishedAt ? reactions(entry.id) : null;
+    const reacted = counts ? REACTIONS.reduce((sum, r) => sum + counts[r], 0) : 0;
     return (
       <ItemRow
         key={entry.number}
@@ -119,9 +120,9 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
         leading={
           !anyCover ? undefined : cover ? (
             // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-            <img src={cover} alt="" loading="lazy" className="aspect-[1200/630] w-21 shrink-0 self-start rounded-md border object-cover @max-[48rem]/app:w-15" />
+            <img src={cover} alt="" loading="lazy" className="aspect-[1200/630] w-40 shrink-0 self-start rounded-md border object-cover @max-[48rem]/app:w-24" />
           ) : (
-            <span aria-hidden className="aspect-[1200/630] w-21 shrink-0 self-start rounded-md border border-dashed bg-muted/40 @max-[48rem]/app:w-15" />
+            <span aria-hidden className="aspect-[1200/630] w-40 shrink-0 self-start rounded-md border border-dashed bg-muted/40 @max-[48rem]/app:w-24" />
           )
         }
         title={

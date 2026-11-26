@@ -263,7 +263,7 @@ the list picks none to approve at once.
   entries have most tags) (`FilterPills`, `?tag=`), its search (`PaneSearch`) and New entry; then the drafts in a dashed
   panel under their group label (the one whose release notes wait first, with "Draft with AI" at its row's end while
   its text is unwritten and AI can run, else "Write it"; then the running draft), then the published entries under
-  their years. Each row leads with its cover (the 480px size; where any entry has one, an entry without keeps its place
+  their years. Each row leads with its cover (160px wide, 96 on phones; the 480px size; where any entry has one, an entry without keeps its place
   as a dashed box, so titles line up; with none, no boxes), then its title and one quiet line: the date (when it went
   out, or a draft's last edit), its tags as words (Breaking in its colour), what it holds or completes (pull requests,
   posts, comments), saying nothing for none; how many reactions it had sits at the row's end.

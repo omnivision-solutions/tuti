@@ -296,6 +296,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const published = team.getByRole("listitem").filter({ hasText: "Dark mode is here" });
   await expect(published).toContainText("1 post");
   await expect(published).toContainText("1 reaction");
+  // No entry has a cover yet: no empty boxes to line titles up against.
+  await expect(team.locator("main span[aria-hidden].border-dashed")).toHaveCount(0);
   await expect(published.locator("time")).toHaveText(/^Published \d{1,2} [A-Z][a-z]{2,3}$/);
   // Signed out: the counts, and a nudge to sign in.
   const reader = await newPerson(browser, portalUrl(slug));
@@ -565,8 +567,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team).toHaveURL(/\?(tag=new&q=invoices|q=invoices&tag=new)$/);
   await expect(team.getByText("No entries match your search")).toBeVisible();
   // The tag picked still shows as picked, with nothing in it; All is a pill away.
-  await expect(tagPills.getByRole("link", { name: "New 0" })).toHaveAttribute("aria-current", "page");
-  await expect(tagPills.getByRole("link", { name: "All 0" })).toBeVisible();
+  await expect(tagPills.getByRole("link", { name: "New", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(tagPills.getByRole("link", { name: "All", exact: true })).toBeVisible();
   await team.getByRole("link", { name: "Clear search" }).click();
   await expect(team).toHaveURL(/\?tag=new$/);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
@@ -1359,7 +1361,7 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(noCover.locator("span[aria-hidden].border-dashed")).toHaveCount(1);
   await checkpoint(team, "team-changelog-thumbnails");
   await team.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(70);
+  await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(110);
   await checkpoint(team, "team-changelog-thumbnails-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
 
