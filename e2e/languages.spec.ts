@@ -132,6 +132,9 @@ test("a signed-in reader's account menu, the changelog's New and the phone menu'
   await reader.setViewportSize({ width: 390, height: 844 });
   // The page's language is its address's (L3): Feedback in German is /de/feedback.
   await reader.goto("/de/feedback");
+  // Its description for search engines and shared links, in German too.
+  const description = reader.locator('meta[name="description"]');
+  await expect(description).toHaveAttribute("content", "Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.");
   await reader.getByRole("banner").getByRole("button", { name: "Menü" }).click();
   const menu = reader.getByRole("dialog", { name: "Menü" });
   await expect(menu).toHaveAccessibleDescription("Acme: Wohin als Nächstes?");
@@ -277,6 +280,8 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await reader.setViewportSize({ width: 390, height: 844 });
   await reader.goto("/de/feedback/feature-requests");
   await expect(reader.getByRole("button", { name: "Neuer Beitrag" })).toBeVisible();
+  // A board with no description of its own: the German one, under the board's own name.
+  await expect(reader.locator('meta[name="description"]')).toHaveAttribute("content", "Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.");
   await checkpoint(reader, "board-in-german-phone", { fullPage: false });
 });
 
