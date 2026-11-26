@@ -357,9 +357,10 @@ export async function InboxPanes({
                                   Needs reply
                                 </Badge>
                               )}
-                              {/* Marked priority (by hand, or by a workflow): in every view, beside what else the row says. */}
+                              {/* Marked priority (by hand, or by a workflow): in every view, beside what else the row says. Not read
+                                  out again: the row's link says it. */}
                               {c.priority && (
-                                <Badge variant="outline" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
+                                <Badge aria-hidden variant="outline" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
                                   Priority
                                 </Badge>
                               )}
