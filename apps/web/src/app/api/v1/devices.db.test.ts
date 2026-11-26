@@ -290,6 +290,14 @@ test("a user's message notifies the phones of exactly those its email goes to", 
   await prisma.conversation.update({ where: { id: conversation.id }, data: { spam: true } });
   await enqueue("conversationPush", { messageId: message.id });
   expect(expo.sent).toEqual([]);
+
+  // Nor does one the AI has, till it's the team's again.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { spam: false, handledBy: "AI" } });
+  await enqueue("conversationPush", { messageId: message.id });
+  expect(expo.sent).toEqual([]);
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { handledBy: "TEAM" } });
+  await enqueue("conversationPush", { messageId: message.id });
+  expect(pushedTo()).toEqual(["quiet"]);
 });
 
 test("a user's message sent again with its requestId is pushed, and emailed, once", async () => {

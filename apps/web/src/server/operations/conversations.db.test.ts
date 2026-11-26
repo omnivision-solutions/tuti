@@ -6,11 +6,13 @@ import type { z } from "zod";
 import { addMember, actAs, createProject, signUp } from "@/test/helpers";
 
 import { homeOverview } from "../home";
+import { inboxStats } from "../inbox-stats";
 import { listMyProjects } from "../membership";
 import { ONLINE_FOR_MS, presenceKey, touchPresence } from "../presence";
 import { upsertProjectUser } from "../project-users";
 import { removeMember } from "../team";
 import {
+  addMessage,
   createConversation,
   getConversation,
   linkConversationPost,
@@ -863,4 +865,112 @@ test("a requestId is a client's id: up to 100 letters, digits and . _ : -", asyn
     await expect(call(replyToConversation, context, { number: 1, body: "On it", requestId })).rejects.toMatchObject({ status: 400 });
   }
   await expect(call(replyToConversation, context, { number: 1, body: "On it", requestId: "3f1c9b2e-7a4d:x_y." + "x".repeat(82) })).resolves.toMatchObject({ body: "On it" });
+});
+
+/** Who has it and whether it's priority, as the database has them. */
+const owned = async (projectId: string) => prisma.conversation.findFirstOrThrow({ where: { projectId, number: 1 }, select: { handledBy: true, priority: true, status: true } });
+
+test("conversations.update hands one to the AI and takes it back, and marks it priority: the conversation, lists and webhooks say so, and nothing else about it moves", async () => {
+  const { context, owner } = await setup();
+  await prisma.webhook.create({ data: { projectId: context.projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id } });
+  // The team's and not priority, as every conversation from before: webhooks are told so.
+  expect(await call(createConversation, context, { user: sam, body: "Help" })).toMatchObject({ handledBy: "team", priority: false });
+  const [created] = await prisma.webhookDelivery.findMany({ where: { webhook: { projectId: context.projectId } }, select: { payload: true } });
+  expect(created!.payload).toMatchObject({ data: { number: 1, handledBy: "team", priority: false } });
+  await call(updateConversation, context, { number: 1, assignee: owner.email });
+  const before = await call(getConversation, context, { number: 1 });
+
+  const numbers = async (view: "open" | "mine" | "ai") => (await call(listConversations, context, { view })).conversations.map((c) => c.number);
+  const handed = await call(updateConversation, context, { number: 1, handledBy: "ai", priority: true });
+  expect(handed).toMatchObject({ handledBy: "ai", priority: true, status: "open", assignee: { email: owner.email }, waitingSince: before.waitingSince });
+  expect(await call(getConversation, context, { number: 1 })).toMatchObject({ handledBy: "ai", priority: true });
+  // In With AI and none of the team's views; a list without a view has it, saying who has it.
+  expect([await numbers("ai"), await numbers("open"), await numbers("mine")]).toEqual([[1], [], []]);
+  expect((await call(listConversations, context, {})).conversations).toMatchObject([{ number: 1, handledBy: "ai", priority: true }]);
+
+  // Each on its own: taking it over leaves the mark, unmarking leaves who has it.
+  expect(await call(updateConversation, context, { number: 1, handledBy: "team" })).toMatchObject({ handledBy: "team", priority: true });
+  expect([await numbers("ai"), await numbers("open"), await numbers("mine")]).toEqual([[], [1], [1]]);
+  expect(await call(updateConversation, context, { number: 1, priority: false })).toMatchObject({ handledBy: "team", priority: false });
+  await expect(call(updateConversation, context, { number: 1 })).rejects.toThrow("handledBy, priority");
+});
+
+test("a conversation the AI has isn't counted as waiting on the team: the sidebar, the tab's title, Home and the Inbox's numbers", async () => {
+  const { context, owner, project } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const counts = async () => [
+    (await listMyProjects(owner.id)).find((p) => p.slug === project.slug)!.openConversations,
+    (await homeOverview(project.id, project.slug)).numbers.needReply,
+    (await inboxStats(project.id)).waiting,
+  ];
+  expect(await counts()).toEqual([1, 1, 1]);
+  await call(updateConversation, context, { number: 1, handledBy: "ai" });
+  expect(await counts()).toEqual([0, 0, 0]);
+  expect((await inboxStats(project.id)).oldest).toBeNull();
+  await call(updateConversation, context, { number: 1, handledBy: "team" });
+  expect(await counts()).toEqual([1, 1, 1]);
+});
+
+test("a teammate's reply takes it over from the AI; a note, the user's message, closing and reopening leave it with whoever had it", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  await call(updateConversation, context, { number: 1, handledBy: "ai" });
+  const has = async () => (await owned(context.projectId)).handledBy;
+
+  // The team's note to itself is no reply, and the user writing is the AI's to answer.
+  await call(replyToConversation, context, { number: 1, body: "Leave this one to the AI", note: true });
+  await call(replyToConversation, context, { number: 1, body: "Anyone?", author: { id: sam.id } });
+  expect(await has()).toBe("AI");
+  // Closed, opened by hand, closed again and opened by the user's message: still the AI's.
+  await call(updateConversation, context, { number: 1, status: "closed" });
+  expect(await has()).toBe("AI");
+  await call(updateConversation, context, { number: 1, status: "open" });
+  await call(updateConversation, context, { number: 1, status: "closed" });
+  await call(replyToConversation, context, { number: 1, body: "One more thing", author: { id: sam.id } });
+  expect(await owned(context.projectId)).toMatchObject({ handledBy: "AI", status: "OPEN" });
+
+  // A teammate replies: the team's, with the reply.
+  await call(replyToConversation, context, { number: 1, body: "I'm on it" });
+  expect(await owned(context.projectId)).toMatchObject({ handledBy: "TEAM", status: "WAITING" });
+  // One the team took stays the team's when it closes and the user opens it again.
+  await call(updateConversation, context, { number: 1, status: "closed" });
+  await call(replyToConversation, context, { number: 1, body: "It's back", author: { id: sam.id } });
+  expect(await owned(context.projectId)).toMatchObject({ handledBy: "TEAM", status: "OPEN" });
+
+  // Handed back, then Send and close: the closing reply takes it over too.
+  await call(updateConversation, context, { number: 1, handledBy: "ai" });
+  await call(replyToConversation, context, { number: 1, body: "Fixed for good", close: true });
+  expect(await owned(context.projectId)).toMatchObject({ handledBy: "TEAM", status: "CLOSED" });
+});
+
+test("two teammates replying at once to one the AI has: both replies are written, and it's the team's", async () => {
+  const { context, project } = await setup();
+  const tess = await addMember(project.id, "MEMBER");
+  await call(createConversation, context, { user: sam, body: "Help" });
+  await call(updateConversation, context, { number: 1, handledBy: "ai" });
+
+  const replies = await Promise.all([
+    call(replyToConversation, context, { number: 1, body: "Olive here" }),
+    call(replyToConversation, { actor: { kind: "user", userId: tess.id }, projectId: project.id }, { number: 1, body: "Tess here" }),
+  ]);
+  expect(replies.map((reply) => reply.author)).toEqual(["team", "team"]);
+  expect(await owned(project.id)).toMatchObject({ handledBy: "TEAM", status: "WAITING" });
+  const { messages } = await call(getConversation, context, { number: 1 });
+  expect(messages.filter((message) => message.author === "team").map((message) => message.body).sort()).toEqual(["Olive here", "Tess here"]);
+});
+
+test("a reply that isn't written takes nothing over: the takeover is the reply's own transaction", async () => {
+  const { context, owner, project } = await setup();
+  await call(createConversation, context, { user: sam, body: "Help" });
+  await call(updateConversation, context, { number: 1, handledBy: "ai" });
+  const { id } = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+
+  // What's written with the reply (its attachments) fails: no reply, so nothing is taken over.
+  await expect(
+    addMessage(id, project.id, { author: "TEAM", authorId: owner.id, channel: "APP", body: "Half a reply" }, async () => {
+      throw new Error("the upload is gone");
+    }),
+  ).rejects.toThrow("the upload is gone");
+  expect(await owned(project.id)).toMatchObject({ handledBy: "AI", status: "OPEN" });
+  expect(await prisma.conversationMessage.count({ where: { conversationId: id, author: "TEAM" } })).toBe(0);
 });

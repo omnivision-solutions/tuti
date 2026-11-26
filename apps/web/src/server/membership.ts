@@ -65,9 +65,10 @@ export async function listMyProjects(userId: string) {
   });
   const projectIds = memberships.map((m) => m.project.id);
   // Where work waits, for the sidebar (and the open conversations for the tab's title): open
-  // conversations, posts waiting for triage (Open), and Autopilot's posts and articles to review (its To review).
+  // conversations the team has (never the AI's: docs/plan.md, Inbox automation), posts waiting for triage (Open), and
+  // Autopilot's posts and articles to review (its To review).
   const [open, triage, waitingCounts] = await Promise.all([
-    prisma.conversation.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", spam: false, ...awake() }, _count: true }),
+    prisma.conversation.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", spam: false, handledBy: "TEAM", ...awake() }, _count: true }),
     prisma.post.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, status: "OPEN", duplicateOfId: null }, _count: true }),
     toReviewCounts(projectIds),
   ]);

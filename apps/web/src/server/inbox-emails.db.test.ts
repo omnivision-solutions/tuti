@@ -131,3 +131,46 @@ test("a message whose email couldn't be queued is found by the cron and emailed;
   expect(await resubmit()).toEqual({ found: 0, queued: 0 });
   expect(to(owner.email)).toHaveLength(2);
 });
+
+test("a conversation the AI has emails nobody, at once or by the cron; taken over by a teammate's reply, the message it answered isn't emailed late", async () => {
+  const { owner, project, member, key } = await setup();
+  const log = { info: () => {}, warn: () => {} };
+  const resubmit = () => handlers.resubmitConversationNotices({}, log);
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  mailbox.emails.length = 0;
+  // Handed to the AI, long enough ago that the team could be emailed about it again.
+  await call(updateConversation, key, { number: 1, handledBy: "ai" });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: null } });
+
+  await call(replyToConversation, key, { number: 1, body: "Any news?", author: { id: "user-42" } });
+  expect(to(owner.email)).toEqual([]);
+  expect(to(member.email)).toEqual([]);
+  // Nor later: the cron that queues missed emails again leaves the AI's alone.
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: new Date(Date.now() - 5 * 60_000) } });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+
+  // A teammate's reply takes it over: what they answered isn't news to the team, so the cron still finds nothing.
+  await call(replyToConversation, key, { number: 1, body: "Looking now" });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+  expect(to(owner.email)).toEqual([]);
+  // It's the team's now: the user's next message is emailed as ever.
+  await call(replyToConversation, key, { number: 1, body: "Thanks!", author: { id: "user-42" } });
+  expect(to(owner.email)).toEqual(["Sam replied: Export"]);
+});
+
+test("a conversation taken over without a reply, its user still waiting: the cron emails the team about it", async () => {
+  const { owner, project, key } = await setup();
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  await call(updateConversation, key, { number: 1, handledBy: "ai" });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: null } });
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: new Date(Date.now() - 5 * 60_000) } });
+  mailbox.emails.length = 0;
+  const resubmit = () => handlers.resubmitConversationNotices({}, { info: () => {}, warn: () => {} });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+
+  await call(updateConversation, key, { number: 1, handledBy: "team" });
+  expect(await resubmit()).toEqual({ found: 1, queued: 1 });
+  expect(to(owner.email)).toEqual(["New conversation: Export"]);
+});

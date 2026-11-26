@@ -2,7 +2,7 @@ import { type Prisma, prisma } from "@tuti/db";
 import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
 import Link from "next/link";
-import { ArrowRightIcon, CheckIcon, CircleCheckIcon, ClockIcon, HourglassIcon, InboxIcon, SearchIcon, ShieldAlertIcon, UserIcon, UserXIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, CircleCheckIcon, ClockIcon, HourglassIcon, InboxIcon, SearchIcon, ShieldAlertIcon, SparklesIcon, UserIcon, UserXIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -39,6 +39,7 @@ const EMPTY: Record<View, string> = {
   mine: "Nothing's assigned to you.",
   unassigned: "Every open conversation has someone on it.",
   waiting: "No conversations wait on a user.",
+  ai: "Nothing's with the AI.",
   snoozed: "Nothing's snoozed.",
   closed: "No closed conversations yet.",
   spam: "No spam.",
@@ -49,6 +50,7 @@ const VIEW_ICONS: Record<View, ReactNode> = {
   mine: <UserIcon />,
   unassigned: <UserXIcon />,
   waiting: <HourglassIcon />,
+  ai: <SparklesIcon />,
   snoozed: <ClockIcon />,
   closed: <CircleCheckIcon />,
   spam: <ShieldAlertIcon />,
@@ -109,6 +111,8 @@ const LISTED = {
   lastMessageAt: true,
   waitingSince: true,
   snoozedUntil: true,
+  handledBy: true,
+  priority: true,
   sample: true,
   id: true,
   assignee: { select: { name: true, image: true } },
@@ -304,8 +308,9 @@ export async function InboxPanes({
                       const match = matches?.get(c.id);
                       const line = match ? `${match.note ? "Note: " : ""}${match.snippet}` : text && (by ? `${by}: ${text}` : text);
                       const unread = reads.get(c.id)?.unread ?? false;
-                      // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
-                      const needsReply = shown !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
+                      // Spam waits on nobody, however it came in; nor does one the AI has wait on the team (With AI, a search).
+                      // Not said in Needs reply, where every row does.
+                      const needsReply = shown !== "spam" && c.handledBy === "TEAM" && c.status === "OPEN" && c.waitingSince !== null;
                       // One age per row: how long they've waited for the team, or since the latest message.
                       const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
                       const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
@@ -331,7 +336,7 @@ export async function InboxPanes({
                               scroll={false}
                               data-row-link={c.number}
                               aria-current={c.number === open ? "page" : undefined}
-                              aria-label={`${unread ? "Unread, " : ""}${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
+                              aria-label={`${unread ? "Unread, " : ""}${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.priority ? ", priority" : ""}${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
                               className={cn("block truncate text-[0.875rem] after:absolute after:inset-0 hover:underline", unread ? "font-[650] text-foreground" : "font-normal text-foreground/70")}
                             >
                               {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
@@ -350,6 +355,18 @@ export async function InboxPanes({
                               {needsReply && shown !== "open" && (
                                 <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
                                   Needs reply
+                                </Badge>
+                              )}
+                              {/* Marked priority (by hand, or by a workflow): in every view, beside what else the row says. */}
+                              {c.priority && (
+                                <Badge variant="outline" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
+                                  Priority
+                                </Badge>
+                              )}
+                              {/* A search finds the AI's among the team's: said, as no view's title does there. */}
+                              {shown === "search" && c.handledBy === "AI" && c.status !== "CLOSED" && (
+                                <Badge variant="secondary" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
+                                  With AI
                                 </Badge>
                               )}
                               {/* A search finds closed ones among those still going. */}

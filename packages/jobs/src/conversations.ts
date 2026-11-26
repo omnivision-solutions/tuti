@@ -64,6 +64,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
           number: true,
           subject: true,
           spam: true,
+          handledBy: true,
           email: true,
           name: true,
           notifiedAt: true,
@@ -75,7 +76,8 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     },
   });
   const conversation = message?.conversation;
-  if (!message || !conversation || message.author !== "USER" || conversation.spam) {
+  // Nor one the AI has (docs/plan.md, Inbox automation): nothing about it reaches the team till it's theirs.
+  if (!message || !conversation || message.author !== "USER" || conversation.spam || conversation.handledBy === "AI") {
     return { skipped: "nothing to tell" };
   }
   const team = await prisma.teamMember.findMany({ where: teamToTell(conversation), select: { user: { select: { email: true } } } });
@@ -417,6 +419,8 @@ const NOTICE_RESUBMIT_FOR_MS = 24 * 60 * 60 * 1000;
  * (the message was saved, the queue was down): each conversation's earliest one, queued again. Should
  * have: the conversation was last told about more than NOTIFY_EVERY_MS before it (a message inside
  * that wait is meant to tell nobody), it isn't spam or sample content, and someone on the team would get the email.
+ * Never one the AI has: its messages tell nobody. Once it's the team's its messages are found like any other's, but for
+ * those the team has replied after: a teammate's reply took it over and answered them, so they're no news.
  */
 export async function resubmitConversationNotices(_: JobInput<"resubmitConversationNotices">, log: JobLogger): Promise<JobResult> {
   if (!emailConfigured() || !process.env.APP_URL) {
@@ -430,6 +434,11 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
     WHERE m."author" = 'USER'
       AND NOT c."spam"
       AND NOT c."sample"
+      AND c."handledBy" = 'TEAM'
+      AND NOT EXISTS (
+        SELECT 1 FROM "conversation_message" r
+        WHERE r."conversationId" = m."conversationId" AND r."author" = 'TEAM' AND NOT r."note" AND r."createdAt" > m."createdAt"
+      )
       AND m."createdAt" < ${new Date(now - NOTICE_LATE_MS)}
       AND m."createdAt" > ${new Date(now - NOTICE_RESUBMIT_FOR_MS)}
       AND (c."notifiedAt" IS NULL OR c."notifiedAt" < m."createdAt" - make_interval(secs => ${NOTIFY_EVERY_MS / 1000}))
