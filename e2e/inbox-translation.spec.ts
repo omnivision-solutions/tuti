@@ -102,6 +102,23 @@ test("a German conversation: the customer's message read in English, the reply p
   await expect(messages.getByRole("listitem").last()).toContainText(untranslatable);
   await expect(messages.getByRole("listitem").last()).not.toContainText("Sent in");
   await expect(preview).toBeHidden();
+
+  // A page loaded before the project translated: a reply that can't be translated is refused, and the page comes back
+  // with the preview box and its "Send in English".
+  await api("/support", { translate: false }, "PATCH");
+  await owner.reload();
+  await api("/support", { translate: true }, "PATCH");
+  const late = `Is it working now (${slug})?`;
+  // Refused on send (asked twice); the page then shows that failure, without asking again.
+  await nextModelReply("Not a translation", late);
+  await nextModelReply("Not a translation", late);
+  await owner.getByRole("textbox", { name: "Reply" }).fill(late);
+  await expect(preview).toBeHidden();
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(preview).toContainText("Couldn't translate it into Deutsch");
+  await preview.getByRole("button", { name: "Send in English" }).click();
+  await expect(messages.getByRole("listitem").last()).toContainText(late);
+  await expect(preview).toBeHidden();
 });
 
 test("a customer's message that couldn't be translated shows as written, with Try again", async ({ browser }, testInfo) => {

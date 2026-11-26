@@ -3,6 +3,7 @@
 import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, LanguagesIcon, MailIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "cn";
 
@@ -82,6 +83,7 @@ export function ReplyForm({
    */
   translated?: { language: string; teamLanguage: string };
 }) {
+  const router = useRouter();
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
@@ -134,8 +136,10 @@ export function ReplyForm({
   // Asked for again (the customer's language changed since): the preview is made afresh for the same text.
   const [previewAgain, setPreviewAgain] = useState(0);
   const toTranslate = translated && drafts.reply.trim();
+  // The text a send just failed to translate: not asked again by itself (its failure, with "Send in English", stays).
+  const sendFailedFor = useRef<string>(undefined);
   useEffect(() => {
-    if (!toTranslate) {
+    if (!toTranslate || sendFailedFor.current === toTranslate) {
       return;
     }
     // Written on since (or sent): that text's preview, if any, comes next.
@@ -238,15 +242,21 @@ export function ReplyForm({
       // open, the reply there to read, though it's left the view (Needs reply), as Featurebase and Intercom do.
       const moved = close && sending === "reply" ? actOn(number, true) : () => {};
       const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen, translation);
-      // Not translated: said in the preview, beside "Send in English" (here, where the page doesn't know it's translated yet).
-      setError(result.translation === "outdated" ? "Their language changed since this preview: check the new one, then send again." : result.translation === "failed" && translated ? undefined : result.error);
+      // Not translated: said in the preview, beside "Send in English".
+      setError(result.translation === "outdated" ? "Their language changed since this preview: check the new one, then send again." : result.translation === "failed" ? undefined : result.error);
       setNotice(result.notice);
+      if (result.translation) {
+        // The page as it is now: the customer's new language (outdated), or translated at all, where it was loaded before
+        // the project translated (the preview box, with "Send in English", needs it). A refused send doesn't refresh it.
+        router.refresh();
+      }
       if (result.translation === "outdated") {
         setPreview(undefined);
         setPreviewAgain((n) => n + 1);
       }
       if (result.translation === "failed") {
         // "Send in English" then sends it as they chose: closing it too, from Send and close.
+        sendFailedFor.current = text.trim();
         setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", close });
         toast.error("Not sent: it couldn't be translated");
       }
@@ -363,7 +373,16 @@ export function ReplyForm({
             ) : "failed" in shownPreview ? (
               <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                 <p className="text-muted-foreground">{shownPreview.failed}</p>
-                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={pending || drafting || files.uploading} onClick={() => send(shownPreview.close ?? false, true)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  disabled={pending || drafting || files.uploading}
+                  // It keeps the keyboard's focus while the reply sends.
+                  focusableWhenDisabled
+                  onClick={() => send(shownPreview.close ?? false, true)}
+                >
                   Send in {nativeLanguageName(translated.teamLanguage)}
                 </Button>
               </div>

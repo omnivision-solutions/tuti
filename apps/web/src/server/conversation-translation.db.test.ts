@@ -398,3 +398,21 @@ test("Try again is refused with translation off or without AI, and the message k
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
   expect(model.requests).toHaveLength(3);
 });
+
+test("Try again that can't be queued gives the message back its reason, so it shows Try again again", async () => {
+  const { owner, project, conversation } = await german();
+  actAs(owner);
+  model.fail(500);
+  model.fail(500);
+  const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+  const why = failed.translationError;
+  expect(why).not.toBeNull();
+  jobs.failing.add("translateMessage");
+  try {
+    await expect(inbox.retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
+  } finally {
+    jobs.failing.clear();
+  }
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: null, translationError: why });
+  expect(model.requests).toHaveLength(3);
+});

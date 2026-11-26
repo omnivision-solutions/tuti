@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { MessageText } from "@/components/inbox/message-text";
+import { Button } from "@/components/ui/button";
 import { nativeLanguageName } from "@/lib/language-name";
 import { retryTranslation } from "@/server/inbox";
 
@@ -107,13 +108,15 @@ export function MessageTranslation({
             {canRetry && " ·"}
           </span>
           {canRetry && (
-            <button
+            <Button
               type="button"
-              className={TOGGLE}
-              // Not disabled: it keeps the keyboard's focus while it works.
-              aria-disabled={retrying || undefined}
+              variant="link"
+              // Inline in the line's text, as the toggle beside a translation is.
+              className="h-auto p-0 text-xs font-medium text-current underline underline-offset-2"
+              disabled={retrying}
+              // It keeps the keyboard's focus while it works.
+              focusableWhenDisabled
               onClick={() =>
-                !retrying &&
                 startRetry(async () => {
                   const result = await retryTranslation(projectSlug, number).catch(() => ({ error: "Couldn't ask for it again: try again in a moment" }));
                   if (result.error) {
@@ -126,7 +129,7 @@ export function MessageTranslation({
               }
             >
               {retrying ? "Translating…" : "Try again"}
-            </button>
+            </Button>
           )}
         </p>
       )}
