@@ -226,12 +226,15 @@ export function ImageGenerator({
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
-                        <button
+                        // Off while one uploads or at the limit, focusable all the same: an upload started from its menu keeps focus here.
+                        <Button
                           type="button"
+                          variant="ghost"
                           ref={addRef}
                           aria-label="Add a reference"
                           disabled={full || uploading}
-                          className="flex size-16 items-center justify-center rounded-lg border border-dashed text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                          focusableWhenDisabled
+                          className="size-16 rounded-lg border border-dashed text-muted-foreground hover:text-foreground [&_svg:not([class*='size-'])]:size-5"
                         />
                       }
                     >

@@ -183,3 +183,22 @@ test("after a failed try, the error replaces the image and its actions: nothing 
   await click("Try 1");
   expect(button("Use as cover")).toBeTruthy();
 });
+
+test("while a reference uploads, + stays focusable (focus isn't dropped) but doesn't open its menu", async () => {
+  let finish!: (value: unknown) => void;
+  uploadImage.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+  const { button } = await dialog();
+  const add = button("Add a reference")!;
+  add.focus();
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", { value: [new File(["x"], "logo.png", { type: "image/png" })], configurable: true });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  // Off to the keyboard and screen readers, but not natively disabled: browsers move focus off a disabled button (to <body>).
+  expect(add.getAttribute("aria-disabled")).toBe("true");
+  expect(add.disabled).toBe(false);
+  expect(document.activeElement).toBe(add);
+  await act(async () => add.click());
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await act(async () => finish({ mediaId: "up1", src: "https://media.example/up1.png" }));
+  expect(disabled(add)).toBe(false);
+});
