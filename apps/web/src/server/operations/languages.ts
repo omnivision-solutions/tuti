@@ -142,7 +142,8 @@ export const updateLanguages = defineOperation({
         }
       }
       await tx.project.update({ where: { id: projectId }, data: { language } });
-      await tx.projectLanguage.deleteMany({ where: { projectId, code: { notIn: input.languages.map(({ code }) => code) } } });
+      // Only languages this release offers: one it doesn't know (a newer release's, during a deploy) can't be in the list, so it stays.
+      await tx.projectLanguage.deleteMany({ where: { projectId, code: { in: LANGUAGE_CODES, notIn: input.languages.map(({ code }) => code) } } });
       // Those added together keep the list's order: a millisecond apart.
       // After every language already there, even one added a moment ago (a millisecond per language, maybe ahead of the clock).
       const latest = await tx.projectLanguage.aggregate({ where: { projectId }, _max: { createdAt: true } });

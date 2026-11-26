@@ -126,3 +126,14 @@ test("a language no longer offered takes none of the plan's room", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   expect((await get()).languages.map(({ code, live }) => [code, live])).toEqual([["de", true], ["fr", true]]);
 });
+
+test("a language this release doesn't offer (a newer release's, during a deploy) isn't removed by saving the list without it", async () => {
+  const { project, get, update } = await setUp();
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "sv", instructions: "Du-tilltal." } });
+  await update({ languages: [{ code: "de" }] });
+  expect((await get()).languages.map(({ code }) => code)).toEqual(["de"]);
+  expect(await prisma.projectLanguage.findMany({ where: { projectId: project.id }, select: { code: true, instructions: true }, orderBy: { code: "asc" } })).toEqual([
+    { code: "de", instructions: "" },
+    { code: "sv", instructions: "Du-tilltal." },
+  ]);
+});
