@@ -36,7 +36,7 @@ const side = (name: string) =>
 export const generateImageOperation = defineOperation({
   name: "images.generate",
   title: "Generate an image",
-  summary: `Make one image with AI from a prompt, at exactly the size asked, optionally from up to ${MAX_IMAGE_REFERENCES} of the project's images: kept as an upload to use as a cover or in content (one no content uses is deleted within a day). Takes 10 to 30 seconds. Needs OpenRouter as the server's AI provider`,
+  summary: `Make one image with AI from a prompt, at exactly the size asked, optionally from up to ${MAX_IMAGE_REFERENCES} of the project's images: kept as an upload to use as a cover or in content (one no content uses is deleted after a day or two). Takes 10 to 30 seconds. Needs OpenRouter as the server's AI provider`,
   method: "POST",
   path: "/images/generate",
   scope: "write",
