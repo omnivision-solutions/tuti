@@ -80,6 +80,8 @@ const versionSelect = {
   draft: true,
   behind: true,
   updateSections: true,
+  sourceHash: true,
+  error: true,
 } as const;
 type Version = Prisma.ArticleTranslationGetPayload<{ select: typeof versionSelect }>;
 
@@ -92,7 +94,8 @@ async function sourceOf(db: Prisma.TransactionClient, articleId: string) {
   if (!article.publishedAt) {
     throw new OperationError(409, "not_published", "Publish the article first: its other languages are made from what's published");
   }
-  return { parts: sourceSections(translationSource(article).text), sourceLanguage: article.project.language, titleHash: contentHash(article.title) };
+  const source = translationSource(article);
+  return { parts: sourceSections(source.text), sourceLanguage: article.project.language, titleHash: contentHash(article.title), sourceHash: source.hash };
 }
 
 /** A version's sections: published, and in the draft. The team's own on a version not kept up to date (for what's behind). */
@@ -260,7 +263,7 @@ export const publishTranslation = defineOperation({
       if (input.version !== undefined && versionToken(version) !== input.version) {
         throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
       }
-      const { parts, sourceLanguage, titleHash } = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage, titleHash, sourceHash } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
         throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
@@ -304,6 +307,11 @@ export const publishTranslation = defineOperation({
           sections: metaOf(out) as Prisma.InputJsonValue,
           draft: Prisma.DbNull,
           publishedAt: version.publishedAt ?? new Date(),
+          // Both counted on: a translate job running now writes nothing (its write checks `retranslate`), so none of the
+          // previous release's, which doesn't know the team's sections, writes over them during a deploy; the gap that marks
+          // a Retranslate is as it was. (A run of this release that misses is queued again below.)
+          retranslate: { increment: 1 },
+          retranslated: { increment: 1 },
           // The sections the team took out of the draft, out of the published text now too.
           removedSections: draft.removed ?? [],
           behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
@@ -312,7 +320,9 @@ export const publishTranslation = defineOperation({
         },
         select: versionSelect,
       });
-      if (update.length > 0) retranslate = { articleId, language: input.language };
+      // Not up to date with the source (a run may be on its way, and now writes nothing): queued again.
+      const behindSource = version.automatic && (version.sourceHash !== sourceHash || version.error !== null);
+      if (update.length > 0 || behindSource) retranslate = { articleId, language: input.language };
       return output(saved, parts, sourceLanguage);
     });
     if (retranslate) await queueTranslation(retranslate);

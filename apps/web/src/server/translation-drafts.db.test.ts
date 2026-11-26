@@ -462,9 +462,11 @@ test("a version never translated can't be published without a title", async () =
   expect(read).toMatchObject({ title: "", publishedAt: null });
   const saved = await call(saveTranslation, as(), { ...de, content: doc("Hallo"), version: read.version });
   await expect(call(publishTranslation, as(), de)).rejects.toMatchObject({ status: 409, code: "no_title" });
-  // With one, it can.
+  // With one, it can. (Its first translation still waiting, publishing queues it again: answered now.)
   await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo"), version: saved.version });
+  model.reply(reply(V1, "de"));
   expect(await call(publishTranslation, as(), de)).toMatchObject({ title: "Bezahlt werden", draft: null });
+  await languageTranslationsDone();
 });
 
 test("a version the team writes remembers only what's usable: nothing from before the product setting changed, nothing of old English", async () => {
@@ -578,8 +580,12 @@ test("kept up to date: a section asked for, then kept on publishing while its tr
   const content = structuredClone(read.content) as Doc;
   content.content![0]!.content![0]!.text = "Guten Tag";
   await call(saveTranslation, as(), { ...de, content, version: read.version });
+  // Its retranslation still waiting, publishing queues it again: answered now, and it keeps the team's Billing.
+  model.reply(reply(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2"));
   const published = await call(publishTranslation, as(), { ...de, keep: [billing!] });
+  await languageTranslationsDone();
   expect(text(published.content)).toContain("Unsere Abrechnung");
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("Unsere Abrechnung");
   expect(published.behind.map(({ section }) => section)).toEqual([billing]);
   const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
   expect(row.updateSections).toEqual([]);
@@ -624,4 +630,18 @@ test("a request cancelled mid-run keeps the section's other reason to be behind"
   const after = await call(getTranslation, as(), de);
   expect(text(after.content)).toContain("Unsere Installation");
   expect(after.behind).toContainEqual({ section: setup, reason: "The product's language setting changed." });
+});
+
+test("publishing a version makes a translate job already running (the previous release's during a deploy) write nothing, and isn't a Retranslate", async () => {
+  await translated();
+  await editBilling();
+  const before = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  // As the previous release's job writes: only while `retranslate` is what it read.
+  const { count } = await prisma.articleTranslation.updateMany({ where: { id: before.id, retranslate: before.retranslate }, data: { title: "Machine" } });
+  expect(count).toBe(0);
+  const after = await prisma.articleTranslation.findFirstOrThrow({ where: { id: before.id } });
+  expect(after.retranslate - after.retranslated).toBe(before.retranslate - before.retranslated);
+  expect(text(after.content)).toContain("Unsere Abrechnung");
 });
