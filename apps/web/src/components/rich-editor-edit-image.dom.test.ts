@@ -257,6 +257,51 @@ test("Replace image again after an undo keeps tries the replaced image got meanw
   await vi.waitFor(() => expect(button("Try 3")).toBeTruthy());
 });
 
+test("Replace image again while the image it becomes is still making a try keeps that try going, one at a time", async () => {
+  let made = 0;
+  let release: (() => void) | undefined;
+  generateImage.mockImplementation(async () => {
+    const n = ++made;
+    // The third (made on the replacing image) waits.
+    if (n === 3) {
+      await new Promise<void>((resolve) => (release = resolve));
+    }
+    return { image: { id: `madeimage0000000000${n}x`, url: `https://media.example/made${n}.png`, width: 1000, height: 500 } };
+  });
+  const { ref, pick, generate, button, click } = await editor();
+  const closed = () => vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  const escape = () => act(async () => document.querySelector<HTMLElement>('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await pick();
+  await generate();
+  await click("Try again");
+  await click("Try 1");
+  await click("Replace image");
+  await closed();
+  await pick();
+  await click("Edit with AI");
+  const prompt = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Orange sky");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Try again");
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Generating, up to half a minute…"));
+  await escape();
+  await closed();
+  await act(async () => ref.current!.commands.undo());
+  await pick();
+  await click("Edit with AI");
+  await click("Try 1");
+  await click("Replace image");
+  await closed();
+  // Back on the image it became: still making its try.
+  await pick();
+  await click("Edit with AI");
+  expect(document.body.textContent).toContain("Generating, up to half a minute…");
+  await act(async () => release!());
+  await vi.waitFor(() => expect(button("Try 3")).toBeTruthy());
+});
+
 test("a try still being made when the dialog closes lands with its image's tries, after another image was edited too", async () => {
   const OTHER = "otherimage0000000000c";
   const two = {

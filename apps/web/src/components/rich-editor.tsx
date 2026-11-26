@@ -295,8 +295,10 @@ export function RichEditor({
       if (replace) {
         // Merged, not overwritten: tries made on that image before (edited, undone, replaced again) stay.
         const from = triesFor.get(edited.image.id)?.tries ?? [];
-        const had = triesFor.get(made.id)?.tries ?? [];
-        triesFor.set(made.id, { tries: [...from, ...had.filter((one) => !from.some((each) => each.id === one.id))], generating: false, error: null });
+        const was = triesFor.get(made.id);
+        const had = was?.tries ?? [];
+        // Its own state kept too: a try still being made on it stays the one at a time.
+        triesFor.set(made.id, { tries: [...from, ...had.filter((one) => !from.some((each) => each.id === one.id))], generating: was?.generating ?? false, error: was?.error ?? null });
       }
       editor
         .chain()
