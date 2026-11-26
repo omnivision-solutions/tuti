@@ -297,8 +297,14 @@ describe("subscribing", () => {
     expect((await confirm(leeLink)).status).toBe(403);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
     expect((await unsubscribe(kimToken)).status).toBe(303);
-    // A private portal's box is its readers': the way back is the same, through signing in.
-    expect(await page({ token: kimToken })).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore. To get it again, subscribe on the changelog .`);
+    // Kim isn't one of the private portal's readers: no way back is offered (the box is its readers').
+    expect(await page({ token: kimToken })).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+    // A reader who unsubscribes is pointed back to the box.
+    const ada = newAddress();
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada } });
+    const { token: adaToken } = await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: ada, confirmedAt: new Date() } });
+    expect((await unsubscribe(adaToken)).status).toBe(303);
+    expect(await page({ token: adaToken })).toContain("To get it again, subscribe on the changelog");
   });
 
   test("a confirmation link confirms only its own request: not once a newer one replaced it, nor after unsubscribing, used or expired", async () => {

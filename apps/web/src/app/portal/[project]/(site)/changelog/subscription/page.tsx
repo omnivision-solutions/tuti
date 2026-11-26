@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
+import { changelogReach } from "@tuti/jobs";
 
 import { Button } from "@/components/ui/button";
 import { CONFIRM_LINK_HOURS, findConfirmation, findSubscription, reachSentence } from "@/server/changelog-subscription";
@@ -110,17 +111,20 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     </form>
   );
   switch (found.reach) {
-    case "unconfirmed":
+    case "unconfirmed": {
+      // The way back only for an address that could have it again: on a private portal, one of its readers.
+      const canReturn = (await changelogReach(found.projectId, { email: found.email, confirmed: true })) !== "private";
       // Unsubscribed (this link only unsubscribes): asking again on the changelog signs them up again.
       return (
         <Message>
           <h1 className={heading}>You&apos;re unsubscribed</h1>
           <p className={text}>
             {name}&apos;s changelog won&apos;t be emailed to {found.email} anymore.
-            <> To get it again, subscribe on the {changelogLink}.</>
+            {canReturn && <> To get it again, subscribe on the {changelogLink}.</>}
           </p>
         </Message>
       );
+    }
     case "private":
       return <PrivatePortal name={name} email={found.email} unsubscribe={unsubscribe} />;
     case "opted-out":
