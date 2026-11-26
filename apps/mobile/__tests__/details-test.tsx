@@ -762,6 +762,57 @@ describe("the details sheet's Activity", () => {
     expect(activityAsked()).toHaveLength(2);
   });
 
+  it("keeps its tab and rows across Assign and back, asking nothing again", async () => {
+    serveActivity(({ filter }) => Promise.resolve(filter === "people" ? { events: [CLOSED], next: null } : { events: [RUN, CLOSED], next: null }));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await fireEvent.press(screen.getByRole("tab", { name: "People" }));
+    expect(await screen.findByRole("tab", { name: "People", selected: true })).toBeTruthy();
+    const asked = activityAsked().length;
+
+    await fireEvent.press(screen.getByRole("button", { name: "Assignee, Unassigned" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("tab", { name: "People", selected: true })).toBeTruthy();
+    expect(screen.getByText("Olive Owner")).toBeTruthy();
+    expect(screen.queryByText("A conversation starts")).toBeNull();
+    expect(activityAsked()).toHaveLength(asked);
+  });
+
+  it("drops a failed tab's error once All is shown offline, so Try again can't load the wrong tab", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    online = false;
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    expect(await screen.findByText(NETWORK)).toBeTruthy();
+    await fireEvent.press(screen.getByRole("tab", { name: "All" }));
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+    expect(screen.queryByText(NETWORK)).toBeNull();
+    expect(screen.getByRole("tab", { name: "All", selected: true })).toBeTruthy();
+  });
+
+  it("starts over for another conversation, even one whose status reads the same", async () => {
+    serveActivity(() => Promise.resolve({ events: [RUN], next: null }));
+    const answer = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) =>
+      path.startsWith("/conversations/13/activity") ? Promise.resolve({ events: [SPAM], next: null }) : path === "/conversations/13/person" ? Promise.resolve(SAM) : answer(path, init),
+    );
+    // Conversation 13's screen holds the same status.
+    const other = screenKey(mockSession, 13);
+    const under = holdTriage(other);
+    showTriage(other, OPEN);
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    mockNumber = "13";
+    await screen.rerender(<Details />);
+    expect(await screen.findByText("The spam filter")).toBeTruthy();
+    expect(screen.queryByText("A conversation starts")).toBeNull();
+    under();
+  });
+
   it("isn't shown by a server from before it", async () => {
     serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
     await render(<Details />);

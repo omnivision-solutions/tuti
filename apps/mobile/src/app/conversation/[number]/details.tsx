@@ -153,8 +153,11 @@ export default function Details() {
   const snoozed = !!triage && isSnoozed(triage);
   const background = IOS ? colors.page : colors.card;
 
+  // A list (assign, snooze) in place of the details, which stay mounted, hidden, so what they hold (the Activity's tab,
+  // its pages, whether it's offline) is there on coming back.
+  let list: ReactNode = null;
   if (pane === "assign") {
-    return (
+    list = (
       <Choices title="Assign" colors={colors} background={background} busy={busy} failed={failed} onBack={() => setPane("details")}>
         {(assignees ?? []).map((a) => {
           const chosen = assignee?.email.toLowerCase() === a.email.toLowerCase();
@@ -175,7 +178,7 @@ export default function Details() {
     );
   }
   if (pane === "snooze") {
-    return (
+    list = (
       <Choices title="Snooze" colors={colors} background={background} busy={busy} failed={failed} onBack={() => setPane("details")}>
         {snoozeChoices().map(({ label, at }) => (
           <Choice busy={busy} key={label} label={label} colors={colors} onPress={() => void change({ snoozedUntil: at.toISOString() }, `Snoozed till ${snoozeTime(at)}`)} />
@@ -187,172 +190,176 @@ export default function Details() {
 
   const name = person ? (person.name ?? person.email ?? "Unknown") : "";
   return (
-    <ScrollView style={{ backgroundColor: background }} contentContainerStyle={styles.sheet}>
-      {person ? (
-        <View style={styles.who}>
-          <View style={[styles.avatar, { backgroundColor: colors.soft }]}>
-            <Text style={[styles.avatarText, { color: colors.onSoft }]}>{name.slice(0, 1).toUpperCase()}</Text>
-          </View>
-          <View style={styles.whoText}>
-            <Text style={[styles.name, { color: colors.text }]} accessibilityRole="header">
-              {name}
-            </Text>
-            {person.email && (
-              <Text style={[styles.detail, { color: colors.muted }]} selectable>
-                {person.email}
-                {!person.verified && " (not verified)"}
-              </Text>
-            )}
-          </View>
-        </View>
-      ) : (
-        !error && (
-          <Text style={[styles.detail, styles.loading, { color: colors.muted }]} accessibilityLiveRegion="polite">
-            Loading…
-          </Text>
-        )
-      )}
-      {error && (
-        <View style={styles.loading}>
-          <Text style={[styles.detail, { color: colors.error, textAlign: "center" }]} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
-          <TextButton label="Try again" colors={colors} onPress={load} />
-        </View>
-      )}
-      {person && (
-        <View style={styles.notes}>
-          {person.blocked && <Note colors={colors}>Marked your email as spam, so replies aren&apos;t emailed to them any more.</Note>}
-          {!person.account && <Note colors={colors}>Known only by this address.</Note>}
-          {person.maybe && (
-            <Note colors={colors}>
-              Maybe {person.maybe.name} (not signed in){person.maybe.id && `, id ${person.maybe.id}`}
-            </Note>
-          )}
-          {person.id && <Note colors={colors}>id {person.id}</Note>}
-          {person.groups.length > 0 && (
-            <View style={styles.groups}>
-              {person.groups.map((group) => (
-                <Text key={group.key} style={[styles.group, { backgroundColor: colors.secondary, color: colors.text }]}>
-                  {group.name}
-                </Text>
-              ))}
+    <>
+      {list}
+      <ScrollView style={[{ backgroundColor: background }, list !== null && styles.hidden]} contentContainerStyle={styles.sheet}>
+        {person ? (
+          <View style={styles.who}>
+            <View style={[styles.avatar, { backgroundColor: colors.soft }]}>
+              <Text style={[styles.avatarText, { color: colors.onSoft }]}>{name.slice(0, 1).toUpperCase()}</Text>
             </View>
+            <View style={styles.whoText}>
+              <Text style={[styles.name, { color: colors.text }]} accessibilityRole="header">
+                {name}
+              </Text>
+              {person.email && (
+                <Text style={[styles.detail, { color: colors.muted }]} selectable>
+                  {person.email}
+                  {!person.verified && " (not verified)"}
+                </Text>
+              )}
+            </View>
+          </View>
+        ) : (
+          !error && (
+            <Text style={[styles.detail, styles.loading, { color: colors.muted }]} accessibilityLiveRegion="polite">
+              Loading…
+            </Text>
+          )
+        )}
+        {error && (
+          <View style={styles.loading}>
+            <Text style={[styles.detail, { color: colors.error, textAlign: "center" }]} accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+            <TextButton label="Try again" colors={colors} onPress={load} />
+          </View>
+        )}
+        {person && (
+          <View style={styles.notes}>
+            {person.blocked && <Note colors={colors}>Marked your email as spam, so replies aren&apos;t emailed to them any more.</Note>}
+            {!person.account && <Note colors={colors}>Known only by this address.</Note>}
+            {person.maybe && (
+              <Note colors={colors}>
+                Maybe {person.maybe.name} (not signed in){person.maybe.id && `, id ${person.maybe.id}`}
+              </Note>
+            )}
+            {person.id && <Note colors={colors}>id {person.id}</Note>}
+            {person.groups.length > 0 && (
+              <View style={styles.groups}>
+                {person.groups.map((group) => (
+                  <Text key={group.key} style={[styles.group, { backgroundColor: colors.secondary, color: colors.text }]}>
+                    {group.name}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        <Group title="Conversation" colors={colors}>
+          <Row
+            ref={assignRow}
+            label="Assignee"
+            busy={busy}
+            value={assignee ? `${assignee.name}${assignedToYou ? " (you)" : ""}` : triage ? "Unassigned" : ""}
+            colors={colors}
+            // Once who has it is known: the list marks them.
+            onPress={triage && assignees && assignees.length > 0 ? () => setPane("assign") : undefined}
+          />
+          <Row label="Status" value={triage ? statusWords(triage) : ""} dot={triage && (statusWords(triage) === STATUS_WORDS.open ? colors.onNote : colors.muted)} colors={colors} />
+          <Row
+            ref={snoozeRow}
+            label="Snooze"
+            busy={busy}
+            value={!triage ? "" : snoozed ? `Snoozed till ${snoozeTime(new Date(triage.snoozedUntil!))}` : "Not snoozed"}
+            colors={colors}
+            onPress={canSnooze ? () => setPane("snooze") : undefined}
+          />
+          {triage && (
+            <Row
+              label={triage.status === "closed" ? "Reopen" : "Close"}
+              busy={busy}
+              action
+              colors={colors}
+              onPress={() => void (triage.status === "closed" ? change({ status: "open" }, "Reopened") : change({ status: "closed" }, "Closed"))}
+            />
           )}
-        </View>
-      )}
-
-      <Group title="Conversation" colors={colors}>
-        <Row
-          ref={assignRow}
-          label="Assignee"
-          busy={busy}
-          value={assignee ? `${assignee.name}${assignedToYou ? " (you)" : ""}` : triage ? "Unassigned" : ""}
-          colors={colors}
-          // Once who has it is known: the list marks them.
-          onPress={triage && assignees && assignees.length > 0 ? () => setPane("assign") : undefined}
-        />
-        <Row label="Status" value={triage ? statusWords(triage) : ""} dot={triage && (statusWords(triage) === STATUS_WORDS.open ? colors.onNote : colors.muted)} colors={colors} />
-        <Row
-          ref={snoozeRow}
-          label="Snooze"
-          busy={busy}
-          value={!triage ? "" : snoozed ? `Snoozed till ${snoozeTime(new Date(triage.snoozedUntil!))}` : "Not snoozed"}
-          colors={colors}
-          onPress={canSnooze ? () => setPane("snooze") : undefined}
-        />
-        {triage && (
-          <Row
-            label={triage.status === "closed" ? "Reopen" : "Close"}
-            busy={busy}
-            action
-            colors={colors}
-            onPress={() => void (triage.status === "closed" ? change({ status: "open" }, "Reopened") : change({ status: "closed" }, "Closed"))}
-          />
-        )}
-        {/* Only where the server knows of priority (it says whether it's marked): one from before would refuse the change. */}
-        {triage && triage.priority !== undefined && (
-          <Row
-            label={triage.priority ? "Not priority" : "Mark priority"}
-            busy={busy}
-            action
-            colors={colors}
-            onPress={() => void change({ priority: !triage.priority }, triage.priority ? "No longer priority" : "Marked priority")}
-          />
-        )}
-        {triage && (
-          <Row
-            label={triage.spam ? "Not spam" : "Mark as spam"}
-            busy={busy}
-            action
-            danger={!triage.spam}
-            colors={colors}
-            onPress={() => void change({ spam: !triage.spam }, triage.spam ? "Moved back to the inbox" : "Marked as spam")}
-          />
-        )}
-      </Group>
-      {busy && <ActivityIndicator style={styles.busy} color={colors.muted} />}
-      {failed && (
-        <Text style={[styles.detail, styles.pad, { color: colors.error }]} accessibilityLiveRegion="polite">
-          {failed}
-        </Text>
-      )}
-
-      {person && person.properties.length > 0 && (
-        <Group title="Properties" colors={colors}>
-          {person.properties.map((property) => (
-            <Row key={property.key} label={property.label} value={property.text} colors={colors} />
-          ))}
+          {/* Only where the server knows of priority (it says whether it's marked): one from before would refuse the change. */}
+          {triage && triage.priority !== undefined && (
+            <Row
+              label={triage.priority ? "Not priority" : "Mark priority"}
+              busy={busy}
+              action
+              colors={colors}
+              onPress={() => void change({ priority: !triage.priority }, triage.priority ? "No longer priority" : "Marked priority")}
+            />
+          )}
+          {triage && (
+            <Row
+              label={triage.spam ? "Not spam" : "Mark as spam"}
+              busy={busy}
+              action
+              danger={!triage.spam}
+              colors={colors}
+              onPress={() => void change({ spam: !triage.spam }, triage.spam ? "Moved back to the inbox" : "Marked as spam")}
+            />
+          )}
         </Group>
-      )}
-      {person?.account && (
-        <>
-          <Group title="Posts" count={person.postCount} colors={colors}>
-            {person.posts.length === 0 ? <Empty text="No posts." colors={colors} /> : person.posts.map((post) => <Row key={post.number} label={post.title} value={POST_STATUS[post.status]} colors={colors} />)}
+        {busy && <ActivityIndicator style={styles.busy} color={colors.muted} />}
+        {failed && (
+          <Text style={[styles.detail, styles.pad, { color: colors.error }]} accessibilityLiveRegion="polite">
+            {failed}
+          </Text>
+        )}
+
+        {person && person.properties.length > 0 && (
+          <Group title="Properties" colors={colors}>
+            {person.properties.map((property) => (
+              <Row key={property.key} label={property.label} value={property.text} colors={colors} />
+            ))}
           </Group>
-          <Group title="Votes" count={person.voteCount} colors={colors}>
-            {person.votes.length === 0 ? (
-              <Empty text="No votes on others' posts." colors={colors} />
+        )}
+        {person?.account && (
+          <>
+            <Group title="Posts" count={person.postCount} colors={colors}>
+              {person.posts.length === 0 ? <Empty text="No posts." colors={colors} /> : person.posts.map((post) => <Row key={post.number} label={post.title} value={POST_STATUS[post.status]} colors={colors} />)}
+            </Group>
+            <Group title="Votes" count={person.voteCount} colors={colors}>
+              {person.votes.length === 0 ? (
+                <Empty text="No votes on others' posts." colors={colors} />
+              ) : (
+                person.votes.map((post) => <Row key={post.number} label={post.title} value={POST_STATUS[post.status]} colors={colors} />)
+              )}
+            </Group>
+          </>
+        )}
+        {person && (
+          <Group title="Other conversations" count={person.conversationCount} colors={colors}>
+            {person.conversations.length === 0 ? (
+              <Empty text="None." colors={colors} />
             ) : (
-              person.votes.map((post) => <Row key={post.number} label={post.title} value={POST_STATUS[post.status]} colors={colors} />)
+              person.conversations.map((other) => (
+                <Pressable
+                  key={other.number}
+                  onPress={() => {
+                    router.back();
+                    router.push(`/conversation/${other.number}`);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${other.subject}, #${other.number}, ${STATUS_WORDS[other.status]}, ${dayOf(other.lastMessageAt)}`}
+                  accessibilityHint={other.line ?? undefined}
+                  android_ripple={{ color: colors.border }}
+                  style={({ pressed }) => [styles.other, IOS && pressed && { backgroundColor: colors.secondary }]}
+                >
+                  <Text style={[styles.meta, { color: colors.muted }]}>
+                    {dayOf(other.lastMessageAt)} · {STATUS_WORDS[other.status]} · #{other.number}
+                  </Text>
+                  <Text style={[styles.otherSubject, { color: colors.text }]}>{other.subject}</Text>
+                  {other.line && (
+                    <Text style={[styles.meta, { color: colors.muted }]} numberOfLines={1}>
+                      {other.line}
+                    </Text>
+                  )}
+                </Pressable>
+              ))
             )}
           </Group>
-        </>
-      )}
-      {person && (
-        <Group title="Other conversations" count={person.conversationCount} colors={colors}>
-          {person.conversations.length === 0 ? (
-            <Empty text="None." colors={colors} />
-          ) : (
-            person.conversations.map((other) => (
-              <Pressable
-                key={other.number}
-                onPress={() => {
-                  router.back();
-                  router.push(`/conversation/${other.number}`);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`${other.subject}, #${other.number}, ${STATUS_WORDS[other.status]}, ${dayOf(other.lastMessageAt)}`}
-                accessibilityHint={other.line ?? undefined}
-                android_ripple={{ color: colors.border }}
-                style={({ pressed }) => [styles.other, IOS && pressed && { backgroundColor: colors.secondary }]}
-              >
-                <Text style={[styles.meta, { color: colors.muted }]}>
-                  {dayOf(other.lastMessageAt)} · {STATUS_WORDS[other.status]} · #{other.number}
-                </Text>
-                <Text style={[styles.otherSubject, { color: colors.text }]}>{other.subject}</Text>
-                {other.line && (
-                  <Text style={[styles.meta, { color: colors.muted }]} numberOfLines={1}>
-                    {other.line}
-                  </Text>
-                )}
-              </Pressable>
-            ))
-          )}
-        </Group>
-      )}
-      <ActivitySection number={number} triage={triage} colors={colors} />
-    </ScrollView>
+        )}
+        {/* Another conversation's details (a link while open): its own Activity, from the start. */}
+        <ActivitySection key={number} number={number} triage={triage} colors={colors} />
+      </ScrollView>
+    </>
   );
 }
 
@@ -440,10 +447,12 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
           const saved = isOffline(e) && to === "all" && !before ? cached<Activity>(key, session!.owner) : null;
           if (isOffline(e) && !before && loadedAt.current !== null && filter === to) {
             setSavedAt(loadedAt.current);
+            setFailed(null);
           } else if (saved) {
             setFilter("all");
             setPages([saved.data]);
             setSavedAt(saved.at);
+            setFailed(null);
           } else {
             setFailed({ why: e.message, retry: () => load(to, before, limit) });
           }
@@ -727,6 +736,7 @@ function TextButton({ label, busy = false, colors, onPress }: { label: string; b
 }
 
 const styles = StyleSheet.create({
+  hidden: { display: "none" },
   sheet: { paddingHorizontal: 16, paddingTop: IOS ? 20 : 8, paddingBottom: 40 },
   loading: { alignItems: "center", gap: 10, paddingVertical: 24 },
   who: { flexDirection: "row", alignItems: "center", gap: 12 },
