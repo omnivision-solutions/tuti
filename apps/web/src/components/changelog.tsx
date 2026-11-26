@@ -670,6 +670,8 @@ export function ChangelogForm({
             <p>{standing}</p>
           </section>
         )}
+        {/* When the text shown was saved: a save refuses to put back lines screenshots replaced since (saveChangelogEntry). */}
+        {screenshots && <input type="hidden" name="screenshotsSeenAt" value={screenshots.savedAt} />}
         {entry && screenshots && (
           <EntryScreenshotsSection projectSlug={projectSlug} number={entry.number} screenshots={screenshots} canTake={canTakeScreenshots} dirty={dirty} />
         )}
@@ -774,6 +776,11 @@ function EntryScreenshotsSection({
     }
     const timer = setInterval(async () => {
       const response = await fetch(`/app/${projectSlug}/changelog/${number}/screenshots`).catch(() => null);
+      // Off the team now (or the entry deleted): nothing more to ask. A network error is asked again.
+      if (response?.status === 404) {
+        clearInterval(timer);
+        return;
+      }
       const result: { running?: boolean; savedAt?: string } | null = response?.ok ? await response.json() : null;
       if (!result || result.running !== false) {
         return;
@@ -861,6 +868,8 @@ function EntryScreenshotsSection({
               size="sm"
               className="self-start"
               onClick={() => {
+                // Focus to the heading first: this button goes.
+                headingRef.current?.focus();
                 setDoneUnsaved(false);
                 router.refresh();
               }}

@@ -6,8 +6,9 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
-import { entryScreenshots, entryScreenshotsRunning, placeLeftoverScreenshots, takeChangelogScreenshots, updateScreenshotSettings } from "@/server/operations/screenshots";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { entryScreenshots, entryScreenshotsRunning, placeLeftoverScreenshots, SCREENSHOTS_PLACED, takeChangelogScreenshots, updateScreenshotSettings } from "@/server/operations/screenshots";
+import { saveChangelogEntry } from "@/server/changelog";
+import { actAs, createProject, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 
 /** Changelog drafts' "[Screenshot: …]" lines filled with screenshots (docs/plan.md, SC2): Browser Use's fake, jobs inline. */
 
@@ -152,4 +153,73 @@ test("a run still running isn't placed (a second delivery of its job leaves it t
   expect(done).toMatchObject({ running: false });
   expect(done.savedAt).toBe((await saved(number)).updatedAt.toISOString());
   expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["image"]);
+});
+
+test("a placement that waited on the entry while the run went on reads its screenshots once it's ended, so none are lost", { timeout: 60_000 }, async () => {
+  await setUp();
+  const { number } = await draft(["[Screenshot: The billing page]", "[Screenshot: The reports page]"].join("\n\n"));
+  const { id: entryId } = await saved(number);
+  browserUse.next({ stuck: true });
+  const before = browserUse.runs.length;
+  const taking = call(takeChangelogScreenshots, as(), { number });
+  await vi.waitFor(() => expect(browserUse.runs).toHaveLength(before + 1), { timeout: 30_000, interval: 100 });
+  const { id: runId } = await prisma.screenshotRun.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  // The entry held (a save, say): a second placement (a duplicate delivery of the job) starts while the run is going and
+  // waits on it, first in line; meanwhile the run ends with both screenshots.
+  let release!: () => void;
+  const holding = prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${entryId} FOR UPDATE`;
+    await new Promise<void>((resolve) => (release = resolve));
+  }, { timeout: 60_000 });
+  await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+  const duplicate = placeChangelogScreenshots(runId);
+  await untilWaitingOnLock(1);
+  browserUse.release();
+  await vi.waitFor(async () => expect((await prisma.screenshotRun.findUniqueOrThrow({ where: { id: runId } })).state).toBe("DONE"), { timeout: 30_000, interval: 100 });
+  release();
+  await holding;
+  // The duplicate claimed it, once it had ended, and placed both; the job's own placement found it claimed.
+  expect(await duplicate).toBe(2);
+  await taking;
+  expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["image", "image"]);
+});
+
+test("the editor's question says running until the run's screenshots are placed, placing one an older worker left", async () => {
+  await setUp();
+  const { number } = await draft("[Screenshot: The billing page]");
+  const run = await call(takeChangelogScreenshots, as(), { number });
+  // Ended, not placed yet (its job about to, or an older worker's that never will), the text as it was.
+  await prisma.screenshotRun.update({ where: { id: run.id }, data: { placedAt: null } });
+  await call(updateChangelogEntry, as(), { number, body: "[Screenshot: The billing page]" });
+  const asked = await entryScreenshotsRunning(project.id, number);
+  // Placed by the question itself: done, and the saved time is the placement's, so the editor knows the text changed.
+  const entry = await saved(number);
+  expect((entry.content as Doc).content!.map((block) => block.type)).toEqual(["image"]);
+  expect(asked).toEqual({ running: false, savedAt: entry.updatedAt.toISOString() });
+});
+
+test("the editor's save of text shown before screenshots went in is refused, not putting their lines back; one that took none isn't", async () => {
+  await setUp();
+  actAs(owner);
+  const { number } = await draft("Billing.\n\n[Screenshot: The billing page]");
+  const shown = await saved(number);
+  const form = (seenAt: Date, text = "Billing, edited.\n\n[Screenshot: The billing page]") => {
+    const data = new FormData();
+    data.set("title", "November");
+    data.set("content", JSON.stringify({ type: "doc", content: text.split("\n\n").map((line) => ({ type: "paragraph", content: [{ type: "text", text: line }] })) }));
+    data.set("screenshotsSeenAt", seenAt.toISOString());
+    return data;
+  };
+  await call(takeChangelogScreenshots, as(), { number });
+  expect(await saveChangelogEntry(project.slug, number, {}, form(shown.updatedAt))).toEqual({ error: SCREENSHOTS_PLACED });
+  expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["paragraph", "image"]);
+  // Shown after they went in: saved.
+  expect(await saveChangelogEntry(project.slug, number, {}, form((await saved(number)).updatedAt, "Billing, edited."))).toEqual({});
+
+  // A run that put nothing in holds no save back.
+  const other = await draft("[Screenshot: a screen that isn't there]");
+  const before = await saved(other.number);
+  browserUse.next({ unreached: { "shot-1.png": "Not in the menu." } });
+  await call(takeChangelogScreenshots, as(), { number: other.number });
+  expect(await saveChangelogEntry(project.slug, other.number, {}, form(before.updatedAt, "Rewritten."))).toEqual({});
 });

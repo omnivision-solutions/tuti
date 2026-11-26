@@ -13,9 +13,13 @@ export const FAKE_UNREACHABLE = "a screen that isn't there";
 export const FAKE_UNREACHED = "There's no such screen in the app.";
 /** A run asked for a screenshot with this in its description keeps running until `release()` (or POST /_fake/release). */
 export const FAKE_SLOW = "a screen that takes a while";
+/** A run whose task has this (the app's "About" notes, say) can't sign in, saying FAKE_SIGN_IN_REFUSED. */
+export const FAKE_CANT_SIGN_IN = "The fake can't sign in.";
+export const FAKE_SIGN_IN_REFUSED = "The app said the password is wrong.";
 
 /**
- * How the fake's next run goes (JSON, so journeys in other processes can script it through /_fake/next-run). By
+ * How the fake's next run goes (JSON, through /_fake/next-run too). Not for journeys: they run side by side, and
+ * another's run could take it; they use what's in the task instead (FAKE_UNREACHABLE, FAKE_SLOW, FAKE_CANT_SIGN_IN). By
  * default the agent signs in and reaches every screenshot the task names (`shot-N.png: …` lines), saving a PNG each.
  */
 export type FakeBrowserUseRun = {
@@ -155,6 +159,9 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         }
         const script = { ...(scripts.shift() ?? {}) };
         script.stuck ||= String(body.task).includes(FAKE_SLOW);
+        if (String(body.task).includes(FAKE_CANT_SIGN_IN)) {
+          script.signInFailed ??= FAKE_SIGN_IN_REFUSED;
+        }
         if (script.createStatus) {
           return answer(script.createStatus, { detail: "The fake was told to refuse this run" });
         }

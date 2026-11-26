@@ -3442,6 +3442,8 @@ model ScreenshotRun {
   /// they were filled (the job, or the editor's read for a run an older worker finished).
   changelogEntryId String?
   placedAt    DateTime?
+  /// How many of its screenshots went in (the editor's save won't put their lines back over them).
+  placed      Int                @default(0)
   state       ScreenshotRunState @default(RUNNING)
   /// Why it failed as a whole (sign-in, the service).
   error       String             @default("")

@@ -421,6 +421,17 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
 
 export type EntryScreenshots = Awaited<ReturnType<typeof entryScreenshots>>;
 
+export const SCREENSHOTS_PLACED =
+  "Screenshots went into the saved text since you opened this entry. Reload the page to see them: saving now would put the lines back in place of them.";
+
+/** Whether a screenshot run put screenshots in the entry's text after `since` (when the editor showed it). */
+export async function screenshotsPlacedSince(projectId: string, number: number, since: Date) {
+  if (Number.isNaN(since.getTime())) {
+    return false;
+  }
+  return (await prisma.screenshotRun.count({ where: { projectId, changelogEntry: { number }, placedAt: { gt: since }, placed: { gt: 0 } } })) > 0;
+}
+
 /**
  * Places the entry's latest run's screenshots if it ended without (its job an older worker's, during a deploy, or one
  * that died): the editor does it before reading the entry. Whether it placed any.
@@ -431,14 +442,24 @@ export async function placeLeftoverScreenshots(entryId: string): Promise<boolean
 }
 
 /**
- * Whether the entry's latest screenshot run is still running (a stopped one settled first), and when the entry was last
- * saved: the editor asks while one runs, and once it's done knows whether its screenshots changed the saved text.
+ * Whether the entry's latest screenshot run is still going (a stopped one settled first), and when the entry was last
+ * saved: the editor asks while one runs. Going until its screenshots are placed, not only until it ends: its job places
+ * them a moment after, and the editor reads `savedAt` to know whether they changed the saved text. One that ended
+ * without (an older worker's, a job that died) is placed here, as on opening the editor.
  */
 export async function entryScreenshotsRunning(projectId: string, number: number) {
   await settleStaleScreenshotRuns(projectId);
-  const entry = await prisma.changelogEntry.findUnique({
-    where: { projectId_number: { projectId, number } },
-    select: { updatedAt: true, screenshotRuns: { orderBy: { createdAt: "desc" }, take: 1, select: { state: true } } },
-  });
-  return { running: entry?.screenshotRuns[0]?.state === "RUNNING", savedAt: entry?.updatedAt.toISOString() ?? null };
+  const read = () =>
+    prisma.changelogEntry.findUnique({
+      where: { projectId_number: { projectId, number } },
+      select: { id: true, updatedAt: true, screenshotRuns: { orderBy: { createdAt: "desc" }, take: 1, select: { state: true, placedAt: true } } },
+    });
+  let entry = await read();
+  const run = entry?.screenshotRuns[0];
+  if (entry && run && run.state !== "RUNNING" && !run.placedAt) {
+    await placeLeftoverScreenshots(entry.id);
+    entry = await read();
+  }
+  const latest = entry?.screenshotRuns[0];
+  return { running: latest?.state === "RUNNING" || (latest !== undefined && !latest.placedAt), savedAt: entry?.updatedAt.toISOString() ?? null };
 }

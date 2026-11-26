@@ -29,7 +29,7 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
-import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { SCREENSHOTS_PLACED, screenshotsPlacedSince, takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -67,6 +67,13 @@ export async function saveChangelogEntry(
   };
   let created: number | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
+    // Screenshots put in the saved text after the form was shown (changelog.takeScreenshots): its text still has the lines
+    // they replaced, and saving it would put them back over the screenshots, which aren't taken again.
+    // ponytail: checked just before saving, not under the entry's lock; one placed in between is overwritten.
+    const seenAt = formData.get("screenshotsSeenAt");
+    if (number !== null && typeof seenAt === "string" && seenAt && (await screenshotsPlacedSince(context.projectId, number, new Date(seenAt)))) {
+      throw new OperationError(409, "changed", SCREENSHOTS_PLACED);
+    }
     if (number === null) {
       created = (await call(createChangelogEntry, context, input)).number;
     } else {
