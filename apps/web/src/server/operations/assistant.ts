@@ -2,6 +2,8 @@ import { type AnswerLength, type Prisma, prisma } from "@tuti/db";
 import { headers } from "next/headers";
 import { z } from "zod";
 
+import { matchText } from "@/lib/match-text";
+
 import { type Actor, defineOperation, OperationError } from "./define";
 
 /**
@@ -40,17 +42,7 @@ export type AssistantSettings = {
 /** A visitor's or a team's address: trimmed, lowercase, valid. */
 export const emailAddress = z.string().trim().toLowerCase().max(320, "Enter a valid email address").pipe(z.email("Enter a valid email address"));
 
-/**
- * Text as off-limits topics are matched: lowercase, accents dropped, and everything but letters
- * and numbers as single spaces, so a match is case-insensitive and on word boundaries.
- */
-export const matchText = (text: string) =>
-  text
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+export { matchText };
 
 /** The first off-limits topic the question names as whole words, if any ("refund" matches "A refund?", not "refunds"). */
 export function offLimitsTopic(question: string, topics: string[]): string | undefined {

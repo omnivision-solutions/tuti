@@ -3,6 +3,7 @@ import { getDomain } from "tldts";
 
 import { NEW_BY_EMAIL_PER_HOUR, type SpamReason } from "@/lib/spam-reasons";
 
+import { offLimitsTopic } from "./operations/assistant";
 import { OperationError } from "./operations/define";
 
 /**
@@ -27,6 +28,9 @@ export type Arrival = {
   proven: boolean;
   /** By email: its From address, and what the receiver's DMARC check said. */
   email?: { sender: string; dmarc: string };
+  /** Their first message, for the team's phrases: its subject, where it came with one, and its text. */
+  subject?: string | null;
+  text?: string;
 };
 
 /**
@@ -36,7 +40,7 @@ export type Arrival = {
  */
 export const senderCounts = (dmarc: string) => dmarc !== "fail" && dmarc !== "unproven";
 
-type Answer = { spam: true; reason: SpamReason } | { spam: false; /** No later check is asked, not even one that counts everyone's. */ sparesAll?: boolean };
+type Answer = { spam: true; reason: SpamReason; /** With "phrase": the one that matched. */ phrase?: string } | { spam: false; /** No later check is asked, not even one that counts everyone's. */ sparesAll?: boolean };
 
 type Check = {
   key: string;
@@ -135,20 +139,36 @@ async function flood(db: Db, { projectId, email }: Arrival): Promise<Answer | nu
   return started >= NEW_BY_EMAIL_PER_HOUR ? { spam: true, reason: "flood" } : null;
 }
 
-/** The checks, in order. The team's phrases (5) and the models (6, 7) go after these. */
+/**
+ * Check 5, the team's phrases (Settings → Spam): one in the subject or the text of the first message, as whole words
+ * whatever the case and accents ("facebook admin" matches "Facebook Admin!", not "facebook administrators"), as
+ * off-limits topics are matched. Never across the two: a phrase is in one or the other.
+ */
+async function phrases(db: Db, { projectId, subject, text }: Arrival): Promise<Answer | null> {
+  if (!subject && !text) {
+    return null;
+  }
+  const { spamPhrases } = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { spamPhrases: true } });
+  const phrase = offLimitsTopic(subject ?? "", spamPhrases) ?? offLimitsTopic(text ?? "", spamPhrases);
+  return phrase ? { spam: true, reason: "phrase", phrase } : null;
+}
+
+/** The checks, in order. The models (6, 7) go after these. */
 export const SPAM_CHECKS: Check[] = [
   { key: "decisions", check: decided },
   { key: "trusted", check: trusted },
   // Today's rule: mail that failed DMARC, whatever lists its address is on (checks 1 and 2 never saw it).
   { key: "dmarc", check: (_db, { email }) => (email?.dmarc === "fail" ? { spam: true, reason: "dmarc_failed" } : null) },
   { key: "flood", whoeverSent: true, check: flood },
+  // An allow or trust spares it: the team's own users may write "facebook admin".
+  { key: "phrases", check: phrases },
 ];
 
 /**
  * Runs the checks on a new conversation, in the transaction that starts it: the first with an answer decides, and says
  * which (`check`). An allow or trust only spares the checks after it that don't count everyone's (`whoeverSent`).
  */
-export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boolean; reason: SpamReason | null; check: string | null }> {
+export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boolean; reason: SpamReason | null; check: string | null; phrase?: string }> {
   let passedBy: string | null = null;
   for (const { key, whoeverSent, check } of SPAM_CHECKS) {
     if (passedBy && !whoeverSent) {
@@ -156,7 +176,7 @@ export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boo
     }
     const answer = await check(db, arrival);
     if (answer?.spam) {
-      return { spam: true, reason: answer.reason, check: key };
+      return { spam: true, reason: answer.reason, check: key, ...(answer.phrase && { phrase: answer.phrase }) };
     }
     if (answer && !passedBy) {
       if (answer.sparesAll) {
@@ -255,7 +275,8 @@ export async function spamChoices(db: Db, conversation: Marked, admin: boolean):
  * Returns what Not spam leaves behind, to say, so it never looks more lasting than it is:
  * - A blocked address: an owner's or admin's Not spam takes it off the list; a member's leaves it, and the list beats their mark.
  * - A blocked domain: an owner's or admin's is an exception for this sender; a member's isn't kept at all.
- * - `reason`, why the filter had filed it: the flood limit still applies, and mail that fails DMARC is still filed.
+ * - `reason`, why the filter had filed it: the flood limit still applies, mail that fails DMARC is still filed, and so
+ *   is a phrase's next match from a sender nothing is kept about.
  */
 export async function recordMark(db: Db, conversation: Marked, spam: boolean, admin: boolean, reason: string | null): Promise<string | undefined> {
   const sender = await conversationSender(db, conversation);
@@ -288,6 +309,9 @@ export async function recordMark(db: Db, conversation: Marked, spam: boolean, ad
   if (!spam && reason === "flood") {
     notices.push(`The hourly limit still applies: past ${NEW_BY_EMAIL_PER_HOUR} new conversations by email from one address in an hour, more go to Spam.`);
   }
+  if (!spam && reason === "phrase" && !sender) {
+    notices.push("Nothing is remembered about its sender: a message with one of your phrases still goes to Spam.");
+  }
   if (!spam && reason === "dmarc_failed") {
     notices.push("Nothing is remembered about its sender: mail that fails DMARC still goes to Spam.");
   }
@@ -312,11 +336,18 @@ export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean
       sender ? "Anyone can get an address at this domain, so it isn't blocked: marking as spam blocks this address" : "This conversation's sender isn't proven, so there's no domain to block",
     );
   }
-  // One entry per domain on the lists (the partial unique index): blocked now, whatever it said.
+  await listSender(db, conversation.projectId, domain, true);
+  return domain;
+}
+
+/**
+ * An address or a domain on the team's blocked or allowed list, an owner's or admin's doing. One entry per address or
+ * domain on the lists (the partial unique index): on this list now, whichever it was on.
+ */
+export async function listSender(db: Db, projectId: string, sender: string, blocked: boolean) {
   await db.$executeRaw`
     INSERT INTO spam_sender (id, "projectId", sender, blocked, "byAdmin", "decidedAt")
-    VALUES (gen_random_uuid()::text, ${conversation.projectId}, ${domain}, true, true, ${new Date()})
+    VALUES (gen_random_uuid()::text, ${projectId}, ${sender}, ${blocked}, true, ${new Date()})
     ON CONFLICT ("projectId", sender) WHERE "conversationId" IS NULL
-    DO UPDATE SET blocked = true, "byAdmin" = true, "decidedAt" = EXCLUDED."decidedAt"`;
-  return domain;
+    DO UPDATE SET blocked = EXCLUDED.blocked, "byAdmin" = true, "decidedAt" = EXCLUDED."decidedAt"`;
 }

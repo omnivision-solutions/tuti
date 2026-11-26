@@ -54,6 +54,7 @@ import * as projects from "./projects";
 import * as readerLanguage from "./reader-language";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
+import * as spamSettings from "./spam-settings";
 import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
@@ -111,6 +112,7 @@ const modules = {
   screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
+  "spam-settings": spamSettings,
   "sso-settings": ssoSettings,
   team,
   webhooks,
@@ -695,6 +697,12 @@ const matrix: Matrix = {
       allowed: "public",
       call: () => passwordReset.setNewPassword(form({ token: "not-a-token", password: "a-new-password", confirm: "a-new-password" })),
     },
+  },
+  "spam-settings": {
+    listSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.listSpamSender(slug, true, "spam.example") },
+    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "spam.example") },
+    setSpamPhrase: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamPhrase(slug, "facebook admin", true) },
+    trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
