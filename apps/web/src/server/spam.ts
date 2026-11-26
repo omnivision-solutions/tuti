@@ -256,7 +256,8 @@ export async function recordMark(db: Db, conversation: Marked, spam: boolean, ad
     let kept = true;
     if (on?.address?.blocked) {
       if (admin) {
-        await db.spamSender.delete({ where: { id: on.address.id } });
+        // Not `delete`: unblocked from another of their conversations at once, it's gone already, which is what was asked.
+        await db.spamSender.deleteMany({ where: { id: on.address.id } });
       }
       notices.push(admin ? `${sender} is unblocked.` : `${sender} stays blocked: an owner or admin can unblock it.`);
     } else if (on?.domain?.blocked && !on.address) {

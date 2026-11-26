@@ -296,8 +296,8 @@ export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }:
               <AlertDialogHeader>
                 <AlertDialogTitle className="wrap-anywhere">Also block {blockDomain}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This conversation is marked as spam, and every new conversation from an address at {blockDomain} goes straight to Spam: nobody is
-                  told about them.
+                  This conversation is marked as spam, and new conversations from addresses at {blockDomain} go straight to Spam, where nobody is told
+                  about them. Senders an owner or admin marked Not spam still get through.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

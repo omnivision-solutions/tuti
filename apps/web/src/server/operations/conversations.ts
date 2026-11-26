@@ -953,11 +953,17 @@ export async function announceConversation(projectId: string, conversation: Conv
   return result;
 }
 
-/** A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo back). */
+/**
+ * A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo
+ * back). Not in a conversation in Spam, which tells nobody: someone the spam filter filed doesn't know it, and writes on.
+ */
 export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
   const result = messageView(message);
-  await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
-  await tellTeam(projectId, message.id);
+  const conversation = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { spam: true } });
+  if (!conversation?.spam) {
+    await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
+    await tellTeam(projectId, message.id);
+  }
   return result;
 }
 
@@ -1417,7 +1423,7 @@ export const updateConversation = defineOperation({
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so every new conversation from it goes to Spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven",
+          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven",
         )
         .meta({ examples: [false] }),
       snoozedUntil: z.iso

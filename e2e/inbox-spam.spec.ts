@@ -11,6 +11,8 @@ import { rawEmail, receive } from "./inbound";
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test("a sender marked as spam is filed next time, with the reason on the conversation; a blocked domain files its other senders, and Not spam says what stays", async ({ browser }, testInfo) => {
+  // Ten emails and as many page loads.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -46,7 +48,9 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await more.click();
   await owner.getByRole("menuitem", { name: "Mark as spam, also block spam-corp.example…" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Also block spam-corp.example?" });
-  await expect(dialog).toContainText("every new conversation from an address at spam-corp.example goes straight to Spam: nobody is told about them.");
+  await expect(dialog).toContainText(
+    "new conversations from addresses at spam-corp.example go straight to Spam, where nobody is told about them. Senders an owner or admin marked Not spam still get through.",
+  );
   await checkpoint(owner, "also-block-domain", { fullPage: false });
   await dialog.getByRole("button", { name: "Mark as spam and block" }).click();
   await expect(owner.getByText("Marked as spam, and blocked spam-corp.example")).toBeVisible();

@@ -16,7 +16,7 @@ import { call } from "./operations/run";
 import { deleteUser } from "./operations/users";
 import { upsertProjectUser } from "./project-users";
 import { arrivalOf, blockableDomain, spamChoices, spamVerdict } from "./spam";
-import { widgetStartConversation } from "./widget-inbox";
+import { widgetSendMessage, widgetStartConversation } from "./widget-inbox";
 
 /**
  * The spam filter's first four checks and what marking teaches it (docs/plan.md, Inbox automation, W1): emails as the
@@ -43,7 +43,7 @@ async function setup({ hook = false } = {}) {
   const as = (user: { id: string }) => ({ actor: { kind: "user" as const, userId: user.id }, projectId: project.id });
   if (hook) {
     await prisma.webhook.create({
-      data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id },
+      data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created", "conversation.message_created"], createdById: owner.id },
     });
   }
   actAs(null);
@@ -146,7 +146,15 @@ test("a known user the team marked as spam is filed in the widget and by email, 
   expect(await widgetStartConversation(project.slug, auth, "Hello again")).toEqual({ number: 2 });
   await mail("e2e-sam@example.com"); // #3
   expect(await filed()).toEqual(["marked", "marked_sender", "marked_sender"]);
-  expect([await told(), emailed(owner.email)]).toEqual([1, 1]);
+  // Not knowing, they write on: still nobody is told, the webhooks included.
+  const messagesTold = () => prisma.webhookDelivery.count({ where: { webhook: { projectId }, event: "conversation.message_created" } });
+  expect(await widgetSendMessage(project.slug, auth, 2, "Anyone there?")).toEqual({});
+  expect(await prisma.conversationMessage.count({ where: { projectId, body: "Anyone there?" } })).toBe(1);
+  expect([await told(), emailed(owner.email), await messagesTold()]).toEqual([1, 1, 0]);
+  // Back in the inbox, their messages are told again.
+  await call(updateConversation, admin, { number: 2, spam: false });
+  expect(await widgetSendMessage(project.slug, auth, 2, "Hello?")).toEqual({});
+  expect(await messagesTold()).toBe(1);
 });
 
 test("a conversation the team creates over the API skips the filter", async () => {
@@ -282,6 +290,26 @@ test("the flood limit files what's past it from one address in an hour, allowed 
   }
   expect((await filed()).at(-1)).toBe("inbox");
   await mail("e2e-sam@example.com");
+  expect((await filed()).at(-1)).toBe("flood");
+});
+
+test("the flood limit is by the hour: conversations started longer ago don't count", { timeout: 60_000 }, async () => {
+  const { projectId, mail, filed } = await setup();
+  for (let i = 0; i < NEW_BY_EMAIL_PER_HOUR; i++) {
+    await mail("e2e-kim@example.com");
+  }
+  /** Moves what's come so far back in time: the conversations and the emails that started them. */
+  const backdate = async (minutes: number) => {
+    const at = new Date(Date.now() - minutes * 60_000);
+    await prisma.conversation.updateMany({ where: { projectId }, data: { createdAt: at } });
+    await prisma.inboundEmail.updateMany({ where: { projectId }, data: { createdAt: at } });
+  };
+  await backdate(61);
+  await mail("e2e-kim@example.com");
+  expect((await filed()).at(-1)).toBe("inbox");
+  // Just inside the hour, they count (the one since with them).
+  await backdate(59);
+  await mail("e2e-kim@example.com");
   expect((await filed()).at(-1)).toBe("flood");
 });
 
