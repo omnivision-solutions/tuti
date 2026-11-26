@@ -239,13 +239,14 @@ export async function findArticlesToInsert(
 }
 
 /** The conversation's Activity (conversations.activity): "Show earlier", and its All, Workflows and People filters. */
-export async function loadConversationActivity(projectSlug: string, conversation: number, filter: string, before?: string): Promise<{ error?: string; activity?: Activity }> {
+export async function loadConversationActivity(projectSlug: string, conversation: number, filter: string, before?: string, limit?: number): Promise<{ error?: string; activity?: Activity }> {
   let activity: Activity | undefined;
   const result = await asTeam(projectSlug, "Only the project's team can see a conversation's activity", async (context) => {
     activity = await call(getConversationActivity, context, {
       number: conversationNumber(conversation),
       filter: ACTIVITY_FILTERS.includes(filter as never) ? (filter as (typeof ACTIVITY_FILTERS)[number]) : "all",
       ...(typeof before === "string" && before && { before }),
+      ...(Number.isInteger(limit) && { limit: Math.min(Math.max(limit!, 1), 100) }),
     });
   });
   return activity ? { activity } : result;

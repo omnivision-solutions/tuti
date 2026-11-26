@@ -92,4 +92,9 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
   await expect(rows.nth(20)).toBeFocused();
   await expect(rows.last()).toContainText("A conversation starts ran");
   await expect(activity.getByRole("button", { name: "Show earlier" })).toHaveCount(0);
+  // Something new meanwhile: nothing shown goes missing, and focus stays where it was.
+  await api("/conversations/1", { priority: true }, "PATCH");
+  await expect(rows).toHaveCount(26);
+  await expect(rows.nth(21)).toBeFocused();
+  await expect(rows.last()).toContainText("A conversation starts ran");
 });

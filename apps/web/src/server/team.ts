@@ -110,8 +110,8 @@ async function removeFromTeam(projectId: string, userId: string, actorId: string
     }
     await tx.teamMember.delete({ where: { projectId_userId: { projectId, userId } } });
     // Each one unassigned, in its Activity (W16), credited to whoever removed them (them, leaving), with why.
-    const assigned = await tx.conversation.findMany({ where: { projectId, assigneeId: userId }, select: { id: true } });
-    await tx.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } });
+    // The ones this update changed: one reassigned meanwhile isn't, and gets no row.
+    const assigned = await tx.conversation.updateManyAndReturn({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null }, select: { id: true } });
     for (const { id } of assigned) {
       await logEvents(tx, id, [{ kind: "assignee", actor: "teammate", actorId, details: { assigneeId: null, left: userId } }]);
     }

@@ -50,8 +50,7 @@ function When({ at }: { at: string }) {
 /**
  * The conversation's Activity (docs/plan.md, Inbox automation, W16), under the person in its details: newest first, All,
  * Workflows and People, and "Show earlier". `first`: the newest page of all of it, as the page rendered it (a live refresh
- * brings it anew). ponytail: earlier pages loaded by hand stay as loaded; more than a page of new events at once while
- * they're shown leaves a gap till the page is opened again.
+ * brings it anew).
  */
 export function ConversationActivity({ projectSlug, number, count, first }: { projectSlug: string; number: number; count: number; first: Activity }) {
   const [filter, setFilter] = useState<ActivityFilter>("all");
@@ -63,9 +62,9 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
   const focusAfter = useRef<string | null>(null);
   const list = useRef<HTMLOListElement>(null);
 
-  const load = (to: ActivityFilter, before?: string, focus?: string) =>
+  const load = (to: ActivityFilter, before?: string, focus?: string, limit?: number) =>
     startTransition(async () => {
-      const result = await loadConversationActivity(projectSlug, number, to, before);
+      const result = await loadConversationActivity(projectSlug, number, to, before, limit);
       if (!result.activity) {
         toast.error(result.error ?? "Couldn't load the activity");
         return;
@@ -76,11 +75,14 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
       focusAfter.current = focus ?? null;
     });
 
-  // A filter's list follows what's new too (the newest event changed: a refresh).
+  // Something new (a refresh brought a new `first`): a filter's list, or All with earlier pages loaded, is read again as
+  // far back as it went, so nothing between the new first page and the earlier ones goes missing.
   const newest = first.events[0]?.id;
+  const shownCount = useRef(0);
   useEffect(() => {
-    if (filter !== "all") {
-      load(filter);
+    if (filter !== "all" || pages.length > 0) {
+      // ponytail: as far back as 100 rows; past that, the earliest pages start over at Show earlier.
+      load(filter, undefined, undefined, Math.min(shownCount.current + 20, 100));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when something new happened
   }, [newest]);
@@ -104,6 +106,9 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
   const seen = new Set<string>();
   const events = all.flatMap((page) => page.events).filter((event) => !seen.has(event.id) && !!seen.add(event.id));
   const next = all.at(-1)?.next ?? null;
+  useEffect(() => {
+    shownCount.current = events.length;
+  });
 
   return (
     <DetailSection title="Activity" count={count} icon={HistoryIcon} open>

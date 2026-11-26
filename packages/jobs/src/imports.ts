@@ -672,8 +672,8 @@ export async function handOverPlaceholders(tx: Tx, projectId: string, userId: st
     await tx.conversationMessage.updateMany({ where: { authorId: from }, data: { authorId: userId } });
     // The conversations they held, if nobody was assigned since (new code clears heldById on any change of assignee,
     // unassigning too; the release before it didn't, so an assignee is checked as well).
-    const claimed = await tx.conversation.findMany({ where: { projectId, heldById: from, assigneeId: null }, select: { id: true } });
-    await tx.conversation.updateMany({ where: { projectId, heldById: from, assigneeId: null }, data: { assigneeId: userId } });
+    // The ones this update changed: one assigned meanwhile isn't, and gets no row.
+    const claimed = await tx.conversation.updateManyAndReturn({ where: { projectId, heldById: from, assigneeId: null }, data: { assigneeId: userId }, select: { id: true } });
     // Each one assigned, in its Activity (docs/plan.md, Inbox automation, W16), by Tuti: written with the claim, after
     // the conversation's latest row, as the app's own writes time them.
     if (claimed.length > 0) {
