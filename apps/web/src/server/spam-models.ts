@@ -347,10 +347,19 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
       log.error("The spam filter's checks kept failing: given up, the conversation left as it is", { conversationId: id });
     }
   }
-  const due = await prisma.conversation.findMany({ where: { pathDueAt: { lte: now } }, orderBy: { pathDueAt: "asc" }, take: 20, select: { id: true } });
+  // Never one past the hour, however many the batch above left: those are given up, never asked about.
+  const due = await prisma.conversation.findMany({
+    where: { pathDueAt: { lte: now }, createdAt: { gte: new Date(now.getTime() - GIVE_UP_AFTER_MS) } },
+    orderBy: { pathDueAt: "asc" },
+    take: 20,
+    select: { id: true },
+  });
   const done = await Promise.all(
     due.map(async ({ id }) => {
-      const { count } = await prisma.conversation.updateMany({ where: { id, pathDueAt: { lte: now } }, data: { pathDueAt: new Date(now.getTime() + CHECKS_DUE_AFTER_MS) } });
+      const { count } = await prisma.conversation.updateMany({
+        where: { id, pathDueAt: { lte: now }, createdAt: { gte: new Date(now.getTime() - GIVE_UP_AFTER_MS) } },
+        data: { pathDueAt: new Date(now.getTime() + CHECKS_DUE_AFTER_MS) },
+      });
       return count === 1 && (await runSpamChecks(id));
     }),
   );

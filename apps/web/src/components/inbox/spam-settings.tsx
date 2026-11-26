@@ -37,8 +37,7 @@ export function SpamSettings({
   projectSlug: string;
   settings: Settings;
   maxPhrase: number;
-  /** Where the server has a model for the spam filter: the guidance's limit; null hides it, as nothing would read it. */
-  maxGuidance: number | null;
+  maxGuidance: number;
 }) {
   return (
     <>
@@ -81,7 +80,8 @@ export function SpamSettings({
         add={(entry) => setSpamPhrase(projectSlug, entry, true)}
         remove={(entry) => setSpamPhrase(projectSlug, entry, false)}
       />
-      {maxGuidance !== null && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
+      {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
+      {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
       <TryMessage projectSlug={projectSlug} />
     </>
   );

@@ -6,7 +6,7 @@ import { SPAM_REASON_KEYS, spamWhy } from "@/lib/spam-reasons";
 
 import { userWithAddress } from "../inbound";
 import { blockableDomain, listSender, spamVerdict } from "../spam";
-import { MAX_SPAM_GUIDANCE } from "../spam-models";
+import { MAX_SPAM_GUIDANCE, spamModelsOn } from "../spam-models";
 import { emailAddress, matchText } from "./assistant";
 import { defineOperation, OperationError } from "./define";
 
@@ -21,7 +21,8 @@ export const MAX_SPAM_SENDERS = 500;
 export const MAX_SPAM_PHRASES = 50;
 export const MAX_SPAM_PHRASE = 80;
 
-export type SpamSettings = { blocked: string[]; allowed: string[]; phrases: string[]; guidance: string };
+/** `guidance` only where the server has a model for the filter: elsewhere nothing reads it. */
+export type SpamSettings = { blocked: string[]; allowed: string[]; phrases: string[]; guidance?: string };
 
 /** A project's lists, phrases and guidance, as the page and the API read them: each list in alphabetical order. */
 export async function spamSettings(projectId: string): Promise<SpamSettings> {
@@ -30,7 +31,7 @@ export async function spamSettings(projectId: string): Promise<SpamSettings> {
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { spamPhrases: true, spamGuidance: true } }),
   ]);
   const on = (blocked: boolean) => senders.filter((row) => row.blocked === blocked).map((row) => row.sender);
-  return { blocked: on(true), allowed: on(false), phrases: spamPhrases, guidance: spamGuidance };
+  return { blocked: on(true), allowed: on(false), phrases: spamPhrases, ...(spamModelsOn() && { guidance: spamGuidance }) };
 }
 
 const ENTRY = "Enter an address or a domain, like kim@acme.example or acme.example";
@@ -67,7 +68,8 @@ const settingsOutput = z
       .meta({ examples: [["facebook admin"]] }),
     guidance: z
       .string()
-      .describe("The team's guidance for the spam filter's models, in its own words: what is and isn't spam for this team. Empty when there's none")
+      .optional()
+      .describe("The team's guidance for the spam filter's models, in its own words: what is and isn't spam for this team. Empty when there's none; left out on a server without a model for the filter, where nothing reads it")
       .meta({ examples: ["Agencies offering SEO or design work are spam; questions about our API are not"] }),
   })
   .meta({ id: "SpamSettings", description: "What the team told the spam filter: who's blocked, who's allowed, its phrases and its guidance for the models" });

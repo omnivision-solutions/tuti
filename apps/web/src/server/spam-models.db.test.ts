@@ -7,7 +7,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 const later = vi.hoisted(() => [] as (() => unknown)[]);
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (task: () => unknown) => void later.push(task) }));
 
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+
+import SpamSettingsPage from "@/app/app/(workspace)/[project]/settings/(admin)/spam/page";
 import { POST as due } from "@/app/api/inbox/due/route";
+import { SpamSettings } from "@/components/inbox/spam-settings";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
@@ -160,7 +164,7 @@ test("between the bands the chat model decides: spam with its reason, not spam o
 });
 
 test("it fails open: a model failing, or a reply that isn't a verdict, leaves the conversation as it is, its checks done", async () => {
-  const { mail, check, notes, state } = await setup();
+  const { projectId, mail, check, notes, state } = await setup();
   // The decision model's answer isn't a probability: it failed, and the chat model isn't asked after it.
   const unanswered = await mail();
   model.decide({ spam: 2 });
@@ -173,6 +177,8 @@ test("it fails open: a model failing, or a reply that isn't a verdict, leaves th
   model.fail(500);
   await check(failed);
   expect([await notes(failed), await state(failed)]).toEqual([[], { ...inInbox, due: false }]);
+  // Its chat request was taken from the day's cap and never answered: given back. The two decisions answered stay.
+  expect(await prisma.aiUsage.findMany({ where: { projectId, feature: "spam" }, orderBy: { createdAt: "asc" }, select: { kind: true } })).toEqual([{ kind: "decision" }, { kind: "decision" }]);
 
   // It answers, but not with a verdict.
   const muddled = await mail();
@@ -357,6 +363,66 @@ test("a conversation the free checks decided keeps no Reply-To: nothing will rea
   const number = await mail("e2e-friend@example.com", { headers: { "Reply-To": "e2e-friend-home@example.com" } });
   expect(await state(number)).toEqual({ ...inInbox, due: false });
   expect(await prisma.inboundEmail.count({ where: { conversationId: (await conversation(number)).id, replyTo: { not: null } } })).toBe(0);
+});
+
+test("the job never asks about a check past the hour, however many of those are left beyond the batch it gives up", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
+  const { projectId } = await setup();
+  await nothingElseDue();
+  // More stale checks than one minute gives up (100), as after a long outage.
+  const old = new Date(Date.now() - GIVE_UP_AFTER_MS - 60_000);
+  await prisma.conversation.createMany({
+    data: Array.from({ length: 101 }, (_, i) => ({ projectId, number: 1000 + i, subject: "Old", origin: "EMAIL" as const, email: `e2e-old-${i}@example.com`, createdAt: old, pathDueAt: old })),
+  });
+  // No answer scripted: a model asked would fail the test.
+  expect(await runDueInbox()).toEqual({ checked: 0 });
+  expect(model.decisions).toEqual([]);
+  // The one left over is given up the next minute.
+  expect(await prisma.conversation.count({ where: { projectId, pathDueAt: { not: null } } })).toBe(1);
+  await runDueInbox();
+  expect(await prisma.conversation.count({ where: { projectId, pathDueAt: { not: null } } })).toBe(0);
+});
+
+/** The element `type` in a tree of React elements, as a page returns it (nothing rendered). */
+function find(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>> | null {
+  if (!isValidElement<{ children?: ReactNode }>(node)) {
+    return null;
+  }
+  if (node.type === type) {
+    return node as ReactElement<Record<string, unknown>>;
+  }
+  for (const child of Children.toArray(node.props.children)) {
+    const found = find(child, type);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+test("the guidance is there (Settings → Spam's card, spam.get) only where the server has a model for the filter", async () => {
+  const { owner, admin } = await setup();
+  await call(updateSpamSettings, admin, { guidance: "SEO pitches are spam" });
+  const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: admin.projectId }, select: { slug: true } });
+  actAs(owner);
+  // The card shows where the page gives the settings their guidance.
+  const shown = async () => {
+    const page = await SpamSettingsPage({ params: Promise.resolve({ project: slug }) } as PageProps<"/app/[project]/settings/spam">);
+    return (find(page, SpamSettings)!.props.settings as { guidance?: string }).guidance;
+  };
+  expect([await shown(), (await call(getSpamSettings, admin, {})).guidance]).toEqual(["SEO pitches are spam", "SEO pitches are spam"]);
+
+  // No AI on the server, both models off, or a cap of 0: nothing reads it, so it isn't shown.
+  for (const off of [
+    () => vi.stubEnv("OPENAI_API_KEY", ""),
+    () => vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "off" }, chat: { model: "off" } } })),
+    () => vi.stubEnv("TUTI_CONFIG", configFile({ spam: { requestsPerDay: 0 } })),
+  ]) {
+    vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+    vi.stubEnv("TUTI_CONFIG", configFile({}));
+    off();
+    expect([await shown(), "guidance" in (await call(getSpamSettings, admin, {}))]).toEqual([undefined, false]);
+  }
 });
 
 test("the job's endpoint runs only with the server's token", async () => {

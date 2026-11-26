@@ -67,6 +67,10 @@ test.skipIf(!spamModelsOn())(`spam checks with ${JSON.stringify(spamModels())}`,
   const caught = real.filter((row) => row.got === "spam").length / Math.max(real.length, 1);
   const found = spam.filter((row) => row.got === "spam").length / Math.max(spam.length, 1);
   console.log(spamModels(), { realMailCaught: caught, spamFound: found });
+  // A run that proves nothing fails: a set without real mail, or a model that didn't answer (a wrong key, a model down,
+  // which the checks fail open on), would show nothing caught.
+  expect(real.length).toBeGreaterThan(0);
+  expect(rows.filter((row) => row.got === "no answer")).toEqual([]);
   // What switching the checks on waits for: almost no real mail caught. How much spam they find is for tuning.
   expect(caught).toBeLessThanOrEqual(0.01);
 });
