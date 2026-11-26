@@ -5,7 +5,7 @@ import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
-import { nextModelReply } from "./model";
+import { modelRequests, nextModelReply } from "./model";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -94,6 +94,8 @@ test("a German conversation: the customer's message read in English, the reply p
   await preview.getByRole("button", { name: "Send in English" }).click();
   await expect(messages.getByRole("listitem").last()).toContainText(late);
   await expect(preview).toBeHidden();
+  // The send's two asks only: the page that came back showed its failure without paying for another.
+  expect((await modelRequests()).filter((request) => request.user.includes(late))).toHaveLength(2);
 });
 
 test("a customer's message that couldn't be translated shows as written, with Try again", async ({ browser }, testInfo) => {

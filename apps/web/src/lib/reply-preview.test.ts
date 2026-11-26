@@ -1,0 +1,27 @@
+import { expect, test } from "vitest";
+
+import { previewToShow, type ReplyPreview, wantsPreview } from "./reply-preview";
+
+test("a failed text isn't asked again while its failure shows; edited away and back, it is", () => {
+  const failed: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer" };
+  expect(previewToShow(failed, "Thanks!", "de")).toBe(failed);
+  expect(wantsPreview(previewToShow(failed, "Thanks!", "de"), "Thanks!")).toBe(false);
+  // Edited: the failure is another text's, so this one's preview is asked for.
+  expect(wantsPreview(previewToShow(failed, "Thanks a lot!", "de"), "Thanks a lot!")).toBe(true);
+  // Back again, with the preview now the edited text's: asked for again.
+  const edited: ReplyPreview = { for: "Thanks a lot!", text: "Vielen Dank!", language: "de" };
+  expect(wantsPreview(previewToShow(edited, "Thanks!", "de"), "Thanks!")).toBe(true);
+  // Reset (an outdated send): asked for again.
+  expect(wantsPreview(previewToShow(undefined, "Thanks!", "de"), "Thanks!")).toBe(true);
+});
+
+test("nothing is asked while the reply is being sent: a preview started before Send doesn't pay again or overwrite its outcome", () => {
+  expect(wantsPreview(undefined, "Thanks!", true)).toBe(false);
+  expect(wantsPreview(undefined, "Thanks!", false)).toBe(true);
+});
+
+test("a preview in a language that's no longer the customer's isn't shown, and nothing is asked without text", () => {
+  expect(previewToShow({ for: "Thanks!", text: "Danke!", language: "de" }, "Thanks!", "fr")).toBeUndefined();
+  expect(wantsPreview(undefined, undefined)).toBe(false);
+  expect(wantsPreview(undefined, "")).toBe(false);
+});
