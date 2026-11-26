@@ -1,6 +1,6 @@
 import { nativeLanguageName } from "@tuti/shared/languages";
 
-import { noticeText } from "./conversation-translation";
+import { noticeText, translationsPendingBefore } from "./conversation-translation";
 import { randomUUID } from "node:crypto";
 
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
@@ -115,6 +115,14 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     await Promise.all(recipients.map((member) => sendEmail({ to: member.user.email, ...email })));
     return { emailed: recipients.length };
   }
+  // Its translation waited for first, nothing claimed meanwhile: a run stopped while it waits leaves the conversation's turn
+  // as it was, for conversation-notices-resubmit to find.
+  const email = emailOf(await textOf());
+  // An earlier message of theirs, since the team was last told, still being translated: its email is on its way and tells
+  // them (it claims its turn once its wait is over); this one, a quick "hallo?" after it, doesn't take its place.
+  if (await translationsPendingBefore(conversation.id, message.createdAt, conversation.notifiedAt)) {
+    return { skipped: "an earlier message's email tells them" };
+  }
   const previous = conversation.notifiedAt;
   const claimedAt = new Date();
   const { count } = await prisma.conversation.updateMany({
@@ -124,9 +132,6 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   if (count === 0) {
     return { skipped: "told recently" };
   }
-  // Claimed first, then the translation waited for: a later message with nothing to wait for (a quick "hello?") doesn't
-  // take the email in its place.
-  const email = emailOf(await textOf());
   // Each address on its own: one that's refused doesn't keep the others from hearing.
   const results = await Promise.allSettled(team.map((member) => sendEmail({ to: member.user.email, ...email })));
   const failed = results.filter((result) => result.status === "rejected");

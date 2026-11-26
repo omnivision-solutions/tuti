@@ -88,6 +88,17 @@ export async function translateMessage(input: JobInput<"translateMessage">, log:
   }
 }
 
+/** What translationPending reads of a message. */
+const PENDING_SELECT = {
+  author: true,
+  note: true,
+  body: true,
+  teamText: true,
+  language: true,
+  translationError: true,
+  conversation: { select: { spam: true, language: true, project: { select: { language: true, teamLanguage: true, translateConversations: true } } } },
+} as const;
+
 /** How long the team's email and push about a message wait for its translation, and how often they look. */
 const NOTICE_WAITS_MS = 10_000;
 const NOTICE_LOOKS_MS = 1_000;
@@ -105,15 +116,7 @@ export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): P
   for (;;) {
     const message = await prisma.conversationMessage.findUniqueOrThrow({
       where: { id: messageId },
-      select: {
-        author: true,
-        note: true,
-        body: true,
-        teamText: true,
-        language: true,
-        translationError: true,
-        conversation: { select: { spam: true, language: true, project: { select: { language: true, teamLanguage: true, translateConversations: true } } } },
-      },
+      select: PENDING_SELECT,
     });
     // Translated: as the Inbox shows it, its language named where it's known.
     if (message.teamText !== null) {
@@ -124,6 +127,15 @@ export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): P
     }
     await new Promise((resolve) => setTimeout(resolve, NOTICE_LOOKS_MS));
   }
+}
+
+/** Whether any of a conversation's customer messages from `since` up to `before` is still to be translated (translationPending). */
+export async function translationsPendingBefore(conversationId: string, before: Date, since: Date | null) {
+  const messages = await prisma.conversationMessage.findMany({
+    where: { conversationId, author: "USER", note: false, teamText: null, translationError: null, language: null, createdAt: { lt: before, ...(since && { gt: since }) } },
+    select: { ...PENDING_SELECT },
+  });
+  return messages.some(translationPending);
 }
 
 /**

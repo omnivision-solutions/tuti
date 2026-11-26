@@ -507,15 +507,26 @@ test("the team's notices wait for a translation still to come, and give up after
   expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translated: true, translatedFrom: null });
 });
 
-test("the email waits for its message's translation after claiming its turn: a quick message after it doesn't take its place", async () => {
+test("an email waits for its message's translation without claiming the conversation's turn; a quick message after it leaves the email to it", async () => {
   const { owner, conversation, messages } = await pending(GERMAN, "hallo?");
   const [question, hello] = messages;
+  const { notifiedAt: before } = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+  const looks = vi.spyOn(prisma.conversationMessage, "findUniqueOrThrow");
   const first = handlers.conversationMessage({ messageId: question!.id }, quiet);
-  // Its turn claimed (the conversation's notifiedAt now), it waits for the translation.
-  await vi.waitFor(async () => expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt!.getTime()).toBeGreaterThan(Date.now() - 60_000));
-  expect(await handlers.conversationMessage({ messageId: hello!.id }, quiet)).toEqual({ skipped: "told recently" });
-  await prisma.conversationMessage.update({ where: { id: question!.id }, data: { teamText: ENGLISH, language: "de" } });
-  expect(await first).toMatchObject({ emailed: 1 });
+  try {
+    // In its wait (it has looked for the translation more than once), nothing is claimed: a run stopped now leaves the
+    // turn for conversation-notices-resubmit to find.
+    await vi.waitFor(() => expect(looks.mock.calls.length).toBeGreaterThan(1), { timeout: 5_000 });
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
+    // "hallo?" after it, with nothing to wait for, leaves the email to the question's.
+    expect(await handlers.conversationMessage({ messageId: hello!.id }, quiet)).toEqual({ skipped: "an earlier message's email tells them" });
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
+    await prisma.conversationMessage.update({ where: { id: question!.id }, data: { teamText: ENGLISH, language: "de" } });
+    expect(await first).toMatchObject({ emailed: 1 });
+  } finally {
+    looks.mockRestore();
+  }
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt!.getTime()).toBeGreaterThan(before!.getTime());
   const email = await mailbox.latestTo(owner.email);
   expect(email.text).toContain(ENGLISH);
   expect(email.text).toContain("Translated from Deutsch");

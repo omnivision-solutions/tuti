@@ -8,6 +8,13 @@ type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: 
 /** Article translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. */
 const TRANSLATE_RUNS = 4;
 
+/**
+ * The team's email and push about a customer's message, each at once on the whole server: one may wait in its slot for
+ * the message's translation (@tuti/jobs noticeText, up to 10 seconds), which needs a slot of its own; capped, a burst of
+ * messages can't fill the worker with waiting notices and hold back the translations they wait for. The rest wait their turn.
+ */
+const NOTICE_RUNS = 4;
+
 /** How long a queued code change may wait for its turn before Hatchet gives up on it (its default is 5 minutes). */
 const CODE_CHANGE_QUEUE = "24h" as const;
 
@@ -76,6 +83,9 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
       executionTimeout: "10m" as const,
       scheduleTimeout: "24h" as const,
       concurrency: [...(own ? [own] : []), { expression: "'translate-article'", maxRuns: TRANSLATE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+    }),
+    ...((key === "conversationMessage" || key === "conversationPush") && {
+      concurrency: [...(own ? [own] : []), { expression: `'${job.name}'`, maxRuns: NOTICE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
     }),
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),

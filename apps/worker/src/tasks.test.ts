@@ -58,6 +58,13 @@ test("a screenshot run may take forty minutes (two tries of the agent and keepin
   expect(taskOptions("screenshotRun")).toMatchObject({ name: "screenshot-run", retries: 0, executionTimeout: "40m", scheduleTimeout: "1h", concurrency: [{ expression: "'screenshot-run'", maxRuns: 3 }] });
 });
 
+test("the team's email and push about a message run a few at once each, so waiting for translations can't fill the worker's slots", () => {
+  expect(taskOptions("conversationMessage")).toMatchObject({ name: "conversation-message", concurrency: [{ expression: "'conversation-message'", maxRuns: 4 }] });
+  expect(taskOptions("conversationPush")).toMatchObject({ name: "conversation-push", retries: 2, concurrency: [{ expression: "'conversation-push'", maxRuns: 4 }] });
+  // The translations they wait for aren't capped by them.
+  expect(taskOptions("translateMessage")).not.toHaveProperty("concurrency");
+});
+
 test("syncing API references from their URLs may take ten minutes", () => {
   expect(taskOptions("syncApiReferences")).toMatchObject({ name: "sync-api-references", executionTimeout: "10m", on: { cron: "41 * * * *" } });
 });
