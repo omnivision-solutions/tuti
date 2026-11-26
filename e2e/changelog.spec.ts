@@ -59,6 +59,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await linkPost.getByRole("button", { name: /#1\s*Dark mode/ }).click();
   await expect(linkPost).toBeHidden();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  // Its count beside the heading, the actions in the same row.
+  const postsRow = completes.getByRole("heading", { name: "Posts" }).locator("..");
+  await expect(postsRow).toHaveText(/^Posts\s*1\s*Link$/);
   // Linked, it's not offered again.
   await completes.getByRole("button", { name: "Link post…" }).click();
   await expect(linkPost.getByText("No matching posts.")).toBeVisible();
@@ -163,6 +166,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await expect(completes.getByRole("button", { name: "Link post…" })).toBeFocused();
+  // None now: the count says so, with no line of its own.
+  await expect(postsRow).toHaveText(/^Posts\s*0\s*Link$/);
+  await expect(completes).not.toContainText("None.");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   // One line: where it goes and the post it completes; nobody has subscribed, so no subscriber is emailed.
@@ -2030,6 +2036,7 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   // Each as Autopilot shows it: a "PR #14" chip, its title beside it; the chip opens its repo#number and GitHub's link.
   const chip = (number: number, title: string) => section.getByRole("button", { name: `PR #${number}: ${title}` });
   await expect(section.getByRole("listitem").first()).toHaveText(/^PR #14\s*Remember the theme$/);
+  await expect(section.getByRole("heading", { name: "Pull requests" }).locator("..")).toHaveText(/^Pull requests\s*1\s*Add$/);
   await chip(14, "Remember the theme").click();
   await expect(team.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", `https://github.com/${repo}/pull/14`);
   // Autopilot is off here, so it never read it: no who merged it when, no activity page.
