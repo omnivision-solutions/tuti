@@ -166,5 +166,18 @@
     "unsubscribed": "Hai annullato l’iscrizione a queste email.",
     "readChangelog": "Leggi le novità",
     "rss": "RSS"
+  },
+  "roadmap": {
+    "description": "Cosa è pianificato, cosa stiamo realizzando e cosa è pronto.",
+    "signInToVote": "<link>Accedi</link> per votare.",
+    "columns": "Colonne",
+    "meaning": {
+      "PLANNED": "Abbiamo deciso di realizzarle.",
+      "IN_PROGRESS": "Le stiamo realizzando adesso.",
+      "COMPLETED": "Rilasciate e pronte all’uso."
+    },
+    "nothingHere": "Ancora niente qui.",
+    "inChangelog": "Nelle novità",
+    "inChangelogLabel": "Nelle novità: {title}"
   }
 }

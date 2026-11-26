@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { canAssignRole, canManageTeamMember } from "@/lib/roles";
 
+import { logEvents } from "./conversation-events";
 import { getMembership, teamRoleIn } from "./membership";
 import { getSession } from "./session";
 
@@ -108,7 +109,12 @@ async function removeFromTeam(projectId: string, userId: string, actorId: string
       return { error: refused.lastOwner };
     }
     await tx.teamMember.delete({ where: { projectId_userId: { projectId, userId } } });
-    await tx.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } });
+    // Each one unassigned, in its Activity (W16), credited to whoever removed them (them, leaving), with why.
+    // The ones this update changed: one reassigned meanwhile isn't, and gets no row.
+    const assigned = await tx.conversation.updateManyAndReturn({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null }, select: { id: true } });
+    for (const { id } of assigned) {
+      await logEvents(tx, id, [{ kind: "assignee", actor: "teammate", actorId, details: { assigneeId: null, left: userId } }]);
+    }
     await tx.post.updateMany({ where: { projectId, ownerId: userId }, data: { ownerId: null } });
     await tx.apiKey.updateMany({ where: { projectId, createdById: userId, revokedAt: null }, data: { revokedAt: new Date() } });
     await tx.invitation.updateMany({ where: sentPending(projectId, userId), data: { revokedAt: new Date() } });

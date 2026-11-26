@@ -257,8 +257,15 @@ the list picks none to approve at once.
   leaving room for the conversation even with the app sidebar open. The toggle uses the same rem threshold
   and current root font size as the CSS, so the sheet stays reachable with larger text.
   The sections, each with an icon, count and chevron and a line above it: Customer details (who they are, all their
-  properties, groups, posts and votes), Other conversations, Linked posts, Looks related and Conversation attributes.
-  Customer details starts open, and the posts once there are some; the rest start folded. A section opened or folded by
+  properties, groups, posts and votes), Other conversations, Activity, Linked posts, Looks related and Conversation
+  attributes. Customer details and Activity start open (what happened to it is what the team looks for beside a
+  conversation), and the posts once there are some; the rest start folded. Activity is a timeline, newest first, like
+  Other conversations: All, Workflows and People as small pills (buttons, `aria-pressed`) above it; each row a dot by who
+  did it (blue `status-in-progress` the workflows and built-in steps, green `status-completed` the spam filter, violet
+  `status-planned` the AI, orange `highlight-foreground` a teammate or API key, grey `status-open` the person, light grey
+  Tuti), the sentence with who in semibold, a muted line with the time (the viewer's) and a short detail, and for a
+  workflow run each workflow it checked on a muted tint under it ("Priority for everyone · marked this priority"); "Show
+  earlier" under the last, the next row taking focus. A snooze's time in a row is the API's words, in UTC. A section opened or folded by
   hand stays so in that browser for every conversation. Other conversations is a timeline, newest first: a dot in the
   status's colour on a line, a muted date · status · number line, the title, and one line of the latest message.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is

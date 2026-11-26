@@ -6,7 +6,20 @@ import { crc32, deflateSync } from "node:zlib";
 export const FAKE_BROWSER_USE_KEY = "bu_fake_key";
 
 /**
- * How the fake's next run goes (JSON, so journeys in other processes can script it through /_fake/next-run). By
+ * A screenshot asked for with this in its description isn't reached, by any run, saying FAKE_UNREACHED: for a journey,
+ * where runs scripted with `next` could go to another journey's run.
+ */
+export const FAKE_UNREACHABLE = "a screen that isn't there";
+export const FAKE_UNREACHED = "There's no such screen in the app.";
+/** A run asked for a screenshot with this in its description keeps running until `release()` (or POST /_fake/release). */
+export const FAKE_SLOW = "a screen that takes a while";
+/** A run whose task has this (the app's "About" notes, say) can't sign in, saying FAKE_SIGN_IN_REFUSED. */
+export const FAKE_CANT_SIGN_IN = "The fake can't sign in.";
+export const FAKE_SIGN_IN_REFUSED = "The app said the password is wrong.";
+
+/**
+ * How the fake's next run goes (JSON, through /_fake/next-run too). Not for journeys: they run side by side, and
+ * another's run could take it; they use what's in the task instead (FAKE_UNREACHABLE, FAKE_SLOW, FAKE_CANT_SIGN_IN). By
  * default the agent signs in and reaches every screenshot the task names (`shot-N.png: …` lines), saving a PNG each.
  */
 export type FakeBrowserUseRun = {
@@ -50,6 +63,10 @@ export type BrowserUseFake = {
   failNext: { deletes: number; costs: number; stops: number };
   /** How many of the next browser stops answer 404, as for a browser that stopped by itself since it was listed (it is stopped). */
   goneNext: number;
+  /** Network policies by id (POST/PATCH /network-policies): every run must be given one it has (Screenshots confines its browser to the team's app). */
+  policies: Map<string, { name: string; defaultAction: "allow" | "block"; allow: { domains: string[] } }>;
+  /** Awaited as a policy is made, before it's answered: e.g. another run saving its own meanwhile. */
+  beforePolicyCreate?: () => Promise<void>;
   /** Lets every stuck run end. */
   release(): void;
   close(): Promise<void>;
@@ -99,6 +116,7 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
     failNext: { deletes: 0, costs: 0, stops: 0 },
     goneNext: 0,
     files,
+    policies: new Map(),
     release: () => {
       for (const run of runs.values()) {
         run.script.stuck = false;
@@ -119,6 +137,10 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         const body = downloads.get(download[1]!);
         return body ? res.writeHead(200, { "content-type": "image/png" }).end(body) : answer(404, { detail: "Gone" });
       }
+      if (path === "/_fake/release" && req.method === "POST") {
+        fake.release();
+        return answer(200, {});
+      }
       if (path === "/_fake/next-run" && req.method === "POST") {
         fake.next(JSON.parse(raw) as FakeBrowserUseRun);
         return answer(200, {});
@@ -127,6 +149,29 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         return answer(401, { detail: "Invalid API key" });
       }
       const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      if (path === "/network-policies" && req.method === "POST") {
+        const make = () => {
+          const policy = { name: String(body.name), defaultAction: (body.defaultAction as "allow" | "block") ?? "allow", allow: (body.allow as { domains: string[] }) ?? { domains: [] } };
+          const policyId = id("e");
+          fake.policies.set(policyId, policy);
+          answer(201, { id: policyId, ...policy });
+        };
+        const hook = fake.beforePolicyCreate;
+        fake.beforePolicyCreate = undefined;
+        return hook ? void hook().then(make) : make();
+      }
+      const policyPath = /^\/network-policies\/([^/]+)$/.exec(path);
+      if (policyPath && req.method === "DELETE") {
+        return fake.policies.delete(policyPath[1]!) ? res.writeHead(204).end() : answer(404, { detail: "No such policy" });
+      }
+      if (policyPath && req.method === "PATCH") {
+        const policy = fake.policies.get(policyPath[1]!);
+        if (!policy) {
+          return answer(404, { detail: "No such policy" });
+        }
+        Object.assign(policy, body.defaultAction && { defaultAction: body.defaultAction }, body.allow && { allow: body.allow });
+        return answer(200, { id: policyPath[1], ...policy });
+      }
       if (path === "/workspaces" && req.method === "POST") {
         const workspaceId = id("a");
         files.set(workspaceId, new Map());
@@ -136,11 +181,19 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         // A copy: release() changes it.
         // Browser Use's residential proxy is on by default (billed per GB): Tuti always says whether it wants it, so a run
         // that leaves it out is refused.
-        const settings = body.browserSettings as { proxyCountryCode?: unknown } | null | undefined;
+        const settings = body.browserSettings as { proxyCountryCode?: unknown; networkPolicyId?: unknown } | null | undefined;
         if (!settings || !("proxyCountryCode" in settings) || (settings.proxyCountryCode !== null && typeof settings.proxyCountryCode !== "string")) {
           return answer(422, { detail: "The fake refuses a run without browserSettings.proxyCountryCode (Browser Use's residential proxy is on by default)" });
         }
+        // Screenshots confine every run's browser to the team's app: the fake refuses one without a policy it knows.
+        if (typeof settings.networkPolicyId !== "string" || !fake.policies.has(settings.networkPolicyId)) {
+          return answer(settings.networkPolicyId ? 404 : 422, { detail: "The fake refuses a run without a network policy it has (browserSettings.networkPolicyId)" });
+        }
         const script = { ...(scripts.shift() ?? {}) };
+        script.stuck ||= String(body.task).includes(FAKE_SLOW);
+        if (String(body.task).includes(FAKE_CANT_SIGN_IN)) {
+          script.signInFailed ??= FAKE_SIGN_IN_REFUSED;
+        }
         if (script.createStatus) {
           return answer(script.createStatus, { detail: "The fake was told to refuse this run" });
         }
@@ -153,8 +206,8 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         fake.browsers.set(sessionId, { id: id("d"), status: "active" });
         // The agent's work: each screenshot the task names saved, but those it couldn't reach (or any, signed out).
         if ((script.status ?? "completed") === "completed" && !script.signInFailed) {
-          for (const [, file] of String(body.task).matchAll(/^(shot-\d+\.png): /gm)) {
-            if (!script.unreached?.[file!]) {
+          for (const [, file, show] of String(body.task).matchAll(/^(shot-\d+\.png): (.*)$/gm)) {
+            if (!script.unreached?.[file!] && !show!.includes(FAKE_UNREACHABLE)) {
               files.get(workspaceId)?.set(`outputs/${file}`, fakePng());
             }
           }
@@ -178,8 +231,8 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
               : {
                   signedIn: true,
                   shots: files.map(([, file, show]) =>
-                    run.script.unreached?.[file!]
-                      ? { file, reached: false, reason: run.script.unreached[file!] }
+                    run.script.unreached?.[file!] || show!.includes(FAKE_UNREACHABLE)
+                      ? { file, reached: false, reason: run.script.unreached?.[file!] ?? FAKE_UNREACHED }
                       : { file, reached: true, description: `The screen: ${show}`, url: "https://app.example.com/dashboard" },
                   ),
                 };

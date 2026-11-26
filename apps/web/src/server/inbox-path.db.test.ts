@@ -67,19 +67,23 @@ async function setup() {
     priority: async (number: number) => (await conversation(number)).priority,
     /** Set back by hand, as a teammate would: what the next workflow does then shows. */
     unmark: (number: number) => call(updateConversation, admin, { number, priority: false }),
-    /** Tuti's notes in a conversation, oldest first. */
-    notes: async (number: number) =>
-      (
-        await prisma.conversationMessage.findMany({
-          where: { conversation: { projectId, number }, author: "TUTI" },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          select: { body: true, note: true, authorId: true },
-        })
-      ).map((message) => {
-        // Only the team's to read, and nobody's.
-        expect(message).toMatchObject({ note: true, authorId: null });
-        return message.body;
-      }),
+    /**
+     * What the workflows did in a conversation, oldest first, by its Activity (W16): "<workflow> <what it did>" for each
+     * one that changed something. The thread keeps no note of it (W8 wrote one, till W16).
+     */
+    notes: async (number: number) => {
+      expect(await prisma.conversationMessage.count({ where: { conversation: { projectId, number }, author: "TUTI" } })).toBe(0);
+      const runs = await prisma.conversationEvent.findMany({
+        where: { conversation: { projectId, number }, kind: "workflows_ran" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { actor: true, details: true },
+      });
+      return runs.flatMap((run) => {
+        expect(run.actor).toBe("workflow");
+        const { workflows } = run.details as { workflows: { name: string; did: string[] }[] };
+        return workflows.filter((w) => w.did.length > 0).map((w) => `${w.name} ${w.did.map((kind) => (kind === "mark_priority" ? "marked this priority" : kind)).join(", ")}`);
+      });
+    },
     /** What the project's webhooks were told, oldest first: each event and whether the conversation was priority. */
     told: async () =>
       (await prisma.webhookDelivery.findMany({ where: { webhook: { projectId } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { event: true, payload: true } })).map(
@@ -94,7 +98,7 @@ const apiKey = (createdById: string, projectId: string) => ({ kind: "apiKey" as 
 /** The team's emails about new conversations. */
 const emailed = (address: string) => mailbox.emails.filter((email) => email.to.includes(address) && /^New conversation/.test(email.subject)).length;
 
-test("a trigger's list runs once, top to bottom: the workflows that are on, each one that acted leaving its note, and the team is told as before", async () => {
+test("a trigger's list runs once, top to bottom: the workflows that are on, each one that acted in its Activity, and the team is told as before", async () => {
   const { admin, owner, workflow, start, priority, notes, told } = await setup();
   const first = await workflow("Everyone first", "conversation_started");
   const second = await workflow("Second look", "conversation_started");
@@ -188,7 +192,7 @@ test("someone Tuti doesn't know is in no group: a signed-out visitor, an address
   expect(await notes(await start("user-1"))).toEqual(["No plan yet marked this priority"]);
 });
 
-test("the same message run twice writes one note and changes nothing twice, whatever the team changed in its workflows in between", async () => {
+test("the same message run twice writes one Activity row and changes nothing twice, whatever the team changed in its workflows in between", async () => {
   const { projectId, admin, workflow, start, priority, unmark, notes } = await setup();
   const first = await workflow("Everyone first", "conversation_started");
   const number = await start("user-1");
@@ -216,8 +220,8 @@ test("the same message run twice writes one note and changes nothing twice, what
   // Each says the conversation as it is once its turn commits: marked, by the one that ran it.
   expect(runs).toEqual([{ priority: true }, { priority: true }, { priority: true }]);
   expect(await notes(started.conversation.number)).toEqual(["Another marked this priority"]);
-  // Only a user's message runs a list: never the note it left.
-  const note = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: started.conversation.id, author: "TUTI" } });
+  // Only a user's message runs a list: never a teammate's note.
+  const note = await call(replyToConversation, admin, { number: started.conversation.number, body: "Ask billing", note: true });
   await unmark(started.conversation.number);
   expect(await runWorkflows(projectId, started.conversation.id, note.id, "user_replied")).toEqual({ priority: false });
   expect(await priority(started.conversation.number)).toBe(false);

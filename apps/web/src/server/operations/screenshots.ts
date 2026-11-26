@@ -1,11 +1,15 @@
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, SCREENSHOT_SECRET, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
-import { screenshotsEnabled } from "@tuti/shared";
+import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeChangelogScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
+import { getDomain } from "tldts";
 import { z } from "zod";
 
+import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters";
+
+import { displayDoc } from "../content";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 
@@ -22,6 +26,9 @@ export const SCREENSHOTS_UNAVAILABLE = "Screenshots aren't available on this ser
 const NOT_SET_UP = "Add your app's address in Settings → Screenshots first.";
 
 export const MAX_SHOTS = 10;
+export const MAX_OTHER_DOMAINS = 20;
+/** A domain name as Browser Use's network policies take one: letters, digits and hyphens in dot-separated labels, no IP. */
+const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 export const MAX_ABOUT = 2000;
 
 const SIGN_INS = ["none", "password", "link"] as const;
@@ -128,6 +135,10 @@ const settingsOutput = z
     about: z.string().describe("What the agent reads about your app on every run").meta({ examples: ["After signing in, pick the Acme workspace. Close the tour."] }),
     window: z.enum(WINDOW_NAMES).describe("The browser window: `desktop` (1440×900) or `phone` (390×844)").meta({ examples: ["desktop"] }),
     residentialProxy: z.boolean().describe("Whether runs go through a residential proxy: only for an app that blocks visits from cloud servers; runs cost more").meta({ examples: [false] }),
+    otherDomains: z
+      .array(z.string())
+      .describe("Other hosts your app needs (its API, a sign-in page, a CDN): the browser opens only your app's own host, its sign-in link's, and these (with their subdomains), and the password can be entered on any of them")
+      .meta({ examples: [["acme.auth0.com"]] }),
     test: runOutput.nullable().describe("The latest Test (screenshotSettings.test), if any"),
   })
   .meta({ id: "ScreenshotSettings", description: "How screenshots sign in to your app" });
@@ -145,6 +156,7 @@ export async function settingsView(projectId: string): Promise<z.infer<typeof se
     about: settings?.about ?? "",
     window: (settings?.window.toLowerCase() ?? "desktop") as (typeof WINDOW_NAMES)[number],
     residentialProxy: settings?.residentialProxy ?? false,
+    otherDomains: settings?.otherDomains ?? [],
     test: await readRun(projectId, { test: true }),
   };
 }
@@ -194,6 +206,23 @@ export const updateScreenshotSettings = defineOperation({
       .boolean()
       .optional()
       .describe("Runs go through a residential proxy (in the US): only if your app blocks visits from cloud servers. Runs cost more (the proxy's traffic is billed)"),
+    otherDomains: z
+      .array(
+        z
+          .string()
+          .trim()
+          .toLowerCase()
+          .regex(DOMAIN, "Enter each domain on its own, like cdn.example.com: no https://, path or port")
+          // A shared suffix (vercel.app, github.io, com) would open every site under it: a domain of its own only.
+          .refine((domain) => getDomain(domain, { allowPrivateDomains: true }) !== null, {
+            error: (issue) => `${String(issue.input)} is shared by many sites: enter your own domain under it, like acme.${String(issue.input)}`,
+          }),
+      )
+      .max(MAX_OTHER_DOMAINS, `List up to ${MAX_OTHER_DOMAINS} other domains`)
+      .optional()
+      .describe(
+        `Other hosts your app needs, up to ${MAX_OTHER_DOMAINS} (its API like api.example.com, a sign-in page like acme.auth0.com, a CDN): the browser opens only your app's own host, its sign-in link's, and these (with their subdomains), and the password can be entered on any of them. They replace the list`,
+      ),
   }),
   output: settingsOutput.describe("The screenshot settings, as saved"),
   example: { appUrl: "https://app.example.com", signIn: "password", username: "demo@example.com", password: "a demo account's password", about: "Close the welcome tour.", window: "desktop" },
@@ -229,6 +258,15 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   if (signIn === "LINK" && !signInLink) {
     throw new OperationError(400, "invalid_input", `Enter the sign-in link${moved}`);
   }
+  // A domain added sends the browser, and the password typed there, somewhere new: as when the app moves, only with the
+  // secret sent again, so whoever adds one (another admin, a key) must know it. Taking domains off needs nothing.
+  const added = (input.otherDomains ?? []).filter((domain) => !(saved?.otherDomains ?? []).includes(domain));
+  if (added.length > 0 && signIn === "PASSWORD" && password && !input.password) {
+    throw new OperationError(400, "invalid_input", "Enter the password again to add another domain: it can be typed there");
+  }
+  if (added.length > 0 && signIn === "LINK" && signInLink && !input.signInLink) {
+    throw new OperationError(400, "invalid_input", "Enter the sign-in link again to add another domain: the browser can go there with it");
+  }
   const data = {
     appUrl,
     signIn,
@@ -239,6 +277,7 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
     about: input.about ?? saved?.about ?? "",
     window: (input.window?.toUpperCase() ?? saved?.window ?? "DESKTOP") as ScreenshotWindow,
     residentialProxy: input.residentialProxy ?? saved?.residentialProxy ?? false,
+    otherDomains: input.otherDomains ? [...new Set(input.otherDomains)] : (saved?.otherDomains ?? []),
   };
   await tx.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
 }
@@ -262,8 +301,8 @@ const startedBy = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
  * Starts a run, or finds the one running: one at a time per project (and one Test), as each holds a worker slot for
  * minutes and spends up to the cost cap. A Test returns the one running; screenshots.take refuses (409).
  */
-async function start(projectId: string, actor: Actor, shots: { show: string }[], test: boolean) {
-  const started = await startScreenshots(projectId, shots, { startedById: startedBy(actor), test }).catch(() => {
+async function start(projectId: string, actor: Actor, shots: { show: string }[], test: boolean, changelogEntryId?: string) {
+  const started = await startScreenshots(projectId, shots, { startedById: startedBy(actor), test, changelogEntryId }).catch(() => {
     throw new OperationError(503, "unavailable", "Couldn't start the screenshots. Try again in a moment.");
   });
   if (!started.started && !test) {
@@ -310,6 +349,7 @@ export const takeScreenshots = defineOperation({
             .trim()
             .min(1, "Say what each screenshot shows")
             .max(500, "Keep each screenshot's description under 500 characters")
+            .refine((show) => !hasHiddenCharacters(show), { error: `A screenshot's description ${HIDDEN_CHARACTERS}` })
             .describe("What it shows, as you'd ask a person: the screen, and what's open or selected on it"),
         }),
       )
@@ -344,3 +384,147 @@ export const getScreenshots = defineOperation({
     return run;
   },
 });
+
+export const takeChangelogScreenshots = defineOperation({
+  name: "changelog.takeScreenshots",
+  title: "Fill screenshot lines",
+  summary: `Take screenshots for the entry's "[Screenshot: …]" lines you confirm (\`shots\`, up to ${MAX_SHOTS}, each still in its saved text), in the background (screenshots.get reads the run). Each one taken replaces its line if still there as it was; one not taken stays. Costs credits where used`,
+  method: "POST",
+  path: "/changelog/{number}/screenshots",
+  scope: "write",
+  // As screenshots.take: what's asked for goes into the agent's task beside the sign-in.
+  access: "admin",
+  errors: [402, 404, 409, 503],
+  input: z.object({
+    number: z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] }),
+    shots: z
+      .array(
+        z.object({
+          show: z
+            .string()
+            .trim()
+            .min(1, "Say what each screenshot shows")
+            .max(MAX_SHOW, `Keep each screenshot line under ${MAX_SHOW} characters`)
+            // What the admin confirmed must be all the agent reads.
+            .refine((show) => !hasHiddenCharacters(show), { error: (issue) => `“[Screenshot: ${String(issue.input).slice(0, 80)}]” ${HIDDEN_CHARACTERS}` })
+            .describe("A line's text, between \"[Screenshot:\" and \"]\", as it is in the entry"),
+        }),
+      )
+      .min(1, "Pick a line to take")
+      .max(MAX_SHOTS, `Take up to ${MAX_SHOTS} screenshots at a time`)
+      .describe(`The lines to take, as you read them in the entry: only these are sent to the agent, and each must still be one of its "[Screenshot: …]" lines (a 409 otherwise)`),
+  }),
+  output: runOutput.describe("The run, running"),
+  example: { shots: [{ show: "The billing page with the invoices list" }] },
+  run: async ({ actor, projectId }, { number, shots }) => {
+    const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, content: true, body: true } });
+    if (!entry) {
+      throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
+    }
+    await refuseRun(projectId);
+    // Only lines the caller confirmed, each one of the entry's own, one for one: what the agent is asked is what was
+    // read, never a line added since (by a member, or a draft written from outside text).
+    const left = screenshotsAsked(displayDoc(entry));
+    if (left.length === 0) {
+      throw new OperationError(409, "no_markers", "This entry has no “[Screenshot: …]” lines to fill.");
+    }
+    for (const { show } of shots) {
+      const at = left.indexOf(show);
+      if (at === -1) {
+        throw new OperationError(409, "changed", `“[Screenshot: ${show.slice(0, 80)}${show.length > 80 ? "…" : ""}]” isn't in the entry's saved text any more. Look at its lines again.`);
+      }
+      left.splice(at, 1);
+    }
+    return start(projectId, actor, shots, false, entry.id);
+  },
+});
+
+
+/** Shots whose cost the estimate averages: the project's latest. */
+const ESTIMATE_SHOTS = 20;
+
+/**
+ * What the changelog editor shows of an entry's screenshots: how many of its lines ask for one, whether they can be
+ * taken (null: not on this server, or not set up), the entry's latest run while it runs, the lines it didn't take that
+ * are still there with why, and what taking them would cost in credits, from recent screenshots (with credits on; null when none has been priced yet).
+ */
+export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string; updatedAt: Date }) {
+  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
+  // Going until its screenshots are placed, as entryScreenshotsRunning says: one ended a moment before its job places
+  // them still has the editor asking.
+  const going = latest !== null && (latest.state === "RUNNING" || !latest.placedAt);
+  if (latest?.state === "RUNNING") {
+    await settleStaleScreenshotRuns(projectId);
+  }
+  const asked = screenshotsAsked(displayDoc(entry));
+  const setUp = Boolean(await prisma.screenshotSettings.count({ where: { projectId } }));
+  const run =
+    latest &&
+    (await prisma.screenshotRun.findUniqueOrThrow({
+      where: { id: latest.id },
+      select: { state: true, screenshots: { orderBy: { position: "asc" }, select: { show: true, failed: true, imageId: true } } },
+    }));
+  const left = [...asked];
+  const failed =
+    run && !going
+      ? run.screenshots.flatMap(({ show, failed, imageId }) => {
+          const at = imageId ? -1 : left.indexOf(show);
+          return at === -1 ? [] : (left.splice(at, 1), [{ show, reason: failed || "Not taken." }]);
+        })
+      : [];
+  const priced = creditsEnabled()
+    ? await prisma.screenshot.findMany({ where: { projectId, cost: { not: null }, run: { test: false } }, orderBy: { createdAt: "desc" }, take: ESTIMATE_SHOTS, select: { cost: true } })
+    : [];
+  return {
+    // When the entry shown was saved: a run that ends without changing it changed nothing in the form.
+    savedAt: entry.updatedAt.toISOString(),
+    asked: asked.length,
+    // The lines, for Take screenshots to list before it sends them (the first MAX_SHOTS).
+    lines: asked.slice(0, MAX_SHOTS),
+    available: screenshotsAvailable() && setUp ? true : screenshotsAvailable() ? ("not_set_up" as const) : false,
+    running: run && going ? run.screenshots.length : null,
+    // A run for it ended: the section stays (focus goes to it after one), saying when every line is filled.
+    ran: Boolean(run && !going),
+    failed,
+    // ponytail: the average shot's cost; a run's own sign-in, shared by its shots, makes a lone one cost more.
+    estimate: priced.length ? (priced.reduce((sum, shot) => sum + shot.cost!.toNumber(), 0) / priced.length) * creditsPerUsageDollar() * Math.min(asked.length, MAX_SHOTS) : null,
+    credits: creditsEnabled(),
+  };
+}
+
+export type EntryScreenshots = Awaited<ReturnType<typeof entryScreenshots>>;
+
+export const SCREENSHOTS_PLACED =
+  "Screenshots went into the saved text since you opened this entry. Reload the page to see them: saving now would put the lines back in place of them.";
+
+/**
+ * Places the entry's latest run's screenshots if it ended without (its job an older worker's, during a deploy, or one
+ * that died): the editor does it before reading the entry. Whether it placed any.
+ */
+export async function placeLeftoverScreenshots(entryId: string): Promise<boolean> {
+  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entryId }, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
+  return Boolean(latest && latest.state !== "RUNNING" && !latest.placedAt && (await placeChangelogScreenshots(latest.id)) > 0);
+}
+
+/**
+ * Whether the entry's latest screenshot run is still going (a stopped one settled first), and when the entry was last
+ * saved: the editor asks while one runs. Going until its screenshots are placed, not only until it ends: its job places
+ * them a moment after, and the editor reads `savedAt` to know whether they changed the saved text. One that ended
+ * without (an older worker's, a job that died) is placed here, as on opening the editor.
+ */
+export async function entryScreenshotsRunning(projectId: string, number: number) {
+  await settleStaleScreenshotRuns(projectId);
+  const read = () =>
+    prisma.changelogEntry.findUnique({
+      where: { projectId_number: { projectId, number } },
+      select: { id: true, updatedAt: true, screenshotRuns: { orderBy: { createdAt: "desc" }, take: 1, select: { state: true, placedAt: true } } },
+    });
+  let entry = await read();
+  const run = entry?.screenshotRuns[0];
+  if (entry && run && run.state !== "RUNNING" && !run.placedAt) {
+    await placeLeftoverScreenshots(entry.id);
+    entry = await read();
+  }
+  const latest = entry?.screenshotRuns[0];
+  return { running: latest?.state === "RUNNING" || (latest !== undefined && !latest.placedAt), savedAt: entry?.updatedAt.toISOString() ?? null };
+}

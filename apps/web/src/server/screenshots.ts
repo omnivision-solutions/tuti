@@ -24,6 +24,8 @@ export async function saveScreenshotSettings(projectSlug: string, _state: FormSt
     window: text("window") as "desktop" | "phone" | undefined,
     // A checkbox: sent only when it's on.
     residentialProxy: formData.get("residentialProxy") === "on",
+    // One per line (or separated by commas or spaces); empty clears them.
+    otherDomains: (text("otherDomains") ?? "").split(/[\s,]+/).filter(Boolean),
   };
   return asAdmin(projectSlug, DENIED, (context) => call(updateScreenshotSettings, context, input));
 }
