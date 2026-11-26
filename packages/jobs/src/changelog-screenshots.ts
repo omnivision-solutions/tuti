@@ -1,6 +1,8 @@
 import { type Doc, fromPlainText, MAX_ALT_LENGTH, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
+import { queueChangelogTranslations } from "./article-translation";
+
 /**
  * Changelog drafts' "[Screenshot: what it should show]" lines filled with screenshots of the team's app (docs/plan.md,
  * SC2): changelog.takeScreenshots asks a run (screenshots.ts) for each line's screenshot, and once the run is done its
@@ -46,6 +48,15 @@ export async function placeChangelogScreenshots(runId: string): Promise<number> 
   if (!entryId) {
     return 0;
   }
+  const placed = await placeInEntry(runId, entryId);
+  if (placed > 0) {
+    // A published entry's text changed: its languages kept up to date follow (docs/plan.md L16); a draft's wait for its publish.
+    await queueChangelogTranslations(entryId);
+  }
+  return placed;
+}
+
+function placeInEntry(runId: string, entryId: string): Promise<number> {
   return prisma.$transaction(async (tx) => {
     const [entry] = await tx.$queryRaw<{ content: unknown; body: string; updatedAt: Date }[]>`SELECT content, body, "updatedAt" FROM changelog_entry WHERE id = ${entryId} FOR UPDATE`;
     // Once, and only once it's ended (a second delivery of its job finds it running and leaves it to the first): claimed

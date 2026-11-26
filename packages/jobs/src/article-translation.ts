@@ -245,6 +245,14 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
   const started: Started = {};
   try {
     const result = await translateOne(kind, parentId, language, log, run, started);
+    if ((result.skipped === STALE || result.skipped === CHANGED) && kind.name === "entry") {
+      // The product setting (or the entry) changed while it was translating, so it wrote nothing: an article's are queued
+      // again by the setting's change itself (queueLanguageTranslations); an entry's, which that leaves to their next
+      // translation, is that next one: the one already under way, again, under the new setting. (Where the entry's text
+      // changed, its edit's job has translated it, or does: this one then finds it up to date and asks nothing.)
+      await queue(kind, parentId, language);
+      return result;
+    }
     if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED && result.skipped !== NO_AI && started.retryAt) {
       // Nothing left to do for it: the safety net's try goes, unless a newer publish or Retranslate set another since it read it.
       // Without AI it stays, so the retry job translates the page once AI is set up.
@@ -427,7 +435,8 @@ async function queueEach(pages: Page[]) {
  */
 // Moved on each queuing (not set only when empty), so a job that finds its page up to date can tell a newer queuing's net
 // from the one it read; a page waiting on a failure keeps its backoff.
-const safetyNet = (kind: Kind, where: object) => kind.table().updateMany({ where: { ...where, error: null }, data: { retryAt: new Date(Date.now() + lostAfterMs()) } });
+const safetyNet = (kind: Kind, where: object, client?: Client) =>
+  kind.table(client).updateMany({ where: { ...where, error: null }, data: { retryAt: new Date(Date.now() + lostAfterMs()) } });
 
 /** Queuing (inline, translating) still going after the request or publish answered. */
 const inBackground = new Set<Promise<void>>();
@@ -454,9 +463,13 @@ async function queueTranslations(kind: Kind, parentId: string) {
     return;
   }
   const missing = source.languages.filter(({ code, automatic }) => automatic && !source.translations.some((t) => t.language === code));
-  await kind.table().createMany({ data: missing.map(({ code }) => ({ [kind.parent]: parentId, projectId: source.projectId, language: code })), skipDuplicates: true });
   const languages = [...source.translations.filter((t) => t.automatic).map((t) => t.language), ...missing.map(({ code }) => code)];
-  await safetyNet(kind, { [kind.parent]: parentId, language: { in: languages } });
+  // The new versions and every version's safety net in one transaction: none is left without its net, which the retry
+  // job finds it by.
+  await prisma.$transaction(async (tx) => {
+    await kind.table(tx).createMany({ data: missing.map(({ code }) => ({ [kind.parent]: parentId, projectId: source.projectId, language: code })), skipDuplicates: true });
+    await safetyNet(kind, { [kind.parent]: parentId, language: { in: languages } }, tx);
+  });
   queueAll(() => queueEach(languages.map((language) => ({ kind, parentId, language }))));
 }
 

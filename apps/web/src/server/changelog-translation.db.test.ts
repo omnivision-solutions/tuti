@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, PRODUCT_SETTING_CHANGED, translationSource } from "@tuti/jobs";
+import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeChangelogScreenshots, PRODUCT_SETTING_CHANGED, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -166,4 +166,40 @@ test("a translation ending long after an announcement was due doesn't send it: t
   await call(updateChangelogEntry, as(), { number: entry.number, title: "Dark mode is here" });
   await languageTranslationsDone();
   expect(entryEmails(email)).toHaveLength(0);
+});
+
+test("an entry translating as the product setting changes is translated again under the new one", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  // Its first translation finds the setting changed as it answers: it writes nothing, and goes again.
+  model.reply(reply("stale"), () => call(updateLanguages, as(), { languages: [{ code: "de", productAvailable: true }] }));
+  model.reply(reply("on"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  expect(await translation()).toMatchObject({ title: "[on] Dark mode", productAvailable: true });
+  expect(model.requests).toHaveLength(2);
+});
+
+test("screenshots placed in a published entry's text bring its translations up to date", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  // A line asking for a screenshot in its published text (as an older entry can have), and a finished run's screenshot for it.
+  const marked = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: BODY }] }, { type: "paragraph", content: [{ type: "text", text: "[Screenshot: The theme menu]" }] }] };
+  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { content: marked, body: `${BODY}\n\n[Screenshot: The theme menu]` } });
+  const image = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1000, status: "READY", width: 1200, height: 800 } });
+  const run = await prisma.screenshotRun.create({ data: { projectId: project.id, changelogEntryId: entry.id, state: "DONE" } });
+  await prisma.screenshot.create({ data: { projectId: project.id, runId: run.id, position: 0, show: "The theme menu", imageId: image.id } });
+  // Placed: its text changed (the image's description is new to translate; the rest comes from memory).
+  const placed = { type: "doc" as const, content: [marked.content[0]!, { type: "image", attrs: { mediaId: image.id, width: "100", align: "center", alt: "The theme menu", w: 1200, h: 800 } }] };
+  const { segments } = segmentsOf(translationSource({ title: TITLE, body: "", content: placed }).doc);
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }));
+  expect(await placeChangelogScreenshots(run.id)).toBe(1);
+  await languageTranslationsDone();
+  const de = await translation();
+  expect(JSON.stringify(de.content)).toContain("[de] The theme menu");
+  expect(de.body).not.toContain("Screenshot");
+  expect(model.requests).toHaveLength(2);
 });
