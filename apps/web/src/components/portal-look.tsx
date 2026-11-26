@@ -2,6 +2,7 @@
 
 import { LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import { createContext, useContext, useId, useSyncExternalStore } from "react";
 
@@ -131,17 +132,27 @@ export function IfSidebarLinks({ children }: { children: React.ReactNode }) {
   return usePortalLook().sidebarLinks.length > 0 ? children : null;
 }
 
+/**
+ * The language the team writes the portal's own words in (its default): their links' labels and boards' names carry it,
+ * inside landmarks named in the reader's language (`lang` on those), until <html lang> follows the reader (L3).
+ */
+export const TeamLanguageContext = createContext<string | undefined>(undefined);
+export const useTeamLanguage = () => useContext(TeamLanguageContext);
+
 /** The team's links in the header. On phones they get a line of their own. */
 export function PortalHeaderLinks() {
   const { headerLinks } = usePortalLook();
+  const t = useTranslations("header");
+  const lang = useLocale();
+  const team = useTeamLanguage();
   if (headerLinks.length === 0) {
     return null;
   }
   return (
     // On phones and tablets they're in the header's menu (PortalMenu).
-    <nav aria-label="Links" className="flex flex-wrap gap-x-4 gap-y-1 max-md:hidden">
+    <nav lang={lang} aria-label={t("links")} className="flex flex-wrap gap-x-4 gap-y-1 max-md:hidden">
       {headerLinks.map((link, i) => (
-        <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
+        <a key={i} href={link.url} lang={team} className="text-sm text-muted-foreground hover:text-foreground">
           {link.label}
         </a>
       ))}
@@ -152,13 +163,16 @@ export function PortalHeaderLinks() {
 /** Without JavaScript (where the header's menu can't open), on phones and tablets: the team's header links in a row of their own. */
 export function PortalLinksRow() {
   const { headerLinks } = usePortalLook();
+  const t = useTranslations("header");
+  const lang = useLocale();
+  const team = useTeamLanguage();
   if (headerLinks.length === 0) {
     return null;
   }
   return (
-    <nav aria-label="Links" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 md:hidden">
+    <nav lang={lang} aria-label={t("links")} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 md:hidden">
       {headerLinks.map((link, i) => (
-        <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
+        <a key={i} href={link.url} lang={team} className="text-sm text-muted-foreground hover:text-foreground">
           {link.label}
         </a>
       ))}
@@ -174,6 +188,9 @@ export function PortalLinksRow() {
 export function PortalFooter({ docs = false }: { docs?: boolean }) {
   const { footerLinks, poweredBy, themeSwitch } = usePortalLook();
   const path = usePortalPath();
+  const t = useTranslations("footer");
+  const lang = useLocale();
+  const team = useTeamLanguage();
   // Docs pages have it under the page, beside the tree (DocsLayout): under the tree's column it would push the tree up as it scrolls into view.
   const onDocs = path === "/docs" || path.startsWith("/docs/");
   if ((footerLinks.length === 0 && !poweredBy && !themeSwitch) || onDocs !== docs) {
@@ -183,24 +200,28 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
     // Inside <main> on Docs, where a footer isn't the page's footer landmark unless it says so.
     <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "border-t px-6 py-6")}>
       {footerLinks.length > 0 && (
-        <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+        <nav lang={lang} aria-label={t("label")} className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {footerLinks.map((link, i) => (
-            <a key={i} href={link.url} className="text-xs text-muted-foreground hover:text-foreground">
+            <a key={i} href={link.url} lang={team} className="text-xs text-muted-foreground hover:text-foreground">
               {link.label}
             </a>
           ))}
         </nav>
       )}
-      {poweredBy && <PoweredByTuti source="portal" />}
+      {poweredBy && (
+        <PoweredByTuti source="portal" lang={lang}>
+          {(logo) => t.rich("poweredBy", { logo })}
+        </PoweredByTuti>
+      )}
       {themeSwitch && <ThemeSwitch />}
     </footer>
   );
 }
 
 const THEMES = [
-  ["system", "System", MonitorIcon],
-  ["light", "Light", SunIcon],
-  ["dark", "Dark", MoonIcon],
+  ["system", MonitorIcon],
+  ["light", SunIcon],
+  ["dark", MoonIcon],
 ] as const;
 const noStore = () => () => {};
 
@@ -215,9 +236,13 @@ function ThemeSwitch() {
   const tried = useSyncExternalStore(onShown, () => shownScheme, () => null);
   const name = useId();
   const hydrated = useSyncExternalStore(noStore, () => true, () => false);
+  const t = useTranslations("footer");
   return (
-    <div role="radiogroup" aria-label="Theme" className="flex gap-0.5">
-      {THEMES.map(([value, label, Icon]) => (
+    // In the reader's language, until <html lang> follows it (L3).
+    <div role="radiogroup" lang={useLocale()} aria-label={t("theme")} className="flex gap-0.5">
+      {THEMES.map(([value, Icon]) => {
+        const label = t(value);
+        return (
         <label
           key={value}
           title={label}
@@ -245,7 +270,8 @@ function ThemeSwitch() {
           />
           <Icon aria-hidden className="size-3.5" />
         </label>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -254,8 +280,25 @@ function ThemeSwitch() {
  * "Powered by tuti", linking to tuti.so: under the portal's pages and the widget's tabs (see PortalFooter). The link says
  * where it was (utm_*): the badge sends no referrer, so otherwise every click would read as a direct visit. Never which
  * project: on a self-hosted installation that would tell tuti.so what it runs (docs/self-hosting.md lists what it sends).
+ * `children` words it around the logo in the reader's language (the portal's footer); the widget's is English until its text moves (L5).
  */
-export function PoweredByTuti({ source, className }: { source: "portal" | "widget"; className?: string }) {
+export function PoweredByTuti({
+  source,
+  className,
+  lang,
+  children = (logo) => <>Powered by {logo()}</>,
+}: {
+  source: "portal" | "widget";
+  className?: string;
+  lang?: string;
+  children?: (logo: () => React.ReactNode) => React.ReactNode;
+}) {
+  const logo = () => (
+    <>
+      <TutiMark mono className="size-4" />
+      <TutiWordmark className="text-foreground" />
+    </>
+  );
   const href = `https://tuti.so/?utm_source=${source}&utm_medium=powered_by&utm_campaign=badge`;
   return (
     <a
@@ -263,11 +306,10 @@ export function PoweredByTuti({ source, className }: { source: "portal" | "widge
       href={href}
       target="_blank"
       rel="noreferrer"
+      lang={lang}
       className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground", className)}
     >
-      Powered by
-      <TutiMark mono className="size-4" />
-      <TutiWordmark className="text-foreground" />
+      {children(logo)}
     </a>
   );
 }

@@ -4,6 +4,27 @@
     "menu": "Menu",
     "closeMenu": "Close the menu",
     "language": "Language: {language}",
-    "languages": "Language"
+    "languages": "Language",
+    "portal": "Portal",
+    "feedback": "Feedback",
+    "roadmap": "Roadmap",
+    "changelog": "Changelog",
+    "docs": "Documentation",
+    "new": "New",
+    "boards": "Boards",
+    "menuDescription": "{name}: where to go from here.",
+    "links": "Links",
+    "account": "Account",
+    "accountSettings": "Account settings",
+    "signOut": "Sign out",
+    "signOutFailed": "Couldn't sign you out. Try again."
+  },
+  "footer": {
+    "label": "Footer",
+    "poweredBy": "Powered by <logo></logo>",
+    "theme": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
   }
 }

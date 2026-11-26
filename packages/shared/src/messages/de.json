@@ -4,6 +4,27 @@
     "menu": "Menü",
     "closeMenu": "Menü schließen",
     "language": "Sprache: {language}",
-    "languages": "Sprache"
+    "languages": "Sprache",
+    "portal": "Portal",
+    "feedback": "Feedback",
+    "roadmap": "Roadmap",
+    "changelog": "Changelog",
+    "docs": "Dokumentation",
+    "new": "Neu",
+    "boards": "Boards",
+    "menuDescription": "{name}: Wohin als Nächstes?",
+    "links": "Links",
+    "account": "Konto",
+    "accountSettings": "Kontoeinstellungen",
+    "signOut": "Abmelden",
+    "signOutFailed": "Abmelden fehlgeschlagen. Bitte erneut versuchen."
+  },
+  "footer": {
+    "label": "Fußzeile",
+    "poweredBy": "Bereitgestellt von <logo></logo>",
+    "theme": "Darstellung",
+    "system": "System",
+    "light": "Hell",
+    "dark": "Dunkel"
   }
 }
