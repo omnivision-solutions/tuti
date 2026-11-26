@@ -1701,7 +1701,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
       body: JSON.stringify(body),
     });
     expect(response.ok).toBe(true);
-    return (await response.json()) as { slug: string };
+    return (await response.json()) as { id: string; slug: string };
   };
 
   // No published articles yet: no Docs tab.
@@ -1834,12 +1834,13 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
     await expect(stat("Found nothing")).toContainText("2", { timeout: 2_000 });
   }).toPass();
 
-  // The customer's page opens the widget at an article (say, from a contextual help button).
+  // The customer's page opens the widget at an article by its ID (say, from a contextual help button).
   await visitor.keyboard.press("Escape");
   await expect(visitor.locator("#tuti-widget")).toBeHidden();
+  expect(exporting.id).toMatch(/^a_[a-z0-9]{8}$/);
   await visitor.evaluate(
     (article) => (window as unknown as { Tuti: { open(options: { article: string }): void } }).Tuti.open({ article }),
-    exporting.slug,
+    exporting.id,
   );
   await expect(launcher).toHaveAttribute("aria-expanded", "true");
   await expect(widget.getByRole("heading", { name: "Exporting your data", level: 1 })).toBeVisible();

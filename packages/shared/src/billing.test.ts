@@ -102,6 +102,16 @@ test("a file without monthly email limits is valid: none", () => {
   expect(billingConfig()!.plans.map(({ limits }) => limits.emailsPerMonth)).toEqual([null, null, null]);
 });
 
+test("a file without language limits is valid: none", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => config.plans.forEach((plan) => delete plan.limits.languages)));
+  expect(billingConfig()!.plans.map(({ limits }) => limits.languages)).toEqual([null, null, null]);
+});
+
+test("a plan has no fewer languages than the plan before it", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.limits.languages = 2; }));
+  expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.languages/);
+});
+
 test("prices are whole dollars", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices.month!.perMonth = 8.33; }));
   expect(() => billingConfig()).toThrow(/plans\[1\]\.prices\.month\.perMonth/);

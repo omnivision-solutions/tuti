@@ -7,7 +7,7 @@ vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
 
-const { HowAnnounced, publishSummary, WhoSeesIt } = await import("./changelog");
+const { emailable, HowAnnounced, publishSummary, WhoSeesIt } = await import("./changelog");
 
 /** The Publish dialog's line, as text (the count's popover aside). */
 const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
@@ -153,6 +153,21 @@ describe("the Publish dialog's line", () => {
   });
 });
 
+test("an email-only entry offers no Mark it new (it's in no widget), before publishing or after", () => {
+  const entry = { number: 1, title: "Pricing", content: { type: "doc" as const, content: [] }, tags: [], groups: [], emailOnly: true, posts: [], cover: null, told: null, announced: true, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 };
+  for (const published of [false, true]) {
+    const html = renderToStaticMarkup(createElement(HowAnnounced, { entry: { ...entry, published }, subscribers: 1 }));
+    expect(html).toContain("Not in your widget: it&#x27;s email only.");
+    expect(html).not.toContain("Mark it new");
+    expect(html).not.toContain("Marked new");
+  }
+});
+
+test("an email-only entry's Publish line says it's listed nowhere", () => {
+  const { start, count } = publishSummary({ email: true, subscribers: 3, emailedSubscribers: false, subscribersLeft: 0, posts: 0, asked: 0, emailOnly: true });
+  expect(`${start}${count}.`).toBe("It's listed nowhere, and sends 3 emails.");
+});
+
 describe("Who sees it", () => {
   test("a draft for some groups counts, and says it counts, only the subscribers in them", () => {
     expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 0)).toContain("Nobody in its groups has subscribed.");
@@ -171,9 +186,20 @@ describe("Who sees it", () => {
 
   test("on a plan without reader groups, each group's description names the plan it needs", () => {
     const html = picker({ title: "Reader groups need the Business plan", billingHref: null, note: null });
-    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    const id = /name="groups"[^>]*aria-describedby="([^"]+)"|aria-describedby="([^"]+)"[^>]*name="groups"/.exec(html)?.slice(1).find(Boolean);
     expect(id).toBeTruthy();
     expect(html).toContain(`id="${id}" hidden="">Reader groups need the Business plan</span>`);
-    expect(picker(null)).not.toContain("aria-describedby");
+    expect(picker(null)).not.toMatch(/<input[^>]*name="groups"[^>]*aria-describedby/);
   });
+});
+
+test("Email only promises an email only where publishing can still send one", () => {
+  const draft = { sample: false, importedOn: null, published: false, emailedSubscribers: false };
+  expect(emailable(null, 3)).toBe(true);
+  expect(emailable(draft, 0)).toBe(true);
+  expect(emailable(draft, null)).toBe(false);
+  expect(emailable({ ...draft, sample: true }, 3)).toBe(false);
+  expect(emailable({ ...draft, importedOn: "2 April 2024" }, 3)).toBe(false);
+  expect(emailable({ ...draft, published: true }, 3)).toBe(false);
+  expect(emailable({ ...draft, published: true, emailedSubscribers: true }, 3)).toBe(true);
 });

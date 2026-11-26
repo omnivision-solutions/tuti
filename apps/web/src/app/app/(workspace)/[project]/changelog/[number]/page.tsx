@@ -62,6 +62,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       content: true,
       tags: true,
       groups: groupClaims,
+      emailOnly: true,
       updatedAt: true,
       publishedAt: true,
       announced: true,
@@ -212,6 +213,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   markers={entry.publishedAt ? [] : markersIn(displayDoc(entry))}
                   // Offered while it has no cover: Publish can add one.
                   covers={entry.cover ? null : covers}
+                  emailOnly={entry.emailOnly}
                   part="publish"
                 />
               </PageActions>
@@ -232,6 +234,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 content: displayDoc(entry) as Doc,
                 tags: entry.tags.map((t) => t.toLowerCase() as TagName),
                 groups: claimsOf(entry),
+                emailOnly: entry.emailOnly,
                 posts: listed,
                 published: entry.publishedAt !== null,
                 cover,

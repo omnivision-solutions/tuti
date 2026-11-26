@@ -100,6 +100,11 @@ describe("EmailRichText", () => {
     expect(await html(doc({ type: "video", attrs: { provider: "evil", id: "x" } }))).not.toContain("<a");
   });
 
+  test("with no page to link to (an email-only entry), a video links to its own", async () => {
+    const out = await render(createElement(EmailRichText, { doc: doc(video), linkUrl: null }));
+    expect(out).toMatch(/<a href="https:\/\/www\.youtube\.com\/watch\?v=dQw4w9WgXcQ"[^>]*>.*Watch the video/);
+  });
+
   test("plain text stays readable", async () => {
     const out = await plain(everything, MEDIA);
     for (const line of ["BIG NEWS", "First bullet", "Third step", "const a = 1;", "A quote", "Watch the video"]) {

@@ -350,8 +350,9 @@ export function ReplyForm({
         </Field>
         {!note && toTranslate && translated && !(shownPreview && "asWritten" in shownPreview) && (
           // The reply as the customer will get it, under what the team wrote (docs/plan.md L22).
-          <div className="inbox-reply-translation mx-1 mt-1 mb-1.5 rounded-lg bg-muted px-2.5 py-1.5 text-xs leading-normal" aria-live="polite">
-            <p className="flex items-center gap-1 font-medium text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none">
+          <div className="inbox-reply-translation mx-1 mt-1 mb-1.5 rounded-lg bg-muted px-2.5 py-1.5 text-xs leading-normal">
+            {/* Only the status is announced: the translation itself would be read out at every pause in typing. */}
+            <p aria-live="polite" className="flex items-center gap-1 font-medium text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none">
               <LanguagesIcon aria-hidden />
               {shownPreview && "failed" in shownPreview
                 ? `Couldn't translate it into ${nativeLanguageName(translated.language)}`
@@ -367,7 +368,9 @@ export function ReplyForm({
                 </Button>
               </div>
             ) : (
-              <p lang={shownPreview.language} className="mt-0.5 text-sm break-words whitespace-pre-wrap">
+              // Held to a third of the screen, so the reply box stays in view above it (a phone with its keyboard open);
+              // scrolled inside, from the keyboard too.
+              <p lang={shownPreview.language} tabIndex={0} className="mt-0.5 max-h-[30vh] overflow-y-auto text-sm break-words whitespace-pre-wrap">
                 {shownPreview.text}
               </p>
             )}

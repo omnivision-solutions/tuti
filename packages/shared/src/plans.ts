@@ -239,6 +239,11 @@ export function emailsPerMonth(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.emailsPerMonth : null;
 }
 
+/** How many languages a project on `plan` may have, its default included, or null for no limit (always, without plans). */
+export function languageLimit(plan: PlanKey): number | null {
+  return plansEnabled() ? terms(plan).limits.languages : null;
+}
+
 /** The longest range Reporting shows a project on `plan`, in days, or null for every range (always, without plans). */
 export function reportingDays(plan: PlanKey): number | null {
   return plansEnabled() ? terms(plan).limits.reportingDays : null;

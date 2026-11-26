@@ -298,6 +298,9 @@ model Project {
   /// description, and the image a link to it shows (an upload, like the logos).
   seoTitle                       String       @default("")
   seoDescription                 String       @default("")
+  /// The language the team writes in (docs/plan.md, Languages: a code from @tuti/shared's LANGUAGES). Its pages keep
+  /// their addresses; it changes only while the project has no other languages.
+  language                       String       @default("en")
   seoImageId                     String?
   /// More of the look (Customize → Branding): light or dark mode for readers who haven't picked one
   /// ("system": their device's), text beside the logo (empty: none, or the project's name without a
@@ -457,6 +460,7 @@ model Project {
   emailPreferences         EmailPreference[]
   changelogEntries         ChangelogEntry[]
   changelogSubscribers     ChangelogSubscriber[]
+  languages                ProjectLanguage[]
   articles                 Article[]
   articleChunks            ArticleChunk[]
   apiOperationEntries      ApiOperationEntry[]
@@ -1829,6 +1833,27 @@ model ChangelogSubscriber {
   @@map("changelog_subscriber")
 }
 
+/// A language a project's portal is in besides its default one (docs/plan.md, Languages), in the order added.
+model ProjectLanguage {
+  projectId        String
+  /// A code from @tuti/shared's LANGUAGES.
+  code             String
+  /// New pages are translated automatically (else the team writes them).
+  automatic        Boolean  @default(true)
+  /// For translating into it: "Use du".
+  instructions     String   @default("")
+  /// "Our product is available in <language>": the team's own product has its words in this language.
+  productAvailable Boolean  @default(false)
+  /// Readers get it; until then only the team can open its pages.
+  live             Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, code])
+  @@map("project_language")
+}
+
 /// Emailing a published changelog entry to a subscriber: claimed, then sent (once per entry and subscriber).
 model ChangelogEmail {
   entryId      String
@@ -2332,6 +2357,10 @@ enum ArticleListing {
 model Article {
   id              String         @id @default(cuid())
   projectId       String
+  /// Its ID for embeds and the API (`id` in articles.*, `data-tuti-article`): `a_` and 8 lowercase letters and
+  /// digits, a shape no slug can take. Made by the database when it's created, never changed, so a new slug never
+  /// breaks what refers to it.
+  publicId        String         @default(dbgenerated("article_public_id()"))
   /// From the title (or the team's, with `customSlug`); no other live article, tab or collection in the
   /// project has it, so /docs/<slug> is one page. Follows the title while it's a draft, unless it's custom.
   slug            String
@@ -2394,6 +2423,7 @@ model Article {
   verifications     ArticleVerification[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
+  @@unique([projectId, publicId])
   @@index([collectionId])
   @@index([deletedAt])
   @@map("article")
