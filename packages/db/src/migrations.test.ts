@@ -51,15 +51,18 @@ describe("migrations", () => {
     expect(found).toEqual([]);
   });
 
-  // Prisma can't describe the index (btree_gin), so `prisma migrate dev` writes a drop and a plain build of it
-  // into every new migration: that would hold up new messages while it builds.
-  it("leave the Inbox's search index alone", () => {
+  // Prisma can't describe these indexes (btree_gin with pg_trgm), so `prisma migrate dev` writes a drop and a plain build
+  // of each into every new migration: that would hold up the table's writes while it builds. Each with the migration that
+  // made it (CONCURRENTLY).
+  it.each([
+    ["conversation_message_project_body_trgm_idx", "20261124190100_conversation_message_project_body_trigram_index"],
+    ["conversation_message_project_team_text_trgm_idx", "20261126090100_conversation_message_team_text_trigram_index"],
+    ["article_translation_project_body_trgm_idx", "20261127090100_article_translation_body_trigram_index"],
+  ])("leave the search index %s alone", (index, made) => {
     const dir = new URL("../prisma/migrations/", import.meta.url);
     const rebuilt = readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name > "20261124190100_conversation_message_project_body_trigram_index")
-      .filter((entry) =>
-        readFileSync(new URL(`${entry.name}/migration.sql`, dir), "utf8").includes("conversation_message_project_body_trgm_idx"),
-      )
+      .filter((entry) => entry.isDirectory() && entry.name > made)
+      .filter((entry) => readFileSync(new URL(`${entry.name}/migration.sql`, dir), "utf8").includes(index))
       .map((entry) => entry.name);
     expect(rebuilt).toEqual([]);
   });
