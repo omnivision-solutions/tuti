@@ -78,10 +78,10 @@ async function groupsOf(tx: Prisma.TransactionClient, projectId: string, userId:
  * whatever the team changed in its workflows meanwhile. A conversation in Spam runs nothing, and its message isn't
  * marked: Not spam on what the filter filed runs its first message's list then.
  *
- * Returns what changed on the conversation, for whoever tells of it. Never throws: the message is in, and the team is
+ * Returns the conversation's priority as it is now, for whoever tells of it. Never throws: the message is in, and the team is
  * told of it whatever happens here. ponytail: a run that failed isn't tried again; `pathDueAt` (W3) is where it would be.
  */
-export async function runWorkflows(projectId: string, conversationId: string, messageId: string, trigger: WorkflowTrigger): Promise<{ priority?: true }> {
+export async function runWorkflows(projectId: string, conversationId: string, messageId: string, trigger: WorkflowTrigger): Promise<{ priority?: boolean }> {
   try {
     return await prisma.$transaction(async (tx) => {
       const [conversation] = await tx.$queryRaw<{ spam: boolean; priority: boolean; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
@@ -95,7 +95,8 @@ export async function runWorkflows(projectId: string, conversationId: string, me
         data: { workflowsRanAt: new Date() },
       });
       if (count === 0) {
-        return {};
+        // Ran for this message already: the conversation as it is now, whatever ran it.
+        return { priority: conversation.priority };
       }
       const workflows = await tx.workflow.findMany({
         where: { projectId, trigger, enabled: true },
@@ -142,7 +143,8 @@ export async function runWorkflows(projectId: string, conversationId: string, me
         });
         await notifyInbox(tx, { projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
       }
-      return held.priority && !conversation.priority ? { priority: true as const } : {};
+      // As it is once this commits, changed here or not: a reply's workflows may have marked it before this ran.
+      return { priority: held.priority };
     });
   } catch (error) {
     log.error("Running a conversation's workflows failed", { projectId, conversationId, messageId, trigger, error });

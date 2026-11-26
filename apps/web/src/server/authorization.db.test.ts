@@ -852,9 +852,11 @@ const matrix: Matrix = {
   },
   // The inbox's workflows are settings: owners and admins only, like Settings → Inbox.
   workflows: {
+    // Saving an existing one, so another project's workflow id is refused too (creating, with null, is the same check without an id).
     saveWorkflow: {
       allowed: "ADMIN",
-      call: (slug) => workflows.saveWorkflow(slug, null, { name: "Priority", trigger: "conversation_started", actions: [{ kind: "mark_priority" }] }),
+      takesIds: true,
+      call: (slug, f) => workflows.saveWorkflow(slug, f.workflowId, { name: "Priority", trigger: "conversation_started", actions: [{ kind: "mark_priority" }] }),
     },
     moveWorkflow: { allowed: "ADMIN", takesIds: true, call: (slug, f) => workflows.moveWorkflow(slug, f.workflowId, 0) },
     deleteWorkflow: { allowed: "ADMIN", takesIds: true, call: (slug, f) => workflows.deleteWorkflow(slug, f.workflowId) },

@@ -179,7 +179,7 @@ test("someone Tuti doesn't know is in no group: a signed-out visitor, an address
   const reader = await signUp("Reader");
   await startConversation(projectId, { userId: reader.id, email: null, body: "Hello", origin: "WIDGET", channel: "WIDGET" }); // #4
   const fourth = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 4 } }, include: { messages: true } });
-  expect(await runWorkflows(projectId, fourth.id, fourth.messages[0]!.id, "conversation_started")).toEqual({});
+  expect(await runWorkflows(projectId, fourth.id, fourth.messages[0]!.id, "conversation_started")).toEqual({ priority: false });
   for (const number of [1, 2, 3, 4]) {
     expect([number, await priority(number), await notes(number)]).toEqual([number, false, []]);
   }
@@ -202,19 +202,24 @@ test("the same message run twice writes one note and changes nothing twice, what
   await call(moveWorkflow, admin, { id: other.id, position: 0 });
   await call(updateWorkflow, admin, { id: first.id, name: "Renamed" });
   // The message's list has run: again, it changes nothing and writes nothing.
-  expect(await runWorkflows(projectId, conversation.id, message.id, "conversation_started")).toEqual({});
-  expect(await runWorkflows(projectId, conversation.id, message.id, "user_replied")).toEqual({});
+  expect(await runWorkflows(projectId, conversation.id, message.id, "conversation_started")).toEqual({ priority: false });
+  expect(await runWorkflows(projectId, conversation.id, message.id, "user_replied")).toEqual({ priority: false });
+  // What it says is the conversation as it is now, not what this run changed: marked meanwhile, it says so.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { priority: true } });
+  expect(await runWorkflows(projectId, conversation.id, message.id, "conversation_started")).toEqual({ priority: true });
+  await unmark(number);
   expect([await priority(number), await notes(number)]).toEqual([false, ["Everyone first marked this priority"]]);
 
   // Run twice at once for a message that hasn't run: one of them runs it.
   const started = await startConversation(projectId, { userId: null, email: "e2e-twice@example.com", body: "Hello", origin: "API", channel: "API" });
   const runs = await Promise.all([1, 2, 3].map(() => runWorkflows(projectId, started.conversation.id, started.message.id, "conversation_started")));
-  expect(runs.filter((changed) => changed.priority)).toHaveLength(1);
+  // Each says the conversation as it is once its turn commits: marked, by the one that ran it.
+  expect(runs).toEqual([{ priority: true }, { priority: true }, { priority: true }]);
   expect(await notes(started.conversation.number)).toEqual(["Another marked this priority"]);
   // Only a user's message runs a list: never the note it left.
   const note = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: started.conversation.id, author: "TUTI" } });
   await unmark(started.conversation.number);
-  expect(await runWorkflows(projectId, started.conversation.id, note.id, "user_replied")).toEqual({});
+  expect(await runWorkflows(projectId, started.conversation.id, note.id, "user_replied")).toEqual({ priority: false });
   expect(await priority(started.conversation.number)).toBe(false);
 });
 
