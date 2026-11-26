@@ -498,7 +498,8 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
     ])
   ).flat();
   let found: { id: string; slug: string } | undefined;
-  for (const candidate of candidates) {
+  // One article found by several lookups is checked once, at its first place.
+  for (const candidate of new Map(candidates.map((candidate) => [candidate.id, candidate])).values()) {
     if (await articleAt(projectSlug, candidate.slug)) {
       found = candidate;
       break;
