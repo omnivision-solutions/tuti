@@ -49,6 +49,12 @@ const retranslate = async (input: Parameters<typeof retranslateLanguage.run>[1])
   return result;
 };
 
+/** Publishes "Getting started", once its translating (in the background, inline) is done. */
+const publish = async () => {
+  await call(publishArticle, as(), { slug: "getting-started" });
+  await languageTranslationsDone();
+};
+
 const BODY = "Open Settings and click New project.\n\nPick a plan that fits your team.";
 
 /** A reply translating every segment of "Getting started" with `body`: `[tag] ` before each one's text. */
@@ -69,7 +75,7 @@ test("publishing translates into each language kept up to date, its title, descr
   await languages({ languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
   await draft();
   model.reply(reply());
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
 
   expect(model.requests).toHaveLength(1);
   expect(model.requests[0]!.system).toContain("from English into German");
@@ -88,6 +94,7 @@ test("publishing translates into each language kept up to date, its title, descr
   const changed = "Open Settings and click New project.\n\nPick any plan.";
   model.reply(reply("de", changed));
   await call(updateArticle, as(), { slug: "getting-started", body: changed, publish: true });
+  await languageTranslationsDone();
   expect(model.requests).toHaveLength(2);
   expect(model.requests[1]!.user).toContain("Pick any plan.");
   expect(model.requests[1]!.user).not.toContain("Open Settings");
@@ -96,7 +103,7 @@ test("publishing translates into each language kept up to date, its title, descr
 
 test("adding a language translates every published article; Retranslate sends everything again", async () => {
   await draft();
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
   model.reply(reply());
   await languages({ languages: [{ code: "de" }] });
   expect(await translation()).toMatchObject({ title: "[de] Getting started" });
@@ -112,7 +119,7 @@ test("the product setting changing: versions kept up to date retranslated anew u
   await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
   // A version the team writes.
   const { id: articleId } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
   await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", automatic: false } });
@@ -137,7 +144,7 @@ test("the setting changing between a job's translating and its write: it writes 
   await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
 
   // Retranslate's job is waiting for its answer when the switch changes; the switch's job is answered first.
   model.reply(reply("stale"), () => call(updateLanguages, as(), { languages: [{ code: "de", productAvailable: true }] }));
@@ -152,7 +159,7 @@ test("a job queued under the old setting stops before asking anything", async ()
   await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
   const { articleId } = await translation();
   // As a job would see it partway: the setting counted a change since it read it (its first read, mocked to the old one).
   const findUnique = prisma.articleTranslation.findUnique.bind(prisma.articleTranslation);
@@ -174,7 +181,7 @@ test("can't run: provider failures are retried, then the page waits with why and
   // Inline, the job's first run is its last try: the provider failing (asked, then asked again once), the page waits.
   model.fail(500);
   model.fail(500);
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
   const { articleId } = await translation();
   expect(await translation()).toMatchObject({ publishedAt: null, error: "The translation provider didn't answer", tries: 1 });
   // Not the last try: thrown for Hatchet's retry.
@@ -215,7 +222,7 @@ test("on its last try, any other error marks the page as waiting, to be tried ag
   await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
-  await call(publishArticle, as(), { slug: "getting-started" });
+  await publish();
   const { articleId } = await translation();
   model.reply(reply("again"));
   // Its write fails (the database, say): thrown for Hatchet's retry before the last try, kept on the page on it.
@@ -231,4 +238,30 @@ test("on its last try, any other error marks the page as waiting, to be tried ag
   } finally {
     spy.mockRestore();
   }
+});
+
+test("a translation that can't be queued, or whose job is lost, waits and is queued again by the retry job", async () => {
+  await draft();
+  await publish();
+  // Hatchet can't be reached when German is added: the page waits with a time to try again.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  vi.stubEnv("HATCHET_CLIENT_TOKEN", "not-a-token");
+  await languages({ languages: [{ code: "de" }] });
+  vi.stubEnv("JOBS_DRIVER", "inline");
+  const waiting = await translation();
+  expect(waiting).toMatchObject({ publishedAt: null, error: "Couldn't translate it" });
+  expect(waiting.retryAt!.getTime()).toBeGreaterThan(Date.now());
+  expect((await call(getLanguages, as(), {})).languages[0]!.articles).toMatchObject({ waiting: 1, why: "Couldn't translate it" });
+
+  // Due: queued again and translated, nothing left to try.
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  model.reply(reply());
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await translation()).toMatchObject({ title: "[de] Getting started", error: null, retryAt: null });
+
+  // A job lost after it was queued (no error, its safety net's time passed) is queued again; up to date, it ends there.
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await translation()).toMatchObject({ retryAt: null });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
 });
