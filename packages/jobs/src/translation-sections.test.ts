@@ -206,3 +206,22 @@ test("the team's own intro at the top stands for an intro the source adds later:
   ]);
   expect(behindSections(back, source2).map((key) => key.split("\u001f")[0])).toEqual([""]);
 });
+
+test("the team's intro standing for the source's stays through later runs, and gives way when the team asks for that section", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  const de = doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const edited: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...de.content!] };
+  const { sections: ours } = editedSections(versionSections(de, [], source), edited, source);
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source2 = sourceSections(v2);
+  const translated = doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const once = withTranslation(ours, translated, source2, { published: true });
+  // English changes Billing: the published text keeps the team's intro.
+  const v3 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by invoice"]);
+  const twice = withTranslation(versionSections(docOfSections(once), metaOf(once), source2), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v3), { published: true });
+  expect(texts(docOfSections(twice))).toEqual(["Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Per Rechnung"]);
+  // A version the team writes, asking for the intro: its translation, as asked.
+  const asked = withTranslation(ours, translated, source2, { only: new Set([source2[0]!.key]) });
+  expect(texts(docOfSections(asked))).toEqual(["Einleitung", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+});

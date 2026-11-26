@@ -96,9 +96,11 @@ export function withTranslation(
   // source's intro then: still theirs, and behind it (the source's intro is new to it).
   const headless = (section: Section | undefined) => !!section && section.blocks[0]?.type !== "heading";
   if (headless(out[0]) && headless(out[1])) {
+    const introKey = source[0]!.key;
     const [first, second] = [out[0]!, out[1]!];
-    const theirs = first.meta.key === null || first.meta.own ? first : second;
-    out.splice(0, 2, { blocks: theirs.blocks, meta: { key: first.meta.key ?? second.meta.key, hash: null, own: true } });
+    const [sources, theirs] = first.meta.key === introKey ? [first, second] : [second, first];
+    // Asked for (Update those sections): its new translation, as asked. Else the team's, kept (so a later run keeps it too).
+    out.splice(0, 2, only?.has(introKey) ? sources : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true } });
   }
   return out;
 }
