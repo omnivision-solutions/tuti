@@ -887,7 +887,7 @@ function Conversation({
                   {m.original !== null && (
                     // A translated reply: what the team wrote, a click away (docs/plan.md L22).
                     <details className="group mt-1 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer font-medium underline underline-offset-2">
+                      <summary className="w-fit cursor-pointer list-none font-medium underline underline-offset-2 [&::-webkit-details-marker]:hidden">
                         <span className="group-open:hidden">Show original</span>
                         <span className="hidden group-open:inline">Hide original</span>
                       </summary>

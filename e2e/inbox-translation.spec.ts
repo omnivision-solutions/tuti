@@ -181,9 +181,10 @@ test("in the widget, a German customer gets the team's reply in German, with wha
 
   // The customer reads the German; what the team wrote is a click away.
   await expect(thread).toContainText(inGerman);
-  await expect(thread).not.toContainText(reply);
+  const original = thread.getByText(reply, { exact: true });
+  await expect(original).toBeHidden();
   await thread.getByText("Show original").click();
-  await expect(thread).toContainText(reply);
+  await expect(original).toBeVisible();
   await expect(thread.getByText("Hide original")).toBeVisible();
   await checkpoint(kai, "widget-show-original");
   await kai.setViewportSize({ width: 390, height: 844 });
