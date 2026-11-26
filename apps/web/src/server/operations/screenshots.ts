@@ -348,7 +348,7 @@ export const getScreenshots = defineOperation({
 
 export const takeChangelogScreenshots = defineOperation({
   name: "changelog.takeScreenshots",
-  title: "Fill an entry's screenshot lines",
+  title: "Fill screenshot lines",
   summary: `Take screenshots for the entry's "[Screenshot: …]" lines (up to ${MAX_SHOTS}), in the background (screenshots.get reads the run). Each one taken replaces its line if the line is still as it was; one not taken stays, holding publishing back. Costs credits where used`,
   method: "POST",
   path: "/changelog/{number}/screenshots",
