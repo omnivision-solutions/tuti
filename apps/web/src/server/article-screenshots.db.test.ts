@@ -7,9 +7,10 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { displayDoc } from "@/server/content";
 import { takeArticleScreenshots as takeFromEditor } from "@/server/docs";
 import { createArticle, publishArticle, publishChanges, updateArticle } from "@/server/operations/docs";
+import { applyCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { articleScreenshots, articleScreenshotsRunning, placeLeftoverScreenshots, takeArticleScreenshots, updateScreenshotSettings } from "@/server/operations/screenshots";
-import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, landArticleEdit, signUp, type TestUser } from "@/test/helpers";
 
 /** Help center articles' "[Screenshot: …]" lines filled with screenshots (docs/plan.md, SC3): Browser Use's fake, jobs inline. */
 
@@ -193,6 +194,15 @@ test("a screenshot marker anywhere holds publishing back, not only a line of its
   );
   await call(publishArticle, as(), { slug: code });
   expect((await article(code)).publishedAt).not.toBeNull();
+  // Nor is it a line to fill: Take screenshots isn't offered for it.
+  expect(screenshotsAsked(await savedText(code))).toEqual([]);
+  // In a step's title, or a details block's summary.
+  const inStep = await write(doc({ type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Open Billing [Screenshot: the billing page]" }] }] }] }));
+  await expect(call(publishArticle, as(), { slug: inStep })).rejects.toMatchObject({ status: 409, code: "markers" });
+  const inDetails = await write(
+    doc({ type: "details", content: [{ type: "detailsSummary", content: [{ type: "text", text: "[Screenshot: the menu]" }] }, { type: "detailsContent", content: [paragraph("Open it.")] }] }),
+  );
+  await expect(call(publishArticle, as(), { slug: inDetails })).rejects.toMatchObject({ status: 409, code: "markers" });
   const step = { type: "orderedList", attrs: { start: 1 }, content: [{ type: "listItem", content: [paragraph("Open Billing. [Screenshot: the billing page]")] }] };
   const slug = await write(doc(step));
   await expect(call(publishArticle, as(), { slug })).rejects.toMatchObject({ status: 409, code: "markers", message: expect.stringContaining("[Screenshot: the billing page]") });
@@ -200,4 +210,17 @@ test("a screenshot marker anywhere holds publishing back, not only a line of its
   await call(publishArticle, as(), { slug });
   await call(updateArticle, as(), { slug, content: doc(paragraph("Open Billing, then [screenshot: the menu] pick a plan.")) });
   await expect(call(publishChanges, as(), { slug })).rejects.toMatchObject({ status: 409, code: "markers", message: expect.stringContaining("[screenshot: the menu]") });
+});
+
+test("Autopilot's Undo puts back live text that had a marker before (published before this check, or imported): only new text going live is refused", async () => {
+  const before = doc(paragraph("Pick a light theme."), paragraph("[Screenshot: the theme menu]"));
+  const slug = await write(doc(paragraph("Draft.")));
+  const { id } = await article(slug);
+  await prisma.article.update({ where: { id }, data: { content: before, body: "Pick a light theme.\n[Screenshot: the theme menu]", publishedAt: new Date() } });
+  const edit = await landArticleEdit(project.id, id, 91, () => doc(paragraph("Pick a light or dark theme.")));
+  const review = await call(getCodeChangeTarget, as(), { type: "articles", id });
+  await call(applyCodeChangeAction, as(), { id: edit.id, revision: review.revision!, reviewedAs: "published" });
+  expect((await article(slug)).content).toEqual(doc(paragraph("Pick a light or dark theme.")));
+  await call(undoCodeChangeAction, as(), { id: edit.id });
+  expect((await article(slug)).content).toEqual(before);
 });

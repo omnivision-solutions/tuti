@@ -28,12 +28,19 @@ export function screenshotAsked(block: Block): string | null {
   if (block.type !== "paragraph") {
     return null;
   }
-  const text = toPlainText(block).trim();
+  // The syntax quoted as code is an example (an article about asking for screenshots), not a line to fill.
+  const text = toPlainText(withoutCode(block)).trim();
   const start = MARKER_START.exec(text);
   // Whole, however long: two lines alike up to a cut-off aren't the same line (the operations refuse one over
   // MAX_SHOW, which the agent isn't asked).
   return start && text.endsWith("]") ? text.slice(start[0].length, -1).trim() || null : null;
 }
+
+/** A block without its inline code. */
+const withoutCode = (block: Block): Block => ({ ...block, content: block.content?.filter((inline) => !inline.marks?.some((mark) => mark.type === "code")) });
+
+/** Blocks that hold text themselves (their children are text, not blocks). */
+const TEXT_BLOCKS = new Set(["paragraph", "heading", "codeBlock", "stepTitle", "detailsSummary"]);
 
 /** The "[Screenshot: …]" lines a text asks for, in order (see screenshotAsked). */
 export const screenshotsAsked = (doc: Doc) => (doc.content ?? []).map(screenshotAsked).filter((show): show is string => show !== null);
@@ -79,9 +86,8 @@ export function markersIn(doc: Doc, kind: keyof typeof MARKERS = "any"): string[
     if (node.type === "codeBlock" && !code) {
       return;
     }
-    if (node.type === "paragraph" || node.type === "heading" || node.type === "codeBlock") {
-      const text = code ? node : { ...node, content: node.content?.filter((inline) => !inline.marks?.some((mark) => mark.type === "code")) };
-      found.push(...toPlainText(text).split("\n").flatMap((line) => markersOf(line, kind)));
+    if (TEXT_BLOCKS.has(node.type ?? "")) {
+      found.push(...toPlainText(code ? node : withoutCode(node as Block)).split("\n").flatMap((line) => markersOf(line, kind)));
       return;
     }
     node.content?.forEach(read);
