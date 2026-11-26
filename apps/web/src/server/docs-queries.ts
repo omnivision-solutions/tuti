@@ -492,20 +492,45 @@ export async function currentVersions(articles: SourceText[], languages: string[
 }
 
 /**
+ * The languages `articles` are translated into (current versions in `languages`, in their order), at each one's slug there,
+ * without reading any version's text: only what says it's current, and each article's English (hashed once) where a version
+ * kept up to date has to be compared with it. For lists of many (the sitemap).
+ * ponytail: the English's hash worked out from its text each time; storing it on the article is the upgrade if this grows.
+ */
+export async function translatedInto(articles: { id: string; slug: string }[], languages: string[]): Promise<Map<string, { language: string; slug: string }[]>> {
+  const out = new Map<string, { language: string; slug: string }[]>();
+  if (articles.length === 0 || languages.length === 0) {
+    return out;
+  }
+  const slugs = new Map(articles.map((article) => [article.id, article.slug]));
+  const versions = await prisma.articleTranslation.findMany({
+    where: { articleId: { in: [...slugs.keys()] }, language: { in: languages }, publishedAt: { not: null } },
+    select: { articleId: true, language: true, slug: true, automatic: true, sourceHash: true },
+  });
+  const compared = [...new Set(versions.filter((version) => version.automatic).map((version) => version.articleId))];
+  const sources =
+    compared.length > 0 ? await prisma.article.findMany({ where: { id: { in: compared } }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true } }) : [];
+  const hashes = new Map(sources.map((article) => [article.id, translationSource(article).hash]));
+  for (const version of versions.sort((a, b) => languages.indexOf(a.language) - languages.indexOf(b.language))) {
+    if (!version.automatic || version.sourceHash === hashes.get(version.articleId)) {
+      out.set(version.articleId, [...(out.get(version.articleId) ?? []), { language: version.language, slug: version.slug ?? slugs.get(version.articleId)! }]);
+    }
+  }
+  return out;
+}
+
+/**
  * Where an article reads in each language (docs/plan.md: "hreflang and the sitemap list only the languages a page is
  * translated into"): its default-language address, and each live language it has a current version in, at its slug there.
  */
 export async function articleAddresses(projectSlug: string, slug: string): Promise<Record<string, string>> {
-  const article = await prisma.article.findFirst({
-    where: { project: { slug: projectSlug }, slug, ...servedArticle },
-    select: { id: true, projectId: true, title: true, description: true, keywords: true, body: true, content: true },
-  });
+  const article = await prisma.article.findFirst({ where: { project: { slug: projectSlug }, slug, ...servedArticle }, select: { id: true, projectId: true, slug: true } });
   if (!article) {
     return {};
   }
   const languages = await portalLanguages(article.projectId);
-  const versions = (await currentVersions([article], languages.live)).get(article.id) ?? [];
-  return Object.fromEntries([[languages.default, `/docs/${slug}`], ...versions.map((version) => [version.language, `/docs/${version.slug ?? slug}`])]);
+  const versions = (await translatedInto([article], languages.live)).get(article.id) ?? [];
+  return Object.fromEntries([[languages.default, `/docs/${slug}`], ...versions.map((version) => [version.language, `/docs/${version.slug}`])]);
 }
 
 /** A page showing article `slug` in its place (the docs home, a tab's), at its own `path` in every language the article reads in. */

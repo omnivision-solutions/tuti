@@ -17,7 +17,7 @@ import { request } from "@/test/next-headers";
 import { portalAddress } from "./custom-domains";
 import { shareCard } from "./share-card";
 import { docsPage } from "./docs-queries";
-import { createArticle, createTab, publishArticle, updateTab } from "./operations/docs";
+import { createArticle, createCollection, createTab, publishArticle, reorderArticle, updateTab } from "./operations/docs";
 import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -195,4 +195,29 @@ test("a title the share card's fonts can't draw (Japanese) keeps the default lan
   const metadata = await generateMetadata(params("seikyu"));
   expect(metadata.alternates?.canonical).toBe(`${portal}/ja/docs/seikyu`);
   expect(metadata.openGraph?.images).toMatchObject([{ url: `${portal}/og/docs/billing` }]);
+});
+
+test("a tab other than the docs home showing a translated article in its place: in German at its own address, in the sitemap too", async () => {
+  // Guides is the first tab (the docs home); Help, the second, shows Billing (in its collection) in its place.
+  await call(createTab, as(), { name: "Guides" });
+  const help = await call(createTab, as(), { name: "Help" });
+  const collection = await call(createCollection, as(), { name: "Payments", tab: help.slug });
+  await call(reorderArticle, as(), { slug: "billing", collection: collection.slug });
+  await call(updateTab, as(), { slug: help.slug, landing: "page", landingPage: "billing" });
+  at("de");
+  const metadata = await generateMetadata(params(help.slug));
+  expect(metadata.alternates).toMatchObject({
+    canonical: `${portal}/de/docs/${help.slug}`,
+    languages: { en: `${portal}/docs/${help.slug}`, de: `${portal}/de/docs/${help.slug}`, "x-default": `${portal}/docs/${help.slug}` },
+  });
+  at(null);
+  const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+  expect(xml).toContain(`<loc>${portal}/de/docs/${help.slug}</loc>`);
+});
+
+test("the team's preview of a language not live yet: its Markdown's canonical is the default language's, as its page's is", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: false, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] });
+  at("de");
+  const md = await markdown(new Request("http://x"), params("abrechnung"));
+  expect(md.headers.get("link")).toBe(`<${portal}/docs/billing>; rel="canonical"`);
 });

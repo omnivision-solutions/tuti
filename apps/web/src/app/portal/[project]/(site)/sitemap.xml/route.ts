@@ -9,7 +9,7 @@ import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { shownOperations } from "@/server/api-reference-queries";
 import {
-  currentVersions,
+  translatedInto,
   type DocsArticleLink,
   type DocsCollection,
   docsContents,
@@ -70,7 +70,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     prisma.article.findMany({
       where: { projectId: project.id, ...listedArticle, noindex: false, sample: false, ...(await readableArticle(project.id, SIGNED_OUT)) },
       orderBy: { slug: "asc" },
-      select: { id: true, slug: true, updatedAt: true, title: true, description: true, keywords: true, body: true, content: true },
+      select: { id: true, slug: true, updatedAt: true },
     }),
     docsContents(slug, { reader: SIGNED_OUT, locks: false }),
   ]);
@@ -81,7 +81,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     landingSlugs.length > 0
       ? await prisma.article.findMany({
           where: { projectId: project.id, ...servedArticle, sample: false, slug: { in: landingSlugs }, ...(await readableArticle(project.id, SIGNED_OUT)) },
-          select: { id: true, slug: true, updatedAt: true, title: true, description: true, keywords: true, body: true, content: true },
+          select: { id: true, slug: true, updatedAt: true },
         })
       : [];
   const landings = new Map(landingRows.map((article) => [article.slug, article.updatedAt]));
@@ -122,7 +122,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // translated": the sitemap lists only those).
   const [portal, languages] = await Promise.all([portalAddress(slug), pageLanguages(slug)]);
   const live = languages?.live ?? [];
-  const [translations, landingTranslations] = await Promise.all([currentVersions(articles, live), currentVersions(landingRows, live)]);
+  // Which versions are current, read without any version's text (translatedInto).
+  const [translations, landingTranslations] = await Promise.all([translatedInto(articles, live), translatedInto(landingRows, live)]);
   // A tab (or the docs home) showing an article in its place: in the languages that article is translated into, at its own path.
   const landingLanguages = new Map(landingRows.map((row) => [row.slug, (landingTranslations.get(row.id) ?? []).map((version) => version.language)]));
   const tabLanguages = (tab: (typeof docs.tabs)[number] | undefined, path: string): [string, string][] =>
@@ -165,7 +166,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       path: `/docs/${article.slug}`,
       lastmod: article.updatedAt,
       teamText: true,
-      inLanguages: (translations.get(article.id) ?? []).map((version): [string, string] => [version.language, `/docs/${version.slug ?? article.slug}`]),
+      inLanguages: (translations.get(article.id) ?? []).map((version): [string, string] => [version.language, `/docs/${version.slug}`]),
     })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
