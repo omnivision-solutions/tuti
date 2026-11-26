@@ -84,3 +84,20 @@ export function preferredLanguage(accept: string | null, offered: Language[]): L
   }
   return null;
 }
+
+/**
+ * The portal's own path of a page (/feedback/ideas) from Next.js's path of it (usePortalPath): on the server the rewritten
+ * /portal/<slug>/… (the language already off), in the browser the address, which the site's path (`base`; /portal/<slug>
+ * too, the internal path's shape) and the language's prefix come off.
+ */
+export function portalPathOf(path: string, { base, slug, prefix }: { base: string; slug: string; prefix: string }): string {
+  const internal = `/portal/${slug}`;
+  const own =
+    slug && (path === internal || path.startsWith(`${internal}/`))
+      ? path.slice(internal.length) || "/"
+      : base && (path === base || path.startsWith(`${base}/`))
+        ? path.slice(base.length) || "/"
+        : path;
+  const inLanguage = prefix ? splitLanguage(own) : null;
+  return inLanguage ? inLanguage.path : own;
+}

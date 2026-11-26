@@ -67,6 +67,8 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
   const results = project ? await searchForReader(project.id, projectSlug, query, 10, { operations: true }) : [];
+  // Titles and snippets: the team's words, in the default language under another's address (untranslatedLang).
+  const lang = await untranslatedLang();
   if (results.length === 0) {
     return (
       <EmptyState
@@ -82,7 +84,7 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   }
   return (
     // Rows on the paper.
-    <ul lang={await untranslatedLang()} aria-label="Search results" className="flex flex-col">
+    <ul aria-label="Search results" className="flex flex-col">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-1 border-b py-4 first:pt-0">
           <Link href={at(`/docs/${result.slug}`)} className="text-[1.0625rem] font-semibold break-words hover:underline">
@@ -93,10 +95,10 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
                 <Method kind={result.method as ApiOperation["kind"]} />{" "}
               </>
             )}
-            {result.title}
+            <span lang={lang}>{result.title}</span>
             {result.locked && <LockedMark />}
           </Link>
-          {result.snippet && <p className="text-[0.9375rem] break-words text-muted-foreground">{result.snippet}</p>}
+          {result.snippet && <p lang={lang} className="text-[0.9375rem] break-words text-muted-foreground">{result.snippet}</p>}
         </li>
       ))}
     </ul>
@@ -146,9 +148,11 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   const popular = (await shownPopularArticles(project, tab ?? docs, { preview })).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
   // "Can't find it?": how to reach the team (Ask AI is in the search above it).
   const support = home ? await supportContact(project) : null;
+  // The team's words (collections' names and descriptions, references' names, articles' titles): in the default language
+  // under another's address (untranslatedLang). Not the portal's own text around them.
+  const lang = await untranslatedLang();
   return (
-    // The team's collections and articles: in the default language under another's address (untranslatedLang).
-    <div lang={await untranslatedLang()} className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8">
       {/* The home: its heading over a big box for searching and asking (the header's is the same box), and the most-read as chips. */}
       {home ? (
         <div
@@ -158,7 +162,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           <DocsHomeHeader />
           {/* The header's box gives way to it here (the same box). */}
           <DocsSearchBox askAI={answersEnabled()} hero className="w-full max-w-[46rem]" />
-          <PopularChips articles={popular} />
+          <PopularChips articles={popular} lang={lang} />
         </div>
       ) : (
         <PortalPageHeader title={tab.name} />
@@ -182,11 +186,11 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <h2 className="font-sans text-[1.0625rem] font-semibold break-words">
-                    {collection.name}
+                    <span lang={lang}>{collection.name}</span>
                     {collection.locked && <LockedMark />}
                   </h2>
                   {collection.sample && <SampleBadge />}
-                  {collection.description && <p className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
+                  {collection.description && <p lang={lang} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
                   <div className="mt-auto pt-2">
                     <ArticleCount count={articleCount(collection)} />
                   </div>
@@ -204,14 +208,14 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                 href={at(`/docs/${reference.slug}`)}
                 className="flex h-full flex-col gap-1 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md sm:px-6"
               >
-                <h2 className="font-sans text-[1.0625rem] font-semibold break-words">{reference.name}</h2>
+                <h2 lang={lang} className="font-sans text-[1.0625rem] font-semibold break-words">{reference.name}</h2>
                 <p className="text-sm font-medium text-muted-foreground">API reference</p>
               </Link>
             </li>
           ))}
         </ul>
       )}
-      <PopularArticles articles={popular} />
+      <PopularArticles articles={popular} lang={lang} />
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-3">
           {collections.length > 0 && (
@@ -219,7 +223,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
               More articles
             </h2>
           )}
-          <ArticleLinks articles={uncollected} href={(slug) => at(`/docs/${slug}`)} />
+          <ArticleLinks articles={uncollected} href={(slug) => at(`/docs/${slug}`)} lang={lang} />
         </section>
       )}
       {support && <StillStuck support={support} home />}
@@ -320,11 +324,14 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   const { docs, tab, parent, collection } = page;
   // The level above: the collection it's in, else its tab or all of them.
   const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab);
+  // The team's words (its and its parent's names, its description, its articles): in the default language under another's
+  // address (untranslatedLang).
+  const lang = await untranslatedLang();
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
-      <div lang={await untranslatedLang()} className="flex flex-col gap-8">
+      <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
-          <Link href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
+          <Link lang={parent ? lang : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
             {up.label}
           </Link>
           <PortalPageHeader
@@ -336,17 +343,19 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
                     <CollectionIcon name={collection.icon} />
                   </span>
                 )}
-                <span className="min-w-0">{collection.name}</span>
+                <span lang={lang} className="min-w-0">
+                  {collection.name}
+                </span>
               </span>
             }
-            description={collection.description}
+            description={collection.description && <span lang={lang}>{collection.description}</span>}
           />
           {collection.sample && <SampleBadge />}
         </div>
         {collection.locked ? (
           <LockedMessage signedIn={docs.signedIn} />
         ) : (
-          <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} />
+          <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} lang={lang} />
         )}
       </div>
     </DocsLayout>
@@ -406,7 +415,9 @@ export async function DocsArticle({
   return (
     <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
       {jsonLd}
-      <article lang={lang} className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
+      {/* The team's words (its title, text and headings, its collection's name, the articles around it) carry the default
+          language's `lang` under another's address (untranslatedLang); the portal's own text around them doesn't. */}
+      <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
               has), the actions at the row's end on wide screens, under the title on phones. */}
@@ -420,7 +431,7 @@ export async function DocsArticle({
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
               )}
-              <Link href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
+              <Link lang={collection ? lang : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
                 {up.label}
               </Link>
             </nav>
@@ -436,7 +447,7 @@ export async function DocsArticle({
               </div>
             )}
           </div>
-          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
+          <h1 lang={lang} id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {article.title}
           </h1>
           {readable?.sample && <SampleBadge />}
@@ -463,7 +474,7 @@ export async function DocsArticle({
                 On this page
                 <ChevronDownIcon aria-hidden className="size-4 transition-transform group-open/toc:rotate-180" />
               </summary>
-              <ul className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border border-border bg-card p-1.5 shadow-sm">
+              <ul lang={lang} className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border border-border bg-card p-1.5 shadow-sm">
                 {headings.map((heading) => (
                   <li key={heading.id}>
                     <a href={`#${heading.id}`} className={cn("block rounded-md px-2 py-1.5 text-muted-foreground hover:text-foreground", heading.level === 3 && "pl-5")}>
@@ -478,6 +489,7 @@ export async function DocsArticle({
         {readable ? (
           <>
             <RichText
+              lang={lang}
               doc={readable.doc}
               mediaUrls={await mediaUrls(readable.doc)}
               headingIds
@@ -489,7 +501,7 @@ export async function DocsArticle({
             <CodeCopyButtons />
             <ArticleViewCount projectSlug={project} slug={slug} />
             <ArticleFeedback projectSlug={project} slug={slug} className="mt-4" />
-            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} support={await supportContact(project)} />
+            <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} support={await supportContact(project)} lang={lang} />
           </>
         ) : (
           <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
@@ -500,7 +512,7 @@ export async function DocsArticle({
 }
 
 /** The end of an article: the previous and next ones in reading order, related ones (articleEnd), and "Still stuck?". */
-async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof articleEnd>>; support: SupportContact | null }) {
+async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<typeof articleEnd>>; support: SupportContact | null; lang?: string }) {
   const at = await portalLinks();
   const step = (article: DocsArticleLink, rel: "prev" | "next") => (
     <Link
@@ -524,7 +536,9 @@ async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof art
           </>
         )}
       </span>
-      <span className="font-medium break-words">{article.title}</span>
+      <span lang={lang} className="font-medium break-words">
+        {article.title}
+      </span>
     </Link>
   );
   return (
@@ -540,7 +554,7 @@ async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof art
           <h2 id="related-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
             Related articles
           </h2>
-          <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} />
+          <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} lang={lang} />
         </section>
       )}
       <StillStuck support={support} />
@@ -562,6 +576,8 @@ export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active
  */
 async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: string | null; extra?: React.ReactNode }) {
   const at = await portalLinks();
+  // The team's names and titles: in the default language under another's address (untranslatedLang).
+  const lang = await untranslatedLang();
   // One line each, a long name cut short (in full on hover).
   const link = (slug: string, title: string, name: React.ReactNode, className?: string) => (
     <Link
@@ -586,7 +602,9 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
   // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short).
   const locked = (name: string, isLocked?: boolean) => (
     <>
-      <span className="min-w-0 break-words">{name}</span>
+      <span lang={lang} className="min-w-0 break-words">
+        {name}
+      </span>
       {isLocked && <LockedMark />}
     </>
   );
@@ -594,7 +612,7 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
     extra ??
     (tree.references.length > 0 &&
       tree.references.map((reference) => (
-        <Fragment key={reference.slug}>{link(reference.slug, reference.name, <span className="min-w-0 break-words">{reference.name}</span>, "font-medium text-foreground")}</Fragment>
+        <Fragment key={reference.slug}>{link(reference.slug, reference.name, <span lang={lang} className="min-w-0 break-words">{reference.name}</span>, "font-medium text-foreground")}</Fragment>
       )));
   const articles = (list: DocsTree["uncollected"]) => list.map((article) => <li key={article.slug}>{link(article.slug, article.title, locked(article.title, article.locked))}</li>);
   const contents = (collection: DocsTreeCollection) => (
@@ -614,7 +632,7 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
     </ul>
   );
   return (
-    <nav lang={await untranslatedLang()} aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
+    <nav aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
       <DocsSidebarLinks className="mb-3 border-b pb-4" />
       {/* Each collection a row that opens (`<details>`, so it works without JavaScript): the page's own open. */}
       {tree.collections.map((collection) => (

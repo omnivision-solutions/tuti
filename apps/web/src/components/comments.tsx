@@ -48,8 +48,11 @@ export function CommentList({
   sort = "oldest",
   ability,
   editable,
+  lang,
 }: {
   comments: CommentView[];
+  /** The comments' language, where the page around them is in another (untranslatedLang). */
+  lang?: string;
   editable?: (comment: CommentView, text: React.ReactNode) => React.ReactNode;
   teamUserIds: Set<string>;
   events?: StatusChangeView[];
@@ -69,7 +72,7 @@ export function CommentList({
   );
 
   const text = (comment: CommentView) => (
-    <RichText doc={displayDoc(comment)} mediaUrls={mediaUrls} className={cn("rich-text break-words", portal ? "text-[0.96875rem] leading-relaxed" : "text-sm")} />
+    <RichText lang={lang} doc={displayDoc(comment)} mediaUrls={mediaUrls} className={cn("rich-text break-words", portal ? "text-[0.96875rem] leading-relaxed" : "text-sm")} />
   );
   const row = (comment: CommentView) => (
     <div

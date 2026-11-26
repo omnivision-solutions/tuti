@@ -44,7 +44,7 @@ const ROADMAP_DESCRIPTION = "What's planned, what we're building and what's done
 /** What's planned, being built and done, from the posts' statuses; a board at a time (`?board=`), voted on from the cards. */
 export default async function RoadmapPage(props: PageProps<"/portal/[project]/roadmap">) {
   const at = await portalLinks();
-  // Posts: people's words, in the default language under another's address (untranslatedLang).
+  // Posts' titles and text: people's words, in the default language under another's address (untranslatedLang).
   const lang = await untranslatedLang();
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
@@ -188,7 +188,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               {posts.length === 0 ? (
                 <p className="rounded-xl bg-muted px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
               ) : (
-                <ul lang={lang} className="flex flex-col gap-2.5">
+                <ul className="flex flex-col gap-2.5">
                   {posts.map((post) => {
                     const entry = entries.get(post.id);
                     const eta = post.eta && etaOnPortal(post.eta, post.status, now) ? post.eta : null;
@@ -198,10 +198,10 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           <LayoutListIcon aria-hidden className="size-3.5" />
                           {post.board.name} <VisibilityBadge visibility={post.visibility} />
                         </p>
-                        <Link href={at(postPath(post))} className="mt-1.5 text-base leading-snug font-[650] tracking-[-0.01em] break-words hover:underline">
+                        <Link lang={lang} href={at(postPath(post))} className="mt-1.5 text-base leading-snug font-[650] tracking-[-0.01em] break-words hover:underline">
                           {post.title}
                         </Link>
-                        {post.body && <p className="mt-1 line-clamp-2 text-[0.9375rem] leading-relaxed text-muted-foreground">{post.body}</p>}
+                        {post.body && <p lang={lang} className="mt-1 line-clamp-2 text-[0.9375rem] leading-relaxed text-muted-foreground">{post.body}</p>}
                         {eta && (
                           <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                             <CalendarIcon aria-hidden className="size-3.5" />

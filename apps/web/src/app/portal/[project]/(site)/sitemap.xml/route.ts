@@ -16,6 +16,7 @@ import {
   listedArticle,
   readableArticle,
   servedArticle,
+  tabLanding,
   tabLandingSlug,
 } from "@/server/docs-queries";
 import { PORTAL_BOARDS, SIGNED_OUT_VIEWER, visiblePosts } from "@/server/post-visibility";
@@ -107,10 +108,15 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   ];
   const latestPost = project.posts[0]?.updatedAt;
   // A tab showing an article in its place is that article's page: in the default language alone, as the article's own.
-  const showsArticle = (tab: (typeof docs.tabs)[number] | undefined) => {
-    const landing = tab && tabLandingSlug(tab);
-    return !!landing && landings.has(landing);
-  };
+  // As the tab's page resolves it (tabLanding: an article picked there that's since moved to another tab is its overview),
+  // and one everyone may read.
+  const articleTabs = new Set(
+    await Promise.all(
+      docs.tabs.map(async (tab) => ((await tabLanding(slug, docs, tab)).kind === "article" && landings.has(tabLandingSlug(tab) ?? "") ? tab.slug : null)),
+    ),
+  );
+  const showsArticle = (tab: (typeof docs.tabs)[number] | undefined) => !!tab && articleTabs.has(tab.slug);
+
   // `teamText`: an article's, post's or changelog entry's page, in the default language only until it has translations (see portalPageMetadata).
   const pages: { path: string; lastmod?: Date; teamText?: boolean }[] = [
     { path: "", lastmod: latestPost },
@@ -124,7 +130,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     {
       path: "/docs",
       lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]),
-      teamText: showsArticle(docs.tabs.find((tab) => tab.slug === docs.home)),
+      // The tab /docs shows: the first, or the first with something to read (as docsHome).
+      teamText: showsArticle(docs.tabs.find((tab) => tab.slug === docs.home) ?? docs.tabs[0]),
     },
     ...docs.tabs
       .filter((tab) => tab.slug !== docs.home)

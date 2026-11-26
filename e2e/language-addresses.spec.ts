@@ -24,6 +24,8 @@ test("a reader opens the portal's German addresses while German is live; an offl
   await api("/changelog", { title: "CSV export is here" });
   await api("/changelog/1/publish", {});
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/articles", { title: "Invite your team", body: "Owners send invites from Settings." });
+  await api("/articles/invite-your-team/publish", {});
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/de/roadmap");
@@ -45,14 +47,20 @@ test("a reader opens the portal's German addresses while German is live; an offl
   await expect(reader.getByRole("link", { name: "CSV export is here" })).toHaveAttribute("href", "/de/changelog/1");
   await reader.getByRole("link", { name: "CSV export is here" }).click();
   await expect(reader).toHaveURL(`${portalUrl(slug)}/de/changelog/1`);
-  await expect(reader.getByRole("heading", { name: "CSV export is here", level: 1 }).locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  await expect(reader.getByRole("heading", { name: "CSV export is here", level: 1 }).locator("[lang]")).toHaveAttribute("lang", "en");
   await expect(reader.getByRole("link", { name: "Changelog" }).first()).toHaveAttribute("href", "/de/changelog");
 
-  // People's words stay in the default language, marked so: a board's posts.
+  // The team's and people's words stay in the default language, marked so (a post's title, an article's link); the portal's own
+  // text around them is the page's (a vote button, the docs' search box).
+  const langOf = (locator: import("@playwright/test").Locator) => locator.evaluate((element) => element.closest("[lang]")?.getAttribute("lang"));
   await reader.goto("/de/feedback/feature-requests");
-  await expect(reader.getByRole("link", { name: "Dark mode" }).locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  expect(await langOf(reader.getByRole("link", { name: "Dark mode" }))).toBe("en");
+  expect(await langOf(reader.getByRole("main").locator("[aria-label*=\"vote\" i]").first())).toBe("de");
   // Posting signed out comes back to the board in German after signing in, and so does the account page.
   await expect(reader.locator('input[type="hidden"][name="next"]').first()).toHaveValue("/de/feedback/feature-requests");
+  await reader.goto("/de/docs");
+  expect(await langOf(reader.getByRole("main").getByRole("link", { name: "Invite your team" }).first().locator("span[lang], [lang]").first())).toBe("en");
+  expect(await langOf(reader.locator("[data-docs-hero]").locator("[aria-label*=\"search\" i]").first())).toBe("de");
   await reader.goto("/de/account");
   await expect(reader).toHaveURL(`${portalUrl(slug)}/de/sign-in?next=${encodeURIComponent("/de/account")}`);
 

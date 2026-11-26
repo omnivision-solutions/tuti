@@ -44,7 +44,7 @@ const OVERVIEW_DESCRIPTION = "Vote for the ideas you want most, or share your ow
  */
 export default async function FeedbackOverview(props: PageProps<"/portal/[project]/feedback">) {
   const at = await portalLinks();
-  // Posts: people's words, in the default language under another's address (untranslatedLang).
+  // Posts' titles: people's words, in the default language under another's address (untranslatedLang).
   const lang = await untranslatedLang();
   const { project: slug } = await props.params;
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, slug: true, portalAccess: true } });
@@ -139,7 +139,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
           {results.posts.length === 0 ? (
             <EmptyState title="No ideas match" description="Try other words, or post it on one of the boards." />
           ) : (
-            <ul lang={lang} className="flex flex-col divide-y border-b">
+            <ul className="flex flex-col divide-y border-b">
               {results.posts.map((post) => {
                 const board = bySlug.get(post.board.slug)!;
                 return (
@@ -147,7 +147,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                       {post.status !== "OPEN" && <StatusLabel status={post.status} />}
                       <h2 className="font-sans text-base leading-snug font-[650] break-words">
-                        <Link href={at(postPath({ ...post, board }))} className="hover:underline">
+                        <Link lang={lang} href={at(postPath({ ...post, board }))} className="hover:underline">
                           {post.title}
                         </Link>
                       </h2>
@@ -183,11 +183,11 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                     {board.description && <p className="text-sm text-muted-foreground">{board.description}</p>}
                   </div>
                   {ideas.length > 0 ? (
-                    <ul lang={lang} className="flex flex-col gap-2.5">
+                    <ul className="flex flex-col gap-2.5">
                       {ideas.map((post) => (
                         <li key={post.id} className="flex items-center gap-3">
                           {vote(post, "chip")}
-                          <Link href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
+                          <Link lang={lang} href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
                             {post.title}
                           </Link>
                           {post.status !== "OPEN" && <StatusLabel status={post.status} className="shrink-0" />}
@@ -215,11 +215,11 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
               <h2 id="recently-shipped" className="text-[0.8125rem] font-medium text-muted-foreground">
                 Recently shipped
               </h2>
-              <ul lang={lang} className="flex flex-col divide-y border-b">
+              <ul className="flex flex-col divide-y border-b">
                 {latest.map((post) => (
                   <li key={post.id} className="flex items-center gap-3 py-3">
                     <CircleCheckIcon aria-hidden className="size-4 shrink-0 text-status-completed" />
-                    <Link href={at(postPath({ ...post, board: post.board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
+                    <Link lang={lang} href={at(postPath({ ...post, board: post.board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
                       {post.title}
                     </Link>
                     <span className="shrink-0 text-sm text-muted-foreground">{formatDay(post.shippedAt)}</span>

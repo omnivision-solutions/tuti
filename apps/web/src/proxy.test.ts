@@ -263,7 +263,7 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
   });
 
   test("a rule never sends an address back to itself, through a live language's prefix or an offline one's", async () => {
-    // The rule /de/docs/billing takes from /docs/billing is already in German: it's the page itself, served.
+    // The rule /de/docs/billing takes from /docs/billing is already in German: no rule there, the page itself, served.
     portal.rules.set("/docs/billing", "/de/docs/billing");
     expect(await where("/de/docs/billing")).toBe("/docs/billing de /de");
     expect(await where("/DOCS/billing/")).toBe("308 https://acme.tuti.example/de/docs/billing");
@@ -271,8 +271,8 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     portal.rules.set("/docs/payments", "/fr/docs/payments?from=old");
     expect(await where("/docs/payments")).toBe("/docs/payments en -");
     expect(await where("/fr/docs/payments")).toBe("307 https://acme.tuti.example/docs/payments");
-    // Taken under German too: /de/docs/payments → /fr/docs/payments → /docs/payments, no loop there.
-    expect(await where("/de/docs/payments")).toBe("308 https://acme.tuti.example/fr/docs/payments?from=old");
+    // Taken under German too, its chain (/fr/docs/payments → /docs/payments → /fr/docs/payments) goes round: the page.
+    expect(await where("/de/docs/payments")).toBe("/docs/payments de /de");
     // An exact rule under an offline prefix to its own page in the default language, which /docs/kb sends back: the page itself.
     portal.rules.set("/fr/kb", "/kb");
     portal.rules.set("/kb", "/fr/kb");
@@ -280,20 +280,30 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     // Followed as requests go, /fr/kb's own rule leads round too: it's skipped, and French being offline sends it to /kb.
     expect(await where("/fr/kb")).toBe("307 https://acme.tuti.example/kb");
     // Round in more steps, through French while it's offline: /kb2 → /fr/legacy → /legacy → /fr/kb2 → /kb2. Every address on
-    // the circle shows its page; one leading into it still goes on.
+    // the circle shows its page, and so does one leading into it.
     portal.rules.set("/kb2", "/fr/legacy");
     portal.rules.set("/legacy", "/fr/kb2");
     portal.rules.set("/old-kb", "/kb2");
     expect(await where("/kb2")).toBe("/kb2 en -");
     expect(await where("/legacy")).toBe("/legacy en -");
     expect(await where("/fr/legacy")).toBe("307 https://acme.tuti.example/legacy");
-    expect(await where("/old-kb")).toBe("308 https://acme.tuti.example/kb2");
+    expect(await where("/old-kb")).toBe("/old-kb en -");
+    // Round only once a skipped rule's address goes on to the default language's: /a → /fr/fr/a → /fr/a → /fr/b → /b → /fr/fr/a.
+    // Asked for anywhere on it, no circle: /a and /b show their pages; the French ones go to the default's.
+    portal.rules.set("/a", "/fr/fr/a");
+    portal.rules.set("/fr/a", "/fr/b");
+    portal.rules.set("/b", "/fr/fr/a");
+    expect(await where("/a")).toBe("/a en -");
+    expect(await where("/b")).toBe("/b en -");
+    expect(await where("/fr/a")).toBe("307 https://acme.tuti.example/a");
+    expect(await where("/fr/fr/a")).toBe("307 https://acme.tuti.example/fr/a");
+    expect(await where("/fr/b")).toBe("307 https://acme.tuti.example/b");
     // Followed as requests go: an offline language's address with an exact rule of its own takes that rule, not the default
-    // language's address, so /kb3 → /fr/kb3 → /docs/payments is no circle.
+    // language's address, so /kb3 → /fr/kb3 → /docs/invoices is no circle.
     portal.rules.set("/kb3", "/fr/kb3");
-    portal.rules.set("/fr/kb3", "/docs/payments");
+    portal.rules.set("/fr/kb3", "/docs/invoices");
     expect(await where("/kb3")).toBe("308 https://acme.tuti.example/fr/kb3");
-    expect(await where("/fr/kb3")).toBe("308 https://acme.tuti.example/docs/payments");
+    expect(await where("/fr/kb3")).toBe("308 https://acme.tuti.example/docs/invoices");
     // A circle longer than the 20 addresses followed (21 rules through French, offline: 42 addresses) counts as one too.
     for (let i = 0; i < 21; i++) {
       portal.rules.set(`/long${i}`, `/fr/long${(i + 1) % 21}`);
@@ -343,7 +353,8 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
   test("Send visitors to their language: a first visit to the home goes to the live language the browser asks for, kept as its choice", async () => {
     const home = (path: string, headers: Record<string, string> = {}) =>
       proxy(new NextRequest(`http://acme.tuti.example${path}`, { headers: { host: "acme.tuti.example", ...headers } }));
-    const browser = { "accept-language": "de-DE,de;q=0.9,en;q=0.8" };
+    // A page the browser loads itself, as it says (Sec-Fetch-*).
+    const browser = { "accept-language": "de-DE,de;q=0.9,en;q=0.8", "sec-fetch-dest": "document", "sec-fetch-mode": "navigate" };
     // Off by default.
     expect((await home("/", browser)).headers.get("x-middleware-rewrite")).toBeTruthy();
     portal.languages = { default: "en", live: ["de"], stored: ["de", "fr"], sendVisitors: true };
@@ -354,14 +365,17 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     // that isn't live (French), nor in Customize's preview.
     expect((await home("/", { ...browser, cookie: "tuti_language=en" })).headers.get("x-middleware-rewrite")).toBeTruthy();
     expect((await home("/roadmap", browser)).headers.get("x-middleware-rewrite")).toBeTruthy();
-    expect((await home("/", { "accept-language": "en-GB,de;q=0.5" })).headers.get("x-middleware-rewrite")).toBeTruthy();
-    expect((await home("/", { "accept-language": "fr" })).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/", { ...browser, "accept-language": "en-GB,de;q=0.5" })).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/", { ...browser, "accept-language": "fr" })).headers.get("x-middleware-rewrite")).toBeTruthy();
     expect((await home("/", { ...browser, "sec-fetch-dest": "iframe" })).headers.get("x-middleware-rewrite")).toBeTruthy();
     expect((await home("/de", browser)).headers.get("x-middleware-request-x-tuti-language")).toBe("de");
-    // Only a page the browser loads: not the router's prefetches or client navigations (no redirect, no cookie).
-    expect((await home("/", { ...browser, "sec-fetch-dest": "document" })).status).toBe(307);
-    for (const router of [{ rsc: "1" }, { "next-router-prefetch": "1" }, { "sec-fetch-dest": "empty" }] as Record<string, string>[]) {
-      const response = await home("/", { ...browser, ...router });
+    // Only a page the browser says it loads (either header will do): not the router's prefetches or client navigations
+    // (fetches: empty, cors), nor a request that says neither (no redirect, no cookie).
+    const accept = { "accept-language": browser["accept-language"] };
+    expect((await home("/", { ...accept, "sec-fetch-dest": "document" })).status).toBe(307);
+    expect((await home("/", { ...accept, "sec-fetch-mode": "navigate" })).status).toBe(307);
+    for (const router of [{ "sec-fetch-dest": "empty", "sec-fetch-mode": "cors" }, { "sec-fetch-dest": "empty", "sec-fetch-mode": "same-origin" }, {}] as Record<string, string>[]) {
+      const response = await home("/", { ...accept, ...router });
       expect([response.headers.get("x-middleware-rewrite"), response.cookies.get("tuti_language")], JSON.stringify(router)).toEqual(["http://acme.tuti.example/portal/acme", undefined]);
     }
   });

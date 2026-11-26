@@ -108,9 +108,11 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       // Its publishing date alone: emails going out change updatedAt too.
       published: listed.publishedAt,
     }));
+  // The entry's and its comments' words: the team's and people's, in the default language under another's address
+  // (untranslatedLang); not the portal's own text around them.
+  const lang = await untranslatedLang();
   return (
-    // The entry and its comments: the team's and people's words (untranslatedLang).
-    <div lang={await untranslatedLang()} className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       {jsonLd}
       <ChangelogMenu slug={slug} current={entry.number} />
       <ChangelogEntryView
@@ -120,6 +122,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
         base={await portalLinkBase()}
+        lang={lang}
       />
       <section className="flex flex-col gap-3 border-t pt-8" aria-label="Comments">
         <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-sans text-lg font-semibold outline-none">
@@ -148,6 +151,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         )}
         <div className="pt-3">
           <CommentList
+            lang={lang}
             portal
             comments={comments}
             teamUserIds={new Set(team.map((m) => m.userId))}

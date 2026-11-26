@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { languageFrom, preferredLanguage, splitLanguage, withLanguage } from "./language-addresses";
+import { languageFrom, portalPathOf, preferredLanguage, splitLanguage, withLanguage } from "./language-addresses";
 
 test("links add the language's prefix back (portalHref, usePortalHref); not to the API, Next.js's files or other sites", () => {
   expect(["/", "/docs/billing", "/?tab=new", "/#top", "/sign-in?next=%2Fdocs"].map((path) => withLanguage("/de", path))).toEqual([
@@ -48,4 +48,16 @@ test("the language a browser asks for most, of those offered: whole, else by its
   expect(preferredLanguage("fr, *;q=0.5", [...offered])).toBeNull();
   expect(preferredLanguage("de;q=0, fr", [...offered])).toBeNull();
   expect(preferredLanguage(null, [...offered])).toBeNull();
+});
+
+test("a page's portal path (usePortalPath): the site's path and the language's prefix off, whatever the site's path is", () => {
+  const acme = { base: "", slug: "acme", prefix: "/de" };
+  expect(portalPathOf("/portal/acme/docs/billing", acme)).toBe("/docs/billing");
+  expect(portalPathOf("/de/docs/billing", acme)).toBe("/docs/billing");
+  expect(portalPathOf("/de", acme)).toBe("/");
+  expect(portalPathOf("/help/de/roadmap", { ...acme, base: "/help" })).toBe("/roadmap");
+  // A site's path shaped like the internal one (/portal/acme on acme's own site): the prefix comes off too.
+  expect(portalPathOf("/portal/acme/de/docs", { ...acme, base: "/portal/acme" })).toBe("/docs");
+  // In the default language nothing more comes off.
+  expect(portalPathOf("/docs/billing", { ...acme, prefix: "" })).toBe("/docs/billing");
 });

@@ -144,6 +144,13 @@ test("the sitemap lists the portal's own pages in each live language with altern
   const withLanding = await (await sitemap(new Request("http://x"), params)).text();
   expect(withLanding).toMatch(new RegExp(`<url><loc>${address}/docs</loc><lastmod>`));
   expect(withLanding).not.toContain(`${address}/de/docs`);
+  // One picking an article that's in another tab now shows its overview (tabLanding): in every live language.
+  const other = await prisma.docsTab.create({ data: { projectId: project.id, slug: "other", name: "Other", order: 1, landing: "PAGE", landingArticleId: billing.id } });
+  const refunds = await prisma.collection.create({ data: { projectId: project.id, slug: "refunds", name: "Refunds", tabId: other.id } });
+  await prisma.article.create({ data: { projectId: project.id, slug: "refund-policy", title: "Refund policy", publishedAt: new Date(), collectionId: refunds.id } });
+  const moved = await (await sitemap(new Request("http://x"), params)).text();
+  expect(moved).toContain(`<url><loc>${address}/de/docs/other</loc>`);
+  expect(moved).not.toContain(`${address}/de/docs<`);
 
   inLanguage("de", "/de");
   expect(await (await llms(new Request("http://x"), params)).text()).toContain(`(${address}/de/docs/billing.md)`);

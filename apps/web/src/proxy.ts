@@ -206,22 +206,24 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
       if (own && !ownAddress(split.path) && !(await isOperation(split.path))) {
         return own;
       }
+      // The path's own rule in the language, but not one that lands on the path itself (/docs/billing → /de/docs/billing,
+      // taken at /de/docs/billing): that's no rule there.
       const rule = await redirectFor(slug, split.path);
-      return rule && prefixedTarget(rule, languagePrefix(split.code));
+      const target = rule && prefixedTarget(rule, languagePrefix(split.code));
+      return target && destinationKey(target) !== redirectKey(path) ? target : null;
     };
-    // Never round in circles: a rule whose chain, followed as requests go (each address's own rule first, else an offline
-    // language's address going on to the default's; a whole address ends it), comes back to this address is skipped, so every address on the circle shows its page. Rules can't be saved
-    // as a chain, but a prefix's rules and a language going offline make ones no save could check
-    // (/kb → /fr/legacy, /legacy → /fr/kb while French is offline; /docs/billing → /de/docs/billing, asked at /de/docs/billing).
-    const here = redirectKey(address);
+    // Never round in circles: a rule is skipped (the page shows) when its chain, followed as requests go (each address's
+    // own rule first, else an offline language's address going on to the default's; a whole address or a page ends it),
+    // goes round anywhere. Then every chain a request follows has no circle in it: each address on it keeps its rule, and
+    // one whose rule is skipped either shows its page or, under an offline prefix, goes on to an address whose chain goes
+    // round too, which shows its page. Rules can't be saved as a chain, but a prefix's rules and a language going offline
+    // make ones no save could check (/kb → /fr/legacy, /legacy → /fr/kb while French is offline; /docs/billing →
+    // /de/docs/billing, asked at /de/docs/billing). ponytail: follows up to 20 addresses, as many as browsers do before
+    // giving up; a chain still going after them counts as going round.
     let to = await ruleFor(address);
-    // A circle further on that this address isn't on ends the chain there (its addresses show their pages), so the rule
-    // stands. ponytail: follows up to 20 addresses, as many as browsers do before giving up; a chain still going after them
-    // counts as a circle (a browser would give up on it anyway), so the page shows.
-    let next = to && destinationKey(to);
-    const seen = new Set<string>();
-    for (let hops = 0; to && next && !seen.has(next); hops++) {
-      if (next === here || hops === 20) {
+    const seen = new Set([redirectKey(address)]);
+    for (let next = to && destinationKey(to), hops = 0; to && next; hops++) {
+      if (seen.has(next) || hops === 20) {
         to = null;
         break;
       }
@@ -250,11 +252,12 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   // "Send visitors to their language" (off by default): a first visit to the portal's home (no language chosen in this
   // browser yet) goes to the live language the browser asks for (Accept-Language); never other pages, nor Customize's
   // preview. Kept as this browser's choice (the switcher's cookie), so the visit after stays where the reader went. Only a
-  // page the browser loads itself: not the router's prefetches or client navigations (RSC requests), which would use up the
-  // first visit, or show /de inside the layout as it was (both addresses are one route to it).
+  // page the browser says it loads itself (Sec-Fetch-Dest: document, or Sec-Fetch-Mode: navigate), never the router's
+  // prefetches or client navigations, which would use up the first visit or show /de inside the layout as it was (both
+  // addresses are one route to it). Next keeps its own router headers from the proxy, so the browser's are all there is to
+  // go by, and one that says neither isn't sent anywhere.
   const framed = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";
-  const dest = request.headers.get("sec-fetch-dest");
-  const pageLoad = (dest === null || dest === "document") && !request.headers.has("rsc") && !request.headers.has("next-router-prefetch");
+  const pageLoad = request.headers.get("sec-fetch-dest") === "document" || request.headers.get("sec-fetch-mode") === "navigate";
   if (reading && address === "/" && pageLoad && languages?.sendVisitors && !request.cookies.has(LANGUAGE_COOKIE) && !framed) {
     const wanted = preferredLanguage(request.headers.get("accept-language"), [languages.default, ...languages.live]);
     if (wanted && wanted !== languages.default) {

@@ -28,7 +28,7 @@ export function useShowsPopular(articles: unknown[]) {
 }
 
 /** The most-read of them as chips under the home's search (as the popular articles are shown). */
-export function PopularChips({ articles }: { articles: { href: string; title: string }[] }) {
+export function PopularChips({ articles, lang }: { articles: { href: string; title: string }[]; lang?: string }) {
   if (!useShowsPopular(articles)) {
     return null;
   }
@@ -39,6 +39,7 @@ export function PopularChips({ articles }: { articles: { href: string; title: st
         <li key={article.href}>
           <Link
             href={article.href}
+            lang={lang}
             className="inline-flex h-9 items-center rounded-full bg-secondary px-3.5 text-[0.9375rem] whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary-hover hover:text-foreground"
           >
             {article.title}
@@ -50,7 +51,7 @@ export function PopularChips({ articles }: { articles: { href: string; title: st
 }
 
 /** A tab's most-read articles (popularArticles), when the team shows them (Customize → Docs home) and there are a few: rows on the paper, in two columns. */
-export function PopularArticles({ articles }: { articles: { href: string; title: string }[] }) {
+export function PopularArticles({ articles, lang }: { articles: { href: string; title: string }[]; lang?: string }) {
   if (!useShowsPopular(articles)) {
     return null;
   }
@@ -64,7 +65,7 @@ export function PopularArticles({ articles }: { articles: { href: string; title:
           <li key={article.href} className="border-b">
             <Link href={article.href} className="group flex items-center gap-3 py-3 text-[0.9375rem] break-words transition-colors hover:text-primary">
               <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-              <span className="min-w-0 flex-1">{article.title}</span>
+              <span lang={lang} className="min-w-0 flex-1">{article.title}</span>
               <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </Link>
           </li>

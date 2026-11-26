@@ -63,7 +63,7 @@ export function ChangelogEntryView({
   react?: { projectSlug: string; signedIn: boolean };
   /** What its links go under: the path the portal is under on the team's site (see lib/portal-base.ts), then the language's prefix (portalLinkBase). */
   base?: string;
-  /** Its text's language where the page is in another (untranslatedLang). */
+  /** Its title's and text's language where the page is in another (untranslatedLang). */
   lang?: string;
   /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
   dateMargin?: boolean;
@@ -96,7 +96,7 @@ export function ChangelogEntryView({
     </span>
   );
   return (
-    <article lang={lang} className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
+    <article className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
       {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. */}
       {dateMargin && (
         <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium whitespace-nowrap text-muted-foreground tabular-nums lg:block">
@@ -106,11 +106,12 @@ export function ChangelogEntryView({
       )}
       <div className={cn("flex min-w-0 flex-1 flex-col gap-3", excerpt && "relative")}>
         {back ? (
-          <PortalPageHeader back={back} title={entry.title} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
+          <PortalPageHeader back={back} title={<span lang={lang}>{entry.title}</span>} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
         ) : (
           <>
             {meta}
             <Title
+              lang={lang}
               id={`entry-${entry.number}`}
               className={cn(
                 "font-heading font-semibold tracking-tight break-words",
@@ -140,9 +141,11 @@ export function ChangelogEntryView({
           />
         )}
         {excerpt ? (
-          <Excerpt doc={entry.doc} />
+          <div lang={lang}>
+            <Excerpt doc={entry.doc} />
+          </div>
         ) : (
-          <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+          <RichText lang={lang} doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         )}
         {onPage && entry.posts.length > 0 ? (
           // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read

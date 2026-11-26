@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext } from "react";
 
 import { authClientAt } from "@/lib/auth-client";
-import { splitLanguage, withLanguage } from "@/lib/language-addresses";
+import { portalPathOf, withLanguage } from "@/lib/language-addresses";
 import { withBase } from "@/lib/portal-base";
 
 const PortalBase = createContext({ base: "", slug: "", prefix: "" });
@@ -46,13 +46,7 @@ export function usePortalAuthClient() {
 export function usePortalPath(): string {
   const { base, slug, prefix } = useContext(PortalBase);
   const path = usePathname();
-  const internal = `/portal/${slug}`;
-  if (slug && (path === internal || path.startsWith(`${internal}/`))) {
-    return path.slice(internal.length) || "/";
-  }
-  const own = base && (path === base || path.startsWith(`${base}/`)) ? path.slice(base.length) || "/" : path;
-  const inLanguage = prefix ? splitLanguage(own) : null;
-  return inLanguage ? inLanguage.path : own;
+  return portalPathOf(path, { base, slug, prefix });
 }
 
 /** This page's portal path in its language (/de/feedback/ideas): where signing in (`next`) comes back to. */
