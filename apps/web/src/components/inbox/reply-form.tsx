@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { nativeLanguageName } from "@/lib/language-name";
+import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "@/lib/reply-preview";
 import { draftReplyWithAi, previewReplyTranslation, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
@@ -132,14 +133,16 @@ export function ReplyForm({
   }, [drafts]);
   // The reply in the customer's language, for the text it was made from: what Send sends while that's still the reply.
   // `failed`: why it couldn't be translated, with "Send in English" beside it.
-  const [preview, setPreview] = useState<{ for: string; text: string; language: string } | { for: string; failed: string; close?: boolean } | { for: string; asWritten: true }>();
+  const [preview, setPreview] = useState<ReplyPreview>();
   // Asked for again (the customer's language changed since): the preview is made afresh for the same text.
   const [previewAgain, setPreviewAgain] = useState(0);
   const toTranslate = translated && drafts.reply.trim();
-  // The text a send just failed to translate: not asked again by itself (its failure, with "Send in English", stays).
-  const sendFailedFor = useRef<string>(undefined);
+  const shownPreview = previewToShow(preview, toTranslate || undefined, translated?.language);
+  // Asked for once they stop typing, but not while this text's failure shows (with "Send in English"), nor while it sends
+  // (a timer started before Send would pay for a second translation, or overwrite the send's outcome).
+  const askForPreview = wantsPreview(shownPreview, toTranslate || undefined, pending);
   useEffect(() => {
-    if (!toTranslate || sendFailedFor.current === toTranslate) {
+    if (!askForPreview || !toTranslate) {
       return;
     }
     // Written on since (or sent): that text's preview, if any, comes next.
@@ -150,7 +153,8 @@ export function ReplyForm({
       if (stale) {
         return;
       }
-      setPreview(
+      // Cancelled (stale) once a send starts; a failure that still replaces a failed send's keeps its Send and close.
+      setPreview((shown) => previewAfter(shown,
         "error" in result
           ? { for: toTranslate, failed: result.error }
           : "failed" in result
@@ -159,16 +163,13 @@ export function ReplyForm({
               ? { for: toTranslate, ...result.preview }
               : // Nothing in it to translate (a link, a number): it goes as written.
                 { for: toTranslate, asWritten: true },
-      );
+      ));
     }, PREVIEW_AFTER_MS);
     return () => {
       stale = true;
       clearTimeout(timer);
     };
-  }, [projectSlug, number, toTranslate, translated?.language, previewAgain]);
-  // A translation into a language that's no longer theirs (they wrote in another since) isn't shown: a new one comes.
-  const shownPreview =
-    toTranslate && preview?.for === toTranslate && !("language" in preview && preview.language !== translated?.language) ? preview : undefined;
+  }, [projectSlug, number, toTranslate, translated?.language, previewAgain, askForPreview]);
   const errorId = useId();
   const shortcutId = useId();
   const pausedId = useId();
@@ -256,7 +257,6 @@ export function ReplyForm({
       }
       if (result.translation === "failed") {
         // "Send in English" then sends it as they chose: closing it too, from Send and close.
-        sendFailedFor.current = text.trim();
         setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", close });
         toast.error("Not sent: it couldn't be translated");
       }
