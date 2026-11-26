@@ -132,19 +132,37 @@ test("Audience: Everyone hides the chips; Some groups shows them; going back to 
   expect(new FormData(box).getAll("groups")).toEqual(["beta"]);
 });
 
-test("Some groups with none saved holds Publish: published so, it would go to everyone", async () => {
+test("Some groups with none ticked isn't saved (as everyone) or published: the first chip says to pick one, or choose Everyone", async () => {
   const box = document.createElement("form");
   document.body.append(box);
-  const Held = () => h("output", null, String(useContext(ChangelogSavingContext)?.groupsChanged));
+  const Held = () => {
+    const saving = useContext(ChangelogSavingContext);
+    return h("output", null, `${saving?.groupsChanged} ${saving?.noGroupPicked}`);
+  };
   await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups, picked: [], upgrade, onChange: () => {} }))));
-  expect(box.querySelector("output")?.textContent).toBe("false");
+  expect(box.querySelector("output")?.textContent).toBe("false false");
+  expect(box.checkValidity()).toBe(true);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
-  expect(box.querySelector("output")?.textContent).toBe("true");
-  // On a plan without groups the pick is refused: still held.
+  expect(box.querySelector("output")?.textContent).toBe("true true");
+  expect(box.checkValidity()).toBe(false);
+  expect(box.querySelector<HTMLInputElement>('input[name="groups"]')!.validationMessage).toBe("Pick a group, or choose Everyone.");
+  // On a plan without groups the pick is refused: still none.
   await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
-  expect(box.querySelector("output")?.textContent).toBe("true");
+  expect(box.checkValidity()).toBe(false);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="everyone"]')!.click());
-  expect(box.querySelector("output")?.textContent).toBe("false");
+  expect(box.querySelector("output")?.textContent).toBe("false false");
+  expect(box.checkValidity()).toBe(true);
+});
+
+test("Some groups with one ticked can be saved; unticked again, it can't", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, onChange: () => {} })));
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
+  expect(box.checkValidity()).toBe(true);
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
+  expect(box.checkValidity()).toBe(false);
 });
 
 test("an entry saved for some groups opens on Some groups, its chips picked", async () => {

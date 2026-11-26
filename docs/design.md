@@ -292,7 +292,8 @@ the list picks none to approve at once.
   beside the text with a line on its left, as a post's has (under it on phones, after a line; no card), its groups
   under group labels, and no hint sentences: **Status**, one neutral pill (Draft, "Draft · collecting PRs" for the running
   draft, or Published and the date); **Tags** as chips; **Audience** (with reader groups only), a segmented control,
-  Everyone or Some groups, the second showing the groups as chips (Everyone is no groups); **Goes to**, three bordered
+  Everyone or Some groups, the second showing the groups as chips (Everyone is no groups; Some groups with none ticked isn't saved or
+  published, the first chip saying to pick one or choose Everyone); **Goes to**, three bordered
   rows of an icon, a label and a switch, all on for a draft: Changelog list (off: email only; saved with the entry,
   so Publish waits for a change to it, as for Audience), Widget popup (off and disabled while the list is, "Needs the
   changelog list" under it, back as it was once the list is on) and Email announcement (the subscribers' count under it,

@@ -152,6 +152,9 @@ export const ChangelogSavingContext = createContext<{
   /** Audience or the changelog list changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
   groupsChanged: boolean;
   setGroupsChanged: (changed: boolean) => void;
+  /** Audience is Some groups with none ticked: neither Save nor Publish goes until one is, or it's Everyone. */
+  noGroupPicked: boolean;
+  setNoGroupPicked: (none: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -165,9 +168,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState(false);
   const [coverChanged, setCoverChanged] = useState(false);
   const [groupsChanged, setGroupsChanged] = useState(false);
+  const [noGroupPicked, setNoGroupPicked] = useState(false);
   return (
     <ChangelogSavingContext
-      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged, groupsChanged, setGroupsChanged }}
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged, groupsChanged, setGroupsChanged, noGroupPicked, setNoGroupPicked }}
     >
       {children}
     </ChangelogSavingContext>
@@ -832,12 +836,21 @@ export function WhoSeesIt({
   // (started afresh after a save, or with the form when new saved text replaces it, which drops the picks too).
   const saving = useContext(ChangelogSavingContext);
   const listChanged = listed === emailOnly;
-  // Some groups picked with nothing saved for any (none ticked yet, or the plan refused one) would publish to everyone.
-  const held = changed || listChanged || someGroups !== picked.length > 0;
+  // Some groups with none ticked (none yet, or the plan refused one) would be saved, and published, for everyone: the
+  // form isn't sent (the first chip says why) and Publish waits, until one is ticked or it's Everyone.
+  const [ticked, setTicked] = useState(picked.length);
+  const noGroup = someGroups && ticked === 0;
+  const chips = useRef<HTMLDivElement>(null);
+  useEffect(() => chips.current?.querySelector("input")?.setCustomValidity(noGroup ? "Pick a group, or choose Everyone." : ""), [noGroup]);
+  const held = changed || listChanged || noGroup;
   useEffect(() => {
     saving?.setGroupsChanged(held);
-    return () => saving?.setGroupsChanged(false);
-  }, [saving, held]);
+    saving?.setNoGroupPicked(noGroup);
+    return () => {
+      saving?.setGroupsChanged(false);
+      saving?.setNoGroupPicked(false);
+    };
+  }, [saving, held, noGroup]);
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
   const needsId = useId();
@@ -869,7 +882,7 @@ export function WhoSeesIt({
             }}
           />
           {/* Hidden, not gone: picks not saved yet come back with Some groups. */}
-          <div hidden={!someGroups} className="flex flex-wrap gap-2">
+          <div ref={chips} hidden={!someGroups} className="flex flex-wrap gap-2">
             {groups.map((group) => (
               <label
                 key={group.key}
@@ -901,6 +914,8 @@ export function WhoSeesIt({
                     if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
                       return;
                     }
+                    const step = event.currentTarget.checked ? 1 : -1;
+                    setTicked((n) => n + step);
                     setChanged(true);
                     onChange();
                   }}
@@ -2251,8 +2266,10 @@ export function ChangelogEntryActions({
               ? markers.length === 1
                 ? "Replace a line before publishing"
                 : `Replace ${markers.length} lines before publishing`
-              : groupsUnsaved
-                ? "Save before publishing"
+              : saving?.noGroupPicked
+                ? "Pick a group before publishing"
+                : groupsUnsaved
+                  ? "Save before publishing"
                 : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
@@ -2260,7 +2277,11 @@ export function ChangelogEntryActions({
           <AlertDialogDescription render={<div />} className={cn("flex flex-col gap-3", markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
             {markers.length === 0 && groupsUnsaved ? (
-              <p>{`You changed who “${title}” is for or where it goes and haven't saved it. Save, then publish.`}</p>
+              <p>
+                {saving?.noGroupPicked
+                  ? `“${title}” is for some groups, but none is picked. Pick one, or choose Everyone.`
+                  : `You changed who “${title}” is for or where it goes and haven't saved it. Save, then publish.`}
+              </p>
             ) : markers.length > 0 ? (
               <p>{`“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`}</p>
             ) : (

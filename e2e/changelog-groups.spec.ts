@@ -125,6 +125,8 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await audience.getByText("Some groups", { exact: true }).click();
   await enterprise.check();
   await enterprise.uncheck();
+  // Some groups with none ticked isn't saved (it would be for everyone): back to Everyone.
+  await audience.getByText("Everyone", { exact: true }).click();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await api("/changelog/1", { groups: ["enterprise"] }, "PATCH");
@@ -157,9 +159,14 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await api("/changelog", { title: "Roles", body: "Give teammates roles." });
   await owner.goto(`/app/${slug}/changelog/3`);
   await audience.getByText("Some groups", { exact: true }).click();
-  await audience.getByRole("checkbox", { name: "Enterprise" }).check();
+  // None ticked yet: it would go to everyone, so Publish says to pick one.
   await owner.getByRole("button", { name: "Publish" }).click();
   const publish = owner.getByRole("alertdialog");
+  await expect(publish.getByRole("heading", { name: "Pick a group before publishing" })).toBeVisible();
+  await expect(publish).toContainText("“Roles” is for some groups, but none is picked. Pick one, or choose Everyone.");
+  await publish.getByRole("button", { name: "Cancel" }).click();
+  await audience.getByRole("checkbox", { name: "Enterprise" }).check();
+  await owner.getByRole("button", { name: "Publish" }).click();
   await expect(publish.getByRole("heading", { name: "Save before publishing" })).toBeVisible();
   await expect(publish.getByRole("button", { name: "Publish" })).toBeDisabled();
   await publish.getByRole("button", { name: "Cancel" }).click();
