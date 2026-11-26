@@ -162,10 +162,13 @@ Any element with `data-tuti-article` opens the panel at that article when clicke
 including elements added to the page later (single-page apps):
 
 ```html
-<a href="https://acme.tuti.so/docs/exporting-your-data" data-tuti-article="exporting-your-data">How do exports work?</a>
+<a href="https://acme.tuti.so/docs/exporting-your-data" data-tuti-article="a_7k2m9x4p">How do exports work?</a>
 ```
 
-The value is the article's URL name (the end of its `/docs/…` address). With an `href`,
+The value is the article's ID: copy it, or the whole snippet, from the article's
+Settings (Embed). An ID never changes, so the link keeps working when the article is
+renamed or gets a new address. Its URL name (the end of its `/docs/…` address) works
+too, as do the ones it had before, but a later article could take an old one. With an `href`,
 the link still works where the script isn't loaded; with the script, it opens the
 panel instead of leaving the page.
 
@@ -177,7 +180,7 @@ panel instead of leaving the page.
 | --- | --- |
 | `Tuti.open()` | Opens the panel where it was (Home the first time). |
 | `Tuti.open({ tab })` | Opens it at a tab: `"home"`, `"messages"`, `"docs"` (Help center), `"feedback"` or `"whats-new"` (Home's What's new list). |
-| `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
+| `Tuti.open({ article: "<id>" })` | Opens it at an article from your docs, by its ID (`a_…`, in the article's Settings) or its URL name. |
 | `Tuti.open({ ask: "<question>" })` | Where the server has AI answers on: opens it with the AI assistant answering the question (up to 300 characters; over Home the first time), following on from the visitor's conversation so far. `ask: true` opens the assistant as it was. Your portal's Ask AI uses this. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's default theme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
