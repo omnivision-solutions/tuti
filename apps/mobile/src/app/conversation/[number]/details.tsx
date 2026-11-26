@@ -468,6 +468,16 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
     [api, number, session, filter],
   );
 
+  // The tab last chosen, read again as far back as it's shown: a page more than shown, cut at the oldest row shown, so
+  // new rows above don't push shown ones behind Show earlier.
+  // ponytail: a reload keeps up to 100 rows; someone who paged past 100 goes back to the newest 100 (Show earlier goes on
+  // from there). Paging a reload past 100 if anyone reads that far back.
+  const reload = () => {
+    const to = wanted.current;
+    const far = to === filter && shown.current > 0 ? shown.current + 20 : 0;
+    load(to, undefined, far > 20 ? Math.min(far, 100) : undefined, to === filter && !paging.current ? oldest.current : undefined);
+  };
+
   // On opening, and whenever the conversation's status changes (its fields, not a fetch bringing them as they were): as
   // far back as it's shown, in the tab last chosen (one still loading too, so its tap isn't lost). Its first status
   // after none (the sheet's own fetch, opened by a link) is no change: the opening's load already has it. While it's
@@ -492,10 +502,7 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
       opened.current = true;
       lastChanged.current = changed;
     }
-    // A page more than shown, cut at the oldest row shown: new rows above don't push shown ones behind Show earlier.
-    const to = wanted.current;
-    const far = to === filter && shown.current > 0 ? shown.current + 20 : 0;
-    load(to, undefined, far > 20 ? Math.min(far, 100) : undefined, to === filter && !paging.current ? oldest.current : undefined);
+    reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed (or was fetched, offline)
   }, [triage]);
 
@@ -537,8 +544,8 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
             <Pressable
               key={option.key}
               // Any time, a load running or not: the newest asked for wins.
-              // The tab shown, offline: read again (the connection may be back).
-              onPress={() => (option.key !== wanted.current || savedAt !== null) && load(option.key)}
+              // The tab shown, offline: read again as far back as it's shown (the connection may be back).
+              onPress={() => (option.key !== wanted.current ? load(option.key) : savedAt !== null && reload())}
               accessibilityRole="tab"
               accessibilityState={{ selected: chosen, busy: loading }}
               hitSlop={4}

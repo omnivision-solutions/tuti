@@ -878,6 +878,31 @@ describe("the details sheet's Activity", () => {
     expect(screen.getByText("A conversation starts")).toBeTruthy();
   });
 
+  it("tapped offline, its tab reads again as far back as it's shown", async () => {
+    let online = true;
+    serveActivity(({ before, limit }) =>
+      !online
+        ? Promise.reject(new ApiError(0, "unreachable", NETWORK))
+        : Promise.resolve(before ? { events: [SPAM], next: null } : limit ? { events: [RUN, CLOSED, SPAM], next: null } : { events: [RUN, CLOSED], next: "e2" }),
+    );
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    await screen.findByText("The spam filter");
+
+    // Offline: a reload keeps what's shown, saying so.
+    online = false;
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+
+    online = true;
+    await fireEvent.press(screen.getByRole("tab", { name: "All" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=23");
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByText(/^Offline · updated/)).toBeNull();
+    expect(screen.getByText("The spam filter")).toBeTruthy();
+  });
+
   it("isn't shown by a server from before it", async () => {
     serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
     await render(<Details />);
