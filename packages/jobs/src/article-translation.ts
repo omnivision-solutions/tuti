@@ -398,17 +398,22 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   const now = new Date();
   // Read a page at a time past those held here, so a big batch's pages never crowd out everything else's.
   const ready: { id: string; articleId: string; language: string }[] = [];
-  for (let cursor: string | undefined; ready.length < retryBatch.size; ) {
+  // Paged by the (retryAt, id) read, not a cursor row: a held page's job moving its time can't shift where reading resumes.
+  for (let after: { retryAt: Date; id: string } | undefined; ready.length < retryBatch.size; ) {
     const page = await prisma.articleTranslation.findMany({
-      where: { retryAt: { lte: now }, automatic: true },
+      where: {
+        retryAt: { lte: now },
+        automatic: true,
+        ...(after && { OR: [{ retryAt: { gt: after.retryAt } }, { retryAt: after.retryAt, id: { gt: after.id } }] }),
+      },
       orderBy: [{ retryAt: "asc" }, { id: "asc" }],
       take: retryBatch.size,
-      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
-      select: { id: true, articleId: true, language: true },
+      select: { id: true, articleId: true, language: true, retryAt: true },
     });
     ready.push(...page.filter(({ articleId, language }) => !onTheirWay.has(pageKey(articleId, language))).slice(0, retryBatch.size - ready.length));
     if (page.length < retryBatch.size) break;
-    cursor = page.at(-1)!.id;
+    const last = page.at(-1)!;
+    after = { retryAt: last.retryAt!, id: last.id };
   }
   const due = await prisma.articleTranslation.updateManyAndReturn({
     where: { id: { in: ready.map(({ id }) => id) }, retryAt: { lte: now }, automatic: true },
