@@ -368,6 +368,29 @@ test("inline, a batch holding many due pages doesn't keep the retry job from oth
   expect(await translation("fr")).toMatchObject({ title: "[fr] Getting started", error: null });
 });
 
+test("inline, a page two batches hold stays held until both finish", async () => {
+  await draft();
+  await publish();
+  vi.spyOn(handlers, "translateArticle").mockResolvedValueOnce({ skipped: "lost" } as never);
+  await languages({ languages: [{ code: "de" }] });
+  vi.restoreAllMocks();
+  const { articleId } = await translation();
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  let second: unknown;
+  // Retry run R holds the page; while it waits for its answer a publish's batch B holds it too, runs and finishes.
+  model.reply(reply(), async () => {
+    model.reply(reply());
+    await queueArticleTranslations(articleId);
+    await languageTranslationsDone();
+    // R still holds it: the next run leaves it.
+    await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+    second = await handlers.retryArticleTranslations({}, log);
+  });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(second).toEqual({ queued: 0 });
+  expect(model.requests).toHaveLength(2);
+});
+
 test("without AI on the server, pages wait and say why", async () => {
   await draft();
   await publish();
