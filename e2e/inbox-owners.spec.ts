@@ -97,8 +97,8 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await expect(meta.getByText("Needs reply")).toHaveCount(0);
   await expect(details.getByRole("button", { name: "Open, change status", exact: true })).toBeVisible();
   // Taking over comes before typing: no reply box, no Note tab, and nothing hands it back.
-  await expect(owner.locator(".inbox-take-over")).toHaveText(/^The AI is answering\.\s*Take over$/);
-  await expect(takeOver).toHaveAccessibleDescription("The AI is answering.");
+  await expect(owner.locator(".inbox-take-over")).toHaveText(/^The AI has this conversation\.\s*Take over$/);
+  await expect(takeOver).toHaveAccessibleDescription("The AI has this conversation.");
   await expect(reply).toHaveCount(0);
   await expect(owner.getByRole("tab")).toHaveCount(0);
   await more.click();

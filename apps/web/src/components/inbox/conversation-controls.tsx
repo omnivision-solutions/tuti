@@ -374,7 +374,7 @@ export function PriorityButton({ projectSlug, number, priority }: Props & { prio
 }
 
 /**
- * Where the reply box goes. On a conversation the AI has (`ai`), "The AI is answering" and Take over in its place: taking
+ * Where the reply box goes. On a conversation the AI has (`ai`), "The AI has this conversation." and Take over in its place: taking
  * over comes before typing, so the AI can't answer while a reply is being written. Taken over, it's the team's, with
  * nothing else about it moved, and the reply box (`children`) is there, the cursor in it.
  */
@@ -399,7 +399,7 @@ export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: bo
     <div className="inbox-take-over flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-input bg-card px-3.5 py-2.5 shadow-[0_2px_7px] shadow-black/3.5">
       <p id={saysId} className="flex min-w-0 flex-1 basis-40 items-center gap-1.5 text-sm [&>svg]:size-3.5 [&>svg]:flex-none [&>svg]:text-muted-foreground">
         <SparklesIcon aria-hidden />
-        The AI is answering.
+        The AI has this conversation.
       </p>
       <Button
         size="sm"
