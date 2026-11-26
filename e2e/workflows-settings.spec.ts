@@ -138,7 +138,10 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await api(`/workflows/${third.id}`, undefined, "DELETE");
   await owner.getByRole("switch", { name: "Third" }).click();
   await expect(owner.getByText("There's no workflow with that id")).toBeVisible();
-  await expect(owner.getByRole("switch", { name: "Third" })).toBeChecked();
+  // It goes back on; a refresh landing after that (the page catching up with the delete) may take the row away, which
+  // is right too: the toast is what proves the switch was refused.
+  const thirdSwitch = owner.getByRole("switch", { name: "Third" });
+  await expect.poll(async () => (await thirdSwitch.count()) === 0 || (await thirdSwitch.isChecked())).toBe(true);
   // Nothing wider than the screen.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "workflows-phone");
