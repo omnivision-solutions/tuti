@@ -24,7 +24,8 @@ import { accountPosts, whyNotEmailedAboutPosts } from "@/server/post-lists";
 import { currentPostViewer } from "@/server/portal-access";
 import { firstBoardPath } from "@/server/portal-home";
 import { getSession } from "@/server/session";
-import { portalLinks } from "@/server/portal-base";
+import { portalLanguage, portalLinks } from "@/server/portal-base";
+import { withLanguage } from "@/lib/language-addresses";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
 
 /** For the reader alone: not for search engines. */
@@ -35,7 +36,8 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   const at = await portalLinks();
   const session = await getSession();
   if (!session) {
-    redirect(at(`/sign-in?${new URLSearchParams({ next: "/account" })}`));
+    // In the page's language: signing in comes back to it.
+    redirect(at(`/sign-in?${new URLSearchParams({ next: withLanguage((await portalLanguage()).prefix, "/account") })}`));
   }
   const { project: slug } = await props.params;
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, name: true } });

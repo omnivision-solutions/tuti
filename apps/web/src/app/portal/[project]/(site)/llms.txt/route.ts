@@ -3,6 +3,7 @@ import { prisma } from "@tuti/db";
 
 import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
+import { portalLanguage } from "@/server/portal-base";
 import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -50,7 +51,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   if (!project) {
     return new Response("Not found", { status: 404 });
   }
-  const portal = await portalAddress(slug);
+  // Under a language's prefix (/de/llms.txt) its links are that language's addresses (docs/plan.md, Languages).
+  const portal = `${await portalAddress(slug)}${(await portalLanguage()).prefix}`;
   // For AI tools, like search engines: what's for everyone (nothing for signed-in readers or some groups only),
   // and not the articles whose team blocked search indexing.
   const docs = await docsContents(slug, { reader: SIGNED_OUT, indexable: true, locks: false });

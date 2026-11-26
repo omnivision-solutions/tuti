@@ -19,7 +19,7 @@ import { ACTIVE_STATUSES, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/l
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { boardPosts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { getSession } from "@/server/session";
@@ -44,6 +44,8 @@ const OVERVIEW_DESCRIPTION = "Vote for the ideas you want most, or share your ow
  */
 export default async function FeedbackOverview(props: PageProps<"/portal/[project]/feedback">) {
   const at = await portalLinks();
+  // Posts' titles: people's words, in the default language under another's address (teamLanguage).
+  const lang = await teamLanguage();
   const { project: slug } = await props.params;
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, slug: true, portalAccess: true } });
   if (!project) {
@@ -145,7 +147,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                       {post.status !== "OPEN" && <StatusLabel status={post.status} />}
                       <h2 className="font-sans text-base leading-snug font-[650] break-words">
-                        <Link href={at(postPath({ ...post, board }))} className="hover:underline">
+                        <Link lang={lang} href={at(postPath({ ...post, board }))} className="hover:underline">
                           {post.title}
                         </Link>
                       </h2>
@@ -185,7 +187,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                       {ideas.map((post) => (
                         <li key={post.id} className="flex items-center gap-3">
                           {vote(post, "chip")}
-                          <Link href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
+                          <Link lang={lang} href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
                             {post.title}
                           </Link>
                           {post.status !== "OPEN" && <StatusLabel status={post.status} className="shrink-0" />}
@@ -217,7 +219,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                 {latest.map((post) => (
                   <li key={post.id} className="flex items-center gap-3 py-3">
                     <CircleCheckIcon aria-hidden className="size-4 shrink-0 text-status-completed" />
-                    <Link href={at(postPath({ ...post, board: post.board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
+                    <Link lang={lang} href={at(postPath({ ...post, board: post.board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
                       {post.title}
                     </Link>
                     <span className="shrink-0 text-sm text-muted-foreground">{formatDay(post.shippedAt)}</span>

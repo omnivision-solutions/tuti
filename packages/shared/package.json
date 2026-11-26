@@ -17,6 +17,7 @@
     "./user-properties": "./src/user-properties.ts",
     "./group-conditions": "./src/group-conditions.ts",
     "./portal-redirects": "./src/portal-redirects.ts",
+    "./languages": "./src/languages.ts",
     "./log": "./src/log.ts",
     "./config": "./src/config/index.ts",
     "./plans": "./src/plans.ts",
