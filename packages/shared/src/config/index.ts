@@ -8,6 +8,7 @@ import { autopilot, AUTOPILOT_REPLACED } from "./autopilot";
 import { credits, CREDITS_REPLACED } from "./credits";
 import { duplicates } from "./duplicates";
 import { screenshots } from "./screenshots";
+import { spam } from "./spam";
 import { media, MEDIA_REPLACED } from "./media";
 import { analytics, ANALYTICS_REPLACED } from "./analytics";
 import { customDomains, CUSTOM_DOMAINS_REPLACED } from "./custom-domains";
@@ -38,6 +39,7 @@ export const configSchema = z.object({
   credits,
   duplicates,
   screenshots,
+  spam,
 });
 
 export type Config = z.output<typeof configSchema>;

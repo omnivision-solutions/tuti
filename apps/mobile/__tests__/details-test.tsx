@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo, BackHandler } from "react-native";
 
-import Details from "@/app/conversation/[number]/details";
+import Details, { ActivitySection } from "@/app/conversation/[number]/details";
 import { behaviourFor, lookAt } from "@/lib/notifications";
-import { type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage, triageChanges } from "@/lib/details";
+import { startCache } from "@/lib/offline";
+import { useColors } from "@/lib/theme";
+import { ApiError } from "@/lib/api";
+import { type Activity, type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage, triageChanges } from "@/lib/details";
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -25,7 +28,7 @@ jest.mock("expo-router", () => {
 let mockSetFocused: (focused: boolean) => void = () => {};
 
 let mockNumber = "12";
-const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme" };
+const mockSession = { server: "https://tuti.example.com", token: "token-1", cookie: "c", project: "acme", owner: "owner-1" };
 const mockApi = jest.fn<(path: string, init?: { method?: string; body?: unknown }) => Promise<unknown>>();
 jest.mock("@/lib/session", () => ({
   useApi: () => mockApi,
@@ -104,6 +107,9 @@ function serve(person: Person, triage: Triage = OPEN) {
   screenUnder = holdTriage(KEY);
   showTriage(KEY, triage);
 }
+
+/** The person, for the tests' servers that answer only the team and the conversation; the Activity never answers. */
+const elsewhere = (path: string) => (path.includes("/activity") ? new Promise(() => {}) : Promise.resolve(EMAIL_ONLY));
 
 const patches = () => mockApi.mock.calls.filter(([, init]) => init?.method === "PATCH").map(([, init]) => init!.body);
 
@@ -344,7 +350,7 @@ describe("the details sheet", () => {
       if (path === "/conversations/13") {
         return down ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : Promise.resolve({ ...OPEN, status: "closed", number: 13 });
       }
-      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY);
+      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : elsewhere(path);
     });
     await render(<Details />);
 
@@ -424,7 +430,7 @@ describe("the details sheet", () => {
       if (path === "/conversations/13") {
         return new Promise((resolve) => asked.push(resolve));
       }
-      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY);
+      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : elsewhere(path);
     });
     const first = await render(<Details />);
     await first.unmount();
@@ -447,7 +453,7 @@ describe("the details sheet", () => {
       if (path === "/conversations/14") {
         return init?.method === "PATCH" ? new Promise((resolve) => (patched = resolve)) : new Promise((resolve) => gets.push(resolve));
       }
-      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY);
+      return path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : elsewhere(path);
     });
     const first = await render(<Details />);
     await act(async () => gets[0]!({ ...OPEN, number: 14 }));
@@ -471,7 +477,7 @@ describe("the details sheet", () => {
     const under = holdTriage(key);
     const since = triageChanges(key);
     mockApi.mockImplementation((path) =>
-      path === "/conversations/15" ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : Promise.resolve(EMAIL_ONLY),
+      path === "/conversations/15" ? Promise.reject(new Error("Couldn't reach tuti.example.com.")) : path === "/inbox/assignees" ? Promise.resolve({ assignees: TEAM }) : elsewhere(path),
     );
     await render(<Details />);
     expect(await screen.findByText("Couldn't reach tuti.example.com.")).toBeTruthy();
@@ -506,5 +512,415 @@ describe("the details sheet", () => {
     expect(screen.getByRole("button", { name: "Olive Owner" })).toBeDisabled();
     await act(async () => patched({ ...OPEN, status: "closed", assignee: { name: "Olive Owner", email: "e2e-olive@example.com" } }));
     expect(await screen.findByRole("button", { name: "Assignee, Olive Owner" })).toBeEnabled();
+  });
+});
+
+const event = (id: string, at: string, fields: Partial<Activity["events"][number]> = {}): Activity["events"][number] => ({
+  id,
+  kind: "status",
+  actor: "teammate",
+  who: "Olive Owner",
+  text: "closed it",
+  detail: null,
+  workflows: [],
+  createdAt: at,
+  ...fields,
+});
+const RUN = event("e3", "2026-11-25T10:02:00", {
+  kind: "workflows_ran",
+  actor: "workflow",
+  who: "A conversation starts",
+  text: "ran",
+  detail: "2 workflows checked",
+  workflows: [
+    { name: "Priority for paying plans", what: "marked this priority" },
+    { name: "Enterprise to Olive", what: "didn't match (not in Enterprise)" },
+  ],
+});
+const CLOSED = event("e2", "2026-11-12T09:30:00");
+const SPAM = event("e1", "2026-11-12T09:00:00", { kind: "spam_filter", actor: "spam_filter", who: "The spam filter", text: "let it through", detail: "a known user" });
+const NETWORK = "Couldn't reach tuti.example.com.";
+
+describe("the details sheet's Activity", () => {
+  /** The sheet's server, its Activity answered by `activity` (the path's query as an object). */
+  function serveActivity(activity: (query: Record<string, string>) => Promise<unknown>) {
+    serve(SAM);
+    const answer = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => {
+      const [route, query] = path.split("?");
+      return route === "/conversations/12/activity" ? activity(Object.fromEntries(new URLSearchParams(query))) : answer(path, init);
+    });
+  }
+  const activityAsked = () => mockApi.mock.calls.map(([path]) => path).filter((path) => path.startsWith("/conversations/12/activity"));
+
+  beforeEach(() => {
+    startCache(mockSession.owner);
+  });
+
+  it("shows each row in the server's words, newest first, with its time, detail and the workflows a run checked, and pages back", async () => {
+    serveActivity(({ before }) => Promise.resolve(before === "e2" ? { events: [SPAM], next: null } : { events: [RUN, CLOSED], next: "e2" }));
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    focus.mockClear();
+    await render(<Details />);
+
+    expect(await screen.findByText("A conversation starts")).toBeTruthy();
+    expect(screen.getByText("10:02 · 2 workflows checked")).toBeTruthy();
+    expect(screen.getByLabelText("A conversation starts ran, 10:02, 2 workflows checked, Priority for paying plans: marked this priority, Enterprise to Olive: didn't match (not in Enterprise)")).toBeTruthy();
+    expect(screen.getByText("Priority for paying plans")).toBeTruthy();
+    expect(screen.getByText("Enterprise to Olive")).toBeTruthy();
+    expect(screen.getByText(/didn't match \(not in Enterprise\)/)).toBeTruthy();
+    expect(screen.getByText("Olive Owner")).toBeTruthy();
+    expect(screen.getByText("12 Nov, 09:30")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "All" })).toBeSelected();
+    expect(activityAsked()).toEqual(["/conversations/12/activity?filter=all"]);
+
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked()).toContain("/conversations/12/activity?filter=all&before=e2");
+    expect(await screen.findByText("The spam filter")).toBeTruthy();
+    expect(screen.getByText("12 Nov, 09:00 · a known user")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show earlier" })).toBeNull();
+    // A screen reader goes on to the first of the earlier rows.
+    expect(focus.mock.calls.map(([row, kind]) => `${kind}: ${(row as unknown as { props: { accessibilityLabel: string } }).props.accessibilityLabel}`)).toEqual([
+      "focus: The spam filter let it through, 12 Nov, 09:00, a known user",
+    ]);
+  });
+
+  it("filters by Workflows and People, each saying when it has none", async () => {
+    serveActivity(({ filter }) => Promise.resolve(filter === "workflows" ? { events: [RUN], next: null } : filter === "people" ? { events: [], next: null } : { events: [RUN, CLOSED], next: null }));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    expect(await screen.findByRole("tab", { name: "Workflows", selected: true })).toBeTruthy();
+    expect(screen.queryByText("Olive Owner")).toBeNull();
+    expect(screen.getByText("A conversation starts")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("tab", { name: "People" }));
+    expect(await screen.findByText("Nobody has changed anything yet.")).toBeTruthy();
+    expect(activityAsked()).toEqual(["/conversations/12/activity?filter=all", "/conversations/12/activity?filter=workflows", "/conversations/12/activity?filter=people"]);
+  });
+
+  it("reads it again when a change is made, so the change's row is there", async () => {
+    let closed = false;
+    serveActivity(() => Promise.resolve({ events: closed ? [CLOSED, RUN] : [RUN], next: null }));
+    const answer = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => {
+      if (init?.method === "PATCH") {
+        closed = true;
+      }
+      return answer(path, init);
+    });
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+    expect(screen.queryByText("Olive Owner")).toBeNull();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Close" }));
+    expect(await screen.findByText("Olive Owner")).toBeTruthy();
+  });
+
+  it("offline, shows the newest page as it was kept, saying so", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN, CLOSED], next: "e2" }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    const first = await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await first.unmount();
+
+    online = false;
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    await act(() => jest.advanceTimersByTimeAsync(5 * 60_000));
+    await render(<Details />);
+    expect(await screen.findByText("A conversation starts")).toBeTruthy();
+    expect(screen.getByText("Olive Owner")).toBeTruthy();
+    expect(screen.getByText("Offline · updated 5 minutes ago")).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith("Offline · updated 5 minutes ago");
+  });
+
+  it("with nothing kept, says it couldn't load, and Try again loads it", async () => {
+    let online = false;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    await render(<Details />);
+    expect(await screen.findByText(NETWORK)).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(NETWORK);
+
+    online = true;
+    await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("A conversation starts")).toBeTruthy();
+    expect(screen.queryByText(NETWORK)).toBeNull();
+  });
+
+  it("reads it again as far back as shown, up to 100, and keeps only the newest 20 for offline", async () => {
+    let online = true;
+    const all = Array.from({ length: 25 }, (_, i) => event(`r${25 - i}`, "2026-11-25T10:00:00", { text: `closed it ${25 - i}` }));
+    serveActivity(({ before, limit }) => {
+      if (!online) {
+        return Promise.reject(new ApiError(0, "unreachable", NETWORK));
+      }
+      if (before) {
+        return Promise.resolve({ events: all.slice(all.findIndex((one) => one.id === before) + 1), next: null });
+      }
+      // Closed meanwhile: its row on top.
+      return Promise.resolve(limit ? { events: [CLOSED, ...all].slice(0, Number(limit)), next: null } : { events: all.slice(0, 20), next: "r6" });
+    });
+    const first = await render(<Details />);
+    await screen.findByText(/ it 25$/);
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(await screen.findByText(/ it 1$/)).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Close" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    // A page more than shown: the new row above, and every row shown still there.
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=45");
+    expect(screen.getAllByText(/closed it \d+$/)).toHaveLength(25);
+    expect(screen.getByText(/closed it$/)).toBeTruthy();
+    expect(screen.getByText(/ it 1$/)).toBeTruthy();
+    await first.unmount();
+
+    // Kept: the newest 20 (the new row and 19 more), and Show earlier from the 20th.
+    online = false;
+    await render(<Details />);
+    expect(await screen.findByText(/ it 25$/)).toBeTruthy();
+    expect(screen.getAllByText(/closed it( \d+)?$/)).toHaveLength(20);
+    expect(screen.queryByText(/ it 6$/)).toBeNull();
+    online = true;
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r7");
+    // The newest rows are still as kept: still said to be.
+    expect(await screen.findByText(/ it 1$/)).toBeTruthy();
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+  });
+
+  it("keeps the rows shown when a reload finds no connection, saying it's offline since they loaded", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    online = false;
+    await act(() => jest.advanceTimersByTimeAsync(2 * 60_000));
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(await screen.findByText("Offline · updated 2 minutes ago")).toBeTruthy();
+    expect(screen.getByText("A conversation starts")).toBeTruthy();
+    expect(screen.queryByText(NETWORK)).toBeNull();
+  });
+
+  it("keeps the tab chosen when the conversation changes while it loads", async () => {
+    let answer: (value: unknown) => void = () => {};
+    serveActivity(({ filter }) => (filter === "workflows" ? new Promise((resolve) => (answer = resolve)) : Promise.resolve({ events: [RUN, CLOSED], next: null })));
+    await render(<Details />);
+    await screen.findByText("Olive Owner");
+
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=workflows");
+    await act(async () => answer({ events: [RUN], next: null }));
+    expect(await screen.findByRole("tab", { name: "Workflows", selected: true })).toBeTruthy();
+    expect(screen.queryByText("Olive Owner")).toBeNull();
+  });
+
+  it("takes a tab chosen while it's loading, and reads Show earlier's page too in a reload meanwhile", async () => {
+    let answer: (value: unknown) => void = () => {};
+    serveActivity(({ filter, before }) =>
+      filter === "all" && !before ? new Promise((resolve) => (answer = resolve)) : before ? new Promise(() => {}) : Promise.resolve({ events: [RUN], next: null }),
+    );
+    await render(<Details />);
+    await act(async () => answer({ events: [RUN, CLOSED], next: "e2" }));
+    await screen.findByText("Olive Owner");
+
+    // Show earlier still out when the conversation changes: the reload reads that page too.
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=22");
+
+    // That reload still out: Workflows is taken.
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    expect(await screen.findByRole("tab", { name: "Workflows", selected: true })).toBeTruthy();
+    expect(screen.queryByText("Olive Owner")).toBeNull();
+  });
+
+  it("keeps Show earlier while its page loads, off but focusable, a press meanwhile ignored", async () => {
+    serveActivity(({ before }) => (before ? new Promise(() => {}) : Promise.resolve({ events: [RUN, CLOSED], next: "e2" })));
+    await render(<Details />);
+    await screen.findByText("Olive Owner");
+
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(screen.getByRole("button", { name: "Show earlier" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Show earlier" }).props.accessibilityState).toMatchObject({ busy: true });
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked().filter((path) => path.includes("before="))).toHaveLength(1);
+  });
+
+  it("is fetched once on opening, and again only when the conversation's status changes", async () => {
+    serveActivity(() => Promise.resolve({ events: [RUN], next: null }));
+    // Opened by a link: no screen under it, so the sheet fetches the status itself.
+    screenUnder?.();
+    screenUnder = null;
+    await render(<Details />);
+    expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
+    await screen.findByText("A conversation starts");
+    expect(activityAsked()).toEqual(["/conversations/12/activity?filter=all"]);
+
+    // A fetch bringing it as it was: nothing to read again.
+    await act(async () => showTriage(KEY, { ...OPEN }));
+    expect(activityAsked()).toHaveLength(1);
+    await act(async () => showTriage(KEY, { ...OPEN, priority: true }));
+    expect(activityAsked()).toHaveLength(2);
+  });
+
+  it("keeps its tab and rows across Assign and back, asking nothing again", async () => {
+    serveActivity(({ filter }) => Promise.resolve(filter === "people" ? { events: [CLOSED], next: null } : { events: [RUN, CLOSED], next: null }));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await fireEvent.press(screen.getByRole("tab", { name: "People" }));
+    expect(await screen.findByRole("tab", { name: "People", selected: true })).toBeTruthy();
+    const asked = activityAsked().length;
+
+    await fireEvent.press(screen.getByRole("button", { name: "Assignee, Unassigned" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("tab", { name: "People", selected: true })).toBeTruthy();
+    expect(screen.getByText("Olive Owner")).toBeTruthy();
+    expect(screen.queryByText("A conversation starts")).toBeNull();
+    expect(activityAsked()).toHaveLength(asked);
+  });
+
+  it("drops a failed tab's error once All is shown offline, so Try again can't load the wrong tab", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    online = false;
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    expect(await screen.findByText(NETWORK)).toBeTruthy();
+    await fireEvent.press(screen.getByRole("tab", { name: "All" }));
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+    expect(screen.queryByText(NETWORK)).toBeNull();
+    expect(screen.getByRole("tab", { name: "All", selected: true })).toBeTruthy();
+  });
+
+  it("starts over for another conversation, even one whose status reads the same", async () => {
+    serveActivity(() => Promise.resolve({ events: [RUN], next: null }));
+    const answer = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) =>
+      path.startsWith("/conversations/13/activity") ? Promise.resolve({ events: [SPAM], next: null }) : path === "/conversations/13/person" ? Promise.resolve(SAM) : answer(path, init),
+    );
+    // Conversation 13's screen holds the same status.
+    const other = screenKey(mockSession, 13);
+    const under = holdTriage(other);
+    showTriage(other, OPEN);
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    mockNumber = "13";
+    await screen.rerender(<Details />);
+    expect(await screen.findByText("The spam filter")).toBeTruthy();
+    expect(screen.queryByText("A conversation starts")).toBeNull();
+    under();
+  });
+
+  it("reads it again when the status comes back changed after none, and not when it comes back the same", async () => {
+    serveActivity(() => Promise.resolve({ events: [RUN], next: null }));
+    function Section({ triage }: { triage: Triage | null }) {
+      return <ActivitySection number={12} triage={triage} colors={useColors()} />;
+    }
+    await render(<Section triage={OPEN} />);
+    await screen.findByText("A conversation starts");
+    expect(activityAsked()).toHaveLength(1);
+
+    await screen.rerender(<Section triage={null} />);
+    await screen.rerender(<Section triage={{ ...OPEN }} />);
+    expect(activityAsked()).toHaveLength(1);
+    await screen.rerender(<Section triage={null} />);
+    await screen.rerender(<Section triage={{ ...OPEN, status: "closed" }} />);
+    expect(activityAsked()).toHaveLength(2);
+  });
+
+  it("cuts a reload at the oldest row shown, Show earlier going on from there", async () => {
+    let closed = false;
+    const all = Array.from({ length: 25 }, (_, i) => event(`r${25 - i}`, "2026-11-25T10:00:00", { text: `closed it ${25 - i}` }));
+    serveActivity(({ limit }) => Promise.resolve(limit ? { events: [...(closed ? [CLOSED] : []), ...all].slice(0, Number(limit)), next: null } : { events: all.slice(0, 20), next: "r6" }));
+    await render(<Details />);
+    await screen.findByText(/ it 25$/);
+
+    closed = true;
+    await act(async () => showTriage(KEY, { ...OPEN, status: "closed" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=40");
+    expect(await screen.findByText(/closed it$/)).toBeTruthy();
+    // The 20 shown and the new one: none of the older ones, which Show earlier reads from the oldest shown.
+    expect(screen.getAllByText(/closed it( \d+)?$/)).toHaveLength(21);
+    expect(screen.queryByText(/ it 5$/)).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r6");
+  });
+
+  it("shown offline, reads it again once the conversation is fetched again, or its tab is tapped", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    const first = await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await first.unmount();
+
+    online = false;
+    await render(<Details />);
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+    // Tapping All, the tab shown, asks again: still offline.
+    const asked = activityAsked().length;
+    await fireEvent.press(screen.getByRole("tab", { name: "All" }));
+    expect(activityAsked()).toHaveLength(asked + 1);
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+
+    // Back online: the screen under it fetches the conversation, as it was.
+    online = true;
+    await act(async () => showTriage(KEY, { ...OPEN }));
+    expect(activityAsked()).toHaveLength(asked + 2);
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByText(/^Offline · updated/)).toBeNull();
+    expect(screen.getByText("A conversation starts")).toBeTruthy();
+  });
+
+  it("tapped offline, its tab reads again as far back as it's shown", async () => {
+    let online = true;
+    serveActivity(({ before, limit }) =>
+      !online
+        ? Promise.reject(new ApiError(0, "unreachable", NETWORK))
+        : Promise.resolve(before ? { events: [SPAM], next: null } : limit ? { events: [RUN, CLOSED, SPAM], next: null } : { events: [RUN, CLOSED], next: "e2" }),
+    );
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    await screen.findByText("The spam filter");
+
+    // Offline: a reload keeps what's shown, saying so.
+    online = false;
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+
+    online = true;
+    await fireEvent.press(screen.getByRole("tab", { name: "All" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=23");
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByText(/^Offline · updated/)).toBeNull();
+    expect(screen.getByText("The spam filter")).toBeTruthy();
+  });
+
+  it("reads again at most 100 rows, however many are shown", async () => {
+    const all = Array.from({ length: 105 }, (_, i) => event(`m${105 - i}`, "2026-11-25T10:00:00", { text: `closed it ${105 - i}` }));
+    serveActivity(({ before }) => Promise.resolve(before ? { events: all.slice(100), next: null } : { events: all.slice(0, 100), next: "m6" }));
+    await render(<Details />);
+    await screen.findByText(/ it 105$/);
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(await screen.findByText(/ it 1$/)).toBeTruthy();
+
+    await act(async () => showTriage(KEY, { ...OPEN, status: "closed" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=100");
+  });
+
+  it("isn't shown by a server from before it", async () => {
+    serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
+    await render(<Details />);
+    await screen.findByText("Sam Lee");
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByRole("header", { name: "Activity" })).toBeNull();
+    expect(screen.queryByText("Not found")).toBeNull();
   });
 });

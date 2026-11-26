@@ -101,7 +101,7 @@ import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 import { generateImageOperation } from "./images";
-import { getScreenshots, getScreenshotSettings, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
+import { getScreenshots, getScreenshotSettings, takeArticleScreenshots, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -297,6 +297,7 @@ const all = [
   takeScreenshots,
   getScreenshots,
   takeChangelogScreenshots,
+  takeArticleScreenshots,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */

@@ -21,6 +21,7 @@ import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { blockDomainOf, recordMark } from "../spam";
+import { CHECKS_DUE_AFTER_MS } from "../spam-models";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
 
@@ -1014,7 +1015,7 @@ export async function startConversation(
      * The spam filter (server/spam.ts), run under the project's lock for a conversation a user starts: one it files goes to
      * Spam with the reason, and the caller tells nobody (`conversation.spam`). Without it (the team's own, over the API): never spam.
      */
-    filter?: (tx: Prisma.TransactionClient, first: { subject: string | null; text: string }) => Promise<{ spam: boolean; reason: SpamReason | null; check?: string | null; phrase?: string }>;
+    filter?: (tx: Prisma.TransactionClient, first: { subject: string | null; text: string }) => Promise<{ spam: boolean; reason: SpamReason | null; check?: string | null; phrase?: string; askModels?: boolean }>;
     /** The first message came by email. */
     received?: ReceivedEmail;
     /** More to write in the same transaction (a received email's status, its attachments), with the conversation's and its first message's ids. */
@@ -1051,6 +1052,8 @@ export async function startConversation(
         spam: verdict?.spam ?? false,
         spamReason: verdict?.spam ? verdict.reason : null,
         spamPhrase: (verdict?.spam && verdict.phrase) || null,
+        // Its model checks are left to do (server/spam-models.ts): picked up here if they haven't run by then.
+        pathDueAt: verdict?.askModels ? new Date(now.getTime() + CHECKS_DUE_AFTER_MS) : null,
         lastMessageAt: now,
         activeAt: now,
         waitingSince: now,

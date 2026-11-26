@@ -4,6 +4,7 @@ import { MoreHorizontalIcon } from "lucide-react";
 import { type ReactNode, useActionState, useEffect, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
+import { useCustomizeForm } from "@/components/customize-shell";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -15,7 +16,7 @@ import { matchText } from "@/lib/match-text";
 import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
 import type { FormState } from "@/server/form-state";
 import type { SpamSettings as Settings } from "@/server/operations/spam";
-import { listSpamSender, removeSpamSender, setSpamPhrase, type SpamTry, trySpam } from "@/server/spam-settings";
+import { listSpamSender, removeSpamSender, setSpamGuidance, setSpamPhrase, type SpamTry, trySpam } from "@/server/spam-settings";
 
 const SENDER = "kim@acme.example or acme.example";
 const aboutSender = (entry: string) => (entry.includes("@") ? null : "and its subdomains");
@@ -24,9 +25,20 @@ const asSender = (entry: string) => entry.trim().toLowerCase().replace(/^@/, "")
 
 /**
  * Settings → Spam (docs/plan.md, Inbox automation, W2): the spam filter's blocked and allowed lists, the team's phrases,
- * and a box to try a message against it. Each list saves as it's changed (see spam.update).
+ * its guidance for the AI, and a box to try a message against it. Each list saves as it's changed (see spam.update); the
+ * guidance with the page's "Save changes".
  */
-export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug: string; settings: Settings; maxPhrase: number }) {
+export function SpamSettings({
+  projectSlug,
+  settings,
+  maxPhrase,
+  maxGuidance,
+}: {
+  projectSlug: string;
+  settings: Settings;
+  maxPhrase: number;
+  maxGuidance: number;
+}) {
   return (
     <>
       <EntryList
@@ -68,6 +80,8 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
         add={(entry) => setSpamPhrase(projectSlug, entry, true)}
         remove={(entry) => setSpamPhrase(projectSlug, entry, false)}
       />
+      {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
+      {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
       <TryMessage projectSlug={projectSlug} />
     </>
   );
@@ -201,6 +215,45 @@ function Entry({ entry, about, remove }: { entry: string; about: string | null; 
         </DropdownMenuContent>
       </DropdownMenu>
     </li>
+  );
+}
+
+/** The team's guidance for the AI's checks (checks 6 and 7), in its own words: saved with the page's "Save changes". */
+function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidance: string; max: number }) {
+  const { state, pending, form } = useCustomizeForm({
+    save: async (_prev, formData) => {
+      const result = await setSpamGuidance(projectSlug, String(formData.get("guidance") ?? ""));
+      if (!result.error) {
+        toast.success("Guidance saved");
+      }
+      return result;
+    },
+  });
+  return (
+    <SettingsCard
+      title="Guidance for the AI"
+      description="What is and isn't spam for your team, in your words. The AI reads it when it checks a new conversation that your lists, your phrases and trust in the sender didn't decide. For now it only records in the conversation's Activity what it would have filed."
+    >
+      {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
+      <form {...form} inert={pending} className="flex flex-col">
+        <SettingBlock className="gap-2">
+          <label htmlFor="spam-guidance" className="sr-only">
+            Guidance for the AI
+          </label>
+          <Textarea
+            id="spam-guidance"
+            name="guidance"
+            defaultValue={guidance}
+            maxLength={max}
+            rows={3}
+            placeholder="Agencies offering SEO or design work are spam; questions about our API never are"
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "spam-guidance-error" : undefined}
+          />
+          {state.error && <FieldError id="spam-guidance-error">{state.error}</FieldError>}
+        </SettingBlock>
+      </form>
+    </SettingsCard>
   );
 }
 

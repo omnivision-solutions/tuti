@@ -38,6 +38,11 @@ export const EVENTS = {
   /** The spam filter's verdict where the conversation started. */
   spam_filter: z.object({ spam: z.boolean(), reason: z.string().nullable(), check: z.string().nullable(), phrase: z.string().optional() }),
   /**
+   * The spam filter's model checks (W3), watching only, would have filed it: the model that said so, and the decision
+   * model's probability. Nothing of the sender's, nor the model's words (a sender could steer those).
+   */
+  spam_would_file: z.object({ by: z.enum(["decision", "chat"]), probability: z.number().min(0).max(1).optional() }),
+  /**
    * `byMessage`: the change came with a message (a teammate's reply, the person writing), not by itself. `other`: the
    * message was someone else's on the email thread (a Cc'd colleague), not the conversation's person; who isn't kept.
    */
@@ -125,6 +130,15 @@ export function tellEvent(
         who: "Spam filter",
         text: verdict.spam ? "filed it as spam" : "let it through",
         detail: verdict.spam ? spamWhy(verdict.reason, verdict.phrase) : spamPassedWhy(verdict.check),
+        lines: [],
+      };
+    }
+    case "spam_would_file": {
+      const { by, probability } = details as z.output<typeof EVENTS.spam_would_file>;
+      return {
+        who: "Spam filter",
+        text: "would have filed it as spam",
+        detail: by === "decision" && probability !== undefined ? `the decision model was ${Math.floor(probability * 100)}% sure; watching only` : "the chat model judged it spam; watching only",
         lines: [],
       };
     }

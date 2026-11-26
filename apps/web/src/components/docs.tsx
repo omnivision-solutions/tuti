@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { CollectionSelect } from "@/components/collection-select";
 import { IconField } from "@/components/icon-field";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
+import { ScreenshotLines } from "@/components/screenshot-lines";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,8 +58,10 @@ import {
   saveArticle,
   saveCollection,
   saveTab,
+  takeArticleScreenshots,
   unpublishArticle,
 } from "@/server/docs";
+import type { LineScreenshots } from "@/server/operations/screenshots";
 
 type Article = {
   slug: string;
@@ -187,8 +190,14 @@ export function ArticleForm({
   defaultTitle,
   sections = false,
   findings,
+  screenshots = null,
+  canTakeScreenshots = false,
 }: {
   findings?: import("@/components/verification-marks").VerificationFinding[];
+  /** Its "[Screenshot: …]" lines and their runs (a saved article's). */
+  screenshots?: LineScreenshots | null;
+  /** An owner or admin: they take screenshots (articles.takeScreenshots). */
+  canTakeScreenshots?: boolean;
   projectSlug: string;
   article: Article | null;
   mediaUrls: MediaUrls | null;
@@ -360,6 +369,19 @@ export function ArticleForm({
           )}
         </div>
         {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
+        {/* The form keeps typing not saved over the version the screenshots make, and says so (above): read again however it ends. */}
+        {article && screenshots && (
+          <ScreenshotLines
+            projectSlug={projectSlug}
+            poll={`/app/${projectSlug}/docs/${article.slug}/screenshots`}
+            take={(shows) => takeArticleScreenshots(projectSlug, article.slug, shows)}
+            screenshots={screenshots}
+            canTake={canTakeScreenshots}
+            dirty={dirty}
+            keepsUnsaved
+            className="rounded-xl bg-card p-4 text-sm text-card-foreground shadow-xs ring-1 ring-card-edge"
+          />
+        )}
         {!article && (
           <Field>
           <FieldLabel htmlFor="new-article-description">Search description</FieldLabel>

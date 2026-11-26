@@ -5,6 +5,7 @@ import { NEW_BY_EMAIL_PER_HOUR, type SpamReason } from "@/lib/spam-reasons";
 
 import { offLimitsTopic } from "./operations/assistant";
 import { OperationError } from "./operations/define";
+import { spamModelsOn } from "./spam-models";
 
 /**
  * The spam filter (docs/plan.md, Inbox automation, "The spam filter"): an ordered list of checks a new conversation from
@@ -153,7 +154,7 @@ async function phrases(db: Db, { projectId, subject, text }: Arrival): Promise<A
   return phrase ? { spam: true, reason: "phrase", phrase } : null;
 }
 
-/** The checks, in order. The models (6, 7) go after these. */
+/** The checks, in order. The models (6, 7) go after these, once the request has answered (server/spam-models.ts). */
 export const SPAM_CHECKS: Check[] = [
   { key: "decisions", check: decided },
   { key: "trusted", check: trusted },
@@ -166,9 +167,10 @@ export const SPAM_CHECKS: Check[] = [
 
 /**
  * Runs the checks on a new conversation, in the transaction that starts it: the first with an answer decides, and says
- * which (`check`). An allow or trust only spares the checks after it that don't count everyone's (`whoeverSent`).
+ * which (`check`). An allow or trust only spares the checks after it that don't count everyone's (`whoeverSent`). One
+ * that none decided, neither filed nor let through, is for the models (`askModels`) where this server has one.
  */
-export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boolean; reason: SpamReason | null; check: string | null; phrase?: string }> {
+export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boolean; reason: SpamReason | null; check: string | null; phrase?: string; askModels?: boolean }> {
   let passedBy: string | null = null;
   for (const { key, whoeverSent, check } of SPAM_CHECKS) {
     if (passedBy && !whoeverSent) {
@@ -185,7 +187,7 @@ export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boo
       passedBy = key;
     }
   }
-  return { spam: false, reason: null, check: passedBy };
+  return { spam: false, reason: null, check: passedBy, ...(!passedBy && spamModelsOn() && { askModels: true }) };
 }
 
 /**

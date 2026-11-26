@@ -251,6 +251,9 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `screenshots.model` | `"bu-4.0-mini"` | The agent's model, a Browser Use model id |
 | `screenshots.retryModel` | `"bu-4.0"` | The model a run is tried once more with when the first fails as a whole (not when a screenshot or two weren't reached) |
 | `screenshots.maxCostUsd` | `1` | The most one run may cost, in dollars, its retry included: Browser Use stops it there (a number above 0, at most 100) |
+| `spam.decisions.model` | `"nace-ai/drex-max"` | Check 6: the decision model saying whether a new conversation is spam (at least 0.9 is, at most 0.3 isn't); OpenRouter only (elsewhere, and with `off`, check 7 alone) |
+| `spam.chat.model` | `null` | Check 7: the chat model asked where the decision model wasn't sure (or without one): spam, not spam or unsure; `off` for none. Without, `ai.model`, then Tuti's default |
+| `spam.requestsPerDay` | `200` | The most model requests the spam filter makes for one project in a day (UTC); past it, new conversations go to the inbox unchecked. 0 turns the model checks off |
 
 ### Autopilot's settings
 

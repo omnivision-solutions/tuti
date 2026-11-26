@@ -50,6 +50,9 @@ afterEach(() => {
   mockApi.mockReset();
 });
 
+/** Who it's with, and the sheet's Activity: none yet. */
+const other = (path: string) => (path.includes("/activity") ? { events: [], next: null } : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 });
+
 describe("the conversation's header", () => {
   it("shows its status and assignee, follows the details sheet's changes, and opens it", async () => {
     mockApi.mockResolvedValue(CONVERSATION);
@@ -101,7 +104,7 @@ describe("the conversation's header", () => {
 
     // Closed on the web meanwhile; then `tuti://conversation/12/details`, with no screen under it.
     mockApi.mockImplementation((path) =>
-      Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? { ...CONVERSATION, status: "closed" } : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+      Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? { ...CONVERSATION, status: "closed" } : other(path)),
     );
     const sheet = await render(<Details />);
     expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
@@ -111,7 +114,7 @@ describe("the conversation's header", () => {
 
   it("keeps its status when the details sheet over it closes", async () => {
     mockApi.mockImplementation((path) =>
-      Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? CONVERSATION : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+      Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? CONVERSATION : other(path)),
     );
     await render(<ConversationRoute />);
     await screen.findByRole("button", { name: "Open, unassigned, details" });
@@ -127,7 +130,7 @@ describe("the conversation's header", () => {
     mockApi.mockImplementation((path) =>
       path === "/conversations/12"
         ? new Promise((resolve) => asked.push(resolve))
-        : Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+        : Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : other(path)),
     );
     const opened = await render(<ConversationRoute />);
     // The sheet opens over it (a link) while the screen's fetch is out, so it fetches too; both answer.
@@ -145,7 +148,7 @@ describe("the conversation's header", () => {
     mockApi.mockImplementation((path, init?: { method?: string }) =>
       init?.method === "PATCH"
         ? new Promise((resolve) => (patched = resolve))
-        : Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? CONVERSATION : { name: "Maya Chen", email: null, verified: true, account: false, blocked: false, maybe: null, id: null, properties: [], groups: [], posts: [], postCount: 0, votes: [], voteCount: 0, conversations: [], conversationCount: 0 }),
+        : Promise.resolve(path === "/inbox/assignees" ? { assignees: [] } : path === "/conversations/12" ? CONVERSATION : other(path)),
     );
     const opened = await render(<ConversationRoute />);
     await screen.findByRole("button", { name: "Open, unassigned, details" });

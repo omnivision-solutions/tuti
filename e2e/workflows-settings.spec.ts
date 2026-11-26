@@ -9,7 +9,7 @@ import { APP_URL } from "./env";
 import { apiFor, createProject, holdActions, signUp } from "./helpers";
 
 test("an owner sees the path in Settings → Workflows, reorders a trigger's workflows by dragging and from the menu, turns one off and deletes one, on a phone too", async ({ browser }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -66,7 +66,9 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(names()).toHaveText(["Third", "First", "Second"]);
   await expect.poll(stored).toEqual(["Third", "First", "Later", "Second"]);
 
-  // From the keyboard: the row's menu moves it down, past the one not shown, and its menu has the focus again.
+  // From the keyboard: the row's menu moves it down, past the one not shown, and its menu has the focus again. Once the
+  // drag's save has landed: the menus are disabled while one saves.
+  await expect(started).not.toHaveAttribute("aria-busy", "true");
   const menu = (name: string) => owner.getByRole("button", { name: `Actions for ${name}` });
   await menu("Third").focus();
   await owner.keyboard.press("Enter");
@@ -74,9 +76,9 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.keyboard.press("Escape");
   // Closed before the next opens: a menu closing still has its items for a moment, so two would match "Move down".
   await expect(owner.getByRole("menuitem")).toHaveCount(0);
-  // A click on a row's name is a click on its title: it turns nothing off.
-  await started.getByText("Second", { exact: true }).click();
-  await expect(owner.getByRole("switch", { name: "Second" })).toBeChecked();
+  // A row's name opens its editor (its own journey, workflow-editor.spec.ts), and each group adds one there.
+  await expect(started.getByRole("link", { name: "Second" })).toHaveAttribute("href", /\/settings\/workflows\/[^/]+$/);
+  await expect(main.getByRole("link", { name: "Add workflow when a user replies" })).toHaveAttribute("href", `/app/${slug}/settings/workflows/new?trigger=user_replied`);
 
   // The page's saves held until the switch below has been turned, so the move lands after the focus went on.
   const release = await holdActions(owner);
@@ -101,6 +103,22 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Second")?.enabled).toBe(false);
+
+  const thirdSwitch = owner.getByRole("switch", { name: "Third" });
+  // Turned off, but stored on (as when a teammate turns it back on as this saves; here a trigger on its row in the
+  // journeys' own database keeps it on): once nothing saves, the switch shows what's stored, not the turn.
+  const thirdId = (await order("conversation_started")).find((workflow) => workflow.name === "Third")!.id;
+  const keepOn = `e2e_keep_on_${randomUUID().replaceAll("-", "")}`;
+  await query(`CREATE FUNCTION ${keepOn}() RETURNS trigger AS $$ BEGIN NEW.enabled := true; RETURN NEW; END $$ LANGUAGE plpgsql`);
+  await query(`CREATE TRIGGER ${keepOn} BEFORE UPDATE ON workflow FOR EACH ROW WHEN (NEW.id = '${thirdId}') EXECUTE FUNCTION ${keepOn}()`);
+  try {
+    await thirdSwitch.click();
+    await expect(owner.getByText("Third turned off")).toBeVisible();
+    await expect(thirdSwitch).toBeChecked();
+  } finally {
+    await query(`DROP TRIGGER ${keepOn} ON workflow`);
+    await query(`DROP FUNCTION ${keepOn}()`);
+  }
 
   // Deleted, asking first.
   await menu("First").click();
