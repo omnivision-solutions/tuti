@@ -9,7 +9,7 @@ vi.mock("@/server/images", () => ({ generateImage }));
 vi.mock("@/server/media", () => ({
   uploadStatus: async (id: string) => ({ status: "READY", src: `https://media.example/${id}-full.png`, download: "x", urls: { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` }, width: 1000, height: 500 }),
 }));
-const toast = vi.fn();
+const toast = Object.assign(vi.fn(), { error: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
 
@@ -525,4 +525,24 @@ test("Edited · N of M counts the edited image's own tries; another image's try,
   await click("Try 1");
   expect(document.body.textContent).not.toContain("Edited ·");
   expect([...document.querySelectorAll('[role="dialog"] figcaption')].map((each) => each.textContent)).toEqual(["Original", "Try 1"]);
+});
+
+test("with two copies of the image, one moved meanwhile, Replace guesses at neither: it asks to pick it again", async () => {
+  const copies = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+    ],
+  };
+  const { ref, generate, click } = await editor({ initial: copies });
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  // Text typed before the images moves both.
+  await act(async () => ref.current!.commands.insertContentAt(1, "More "));
+  await click("Replace image");
+  expect(toast.error).toHaveBeenCalledWith("The image moved: pick it again to use this one.");
+  expect(ref.current!.state.doc.child(1).attrs.mediaId).toBe(ORIGINAL);
+  expect(ref.current!.state.doc.child(2).attrs.mediaId).toBe(ORIGINAL);
 });

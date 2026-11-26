@@ -304,14 +304,19 @@ export function RichEditor({
     Object.entries(made.urls).forEach(([key, url]) => mediaUrls.set(key, url));
     const { doc } = editor.state;
     const isEdited = (node: ProseMirrorNode | null | undefined) => node?.type.name === "image" && node.attrs.mediaId === edited.image.id;
-    // Where it was, or (moved since) the first of it.
-    let pos = isEdited(doc.nodeAt(edited.pos)) ? edited.pos : -1;
+    // Where it was, or (moved since) its only copy: with several copies of the upload, which one moved isn't known, so
+    // none is guessed at (the dialog stays, its tries kept).
+    const copies: number[] = [];
     doc.descendants((node, at) => {
-      if (pos < 0 && isEdited(node)) {
-        pos = at;
+      if (isEdited(node)) {
+        copies.push(at);
       }
-      return pos < 0;
     });
+    const pos = isEdited(doc.nodeAt(edited.pos)) ? edited.pos : copies.length === 1 ? copies[0]! : -1;
+    if (pos < 0 && copies.length > 1) {
+      toast.error("The image moved: pick it again to use this one.");
+      return;
+    }
     const node = pos >= 0 ? doc.nodeAt(pos) : null;
     if (node) {
       const image = { mediaId: made.id, w: made.width, h: made.height };
