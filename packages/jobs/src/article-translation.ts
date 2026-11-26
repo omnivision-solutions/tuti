@@ -259,6 +259,27 @@ async function queue(articleId: string, language: string) {
 }
 
 /**
+ * Pages this process will still queue (inline the jobs run one by one here, so a long batch passes its pages' hour): the
+ * retry job leaves them to the batch, so none is translated, and paid for, twice. A restart empties it.
+ */
+const onTheirWay = new Set<string>();
+const pageKey = (articleId: string, language: string) => `${articleId}:${language}`;
+
+/** Queues pages one after another, each counted as on its way until its turn has been queued. */
+async function queueEach(pages: { articleId: string; language: string }[]) {
+  const keys = pages.map(({ articleId, language }) => pageKey(articleId, language));
+  keys.forEach((key) => onTheirWay.add(key));
+  try {
+    for (const [index, { articleId, language }] of pages.entries()) {
+      await queue(articleId, language);
+      onTheirWay.delete(keys[index]!);
+    }
+  } finally {
+    keys.forEach((key) => onTheirWay.delete(key));
+  }
+}
+
+/**
  * A safety net, set on every page about to be queued before the first is: a job lost, or never queued (a restart partway
  * through, inline; Hatchet dropping it), is queued again by the retry job once it's past, as the job's every end sets or
  * clears it.
@@ -308,11 +329,7 @@ export async function queueArticleTranslations(articleId: string) {
   await prisma.articleTranslation.createMany({ data: missing.map(({ code }) => ({ articleId, projectId: article.projectId, language: code })), skipDuplicates: true });
   const languages = [...article.translations.filter((t) => t.automatic).map((t) => t.language), ...missing.map(({ code }) => code)];
   await safetyNet({ articleId, language: { in: languages } });
-  queueAll(async () => {
-    for (const language of languages) {
-      await queue(articleId, language);
-    }
-  });
+  queueAll(() => queueEach(languages.map((language) => ({ articleId, language }))));
 }
 
 /**
@@ -339,11 +356,7 @@ export async function queueLanguageTranslations(projectId: string, language: str
     // On the row, so the retries of one that fails send everything too.
     await prisma.articleTranslation.updateMany({ where: { id: { in: rows.map(({ id }) => id) } }, data: { retranslate: { increment: 1 } } });
   }
-  queueAll(async () => {
-    for (const { articleId } of rows) {
-      await queue(articleId, language);
-    }
-  });
+  queueAll(() => queueEach(rows.map(({ articleId }) => ({ articleId, language }))));
   return rows.length;
 }
 
@@ -371,21 +384,19 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   if (!aiEnabled()) {
     return { skipped: NO_AI };
   }
-  // Inline, pages still being queued here are on their way (one at a time, maybe past their hour's net): taking them
-  // now would translate, and pay for, them twice. A restart empties this, so what it cut off comes back within the hour.
-  if (process.env.JOBS_DRIVER === "inline" && inBackground.size > 0) {
-    return { skipped: "translations still being queued" };
-  }
-  // Claimed in one update, so a run that overlaps a slow one (inline, each runs as it's queued) takes none of its pages;
-  // the claim is the safety net's next time, so pages a restart keeps this run from reaching come back too.
+  // Pages a batch here will still queue (its own runs' too) are left to it; the rest is claimed in one update, so a run
+  // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
+  // this run from reaching come back too.
+  const now = new Date();
+  const ready = (await prisma.articleTranslation.findMany({ where: { retryAt: { lte: now }, automatic: true }, select: { id: true, articleId: true, language: true } })).filter(
+    ({ articleId, language }) => !onTheirWay.has(pageKey(articleId, language)),
+  );
   const due = await prisma.articleTranslation.updateManyAndReturn({
-    where: { retryAt: { lte: new Date() }, automatic: true },
+    where: { id: { in: ready.map(({ id }) => id) }, retryAt: { lte: now }, automatic: true },
     data: { retryAt: new Date(Date.now() + lostAfterMs()) },
     select: { articleId: true, language: true },
   });
   // Each job's end sets the next try's time, or clears it.
-  for (const { articleId, language } of due) {
-    await queue(articleId, language);
-  }
+  await queueEach(due);
   return { queued: due.length };
 }

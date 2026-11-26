@@ -317,7 +317,25 @@ test("inline, the retry job takes no page while a language's pages are still bei
     during = await handlers.retryArticleTranslations({}, log);
   });
   await languages({ languages: [{ code: "de" }] });
-  expect(during).toEqual({ skipped: "translations still being queued" });
+  expect(during).toEqual({ queued: 0 });
+  expect(model.requests).toHaveLength(1);
+});
+
+test("inline, a retry run takes no page an earlier run is still translating", async () => {
+  await draft();
+  await publish();
+  vi.spyOn(handlers, "translateArticle").mockResolvedValueOnce({ skipped: "lost" } as never);
+  await languages({ languages: [{ code: "de" }] });
+  vi.restoreAllMocks();
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  let second: unknown;
+  // An hour into the first run's batch: the page's claimed time has passed, and the next run starts.
+  model.reply(reply(), async () => {
+    await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+    second = await handlers.retryArticleTranslations({}, log);
+  });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(second).toEqual({ queued: 0 });
   expect(model.requests).toHaveLength(1);
 });
 
