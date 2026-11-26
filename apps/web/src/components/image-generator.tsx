@@ -34,6 +34,8 @@ export type PickedImage = { id: string; url: string };
 export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
 /** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
 export type Try = PickedImage & { width: number; height: number };
+/** Tries an owner keeps for one image (see ImageGenerator's `kept`). */
+export type KeptTries = { tries: Try[]; generating: boolean; add: (made: Try) => void; setGenerating: (on: boolean) => void };
 /** What an editor needs for "Edit with AI" on its images: AI credits are on, the project is out of them, its logo. */
 export type ImageEditing = { credits: boolean; paused: boolean; logo: PickedImage | null };
 export type ImageSize = { label: string; width: number; height: number };
@@ -80,8 +82,7 @@ export function ImageGenerator({
   onUse,
   alsoUse,
   editing,
-  tries: initialTries = [],
-  onTries,
+  kept,
   finalFocus,
 }: {
   projectSlug: string;
@@ -107,10 +108,11 @@ export function ImageGenerator({
   alsoUse?: { label: string; onUse: (image: GeneratedImage) => void };
   /** The image being edited ("Edit with AI"): the first reference, kept there, and shown beside each try. */
   editing?: Try;
-  /** Tries made before (kept by the owner, as `onTries` gives them), the last one picked. */
-  tries?: Try[];
-  /** Each new try, with those before it: for the owner to keep while the dialog isn't there. */
-  onTries?: (tries: Try[]) => void;
+  /**
+   * The tries kept by the owner, which outlive the dialog (another image edited meanwhile): the list, whether one is
+   * being made, and the two to change them. A try that lands after the dialog closed or was made again joins the list.
+   */
+  kept?: KeptTries;
   finalFocus?: Parameters<typeof DialogContent>[0]["finalFocus"];
 }) {
   const id = useId();
@@ -129,18 +131,30 @@ export function ImageGenerator({
   const sizes = [defaultSize, ...PRESETS];
   const [sizeLabel, setSizeLabel] = useState(defaultSize.label);
   const [custom, setCustom] = useState({ width: String(defaultSize.width), height: String(defaultSize.height) });
-  const [tries, setTries] = useState<Try[]>(initialTries);
+  const [ownTries, setOwnTries] = useState<Try[]>([]);
+  const tries = kept?.tries ?? ownTries;
   // What the live region says once a try is in (while one runs, Generating…; errors are an alert of their own).
   const [said, setSaid] = useState("");
   const [using, startUsing] = useTransition();
   const [useError, setUseError] = useState<string | null>(null);
   // The try the edited image is (one placed before), or the last.
   const [selected, setSelected] = useState(() => {
-    const placed = initialTries.findIndex((each) => each.id === editing?.id);
-    return placed >= 0 ? placed : Math.max(0, initialTries.length - 1);
+    const placed = tries.findIndex((each) => each.id === editing?.id);
+    return placed >= 0 ? placed : Math.max(0, tries.length - 1);
   });
+  // A new try, made here or landing from before (kept): picked and said.
+  const [count, setCount] = useState(tries.length);
+  if (tries.length !== count) {
+    setCount(tries.length);
+    if (tries.length > count) {
+      setSelected(tries.length - 1);
+      setSaid(`Try ${tries.length} is ready`);
+    }
+  }
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [running, startTransition] = useTransition();
+  // Made here, or (kept) still being made from before.
+  const pending = running || !!kept?.generating;
 
   const preset = sizes.find((size) => size.label === sizeLabel);
   const size = preset ?? { width: Number(custom.width), height: Number(custom.height) };
@@ -174,28 +188,33 @@ export function ImageGenerator({
     }
   };
 
-  const generate = () =>
+  // Started outside the transition, so these land now, not after the try (whose list update isn't part of it).
+  const generate = () => {
+    setError(null);
+    setUseError(null);
+    setSaid("");
+    kept?.setGenerating(true);
     startTransition(async () => {
-      setError(null);
-      setUseError(null);
-      setSaid("");
       const result = await generateImage(projectSlug, { prompt, width: size.width, height: size.height, references: references.map((each) => each.id) }).catch(() => ({
         error: "Couldn't reach Tuti. Try again.",
         image: undefined,
       }));
+      kept?.setGenerating(false);
       if (!result.image) {
         setSaid("");
         setError(result.error ?? "The image couldn't be made. Try again.");
         return;
       }
       const { id: madeId, url, width, height } = result.image;
-      // One runs at a time (Generate waits), so the list is still the one it started with.
-      const made = [...tries, { id: madeId, url, width, height }];
-      setTries(made);
-      onTries?.(made);
-      setSelected(tries.length);
-      setSaid(`Try ${tries.length + 1} is ready`);
+      // Picked and said as the list grows (above).
+      const made = { id: madeId, url, width, height };
+      if (kept) {
+        kept.add(made);
+      } else {
+        setOwnTries((list) => [...list, made]);
+      }
     });
+  };
   // The full size, signed now (a try may be hours old): to use it, or to save it.
   const fresh = (image: Try, then: (status: { src: string; urls: MediaUrls; download: string }) => void) =>
     startUsing(async () => {

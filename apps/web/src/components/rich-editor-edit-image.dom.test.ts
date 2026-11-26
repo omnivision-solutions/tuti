@@ -216,3 +216,50 @@ test("after Replace image, Edit with AI on the new image has the tries it came f
   expect(button("Try 1")!.getAttribute("aria-pressed")).toBe("true");
   expect(document.body.textContent).toContain("Edited · 1 of 2");
 });
+
+test("a try still being made when the dialog closes lands with its image's tries, after another image was edited too", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  let finish!: (value: unknown) => void;
+  generateImage.mockReset();
+  generateImage
+    .mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
+    .mockResolvedValue({ image: { id: "madeimage00000000002x", url: "https://media.example/made2.png", width: 1000, height: 500 } });
+  const { ref, generate, button, click } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  const close = async () => {
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  };
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await click("Edit with AI");
+  await close();
+  // Back on the first image while its try is still being made: it says so.
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await click("Edit with AI");
+  expect(button("Generating…")).toBeTruthy();
+  await act(async () => finish({ image: { id: "madeimage00000000001x", url: "https://media.example/made1.png", width: 1000, height: 500 } }));
+  expect(button("Try 1")).toBeTruthy();
+  // A dialog made again starts with an empty prompt.
+  const prompt = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Bluer");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Try again");
+  expect(button("Try 1")).toBeTruthy();
+  expect(button("Try 2")).toBeTruthy();
+  expect(document.body.textContent).toContain("Edited · 2 of 2");
+});

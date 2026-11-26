@@ -75,7 +75,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
-import { type GeneratedImage, ImageGenerator, type ImageEditing, type Try } from "@/components/image-generator";
+import { type GeneratedImage, ImageGenerator, type ImageEditing, type KeptTries, type Try } from "@/components/image-generator";
 import { toast } from "sonner";
 import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
@@ -231,8 +231,18 @@ export function RichEditor({
 
   // "Edit with AI": the image picked (where it was, as it was). Its dialog stays while the editor does, keeping its tries,
   // and starts afresh for another image.
-  // Each image's tries, by its media id, while the editor is open: editing another image and coming back finds them.
-  const [triesFor] = useState(() => new Map<string, Try[]>());
+  // Each image's tries, by its media id, while the editor is open, and whether one is being made: editing another image
+  // and coming back finds them, a try landing meanwhile too. Drawn again as they change.
+  const [triesFor] = useState(() => new Map<string, { tries: Try[]; generating: boolean }>());
+  const [, redraw] = useState(0);
+  const keptFor = (id: string): KeptTries => {
+    const now = () => triesFor.get(id) ?? { tries: [], generating: false };
+    const set = (next: { tries: Try[]; generating: boolean }) => {
+      triesFor.set(id, next);
+      redraw((n) => n + 1);
+    };
+    return { ...now(), add: (made) => set({ ...now(), tries: [...now().tries, made] }), setGenerating: (generating) => set({ ...now(), generating }) };
+  };
   const [edited, setEdited] = useState<{ pos: number; image: { id: string; url: string; width: number; height: number } } | null>(null);
   const [editingImage, setEditingImage] = useState(false);
   // One of the project's finished uploads, shown here (one its own or another project's, never signed for it, isn't).
@@ -277,7 +287,7 @@ export function RichEditor({
       const at = replace ? pos : pos + node.nodeSize;
       // The image it becomes keeps the tries (and Edit with AI on it again picks the one placed); undone, the old one has its own still.
       if (replace) {
-        triesFor.set(made.id, triesFor.get(edited.image.id) ?? []);
+        triesFor.set(made.id, { tries: triesFor.get(edited.image.id)?.tries ?? [], generating: false });
       }
       editor
         .chain()
@@ -595,8 +605,7 @@ export function RichEditor({
         {editor && uploads && imageEditing && edited && (
           <ImageGenerator
             key={edited.image.id}
-            tries={triesFor.get(edited.image.id)}
-            onTries={(tries) => triesFor.set(edited.image.id, tries)}
+            kept={keptFor(edited.image.id)}
             projectSlug={uploads.projectSlug}
             open={editingImage}
             onOpenChange={setEditingImage}
