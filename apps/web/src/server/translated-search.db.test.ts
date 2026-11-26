@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { embedPublishedArticles, embedTranslation, handlers, languageTranslationsDone, lostAfterMs, translateArticle, translationSource } from "@tuti/jobs";
+import { embedPublishedArticles, embedTranslation, handlers, languageTranslationsDone, lostAfterMs, retryDelay, translateArticle, translationSource } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
 import { SEARCH_CONFIGS } from "@tuti/shared/languages";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
@@ -301,7 +301,8 @@ test("while a new version's sections are being embedded, search by meaning finds
   expect(await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { text: true } })).toEqual([{ text: "[neu] Open Settings and click New project." }]);
 });
 
-test("a late embedding failure keeps an earlier retry time set meanwhile (a newer queuing's safety net)", async () => {
+/** "Getting started", published and translated into German (its sections then taken away, so the next run embeds). */
+async function translatedWithoutSections() {
   await call(updateLanguages, as(), { languages: [{ code: "de" }] });
   await languageTranslationsDone();
   const body = "Open Settings and click New project.";
@@ -312,10 +313,34 @@ test("a late embedding failure keeps an earlier retry time set meanwhile (a newe
   await languageTranslationsDone();
   const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
   await prisma.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
-  // Due again in a minute (a newer queuing's net), earlier than a failure's backoff.
+  return row;
+}
+
+test("a late embedding failure keeps an earlier retry time a newer queuing set meanwhile", async () => {
+  const row = await translatedWithoutSections();
+  // The failure held while a newer queuing sets its safety net, a minute out (earlier than the failure's backoff).
+  model.embeddings.failNext(500);
+  const release = model.embeddings.holdNext();
+  const before = model.embeddings.received;
+  const running = translateArticle({ articleId: row.articleId, language: "de" }, log);
+  await vi.waitFor(() => expect(model.embeddings.received).toBeGreaterThan(before));
   const soon = new Date(Date.now() + 60_000);
   await prisma.articleTranslation.update({ where: { id: row.id }, data: { retryAt: soon } });
+  release();
+  expect(await running).toEqual({ failed: "its search data couldn't be written" });
+  expect(await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ retryAt: soon, tries: 1 });
+});
+
+test("on the retry job's claim, a failure's backoff replaces the claim's time, however long it has grown", async () => {
+  const row = await translatedWithoutSections();
+  // Claimed by the retry job (its time the safety net's: an hour inline) after four failures in a row.
+  const claimed = new Date(Date.now() + lostAfterMs());
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { tries: 4, retryAt: claimed } });
   model.embeddings.failNext(500);
   expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ failed: "its search data couldn't be written" });
-  expect(await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ retryAt: soon, tries: 1 });
+  const after = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
+  expect(after.tries).toBe(5);
+  // The fifth failure's backoff (four hours), not the claim's hour.
+  expect(after.retryAt!.getTime() - Date.now()).toBeGreaterThan(retryDelay(5) - 60_000);
+  expect(retryDelay(5)).toBeGreaterThan(lostAfterMs());
 });

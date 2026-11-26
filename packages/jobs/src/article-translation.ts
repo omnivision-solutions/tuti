@@ -152,7 +152,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
     // Its search data too: one whose embedding failed is embedded here when the retry job brings it back (none to do: a lookup).
-    return (await searchable(row.id, row.tries, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
+    return (await searchable(row.id, row.tries, row.retryAt, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
   if (!aiEnabled()) {
@@ -254,7 +254,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     return { skipped: CHANGED };
   }
   // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: it's embedded later.
-  await searchable(row.id, 0, log);
+  // Its retry time as this run left it: the write just cleared it.
+  await searchable(row.id, 0, null, log);
   return { translated: language };
 }
 
@@ -267,7 +268,7 @@ const SEARCH_WAITS = "its search data couldn't be written";
  * the retry job brings it back here, where, up to date, it's only embedded; embedded, the count starts again. The version
  * itself is shown as written meanwhile, its error left alone.
  */
-async function searchable(translationId: string, tries: number, log: JobLogger) {
+async function searchable(translationId: string, tries: number, read: Date | null, log: JobLogger) {
   try {
     await embedTranslation(translationId, log);
     if (tries > 0) {
@@ -276,9 +277,13 @@ async function searchable(translationId: string, tries: number, log: JobLogger) 
     return true;
   } catch (error) {
     log.warn(`Embedding translation ${translationId} for search failed: ${String(error).slice(0, 300)}`);
-    // The earlier of its time and this one: a newer queuing's safety net (set meanwhile) isn't pushed back by a late failure.
+    // The backoff replaces the time this run read (its own safety net, the retry job's claim); a newer queuing's, set
+    // meanwhile, is kept where it's earlier, so a late failure never pushes it back.
     const next = new Date(Date.now() + retryDelay(tries + 1));
-    await prisma.$executeRaw`UPDATE article_translation SET tries = ${tries + 1}, "retryAt" = LEAST(COALESCE("retryAt", ${next}), ${next}), "updatedAt" = now() WHERE id = ${translationId}`;
+    await prisma.$executeRaw`
+      UPDATE article_translation SET tries = ${tries + 1}, "updatedAt" = now(),
+        "retryAt" = CASE WHEN "retryAt" IS NOT DISTINCT FROM ${read}::timestamp(3) THEN ${next}::timestamp(3) ELSE LEAST(COALESCE("retryAt", ${next}::timestamp(3)), ${next}::timestamp(3)) END
+      WHERE id = ${translationId}`;
     return false;
   }
 }
