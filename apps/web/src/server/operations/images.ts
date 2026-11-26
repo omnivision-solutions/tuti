@@ -104,8 +104,6 @@ export const generateImageOperation = defineOperation({
     const meter = await imagesMeter(projectId).catch((error: unknown) => {
       throw error instanceof OutOfCredits ? new OperationError(402, "no_credits", NO_CREDITS) : error;
     });
-    // Last before the model: a request refused for anything else doesn't use up the hour's images.
-    await countAiImage(projectId);
     // In the order given: the first is the one an edit starts from.
     const widths = new Map(found.map((media) => [media.id, imageWidths(media.width!).findLast((w) => w <= REFERENCE_WIDTH)!]));
     const sent = await Promise.all(ids.map(async (id) => `data:image/webp;base64,${Buffer.from(await storage.get(imageKey(id, widths.get(id)!))).toString("base64")}`)).catch((error: unknown) => {
@@ -113,6 +111,8 @@ export const generateImageOperation = defineOperation({
       throw new OperationError(503, "copy_failed", "Couldn't read the images to work from just now: try again in a moment");
     });
 
+    // Last before the model: a request refused for anything else (credits, references that can't be read) doesn't use up the hour's images.
+    await countAiImage(projectId);
     const { aspectRatio, imageSize, cropped } = imageShape(width, height);
     let png: Buffer;
     try {
