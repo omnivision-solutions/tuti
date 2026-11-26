@@ -1,6 +1,6 @@
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, placeChangelogScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeChangelogScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -368,6 +368,11 @@ export const takeChangelogScreenshots = defineOperation({
     if (asked.length === 0) {
       throw new OperationError(409, "no_markers", "This entry has no “[Screenshot: …]” lines to fill.");
     }
+    // Asked whole or not at all: one cut short could match another line alike up to the cut.
+    const long = asked.find((show) => show.length > MAX_SHOW);
+    if (long) {
+      throw new OperationError(400, "invalid_input", `Keep each screenshot line under ${MAX_SHOW} characters: “[Screenshot: ${long.slice(0, 60)}…]”`);
+    }
     return start(projectId, actor, asked.slice(0, MAX_SHOTS).map((show) => ({ show })), false, entry.id);
   },
 });
@@ -381,7 +386,10 @@ const ESTIMATE_SHOTS = 20;
  * are still there with why, and what taking them would cost in credits, from recent screenshots (with credits on; null when none has been priced yet).
  */
 export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string; updatedAt: Date }) {
-  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { id: true, state: true } });
+  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
+  // Going until its screenshots are placed, as entryScreenshotsRunning says: one ended a moment before its job places
+  // them still has the editor asking.
+  const going = latest !== null && (latest.state === "RUNNING" || !latest.placedAt);
   if (latest?.state === "RUNNING") {
     await settleStaleScreenshotRuns(projectId);
   }
@@ -395,7 +403,7 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
     }));
   const left = [...asked];
   const failed =
-    run && run.state !== "RUNNING"
+    run && !going
       ? run.screenshots.flatMap(({ show, failed, imageId }) => {
           const at = imageId ? -1 : left.indexOf(show);
           return at === -1 ? [] : (left.splice(at, 1), [{ show, reason: failed || "Not taken." }]);
@@ -409,9 +417,9 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
     savedAt: entry.updatedAt.toISOString(),
     asked: asked.length,
     available: screenshotsAvailable() && setUp ? true : screenshotsAvailable() ? ("not_set_up" as const) : false,
-    running: run?.state === "RUNNING" ? run.screenshots.length : null,
+    running: run && going ? run.screenshots.length : null,
     // A run for it ended: the section stays (focus goes to it after one), saying when every line is filled.
-    ran: Boolean(run && run.state !== "RUNNING"),
+    ran: Boolean(run && !going),
     failed,
     // ponytail: the average shot's cost; a run's own sign-in, shared by its shots, makes a lone one cost more.
     estimate: priced.length ? (priced.reduce((sum, shot) => sum + shot.cost!.toNumber(), 0) / priced.length) * creditsPerUsageDollar() * Math.min(asked.length, MAX_SHOTS) : null,
@@ -423,14 +431,6 @@ export type EntryScreenshots = Awaited<ReturnType<typeof entryScreenshots>>;
 
 export const SCREENSHOTS_PLACED =
   "Screenshots went into the saved text since you opened this entry. Reload the page to see them: saving now would put the lines back in place of them.";
-
-/** Whether a screenshot run put screenshots in the entry's text after `since` (when the editor showed it). */
-export async function screenshotsPlacedSince(projectId: string, number: number, since: Date) {
-  if (Number.isNaN(since.getTime())) {
-    return false;
-  }
-  return (await prisma.screenshotRun.count({ where: { projectId, changelogEntry: { number }, placedAt: { gt: since }, placed: { gt: 0 } } })) > 0;
-}
 
 /**
  * Places the entry's latest run's screenshots if it ended without (its job an older worker's, during a deploy, or one

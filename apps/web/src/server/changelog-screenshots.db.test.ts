@@ -223,3 +223,41 @@ test("the editor's save of text shown before screenshots went in is refused, not
   await call(takeChangelogScreenshots, as(), { number: other.number });
   expect(await saveChangelogEntry(project.slug, other.number, {}, form(before.updatedAt, "Rewritten."))).toEqual({});
 });
+
+test("a save isn't held back by a worker's clock: only a placement over the version the text was shown from counts", async () => {
+  await setUp();
+  actAs(owner);
+  const { number } = await draft("Billing.\n\n[Screenshot: The billing page]");
+  const run = await call(takeChangelogScreenshots, as(), { number });
+  // The worker's clock a day fast: its placement's time, and the entry's version it wrote, are in the future.
+  const ahead = new Date(Date.now() + 86_400_000);
+  await prisma.screenshotRun.update({ where: { id: run.id }, data: { placedAt: ahead } });
+  const { id } = await saved(number);
+  await prisma.$executeRaw`UPDATE changelog_entry SET "updatedAt" = ${ahead} WHERE id = ${id}`;
+  const save = async (text: string) => {
+    const data = new FormData();
+    data.set("title", "November");
+    data.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] }));
+    data.set("screenshotsSeenAt", (await saved(number)).updatedAt.toISOString());
+    return saveChangelogEntry(project.slug, number, {}, data);
+  };
+  // Shown after the placement, then again after that save (its version by the web's clock, before the worker's): both saved.
+  expect(await save("Shown after.")).toEqual({});
+  expect(await save("And again.")).toEqual({});
+});
+
+test("the editor opened between a run's end and its placement shows it going, so it asks until it's placed", async () => {
+  await setUp();
+  const { number } = await draft("[Screenshot: The billing page]");
+  const run = await call(takeChangelogScreenshots, as(), { number });
+  await prisma.screenshotRun.update({ where: { id: run.id }, data: { placedAt: null } });
+  expect(await entryScreenshots(project.id, await saved(number))).toMatchObject({ running: 1, ran: false, failed: [] });
+});
+
+test("a line over 500 characters is refused whole, never cut short to match another alike up to there", async () => {
+  await setUp();
+  const start = "a".repeat(500);
+  const { number } = await draft(`[Screenshot: ${start} first]\n\n[Screenshot: ${start} second]`);
+  await expect(call(takeChangelogScreenshots, as(), { number })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("Keep each screenshot line under 500 characters") });
+  expect(await prisma.screenshotRun.count({ where: { projectId: project.id } })).toBe(0);
+});

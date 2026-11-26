@@ -10,7 +10,7 @@ import { prisma } from "@tuti/db";
 type Block = NonNullable<Doc["content"]>[number];
 
 /** The longest a screenshot's description may be (screenshots.take's). */
-const MAX_SHOW = 500;
+export const MAX_SHOW = 500;
 /** How long placing may take, waiting on the entry's lock behind a save or a publish included. */
 const PLACING_MS = 30_000;
 /** Where one starts: its end is the line's last "]", so nothing here backtracks however long the line. */
@@ -26,7 +26,9 @@ export function screenshotAsked(block: Block): string | null {
   }
   const text = toPlainText(block).trim();
   const start = MARKER_START.exec(text);
-  return start && text.endsWith("]") ? text.slice(start[0].length, -1).trim().slice(0, MAX_SHOW) || null : null;
+  // Whole, however long: two lines alike up to a cut-off aren't the same line (changelog.takeScreenshots refuses one
+  // over MAX_SHOW, which the agent isn't asked).
+  return start && text.endsWith("]") ? text.slice(start[0].length, -1).trim() || null : null;
 }
 
 /** The "[Screenshot: …]" lines a text asks for, in order (see screenshotAsked). */
@@ -45,7 +47,7 @@ export async function placeChangelogScreenshots(runId: string): Promise<number> 
     return 0;
   }
   return prisma.$transaction(async (tx) => {
-    const [entry] = await tx.$queryRaw<{ content: unknown; body: string }[]>`SELECT content, body FROM changelog_entry WHERE id = ${entryId} FOR UPDATE`;
+    const [entry] = await tx.$queryRaw<{ content: unknown; body: string; updatedAt: Date }[]>`SELECT content, body, "updatedAt" FROM changelog_entry WHERE id = ${entryId} FOR UPDATE`;
     // Once, and only once it's ended (a second delivery of its job finds it running and leaves it to the first): claimed
     // under the entry's lock, so a line the team puts back later as it was isn't filled again.
     const { count } = await tx.screenshotRun.updateMany({ where: { id: runId, placedAt: null, state: { not: "RUNNING" } }, data: { placedAt: new Date() } });
@@ -84,7 +86,7 @@ export async function placeChangelogScreenshots(runId: string): Promise<number> 
     // Its images are kept as the screenshots' are (storeImage attaches them).
     const text: Doc = { ...doc, content };
     await tx.changelogEntry.update({ where: { id: entryId }, data: { content: text, body: toPlainText(text) } });
-    await tx.screenshotRun.update({ where: { id: runId }, data: { placed: placed.length } });
+    await tx.screenshotRun.update({ where: { id: runId }, data: { placedOver: entry.updatedAt } });
     return placed.length;
   }, { timeout: PLACING_MS });
 }

@@ -29,7 +29,7 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
-import { SCREENSHOTS_PLACED, screenshotsPlacedSince, takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -64,16 +64,12 @@ export async function saveChangelogEntry(
     posts: formData.has("postsEditable") ? formData.getAll("posts").map(Number) : undefined,
     // The cover's upload id, empty once removed (no field: uploads aren't set up, so it stays as it is).
     cover: formData.has("cover") ? String(formData.get("cover")) || null : undefined,
+    // The saved version the form's text was shown from: a save is refused, not putting their lines back, if screenshots
+    // went in since (changelog.takeScreenshots).
+    screenshotsSince: String(formData.get("screenshotsSeenAt") ?? "") || undefined,
   };
   let created: number | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    // Screenshots put in the saved text after the form was shown (changelog.takeScreenshots): its text still has the lines
-    // they replaced, and saving it would put them back over the screenshots, which aren't taken again.
-    // ponytail: checked just before saving, not under the entry's lock; one placed in between is overwritten.
-    const seenAt = formData.get("screenshotsSeenAt");
-    if (number !== null && typeof seenAt === "string" && seenAt && (await screenshotsPlacedSince(context.projectId, number, new Date(seenAt)))) {
-      throw new OperationError(409, "changed", SCREENSHOTS_PLACED);
-    }
     if (number === null) {
       created = (await call(createChangelogEntry, context, input)).number;
     } else {
