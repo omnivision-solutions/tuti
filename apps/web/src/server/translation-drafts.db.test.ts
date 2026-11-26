@@ -686,3 +686,23 @@ test("publishing a draft makes its new text searchable in its language, the old 
   expect(chunks.map(({ text }) => text).join(" ")).toContain("Unsere Abrechnung");
   expect(chunks.map(({ text }) => text).join(" ")).not.toContain("[de] Pay by card");
 });
+
+test("a version the team writes whose search data couldn't be written on publishing is embedded by the retry job", async () => {
+  const articleId = await manualVersion();
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![0]!.content![0]!.text = "Guten Tag";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  // The embeddings provider fails as it's published: no search sections, a time to try again.
+  model.embeddings.failNext(500);
+  await call(publishTranslation, as(), de);
+  const waiting = await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } });
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: waiting.id } })).toBe(0);
+  expect(waiting.tries).toBe(1);
+  // The retry job, once it's due: embedded, nothing translated.
+  await prisma.articleTranslation.update({ where: { id: waiting.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} });
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: waiting.id } })).toBeGreaterThan(0);
+  expect(model.requests).toHaveLength(0);
+});

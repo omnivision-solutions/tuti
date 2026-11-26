@@ -187,6 +187,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   // A version the team writes is translated only where it asked (Update those sections).
   const asked = (row?.updateSections ?? []) as string[];
   if (!row || (!row.automatic && asked.length === 0)) {
+    // Its search data still: one the team published whose embedding failed is embedded here when the retry job brings it back.
+    if (row?.publishedAt && row.article.publishedAt) {
+      return (await searchable(row.id, row.tries, row.retryAt, log)) ? { skipped: "not kept up to date" } : { failed: SEARCH_WAITS };
+    }
     return { skipped: "not kept up to date" };
   }
   const { article, projectLanguage: setting } = row;
@@ -492,7 +496,10 @@ export async function languageTranslationsDone() {
 const translatable = { publishedAt: { not: null }, deletedAt: null, sample: false } as const;
 
 /** Versions the translate job writes: those kept up to date, and others where the team asked for sections (Update those sections). */
-const translatedByJob = { OR: [{ automatic: true }, { NOT: { updateSections: { equals: [] } } }] } satisfies Prisma.ArticleTranslationWhereInput;
+const translatedByJob = {
+  // (And a published one the team writes whose search data couldn't be written: the job embeds it.)
+  OR: [{ automatic: true }, { NOT: { updateSections: { equals: [] } } }, { publishedAt: { not: null }, tries: { gt: 0 } }],
+} satisfies Prisma.ArticleTranslationWhereInput;
 
 /**
  * An article was published or its published text changed (the article-changed job): translates it into each language
