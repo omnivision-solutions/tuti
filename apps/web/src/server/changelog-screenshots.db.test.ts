@@ -1,6 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { creditBalance, grantCredits, placeChangelogScreenshots, screenshotsAsked } from "@tuti/jobs";
+import { creditBalance, grantCredits, placeScreenshots, screenshotsAsked } from "@tuti/jobs";
 
 import { displayDoc } from "@/server/content";
 import { type BrowserUseFake, creditsOn, type S3Fake, startBrowserUseFake, startS3Fake } from "@tuti/testkit";
@@ -134,12 +134,12 @@ test("a run whose job didn't place its screenshots (an older worker's) has them 
   await prisma.screenshotRun.update({ where: { id: run.id }, data: { placedAt: null } });
   await call(updateChangelogEntry, as(), { number, body: "[Screenshot: The billing page]" });
   const { id } = await saved(number);
-  expect(await placeLeftoverScreenshots(id)).toBe(true);
+  expect(await placeLeftoverScreenshots({ changelogEntryId: id })).toBe(true);
   expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["image"]);
   // The same line written again later isn't filled again by that run.
   await call(updateChangelogEntry, as(), { number, body: "[Screenshot: The billing page]" });
-  expect(await placeLeftoverScreenshots(id)).toBe(false);
-  expect(await placeChangelogScreenshots(run.id)).toBe(0);
+  expect(await placeLeftoverScreenshots({ changelogEntryId: id })).toBe(false);
+  expect(await placeScreenshots(run.id)).toBe(0);
   expect((await saved(number)).body).toBe("[Screenshot: The billing page]");
 });
 
@@ -151,7 +151,7 @@ test("a run still running isn't placed (a second delivery of its job leaves it t
   const taking = take(number);
   await vi.waitFor(() => expect(browserUse.runs).toHaveLength(before + 1), { timeout: 30_000, interval: 100 });
   const running = await prisma.screenshotRun.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
-  expect(await placeChangelogScreenshots(running.id)).toBe(0);
+  expect(await placeScreenshots(running.id)).toBe(0);
   expect(await entryScreenshotsRunning(project.id, number)).toMatchObject({ running: true });
   expect(await entryScreenshots(project.id, await saved(number))).toMatchObject({ running: 1 });
   browserUse.release();
@@ -180,7 +180,7 @@ test("a placement that waited on the entry while the run went on reads its scree
     await new Promise<void>((resolve) => (release = resolve));
   }, { timeout: 60_000 });
   await vi.waitFor(() => expect(release).toBeTypeOf("function"));
-  const duplicate = placeChangelogScreenshots(runId);
+  const duplicate = placeScreenshots(runId);
   await untilWaitingOnLock(1);
   browserUse.release();
   await vi.waitFor(async () => expect((await prisma.screenshotRun.findUniqueOrThrow({ where: { id: runId } })).state).toBe("DONE"), { timeout: 30_000, interval: 100 });

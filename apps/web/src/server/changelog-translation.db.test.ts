@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeChangelogScreenshots, PRODUCT_SETTING_CHANGED, setChangelogLine, translationSource } from "@tuti/jobs";
+import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeScreenshots, PRODUCT_SETTING_CHANGED, retryBatch, setChangelogLine, translationSource } from "@tuti/jobs";
 import { billingFile, type ModelFake, startModelFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
@@ -200,7 +200,7 @@ test("screenshots placed in a published entry's text bring its translations up t
   const placed = { type: "doc" as const, content: [marked.content[0]!, { type: "image", attrs: { mediaId: image.id, width: "100", align: "center", alt: "The theme menu", w: 1200, h: 800 } }] };
   const { segments } = segmentsOf(translationSource({ title: TITLE, body: "", content: placed }).doc);
   model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }));
-  expect(await placeChangelogScreenshots(run.id)).toBe(1);
+  expect(await placeScreenshots(run.id)).toBe(1);
   await languageTranslationsDone();
   const de = await translation();
   expect(JSON.stringify(de.content)).toContain("[de] The theme menu");
@@ -413,7 +413,7 @@ test("screenshots placed are kept even when queuing the entry's translations the
   // Reading the entry to queue its translations fails once (the database, briefly).
   const reading = vi.spyOn(prisma.changelogEntry, "findFirst").mockRejectedValueOnce(new Error("database blip"));
   try {
-    expect(await placeChangelogScreenshots(run.id)).toBe(1);
+    expect(await placeScreenshots(run.id)).toBe(1);
   } finally {
     reading.mockRestore();
   }
@@ -516,6 +516,34 @@ test("the retry job never translates a published entry into a language added aft
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
   await languageTranslationsDone();
   expect(await prisma.changelogTranslation.count({ where: { projectId: project.id, language: "fr" } })).toBe(0);
+});
+
+test("the retry job's sweep reads past entries it finds up to date, so one left behind after them is never hidden", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const publish = async (title: string) => {
+    const { number } = await call(createChangelogEntry, as(), { title, body: BODY });
+    model.reply(reply("de", title));
+    await call(publishChangelogEntry, as(), { number });
+    await languageTranslationsDone();
+    return idOf(number);
+  };
+  // Changed since its version, but not its text: the database can't tell, the hash clears it.
+  const upToDate = await publish("Dark mode");
+  await prisma.changelogEntry.update({ where: { id: upToDate }, data: { updatedAt: new Date() } });
+  // Its German version gone, as when queuing failed as it was published; changed after the first.
+  const leftBehind = await publish("Faster exports");
+  await prisma.changelogTranslation.deleteMany({ where: { entryId: leftBehind } });
+  await prisma.changelogEntry.update({ where: { id: leftBehind }, data: { updatedAt: new Date(Date.now() + 1000) } });
+  const size = retryBatch.size;
+  retryBatch.size = 1;
+  try {
+    model.reply(reply("de", "Faster exports"));
+    expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+    await languageTranslationsDone();
+  } finally {
+    retryBatch.size = size;
+  }
+  expect((await prisma.changelogTranslation.findFirstOrThrow({ where: { entryId: leftBehind } })).title).toBe("[de] Faster exports");
 });
 
 test("an announcement whose translation ends after the wait is sent by the email safety net (every 10 minutes, inline too)", async () => {

@@ -24,6 +24,7 @@ import {
   docsSlugsTaken,
   freeDocsSlug,
   RESERVED_ARTICLE_SLUGS,
+  markersIn,
   recordRevision,
   versions,
   revisionsPast,
@@ -516,14 +517,35 @@ export async function keepText(tx: Prisma.TransactionClient, articleId: string, 
 }
 
 /**
+ * Refuses a text going live with "[Screenshot: …]" lines in it (a docs agent's draft or edit asks for a picture there,
+ * as changelog drafts do; articles.takeScreenshots fills them): readers would see the line. Read under the project's
+ * lock, as the text that goes live is.
+ */
+function refuseScreenshotLines(text: { body: string; content: unknown }) {
+  // Anywhere, not only a line of its own a run can fill: one in a step or a sentence would go out just the same.
+  const left = markersIn(displayDoc(text), "screenshot");
+  if (left.length > 0) {
+    throw new OperationError(
+      409,
+      "markers",
+      `Replace or remove ${left.length === 1 ? "the screenshot line" : `the ${left.length} screenshot lines`} in its text first: ${left.join(" ")}`,
+    );
+  }
+}
+
+/**
  * Makes an article's unpublished changes its text: live (`published`, the portal's "Updated" date
  * moves), or its draft's as it's unpublished or deleted, so nothing saved is lost or goes live.
  * Search sections follow once the caller enqueues the article (indexArticle).
  */
-async function applyChanges(tx: Prisma.TransactionClient, articleId: string, published: boolean) {
+async function applyChanges(tx: Prisma.TransactionClient, articleId: string, published: boolean, restoring = false) {
   const changes = await tx.articleChanges.findUnique({ where: { articleId }, select: versionSelect });
   if (!changes) {
     return;
+  }
+  // Putting back what readers saw a moment ago (Autopilot's Undo) isn't a new text going live.
+  if (published && !restoring) {
+    refuseScreenshotLines(changes);
   }
   const article = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { projectId: true, collectionId: true } });
   await tx.article.update({
@@ -601,7 +623,7 @@ async function saveChanges(
         await requireArticleRoom(tx, projectId);
       }
       await settleWaitingEdits(tx, article.id, "APPLIED", authorId);
-      await applyChanges(tx, article.id, true);
+      await applyChanges(tx, article.id, true, restoring);
     }
   } else {
     const retitled = title !== undefined && title !== current.title;
@@ -1446,7 +1468,10 @@ export const publishArticle = defineOperation({
         }
       }
       // Like publishing saved changes: no save can slip between this revision check and publishing under the lock.
-      if (draft) await checkSavedAt(tx, article.id, undefined, input.revision);
+      if (draft) {
+        await checkSavedAt(tx, article.id, undefined, input.revision);
+        refuseScreenshotLines(await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true, content: true } }));
+      }
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
       // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
       // with it, the project's published articles must fit its plan (else nothing is written).

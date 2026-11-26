@@ -17,8 +17,13 @@ export type OpenAIFake = {
   setVector(text: string, vector: number[]): void;
   /** Make the next request fail with this HTTP status. */
   failNext(status?: number): void;
-  /** Hold the answer to the next embeddings request until the returned function is called (its texts are in `inputs` already). */
+  /**
+   * Hold the answer to the next embeddings request until the returned function is called (its texts are in `inputs`
+   * already); with failNext, the failure is what's held.
+   */
   holdNext(): () => void;
+  /** Embeddings requests received so far, answered or not (failed ones too). */
+  readonly received: number;
   close(): Promise<void>;
 };
 
@@ -33,6 +38,7 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
   const models: string[] = [];
   let failStatus: number | undefined;
   let hold: Promise<void> | undefined;
+  let received = 0;
 
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => {
@@ -67,10 +73,14 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
       if (req.method !== "POST" || req.url !== "/embeddings") {
         return send(404, { error: { message: `unexpected ${req.method} ${req.url}` } });
       }
+      received++;
       if (failStatus) {
         const status = failStatus;
         failStatus = undefined;
-        return send(status, { error: { message: "fake failure" } });
+        const held = hold;
+        hold = undefined;
+        void (held ?? Promise.resolve()).then(() => send(status, { error: { message: "fake failure" } }));
+        return;
       }
       const body = JSON.parse(raw) as { model?: string; input?: string[] };
       if (typeof body.model !== "string" || !Array.isArray(body.input)) {
@@ -119,6 +129,9 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
       let release = () => {};
       hold = new Promise((resolve) => (release = resolve));
       return release;
+    },
+    get received() {
+      return received;
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };

@@ -419,7 +419,8 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   // From their address, and one their app has since changed.
   for (const sender of [email, "e2e-ada-before@example.com"]) {
     await prisma.inboundEmail.create({
-      data: { projectId: project.id, recipient: "e2e-support@example.com", sender, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
+      // With a Reply-To kept for the spam filter's models: maybe another of their addresses.
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender, replyTo: "e2e-ada-home@example.com", dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
     });
   }
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
@@ -447,8 +448,25 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   await prisma.post.updateMany({ where: { projectId: project.id, number: 1 }, data: { visibility: "PRIVATE" } });
   const similar = async () => (await findSimilarPosts(project.slug, "Export to CSV", token)).map((post) => post.title);
   expect(await similar()).toEqual(["Export to CSV"]);
+  // Reply-Tos kept for the spam filter's models on conversations that aren't theirs: an email from their address that
+  // didn't pass DMARC (unverified, so not theirs above), and a stranger's whose Reply-To is their address.
+  const unverified = await prisma.conversation.create({ data: { projectId: project.id, number: 50, subject: "Unproven", origin: "EMAIL", email, emailVerified: false } });
+  const strangers = await prisma.conversation.create({ data: { projectId: project.id, number: 51, subject: "Reply to her", origin: "EMAIL", email: "e2e-x@example.com" } });
+  const replyTos = [
+    { conversationId: unverified.id, sender: email, replyTo: "e2e-ada-home@example.com" },
+    { conversationId: strangers.id, sender: "e2e-x@example.com", replyTo: email },
+  ];
+  for (const row of replyTos) {
+    await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "e2e-support@example.com", dedupeKey: randomUUID(), size: 1, status: "ADDED", ...row } });
+  }
 
   expect(await call(deleteUser, team(), { user: "user-1" })).toEqual({ deleted: "user-1" });
+  // Both Reply-Tos gone: neither may be kept once the address is erased.
+  expect(
+    await prisma.inboundEmail.findMany({ where: { conversationId: { in: [unverified.id, strangers.id] } }, orderBy: { conversationId: unverified.id < strangers.id ? "asc" : "desc" }, select: { replyTo: true } }),
+  ).toEqual([{ replyTo: null }, { replyTo: null }]);
+  // Not theirs, so out of what follows, which looks at the project's every conversation.
+  await prisma.conversation.deleteMany({ where: { id: { in: [unverified.id, strangers.id] } } });
 
   await expect(get("user-1")).rejects.toMatchObject({ status: 404 });
   const user = await prisma.user.findUniqueOrThrow({ where: { id: ada } });
@@ -476,6 +494,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     prisma.account.count({ where: { userId: ada } }),
     prisma.importedRecord.count({ where: { projectId: project.id, localId: ada } }),
     prisma.inboundEmail.count({ where: { conversationId: conversation2.id, sender: { not: "" } } }),
+    prisma.inboundEmail.count({ where: { conversationId: conversation2.id, replyTo: { not: null } } }),
   ]) {
     expect(await count).toBe(0);
   }

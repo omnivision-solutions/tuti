@@ -255,6 +255,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
   "changelog.takeScreenshots": () => ({ number: 3, shots: [{ show: "The dashboard" }] }),
+  "articles.takeScreenshots": () => ({ slug: "matrix-screenshots", shots: [{ show: "The dashboard" }] }),
 };
 
 let owner: TestUser;
@@ -397,6 +398,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
     data: [
       { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
       { projectId: project.id, slug: "matrix-draft", title: "Matrix draft" },
+      // A draft with a line asking for a screenshot.
+      { projectId: project.id, slug: "matrix-screenshots", title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
   // The published article's German version (German is the fixture's language), to give its own slug.
@@ -641,7 +644,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
     vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
   }
   // Uploads, for the cover an entry's composed one is kept as, AI images and screenshots' images; Browser Use, for screenshots.
-  const screenshots = operation.name.startsWith("screenshot") || operation.name === "changelog.takeScreenshots";
+  const screenshots = operation.name.startsWith("screenshot") || operation.name.endsWith(".takeScreenshots");
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, ["changelog.composeCover", "images.generate"].includes(operation.name) || screenshots ? value : "");
   }

@@ -1,12 +1,14 @@
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, autopilotLines, closeRunningDraft, onlyPullRequestTitles, setChangelogLine } from "@tuti/jobs";
-import { describe, expect, test } from "vitest";
+import type { Doc } from "@tuti/content";
+import { startS3Fake } from "@tuti/testkit";
+import { describe, expect, test, vi } from "vitest";
 
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { createProject, signUp } from "@/test/helpers";
 
-import { draftToWrite, entryPosts, publishedEntries } from "./changelog-queries";
+import { draftToWrite, entryPosts, generatorSources, publishedEntries } from "./changelog-queries";
 
 test("an entry's editor gets the posts it lists, however old, but not merged ones", async () => {
   const owner = await signUp();
@@ -188,4 +190,38 @@ test("Autopilot's lines are those in the draft that it wrote or the team approve
   expect((await autopilotLines(project.id, urls)).sort()).toEqual(["Dark theme", "Faster search"]);
   // Another project's pull request at the same address isn't this one's.
   expect(await autopilotLines((await createProject(owner)).id, urls)).toEqual([]);
+});
+
+test("Generate's images to work from: the text's, in order, and the logo; only this project's finished images, no files", async () => {
+  const s3 = await startS3Fake();
+  try {
+    for (const [name, value] of Object.entries(s3.env)) {
+      vi.stubEnv(name, value);
+    }
+    const owner = await signUp();
+    const project = await createProject(owner);
+    const other = await createProject(owner);
+    const media = (data: object = {}) =>
+      prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, status: "READY", width: 800, height: 600, size: 1, ...data } });
+    const [second, first, logo, processing, file, elsewhere] = [
+      await media(),
+      await media(),
+      await media(),
+      await media({ status: "PROCESSING" }),
+      await media({ filename: "a.pdf", width: null, height: null }),
+      await media({ projectId: other.id }),
+    ];
+    await prisma.project.update({ where: { id: project.id }, data: { brandLogoId: logo.id } });
+    const image = (id: string) => ({ type: "image", attrs: { mediaId: id, w: 800, h: 600 } });
+    const doc = { type: "doc", content: [image(first.id), image(processing.id), { type: "file", attrs: { mediaId: file.id, name: "a.pdf" } }, image(elsewhere.id), image(second.id)] };
+    const sources = await generatorSources(project.id, doc as Doc);
+    expect(sources.bodyImages.map((each) => each.id)).toEqual([first.id, second.id]);
+    expect(sources.bodyImages[0]!.url).toContain(first.id);
+    expect(sources.logo?.id).toBe(logo.id);
+    // Without a logo: none.
+    expect((await generatorSources(other.id, { type: "doc", content: [] })).logo).toBeNull();
+  } finally {
+    vi.unstubAllEnvs();
+    await s3.close();
+  }
 });
