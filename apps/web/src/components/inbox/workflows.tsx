@@ -249,7 +249,7 @@ function Row({
       />
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <DropdownMenu>
-          <DropdownMenuTrigger id={menuId} disabled={saving} render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${workflow.name}`} />}>
+          <DropdownMenuTrigger id={menuId} disabled={saving} render={<Button variant="ghost" size="icon-sm" focusableWhenDisabled aria-label={`Actions for ${workflow.name}`} />}>
             <MoreHorizontalIcon />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto min-w-36">
@@ -275,6 +275,7 @@ function Row({
             <Button
               variant="destructive"
               disabled={deleting}
+              focusableWhenDisabled
               onClick={() =>
                 startDeleting(async () => {
                   onDelete(true);
