@@ -380,7 +380,7 @@ async function articleByRef(projectId: string, ref: string) {
   );
 }
 
-async function teamArticle(projectId: string, slug: string) {
+export async function teamArticle(projectId: string, slug: string) {
   const article = await findArticle(projectId, slug);
   if (!article) {
     throw new OperationError(404, "not_found", `There's no article “${slug}”`);
