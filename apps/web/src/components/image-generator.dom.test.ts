@@ -6,14 +6,16 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 const generateImage = vi.fn();
 const uploadImage = vi.fn();
 vi.mock("@/server/images", () => ({ generateImage }));
+let uploadStatusHeld: Promise<unknown> | null = null;
 vi.mock("@/server/media", () => ({
-  uploadStatus: async (id: string) => ({ status: "READY", src: `https://media.example/${id}-full.png`, download: `https://media.example/${id}-download.webp`, urls: {}, width: 1200, height: 630 }),
+  uploadStatus: async (id: string) => uploadStatusHeld ?? ({ status: "READY", src: `https://media.example/${id}-full.png`, download: `https://media.example/${id}-download.webp`, urls: {}, width: 1200, height: 630 }),
 }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage }));
 
 const { ImageGenerator } = await import("./image-generator");
 
 beforeEach(() => {
+  uploadStatusHeld = null;
   generateImage.mockReset();
   uploadImage.mockReset();
   let made = 0;
@@ -243,7 +245,7 @@ test("at 14 references, Refine this one is off and says why, rather than droppin
   await click("Generate");
   const refine = button("Refine this one")!;
   expect(refine.getAttribute("aria-disabled")).toBe("true");
-  expect(refine.title).toBe("At most 14 references: remove one first");
+  expect(document.getElementById(refine.getAttribute("aria-describedby")!)?.textContent).toBe("At most 14 references: remove one to refine");
   await click("Refine this one");
   expect(references()).toHaveLength(14);
   expect(references().at(-1)).toBe("https://media.example/ref14.png");
@@ -258,4 +260,26 @@ test("tries show by their lasting links; Use and Download ask for fresh signed l
   expect(document.querySelector<HTMLImageElement>('img[alt="Try 1"]')!.src).toBe("https://media.example/made1.png");
   await click("Use as cover");
   expect(onUse).toHaveBeenCalledWith(expect.objectContaining({ id: "made1", url: "https://media.example/made1-full.png" }));
+});
+
+test("closed while Use as cover waits for its link, the cover isn't changed", async () => {
+  const box = document.createElement("div");
+  document.body.append(box);
+  const onUse = vi.fn();
+  const root = createRoot(box);
+  const props = { projectSlug: "acme", onOpenChange: () => {}, defaultSize: { label: "Cover", width: 1200, height: 630 }, useLabel: "Use as cover", onUse };
+  await act(async () => root.render(h(ImageGenerator, { ...props, open: true })));
+  const prompt = document.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "A parrot");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const button = (name: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((each) => each.textContent?.trim() === name)!;
+  await act(async () => button("Generate").click());
+  let answer!: (value: unknown) => void;
+  uploadStatusHeld = new Promise((resolve) => (answer = resolve));
+  await act(async () => button("Use as cover").click());
+  await act(async () => root.render(h(ImageGenerator, { ...props, open: false })));
+  await act(async () => answer({ status: "READY", src: "https://media.example/made1-full.png", download: "x", urls: {}, width: 1200, height: 630 }));
+  expect(onUse).not.toHaveBeenCalled();
 });

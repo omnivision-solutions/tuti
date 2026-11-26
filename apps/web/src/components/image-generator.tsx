@@ -4,7 +4,7 @@ import type { MediaUrls } from "@tuti/content";
 import { MAX_IMAGE_SIZE, UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
 import { cn } from "cn";
 import { DownloadIcon, ImageIcon, LoaderCircleIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { flushSync } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -103,6 +103,11 @@ export function ImageGenerator({
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
+  // Closed while Use or Download waited for its link: neither happens then.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState(initialReferences);
   const [uploading, setUploading] = useState(false);
@@ -170,6 +175,9 @@ export function ImageGenerator({
     startUsing(async () => {
       setUseError(null);
       const status = await uploadStatus(image.id).catch(() => null);
+      if (!openRef.current) {
+        return;
+      }
       if (status && "src" in status) {
         then(status);
       } else {
@@ -422,7 +430,7 @@ export function ImageGenerator({
                       size="sm"
                       disabled={refineFull}
                       focusableWhenDisabled
-                      title={refineFull ? `At most ${MAX_IMAGE_REFERENCES} references: remove one first` : undefined}
+                      aria-describedby={refineFull ? `${id}-refine-full` : undefined}
                       onClick={() => {
                         add(shown, true);
                         promptRef.current?.focus();
@@ -445,6 +453,11 @@ export function ImageGenerator({
                       {useLabel}
                     </Button>
                   </div>
+                )}
+                {shown && !pending && !error && refineFull && (
+                  <p id={`${id}-refine-full`} className="text-right text-xs text-muted-foreground">
+                    At most {MAX_IMAGE_REFERENCES} references: remove one to refine
+                  </p>
                 )}
                 {useError && (
                   <p role="alert" className="text-sm text-destructive-foreground">
