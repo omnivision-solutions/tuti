@@ -1475,7 +1475,7 @@ export const updateConversation = defineOperation({
   name: "conversations.update",
   title: "Update a conversation",
   summary:
-    "Change a conversation's status, assign it to a team member, mark it as spam or priority, take it over from the AI or hand it back, or snooze it: out of the inbox's views till then, or till the user writes, and open again after. Closed conversations and spam aren't snoozed (409). Marking spam or not teaches the spam filter about its sender.",
+    "Change a conversation's status or assignee, mark it spam or priority, take it over from the AI or hand it back, or snooze it: out of the inbox's views till then, or till the user writes. Closed and spam ones aren't snoozed (409). Marking spam or not teaches the spam filter about its sender.",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
