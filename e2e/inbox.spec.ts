@@ -474,7 +474,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}/inbox/2`);
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("menuitem", { name: "Mark as spam" }).click();
-  await expect(owner.getByText("Marked as spam")).toBeVisible();
+  // The toast, word for word: the conversation's Spam line ("Marked as spam: a teammate marked it") starts the same.
+  await expect(owner.getByText("Marked as spam", { exact: true })).toBeVisible();
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("complementary", { name: "Properties" })).toContainText("Voters");
   await expect(conversations).toHaveCount(0);

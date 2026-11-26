@@ -47,7 +47,7 @@ import { formatDay, initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { isAdminRole } from "@/lib/roles";
-import { SPAM_REASONS, type SpamReason } from "@/lib/spam-reasons";
+import { spamWhy } from "@/lib/spam-reasons";
 import { conversationReads } from "@/server/conversation-reads";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
@@ -133,6 +133,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         origin: true,
         spam: true,
         spamReason: true,
+        spamPhrase: true,
         spamMarkedAt: true,
         handledBy: true,
         priority: true,
@@ -378,7 +379,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               projectSlug={slug}
               number={conversation.number}
               // Why the filter filed it; else a teammate marked it (one from before the two were told apart says neither).
-              why={SPAM_REASONS[conversation.spamReason as SpamReason] ?? (conversation.spamMarkedAt ? "a teammate marked it" : null)}
+              why={spamWhy(conversation.spamReason, conversation.spamPhrase) ?? (conversation.spamMarkedAt ? "a teammate marked it" : null)}
               unblocks={marking.unblocks}
             />
           )}

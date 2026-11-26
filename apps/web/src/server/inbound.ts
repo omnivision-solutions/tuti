@@ -221,7 +221,7 @@ async function conversationAddresses(conversationId: string) {
  * that verified the address first, then someone from the project's app. Otherwise nobody, and the
  * conversation is with the address alone.
  */
-async function userWithAddress(projectId: string, address: string): Promise<string | null> {
+export async function userWithAddress(projectId: string, address: string): Promise<string | null> {
   const account = await prisma.user.findFirst({ where: { email: address, emailVerified: true, ssoIdentity: null }, select: { id: true } });
   if (account) {
     return account.id;
@@ -412,7 +412,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       origin: "EMAIL",
       channel: "EMAIL",
       // The team's decisions and trust go by the address only where its mail could be its own: a forged From proves nobody.
-      filter: (tx) => spamVerdict(tx, { projectId, address: (senderCounts(auth.dmarc) && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc } }),
+      filter: (tx, first) => spamVerdict(tx, { projectId, address: (senderCounts(auth.dmarc) && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc }, ...first }),
       received: { ...received, fromAddress: null },
       alongside: async (tx, conversationId, messageId) => {
         if (!userId) {

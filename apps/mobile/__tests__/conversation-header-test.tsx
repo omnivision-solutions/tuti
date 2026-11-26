@@ -67,6 +67,16 @@ describe("the conversation's header", () => {
     expect(mockPush).toHaveBeenCalledWith("/conversation/12/details");
   });
 
+  it("says who has it while the AI does, in place of its status", async () => {
+    mockApi.mockResolvedValue({ ...CONVERSATION, handledBy: "ai" });
+    await render(<ConversationRoute />);
+
+    expect(await screen.findByRole("button", { name: "With AI, unassigned, details" })).toBeTruthy();
+    // Taken over (here, or by a teammate elsewhere): its status again.
+    await act(async () => showTriage(screenKey(mockSession, 12), { status: "open", assignee: null, spam: false, snoozedUntil: null, handledBy: "team" }));
+    expect(screen.getByRole("button", { name: "Open, unassigned, details" })).toBeTruthy();
+  });
+
   it("shows its status only once this visit's fetch has answered, never one kept from an earlier visit", async () => {
     // Kept by an earlier visit's screen, still open under this one: closed, and Olive's.
     const earlier = holdTriage(screenKey(mockSession, 12));

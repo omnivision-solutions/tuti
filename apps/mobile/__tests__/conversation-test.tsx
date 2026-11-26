@@ -7,6 +7,7 @@ import { onForgetChosen } from "@/lib/layout";
 import { ApiError } from "@/lib/api";
 import { cached, cacheGeneration, conversationKey, forgetCached, keep, startCache } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
+import { showTriage } from "@/lib/details";
 
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
 jest.mock("expo-router", () => {
@@ -379,5 +380,164 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     expect(screen.getByRole("header", { name: /^Maya Chen/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Open, unassigned, details$/ })).toBeTruthy();
     expect(dismissTo()).not.toHaveBeenCalled();
+  });
+});
+
+describe("a conversation the AI has", () => {
+  const withAi: Conversation = { ...conversation([message({})]), handledBy: "ai", priority: false };
+  /** The server: the conversation as it is, each change answered with it as it is then. */
+  function serve(start: Conversation) {
+    let now = start;
+    mockApi.mockImplementation(async (path, init) => {
+      if (path === "/conversations/12" && init?.method === "PATCH") {
+        now = { ...now, ...(init.body as Partial<Conversation>) };
+      }
+      return path === "/conversations/12" ? now : {};
+    });
+  }
+  const patches = () => mockApi.mock.calls.filter(([, init]) => init?.method === "PATCH").map(([, init]) => init!.body);
+  beforeEach(() => {
+    forgetDrafts();
+    startCache(mockSession.owner);
+  });
+
+  it("says the AI has it in place of the reply box; Take over makes it the team's, and then the reply box is there", async () => {
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
+    serve(withAi);
+    await render(<ConversationRoute />);
+
+    expect(await screen.findByText("The AI has this conversation.")).toBeTruthy();
+    // No composer to type a reply or a note into: taking over comes before typing.
+    expect(screen.queryByLabelText("Reply")).toBeNull();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+
+    await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+    expect(patches()).toEqual([{ handledBy: "team" }]);
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    expect(screen.queryByText("The AI has this conversation.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+    expect(announce).toHaveBeenCalledWith("Taken over");
+    // A screen reader's focus, on the button that's gone, is on the reply field.
+    expect(focus).toHaveBeenCalledWith(expect.objectContaining({ props: expect.objectContaining({ accessibilityLabel: "Reply" }) }), "focus");
+    // Kept for reading offline as the team's.
+    expect(cached<Conversation>(conversationKey(mockSession, 12), mockSession.owner)?.data.handledBy).toBe("team");
+  });
+
+  it("moves a screen reader to the reply field when a fetch brings it before Take over's own answer, and only then", async () => {
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
+    serve(withAi);
+    await render(<ConversationRoute />);
+    await screen.findByText("The AI has this conversation.");
+    // The change is made on the server, its answer still on its way, when the stream's fetch answers.
+    let answer!: (conversation: Conversation) => void;
+    const taken: Conversation = { ...withAi, handledBy: "team" };
+    mockApi.mockImplementation((path, init) => (init?.method === "PATCH" ? new Promise((resolve) => (answer = resolve as never)) : Promise.resolve(path === "/conversations/12" ? taken : {})));
+
+    await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+    await act(async () => mockFocus!());
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    expect(focus).toHaveBeenCalledTimes(1);
+    await act(async () => answer(taken));
+
+    // Later the AI gets it and a teammate elsewhere takes it over: focus stays where it is.
+    serve(withAi);
+    await act(async () => mockFocus!());
+    await screen.findByText("The AI has this conversation.");
+    serve(taken);
+    await act(async () => mockFocus!());
+    await screen.findByLabelText("Reply");
+    expect(focus).toHaveBeenCalledTimes(1);
+    focus.mockRestore();
+  });
+
+  it("shows the reply box for the team's own, with no Take over", async () => {
+    serve({ ...withAi, handledBy: "team" });
+    await render(<ConversationRoute />);
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    expect(screen.queryByText("The AI has this conversation.")).toBeNull();
+  });
+
+  it("puts the reply box back when a teammate elsewhere takes it over, and takes it away when the AI gets one", async () => {
+    serve(withAi);
+    await render(<ConversationRoute />);
+    await screen.findByText("The AI has this conversation.");
+
+    // Fetched again (the stream said it changed): the team's now.
+    serve({ ...withAi, handledBy: "team" });
+    await act(async () => mockFocus!());
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    serve(withAi);
+    await act(async () => mockFocus!());
+    expect(await screen.findByText("The AI has this conversation.")).toBeTruthy();
+    expect(screen.queryByLabelText("Reply")).toBeNull();
+  });
+
+  it("says why Take over didn't happen, in the server's words, and offers it still", async () => {
+    serve(withAi);
+    await render(<ConversationRoute />);
+    await screen.findByText("The AI has this conversation.");
+    mockApi.mockImplementation((path, init) =>
+      init?.method === "PATCH" ? Promise.reject(new ApiError(403, "forbidden", "You can't change this conversation.")) : Promise.resolve(path === "/conversations/12" ? withAi : {}),
+    );
+
+    await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+    expect(await screen.findByText("You can't change this conversation.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take over" })).toBeTruthy();
+    expect(screen.queryByLabelText("Reply")).toBeNull();
+  });
+
+  it("puts no unsent reply back into a composer that isn't there: Edit says to take over first", async () => {
+    updateDraft(key, (draft) => ({ ...draft, unsent: [edit] }));
+    serve(withAi);
+    await render(<ConversationRoute />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Edit" }));
+    expect(await screen.findByText("Take over first, then Edit.")).toBeTruthy();
+    expect(getDraft(key).unsent).toEqual([edit]);
+    expect(getDraft(key).reply).toBe("");
+  });
+
+  it("says Priority on its page while it's marked, as the details sheet changes it", async () => {
+    serve({ ...withAi, handledBy: "team", priority: true });
+    await render(<ConversationRoute />);
+    expect(await screen.findByText("Priority")).toBeTruthy();
+
+    await act(async () => showTriage(key, { status: "open", assignee: null, spam: false, snoozedUntil: null, handledBy: "team", priority: false }));
+    expect(screen.queryByText("Priority")).toBeNull();
+  });
+
+  describe("read offline", () => {
+    const offline = () => mockApi.mockImplementation(() => Promise.reject(new ApiError(0, "unreachable", NETWORK)));
+
+    it("is shown as it was kept, the AI's and priority, and Take over says why it can't", async () => {
+      serve({ ...withAi, priority: true });
+      const opened = await render(<ConversationRoute />);
+      await screen.findByText("The AI has this conversation.");
+      await opened.unmount();
+
+      offline();
+      await render(<ConversationRoute />);
+      expect(await screen.findByText("The AI has this conversation.")).toBeTruthy();
+      expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+      expect(screen.getByText("Priority")).toBeTruthy();
+      expect(screen.queryByLabelText("Reply")).toBeNull();
+
+      await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+      expect(await screen.findByText(NETWORK)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Take over" })).toBeTruthy();
+    });
+
+    it("reads one kept before the app knew who has it as the team's, and not priority", async () => {
+      // As a version of the app from before kept it (or a server from before answered): neither field.
+      keep(conversationKey(mockSession, 12), conversation([message({})]), cacheGeneration(), mockSession.owner);
+      offline();
+      await render(<ConversationRoute />);
+
+      expect(await screen.findByText("Hi! The export stops at 500 rows.")).toBeTruthy();
+      expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+      expect(screen.getByLabelText("Reply")).toBeTruthy();
+      expect(screen.queryByText("The AI has this conversation.")).toBeNull();
+      expect(screen.queryByText("Priority")).toBeNull();
+    });
   });
 });

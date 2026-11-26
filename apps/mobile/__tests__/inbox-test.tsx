@@ -6,7 +6,7 @@ import Inbox from "@/app/index";
 import { type Conversation, markRead } from "@/lib/conversation";
 import { type InboxView, type Page, type Row, rowPath } from "@/lib/inbox";
 import { forgetChosen } from "@/lib/layout";
-import { cached, cacheGeneration, forgetCached, inboxKey, keep, projectsKey, startCache } from "@/lib/offline";
+import { cached, cacheGeneration, forgetCached, inboxKey, keep, projectsKey, startCache, viewsKey } from "@/lib/offline";
 
 // The native header as plain views: the switcher's items as buttons, the search bar as a field.
 jest.mock("expo-router", () => {
@@ -117,14 +117,14 @@ const row = (subject: string, more: Partial<Row> = {}): Row => ({
 });
 const page = (rows: Row[], more: Partial<Page> = {}): Page => ({ conversations: rows, nextCursor: null, total: rows.length, ...more });
 
-/** Answers by path; a path with no answer waits until the test gives one. */
-function serve(answers: Record<string, unknown>) {
+/** Answers by path; a path with no answer waits until the test gives one. `views`: the views the server lists. */
+function serve(answers: Record<string, unknown>, views = VIEWS) {
   mockApi.mockImplementation((path) => {
     if (path === "/projects") {
       return Promise.resolve({ projects: PROJECTS });
     }
     if (path === "/inbox/views") {
-      return Promise.resolve({ views: VIEWS });
+      return Promise.resolve({ views });
     }
     const key = Object.keys(answers).find((prefix) => path.startsWith(prefix));
     return key ? Promise.resolve(answers[key]) : new Promise(() => {});
@@ -1537,6 +1537,109 @@ describe("in a wide window (a tablet, a foldable opened)", () => {
     await render(<Inbox />);
     const target = await screen.findByRole("button", { name: /: CSV export stops at 500 rows \(#/ });
     expect(target.props.accessibilityActions).toEqual([
+      { name: "snooze", label: "Snooze" },
+      { name: "close", label: "Close" },
+    ]);
+  });
+});
+
+describe("the AI's conversations and priority", () => {
+  // The views as a server with With AI lists them: after Waiting on user.
+  const WITH_AI: InboxView[] = [...VIEWS.slice(0, 4), { view: "ai", title: "With AI", count: 2 }, ...VIEWS.slice(4)];
+  const rowNamed = (subject: string) => screen.getByRole("button", { name: new RegExp(`: ${subject} \\(#`) });
+  const offline = () => Object.assign(new Error("Couldn't reach tuti.example.com. Check the address and your connection."), { code: "unreachable" });
+  beforeEach(() => void startCache(mockSession.owner));
+
+  it("has With AI among the views with its count, and lists the conversations the AI has", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]), "/conversations?view=ai": page([row("My invoice went missing", { handledBy: "ai" })]) }, WITH_AI);
+    await render(<Inbox />);
+
+    const chips = await screen.findAllByRole("tab");
+    expect(chips.map((chip) => chip.props.accessibilityLabel)).toEqual(["Needs reply, 4", "Mine, 2", "Unassigned", "Waiting on user", "With AI, 2", "Snoozed", "Closed, 9", "Spam"]);
+    await fireEvent.press(screen.getByRole("tab", { name: "With AI, 2" }));
+    expect(await screen.findByText("My invoice went missing")).toBeTruthy();
+    expect(screen.queryByText("CSV export stops at 500 rows")).toBeNull();
+    expect(mockApi).toHaveBeenCalledWith("/conversations?view=ai&limit=25&cursor=0");
+  });
+
+  it("says so when the AI has none", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]), "/conversations?view=ai": page([]) }, WITH_AI);
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("tab", { name: "With AI, 2" }));
+    expect(await screen.findByText("Nothing's with the AI.")).toBeTruthy();
+  });
+
+  it("offers Close on a row the AI has, but no Snooze: snoozed, it would stay in With AI", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows"), row("My invoice went missing", { handledBy: "ai" })]) }, WITH_AI);
+    await render(<Inbox />);
+    await screen.findByText("My invoice went missing");
+    expect(rowNamed("My invoice went missing").props.accessibilityActions).toEqual([{ name: "close", label: "Close" }]);
+    expect(rowNamed("CSV export stops at 500 rows").props.accessibilityActions).toEqual([
+      { name: "snooze", label: "Snooze" },
+      { name: "close", label: "Close" },
+    ]);
+  });
+
+  it("says Priority on a marked row, to a screen reader too, and on no other", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows", { priority: true }), row("Invite link expired", { priority: false })]) });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+
+    expect(screen.getAllByText("Priority")).toHaveLength(1);
+    expect(rowNamed("CSV export stops at 500 rows").props.accessibilityLabel).toContain("(#1), priority, latest message");
+    expect(rowNamed("Invite link expired").props.accessibilityLabel).not.toContain("priority");
+  });
+
+  it("says With AI on one the AI has in a search, which finds it among the team's", async () => {
+    serve({
+      "/conversations?view=open": page([row("CSV export stops at 500 rows")]),
+      "/conversations?q=invoice": page([row("My invoice went missing", { handledBy: "ai", status: "waiting" }), row("Invoices as PDF", { handledBy: "team" })]),
+    });
+    await render(<Inbox />);
+    await screen.findByText("CSV export stops at 500 rows");
+
+    await fireEvent.changeText(screen.getByPlaceholderText("Search"), "invoice");
+    await act(() => jest.advanceTimersByTimeAsync(300));
+    expect(await screen.findByText(/^With AI · /)).toBeTruthy();
+    expect(screen.getByText(/^Open · /)).toBeTruthy();
+    expect(rowNamed("My invoice went missing").props.accessibilityLabel).toContain(", With AI, latest message");
+  });
+
+  it("shows a view newer than the app by the server's title, lists it, and says something when it has none", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]), "/conversations?view=later": page([]) }, [...VIEWS, { view: "later" as never, title: "Later", count: 0 }]);
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("tab", { name: "Later" }));
+    expect(await screen.findByText("No conversations here.")).toBeTruthy();
+    expect(mockApi).toHaveBeenCalledWith("/conversations?view=later&limit=25&cursor=0");
+  });
+
+  it("keeps With AI, who has a row and its priority for reading offline", async () => {
+    serve({ "/conversations?view=open": page([row("CSV export stops at 500 rows")]), "/conversations?view=ai": page([row("My invoice went missing", { handledBy: "ai", priority: true })]) }, WITH_AI);
+    const first = await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("tab", { name: "With AI, 2" }));
+    await screen.findByText("My invoice went missing");
+    await first.unmount();
+
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await render(<Inbox />);
+    await fireEvent.press(await screen.findByRole("tab", { name: "With AI, 2" }));
+    expect(await screen.findByText("My invoice went missing")).toBeTruthy();
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
+    expect(screen.getByText("Priority")).toBeTruthy();
+    expect(rowNamed("My invoice went missing").props.accessibilityActions).toEqual([{ name: "close", label: "Close" }]);
+  });
+
+  it("reads a list and views kept before the app knew of them as the team's and not priority, with the views it had", async () => {
+    // As a version of the app from before kept them (or a server from before answered): no With AI, neither field on a row.
+    keep(viewsKey(mockSession), VIEWS, cacheGeneration(), mockSession.owner);
+    keep(inboxKey(mockSession, "open"), { rows: [row("CSV export stops at 500 rows")], total: 1 }, cacheGeneration(), mockSession.owner);
+    mockApi.mockImplementation(() => Promise.reject(offline()));
+    await render(<Inbox />);
+
+    expect(await screen.findByText("CSV export stops at 500 rows")).toBeTruthy();
+    expect((await screen.findAllByRole("tab")).map((chip) => chip.props.accessibilityLabel)).toEqual(["Needs reply, 4", "Mine, 2", "Unassigned", "Waiting on user", "Snoozed", "Closed, 9", "Spam"]);
+    expect(screen.queryByText("Priority")).toBeNull();
+    expect(rowNamed("CSV export stops at 500 rows").props.accessibilityActions).toEqual([
       { name: "snooze", label: "Snooze" },
       { name: "close", label: "Close" },
     ]);

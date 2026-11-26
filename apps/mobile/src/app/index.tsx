@@ -42,10 +42,14 @@ const EMPTY: Record<ViewName, string> = {
   mine: "Nothing's assigned to you.",
   unassigned: "Every open conversation has someone on it.",
   waiting: "No conversations wait on a user.",
+  ai: "Nothing's with the AI.",
   snoozed: "Nothing's snoozed.",
   closed: "No closed conversations yet.",
   spam: "No spam.",
 };
+
+/** A view the server lists that the app has no words for yet (one newer than the app) still says something. */
+const emptyOf = (view: string) => (EMPTY as Record<string, string | undefined>)[view] ?? "No conversations here.";
 
 // Signed in: the Inbox of the project chosen, its views as chips, a search, and the list, kept current while it's open.
 export default function Inbox() {
@@ -588,9 +592,10 @@ export default function Inbox() {
           onPress={open}
           selected={wide && item.number === chosen}
           onNode={onRowNode}
-          // Not for one that's closed; nor snoozed in Spam, as the details sheet.
+          // Not for one that's closed; nor snoozed in Spam, as the details sheet. Nor one the AI has: a snooze leaves it
+          // in With AI, so its row would only come back, as if the swipe had failed.
           onClose={item.status === "closed" ? undefined : close}
-          onSnooze={item.status === "closed" || (view === "spam" && !q) ? undefined : snooze}
+          onSnooze={item.status === "closed" || (view === "spam" && !q) || item.handledBy === "ai" ? undefined : snooze}
         />
       )}
       ListHeaderComponent={
@@ -644,7 +649,7 @@ export default function Inbox() {
                   ? "You're not on a project yet. Create one, or ask a teammate to invite you, on the web."
                   : searching
                     ? "No conversations match your search. Try other words, a name or an email address."
-                    : EMPTY[view])}
+                    : emptyOf(view))}
             </Text>
           )}
           {error && (

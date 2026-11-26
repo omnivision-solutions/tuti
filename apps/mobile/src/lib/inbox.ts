@@ -4,7 +4,8 @@
  * rows, a page at a time.
  */
 
-export type ViewName = "open" | "mine" | "unassigned" | "waiting" | "snoozed" | "closed" | "spam";
+/** The views the app has words of its own for; the chips are whatever the server lists, a view newer than the app too. */
+export type ViewName = "open" | "mine" | "unassigned" | "waiting" | "ai" | "snoozed" | "closed" | "spam";
 export type InboxView = { view: ViewName; title: string; count: number };
 
 export type Row = {
@@ -19,7 +20,16 @@ export type Row = {
   latestMessage: { author: "user" | "team" | "ai" | "tuti"; name: string | null; fromYou: boolean; fromAddress: string | null; line: string | null } | null;
   /** With a search: the message it was found by. */
   match: { note: boolean; snippet: string } | null;
-};
+} & Owned;
+
+/**
+ * Who has a conversation, the AI or the team, and whether it's marked priority. Neither is in an answer from a server
+ * older than them, nor in a list or conversation kept on the phone from before: then it's the team's, and not priority.
+ */
+export type Owned = { handledBy?: "ai" | "team"; priority?: boolean };
+
+/** In the Inbox's With AI view: the AI has it, till it's closed or spam (as the server's view). */
+export const withAi = (conversation: Owned & { status: string; spam?: boolean }) => conversation.handledBy === "ai" && conversation.status !== "closed" && !conversation.spam;
 
 export type Page = { conversations: Row[]; nextCursor: string | null; total: number };
 
@@ -80,8 +90,9 @@ export function spokenAgeOf(at: string, now = Date.now()) {
 }
 
 export const STATUS = { open: "Open", waiting: "Waiting", closed: "Closed" } as const;
-/** A search finds every status: the row says which, before its age. */
-export const searchAgeOf = (row: Row, now = Date.now()) => `${STATUS[row.status]} · ${ageOf(row.lastMessageAt, now)}`;
+/** A search finds every status, and the AI's among the team's: the row says which, before its age. */
+export const searchStatusOf = (row: Row) => (withAi(row) ? "With AI" : STATUS[row.status]);
+export const searchAgeOf = (row: Row, now = Date.now()) => `${searchStatusOf(row)} · ${ageOf(row.lastMessageAt, now)}`;
 
 /** Initials for the face beside a row: "Maya Chen" → "MC", "sam@example.com" → "S". */
 export const initialsOf = (name: string) =>

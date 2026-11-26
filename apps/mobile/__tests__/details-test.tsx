@@ -261,6 +261,41 @@ describe("the details sheet", () => {
     expect(await screen.findByRole("button", { name: "Mark as spam" })).toBeTruthy();
   });
 
+  it("marks it priority and back, and says so to screen readers", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    serve(SAM, { ...OPEN, priority: false });
+    await render(<Details />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Mark priority" }));
+    expect(patches()).toEqual([{ priority: true }]);
+    expect(getTriage(KEY)?.priority).toBe(true);
+    expect(announce).toHaveBeenLastCalledWith("Marked priority");
+    await fireEvent.press(await screen.findByRole("button", { name: "Not priority" }));
+    expect(patches().at(-1)).toEqual({ priority: false });
+    expect(announce).toHaveBeenLastCalledWith("No longer priority");
+    expect(await screen.findByRole("button", { name: "Mark priority" })).toBeTruthy();
+  });
+
+  it("offers no priority on a server from before it, which would refuse the change", async () => {
+    // Its answer has no `priority`.
+    serve(SAM);
+    await render(<Details />);
+    expect(await screen.findByRole("button", { name: "Mark as spam" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /priority/i })).toBeNull();
+  });
+
+  it("says With AI as the status of one the AI has, never Needs reply, and offers no way to hand one back", async () => {
+    serve(SAM, { ...OPEN, handledBy: "ai" });
+    await render(<Details />);
+    expect(await screen.findByLabelText("Status, With AI")).toBeTruthy();
+    expect(screen.queryByLabelText("Status, Needs reply")).toBeNull();
+
+    // The team's: as before, and nothing hands it to the AI (nothing answers for it yet).
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "team" }));
+    expect(screen.getByLabelText("Status, Needs reply")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
+  });
+
   it("says why a change didn't happen, in the server's words", async () => {
     serve(SAM);
     const answer = mockApi.getMockImplementation()!;
