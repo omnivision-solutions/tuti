@@ -385,3 +385,24 @@ test("a publish from an older read is refused: it would publish a draft never se
   const now = await call(getTranslation, as(), de);
   expect((await call(publishTranslation, as(), { ...de, version: now.version })).draft).toBeNull();
 });
+
+test("Update those sections replaces the team's own text in a section it selects", async () => {
+  await manualVersion();
+  // The team edits Billing and publishes it: published, it's theirs.
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content!.at(-1)!.content![0]!.text = "Von uns bearbeitet";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  await call(publishTranslation, as(), de);
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("Von uns bearbeitet");
+  // Selected explicitly (whether behind or not): the new translation replaces it.
+  const stored = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  const billing = sourceSections(translationSource(stored).text).at(-1)!.key;
+  model.reply(reply(V1, "de2"));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing] });
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("[de2] Pay by card");
+  expect(text(after.content)).not.toContain("Von uns bearbeitet");
+  expect(text(after.content)).toContain("Unsere Installation");
+});
