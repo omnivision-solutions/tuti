@@ -195,7 +195,7 @@ function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: n
           <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Estimates. They vary by question and model. Credits also pay for summaries and duplicate detection.</p>
         </>
       ) : (
-        <p className="text-sm text-muted-foreground">Credits pay for AI answers, summaries, duplicate detection and Autopilot&apos;s checks of the changes you ship.</p>
+        <p className="text-sm text-muted-foreground">Credits pay for AI answers, summaries, duplicate detection, Autopilot&apos;s checks of the changes you ship, screenshots of your app, and emails past those your plan includes.</p>
       )}
     </Tip>
   );

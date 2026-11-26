@@ -92,7 +92,7 @@ export function ImageGenerator({
   fromHere?: { label: string; images: PickedImage[] };
   /** The project's brand logo, if it has one. */
   logo?: PickedImage | null;
-  /** AI credits are on: said beside Generate. */
+  /** Credits are on: said beside Generate. */
   credits?: boolean;
   /** The result's main action ("Use as cover"). */
   useLabel: string;
@@ -469,7 +469,7 @@ export function ImageGenerator({
           </div>
         </div>
         <DialogFooter className="items-center">
-          {credits && <span className="text-xs text-muted-foreground">Uses AI credits</span>}
+          {credits && <span className="text-xs text-muted-foreground">Uses credits</span>}
           {/* The dialog's one primary: Generate until there's an image to use, then the image's own action. */}
           <Button
             type="button"

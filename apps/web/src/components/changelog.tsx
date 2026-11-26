@@ -413,7 +413,7 @@ export function FeaturedImage({
 }
 
 /** The cover designs with something to show for an entry as it's saved, the one picked when nobody picks, and `version`, which changes with each save (its previews are drawn again). */
-/** What FeaturedImage's Generate needs: AI credits are on, the project is out of them, its logo and the entry's images to work from. */
+/** What FeaturedImage's Generate needs: credits are on, the project is out of them, its logo and the entry's images to work from. */
 export type ImageGeneratorProps = { credits: boolean; paused: boolean; logo: PickedImage | null; bodyImages: PickedImage[] };
 
 export type CoverChoices = { designs: CoverDesign[]; automatic: CoverDesign; version: number };

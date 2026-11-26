@@ -792,7 +792,7 @@
         "enabled": {
           "default": false,
           "type": "boolean",
-          "description": "Credits on: projects pay for AI with prepaid credits (Tuti's cloud)"
+          "description": "Credits on: projects pay for AI, screenshots and emails past their plan's with prepaid credits (Tuti's cloud)"
         },
         "perTopupDollar": {
           "default": 100,
