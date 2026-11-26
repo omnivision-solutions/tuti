@@ -453,14 +453,22 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
     [api, number, session, filter],
   );
 
-  // On opening, and whenever the conversation's status changes: as far back as it's shown, in the tab last chosen (one
-  // still loading too, so its tap isn't lost).
+  // On opening, and whenever the conversation's status changes (its fields, not a fetch bringing them as they were): as
+  // far back as it's shown, in the tab last chosen (one still loading too, so its tap isn't lost). Its first status
+  // after none (the sheet's own fetch, opened by a link) is no change: the opening's load already has it.
+  const changed = triage && JSON.stringify([triage.status, triage.assignee?.email ?? null, triage.spam, triage.snoozedUntil, triage.handledBy ?? null, triage.priority ?? null]);
+  const lastChanged = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    const was = lastChanged.current;
+    lastChanged.current = changed;
+    if (was === null) {
+      return;
+    }
     const to = wanted.current;
     const far = to === filter ? shown.current + (paging.current ? 20 : 0) : 0;
     load(to, undefined, far > 20 ? Math.min(far, 100) : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed
-  }, [triage, number]);
+  }, [changed]);
 
   const seen = new Set<string>();
   const events = (pages ?? []).flatMap((page) => page.events).filter((event) => !seen.has(event.id) && !!seen.add(event.id));
@@ -570,7 +578,9 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
       )}
       {next && pages && !failed && (
         <View style={styles.earlier}>
-          {loading ? <ActivityIndicator color={colors.muted} /> : <TextButton label="Show earlier" colors={colors} onPress={() => load(filter, next)} />}
+          {/* Kept while it loads, so a screen reader's focus stays on it; a press meanwhile is ignored. */}
+          <TextButton label="Show earlier" busy={loading} colors={colors} onPress={() => load(filter, next)} />
+          {loading && <ActivityIndicator color={colors.muted} />}
         </View>
       )}
     </Group>
@@ -707,9 +717,10 @@ function Icon({ name, size, color }: { name: SymbolViewProps["name"]; size: numb
   return <SymbolView name={name} size={size} tintColor={color} />;
 }
 
-function TextButton({ label, colors, onPress }: { label: string; colors: Colors; onPress: () => void }) {
+/** With `busy`: off (dimmed, a press ignored) but still focusable, as `Row` is. */
+function TextButton({ label, busy = false, colors, onPress }: { label: string; busy?: boolean; colors: Colors; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" hitSlop={8}>
+    <Pressable onPress={() => !busy && onPress()} accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} hitSlop={8} style={busy && { opacity: 0.6 }}>
       <Text style={[styles.label, { color: colors.primary, fontWeight: "600" }]}>{label}</Text>
     </Pressable>
   );
@@ -754,5 +765,5 @@ const styles = StyleSheet.create({
   eventText: { flex: 1, gap: 1 },
   whoDid: { fontWeight: "600" },
   workflows: { marginTop: 4, gap: 2, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6 },
-  earlier: { alignItems: "flex-start", paddingVertical: 10 },
+  earlier: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
 });

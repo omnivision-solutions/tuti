@@ -733,6 +733,35 @@ describe("the details sheet's Activity", () => {
     expect(screen.queryByText("Olive Owner")).toBeNull();
   });
 
+  it("keeps Show earlier while its page loads, off but focusable, a press meanwhile ignored", async () => {
+    serveActivity(({ before }) => (before ? new Promise(() => {}) : Promise.resolve({ events: [RUN, CLOSED], next: "e2" })));
+    await render(<Details />);
+    await screen.findByText("Olive Owner");
+
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(screen.getByRole("button", { name: "Show earlier" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Show earlier" }).props.accessibilityState).toMatchObject({ busy: true });
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked().filter((path) => path.includes("before="))).toHaveLength(1);
+  });
+
+  it("is fetched once on opening, and again only when the conversation's status changes", async () => {
+    serveActivity(() => Promise.resolve({ events: [RUN], next: null }));
+    // Opened by a link: no screen under it, so the sheet fetches the status itself.
+    screenUnder?.();
+    screenUnder = null;
+    await render(<Details />);
+    expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
+    await screen.findByText("A conversation starts");
+    expect(activityAsked()).toEqual(["/conversations/12/activity?filter=all"]);
+
+    // A fetch bringing it as it was: nothing to read again.
+    await act(async () => showTriage(KEY, { ...OPEN }));
+    expect(activityAsked()).toHaveLength(1);
+    await act(async () => showTriage(KEY, { ...OPEN, priority: true }));
+    expect(activityAsked()).toHaveLength(2);
+  });
+
   it("isn't shown by a server from before it", async () => {
     serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
     await render(<Details />);
