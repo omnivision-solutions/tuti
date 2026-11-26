@@ -212,9 +212,16 @@ export const saveTranslation = defineOperation({
       const out = [...new Set([...(draft?.removed ?? (version.removedSections as string[])), ...removed])].filter((key) => !has.has(key));
       const title = input.title ?? draft?.title ?? version.title;
       const next: Draft = { title, titleEdited: (draft?.titleEdited ?? false) || title !== (draft?.title ?? version.title), content: docOfSections(edited), sections: metaOf(edited), removed: out };
+      // A section edited now is the team's again: an update asked for it earlier no longer overrides it.
+      const base = new Set(drafted ?? published);
+      const editedNow = new Set(edited.filter((section) => !base.has(section) && section.meta.key !== null).map((section) => section.meta.key!));
       const saved = await tx.articleTranslation.update({
         where: { id: version.id },
-        data: { draft: next as Prisma.InputJsonValue, behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out }) },
+        data: {
+          draft: next as Prisma.InputJsonValue,
+          behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out }),
+          updateSections: (version.updateSections as string[]).filter((key) => !editedNow.has(key)),
+        },
         select: versionSelect,
       });
       return output(saved, parts, sourceLanguage);
@@ -298,7 +305,8 @@ export const publishTranslation = defineOperation({
           // The sections the team took out of the draft, out of the published text now too.
           removedSections: draft.removed ?? [],
           behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
-          ...(update.length > 0 && { updateSections: [...new Set([...(version.updateSections as string[]), ...update])] }),
+          // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.
+          updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update])],
         },
         select: versionSelect,
       });

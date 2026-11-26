@@ -269,11 +269,12 @@ test("a version the team writes with sections waiting to update is tried again b
   expect(text((await call(getTranslation, as(), de)).content)).toContain("[de2] Pay by card or invoice");
 });
 
-test("a section asked for takes the new translation, even one the team edited while the job ran", async () => {
+test("an edit saved after asking for a section cancels that request: the edit stays, nothing translated over it", async () => {
   const articleId = await manualVersion();
   const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
   await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
   const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Asked for; while the job translates it, the team rewrites it in the draft.
   model.reply(sectionsReply("de2", ["Billing", "Pay by card or invoice"]), async () => {
     const now = await call(getTranslation, as(), de);
     const content = structuredClone(now.content) as Doc;
@@ -283,11 +284,33 @@ test("a section asked for takes the new translation, even one the team edited wh
   await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
   await languageTranslationsDone();
   const after = await call(getTranslation, as(), de);
-  // Asked for, it takes the new translation in the draft too (that's what Update those sections is for).
-  expect(text(after.draft!.content)).not.toContain("Neu von uns");
-  expect(text(after.draft!.content)).toContain("[de2] Pay by card or invoice");
-  expect(text(after.content)).toContain("[de2] Pay by card or invoice");
-  expect(articleId).toBeTruthy();
+  expect(text(after.draft!.content)).toContain("Neu von uns");
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ updateSections: [] });
+});
+
+test("a section asked for, then kept on publishing while its translation waits, stays the team's", async () => {
+  const articleId = await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Asked for, but the provider doesn't answer (asked, then once more): it waits.
+  model.fail(500);
+  model.fail(500);
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  // The team edits only the intro, and publishes keeping its Billing as it is (behind English).
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![0]!.content![0]!.text = "Guten Tag";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ updateSections: [billing] });
+  await call(publishTranslation, as(), { ...de, keep: [billing!] });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ updateSections: [] });
+  // The retry job later: nothing left asked for, nothing replaces it.
+  await prisma.articleTranslation.updateMany({ where: { articleId }, data: { retryAt: new Date(Date.now() - 1000) } });
+  await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("Unsere Zahlung");
 });
 
 test("a draft keeps the team's published title when the job retranslates it", async () => {

@@ -302,11 +302,14 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     if (now.automatic !== row.automatic) {
       return null;
     }
-    const only = now.automatic ? undefined : new Set(asked);
+    // Only what's still asked for as it writes: one another run did meanwhile, or the team chose since to keep (publishing with
+    // `keep`) or edited again (saving), is no longer overridden.
+    const still = new Set(asked.filter((key) => (now.updateSections as string[]).includes(key)));
+    const only = now.automatic ? undefined : still;
     // The sections asked for take the new translation, whoever owns them (an edit made since included): that's what was asked.
-    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: new Set(asked), published: now.automatic, removed: new Set(now.removedSections as string[]) });
+    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: still, published: now.automatic, removed: new Set(now.removedSections as string[]) });
     const draft = now.draft as Draft | null;
-    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, asked: new Set(asked), removed: new Set(draft.removed) });
+    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, asked: still, removed: new Set(draft.removed) });
     const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
     more = waiting.length > 0;
     // The team's published title stays theirs until the source's title changes.
