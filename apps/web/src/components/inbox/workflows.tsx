@@ -41,7 +41,7 @@ export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { pro
           <Group projectSlug={projectSlug} trigger={trigger} workflows={workflows.filter((workflow) => workflow.trigger === trigger)} groupNames={groupNames} />
         </li>
       ))}
-      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, where it answers before a conversation starts" : "Off in the widget"}>
+      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, where it answers before a conversation starts, once you've published articles" : "Off in the widget"}>
         <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Widget
         </Link>

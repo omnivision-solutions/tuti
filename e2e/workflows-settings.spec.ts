@@ -30,7 +30,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await api("/workflows", { name: "Enterprise replies", trigger: "user_replied", conditions: [{ kind: "in_group", group: "enterprise" }], actions: [{ kind: "mark_priority" }] });
   /** The trigger's list, top to bottom, as the API runs it. */
   const order = async (trigger: string) =>
-    ((await api("/workflows", undefined, "GET")) as unknown as { workflows: { name: string; trigger: string; enabled: boolean }[] }).workflows.filter((workflow) => workflow.trigger === trigger);
+    ((await api("/workflows", undefined, "GET")) as unknown as { workflows: { id: string; name: string; trigger: string; enabled: boolean }[] }).workflows.filter((workflow) => workflow.trigger === trigger);
 
   // Under Spam in the menu; the path top to bottom, the built-in steps fixed in it.
   await owner.goto(`/app/${slug}/settings/spam`);
@@ -40,7 +40,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   const main = owner.getByRole("main");
   await expect(main.getByRole("heading", { level: 2, name: /^When/ })).toHaveText(["When a conversation starts 3", "When a user replies 1"]);
   await expect(main.getByText("Built in")).toHaveCount(3);
-  await expect(main).toContainText("On in the widget, where it answers before a conversation starts");
+  await expect(main).toContainText("On in the widget, where it answers before a conversation starts, once you've published articles");
   await expect(main.getByRole("link", { name: "Spam filter settings" })).toHaveAttribute("href", `/app/${slug}/settings/spam`);
   const started = main.getByRole("list", { name: "When a conversation starts" });
   const replied = main.getByRole("list", { name: "When a user replies" });
@@ -109,6 +109,12 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.getByRole("menuitem", { name: "Move up" }).click();
   await expect(names()).toHaveText(["Second", "Third"]);
   await expect.poll(stored).toEqual(["Second", "Third", "Later"]);
+  // A switch the server refuses (the workflow was deleted meanwhile, through the API) goes back as it was.
+  const third = (await order("conversation_started")).find((workflow) => workflow.name === "Third")!;
+  await api(`/workflows/${third.id}`, undefined, "DELETE");
+  await owner.getByRole("switch", { name: "Third" }).click();
+  await expect(owner.getByText("There's no workflow with that id")).toBeVisible();
+  await expect(owner.getByRole("switch", { name: "Third" })).toBeChecked();
   // Nothing wider than the screen.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "workflows-phone");
