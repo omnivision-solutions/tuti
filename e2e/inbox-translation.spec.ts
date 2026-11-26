@@ -186,6 +186,9 @@ test("in the widget, a German customer gets the team's reply in German, with wha
   await thread.getByText("Show original").click();
   await expect(original).toBeVisible();
   await expect(thread.getByText("Hide original")).toBeVisible();
+  // Each read in its own language's voice: the German reply marked German, what the team wrote marked English.
+  await expect(thread.getByText(inGerman, { exact: true })).toHaveAttribute("lang", "de");
+  await expect(original).toHaveAttribute("lang", "en");
   await checkpoint(kai, "widget-show-original");
   await kai.setViewportSize({ width: 390, height: 844 });
   await checkpoint(kai, "widget-show-original-phone");
