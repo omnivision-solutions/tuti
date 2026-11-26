@@ -9,6 +9,7 @@ export const AI_FEATURE_NAMES: Record<string, string> = {
   code_changes: "Autopilot",
   translation: "Translation",
   duplicates: "Duplicate detection",
+  screenshots: "Screenshots",
 };
 
 /** Dollars: cents, or four places below a cent, or "under $0.0001" for a sliver. */

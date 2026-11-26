@@ -20,3 +20,4 @@ export * from "./billing";
 export * from "./api-fake";
 export * from "./config-file";
 export * from "./expo-push-fake";
+export * from "./browser-use-fake";

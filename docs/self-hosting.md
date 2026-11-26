@@ -130,6 +130,7 @@ Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tut
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log. With it, a password account signs in only once its address is verified (the emailed link), so accounts made before it was set must open that link (signing in sends it) |
 | `EXPO_ACCESS_TOKEN` | Optional, worker (or web, with `JOBS_DRIVER=inline`): push notifications to the mobile app go through Expo's push service with no setup. Only for your own build of the app whose Expo project has enhanced push security on: its access token |
 | `TRUSTED_IP_HEADER` | Set it behind a proxy: the header your proxy sets to the visitor's IP address (e.g. `cf-connecting-ip` behind Cloudflare; if it holds a list, the last value counts, the one your proxy added). It tells visitors apart for the limits on password sign-in, sign-up and verification emails, and for a per-visitor limit on emailed sign-in and password reset links (only a keyed hash of the address is stored, for an hour). Without it, sign-in limits go by `X-Forwarded-For`, which a visitor can set, and which puts everyone in one bucket when the proxy adds to it; emailed links have no per-visitor limit |
+| `BROWSER_USE_API_KEY` | Optional, web and worker: Settings → Screenshots, where an agent in [Browser Use](https://browser-use.com)'s cloud browser signs in to a team's own app and takes screenshots of it (uploads must be set up too). Each run is charged in credits, what its browser session cost: the model and the browser's time, and the proxy's traffic for a project that turned on Use a residential proxy (off by default: runs use none). The agent's files are deleted from Browser Use once downloaded. Its model and cost cap are the config file's `screenshots` keys. Without it, the page says screenshots aren't available on this server |
 | `TUTI_CONFIG` | Optional: the path of the config file, a JSON file of what you tune by feature (see below), on the web app and the worker alike (and the marketing site) |
 
 Every app's `.env.example` lists its variables; the web app refuses to start without the
@@ -245,6 +246,9 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `credits.low` | `100` | Under this balance owners and admins are emailed (and once it's out); 0: only once it's out |
 | `duplicates.posted.model` | `"typesafe/jev-1.14"` | After a post is created: the decision model saying which of the 8 most similar posts it duplicates (they become "Possible duplicates"); OpenRouter only (elsewhere, and with `off`, similarity alone) |
 | `duplicates.typing.model` | `"typesafe/jev-1.14"` | While a title is typed, on the portal and in the widget: the decision model saying which similar posts to suggest voting on instead; OpenRouter only (elsewhere, and with `off`, similarity alone) |
+| `screenshots.model` | `"bu-4.0-mini"` | The agent's model, a Browser Use model id |
+| `screenshots.retryModel` | `"bu-4.0"` | The model a run is tried once more with when the first fails as a whole (not when a screenshot or two weren't reached) |
+| `screenshots.maxCostUsd` | `1` | The most one run may cost, in dollars, its retry included: Browser Use stops it there (a number above 0, at most 100) |
 
 ### Autopilot's settings
 

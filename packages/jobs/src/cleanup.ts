@@ -73,7 +73,7 @@ export const RELEASE_AFTER_HOURS = 24;
  * A sweep rather than bookkeeping on every delete: it reads what's saved, so no delete or
  * edit path can forget to free something. "Uses" means an image node in any post, comment,
  * changelog entry or comment on one, docs article (deleted ones too, until `purgeArticles` removes them), an
- * article's unpublished changes or kept article revision, plus the project's branding images, changelog covers and its team's and users' avatars uploaded in it. A new column that holds a media
+ * article's unpublished changes or kept article revision, plus the project's branding images, changelog covers, screenshots and its team's and users' avatars uploaded in it. A new column that holds a media
  * id must be added to `used` below, or its uploads are released and deleted.
  *
  * Races: every save marks its uploads attached again (`attachMedia`, now), and the release
@@ -119,6 +119,8 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
         -- The project's branding images (logos, favicon, share image), the widget launcher's icon and the changelog's cover background.
         UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId", "widgetIconImageId", "changelogCoverBackgroundId"]) FROM project WHERE id = ${projectId}
         UNION ALL SELECT "coverId" FROM changelog_entry WHERE "projectId" = ${projectId}
+        -- Screenshots' images, for as long as their screenshot is kept.
+        UNION ALL SELECT "imageId" FROM screenshot WHERE "projectId" = ${projectId}
         -- Avatars uploaded from Account (an upload in whichever project they had open), or copied by an import, their owners on its team or its users (above).
         UNION ALL SELECT "imageId" FROM "user" WHERE "imageId" IN (SELECT id FROM media WHERE "projectId" = ${projectId} AND "attachedAt" < ${cutoff})
       )

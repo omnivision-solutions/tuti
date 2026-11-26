@@ -261,8 +261,8 @@ export const groups = [
   },
   {
     name: "Project",
-    description: "The project itself: its name, team, imports from other tools, reports and AI models.",
-    prefixes: ["project", "team", "imports", "reports", "aiModels"],
+    description: "The project itself: its name, team, imports from other tools, reports, AI models, and screenshots of your app taken by an agent.",
+    prefixes: ["project", "team", "imports", "reports", "aiModels", "screenshotSettings", "screenshots"],
   },
   {
     name: "Billing",
@@ -291,6 +291,8 @@ Authorization: Bearer tuti_…
 \`\`\`
 
 A key acts as the team, with its creator's current role: operations for owners and admins work only while its creator is one, and the key stops working when it's revoked or its creator leaves the team.
+
+Tuti's mobile app signs in as a teammate instead of with a key: it sends the teammate's session as the bearer token, with the project's slug in a \`Tuti-Project\` header, and each request acts as that teammate with their role in that project. Only the app's own sign-in gets such a session; there's nothing to set up for it.
 
 ## Errors
 
