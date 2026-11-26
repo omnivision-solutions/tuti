@@ -61,10 +61,11 @@ export function forgetLanguages(slug: string) {
 }
 
 /**
- * Whether a path is an API operation's page (`/docs/<reference>/<operation>`, or its `.md`) on `slug`'s portal: one of the
- * portal's own pages, which the team's rules can't hide under a live language's prefix. Asked only when a rule would.
+ * `slug`'s API references' slugs: an API operation's page (`/docs/<reference>/<operation>`, or its `.md`) is one of the
+ * portal's own, which the team's rules can't hide under a live language's prefix. proxy.ts reads them once per request, and
+ * only when a rule would take such a path.
  */
-export async function isOperationPage(slug: string, path: string): Promise<boolean> {
-  const reference = /^\/docs\/([^/]+)\/[^/]+$/.exec(path)?.[1];
-  return !!reference && !!(await prisma.apiReference.findFirst({ where: { project: { slug }, slug: decodeURIComponent(reference) }, select: { id: true } }));
+export async function apiReferenceSlugs(slug: string): Promise<Set<string>> {
+  const references = await prisma.apiReference.findMany({ where: { project: { slug } }, select: { slug: true } });
+  return new Set(references.map((reference) => reference.slug));
 }

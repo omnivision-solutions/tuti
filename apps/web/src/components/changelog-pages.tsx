@@ -141,7 +141,7 @@ export async function changelogByEmail(
  */
 export async function changelogPage(slug: string, page: number, tag?: ChangelogTag) {
   const at = await portalLinks();
-  const [base, lang] = await Promise.all([portalLinkBase(), untranslatedLang(slug)]);
+  const [base, lang] = await Promise.all([portalLinkBase(), untranslatedLang()]);
   // One more than a page, to know whether there are older ones.
   const [session, reader] = await Promise.all([getSession(), slugReader(slug)]);
   const [found, announced, dates, project] = await Promise.all([

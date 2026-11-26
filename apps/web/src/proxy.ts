@@ -13,7 +13,7 @@ import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } fr
 import { redirectFor } from "@/server/portal-redirects";
 import { LANGUAGE, languagePrefix, ownAddress, preferredLanguage, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
 import { LANGUAGE_COOKIE } from "@/lib/reader-language";
-import { isOperationPage, portalLanguages } from "@/server/language-addresses";
+import { apiReferenceSlugs, portalLanguages } from "@/server/language-addresses";
 import type { Language } from "@tuti/shared/languages";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
@@ -190,6 +190,12 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   // come first under any other prefix too (an imported /fr/articles/… while French is offline).
   if (reading) {
     const isLive = (code: Language) => !!languages?.live.includes(code);
+    // An API operation's page (`/docs/<reference>/<operation>`, or its `.md`): the references read once per request, if asked.
+    let references: Promise<Set<string>> | undefined;
+    const isOperation = async (path: string) => {
+      const reference = /^\/docs\/([^/]+)\/[^/]+$/.exec(path)?.[1];
+      return !!reference && (await (references ??= apiReferenceSlugs(slug))).has(decodeURIComponent(reference));
+    };
     // The rule a path takes, as above.
     const ruleFor = async (path: string) => {
       const split = splitLanguage(path);
@@ -197,34 +203,32 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
         return redirectFor(slug, path);
       }
       const own = await redirectFor(slug, path);
-      if (own && !ownAddress(split.path) && !(await isOperationPage(slug, split.path))) {
+      if (own && !ownAddress(split.path) && !(await isOperation(split.path))) {
         return own;
       }
       const rule = await redirectFor(slug, split.path);
       return rule && prefixedTarget(rule, languagePrefix(split.code));
     };
-    // Where a rule's target ends up (a path as rules match it), an address in a language that isn't live going on to the
-    // default language's; null for a whole address.
-    const landsOn = (to: string) => {
-      const key = destinationKey(to);
-      const target = key ? splitLanguage(key) : null;
-      return target && !isLive(target.code) ? redirectKey(target.path) : key;
-    };
-    // Never round in circles: a rule whose chain (each address's rule, and an offline language's address going on to the
-    // default's) comes back to this address is skipped, so every address on the circle shows its page. Rules can't be saved
+    // Never round in circles: a rule whose chain, followed as requests go (each address's own rule first, else an offline
+    // language's address going on to the default's; a whole address ends it), comes back to this address is skipped, so every address on the circle shows its page. Rules can't be saved
     // as a chain, but a prefix's rules and a language going offline make ones no save could check
     // (/kb → /fr/legacy, /legacy → /fr/kb while French is offline; /docs/billing → /de/docs/billing, asked at /de/docs/billing).
     const here = redirectKey(address);
     let to = await ruleFor(address);
-    // ponytail: follows up to 20 addresses, as many as browsers do before giving up.
-    for (let next = to && landsOn(to), hops = 0; to && next && hops < 20; hops++) {
-      if (next === here) {
+    // A circle further on that this address isn't on ends the chain there (its addresses show their pages), so the rule
+    // stands. ponytail: follows up to 20 addresses, as many as browsers do before giving up; a chain still going after them
+    // counts as a circle (a browser would give up on it anyway), so the page shows.
+    let next = to && destinationKey(to);
+    const seen = new Set<string>();
+    for (let hops = 0; to && next && !seen.has(next); hops++) {
+      if (next === here || hops === 20) {
         to = null;
         break;
       }
+      seen.add(next);
       const rule = await ruleFor(next);
       const split = splitLanguage(next);
-      next = rule ? landsOn(rule) : split && !isLive(split.code) ? redirectKey(split.path) : null;
+      next = rule ? destinationKey(rule) : split && !isLive(split.code) ? redirectKey(split.path) : null;
     }
     if (to) {
       const response = NextResponse.redirect(redirectLocation(to, origin, request.nextUrl.search), 308);
@@ -245,9 +249,13 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   }
   // "Send visitors to their language" (off by default): a first visit to the portal's home (no language chosen in this
   // browser yet) goes to the live language the browser asks for (Accept-Language); never other pages, nor Customize's
-  // preview. Kept as this browser's choice (the switcher's cookie), so the visit after stays where the reader went.
+  // preview. Kept as this browser's choice (the switcher's cookie), so the visit after stays where the reader went. Only a
+  // page the browser loads itself: not the router's prefetches or client navigations (RSC requests), which would use up the
+  // first visit, or show /de inside the layout as it was (both addresses are one route to it).
   const framed = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";
-  if (reading && address === "/" && languages?.sendVisitors && !request.cookies.has(LANGUAGE_COOKIE) && !framed) {
+  const dest = request.headers.get("sec-fetch-dest");
+  const pageLoad = (dest === null || dest === "document") && !request.headers.has("rsc") && !request.headers.has("next-router-prefetch");
+  if (reading && address === "/" && pageLoad && languages?.sendVisitors && !request.cookies.has(LANGUAGE_COOKIE) && !framed) {
     const wanted = preferredLanguage(request.headers.get("accept-language"), [languages.default, ...languages.live]);
     if (wanted && wanted !== languages.default) {
       const response = NextResponse.redirect(redirectLocation(languagePrefix(wanted), origin, request.nextUrl.search), 307);
@@ -302,6 +310,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   // "Preview as a reader": always set here, so only the page's own query can ask for it (see currentReader).
   forwarded.set(LANGUAGE.header, language ?? languages?.default ?? "");
   forwarded.set(LANGUAGE.prefix, prefix);
+  forwarded.set(LANGUAGE.default, languages?.default ?? "");
   forwarded.set(PREVIEW.header, request.nextUrl.searchParams.get(PREVIEW.param) === PREVIEW.value ? PREVIEW.value : "");
   // Customize's preview: its param (on the links it follows) or a framed page; always set here too.
   const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";

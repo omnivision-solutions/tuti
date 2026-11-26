@@ -4,10 +4,10 @@ import { portalPage, redirectKey, reservedPath } from "@tuti/shared/portal-redir
 /**
  * Language addresses (docs/plan.md, Languages): the default language keeps the portal's addresses, another has its code in
  * front, lowercase (/de/docs/billing, /pt-br/changelog). proxy.ts takes the prefix off and says in LANGUAGE's headers which
- * language the address is in (the default one on its own addresses) and its prefix ("" there); always set there, so a request
+ * language the address is in (the default one on its own addresses), its prefix ("" there) and the default language; always set there, so a request
  * can't say its own. Pages' links add the prefix back (portalHref, usePortalHref).
  */
-export const LANGUAGE = { header: "x-tuti-language", prefix: "x-tuti-language-prefix" } as const;
+export const LANGUAGE = { header: "x-tuti-language", prefix: "x-tuti-language-prefix", default: "x-tuti-language-default" } as const;
 
 /** A language's prefix: /de, /pt-br. */
 export const languagePrefix = (code: Language) => `/${code.toLowerCase()}`;
@@ -49,11 +49,16 @@ export function prefixedTarget(to: string, prefix: string): string {
   return to.startsWith("/") && !to.startsWith("//") && !splitLanguage(new URL(to, "http://portal.invalid").pathname) ? withLanguage(prefix, to) : to;
 }
 
-/** The address's language and prefix from proxy.ts's headers (null and "" where it set none: not a portal page). */
-export function languageFrom(headers: Headers | undefined | null): { language: Language | null; prefix: string } {
+/** The address's language, its prefix and the portal's default language from proxy.ts's headers (null and "" where it set none: not a portal page). */
+export function languageFrom(headers: Headers | undefined | null): { language: Language | null; prefix: string; defaultLanguage: Language | null } {
   const language = headers?.get(LANGUAGE.header) ?? "";
   const prefix = headers?.get(LANGUAGE.prefix) ?? "";
-  return { language: isLanguage(language) ? language : null, prefix: BY_PREFIX.has(prefix) ? prefix : "" };
+  const defaultLanguage = headers?.get(LANGUAGE.default) ?? "";
+  return {
+    language: isLanguage(language) ? language : null,
+    prefix: BY_PREFIX.has(prefix) ? prefix : "",
+    defaultLanguage: isLanguage(defaultLanguage) ? defaultLanguage : null,
+  };
 }
 
 /**

@@ -18,7 +18,7 @@ import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { visiblePosts } from "@/server/post-visibility";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, untranslatedLang } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
 import { currentPostViewer, currentReader } from "@/server/portal-access";
@@ -44,6 +44,8 @@ const ROADMAP_DESCRIPTION = "What's planned, what we're building and what's done
 /** What's planned, being built and done, from the posts' statuses; a board at a time (`?board=`), voted on from the cards. */
 export default async function RoadmapPage(props: PageProps<"/portal/[project]/roadmap">) {
   const at = await portalLinks();
+  // Posts: people's words, in the default language under another's address (untranslatedLang).
+  const lang = await untranslatedLang();
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
   const found = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
@@ -186,7 +188,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               {posts.length === 0 ? (
                 <p className="rounded-xl bg-muted px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
               ) : (
-                <ul className="flex flex-col gap-2.5">
+                <ul lang={lang} className="flex flex-col gap-2.5">
                   {posts.map((post) => {
                     const entry = entries.get(post.id);
                     const eta = post.eta && etaOnPortal(post.eta, post.status, now) ? post.eta : null;

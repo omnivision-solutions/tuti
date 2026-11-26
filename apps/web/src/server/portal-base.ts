@@ -1,7 +1,6 @@
 import { headers } from "next/headers";
 
 import { languageFrom, withLanguage } from "@/lib/language-addresses";
-import { pageLanguages } from "@/server/language-addresses";
 import { BASE_HEADER, BASE_PATTERN, withBase } from "@/lib/portal-base";
 
 /** The path the portal is under on the team's site for this request ("" on its own addresses). */
@@ -36,12 +35,14 @@ export async function portalLinks(): Promise<(path: string) => string> {
 }
 
 /**
- * The `lang` of the team's and people's words (an article, a post and its comments, a changelog entry) on a page in another
- * language than the portal's default, where they're still in the default's (docs/plan.md, Languages: "its content carries
- * the default language's `lang`"); undefined in the default language, where `<html lang>` says it. Translated articles (L8)
- * and entries (L17) take their own.
+ * The `lang` of the team's and people's words on a page at another language's address, where they're still in the default
+ * language's (docs/plan.md, Languages: "its content carries the default language's `lang`"); undefined at the default
+ * language's, where `<html lang>` says it. The rule: what the team or people wrote (an article, a post and its comments, a
+ * changelog entry, and the lists and search results made of them, the docs' tree and collections included) carries it; the
+ * portal's own text doesn't (L5 translates it), nor the names the team gives boards, statuses, tabs and the like (L13–L15
+ * translate those). Translated articles (L8) and entries (L17) will take their own.
  */
-export async function untranslatedLang(slug: string): Promise<string | undefined> {
-  const [{ prefix }, languages] = await Promise.all([portalLanguage(), pageLanguages(slug)]);
-  return prefix && languages ? languages.default : undefined;
+export async function untranslatedLang(): Promise<string | undefined> {
+  const { prefix, defaultLanguage } = await portalLanguage();
+  return prefix && defaultLanguage ? defaultLanguage : undefined;
 }

@@ -110,7 +110,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
     }));
   return (
     // The entry and its comments: the team's and people's words (untranslatedLang).
-    <div lang={await untranslatedLang(slug)} className="flex flex-col gap-6">
+    <div lang={await untranslatedLang()} className="flex flex-col gap-6">
       {jsonLd}
       <ChangelogMenu slug={slug} current={entry.number} />
       <ChangelogEntryView

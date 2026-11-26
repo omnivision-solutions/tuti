@@ -82,7 +82,7 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   }
   return (
     // Rows on the paper.
-    <ul aria-label="Search results" className="flex flex-col">
+    <ul lang={await untranslatedLang()} aria-label="Search results" className="flex flex-col">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-1 border-b py-4 first:pt-0">
           <Link href={at(`/docs/${result.slug}`)} className="text-[1.0625rem] font-semibold break-words hover:underline">
@@ -147,7 +147,8 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   // "Can't find it?": how to reach the team (Ask AI is in the search above it).
   const support = home ? await supportContact(project) : null;
   return (
-    <div className="flex flex-col gap-8">
+    // The team's collections and articles: in the default language under another's address (untranslatedLang).
+    <div lang={await untranslatedLang()} className="flex flex-col gap-8">
       {/* The home: its heading over a big box for searching and asking (the header's is the same box), and the most-read as chips. */}
       {home ? (
         <div
@@ -321,7 +322,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab);
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
-      <div className="flex flex-col gap-8">
+      <div lang={await untranslatedLang()} className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
           <Link href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
             {up.label}
@@ -368,7 +369,7 @@ export async function DocsArticle({
   /** Its canonical path: a tab showing it in its place, the tab's. */
   path?: string;
 }) {
-  const [at, lang] = await Promise.all([portalLinks(), untranslatedLang(project)]);
+  const [at, lang] = await Promise.all([portalLinks(), untranslatedLang()]);
   const readable = "doc" in article ? article : null;
   // Its tab and collection have pages for this reader when they have something to read (an unlisted
   // article may be all there is): the way back is its tab's, or /docs.
@@ -613,7 +614,7 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
     </ul>
   );
   return (
-    <nav aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
+    <nav lang={await untranslatedLang()} aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
       <DocsSidebarLinks className="mb-3 border-b pb-4" />
       {/* Each collection a row that opens (`<details>`, so it works without JavaScript): the page's own open. */}
       {tree.collections.map((collection) => (

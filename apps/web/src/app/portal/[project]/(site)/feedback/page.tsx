@@ -19,7 +19,7 @@ import { ACTIVE_STATUSES, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/l
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, untranslatedLang } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { boardPosts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { getSession } from "@/server/session";
@@ -44,6 +44,8 @@ const OVERVIEW_DESCRIPTION = "Vote for the ideas you want most, or share your ow
  */
 export default async function FeedbackOverview(props: PageProps<"/portal/[project]/feedback">) {
   const at = await portalLinks();
+  // Posts: people's words, in the default language under another's address (untranslatedLang).
+  const lang = await untranslatedLang();
   const { project: slug } = await props.params;
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, slug: true, portalAccess: true } });
   if (!project) {
@@ -137,7 +139,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
           {results.posts.length === 0 ? (
             <EmptyState title="No ideas match" description="Try other words, or post it on one of the boards." />
           ) : (
-            <ul className="flex flex-col divide-y border-b">
+            <ul lang={lang} className="flex flex-col divide-y border-b">
               {results.posts.map((post) => {
                 const board = bySlug.get(post.board.slug)!;
                 return (
@@ -181,7 +183,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                     {board.description && <p className="text-sm text-muted-foreground">{board.description}</p>}
                   </div>
                   {ideas.length > 0 ? (
-                    <ul className="flex flex-col gap-2.5">
+                    <ul lang={lang} className="flex flex-col gap-2.5">
                       {ideas.map((post) => (
                         <li key={post.id} className="flex items-center gap-3">
                           {vote(post, "chip")}
@@ -213,7 +215,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
               <h2 id="recently-shipped" className="text-[0.8125rem] font-medium text-muted-foreground">
                 Recently shipped
               </h2>
-              <ul className="flex flex-col divide-y border-b">
+              <ul lang={lang} className="flex flex-col divide-y border-b">
                 {latest.map((post) => (
                   <li key={post.id} className="flex items-center gap-3 py-3">
                     <CircleCheckIcon aria-hidden className="size-4 shrink-0 text-status-completed" />

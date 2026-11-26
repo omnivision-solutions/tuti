@@ -55,6 +55,11 @@ export function usePortalPath(): string {
   return inLanguage ? inLanguage.path : own;
 }
 
+/** This page's portal path in its language (/de/feedback/ideas): where signing in (`next`) comes back to. */
+export function usePortalHere(): string {
+  return withLanguage(useContext(PortalBase).prefix, usePortalPath());
+}
+
 /** This page's address in another language, by its prefix ("" for the default language's): the language switcher's. */
 export function useAddressIn(): (prefix: string) => string {
   const { base } = useContext(PortalBase);

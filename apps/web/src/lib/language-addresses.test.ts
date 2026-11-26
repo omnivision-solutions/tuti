@@ -26,8 +26,16 @@ test("a language's prefix is its code in lowercase; the headers proxy.ts sets ar
   expect(splitLanguage("/pt-br/docs")).toEqual({ code: "pt-BR", path: "/docs" });
   expect(splitLanguage("/zh-cn")).toEqual({ code: "zh-CN", path: "/" });
   expect(splitLanguage("/pt-BR/docs")).toBeNull();
-  expect(languageFrom(new Headers({ "x-tuti-language": "de", "x-tuti-language-prefix": "/de" }))).toEqual({ language: "de", prefix: "/de" });
-  expect(languageFrom(new Headers({ "x-tuti-language": "xx", "x-tuti-language-prefix": "//evil.example" }))).toEqual({ language: null, prefix: "" });
+  expect(languageFrom(new Headers({ "x-tuti-language": "de", "x-tuti-language-prefix": "/de", "x-tuti-language-default": "en" }))).toEqual({
+    language: "de",
+    prefix: "/de",
+    defaultLanguage: "en",
+  });
+  expect(languageFrom(new Headers({ "x-tuti-language": "xx", "x-tuti-language-prefix": "//evil.example", "x-tuti-language-default": "yy" }))).toEqual({
+    language: null,
+    prefix: "",
+    defaultLanguage: null,
+  });
 });
 
 test("the language a browser asks for most, of those offered: whole, else by its first part", () => {

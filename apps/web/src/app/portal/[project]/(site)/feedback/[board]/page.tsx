@@ -29,7 +29,7 @@ import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
 import { seesBoard } from "@/server/post-visibility";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, untranslatedLang } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
@@ -62,6 +62,8 @@ const BOARD_DESCRIPTION = "Vote for the ideas you want most, or share your own."
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const at = await portalLinks();
+  // Posts: people's words, in the default language under another's address (untranslatedLang).
+  const lang = await untranslatedLang();
   const { project: projectSlug, board: boardSlug } = await props.params;
   const searchParams = await props.searchParams;
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
@@ -270,7 +272,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                   : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
             </p>
             {posts.length > 0 && (
-              <ul className="flex flex-col divide-y border-b">
+              <ul lang={lang} className="flex flex-col divide-y border-b">
                 {posts.map((post) => (
                   <li key={post.id} className="flex items-start gap-4 py-5 sm:gap-5 sm:py-[1.375rem]">
                     <div className="flex min-w-0 flex-1 flex-col items-start">
