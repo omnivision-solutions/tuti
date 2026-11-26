@@ -239,6 +239,11 @@ the list picks none to approve at once.
   are centred with the highlight tint. The composer is one card: Reply and Note are underline tabs across its top, its text
   field has no border or ring of its own (the card takes the focus ring while it's written in), and on Note the whole card
   takes the note's tint.
+  A conversation the AI has says so first on its meta line: "With AI" with the view's icon, a neutral pill (`secondary`), in
+  place of "Needs reply" (the details' Status reads "Open" there, its dot neutral: the attention colour is for what waits on
+  the team); one marked priority has the list's "Priority" badge after it. Where the composer goes, a card of its shape says
+  "The AI is answering." with Take over, the page's primary, at its end (under the sentence where they don't fit): no Reply or
+  Note until it's taken over, then the composer with the cursor in it. Mark priority and Remove priority are in More actions.
   A conversation in Spam says why on a line of its own under its meta line, with Not spam beside it (the reason wraps; a long "…and unblock <address>" goes under it):
   "Marked as spam: you blocked this address", one line per reason (`SPAM_REASONS`), "a teammate marked it" for a mark.
   Not spam's toast says what stays in the way (a blocked address or domain and who can change it, the hourly limit);

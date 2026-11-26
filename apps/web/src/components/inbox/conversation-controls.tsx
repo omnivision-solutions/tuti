@@ -1,7 +1,7 @@
 "use client";
 
-import { AlarmClockIcon, CheckIcon, ChevronDownIcon, ShieldAlertIcon, UserPlusIcon } from "lucide-react";
-import { useState, useSyncExternalStore, useTransition } from "react";
+import { AlarmClockIcon, CheckIcon, ChevronDownIcon, ShieldAlertIcon, SparklesIcon, UserPlusIcon } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -21,7 +21,16 @@ import { actOn } from "@/components/inbox/list-keys";
 import { cn } from "@/lib/utils";
 import { CONVERSATION_STATUS_STYLES } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
-import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
+import {
+  assignConversation,
+  markConversationSpam,
+  setConversationPriority,
+  setConversationStatus,
+  setNewConversationEmails,
+  snoozeConversation,
+  summarizeWithAi,
+  takeOverConversation,
+} from "@/server/inbox";
 
 type Props = { projectSlug: string; number: number };
 
@@ -283,7 +292,8 @@ export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }:
   return (
     <>
       <DropdownMenuItem disabled={pending} onClick={() => mark(!spam)}>
-        {spam ? notSpamLabel(unblocks) : "Mark as spam"}
+        {/* A long address to unblock wraps, as the domain under it does. */}
+        <span className="min-w-0 wrap-anywhere">{spam ? notSpamLabel(unblocks) : "Mark as spam"}</span>
       </DropdownMenuItem>
       {!spam && blockDomain && (
         <>
@@ -329,13 +339,89 @@ export function SpamNotice({ projectSlug, number, why, unblocks }: Props & { why
       <Button
         variant="outline"
         size="sm"
-        className="h-auto min-h-7 max-w-full whitespace-normal wrap-anywhere"
+        className="h-auto min-h-8 max-w-full whitespace-normal wrap-anywhere"
         disabled={pending}
         focusableWhenDisabled
         // The line goes with the mark, and this button with it: the focus moves to one that stays.
         onClick={() => mark(false, undefined, () => moreActions()?.focus())}
       >
         {notSpamLabel(unblocks)}
+      </Button>
+    </div>
+  );
+}
+
+/** More actions' Mark priority, or Remove priority: the one flag the list's rows and the conversation's own line show. */
+export function PriorityButton({ projectSlug, number, priority }: Props & { priority: boolean }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <DropdownMenuItem
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await setConversationPriority(projectSlug, number, !priority).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success(priority ? "Priority removed" : "Marked priority");
+          }
+        })
+      }
+    >
+      {priority ? "Remove priority" : "Mark priority"}
+    </DropdownMenuItem>
+  );
+}
+
+/**
+ * Where the reply box goes. On a conversation the AI has (`ai`), "The AI is answering" and Take over in its place: taking
+ * over comes before typing, so the AI can't answer while a reply is being written. Taken over, it's the team's, with
+ * nothing else about it moved, and the reply box (`children`) is there, the cursor in it.
+ */
+export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: boolean; children: ReactNode }) {
+  const [pending, startTransition] = useTransition();
+  const box = useRef<HTMLDivElement>(null);
+  // Taken over here (not by a teammate elsewhere, which the live refresh shows): its button goes, so the focus moves to the
+  // reply. Set as it starts: the page that shows it taken over may be the live refresh's, before this action's own.
+  const took = useRef(false);
+  const saysId = useId();
+  useEffect(() => {
+    if (!ai && took.current) {
+      took.current = false;
+      box.current?.querySelector("textarea")?.focus();
+    }
+  }, [ai]);
+  if (!ai) {
+    return <div ref={box}>{children}</div>;
+  }
+  return (
+    // The composer's card, in its place: the sentence takes the room and the button stays beside it, under it only where they don't fit.
+    <div className="inbox-take-over flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-input bg-card px-3.5 py-2.5 shadow-[0_2px_7px] shadow-black/3.5">
+      <p id={saysId} className="flex min-w-0 flex-1 basis-40 items-center gap-1.5 text-sm [&>svg]:size-3.5 [&>svg]:flex-none [&>svg]:text-muted-foreground">
+        <SparklesIcon aria-hidden />
+        The AI is answering.
+      </p>
+      <Button
+        size="sm"
+        className="ml-auto"
+        disabled={pending}
+        // Keeps the keyboard's focus while it saves; the reply box takes it after.
+        focusableWhenDisabled
+        aria-describedby={saysId}
+        onClick={() =>
+          startTransition(async () => {
+            took.current = true;
+            const result = await takeOverConversation(projectSlug, number).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+            if (result.error) {
+              took.current = false;
+              toast.error(result.error);
+            } else {
+              toast.success("Taken over");
+            }
+          })
+        }
+      >
+        Take over
       </Button>
     </div>
   );
@@ -385,8 +471,11 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
   );
 }
 
-export function ConversationStatusMenu({ projectSlug, number, status, answered }: Props & { status: "OPEN" | "WAITING" | "CLOSED"; answered: boolean }) {
+/** The details' Status. `withAi`: the AI has it, so an open one is "Open", not "Needs reply" (it isn't waiting on the team). */
+export function ConversationStatusMenu({ projectSlug, number, status, answered, withAi = false }: Props & { status: "OPEN" | "WAITING" | "CLOSED"; answered: boolean; withAi?: boolean }) {
   const [pending, startTransition] = useTransition();
+  const open = withAi ? "Open" : "Needs reply";
+  const label = status === "OPEN" ? open : status === "WAITING" ? "Waiting on user" : "Closed";
   const set = (value: "open" | "waiting" | "closed") =>
     startTransition(async () => {
       const moved = actOn(number, value === "closed");
@@ -400,14 +489,15 @@ export function ConversationStatusMenu({ projectSlug, number, status, answered }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="sm" className={TRIAGE_VALUE} aria-label={`${status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}, change status`} disabled={pending} focusableWhenDisabled />}
+        render={<Button variant="ghost" size="sm" className={TRIAGE_VALUE} aria-label={`${label}, change status`} disabled={pending} focusableWhenDisabled />}
       >
-        <span aria-hidden className={cn("inbox-status-dot size-1.5 flex-none rounded-full", CONVERSATION_STATUS_STYLES[status].dot)} />
-        {status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}
+        {/* The attention colour is for what waits on the team. */}
+        <span aria-hidden className={cn("inbox-status-dot size-1.5 flex-none rounded-full", CONVERSATION_STATUS_STYLES[withAi && status === "OPEN" ? "WAITING" : status].dot)} />
+        {label}
         <ChevronDownIcon className="ml-auto size-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {status !== "OPEN" && <DropdownMenuItem onClick={() => set("open")}>Needs reply</DropdownMenuItem>}
+        {status !== "OPEN" && <DropdownMenuItem onClick={() => set("open")}>{open}</DropdownMenuItem>}
         {status === "OPEN" && answered && <DropdownMenuItem onClick={() => set("waiting")}>Waiting on user</DropdownMenuItem>}
         {status !== "CLOSED" && <DropdownMenuItem onClick={() => set("closed")}>Closed</DropdownMenuItem>}
       </DropdownMenuContent>
