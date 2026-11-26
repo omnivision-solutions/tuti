@@ -511,6 +511,10 @@ const matrix: Matrix = {
   inbox: {
     markConversationRead: { allowed: "MEMBER", call: (slug) => inbox.markConversationRead(slug, 1, new Date().toISOString()) },
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
+    // Translation is off in the fixture: no preview, and the model isn't asked.
+    previewReplyTranslation: { allowed: "MEMBER", call: (slug) => inbox.previewReplyTranslation(slug, 1, "Thanks!") },
+    // No message's translation failed in the fixture: nothing is queued.
+    retryTranslation: { allowed: "MEMBER", call: (slug) => inbox.retryTranslation(slug, 1) },
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
     draftReplyWithAi: {
       allowed: "MEMBER",
@@ -530,6 +534,7 @@ const matrix: Matrix = {
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
+    setTranslation: { allowed: "ADMIN", call: (slug) => inbox.setTranslation(slug, { teamLanguage: "en" }) },
     saveDraftInstructions: { allowed: "ADMIN", call: (slug) => inbox.saveDraftInstructions(slug, {}, form({ instructions: "Keep it short." })) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },

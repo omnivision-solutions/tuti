@@ -43,7 +43,7 @@ export async function homeOverview(projectId: string, slug: string) {
   const month = insightsSince(new Date(now));
   const base = `/app/${slug}`;
   // What waits for a reply: the Inbox's Open view (and the sidebar's count).
-  const needsReply = { projectId, spam: false, sample: false, status: "OPEN" as const, ...awake() };
+  const needsReply = { projectId, spam: false, sample: false, handledBy: "TEAM" as const, status: "OPEN" as const, ...awake() };
   const conversationSelect = { number: true, subject: true, waitingSince: true, lastMessageAt: true } as const;
   const toTriage = { projectId, sample: false, duplicateOfId: null, status: "OPEN" as const };
   // As Feedback's Possible duplicates lists them: neither post merged since.

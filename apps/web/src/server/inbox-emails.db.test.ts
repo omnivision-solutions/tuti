@@ -107,7 +107,8 @@ test("a message whose email couldn't be queued is found by the cron and emailed;
   const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
   await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: minutesAgo(30) } });
   // Told about it, then a reply saved 3 minutes ago whose email never got queued (the queue was down).
-  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: minutesAgo(20) } });
+  // (Waiting since its first message, as it would be had the message been written then.)
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: minutesAgo(20), waitingSince: minutesAgo(30) } });
   const lost = () =>
     prisma.conversationMessage.create({
       data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "API", body: "Hello?", createdAt: minutesAgo(3) },
@@ -130,4 +131,83 @@ test("a message whose email couldn't be queued is found by the cron and emailed;
   await prisma.teamMember.updateMany({ where: { projectId: project.id }, data: { emailNewConversations: false } });
   expect(await resubmit()).toEqual({ found: 0, queued: 0 });
   expect(to(owner.email)).toHaveLength(2);
+});
+
+test("a conversation the AI has emails nobody, at once or by the cron; taken over by a teammate's reply, the message it answered isn't emailed late", async () => {
+  const { owner, project, member, key } = await setup();
+  const log = { info: () => {}, warn: () => {} };
+  const resubmit = () => handlers.resubmitConversationNotices({}, log);
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  mailbox.emails.length = 0;
+  // Handed to the AI, long enough ago that the team could be emailed about it again.
+  await call(updateConversation, key, { number: 1, handledBy: "ai" });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: null } });
+
+  await call(replyToConversation, key, { number: 1, body: "Any news?", author: { id: "user-42" } });
+  expect(to(owner.email)).toEqual([]);
+  expect(to(member.email)).toEqual([]);
+  // Nor later: the cron that queues missed emails again leaves the AI's alone.
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: new Date(Date.now() - 5 * 60_000) } });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+
+  // A teammate's reply takes it over: what they answered isn't news to the team, so the cron still finds nothing.
+  await call(replyToConversation, key, { number: 1, body: "Looking now" });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+  expect(to(owner.email)).toEqual([]);
+  // It's the team's now: the user's next message is emailed as ever.
+  await call(replyToConversation, key, { number: 1, body: "Thanks!", author: { id: "user-42" } });
+  expect(to(owner.email)).toEqual(["Sam replied: Export"]);
+});
+
+test("a conversation taken over without a reply, its user still waiting: the cron emails the team about it", async () => {
+  const { owner, project, key } = await setup();
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  await call(updateConversation, key, { number: 1, handledBy: "ai" });
+  // Written 5 minutes ago, its user waiting since, and nobody told.
+  const written = new Date(Date.now() - 5 * 60_000);
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: null, waitingSince: written } });
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: written } });
+  mailbox.emails.length = 0;
+  const resubmit = () => handlers.resubmitConversationNotices({}, { info: () => {}, warn: () => {} });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+
+  await call(updateConversation, key, { number: 1, handledBy: "team" });
+  expect(await resubmit()).toEqual({ found: 1, queued: 1 });
+  expect(to(owner.email)).toEqual(["New conversation: Export"]);
+});
+
+test("sample content emails nobody: the job that emails the team about a message skips a sample conversation's", async () => {
+  const { owner, project, key } = await setup();
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: conversation.id, author: "USER" } });
+  // As Home's "Add sample content" leaves one, and not told about yet: the team would be emailed were it real.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { sample: true, notifiedAt: null } });
+  mailbox.emails.length = 0;
+
+  expect(await handlers.conversationMessage({ messageId: message.id }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "nothing to tell" });
+  expect(to(owner.email)).toEqual([]);
+});
+
+test("a message the teammate's reply didn't see is still found by the cron: the reply answered what came before it, not that one", async () => {
+  const { owner, project, key } = await setup();
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  // The first message, half an hour ago, which the team was told about.
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: minutesAgo(30) } });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: minutesAgo(20), waitingSince: minutesAgo(30) } });
+  // Another, 3 minutes ago, whose email never got queued (the queue was down)...
+  await prisma.conversationMessage.create({
+    data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "API", body: "Also, the export is empty", createdAt: minutesAgo(3) },
+  });
+  // ...and a teammate's reply to what they'd seen a minute before it: the conversation stays open, waiting on the team.
+  await call(replyToConversation, key, { number: 1, body: "Hi Sam, looking now", seen: minutesAgo(4).toISOString() });
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({ status: "OPEN" });
+  mailbox.emails.length = 0;
+
+  expect(await handlers.resubmitConversationNotices({}, { info: () => {}, warn: () => {} })).toEqual({ found: 1, queued: 1 });
+  expect(to(owner.email)).toEqual(["Sam replied: Export"]);
 });

@@ -382,6 +382,23 @@ describe("from the widget", () => {
     expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ userId, email: null, visitorHash: null });
   });
 
+  test("someone the team blocked is filed as spam here too: theirs to read, and nobody is told; an address typed signed out isn't gone by", async () => {
+    const userId = await upsertProjectUser(project.id, "user-8", { name: "Sam", email: "e2e-sam-8@example.com" });
+    await prisma.spamSender.create({ data: { projectId: project.id, sender: "e2e-sam-8@example.com", blocked: true, byAdmin: true } });
+    await prisma.webhook.create({
+      data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id },
+    });
+    model.reply("They want to pay in crypto.");
+    const signedIn = await asked(asReader(), { source: "WIDGET" });
+    expect(await escalateDocs(project.slug, signedIn.id, "e2e-sam-8@example.com", "", "widget", { token: widgetToken(project.id, userId) })).toEqual({ conversation: 1 });
+    // Signed out, typing the blocked address proves nothing: it reaches the team.
+    model.reply("They want to pay in crypto.");
+    const typed = await asked(asReader(), { source: "WIDGET" });
+    expect(await escalateDocs(project.slug, typed.id, "e2e-sam-8@example.com", "", "widget", {})).toMatchObject({ conversation: 2 });
+    expect((await conversations()).map((c) => [c.spam, c.spamReason])).toEqual([[true, "blocked_address"], [false, null]]);
+    expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(1);
+  });
+
   test("once the conversation is started, the question stays passed on even if announcing it fails", async () => {
     const reader = asReader();
     const question = await asked(reader, { source: "WIDGET" });

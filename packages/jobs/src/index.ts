@@ -59,7 +59,7 @@ export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
 export { behindKey, languageTranslationsDone, PRODUCT_SETTING_CHANGED, productSettingChanged, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
-export { DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, translateMessage, translationFailed, translationSettings } from "./conversation-translation";
+export { DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, sameLanguage, translateMessage, translationFailed, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";

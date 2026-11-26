@@ -87,6 +87,7 @@
   "conversations.markRead": ["cannot","conversation","else","inbox","keys","mark","read","signed","someone","teammate"],
   "conversations.person": ["beside","conversation","conversations","groups","latest","many","panel","posts","properties","shows","tuti","votes"],
   "conversations.reply": ["author","close","closed","conversation","internal","keptopen","never","note","open","reply","says","seen","sees","sent","stays","team","unanswered","user","waiting","whether","write","wrote"],
+  "conversations.retryTranslation": ["background","conversation","conversations","failed","happens","messages","none","nothing","project","shows","translated","translates","translation","translationerror","user","whose"],
   "conversations.suggestReply": ["answer","asked","asking","cover","docs","drafted","edit","nothing","otherwise","reply","send","sent","team","user"],
   "conversations.summarize": ["adds","conversation","done","note","open","sees","summary","team","user","wants"],
   "conversations.translateReply": ["another","conversations","language","nothing","project","reply","send","sent","theirs","translated","translates","translation","user","writes"],

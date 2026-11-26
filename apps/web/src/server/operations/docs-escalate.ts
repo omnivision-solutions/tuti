@@ -9,6 +9,7 @@ import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }
 
 import { countEmailedLink } from "../email-link-limits";
 import { sessionIn } from "../session";
+import { arrivalOf, spamVerdict } from "../spam";
 import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
 import { emailAddress, limitHeaders } from "./assistant";
 import { defineOperation, OperationError } from "./define";
@@ -265,6 +266,8 @@ async function toConversation(
       origin: "ESCALATION",
       // The portal's Messages are the widget's.
       channel: "widget" in from ? "WIDGET" : "API",
+      // The spam filter, as in Messages: by who's signed in, never by an address typed or given.
+      filter: async (tx) => spamVerdict(tx, await arrivalOf(tx, projectId, who.userId)),
       then: [
         ...(question.answer ? [{ author: "AI" as const, body: sources.length > 0 ? `${question.answer}\n\nSources: ${sources.join(", ")}` : question.answer }] : []),
         ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),
@@ -279,9 +282,11 @@ async function toConversation(
   }
   // Started: the question stays claimed whatever happens next, or a retry would start a second conversation.
   const { conversation, message } = started;
-  await announceConversation(projectId, conversation, message).catch((error: unknown) =>
-    log.error("Announcing an escalated question's conversation failed", { projectId, error }),
-  );
+  if (!conversation.spam) {
+    await announceConversation(projectId, conversation, message).catch((error: unknown) =>
+      log.error("Announcing an escalated question's conversation failed", { projectId, error }),
+    );
+  }
   return { id: question.id, escalated: true, conversation: conversation.number, ...(fresh && { visitor: fresh.token }) };
 }
 

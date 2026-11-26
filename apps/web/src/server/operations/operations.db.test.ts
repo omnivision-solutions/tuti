@@ -153,6 +153,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.update": () => ({ number: 1, status: "closed" }),
   // Translation is off in the fixture: not_translated, and the model isn't asked.
   "conversations.translateReply": () => ({ number: 1, body: "From the matrix" }),
+  // No message's translation failed in the fixture: nothing is queued.
+  "conversations.retryTranslation": () => ({ number: 1 }),
   "conversations.linkPost": () => ({ number: 1, post: 1 }),
   "conversations.unlinkPost": () => ({ number: 1, post: 1 }),
   // Nothing in the fixture's docs is close to what was asked: no draft, and the model isn't asked.

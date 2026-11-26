@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, sameLanguage, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
@@ -21,11 +21,13 @@ import {
   MarkStatusButton,
   SnoozeMenu,
   SpamButton,
+  SpamNotice,
   SummarizeButton,
 } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageDay } from "@/components/inbox/message-day";
 import { MessageText } from "@/components/inbox/message-text";
+import { MessageTranslation } from "@/components/inbox/message-translation";
 import { DetailSection } from "@/components/inbox/detail-section";
 import { ConversationMore } from "@/components/inbox/more-actions";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -35,7 +37,6 @@ import { ScrollToEnd } from "@/components/scroll-to-end";
 import { Pane, PaneBody, PaneHeader } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type ConversationStatusName } from "@/lib/conversation-statuses";
@@ -43,6 +44,7 @@ import { formatDay, initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { isAdminRole } from "@/lib/roles";
+import { SPAM_REASONS, type SpamReason } from "@/lib/spam-reasons";
 import { conversationReads } from "@/server/conversation-reads";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
@@ -52,6 +54,7 @@ import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { assignableTeam, conversationPerson } from "@/server/operations/conversations";
 import { postsLikeConversation } from "@/server/post-lists";
+import { spamChoices } from "@/server/spam";
 import { pageTitle } from "@/lib/page-title";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
@@ -126,7 +129,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         status: true,
         origin: true,
         spam: true,
+        spamReason: true,
+        spamMarkedAt: true,
         sample: true,
+        // The customer's language: replies are previewed and sent in it while the project translates (docs/plan.md L22).
+        language: true,
         email: true,
         name: true,
         emailVerified: true,
@@ -159,6 +166,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             authorUser: { select: { name: true } },
             attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
             attachmentsDropped: true,
+            teamText: true,
+            language: true,
+            translationError: true,
           },
         },
       },
@@ -200,9 +210,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Signed as the page renders: an image is shown, any other file is saved under its name.
   // Out of credits: the AI's buttons show, disabled (the layout says why).
   const paused = aiEnabled() && (await aiPaused(projectId));
-  const [signed, related] = await Promise.all([
+  const [signed, related, marking] = await Promise.all([
     attachmentLinks(conversation.messages.flatMap((m) => m.attachments)),
     postsLikeConversation(projectId, conversation),
+    // What marking it as spam, or not, would do beyond it: for owners and admins, whose the blocked list is.
+    spamChoices(prisma, { ...conversation, projectId }, isAdminRole(membership.role)),
   ]);
   const links = new Map(signed.map((a) => [a.id, a]));
 
@@ -263,6 +275,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const canSnooze = !conversation.spam && conversation.status !== "CLOSED";
   const snoozedUntil = canSnooze && conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null;
   const posts = conversation.posts.map((link) => link.post);
+  // Replies go out in the customer's language, previewed under the composer (docs/plan.md L22).
+  const { teamLanguage, translate } = await translationSettings(projectId);
+  const translated = translate && conversation.language && !sameLanguage(conversation.language, teamLanguage) ? { language: conversation.language, teamLanguage } : undefined;
   type Message = (typeof conversation.messages)[number];
   // Someone else on the email (in Cc) shows as their address.
   const byName = (message: Message) =>
@@ -298,7 +313,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
                   {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
                   {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
-                  <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />
+                  <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} {...marking} />
                 </ConversationMore>
                 <DetailsToggle hidden={detailsHidden} />
               </>
@@ -333,8 +348,16 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 {conversation.origin === "ESCALATION" ? " · started from an AI answer" : ` · via ${ORIGINS[conversation.origin].replace(/^the /, "")}`}
               </span>
             </>
-            {conversation.spam && <Badge variant="outline">Spam</Badge>}
           </p>
+          {conversation.spam && (
+            <SpamNotice
+              projectSlug={slug}
+              number={conversation.number}
+              // Why the filter filed it; else a teammate marked it (one from before the two were told apart says neither).
+              why={SPAM_REASONS[conversation.spamReason as SpamReason] ?? (conversation.spamMarkedAt ? "a teammate marked it" : null)}
+              unblocks={marking.unblocks}
+            />
+          )}
           <div id="conversation" className="inbox-conversation-body relative min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
             <div className="inbox-messages-and-composer flex min-h-full flex-col gap-2.5 px-6 pt-3 @max-[52.5rem]/inbox:px-3 @min-[77rem]/app:group-data-[details=hidden]/thread:px-9">
               <EarlierMessages
@@ -376,9 +399,23 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                                 Internal note · {name}
                               </p>
                             )}
-                            <p className="text-sm break-words whitespace-pre-wrap">
-                              <MessageText text={message.body} ugc={message.author === "USER"} />
-                            </p>
+                            {message.note ? (
+                              <p className="text-sm break-words whitespace-pre-wrap">
+                                <MessageText text={message.body} ugc={false} />
+                              </p>
+                            ) : (
+                              <MessageTranslation
+                                body={message.body}
+                                teamText={message.teamText}
+                                language={message.language}
+                                error={message.translationError}
+                                fromTeam={fromTeam}
+                                // Try again runs only where it can: translation on, and AI on the server.
+                                canRetry={translate && aiEnabled()}
+                                projectSlug={slug}
+                                number={conversation.number}
+                              />
+                            )}
                             <MessageAttachments
                               cards
                               attachments={message.attachments.map((a) => links.get(a.id)!)}
@@ -448,6 +485,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
                   emailWaits={wait && { why: wait.why, warning: wait.warning, link: wait.link }}
+                  translated={translated}
                 />
               </div>
             </div>

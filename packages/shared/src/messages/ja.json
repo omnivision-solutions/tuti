@@ -4,6 +4,27 @@
     "menu": "メニュー",
     "closeMenu": "メニューを閉じる",
     "language": "言語: {language}",
-    "languages": "言語"
+    "languages": "言語",
+    "portal": "ポータル",
+    "feedback": "フィードバック",
+    "roadmap": "ロードマップ",
+    "changelog": "更新情報",
+    "docs": "ドキュメント",
+    "new": "新着",
+    "boards": "ボード",
+    "menuDescription": "{name}：移動先を選択",
+    "links": "リンク",
+    "account": "アカウント",
+    "accountSettings": "アカウント設定",
+    "signOut": "ログアウト",
+    "signOutFailed": "ログアウトできませんでした。もう一度お試しください。"
+  },
+  "footer": {
+    "label": "フッター",
+    "poweredBy": "Powered by <logo></logo>",
+    "theme": "テーマ",
+    "system": "システム",
+    "light": "ライト",
+    "dark": "ダーク"
   }
 }

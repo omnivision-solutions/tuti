@@ -15,7 +15,7 @@ export const MAX_DRAFT_INSTRUCTIONS = 2000;
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
   const [project, subdomain, last, own] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, teamLanguage: true, translateConversations: true, emailPausedAt: true, emailPausedReason: true, plan: true },
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, language: true, teamLanguage: true, translateConversations: true, emailPausedAt: true, emailPausedReason: true, plan: true },
     }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
@@ -26,7 +26,8 @@ export const supportSettings = async (projectId: string) => {
     // The team's standing instructions for replies drafted by AI (conversations.suggestReply).
     draftInstructions: project.supportDraftInstructions,
     // Inbox in the team's language (docs/plan.md L22).
-    teamLanguage: project.teamLanguage ?? DEFAULT_TEAM_LANGUAGE,
+    // Unset: the project's default language.
+    teamLanguage: project.teamLanguage ?? project.language ?? DEFAULT_TEAM_LANGUAGE,
     translate: project.translateConversations,
     // Email: whether this server receives it, the project's address (once it has one) and the latest email's time.
     email: domain
@@ -280,9 +281,7 @@ export const updateSupportSettings = defineOperation({
       translate: z
         .boolean()
         .optional()
-        .describe(
-          "Turn Translate conversations on or off: the user's messages translated into the team's language, and replies into theirs. Not available yet: true is refused (409) until the Inbox shows translated conversations",
-        )
+        .describe("Turn Translate conversations on or off: the user's messages translated into the team's language, and replies into theirs")
         .meta({ examples: [true] }),
     })
     .refine((input) => Object.values(input).some((value) => value !== undefined), "Send inbox, email, draftInstructions, teamLanguage or translate")
@@ -290,11 +289,6 @@ export const updateSupportSettings = defineOperation({
   example: { inbox: true },
   output: settingsOutput,
   run: async ({ projectId }, input) => {
-    // Until the Inbox shows translated conversations (docs/plan.md L22, part two), nothing in the app could read or send
-    // one: on is refused. Part two lifts this.
-    if (input.translate) {
-      throw new OperationError(409, "not_available_yet", "Translating conversations isn't available yet: the Inbox can't show translated conversations");
-    }
     if (input.translate && !aiEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
     }

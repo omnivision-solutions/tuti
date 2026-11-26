@@ -1,10 +1,12 @@
-import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, Prisma, prisma } from "@tuti/db";
-import { enqueue, historySince, inSomePlansHistory, replyTranslation, translationFailed, visibleConversations } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { type ConversationOrigin, type ConversationOwner, type ConversationStatus, type MessageAuthor, type MessageChannel, Prisma, prisma } from "@tuti/db";
+import { enqueue, historySince, inSomePlansHistory, replyTranslation, translationFailed, translationSettings, visibleConversations } from "@tuti/jobs";
+import { aiEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { rowLine, subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
+import { isAdminRole } from "@/lib/roles";
+import { SPAM_REASON_KEYS, type SpamReason } from "@/lib/spam-reasons";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload } from "../attachments";
 import { conversationReads } from "../conversation-reads";
@@ -15,6 +17,7 @@ import { conversationCompanies } from "../inbox-companies";
 import { notifyInbox } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
+import { blockDomainOf, recordMark } from "../spam";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
 
@@ -22,6 +25,9 @@ import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStat
 
 export const CONVERSATION_STATUSES = ["open", "waiting", "closed"] as const;
 export const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typeof CONVERSATION_STATUSES)[number];
+
+/** Who has a conversation (docs/plan.md, Inbox automation: one owner per conversation), as the API says it. */
+const HANDLERS = ["ai", "team"] as const;
 
 export const MAX_MESSAGE_LENGTH = 10_000;
 const MAX_SUBJECT_LENGTH = 200;
@@ -75,9 +81,21 @@ const conversationFields = {
     .nullable()
     .describe("The team member it's assigned to; null when unassigned"),
   spam: z.boolean().describe("Marked as spam: lists leave it out unless asked for").meta({ examples: [false] }),
+  spamReason: z
+    .enum(SPAM_REASON_KEYS)
+    .nullable()
+    .describe(
+      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC) or flood (too many new conversations by email from this address in an hour). Null when it isn't spam, and when a teammate marked it",
+    )
+    .meta({ examples: [null] }),
+  handledBy: z
+    .enum(HANDLERS)
+    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. Nothing answers for the AI yet: one it has waits there, with nobody told, till a teammate takes it over")
+    .meta({ examples: ["team"] }),
+  priority: z.boolean().describe("Marked priority: the Inbox's list says so on its row").meta({ examples: [false] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
   waitingSince: at("Since when the user has waited on the team: their oldest unanswered message; null when they aren't waiting").nullable(),
-  snoozedUntil: at("Out of the inbox's views till then, or till the user writes; null when not snoozed (closed and spam ones never are)")
+  snoozedUntil: at("Out of the inbox's views till then, or till the user writes (one the AI has stays in With AI); null when not snoozed (closed and spam ones never are)")
     .nullable()
     .meta({ examples: [null] }),
   createdAt: at("When it started"),
@@ -197,6 +215,9 @@ const conversationSelect = {
   name: true,
   emailVerified: true,
   spam: true,
+  spamReason: true,
+  handledBy: true,
+  priority: true,
   lastMessageAt: true,
   waitingSince: true,
   snoozedUntil: true,
@@ -249,6 +270,10 @@ function view(row: ConversationRow, slug: string) {
     user: conversationPerson(row),
     assignee: row.assignee,
     spam: row.spam,
+    // Only of what's in Spam: a release from before unmarks without clearing it, while a deploy overlaps the two.
+    spamReason: row.spam ? (row.spamReason as SpamReason | null) : null,
+    handledBy: row.handledBy.toLowerCase(),
+    priority: row.priority,
     lastMessageAt: row.lastMessageAt,
     waitingSince: row.waitingSince,
     /** Out of the inbox's views till then (null: not snoozed, or no longer; never closed or spam ones). */
@@ -330,6 +355,7 @@ export const INBOX_VIEWS = {
   mine: "Mine",
   unassigned: "Unassigned",
   waiting: "Waiting on user",
+  ai: "With AI",
   snoozed: "Snoozed",
   closed: "Closed",
   spam: "Spam",
@@ -341,16 +367,19 @@ const VIEW_NAMES = Object.keys(INBOX_VIEWS) as [InboxView, ...InboxView[]];
 /**
  * A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). With
  * `since` (historySince), closed ones from before it are past the plan's history: in no view. Mine is `userId`'s.
+ * Those the AI has (docs/plan.md, Inbox automation) are in With AI alone, snoozed or not, till they're closed or spam:
+ * Closed and Spam list what's done with, whoever had it, so every conversation is in some view.
  */
 export function viewWhere(view: InboxView, projectId: string, userId: string, since: Date | null = null): Prisma.ConversationWhereInput {
   const now = new Date();
   const filters: Record<InboxView, Prisma.ConversationWhereInput> = {
-    open: { spam: false, status: "OPEN", ...awake(now) },
-    mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" }, ...awake(now) },
-    unassigned: { spam: false, assigneeId: null, status: "OPEN", ...awake(now) },
-    waiting: { spam: false, status: "WAITING", ...awake(now) },
+    open: { spam: false, handledBy: "TEAM", status: "OPEN", ...awake(now) },
+    mine: { spam: false, handledBy: "TEAM", assigneeId: userId, status: { not: "CLOSED" }, ...awake(now) },
+    unassigned: { spam: false, handledBy: "TEAM", assigneeId: null, status: "OPEN", ...awake(now) },
+    waiting: { spam: false, handledBy: "TEAM", status: "WAITING", ...awake(now) },
+    ai: { spam: false, handledBy: "AI", status: { not: "CLOSED" } },
     // Closed is done with, snoozed or not (a snooze left on one, by a release from before, doesn't hide it).
-    snoozed: { spam: false, status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
+    snoozed: { spam: false, handledBy: "TEAM", status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
     closed: { spam: false, status: "CLOSED" },
     spam: { spam: true },
   };
@@ -575,7 +604,7 @@ export const listConversations = defineOperation({
       .enum(VIEW_NAMES)
       .optional()
       .describe(
-        "Only those in this view of the Inbox, as conversations.views counts them: open (needs a reply), mine (assigned to the signed-in teammate, or to whoever created the API key; not closed), unassigned (and open), waiting (on the user), snoozed, closed or spam. Snoozed ones are only in snoozed. It decides spam: `spam` isn't read with it",
+        "Only those in this view of the Inbox, as conversations.views counts them: open (needs a reply), mine (assigned to the signed-in teammate, or to whoever created the API key; not closed), unassigned (and open), waiting (on the user), ai (those the AI has, till they're closed or spam: they're in none of the others before), snoozed, closed or spam. The team's snoozed ones are only in snoozed; the AI's stay in ai. It decides spam: `spam` isn't read with it",
       )
       .meta({ examples: ["open"] }),
     status: z.enum(CONVERSATION_STATUSES).optional().describe("Only those with this status").meta({ examples: ["open"] }),
@@ -941,11 +970,17 @@ export async function announceConversation(projectId: string, conversation: Conv
   return result;
 }
 
-/** A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo back). */
-export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
+/**
+ * A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo
+ * back). Not one written in a conversation in Spam (`inSpam`, addMessage's), which tells nobody: someone the spam filter
+ * filed doesn't know it, and writes on. Webhooks hear of those once it's marked Not spam (conversations.update).
+ */
+export async function announceUserMessage(projectId: string, number: number, message: MessageRow & { inSpam: boolean }) {
   const result = messageView(message);
-  await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
-  await tellTeam(projectId, message.id);
+  if (!message.inSpam) {
+    await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
+    await tellTeam(projectId, message.id);
+  }
   return result;
 }
 
@@ -967,8 +1002,11 @@ export async function startConversation(
     then?: { author: "AI"; body: string; note?: boolean }[];
     /** Refused (429) when the conversations `where` matches started this many in the last day: checked under the lock, so starts at once can't all pass. */
     perDay?: { where: Prisma.ConversationWhereInput; max: number };
-    /** Mail that failed DMARC: it goes to Spam, and nobody is told. */
-    spam?: boolean;
+    /**
+     * The spam filter (server/spam.ts), run under the project's lock for a conversation a user starts: one it files goes to
+     * Spam with the reason, and the caller tells nobody (`conversation.spam`). Without it (the team's own, over the API): never spam.
+     */
+    filter?: (tx: Prisma.TransactionClient) => Promise<{ spam: boolean; reason: SpamReason | null }>;
     /** The first message came by email. */
     received?: ReceivedEmail;
     /** More to write in the same transaction (a received email's status, its attachments), with the conversation's and its first message's ids. */
@@ -991,6 +1029,7 @@ export async function startConversation(
         throw new OperationError(429, "rate_limited", "You've started a lot of conversations today. Try again tomorrow, or add to one you have.");
       }
     }
+    const verdict = await start.filter?.(tx);
     const created = await tx.conversation.create({
       data: {
         projectId,
@@ -1001,7 +1040,8 @@ export async function startConversation(
         email: start.email?.toLowerCase() ?? null,
         name: start.name ?? null,
         visitorHash: start.visitorHash ?? null,
-        spam: start.spam ?? false,
+        spam: verdict?.spam ?? false,
+        spamReason: verdict?.spam ? verdict.reason : null,
         lastMessageAt: now,
         activeAt: now,
         waitingSince: now,
@@ -1077,15 +1117,22 @@ export async function addMessage(
    */
   { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean } } = {},
 ) {
-  return prisma.$transaction(async (tx) => {
+  // Whether it was in Spam as the message was written, read while the conversation is held: its user's message tells
+  // nobody then (announceUserMessage), and Not spam, which holds it too, tells of exactly those.
+  let inSpam = false;
+  const added = await prisma.$transaction(async (tx) => {
     // Every message holds the conversation first, then takes its time: after the conversation's latest (by a millisecond
     // when the clock says no later, or another server's clock runs ahead), so messages' times are the order they're
     // written in. A user message is never older than a reply or note the team has already seen.
     // (The latest read in a statement of its own, after the wait: one written by whoever held it is seen.)
-    await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [held] = await tx.$queryRaw<{ spam: boolean; spamMarkedAt: Date | null }[]>`
+      SELECT "spam", "spamMarkedAt" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    inSpam = !!held?.spam;
     const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
       SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
-    const now = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0));
+    // In Spam, after its mark too, whichever server's clock runs ahead: what was written since the mark is told by its time.
+    const marked = held?.spam && held.spamMarkedAt ? held.spamMarkedAt.getTime() + 1 : 0;
+    const now = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0, marked));
     const created = await tx.conversationMessage.create({
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
@@ -1107,6 +1154,7 @@ export async function addMessage(
       // message from the user after what this teammate saw (or, not saying, after this reply was asked for). Then theirs
       // still needs a reply: it stays open and waiting on the team, not closed or waiting on them. Otherwise a snooze whose
       // time has passed (the wake job not there yet) ends with the reply: it's been seen to.
+      // A teammate's reply takes it over from the AI (docs/plan.md, Inbox automation), with the reply: never one without the other.
       const [held] = await tx.$queryRaw<[{ status: ConversationStatus }]>`SELECT "status" FROM "conversation" WHERE "id" = ${conversationId}`;
       const [{ unseen }] = await tx.$queryRaw<[{ unseen: boolean }]>`
         SELECT EXISTS (SELECT 1 FROM "conversation_message" WHERE "conversationId" = ${conversationId} AND "author" = 'USER'
@@ -1114,6 +1162,7 @@ export async function addMessage(
       const after = held.status === "OPEN" && unseen;
       await tx.$executeRaw`UPDATE "conversation" SET
         "status" = CASE WHEN ${after} THEN "status" ELSE ${close ? "CLOSED" : "WAITING"}::"ConversationStatus" END,
+        "handledBy" = 'TEAM',
         "waitingSince" = CASE WHEN ${after} THEN "waitingSince" ELSE NULL END,
         "lastMessageAt" = GREATEST("lastMessageAt", ${now}),
         "activeAt" = ${now},
@@ -1131,6 +1180,7 @@ export async function addMessage(
     }
     return written;
   });
+  return { ...added, inSpam };
 }
 
 /**
@@ -1245,7 +1295,7 @@ export const replyToConversation = defineOperation({
   run: async ({ actor, projectId }, input) => {
     // Written as its user (an API key's), it joins one past the plan's history, as their email would.
     const conversation = await findConversation(projectId, input.number, { hidden: !!input.author && actor.kind !== "user" });
-    let message: MessageRow;
+    let message: MessageRow & { inSpam: boolean };
     if (input.note && input.author) {
       throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
     }
@@ -1370,11 +1420,62 @@ export const translateReply = defineOperation({
   },
 });
 
+export const retryTranslation = defineOperation({
+  name: "conversations.retryTranslation",
+  title: "Retry failed translations",
+  summary:
+    "Where the project translates conversations: the user's messages whose translation failed (their `translationError`) are translated again, in the background. Their translation shows on the conversation once it's in. With none that failed, nothing happens.",
+  method: "POST",
+  path: "/conversations/{number}/translation-retries",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: z.object({ number: conversationNumber }),
+  example: { number: 12 },
+  output: z
+    .object({ retried: z.number().int().describe("How many messages are being translated again").meta({ examples: [1] }) })
+    .describe("What's being translated again"),
+  run: async ({ projectId }, input) => {
+    const conversation = await findConversation(projectId, input.number);
+    const failed = await prisma.conversationMessage.findMany({
+      where: { conversationId: conversation.id, author: "USER", note: false, teamText: null, translationError: { not: null } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, translationError: true },
+    });
+    if (failed.length === 0) {
+      return { retried: 0 };
+    }
+    if (!(await translationSettings(projectId)).translate) {
+      throw new OperationError(409, "translation_off", "This project doesn't translate conversations");
+    }
+    if (!aiEnabled()) {
+      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
+    }
+    let retried = 0;
+    // One at a time, as each arrived: the job settles the conversation's language by the newest.
+    for (const { id, translationError } of failed) {
+      // Claimed by clearing why it failed: a second Try again meanwhile finds nothing to queue (no second paid translation),
+      // and the job sets it again if this one fails too.
+      const { count } = await prisma.conversationMessage.updateMany({ where: { id, teamText: null, translationError: { not: null } }, data: { translationError: null } });
+      if (count === 0) {
+        continue;
+      }
+      retried++;
+      await enqueue("translateMessage", { messageId: id }).catch(async (error: unknown) => {
+        // Not queued: it shows its Try again again.
+        await translationFailed(id, translationError!);
+        throw error;
+      });
+    }
+    return { retried };
+  },
+});
+
 export const updateConversation = defineOperation({
   name: "conversations.update",
   title: "Update a conversation",
   summary:
-    "Change a conversation's status, assign it to a team member, mark it as spam, or snooze it: out of the inbox's views till then, or till the user writes, and open again after. Closed conversations and spam aren't snoozed (409).",
+    "Change a conversation's status or assignee, mark it spam or priority, take it over from the AI or hand it back, or snooze it: out of the inbox's views till then, or till the user writes. Closed and spam ones aren't snoozed (409). Marking spam or not teaches the spam filter about its sender.",
   method: "PATCH",
   path: "/conversations/{number}",
   scope: "write",
@@ -1389,7 +1490,26 @@ export const updateConversation = defineOperation({
         .describe("Its new status: waiting (on the user) only once the team's reply is its latest message (replying sets it)")
         .meta({ examples: ["closed"] }),
       assignee: z.email().nullable().optional().describe("Assign it to a team member, by their email; null to unassign").meta({ examples: ["olive@example.com"] }),
-      spam: z.boolean().optional().describe("Mark it as spam, or not").meta({ examples: [true] }),
+      spam: z
+        .boolean()
+        .optional()
+        .describe(
+          "Mark it as spam, or not. Where its sender's address is proven (not mail that failed DMARC, nor an address a signed-out visitor typed or the API gave), their next conversation is filed the same way. false on one the spam filter filed (`spamReason`) tells the team and webhooks (`conversation.created`), as a new conversation",
+        )
+        .meta({ examples: [true] }),
+      blockDomain: z
+        .boolean()
+        .optional()
+        .describe(
+          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven",
+        )
+        .meta({ examples: [false] }),
+      handledBy: z
+        .enum(HANDLERS)
+        .optional()
+        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Nothing answers for the AI yet: one handed to it waits in With AI, and the team isn't told, till a teammate takes it over. Closing and reopening leave it")
+        .meta({ examples: ["team"] }),
+      priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso
         .datetime({ offset: true })
         .transform((at) => new Date(at))
@@ -1400,20 +1520,37 @@ export const updateConversation = defineOperation({
         .meta({ examples: ["2026-11-25T09:00:00.000Z"] }),
     })
     .refine(
-      (input) => input.status !== undefined || input.assignee !== undefined || input.spam !== undefined || input.snoozedUntil !== undefined,
-      "Send a status, an assignee, spam or snoozedUntil",
+      (input) => [input.status, input.assignee, input.spam, input.handledBy, input.priority, input.snoozedUntil].some((value) => value !== undefined),
+      "Send a status, an assignee, spam, handledBy, priority or snoozedUntil",
     )
-    .meta({ anyOf: [{ required: ["status"] }, { required: ["assignee"] }, { required: ["spam"] }, { required: ["snoozedUntil"] }] }),
+    .refine((input) => !input.blockDomain || input.spam === true, "blockDomain goes with spam: true")
+    .meta({ anyOf: ["status", "assignee", "spam", "handledBy", "priority", "snoozedUntil"].map((field) => ({ required: [field] })) }),
   example: { status: "closed" },
-  output: z.object(conversationFields).describe("The conversation as it is now"),
-  run: async ({ projectId }, input) => {
+  output: z
+    .object({
+      ...conversationFields,
+      notice: z
+        .string()
+        .optional()
+        .describe(
+          "With `spam: false`: what it leaves in place, when something stays that would file this sender again (a blocked address or domain and who can change it, the hourly limit, DMARC), or what it undid (a blocked address an owner or admin took off the list)",
+        )
+        .meta({ examples: ["spam.example stays blocked. e2e-kim@spam.example is let through from now on."] }),
+    })
+    .describe("The conversation as it is now"),
+  run: async ({ actor, projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
+    let notice: string | undefined;
+    // The spam filter had filed it and a teammate says it isn't spam: told as a new conversation, once (its reason goes).
+    let released = false;
+    // Marked Not spam: what its user wrote while it was in Spam, when nobody was told, oldest first.
+    let unheard: MessageRow[] = [];
     const updated = await prisma.$transaction(async (tx) => {
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
-      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null }[]>`
-        SELECT "status", "spam", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamMarkedAt: Date | null }[]>`
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamMarkedAt" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1431,6 +1568,39 @@ export const updateConversation = defineOperation({
           throw new OperationError(409, "unanswered", "They wrote last: reply, and it waits on them");
         }
       }
+      // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
+      const marked = input.spam !== undefined && input.spam !== held!.spam;
+      let markedAt = new Date();
+      if (marked || input.blockDomain) {
+        const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
+        const admin = !!member && isAdminRole(member.role);
+        const sent = { ...conversation, projectId };
+        if (marked) {
+          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason);
+          released = !input.spam && !!held!.spamReason;
+          // Read while it's held: a message waits for this, sees it unmarked and tells of itself. Since the filter filed it
+          // (all of it), or since its mark; one marked before marks had a time has none to count from, and nothing is told.
+          // ponytail: the first 100.
+          if (!input.spam && (released || held!.spamMarkedAt)) {
+            unheard = await tx.conversationMessage.findMany({
+              where: { conversationId: conversation.id, author: "USER", note: false, ...(!released && { createdAt: { gt: held!.spamMarkedAt! } }) },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              take: 100,
+              select: messageSelect,
+            });
+          }
+          // Marked as spam no earlier than its latest message, whichever server's clock runs ahead: only what's written
+          // after is told on Not spam (addMessage times those after the mark).
+          if (input.spam) {
+            const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
+              SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversation.id}`;
+            markedAt = new Date(Math.max(markedAt.getTime(), latest?.getTime() ?? 0));
+          }
+        }
+        if (input.blockDomain) {
+          await blockDomainOf(tx, sent, admin);
+        }
+      }
       // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
       // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
       const waking = input.snoozedUntil === null && !!held?.snoozedUntil && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
@@ -1445,6 +1615,10 @@ export const updateConversation = defineOperation({
           // Assigned or unassigned by the team: no longer the imported holder's to take over (handOverPlaceholders).
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
+          ...(marked && { spamMarkedAt: markedAt, spamReason: null }),
+          // Take over, or Hand back to the AI: nothing else about it moves (its status, its assignee, how old it is).
+          ...(input.handledBy && { handledBy: input.handledBy.toUpperCase() as ConversationOwner }),
+          ...(input.priority !== undefined && { priority: input.priority }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),
           // Closed or spam is done with: a snooze no longer brings it back.
           ...((input.status === "closed" || input.spam === true) && input.snoozedUntil === undefined && { snoozedUntil: null }),
@@ -1456,7 +1630,20 @@ export const updateConversation = defineOperation({
       await notifyInbox(tx, { projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash, email: row.email });
       return row;
     });
-    return view(updated, await projectSlug(projectId));
+    // It's unmarked whatever happens here, and saying it again would tell nobody: a failure is logged, not thrown.
+    try {
+      // Filed by the filter: its first message is the new conversation's, told to the team too. The rest, to webhooks.
+      const first = released ? unheard.shift() : undefined;
+      if (first) {
+        await announceConversation(projectId, updated, first);
+      }
+      for (const message of unheard) {
+        await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
+      }
+    } catch (error) {
+      log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
+    }
+    return { ...view(updated, await projectSlug(projectId)), ...(notice && { notice }) };
   },
 });
 
