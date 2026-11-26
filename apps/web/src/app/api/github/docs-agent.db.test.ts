@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { enqueue, grantCredits } from "@tuti/jobs";
+import { autopilotSettingsSelect, enqueue, grantCredits, SCREENSHOT_RULE, SCREENSHOT_WAITS, waitsBecause } from "@tuti/jobs";
 import { roleDefaultModel } from "@tuti/shared";
 import { billingFile, creditsOn, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -351,6 +351,82 @@ describe("a correction beside a table or code is made where the old text stands"
     await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
     const { edit } = await correcting(35, code, { add: "## The command line\n\nThe command takes dark too." });
     expect(edit).toMatchObject({ status: "PENDING", waitReason: "Its article gets a section at the end", payload: expect.objectContaining({ added: true }) as unknown });
+  });
+});
+
+describe("marking where a screenshot goes (SC3)", () => {
+  const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
+  /** A pull request whose writer corrects the first paragraph and puts a screenshot line after the second. */
+  const marking = async (number: number) => {
+    await prisma.article.update({ where: { id: article.id }, data: { content: { type: "doc", content: [paragraph("The app has a light theme."), paragraph("Pick it in Settings.")] } } });
+    pullRequest(number);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It says the app only has a light theme." }]), undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(
+      JSON.stringify({
+        reason: "It says there's only a light theme.",
+        overview: "It names Dark beside Light.",
+        sections: { "1": "The app has a light theme and a dark one.\n\nPick it in Settings.\n\n[Screenshot: Settings with the Theme menu open]" },
+      }),
+      undefined,
+      '"problem"',
+    );
+    expect(await merge(number)).toBe(200);
+    return model.requests.findLast((request) => request.user.includes('"problem"'))!;
+  };
+
+  test("with Screenshots set up, the writers may mark one; an edit with a line waits for a person, and isn't published until it's filled", async () => {
+    vi.stubEnv("BROWSER_USE_API_KEY", "bu-test-key");
+    await prisma.screenshotSettings.create({ data: { projectId: project.id, appUrl: "https://app.example.com" } });
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    const writer = await marking(36);
+    expect(writer.system).toContain(SCREENSHOT_RULE);
+    const edit = await prisma.codeChangeAction.findFirstOrThrow({
+      where: { codeChange: { projectId: project.id, number: 36 }, kind: "ARTICLE_EDIT" },
+      select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true, status: true },
+    });
+    // It waits for a person (a line added makes it larger than a correction); were it small enough to go out by
+    // itself, its line would still hold it.
+    expect(edit.status).toBe("PENDING");
+    const small = { ...edit, payload: { ...(edit.payload as object), check: { ...(edit.payload as { check: object }).check, scope: "correction" } } };
+    const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect });
+    expect(await waitsBecause(small, settings)).toBe(SCREENSHOT_WAITS);
+    const { content } = await prisma.articleChanges.findUniqueOrThrow({ where: { articleId: article.id }, select: { content: true } });
+    expect(content).toEqual({
+      type: "doc",
+      content: [paragraph("The app has a light theme and a dark one."), paragraph("Pick it in Settings."), paragraph("[Screenshot: Settings with the Theme menu open]")],
+    });
+    // Approved with the line still in: refused, readers would see it.
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "published" })).rejects.toMatchObject({ status: 409, code: "markers" });
+    expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).not.toContain("dark");
+  });
+
+  test("the new article's writer is told too, with Screenshots set up, and not without", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
+    const proposing = async (number: number) => {
+      pullRequest(number);
+      model.decide(USERS);
+      model.reply(answer([], [{ title: "Pick a theme for everyone", probability: 0.9, collection: null, after: null, reason: "Team themes are new." }]), undefined, `"merge-${number}"`);
+      model.reply(PROPOSALS, undefined, '"proposals"');
+      model.reply(JSON.stringify({ title: "Pick a theme for everyone", reason: "It's new.", notes: "## Pick a theme for everyone\n\n1. Open **Settings**." }), undefined, '"article_needed"');
+      await merge(number);
+      return model.requests.findLast((request) => request.user.includes('"article_needed"'))!;
+    };
+    vi.stubEnv("BROWSER_USE_API_KEY", "bu-test-key");
+    expect((await proposing(39)).system).not.toContain("[Screenshot:");
+    await prisma.screenshotSettings.create({ data: { projectId: project.id, appUrl: "https://app.example.com" } });
+    expect((await proposing(40)).system).toContain(SCREENSHOT_RULE);
+  });
+
+  test("without Screenshots set up (or on a server without them), the writers aren't told they may", async () => {
+    await prisma.screenshotSettings.create({ data: { projectId: project.id, appUrl: "https://app.example.com" } });
+    vi.stubEnv("BROWSER_USE_API_KEY", "");
+    expect((await marking(37)).system).not.toContain("[Screenshot:");
+    vi.stubEnv("BROWSER_USE_API_KEY", "bu-test-key");
+    await prisma.screenshotSettings.delete({ where: { projectId: project.id } });
+    expect((await marking(38)).system).not.toContain("[Screenshot:");
   });
 });
 

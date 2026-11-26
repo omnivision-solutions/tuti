@@ -315,6 +315,8 @@ const matrix: Matrix = {
       call: (slug) => docs.saveArticleSettings(slug, "matrix-draft", {}, form({ listing: "unlisted", keywords: "matrix", description: "By the matrix" })),
     },
     publishArticle: { allowed: "MEMBER", call: (slug) => docs.publishArticle(slug, "matrix-draft") },
+    // Owners and admins, as screenshots.take. Inline, by Browser Use's fake.
+    takeArticleScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => docs.takeArticleScreenshots(slug, "matrix-screenshots", ["The dashboard"])) },
     publishArticleChanges: { allowed: "MEMBER", call: (slug) => docs.publishArticleChanges(slug, "matrix-article") },
     discardArticleChanges: { allowed: "MEMBER", call: (slug) => docs.discardArticleChanges(slug, "matrix-article") },
     unpublishArticle: { allowed: "MEMBER", call: (slug) => docs.unpublishArticle(slug, "matrix-article") },
@@ -1117,6 +1119,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
       { projectId, slug: "matrix-draft", title: "Matrix draft" },
+      // A line asking for a screenshot, for Take screenshots.
+      { projectId, slug: "matrix-screenshots", title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
   const question = await prisma.docsQuestion.create({
