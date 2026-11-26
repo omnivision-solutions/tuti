@@ -356,3 +356,17 @@ test("editing: the original beside the try; Try again makes another; Insert as n
   await click("Replace image");
   expect(onUse).toHaveBeenCalledWith(expect.objectContaining({ id: "made2", url: "https://media.example/made2-full.png" }));
 });
+
+test("while Replace image waits for its link, Try again is off: a try made then would land with the image it replaced", async () => {
+  const { button, click, type } = await dialog({ ...editProps, alsoUse: { label: "Insert as new", onUse: vi.fn() } });
+  await type("Make the sky orange");
+  await click("Generate");
+  let answer!: (value: unknown) => void;
+  uploadStatusHeld = new Promise((resolve) => (answer = resolve));
+  await click("Replace image");
+  expect(disabled(button("Try again")!)).toBe(true);
+  await click("Try again");
+  expect(generateImage).toHaveBeenCalledTimes(1);
+  await act(async () => answer({ status: "READY", src: "https://media.example/made1-full.png", download: "x", urls: {}, width: 800, height: 600 }));
+  expect(disabled(button("Try again")!)).toBe(false);
+});

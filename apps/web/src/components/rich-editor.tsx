@@ -233,15 +233,21 @@ export function RichEditor({
   // and starts afresh for another image.
   // Each image's tries, by its media id, while the editor is open, and whether one is being made: editing another image
   // and coming back finds them, a try landing meanwhile too. Drawn again as they change.
-  const [triesFor] = useState(() => new Map<string, { tries: Try[]; generating: boolean }>());
+  type Kept = { tries: Try[]; generating: boolean; error: string | null };
+  const [triesFor] = useState(() => new Map<string, Kept>());
   const [, redraw] = useState(0);
   const keptFor = (id: string): KeptTries => {
-    const now = () => triesFor.get(id) ?? { tries: [], generating: false };
-    const set = (next: { tries: Try[]; generating: boolean }) => {
+    const now = (): Kept => triesFor.get(id) ?? { tries: [], generating: false, error: null };
+    const set = (next: Kept) => {
       triesFor.set(id, next);
       redraw((n) => n + 1);
     };
-    return { ...now(), add: (made) => set({ ...now(), tries: [...now().tries, made] }), setGenerating: (generating) => set({ ...now(), generating }) };
+    return {
+      ...now(),
+      add: (made) => set({ ...now(), tries: [...now().tries, made] }),
+      setGenerating: (generating) => set({ ...now(), generating }),
+      setError: (error) => set({ ...now(), error }),
+    };
   };
   const [edited, setEdited] = useState<{ pos: number; image: { id: string; url: string; width: number; height: number } } | null>(null);
   const [editingImage, setEditingImage] = useState(false);
@@ -287,7 +293,7 @@ export function RichEditor({
       const at = replace ? pos : pos + node.nodeSize;
       // The image it becomes keeps the tries (and Edit with AI on it again picks the one placed); undone, the old one has its own still.
       if (replace) {
-        triesFor.set(made.id, { tries: triesFor.get(edited.image.id)?.tries ?? [], generating: false });
+        triesFor.set(made.id, { tries: triesFor.get(edited.image.id)?.tries ?? [], generating: false, error: null });
       }
       editor
         .chain()

@@ -35,7 +35,15 @@ export type GeneratedImage = PickedImage & { width: number; height: number; urls
 /** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
 export type Try = PickedImage & { width: number; height: number };
 /** Tries an owner keeps for one image (see ImageGenerator's `kept`). */
-export type KeptTries = { tries: Try[]; generating: boolean; add: (made: Try) => void; setGenerating: (on: boolean) => void };
+export type KeptTries = {
+  tries: Try[];
+  generating: boolean;
+  /** The last try's error, said where its try would be. */
+  error: string | null;
+  add: (made: Try) => void;
+  setGenerating: (on: boolean) => void;
+  setError: (error: string | null) => void;
+};
 /** What an editor needs for "Edit with AI" on its images: AI credits are on, the project is out of them, its logo. */
 export type ImageEditing = { credits: boolean; paused: boolean; logo: PickedImage | null };
 export type ImageSize = { label: string; width: number; height: number };
@@ -151,7 +159,10 @@ export function ImageGenerator({
       setSaid(`Try ${tries.length} is ready`);
     }
   }
-  const [error, setError] = useState<string | null>(null);
+  // Kept with the tries (a try failing after the dialog was made again says so), or the dialog's own.
+  const [ownError, setOwnError] = useState<string | null>(null);
+  const error = kept ? kept.error : ownError;
+  const setError = kept ? kept.setError : setOwnError;
   const [running, startTransition] = useTransition();
   // Made here, or (kept) still being made from before.
   const pending = running || !!kept?.generating;
@@ -554,7 +565,8 @@ export function ImageGenerator({
           <Button
             type="button"
             variant={shown ? "outline" : "default"}
-            disabled={pending || uploading || !prompt.trim() || !sizeOk}
+            // Not while a try is being used either: one made meanwhile would land with the image it replaced.
+            disabled={pending || uploading || using || !prompt.trim() || !sizeOk}
             focusableWhenDisabled
             onClick={generate}
           >

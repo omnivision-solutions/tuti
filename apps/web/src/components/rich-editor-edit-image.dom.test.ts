@@ -263,3 +263,42 @@ test("a try still being made when the dialog closes lands with its image's tries
   expect(button("Try 2")).toBeTruthy();
   expect(document.body.textContent).toContain("Edited · 2 of 2");
 });
+
+test("a try failing after its dialog was made again (another image edited meanwhile) says why", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  let finish!: (value: unknown) => void;
+  generateImage.mockReset();
+  generateImage.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+  const { ref, generate, button, click } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  const close = async () => {
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  };
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await click("Edit with AI");
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await click("Edit with AI");
+  await act(async () => finish({ error: "This project is out of credits" }));
+  expect(button("Generating…")).toBeUndefined();
+  expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe("This project is out of credits");
+  // Not the other image's: its dialog has no error.
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await click("Edit with AI");
+  expect(document.querySelector('[role="dialog"] [role="alert"]')).toBeNull();
+});
