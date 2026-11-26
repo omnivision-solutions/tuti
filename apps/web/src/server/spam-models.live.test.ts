@@ -37,8 +37,8 @@ const MADE_UP: Case[] = [
 const PRIVATE = new URL("../../../../packages/jobs/src/evals/spam/cases.json", import.meta.url);
 const CASES: Case[] = existsSync(PRIVATE) ? (JSON.parse(readFileSync(PRIVATE, "utf8")) as Case[]) : MADE_UP;
 
-/** The evaluation's spend isn't a project's. */
-const meter = async () => {};
+/** The evaluation's spend isn't a project's: nothing is reserved or recorded. */
+const reserve = async () => ({ meter: async () => {}, release: async () => {} });
 
 const inputOf = (c: Case): SpamInput => ({
   sender: c.sender,
@@ -56,7 +56,7 @@ test.skipIf(!spamModelsOn())(`spam checks with ${JSON.stringify(spamModels())}`,
   for (let i = 0; i < CASES.length; i += 5) {
     await Promise.all(
       CASES.slice(i, i + 5).map(async (c) => {
-        const judgement = await judgeSpam(inputOf(c), spamModels(), meter);
+        const judgement = await judgeSpam(inputOf(c), spamModels(), reserve);
         rows.push({ name: c.name, expected: c.spam ? "spam" : "not spam", got: judgement === null ? "no answer" : judgement.spam ? "spam" : "not spam", why: judgement?.reason ?? judgement?.why ?? "" });
       }),
     );

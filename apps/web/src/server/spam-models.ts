@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
-import { historySince, spamMeter, visibleConversations } from "@tuti/jobs";
-import { aiEnabled, complete, config, decide, decisionsAvailable, DEFAULT_AI_MODEL, log, type Meter } from "@tuti/shared";
+import { historySince, visibleConversations } from "@tuti/jobs";
+import { aiEnabled, complete, config, creditsEnabled, decide, decisionsAvailable, DEFAULT_AI_MODEL, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
 import { notifyInbox } from "./live";
@@ -112,15 +112,30 @@ const oneLine = (text: string, max = 200) => {
  */
 export type SpamJudgement = { spam: boolean; by: "decision" | "chat"; why: string; reason?: string; probability?: number } | null;
 
+/** A model request taken out of the day's cap before it's sent: its meter records it, and one never answered is given back. */
+export type Reserved = { meter: Meter; release: () => Promise<void> };
+/** Takes a request of the day's cap for this model, or null where it's reached. */
+export type Reserve = (kind: "decision" | "chat", model: string) => Promise<Reserved | null>;
+
 /**
  * Checks 6 and 7 on what a conversation says: the decision model first, the chat model between its bands (or alone,
- * without one). Never throws: a model that fails, or `more()` saying the day's cap is reached, answers null. Unsure isn't spam.
+ * without one). Each request is reserved first (`reserve`). Never throws: a model that fails, or the day's cap reached,
+ * answers null. Unsure isn't spam.
  */
-export async function judgeSpam(input: SpamInput, models: { decision: string | null; chat: string | null }, meter: Meter, more: () => Promise<boolean> = async () => true): Promise<SpamJudgement> {
+export async function judgeSpam(input: SpamInput, models: { decision: string | null; chat: string | null }, reserve: Reserve): Promise<SpamJudgement> {
   const state = { ...input, text: input.text.slice(0, MESSAGE_CHARS) };
+  const taken: Reserved[] = [];
+  const take = async (kind: "decision" | "chat", model: string) => {
+    const reserved = await reserve(kind, model);
+    if (reserved) {
+      taken.push(reserved);
+    }
+    return reserved?.meter ?? null;
+  };
   try {
     if (models.decision) {
-      if (!(await more())) {
+      const meter = await take("decision", models.decision);
+      if (!meter) {
         return null;
       }
       const { noul } = (await decide(state, DECISION, { meter, model: models.decision })).spam as { noul: number };
@@ -131,7 +146,8 @@ export async function judgeSpam(input: SpamInput, models: { decision: string | n
         return { spam: false, by: "decision", probability: noul, why: "the decision model judged it not spam" };
       }
     }
-    if (!models.chat || !(await more())) {
+    const meter = models.chat && (await take("chat", models.chat));
+    if (!models.chat || !meter) {
       return null;
     }
     const reply = await complete({ system: CHAT_SYSTEM, user: JSON.stringify(state), maxTokens: 300, timeoutMs: 45_000, model: models.chat, meter });
@@ -148,6 +164,8 @@ export async function judgeSpam(input: SpamInput, models: { decision: string | n
   } catch (error) {
     log.warn("The spam filter's model check failed: the conversation stays in the inbox", { error });
     return null;
+  } finally {
+    await Promise.all(taken.map((reserved) => reserved.release()));
   }
 }
 
@@ -209,14 +227,44 @@ async function inputOf(conversationId: string) {
   return { projectId, input };
 }
 
-/** Whether the project may make another model request today (UTC): its recorded `spam` requests under the cap. */
-async function underCap(projectId: string) {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const used = await prisma.aiUsage.count({ where: { projectId, feature: "spam", createdAt: { gte: today } } });
-  // ponytail: counted before each request, so checks at the same moment can each take the last one; a few over, at most.
-  return used < config().spam.requestsPerDay;
-}
+/**
+ * The day's cap (UTC), per project: a request is recorded (`spam`, never charged) before it's sent, under a lock of the
+ * project's, only while today's are under `spam.requestsPerDay`, so a burst of mail can't all see room at once. Its
+ * meter fills the row in once it's answered; one never answered is given back.
+ */
+const reserveFor =
+  (projectId: string): Reserve =>
+  async (kind, model) => {
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const id = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(40, hashtext(${projectId}))`;
+      const used = await tx.aiUsage.count({ where: { projectId, feature: "spam", createdAt: { gte: today } } });
+      if (used >= config().spam.requestsPerDay) {
+        return null;
+      }
+      const row = await tx.aiUsage.create({
+        data: { projectId, feature: "spam", kind, model, inputTokens: 0, outputTokens: 0, credits: creditsEnabled() ? 0 : null },
+        select: { id: true },
+      });
+      return row.id;
+    });
+    if (!id) {
+      return null;
+    }
+    let answered = false;
+    return {
+      meter: async (usage) => {
+        answered = true;
+        await prisma.aiUsage.update({ where: { id }, data: usage }).catch((error: unknown) => log.error("Recording AI usage failed", { projectId, feature: "spam", ...usage, error }));
+      },
+      release: async () => {
+        if (!answered) {
+          await prisma.aiUsage.deleteMany({ where: { id } });
+        }
+      },
+    };
+  };
 
 /**
  * Runs a conversation's model checks, if they're still due (`pathDueAt`): asks the models, then under the conversation's
@@ -230,7 +278,7 @@ export async function runSpamChecks(conversationId: string): Promise<boolean> {
     if (!read) {
       return false;
     }
-    const judgement = read.input && (await judgeSpam(read.input, spamModels(), spamMeter(read.projectId), () => underCap(read.projectId)));
+    const judgement = read.input && (await judgeSpam(read.input, spamModels(), reserveFor(read.projectId)));
     return await prisma.$transaction(async (tx) => {
       const [conversation] = await tx.$queryRaw<{ pathDueAt: Date | null; spam: boolean; spamMarkedAt: Date | null; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
         SELECT "pathDueAt", "spam", "spamMarkedAt", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;

@@ -210,6 +210,18 @@ test("past the day's cap no model is asked; the requests are recorded as the spa
   expect(model.decisions).toHaveLength(1);
 });
 
+test("checks at once never all see room under the cap: each request is taken from it before it's sent", async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "acme/decider" }, chat: { model: "off" }, requestsPerDay: 1 } }));
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
+  const { projectId, mail, check } = await setup();
+  const numbers = [await mail("e2e-a@example.com"), await mail("e2e-b@example.com"), await mail("e2e-c@example.com")];
+  // One answer scripted: a second request would find none, and fail the test.
+  model.decide({ spam: 0.1 });
+  await Promise.all(numbers.map(check));
+  expect(model.decisions).toHaveLength(1);
+  expect(await prisma.aiUsage.count({ where: { projectId, feature: "spam" } })).toBe(1);
+});
+
 test("a server without a decision model asks the chat model alone; one without any model leaves nothing due", async () => {
   vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "off" }, chat: { model: "acme/tiny" } } }));
   const { mail, check, notes, state } = await setup();
