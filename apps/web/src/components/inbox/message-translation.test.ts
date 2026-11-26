@@ -56,3 +56,11 @@ test("Try again's Translating… shows on every message it re-queued, not only t
   // A message it didn't re-queue (one in the team's language) says nothing.
   expect(retried("m3")).not.toContain("Translating…");
 });
+
+test("a re-queued message whose failure is still on the page shows the failure: a retry that fails again isn't hidden", () => {
+  const html = renderToStaticMarkup(
+    createElement(RetriedTranslations.Provider, { value: { retried: new Set(["m1"]), markRetried: () => {} } }, createElement(MessageTranslation, { ...props, error: "Out of credits" })),
+  );
+  expect(html).toContain("Out of credits");
+  expect(html).not.toContain("Translating…");
+});

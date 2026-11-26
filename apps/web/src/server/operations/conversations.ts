@@ -14,7 +14,7 @@ import { portalAddress } from "../custom-domains";
 import { readerToSend, searchDocs } from "../docs-search";
 import { emitEvent } from "../events";
 import { conversationCompanies } from "../inbox-companies";
-import { notifyInbox } from "../live";
+import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { blockDomainOf, recordMark } from "../spam";
@@ -1467,6 +1467,10 @@ export const retryTranslation = defineOperation({
         await translationFailed(id, translationError!);
         throw error;
       });
+    }
+    if (retried > 0) {
+      // Open Inbox pages (other teammates' too) show them as queued again, "Translating…", not their old failure.
+      await notifyInboxNow({ projectId, conversationId: conversation.id, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
     }
     return { retried };
   },
