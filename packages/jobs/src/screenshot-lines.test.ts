@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { screenshotsAsked } from "./changelog-screenshots";
+import { screenshotsAsked } from "./screenshot-lines";
 
 const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
 const doc = (...texts: string[]) => ({ type: "doc", content: texts.map(paragraph) }) as Doc;
@@ -23,4 +23,11 @@ test("a line is read without backtracking, however long (a run of spaces after t
 test("a long line is read whole: two alike up to 500 characters aren't the same line", () => {
   const start = "a".repeat(500);
   expect(screenshotsAsked(doc(`[Screenshot: ${start} first]`, `[Screenshot: ${start} second]`))).toEqual([`${start} first`, `${start} second`]);
+});
+
+test("a line quoted as code whole is an example, not a line to fill; code inside a line is part of what it asks for", () => {
+  const code = (text: string) => ({ type: "text", text, marks: [{ type: "code" }] });
+  const line = (...content: object[]) => ({ type: "doc", content: [{ type: "paragraph", content }] }) as Doc;
+  expect(screenshotsAsked(line(code("[Screenshot: the billing page]")))).toEqual([]);
+  expect(screenshotsAsked(line({ type: "text", text: "[Screenshot: the " }, code("Theme"), { type: "text", text: " menu in Settings]" }))).toEqual(["the Theme menu in Settings"]);
 });

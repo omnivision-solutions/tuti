@@ -4,7 +4,7 @@ import { openValue } from "@tuti/shared/signed";
 import { mediaLimit } from "@tuti/shared/storage";
 
 import { screenshotsMeter } from "./ai-usage";
-import { placeChangelogScreenshots } from "./changelog-screenshots";
+import { placeScreenshots } from "./screenshot-lines";
 import { type BrowserUse, browserUse, BrowserUseError, type RunSummary, type SessionCost, TERMINAL } from "./browser-use";
 import { aiPaused } from "./credits";
 import { storeImage } from "./import-media";
@@ -154,7 +154,7 @@ function costFields(costs: SessionCost[]) {
 export async function startScreenshots(
   projectId: string,
   shots: { show: string }[],
-  { startedById, test = false, changelogEntryId }: { startedById: string; test?: boolean; changelogEntryId?: string },
+  { startedById, test = false, changelogEntryId, articleId }: { startedById: string; test?: boolean; changelogEntryId?: string; articleId?: string },
 ) {
   await settleStaleScreenshotRuns(projectId);
   const select = { id: true, screenshots: { orderBy: { position: "asc" }, select: { id: true } } } satisfies Prisma.ScreenshotRunSelect;
@@ -164,7 +164,7 @@ export async function startScreenshots(
     return running
       ? { run: running, started: false }
       : {
-          run: await tx.screenshotRun.create({ data: { projectId, startedById, test, changelogEntryId, screenshots: { create: shots.map((shot, position) => ({ projectId, position, show: shot.show })) } }, select }),
+          run: await tx.screenshotRun.create({ data: { projectId, startedById, test, changelogEntryId, articleId, screenshots: { create: shots.map((shot, position) => ({ projectId, position, show: shot.show })) } }, select }),
           started: true,
         };
   });
@@ -183,8 +183,8 @@ export async function startScreenshots(
 /** The job: runs the agent for a recorded run (startScreenshots). */
 export async function screenshotRun({ runId }: JobInput<"screenshotRun">, jobLog: JobLogger): Promise<JobResult> {
   const results = await takeScreenshots(runId);
-  // A changelog entry's (changelog.takeScreenshots): each taken in place of its line.
-  const placed = await placeChangelogScreenshots(runId);
+  // A changelog entry's or an article's (changelog.takeScreenshots, articles.takeScreenshots): each taken in place of its line.
+  const placed = await placeScreenshots(runId);
   jobLog.info(`screenshot run ${runId}: ${results.filter((shot) => "imageId" in shot).length} of ${results.length} taken, ${placed} placed`);
   return { taken: results.filter((shot) => "imageId" in shot).length, shots: results.length, placed };
 }

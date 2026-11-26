@@ -259,6 +259,12 @@ function cutName(name: string) {
   return cut.trim();
 }
 
+/** An email's Reply-To, lowercase, where it names one other than its From (a sign the spam filter's models read); else null. */
+function replyToOf(mail: Mail, sender: string) {
+  const address = mail.replyTo?.value[0]?.address?.toLowerCase().slice(0, 320);
+  return address && address !== sender ? address : null;
+}
+
 /** Another request read this email first. */
 class AlreadyRead extends Error {}
 
@@ -413,7 +419,10 @@ async function readEmail(id: string, projectId: string, token: string | null, au
           await tx.conversation.update({ where: { id: conversationId }, data: { emailVerified: dmarcPassed } });
         }
         await keepAttachments(tx, messageId);
-        await finish(tx, { status: "ADDED", conversationId });
+        // Its Reply-To, for the spam filter's models: only where they'll check it (the conversation has `pathDueAt`, which
+        // the verdict set in this transaction), and cleared once they have.
+        const { pathDueAt } = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { pathDueAt: true } });
+        await finish(tx, { status: "ADDED", conversationId, ...(pathDueAt && { replyTo: replyToOf(mail, sender) }) });
       },
     });
     written = true;
