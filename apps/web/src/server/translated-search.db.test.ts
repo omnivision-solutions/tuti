@@ -214,3 +214,35 @@ test("an unpublish that comes while a version's sections are written waits for t
   await embedding;
   expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(0);
 });
+
+test("a new version whose sections can't be embedded as it's written keeps its translation, waits for its search data, and no older section answers for it", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languageTranslationsDone();
+  const body = "Open Settings and click New project.";
+  await call(createArticle, as(), { title: "Getting started", body });
+  const { segments } = segmentsOf(translationSource({ title: "Getting started", description: "", keywords: [], body, content: null }).doc);
+  const answer = (tag: string) => JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[${tag}] ${text}`])) });
+  model.reply(answer("de"));
+  await call(publishArticle, as(), { slug: "getting-started" });
+  await languageTranslationsDone();
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(1);
+  // Translated again (Retranslate), its embedding failing as it's written.
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { retranslate: { increment: 1 } } });
+  model.reply(answer("neu"));
+  model.embeddings.failNext(500);
+  expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ translated: "de" });
+  const written = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
+  expect(written).toMatchObject({ body: "[neu] Open Settings and click New project.", error: null, tries: 1 });
+  expect(written.retryAt).not.toBeNull();
+  // The old version's section is gone: meaning search can't answer with text the version no longer has.
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(0);
+});
+
+test("a Japanese search counts every term the reader typed, however many", async () => {
+  const words = ["請求書", "アカウント", "設定", "ページ", "ダウンロード", "毎月", "自動", "送信", "管理者"];
+  const slug = await article("invoices", { ja: { title: "請求", body: `${words.join("の")}について。` } });
+  expect((await search("ja", words.join(" "))).map((result) => result.slug)).toEqual([slug]);
+  // The ninth missing: not found (no term is left out).
+  expect(await search("ja", [...words.slice(0, 8), "削除"].join(" "))).toEqual([]);
+});

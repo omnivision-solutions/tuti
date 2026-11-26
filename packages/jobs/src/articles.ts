@@ -113,7 +113,17 @@ export async function embedTranslation(translationId: string, log: JobLogger): P
       return { skipped: false, embedded: 0 };
     }
   }
-  const vectors = next ? await embed(next.chunks.map((c) => c.embedText)) : [];
+  let vectors: number[][];
+  try {
+    vectors = next ? await embed(next.chunks.map((c) => c.embedText)) : [];
+  } catch (error) {
+    // An older version's sections go at once: search by meaning never answers with text the version no longer has (its
+    // words still find it, and its sections come with the retry).
+    if (next) {
+      await prisma.articleTranslationChunk.deleteMany({ where: { translationId, contentHash: { not: next.hash } } });
+    }
+    throw error;
+  }
   const written = await prisma.$transaction(async (tx) => {
     // The article, then the version (articleChanged's order, the article first), locked: an unpublish, a delete or a newer
     // version can't commit between this check and the write.

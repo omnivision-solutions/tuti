@@ -28,7 +28,7 @@ export async function searchTranslatedDocs(
     AND ${unlisted ? Prisma.sql`a.listing IN ('EVERYWHERE', 'UNLISTED')` : Prisma.sql`a.listing = 'EVERYWHERE'`} AND ${visibleArticleSql(reader)}`;
   const [byMeaning, byWords] = await Promise.all([
     meaning && embeddingsEnabled() ? meaningMatches(projectId, language, query, limit, embedTimeoutMs, found) : [],
-    wordMatches(language, query, limit, found),
+    wordMatches(projectId, language, query, limit, found),
   ]);
   const seen = new Set(byMeaning.map((result) => result.slug));
   return [...byMeaning, ...byWords.filter((result) => !seen.has(result.slug))].slice(0, limit);
@@ -61,11 +61,14 @@ async function meaningMatches(projectId: string, language: string, query: string
   return rows.map(({ slug, title, heading, text }) => ({ slug, title, snippet: snippet(text || heading) }));
 }
 
+/** The most terms a search in Japanese, Korean or Chinese matches (each one a part of the query). */
+const MAX_TERMS = 32;
+
 /** A LIKE pattern's text, its wildcards taken literally. */
 const likeText = (text: string) => text.replace(/[\\%_]/g, "\\$&");
 
 /** Matches by words: stemmed where the language has a stemmer, else (ja, ko, zh-CN) each of the query's terms inside words. */
-async function wordMatches(language: string, query: string, limit: number, found: Prisma.Sql): Promise<DocsSearchResult[]> {
+async function wordMatches(projectId: string, language: string, query: string, limit: number, found: Prisma.Sql): Promise<DocsSearchResult[]> {
   const config = searchConfig(language);
   if (config) {
     // ponytail: each translation's tsvector per search, as the source's; a stored column with a GIN index if docs get big.
@@ -86,22 +89,28 @@ async function wordMatches(language: string, query: string, limit: number, found
     return rows.map(({ slug, title, passage, description, inText }) => ({ slug, title, snippet: snippet(!inText && description ? description : passage) }));
   }
   // Written without spaces between words: each term the reader typed (split where they put spaces) found inside the text.
-  // ponytail: the body's trigram index serves terms of three characters or more; the title and keywords, and shorter
-  // terms, are read from the project's rows in the language. A stored, indexed search text per row if docs get big.
-  const terms = query.split(/\s+/u).filter(Boolean).slice(0, 8);
-  if (terms.length === 0) {
+  // Every term counts; a query of more than MAX_TERMS is no search a reader types (nothing found, rather than matching
+  // fewer terms than were asked for).
+  const terms = [...new Set(query.split(/\s+/u).filter(Boolean))];
+  if (terms.length === 0 || terms.length > MAX_TERMS) {
     return [];
   }
-  const has = (term: string) => {
+  // Each term's matches: in the body (a predicate of its own, which the body's trigram index can serve) or in the title or
+  // keywords; a translation must match every term. The language's rows of the project are what's searched either way.
+  // ponytail: the trigram index serves a term of three characters or more (shorter ones, often in these languages, read
+  // the language's rows); a stored, indexed search text per row if docs get big.
+  const inLanguage = Prisma.sql`"projectId" = ${projectId} AND language = ${language}`;
+  const matching = (term: string) => {
     const pattern = `%${likeText(term)}%`;
-    return Prisma.sql`(t.title ILIKE ${pattern} OR array_to_string(t.keywords, ' ') ILIKE ${pattern} OR t.body ILIKE ${pattern})`;
+    return Prisma.sql`(SELECT id FROM article_translation WHERE ${inLanguage} AND body ILIKE ${pattern}
+      UNION SELECT id FROM article_translation WHERE ${inLanguage} AND (title ILIKE ${pattern} OR array_to_string(keywords, ' ') ILIKE ${pattern}))`;
   };
   const first = terms[0]!;
   const rows = await prisma.$queryRaw<{ slug: string; title: string; body: string; description: string; at: number }[]>`
     SELECT a.slug, t.title, t.body, t.description, strpos(lower(t.body), lower(${first})) AS at
     FROM article_translation t
     JOIN article a ON a.id = t."articleId"
-    WHERE ${found} AND ${Prisma.join(terms.map(has), " AND ")}
+    WHERE ${found} AND t.id IN (${Prisma.join(terms.map(matching), " INTERSECT ")})
     ORDER BY (t.title ILIKE ${`%${likeText(first)}%`}) DESC, t.title
     LIMIT ${limit}`;
   // The passage from a little before the first term, where the text has it; else the team's description.
