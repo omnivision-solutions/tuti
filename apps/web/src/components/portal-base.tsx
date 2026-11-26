@@ -17,6 +17,11 @@ export function PortalBaseProvider({ base, slug, prefix = "", children }: { base
   return <PortalBase.Provider value={{ base, slug, prefix }}>{children}</PortalBase.Provider>;
 }
 
+/** The page's language's prefix ("/de", or "" in the default language). */
+export function usePortalLanguagePrefix() {
+  return useContext(PortalBase).prefix;
+}
+
 /** The portal's project, for client components. */
 export function usePortalSlug() {
   return useContext(PortalBase).slug;

@@ -21,9 +21,12 @@ export function splitLanguage(path: string): { code: Language; path: string } | 
   return code ? { code, path: end === -1 ? "/" : path.slice(end) } : null;
 }
 
-/** `path` in the language whose prefix is `prefix` (/docs → /de/docs). Not the API or Next.js's files, which have no language. */
+/**
+ * `path` in the language whose prefix is `prefix` (/docs → /de/docs). Not the API or Next.js's files, which have no language,
+ * nor a path already in one (a `next` to come back to after signing in keeps the page's).
+ */
 export function withLanguage(prefix: string, path: string): string {
-  if (!prefix || !path.startsWith("/") || path.startsWith("//") || /^\/(api|_tuti)(\/|$)/.test(path)) {
+  if (!prefix || !path.startsWith("/") || path.startsWith("//") || /^\/(api|_tuti)(\/|$)/.test(path) || splitLanguage(path.split(/[?#]/)[0]!)) {
     return path;
   }
   return path === "/" ? prefix : /^\/[?#]/.test(path) ? `${prefix}${path.slice(1)}` : `${prefix}${path}`;

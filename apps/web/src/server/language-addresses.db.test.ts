@@ -16,6 +16,7 @@ import { portalLanguages } from "./language-addresses";
 import { getLanguages, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 import { PREVIEW_READER_COOKIE } from "./portal-access";
+import { portalHref, portalLinkBase, portalLinks } from "./portal-base";
 
 /** Language addresses (docs/plan.md, Languages: L3): /de/… on a portal with German live, read from the database. */
 
@@ -87,6 +88,19 @@ test("hreflang: the portal's own pages in every live language, x-default the def
   const preview = await feedbackMetadata(params);
   expect(preview.robots).toEqual({ index: false, follow: false });
   expect(preview.alternates).toEqual({ canonical: `${address}/feedback` });
+});
+
+test("the server's links add the language's prefix: under a site's path, and not twice", async () => {
+  inLanguage("de", "/de");
+  request.headers["x-tuti-base"] = "/help";
+  expect([await portalHref("/docs/billing"), await portalHref("/"), await portalLinkBase(), (await portalLinks())("/de/feedback")]).toEqual([
+    "/help/de/docs/billing",
+    "/help/de",
+    "/help/de",
+    "/help/de/feedback",
+  ]);
+  inLanguage("en");
+  expect(await portalHref("/docs/billing")).toBe("/docs/billing");
 });
 
 test("the sitemap lists the portal's own pages in each live language with alternates, articles in the default language alone; /de/llms.txt links German addresses", async () => {

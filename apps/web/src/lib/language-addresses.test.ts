@@ -18,6 +18,8 @@ test("links add the language's prefix back (portalHref, usePortalHref); not to t
     "#comments",
   ]);
   expect(withLanguage("", "/docs")).toBe("/docs");
+  // Already in a language (a `next` to come back to): as it is.
+  expect(["/de/docs", "/fr?x=1", "/de"].map((path) => withLanguage("/de", path))).toEqual(["/de/docs", "/fr?x=1", "/de"]);
 });
 
 test("a language's prefix is its code in lowercase; the headers proxy.ts sets are read only as one of those", () => {

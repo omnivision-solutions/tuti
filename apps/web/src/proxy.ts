@@ -11,7 +11,7 @@ import { redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
 import { redirectFor } from "@/server/portal-redirects";
-import { LANGUAGE, languagePrefix, ownAddress, prefixedTarget, splitLanguage } from "@/lib/language-addresses";
+import { LANGUAGE, languagePrefix, ownAddress, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
 import { portalLanguages } from "@/server/language-addresses";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
@@ -220,7 +220,8 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
     }
     const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}${prefix}/sign-in`, origin);
     if (pathname !== "/") {
-      signIn.searchParams.set("next", pathname + request.nextUrl.search);
+      // In the page's language: signing in comes back to it (withLanguage leaves it as it is).
+      signIn.searchParams.set("next", withLanguage(prefix, pathname) + request.nextUrl.search);
     }
     const response = NextResponse.redirect(signIn);
     response.headers.set("cache-control", "private, no-store");

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { usePortalHref, usePortalLanguagePrefix, usePortalPath } from "@/components/portal-base";
+import { withLanguage } from "@/lib/language-addresses";
 
 /**
  * The portal's sign-in page, coming back to this page afterwards with its query
@@ -12,6 +13,7 @@ import { usePortalHref, usePortalPath } from "@/components/portal-base";
 export function useSignInHref() {
   const path = usePortalPath();
   const at = usePortalHref();
+  const prefix = usePortalLanguagePrefix();
   const search = useSearchParams().toString();
   const here = search ? `${path}?${search}` : path;
   const href = /^\/sign-(in|up)\b/.test(path)
@@ -19,7 +21,8 @@ export function useSignInHref() {
     : // Nothing to come back to from a password reset (and its link's token stays out of the URL).
       here === "/" || /^\/(forgot|reset)-password\b/.test(path)
       ? "/sign-in"
-      : `/sign-in?${new URLSearchParams({ next: here })}`;
+      : // In the page's language: every way of signing in comes back to it.
+        `/sign-in?${new URLSearchParams({ next: withLanguage(prefix, here) })}`;
   return at(href);
 }
 

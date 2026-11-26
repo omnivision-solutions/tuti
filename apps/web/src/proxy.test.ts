@@ -7,7 +7,7 @@ import type { PortalLanguages } from "./server/language-addresses";
 
 // The team's redirects and the portal's languages, as a test sets them (with the database: portal-redirects.db.test.ts,
 // language-addresses.db.test.ts); the team's preview is a request with the preview cookie set to "team".
-const portal = vi.hoisted(() => ({ rules: new Map<string, string>(), languages: null as PortalLanguages | null }));
+const portal = vi.hoisted(() => ({ rules: new Map<string, string>(), languages: null as PortalLanguages | null, visitor: "public" }));
 vi.mock("@/server/portal-redirects", async () => {
   const { redirectKey } = await import("@/lib/portal-redirects");
   return { redirectFor: async (_slug: string, path: string) => portal.rules.get(redirectKey(path)) ?? null };
@@ -15,7 +15,7 @@ vi.mock("@/server/portal-redirects", async () => {
 vi.mock("@/server/language-addresses", () => ({ portalLanguages: async () => portal.languages }));
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-access", () => ({
-  portalVisitor: async () => "public",
+  portalVisitor: async () => portal.visitor,
   previewTokenFor: async () => false,
   teamPreview: async (_slug: string, _headers: Headers, preview?: string) => preview === "team",
   PREVIEW_READER_COOKIE: "tuti_preview_reader",
@@ -39,6 +39,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   portal.rules.clear();
   portal.languages = null;
+  portal.visitor = "public";
 });
 
 const request = (host: string, path: string) =>
@@ -215,6 +216,14 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     // Only a whole first segment, lowercase: /dex and /DE are paths of their own.
     expect(await where("/dex/docs")).toBe("/dex/docs en -");
     expect(await where("/DE/docs")).toBe("/DE/docs en -");
+  });
+
+  test("a private portal sends a visitor to sign in in the page's language, to come back to the page in it", async () => {
+    portal.visitor = "refused";
+    expect(await where("/de/feedback/ideas?sort=new")).toBe(`307 https://acme.tuti.example/de/sign-in?next=${encodeURIComponent("/de/feedback/ideas?sort=new")}`);
+    expect(await where("/de")).toBe("307 https://acme.tuti.example/de/sign-in");
+    expect(await where("/feedback")).toBe(`307 https://acme.tuti.example/sign-in?next=${encodeURIComponent("/feedback")}`);
+    expect(await where("/de/sign-in")).toBe("/sign-in de /de");
   });
 
   test("the team's redirects under a live language's prefix are skipped only where the path without it is the portal's own", async () => {
