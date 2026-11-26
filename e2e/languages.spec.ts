@@ -290,7 +290,7 @@ test("Docs in German: the docs tabs' lock and the sidebar's links, named in Germ
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
   await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
   // Two tabs; Enterprise is for signed-in readers, shown to others with a lock.
   await api("/tabs", { name: "Guides" });
@@ -310,6 +310,10 @@ test("Docs in German: the docs tabs' lock and the sidebar's links, named in Germ
   const links = reader.getByRole("list", { name: "Links" }).first();
   await expect(links).toHaveAttribute("lang", "de");
   await expect(links.getByRole("link", { name: "Status page" })).toHaveAttribute("lang", "en");
+  // German's word is English's too: in French the list's name shows it's translated.
+  await reader.goto(`/fr/docs/${article.slug}`);
+  await expect(reader.getByRole("list", { name: "Liens" }).first()).toHaveAttribute("lang", "fr");
+  await reader.goto(`/de/docs/${article.slug}`);
 
   // On a phone the tree and the links are in the header's menu, a size up (data-sidebar-links).
   await reader.setViewportSize({ width: 390, height: 844 });
