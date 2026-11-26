@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { behindSections, docOfSections, editedSections, sourceSections, versionSections, withTranslation } from "./translation-sections";
+import { behindSections, docOfSections, editedSections, metaOf, sourceSections, versionSections, withTranslation } from "./translation-sections";
 
 /** A document of sections: [heading, text] each ("" for the part before the first heading). */
 const doc = (...parts: [string, string][]): Doc => ({
@@ -164,4 +164,24 @@ test("a section added next to one rewritten (heading and text) never takes its p
   const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by invoice"]);
   const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v2), { removed: new Set(removed) });
   expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren", "FAQ", "Fragen", "Zahlung", "Per Karte"]);
+});
+
+test("a source intro added under the team's section at the top goes first: the text splits back into its sections", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  const de = doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const { sections: edited } = editedSections(versionSections(de, [], source), doc(["Hinweis", "Von uns"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  // English adds an intro.
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source2 = sourceSections(v2);
+  const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), source2, { published: true });
+  expect(texts(docOfSections(next))).toEqual(["Einleitung", "Hinweis", "Von uns", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+  // Read back, its sections are as written: the team's Hinweis still theirs.
+  const back = versionSections(docOfSections(next), metaOf(next), source2);
+  expect(back.map(({ meta }) => [meta.key?.split("\u001f")[0] ?? null, !!meta.own])).toEqual([
+    ["", false],
+    [null, true],
+    ["Setup", false],
+    ["Billing", false],
+  ]);
 });

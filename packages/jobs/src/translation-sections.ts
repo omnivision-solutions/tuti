@@ -86,6 +86,12 @@ export function withTranslation(
     }
     out.push(...(after.get(key) ?? []));
   }
+  // A source intro (no heading) goes first: after the team's sections at the top, it would read as part of the last of them
+  // (and the text would split into fewer sections than it says it has).
+  const intro = source[0] && source[0].blocks[0]?.type !== "heading" ? out.findIndex((section) => section.meta.key === source[0]!.key) : -1;
+  if (intro > 0) {
+    out.unshift(...out.splice(intro, 1));
+  }
   return out;
 }
 
