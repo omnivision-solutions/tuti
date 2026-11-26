@@ -26,6 +26,8 @@ export const SPAM_AT = 0.9;
 export const NOT_SPAM_AT = 0.3;
 /** When the inbox-due job picks up a conversation whose checks haven't run, from when it started (or was last picked up). */
 export const CHECKS_DUE_AFTER_MS = 2 * 60_000;
+/** How long after its conversation started a check still due is given up (see runDueInbox). */
+export const GIVE_UP_AFTER_MS = 60 * 60_000;
 /** The team's guidance for the models (Settings → Spam). */
 export const MAX_SPAM_GUIDANCE = 500;
 
@@ -331,6 +333,20 @@ export function spamChecksAfter(conversationId: string) {
  * this run finished.
  */
 export async function runDueInbox(now = new Date()): Promise<{ checked: number }> {
+  // Checks still due an hour after their conversation started keep failing (a run that throws after the models answered):
+  // given up without asking again, so they can't spend the day's requests, the conversation left as it is (fails open).
+  const stale = await prisma.conversation.findMany({
+    where: { pathDueAt: { lte: now }, createdAt: { lt: new Date(now.getTime() - GIVE_UP_AFTER_MS) } },
+    take: 100,
+    select: { id: true },
+  });
+  for (const { id } of stale) {
+    const { count } = await prisma.conversation.updateMany({ where: { id, pathDueAt: { lte: now } }, data: { pathDueAt: null } });
+    await prisma.inboundEmail.updateMany({ where: { conversationId: id, replyTo: { not: null } }, data: { replyTo: null } });
+    if (count === 1) {
+      log.error("The spam filter's checks kept failing: given up, the conversation left as it is", { conversationId: id });
+    }
+  }
   const due = await prisma.conversation.findMany({ where: { pathDueAt: { lte: now } }, orderBy: { pathDueAt: "asc" }, take: 20, select: { id: true } });
   const done = await Promise.all(
     due.map(async ({ id }) => {

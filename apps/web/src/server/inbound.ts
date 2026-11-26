@@ -13,7 +13,6 @@ import { storeAttachments } from "./attachments";
 import { emailText, PARSER_OPTIONS } from "./email-text";
 import { inboxPath } from "./inbox-path";
 import { senderCounts, spamVerdict } from "./spam";
-import { spamModelsOn } from "./spam-models";
 
 /**
  * Receiving email in the support inbox (docs/plan.md, Support inbox, "Receiving email"): each project
@@ -420,8 +419,10 @@ async function readEmail(id: string, projectId: string, token: string | null, au
           await tx.conversation.update({ where: { id: conversationId }, data: { emailVerified: dmarcPassed } });
         }
         await keepAttachments(tx, messageId);
-        // Its Reply-To, for the spam filter's models: only where they'll check it (cleared once they have).
-        await finish(tx, { status: "ADDED", conversationId, ...(spamModelsOn() && { replyTo: replyToOf(mail, sender) }) });
+        // Its Reply-To, for the spam filter's models: only where they'll check it (the conversation has `pathDueAt`, which
+        // the verdict set in this transaction), and cleared once they have.
+        const { pathDueAt } = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { pathDueAt: true } });
+        await finish(tx, { status: "ADDED", conversationId, ...(pathDueAt && { replyTo: replyToOf(mail, sender) }) });
       },
     });
     written = true;

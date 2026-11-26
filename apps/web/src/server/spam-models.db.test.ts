@@ -16,7 +16,7 @@ import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { getSpamSettings, updateSpamSettings } from "./operations/spam";
-import { CHECKS_DUE_AFTER_MS, runDueInbox, runSpamChecks, spamSignals } from "./spam-models";
+import { CHECKS_DUE_AFTER_MS, GIVE_UP_AFTER_MS, runDueInbox, runSpamChecks, spamSignals } from "./spam-models";
 
 /**
  * The spam filter's model checks, watching only (docs/plan.md, Inbox automation, W3): checks 6 and 7 on a new
@@ -336,6 +336,27 @@ test("a check left behind (a deploy, a crash) is picked up once by the job when 
   expect(await runDueInbox(new Date(Date.now() + 60 * 60_000))).toEqual({ checked: 0 });
   // The old one was never asked about (one decision request in all).
   expect(model.decisions).toHaveLength(1);
+});
+
+test("a check still due an hour after its conversation started is given up: cleared, nothing asked, the conversation as it is", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
+  const { mail, conversation, notes, state } = await setup();
+  await nothingElseDue();
+  const number = await mail("e2e-stuck@example.com", { headers: { "Reply-To": "e2e-elsewhere@example.com" } });
+  const { id } = await conversation(number);
+  expect(await prisma.inboundEmail.count({ where: { conversationId: id, replyTo: { not: null } } })).toBe(1);
+  // No answer scripted: a model asked would fail the test.
+  expect(await runDueInbox(new Date(Date.now() + GIVE_UP_AFTER_MS + 1000))).toEqual({ checked: 0 });
+  expect([await state(number), await notes(number), model.decisions]).toEqual([{ ...inInbox, due: false }, [], []]);
+  expect(await prisma.inboundEmail.count({ where: { conversationId: id, replyTo: { not: null } } })).toBe(0);
+});
+
+test("a conversation the free checks decided keeps no Reply-To: nothing will read it", async () => {
+  const { admin, mail, conversation, state } = await setup();
+  await call(updateSpamSettings, admin, { allow: ["e2e-friend@example.com"] });
+  const number = await mail("e2e-friend@example.com", { headers: { "Reply-To": "e2e-friend-home@example.com" } });
+  expect(await state(number)).toEqual({ ...inInbox, due: false });
+  expect(await prisma.inboundEmail.count({ where: { conversationId: (await conversation(number)).id, replyTo: { not: null } } })).toBe(0);
 });
 
 test("the job's endpoint runs only with the server's token", async () => {
