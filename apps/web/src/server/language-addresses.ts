@@ -102,7 +102,8 @@ export async function inDefaultLanguage(slug: string, code: Language, path: stri
   const select = { article: { select: { slug: true } } } as const;
   const [current, byDefault, old] = await Promise.all([
     prisma.articleTranslation.findFirst({ where: { language: code, slug: asked, article }, select }),
-    prisma.article.findFirst({ where: { ...article, slug: asked }, select: { id: true } }),
+    // Any it serves, shown with a lock too (as articleNamed counts it): it only keeps the path, naming nothing.
+    prisma.article.findFirst({ where: { projectId: project.id, ...servedArticle, slug: asked }, select: { id: true } }),
     prisma.articleOldSlug.findFirst({ where: { language: code, slug: asked, article }, orderBy: { createdAt: "desc" }, select }),
   ]);
   const found = current ?? (byDefault ? null : old);

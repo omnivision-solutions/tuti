@@ -396,6 +396,9 @@ test("an offline language's address finds an article by its default-language slu
   await call(updateArticle, as(), { slug: "invoices", newSlug: "abrechnung" });
   expect(new URL((await visit("/de/docs/abrechnung")).headers.get("location")!).pathname).toBe("/docs/abrechnung");
   expect(new URL((await visit("/de/docs/rechnungen")).headers.get("location")!).pathname).toBe("/docs/billing");
+  // Invoices for signed-in readers only, shown with a lock: still the one the address names, never Billing.
+  await prisma.article.updateMany({ where: { projectId: project.id, slug: "abrechnung" }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
+  expect(new URL((await visit("/de/docs/abrechnung")).headers.get("location")!).pathname).toBe("/docs/abrechnung");
 });
 
 test("an article this reader can't see never hides one they can behind it, by a current or an old slug", async () => {
