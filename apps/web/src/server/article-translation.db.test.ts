@@ -265,3 +265,22 @@ test("a translation that can't be queued, or whose job is lost, waits and is que
   expect(await translation()).toMatchObject({ retryAt: null });
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
 });
+
+test("pages a language queues all get their safety net before the first is translated, so a restart partway strands none", async () => {
+  await draft();
+  await publish();
+  await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+  await call(publishArticle, as(), { slug: "billing" });
+  let during: { retryAt: Date | null }[] = [];
+  // While a page is being translated (whichever is first), as a restart would find them.
+  const look = async () => {
+    if (during.length > 0) return;
+    during = await prisma.articleTranslation.findMany({ where: { projectId: project.id }, select: { retryAt: true } });
+  };
+  model.reply(reply(), look, "Pick a plan");
+  model.reply(JSON.stringify({ segments: { "1": "[de] Billing", "2": "[de] Pay by card." } }), look, "Pay by card");
+  await languages({ languages: [{ code: "de" }] });
+  expect(during).toHaveLength(2);
+  expect(during.every(({ retryAt }) => retryAt !== null && retryAt.getTime() > Date.now())).toBe(true);
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id, retryAt: null } })).toBe(2);
+});
