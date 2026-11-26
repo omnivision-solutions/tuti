@@ -179,14 +179,38 @@ test("a version whose search data couldn't be written is tried again by the retr
 test("the backfill embeds published translations too, carrying on past one that fails", async () => {
   await article("invoices", { de: { title: "Abrechnung", body: "Rechnungen herunterladen." }, fr: { title: "Factures", body: "Télécharger les factures." } });
   await article("drafted", { de: { title: "Entwurf", body: "Noch nicht veröffentlicht.", published: false } });
-  const result = await embedPublishedArticles(log);
-  // (It runs over the whole database: this test's own project is what's checked.)
-  expect(result).toMatchObject({ failed: [], translationsFailed: [] });
+  // This test's project only: no other project's rows take its scripted failure or show in its counts.
+  const result = await embedPublishedArticles(log, { projectId: project.id });
+  expect(result).toMatchObject({ failed: [], translations: 2, translationsEmbedded: 2, translationsFailed: [] });
   expect((await prisma.articleTranslationChunk.findMany({ where: { projectId: project.id }, select: { language: true } })).map((c) => c.language).sort()).toEqual(["de", "fr"]);
   // One failing (the provider down for it) doesn't stop the rest.
   await prisma.articleTranslationChunk.deleteMany({ where: { projectId: project.id } });
   model.embeddings.failNext(500);
-  const again = await embedPublishedArticles(log);
+  const again = await embedPublishedArticles(log, { projectId: project.id });
+  expect(again).toMatchObject({ translations: 2, translationsEmbedded: 1 });
   expect(again.translationsFailed).toHaveLength(1);
   expect(await prisma.articleTranslationChunk.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("an unpublish that comes while a version's sections are written waits for them, and then takes them away", async () => {
+  await article("invoices", { de: { title: "Abrechnung", body: "Rechnungen herunterladen." } });
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  let embedding: Promise<unknown> = Promise.resolve();
+  await prisma.$transaction(async (tx) => {
+    // The article held, as an unpublish holds it.
+    await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.articleId} FOR UPDATE`;
+    embedding = embedTranslation(row.id, log);
+    // It waits for the article (it locks it before writing), so the unpublish below commits first.
+    await vi.waitFor(
+      async () => {
+        const [{ waiting }] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+          SELECT count(*) AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%FROM article WHERE id%FOR UPDATE%'`;
+        expect(Number(waiting)).toBeGreaterThan(0);
+      },
+      { timeout: 4_000 },
+    );
+    await tx.article.update({ where: { id: row.articleId }, data: { publishedAt: null } });
+  });
+  await embedding;
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(0);
 });

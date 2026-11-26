@@ -115,7 +115,9 @@ export async function embedTranslation(translationId: string, log: JobLogger): P
   }
   const vectors = next ? await embed(next.chunks.map((c) => c.embedText)) : [];
   const written = await prisma.$transaction(async (tx) => {
-    // Locked, so a newer version can't slip in between this check and the write.
+    // The article, then the version (articleChanged's order, the article first), locked: an unpublish, a delete or a newer
+    // version can't commit between this check and the write.
+    await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${translation.articleId} FOR UPDATE`;
     await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${translationId} FOR UPDATE`;
     const latest = translationChunksOf(await tx.articleTranslation.findUnique({ where: { id: translationId }, select: translationSelect }));
     if (latest?.hash !== next?.hash) {
@@ -138,10 +140,10 @@ export async function embedTranslation(translationId: string, log: JobLogger): P
 }
 
 /** For the backfill: embeds every published article (unchanged ones are skipped), carrying on past failures. */
-export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; embedded: number; failed: string[]; translations: number; translationsEmbedded: number; translationsFailed: string[] }> {
+export async function embedPublishedArticles(log: JobLogger, { projectId }: { projectId?: string } = {}): Promise<{ articles: number; embedded: number; failed: string[]; translations: number; translationsEmbedded: number; translationsFailed: string[] }> {
   const articles = await prisma.article.findMany({
     // Not sample content, which is never embedded (chunksOf).
-    where: { publishedAt: { not: null }, sample: false },
+    where: { publishedAt: { not: null }, sample: false, ...(projectId && { projectId }) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });
@@ -160,7 +162,7 @@ export async function embedPublishedArticles(log: JobLogger): Promise<{ articles
   }
   // And their published translations, each in its language.
   const translations = await prisma.articleTranslation.findMany({
-    where: { publishedAt: { not: null }, article: { publishedAt: { not: null }, deletedAt: null, sample: false } },
+    where: { publishedAt: { not: null }, article: { publishedAt: { not: null }, deletedAt: null, sample: false }, ...(projectId && { projectId }) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });
