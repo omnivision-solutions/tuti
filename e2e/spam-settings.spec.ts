@@ -62,7 +62,7 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
 
   // The guidance for the AI's checks: saved with the page's Save changes, and there again on the next visit.
   const guidance = card("Guidance for the AI");
-  await expect(guidance).toContainText("For now it only leaves a note on what it would have filed.");
+  await expect(guidance).toContainText("For now it only records in the conversation's Activity what it would have filed.");
   await guidance.getByLabel("Guidance for the AI").fill("Agencies offering SEO work are spam");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Guidance saved")).toBeVisible();
