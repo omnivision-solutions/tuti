@@ -322,6 +322,10 @@ test("subscribing again sets the language of the page it's done on; a reader's o
     request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
     await subscribe(address);
     expect(await languageOf(address)).toBeNull();
+    // Confirmed (and since opted out, so asking again sends a link): a typed-in address leaves its language be.
+    await prisma.changelogSubscriber.updateMany({ where: { projectId: project.id, email: address }, data: { confirmedAt: new Date(), language: "de", unsubscribedAt: new Date() } });
+    await subscribe(address);
+    expect(await languageOf(address)).toBe("de");
   } finally {
     request.headers = {};
   }

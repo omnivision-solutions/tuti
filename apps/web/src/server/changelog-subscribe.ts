@@ -61,9 +61,14 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email, language },
-    update: { language },
+    update: {},
     select: { id: true, email: true, confirmedAt: true },
   });
+  // Asked again before it's confirmed: the page it's asked on now. A confirmed one keeps its own: an address anyone can
+  // type never changes the language someone already receives in (their switch, signed in, does).
+  if (!subscriber.confirmedAt) {
+    await prisma.changelogSubscriber.updateMany({ where: { id: subscriber.id, confirmedAt: null }, data: { language } });
+  }
   // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's
   // emails off (their link offers to turn them back on): a link of this request's own (emailConfirmation).
   const sent = await emailConfirmation({ ...project, slug: projectSlug }, subscriber);
