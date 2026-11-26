@@ -162,3 +162,26 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await more.click();
   await expect(owner.getByRole("menuitem", { name: "Mark priority" })).toBeVisible();
 });
+
+test("a closed conversation the AI has says both: With AI and Closed beside it, Take over in its reply box's place, and Open, not Needs reply, in its Status", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "The export button does nothing." });
+  // Closing changes nothing about who has it: closed and the AI's.
+  await api("/conversations/1", { status: "closed", handledBy: "ai" }, "PATCH");
+
+  await owner.goto(`/app/${slug}/inbox/1?view=closed`);
+  const meta = owner.locator(".inbox-conversation-meta");
+  await expect(meta.getByText("With AI", { exact: true })).toBeVisible();
+  await expect(meta.locator(".inbox-conversation-state")).toHaveText("Closed");
+  await expect(owner.getByRole("button", { name: "Take over" })).toBeVisible();
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveCount(0);
+  // Opening it again, its Status calls it Open: the AI has it, so it isn't waiting on the team.
+  const details = owner.getByRole("complementary", { name: "Conversation details" });
+  await details.getByRole("button", { name: "Closed, change status", exact: true }).click();
+  await expect(owner.getByRole("menuitem", { name: "Open", exact: true })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: "Needs reply", exact: true })).toHaveCount(0);
+});
