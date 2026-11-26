@@ -10,7 +10,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { nativeLanguageName, TEAM_LANGUAGES } from "@/lib/language-name";
+import { nativeLanguageName } from "@/lib/language-name";
 import { getSupportAddress, saveDraftInstructions, setSupportInbox, setTranslation } from "@/server/inbox";
 
 /** Turns the support inbox on or off. */
@@ -69,7 +69,7 @@ export function TranslationSettings({
   const [on, setOn] = useState(translate);
   const [language, setLanguage] = useState(teamLanguage);
   // A language set through the API that isn't offered here is still shown as it is.
-  const languages = TEAM_LANGUAGES.includes(language) ? TEAM_LANGUAGES : [...TEAM_LANGUAGES, language];
+  const languages = (LANGUAGE_CODES as readonly string[]).includes(language) ? LANGUAGE_CODES : [...LANGUAGE_CODES, language];
   const items = languages.map((code) => ({ value: code, label: nativeLanguageName(code) }));
   const save = (change: { translate?: boolean; teamLanguage?: string }, undo: () => void, done: string) =>
     startTransition(async () => {

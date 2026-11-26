@@ -7,9 +7,3 @@ export function nativeLanguageName(code: string): string {
     return code;
   }
 }
-
-/**
- * The team languages Settings → Inbox offers: English, then the portal's launch languages (docs/plan.md, Languages).
- * ponytail: here until L1 puts the launch languages in @tuti/shared; then use that list.
- */
-export const TEAM_LANGUAGES = ["en", "de", "fr", "es", "pt-BR", "it", "nl", "ja", "ko", "zh-CN", "pl"];
