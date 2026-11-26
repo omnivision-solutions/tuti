@@ -1,4 +1,5 @@
 import { type Doc, toPlainText } from "@tuti/content";
+import { markersIn } from "@tuti/jobs";
 
 export { blocksToNotes, droppedFacts, factsIn, readNotes as readReleaseNotes } from "@tuti/content";
 
@@ -34,49 +35,10 @@ const SCREENSHOTS = `
 /**
  * What a draft leaves for the team to fill in: "[Check: …]" for a fact the input didn't give, "[Screenshot: …]" where a
  * picture belongs. Asked for as a line of its own; plain text, so the notes' reader keeps them and they show in the
- * entry's Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish).
+ * entry's Markdown for whoever replaces them. An entry isn't published while it has any (changelog.publish). Read with
+ * markersIn (@tuti/jobs), which articles' publishing shares.
  */
-// Where one starts, however the model wrote it ("[check: …]", "[ Screenshot : …]").
-const MARKER_START = /\[\s*(?:check|screenshot)\s*:/gi;
-
-/** The markers in a line of text, each from its opening bracket to the one that closes it (brackets of its own inside counted), or to the line's end if none does: one left open is no less a note to self. */
-function markersOf(text: string): string[] {
-  const found: string[] = [];
-  let covered = 0;
-  for (const start of text.matchAll(MARKER_START)) {
-    // Inside the one before it ("[Check: or [Check: this?]]"): that one names it.
-    if (start.index < covered) {
-      continue;
-    }
-    let depth = 0;
-    covered = text.length;
-    for (let i = start.index; i < text.length; i++) {
-      depth += text[i] === "[" ? 1 : text[i] === "]" ? -1 : 0;
-      if (depth === 0) {
-        covered = i + 1;
-        break;
-      }
-    }
-    found.push(text.slice(start.index, covered).trim());
-  }
-  return found;
-}
-
-/**
- * The markers still in a text, as written, each one: on a line of its own as asked, or inside a sentence, a heading or
- * a code block where the model put it instead, which would go out to readers just the same.
- */
-export function markersIn(doc: Doc): string[] {
-  const found: string[] = [];
-  (function read(node: JSONContent | Doc) {
-    if (node.type === "paragraph" || node.type === "heading" || node.type === "codeBlock") {
-      found.push(...toPlainText(node).split("\n").flatMap(markersOf));
-      return;
-    }
-    node.content?.forEach(read);
-  })(doc);
-  return found;
-}
+export { markersIn } from "@tuti/jobs";
 
 /** The markers of `before` that `after` no longer has, one for one: two alike kept as one is one dropped. */
 export function droppedMarkers(before: Doc, after: Doc): string[] {

@@ -315,6 +315,8 @@ const matrix: Matrix = {
       call: (slug) => docs.saveArticleSettings(slug, "matrix-draft", {}, form({ listing: "unlisted", keywords: "matrix", description: "By the matrix" })),
     },
     publishArticle: { allowed: "MEMBER", call: (slug) => docs.publishArticle(slug, "matrix-draft") },
+    // Owners and admins, as screenshots.take. Inline, by Browser Use's fake.
+    takeArticleScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => docs.takeArticleScreenshots(slug, "matrix-screenshots", ["The dashboard"])) },
     publishArticleChanges: { allowed: "MEMBER", call: (slug) => docs.publishArticleChanges(slug, "matrix-article") },
     discardArticleChanges: { allowed: "MEMBER", call: (slug) => docs.discardArticleChanges(slug, "matrix-article") },
     unpublishArticle: { allowed: "MEMBER", call: (slug) => docs.unpublishArticle(slug, "matrix-article") },
@@ -726,6 +728,7 @@ const matrix: Matrix = {
     listSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.listSpamSender(slug, true, "spam.example") },
     removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "spam.example") },
     setSpamPhrase: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamPhrase(slug, "facebook admin", true) },
+    setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
     trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   },
   "sso-settings": {
@@ -1120,6 +1123,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
       { projectId, slug: "matrix-draft", title: "Matrix draft" },
+      // A line asking for a screenshot, for Take screenshots.
+      { projectId, slug: "matrix-screenshots", title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
   const question = await prisma.docsQuestion.create({

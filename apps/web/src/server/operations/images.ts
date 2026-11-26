@@ -6,6 +6,8 @@ import { mediaStorage } from "@tuti/shared/storage";
 import sharp from "sharp";
 import { z } from "zod";
 
+import { MAX_IMAGE_PROMPT, MAX_IMAGE_REFERENCES, MIN_GENERATED_SIDE } from "@/lib/image-limits";
+
 import { lastingImage } from "../media-urls";
 import { uploaderOf } from "./changelog";
 import { NO_CREDITS } from "./credits";
@@ -17,9 +19,7 @@ import { imageOutput } from "./widget";
  * asked, kept as the caller's upload. Not in any content yet: the daily release frees it if nothing ever uses it.
  */
 
-export const MAX_IMAGE_PROMPT = 2000;
-export const MAX_IMAGE_REFERENCES = 14;
-export const MIN_GENERATED_SIDE = 64;
+export { MAX_IMAGE_PROMPT, MAX_IMAGE_REFERENCES, MIN_GENERATED_SIDE };
 /** The size references are sent at: enough for the model to work from, a fraction of a full-size one's bytes. */
 const REFERENCE_WIDTH = 1600;
 

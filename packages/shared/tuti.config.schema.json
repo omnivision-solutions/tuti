@@ -892,6 +892,53 @@
         }
       },
       "additionalProperties": false
+    },
+    "spam": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "decisions": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": "nace-ai/drex-max",
+              "type": "string",
+              "pattern": "^\\S{1,200}$",
+              "description": "Check 6: the decision model saying whether a new conversation is spam (at least 0.9 is, at most 0.3 isn't); OpenRouter only (elsewhere, and with `off`, check 7 alone)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "chat": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "model": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\S{1,200}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Check 7: the chat model asked where the decision model wasn't sure (or without one): spam, not spam or unsure; `off` for none. Without, `ai.model`, then Tuti's default"
+            }
+          },
+          "additionalProperties": false
+        },
+        "requestsPerDay": {
+          "default": 200,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "The most model requests the spam filter makes for one project in a day (UTC); past it, new conversations go to the inbox unchecked. 0 turns the model checks off"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -30,7 +30,7 @@ let member: TestUser;
 let owner: TestUser;
 
 /** One of each record the pages open, so a page that doesn't check would find it. */
-let records: { post: { id: string; number: number }; article: { id: string; slug: string }; change: { id: string }; entry: number; conversation: number; collection: string; tab: string; reference: string; user: string };
+let records: { post: { id: string; number: number }; article: { id: string; slug: string }; change: { id: string }; workflow: { id: string }; entry: number; conversation: number; collection: string; tab: string; reference: string; user: string };
 
 beforeAll(async () => {
   owner = await signUp("Owner");
@@ -72,7 +72,8 @@ beforeAll(async () => {
     { actor: { kind: "user", userId: owner.id }, projectId },
     { name: "API", spec: JSON.stringify({ openapi: "3.1.0", info: { title: "API", version: "1" }, paths: { "/posts": { get: { summary: "List posts", responses: { 200: { description: "OK" } } } } } }) },
   );
-  records = { post, article, change, entry: 1, conversation: 1, collection: collection.slug, tab: tab.slug, reference: reference.slug, user: "user-1" };
+  const workflow = await prisma.workflow.create({ data: { projectId, name: "Enterprise first", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
+  records = { post, article, change, workflow, entry: 1, conversation: 1, collection: collection.slug, tab: tab.slug, reference: reference.slug, user: "user-1" };
 });
 
 // AI and Autopilot on, so their pages get as far as their checks. Nothing here gets past one to call it.
@@ -80,8 +81,8 @@ beforeEach(() => vi.stubEnv("OPENAI_API_KEY", "sk-or-placeholder"));
 
 /** The params for the page in `file`: the project's, and its records', so a page that doesn't check would find them. */
 function props(file: string) {
-  const { post, article, change } = records;
-  const id = file.includes("/feedback/[id]/") ? post.id : file.includes("/articles/[id]/") ? article.id : change.id;
+  const { post, article, change, workflow } = records;
+  const id = file.includes("/feedback/[id]/") ? post.id : file.includes("/articles/[id]/") ? article.id : file.includes("/workflows/[id]/") ? workflow.id : change.id;
   const number = file.includes("/changelog/") ? records.entry : file.includes("/inbox/") ? records.conversation : post.number;
   return {
     params: Promise.resolve({ project: project.slug, id, number: String(number), slug: article.slug, collection: records.collection, tab: records.tab, reference: records.reference, user: records.user }),

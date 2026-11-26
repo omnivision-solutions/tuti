@@ -6,7 +6,7 @@ import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
-import { aiEnabled, planIncludes } from "@tuti/shared";
+import { aiEnabled, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cn } from "cn";
 import { ExternalLinkIcon } from "lucide-react";
@@ -21,7 +21,7 @@ import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
 import { COMMENTS_HEADING } from "@/lib/comment-threads";
 import { formatDate } from "@/lib/format";
-import { entryPosts, entryTold } from "@/server/changelog-queries";
+import { entryPosts, entryTold, generatorSources } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
@@ -82,7 +82,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     notFound();
   }
   // Screenshots a run took that its job didn't put in the text (an older worker's, during a deploy): put in, then read again.
-  if (await placeLeftoverScreenshots(entry.id)) {
+  if (await placeLeftoverScreenshots({ changelogEntryId: entry.id })) {
     entry = (await readEntry())!;
   }
   const listed = entry.posts.map(({ post }) => post.number);
@@ -137,6 +137,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const coverOf = mediaStorage() ? await coverContent(membership.project.id, entry) : null;
   const covers = coverOf && { designs: coverDesigns(coverOf), automatic: automaticDesign(coverOf), version: entry.updatedAt.getTime() };
   const commentMedia = await mediaUrls(...comments.map(displayDoc));
+  // Generate (AI images) on its cover: the text's images and the project's logo to work from.
+  const imageGenerator = imagesEnabled() && mediaStorage() ? await generatorSources(membership.project.id, displayDoc(entry) as Doc) : null;
   // Its pull requests' section: with GitHub connected, or listing the ones it has. A draft's "Add changes…" adds to the
   // running draft, this one or the one named (started as Next release if there's none).
   const [github, runningDraft] = await Promise.all([
@@ -275,6 +277,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               covers={covers}
               canEditWithAi={aiEnabled() && !unwritten}
               aiPaused={paused}
+              imageGenerator={imageGenerator && { ...imageGenerator, credits: creditsEnabled(), paused }}
               pullRequests={pullRequests}
               screenshots={await entryScreenshots(membership.project.id, entry)}
               canTakeScreenshots={isAdminRole(membership.role)}
@@ -320,3 +323,4 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     </ChangelogSaving>
   );
 }
+

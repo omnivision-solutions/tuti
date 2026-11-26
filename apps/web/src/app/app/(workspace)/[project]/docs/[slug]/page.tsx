@@ -39,7 +39,8 @@ import {
   collectionOptions,
   namedLevel,
 } from "@/server/docs-queries";
-import { getMembership } from "@/server/membership";
+import { getMembership, isAdminRole } from "@/server/membership";
+import { articleScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { mediaUrls } from "@/server/media-urls";
 import { articleVerifications, verifyUnavailable } from "@/server/operations/verify";
 import { markedRun } from "@/lib/docs-review";
@@ -77,6 +78,9 @@ export default async function ArticlePage(
   if (!membership) {
     notFound();
   }
+  // Screenshots a run took that its job didn't put in the text (an older worker's, during a deploy): put in first, a
+  // version of their own, so what follows reads them.
+  await placeLeftoverScreenshots({ article: { projectId: membership.project.id, slug: articleSlug, deletedAt: null } });
   // The newest version, read before the text: an edit landing between the two leaves the text newer than it, never
   // older, so the editor's save is checked against it rather than taken as made on it.
   const newest = await prisma.articleRevision.findFirst({
@@ -398,6 +402,8 @@ export default async function ArticlePage(
               // As the portal measures it (portal-docs' `outlined`).
               findings={showsVerify ? markedRun(await articleVerifications(article.id))?.statements : undefined}
               sections={docHeadings(displayDoc(edited)).length >= 2}
+              screenshots={await articleScreenshots(membership.project.id, article, newest?.id ?? null)}
+              canTakeScreenshots={isAdminRole(membership.role)}
             />
           </div>
         </section>

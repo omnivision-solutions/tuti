@@ -6,6 +6,7 @@ import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
 import { freeLanguageSlug } from "./docs-slugs";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
+import { embedTranslation } from "./articles";
 import { lockProject } from "./running-draft";
 
 /**
@@ -280,7 +281,8 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
   }
 }
 
-type Settle = (data: Record<string, unknown>) => Promise<boolean>;
+/** `newVersion`: the write is a new translation, whose old sections go with it (search by meaning never answers with them). */
+type Settle = (data: Record<string, unknown>, newVersion?: boolean) => Promise<boolean>;
 /** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
 type Started = { settle?: Settle; retryAt?: Date | null };
 
@@ -304,7 +306,9 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
       // the retry job's nameUnnamed, or the next job, names it.
       await nameVersion(published.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${parentId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
     }
-    return { skipped: "up to date" };
+    // Its search data too: one whose embedding failed is embedded here when the retry job brings it back (none to do: a lookup).
+    // Articles only: changelog entries aren't searched by meaning.
+    return kind.name !== "article" || (await searchable(row.id, row.tries, row.retryAt, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
   if (!aiEnabled()) {
@@ -317,13 +321,18 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
    * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
    * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
    */
-  const settle: Settle = (data) =>
+  const settle: Settle = (data, newVersion = false) =>
     prisma.$transaction(async (tx) => {
       const now = await kind.lockSource(tx, parentId);
       if (!now || translationSource(now).hash !== source.hash) {
         return false;
       }
       const { count } = await kind.table(tx).updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
+      if (count > 0 && newVersion && kind.name === "article") {
+        // The old version's sections go in the same transaction: until the new one's are embedded (searchable, next),
+        // search by meaning finds nothing of it, never the old text under the new title (its words still find it).
+        await tx.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
+      }
       return count > 0;
     });
   started.settle = settle;
@@ -388,11 +397,47 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     tries: 0,
     retryAt: null,
     retranslated: row.retranslate,
-  });
-  if (written && kind.name === "article") {
-    await nameVersion(published.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${parentId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
+  }, true);
+  if (!written) {
+    return { skipped: CHANGED };
   }
-  return written ? { translated: language } : { skipped: CHANGED };
+  if (kind.name === "article") {
+    // Named first (its own transaction, the project locked), then searchable.
+    await nameVersion(published.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${parentId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
+    // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: it's embedded later.
+    // Its retry time as this run left it: the write just cleared it.
+    await searchable(row.id, 0, null, log);
+  }
+  return { translated: language };
+}
+
+/** Why a version up to date is tried again: its sections couldn't be embedded for search. */
+const SEARCH_WAITS = "its search data couldn't be written";
+
+/**
+ * Embeds a written version's sections for search in its language (embedTranslation). Failing (the embeddings provider
+ * didn't answer), its retry time is set, backing off as a translation's does (`tries`, the failures in a row so far):
+ * the retry job brings it back here, where, up to date, it's only embedded; embedded, the count starts again. The version
+ * itself is shown as written meanwhile, its error left alone.
+ */
+async function searchable(translationId: string, tries: number, read: Date | null, log: JobLogger) {
+  try {
+    await embedTranslation(translationId, log);
+    if (tries > 0) {
+      await prisma.articleTranslation.updateMany({ where: { id: translationId, error: null }, data: { tries: 0 } });
+    }
+    return true;
+  } catch (error) {
+    log.warn(`Embedding translation ${translationId} for search failed: ${String(error).slice(0, 300)}`);
+    // The backoff replaces the time this run read (its own safety net, the retry job's claim); a newer queuing's, set
+    // meanwhile, is kept where it's earlier, so a late failure never pushes it back.
+    const next = new Date(Date.now() + retryDelay(tries + 1));
+    await prisma.$executeRaw`
+      UPDATE article_translation SET tries = ${tries + 1}, "updatedAt" = now(),
+        "retryAt" = CASE WHEN "retryAt" IS NOT DISTINCT FROM ${read}::timestamp(3) THEN ${next}::timestamp(3) ELSE LEAST(COALESCE("retryAt", ${next}::timestamp(3)), ${next}::timestamp(3)) END
+      WHERE id = ${translationId}`;
+    return false;
+  }
 }
 
 /** Queues a translate job, never failing the caller: the page waits, and the retry job or Try again picks it up. */
@@ -564,37 +609,51 @@ const LEFT_BEHIND_MS = 2 * 24 * 60 * 60_000;
 
 /**
  * Changelog entries whose languages kept up to date were never queued (queuing failed as they were published or changed:
- * nothing set their safety net): a published entry changed lately with an automatic language's version missing, or not
- * made from its text as it is, and nothing waiting to bring it there (no retry time, no error). Queued as a publish does.
- * ponytail: reads the entries changed in the last two days on each run (few: one per publish or edit); a marker on the
- * entry as it's queued is the upgrade if that grows.
+ * nothing set their safety net): a published entry changed lately with an automatic language's version missing (a language
+ * there as it changed: entries don't join one added later, which isn't confirmed for them), or not made from its text as
+ * it is, and nothing waiting to bring it there (no retry time, no error). Queued as a publish does. Read in pages of those
+ * the database can tell may be behind (a version older than the entry's change); the text's hash, checked here, clears an
+ * edit that didn't change it, and reading goes on past those, so they never hide one behind them.
  */
 async function entriesLeftBehind(): Promise<number> {
-  const entries = await prisma.changelogEntry.findMany({
-    where: { ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput), updatedAt: { gt: new Date(Date.now() - LEFT_BEHIND_MS) }, project: { languages: { some: {} } } },
-    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-    take: retryBatch.size,
-    select: {
-      id: true,
-      title: true,
-      body: true,
-      content: true,
-      updatedAt: true,
-      translations: { select: { language: true, automatic: true, sourceHash: true, publishedAt: true, retryAt: true, error: true } },
-      project: { select: { languages: { select: { code: true, automatic: true, createdAt: true } } } },
-    },
-  });
+  const since = new Date(Date.now() - LEFT_BEHIND_MS);
   let queued = 0;
-  for (const entry of entries) {
-    const { hash } = translationSource(entry);
-    // Only languages there as it was published or changed: entries don't join a language added later (it isn't confirmed for them).
-    const missing = entry.project.languages.some(
-      ({ code, automatic, createdAt }) => automatic && createdAt <= entry.updatedAt && !entry.translations.some((t) => t.language === code),
-    );
-    const behind = entry.translations.some((t) => t.automatic && !t.retryAt && !t.error && (!t.publishedAt || t.sourceHash !== hash));
-    if (missing || behind) {
-      await queueTranslations(ENTRY, entry.id).catch((error: unknown) => serverLog.error("Queuing a changelog entry's translations failed", { entryId: entry.id, error }));
-      queued++;
+  for (let after = { updatedAt: since, id: "" }; queued < retryBatch.size; ) {
+    const page = await prisma.$queryRaw<{ id: string; updatedAt: Date; missing: boolean }[]>`
+      SELECT id, "updatedAt", missing FROM (
+        SELECT e.id, e."updatedAt", EXISTS (
+          SELECT 1 FROM project_language l
+          WHERE l."projectId" = e."projectId" AND l.automatic AND l."createdAt" <= e."updatedAt"
+            AND NOT EXISTS (SELECT 1 FROM changelog_translation t WHERE t."entryId" = e.id AND t.language = l.code)
+        ) AS missing
+        FROM changelog_entry e
+        WHERE e."publishedAt" IS NOT NULL AND NOT e.sample AND e."updatedAt" > ${since}::timestamp(3)
+          AND (e."updatedAt", e.id) > (${after.updatedAt}::timestamp(3), ${after.id})
+      ) e
+      WHERE missing
+          OR EXISTS (
+            SELECT 1 FROM changelog_translation t
+            WHERE t."entryId" = e.id AND t.automatic AND t."retryAt" IS NULL AND t.error IS NULL
+              AND (t."publishedAt" IS NULL OR t."updatedAt" < e."updatedAt")
+          )
+      ORDER BY e."updatedAt", e.id
+      LIMIT ${retryBatch.size}`;
+    if (page.length === 0) {
+      break;
+    }
+    after = page.at(-1)!;
+    const entries = await prisma.changelogEntry.findMany({
+      where: { id: { in: page.map(({ id }) => id) } },
+      select: { id: true, title: true, body: true, content: true, translations: { select: { automatic: true, sourceHash: true, publishedAt: true, retryAt: true, error: true } } },
+    });
+    for (const entry of entries) {
+      const { hash } = translationSource(entry);
+      const missing = page.find(({ id }) => id === entry.id)?.missing;
+      const behind = entry.translations.some((t) => t.automatic && !t.retryAt && !t.error && (!t.publishedAt || t.sourceHash !== hash));
+      if (missing || behind) {
+        await queueTranslations(ENTRY, entry.id).catch((error: unknown) => serverLog.error("Queuing a changelog entry's translations failed", { entryId: entry.id, error }));
+        queued++;
+      }
     }
   }
   return queued;
