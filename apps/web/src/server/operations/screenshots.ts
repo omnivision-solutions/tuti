@@ -7,6 +7,8 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { getDomain } from "tldts";
 import { z } from "zod";
 
+import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters";
+
 import { displayDoc } from "../content";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -347,6 +349,7 @@ export const takeScreenshots = defineOperation({
             .trim()
             .min(1, "Say what each screenshot shows")
             .max(500, "Keep each screenshot's description under 500 characters")
+            .refine((show) => !hasHiddenCharacters(show), { error: `A screenshot's description ${HIDDEN_CHARACTERS}` })
             .describe("What it shows, as you'd ask a person: the screen, and what's open or selected on it"),
         }),
       )
@@ -402,6 +405,8 @@ export const takeChangelogScreenshots = defineOperation({
             .trim()
             .min(1, "Say what each screenshot shows")
             .max(MAX_SHOW, `Keep each screenshot line under ${MAX_SHOW} characters`)
+            // What the admin confirmed must be all the agent reads.
+            .refine((show) => !hasHiddenCharacters(show), { error: (issue) => `“[Screenshot: ${String(issue.input).slice(0, 80)}]” ${HIDDEN_CHARACTERS}` })
             .describe("A line's text, between \"[Screenshot:\" and \"]\", as it is in the entry"),
         }),
       )

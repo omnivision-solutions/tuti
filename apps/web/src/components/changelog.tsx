@@ -28,6 +28,7 @@ import { flushSync } from "react-dom";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
+import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters";
 import { useImageUpload } from "@/components/branding-settings";
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
@@ -867,7 +868,10 @@ function EntryScreenshotsSection({
                     className="flex max-h-[min(40dvh,20rem)] list-decimal flex-col gap-1 overflow-y-auto rounded-md pl-5 text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     {confirming?.map((line, index) => (
-                      <li key={index}>{line}</li>
+                      <li key={index}>
+                        {line}
+                        {hasHiddenCharacters(line) && <span className="block text-destructive">{`This line ${HIDDEN_CHARACTERS}.`}</span>}
+                      </li>
                     ))}
                   </ol>
                   {asked > (confirming?.length ?? 0) && <p>{`The other ${asked - (confirming?.length ?? 0)} can be taken once these are in.`}</p>}
@@ -877,7 +881,7 @@ function EntryScreenshotsSection({
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={starting}>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={starting}
+                  disabled={starting || (confirming ?? []).some(hasHiddenCharacters)}
                   focusableWhenDisabled
                   onClick={() => {
                     const shows = confirming ?? [];
