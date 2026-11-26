@@ -5,10 +5,10 @@ import { expect, test, vi } from "vitest";
 // The server action isn't called while rendering.
 vi.mock("@/server/inbox", () => ({ retryTranslation: vi.fn() }));
 
-const { MessageTranslation, translationLine } = await import("./message-translation");
+const { MessageTranslation, RetriedTranslations, translationLine } = await import("./message-translation");
 
 type Props = Parameters<typeof MessageTranslation>[0];
-const props: Props = { body: "Ich kann mich nicht anmelden.", teamText: null, language: "de", error: null, fromTeam: false, canRetry: true, projectSlug: "acme", number: 1 };
+const props: Props = { id: "m1", body: "Ich kann mich nicht anmelden.", teamText: null, language: "de", error: null, fromTeam: false, canRetry: true, projectSlug: "acme", number: 1 };
 const render = (over: Partial<Props>) => renderToStaticMarkup(createElement(MessageTranslation, { ...props, ...over }));
 
 test("one wrapper around the text in every state, so the text (and focus on it) stays as the line changes", () => {
@@ -44,4 +44,15 @@ test("the line: Translating… once Try again queued it, until the translation o
   expect(translationLine({ teamText: null, error: "Out of credits", fromTeam: false, retried: true })).toBe("failed");
   expect(translationLine({ teamText: "Hi", error: null, fromTeam: false, retried: true })).toBe("translated");
   expect(translationLine({ teamText: null, error: null, fromTeam: true, retried: true })).toBeNull();
+});
+
+test("Try again's Translating… shows on every message it re-queued, not only the one clicked", () => {
+  const retried = (id: string) =>
+    renderToStaticMarkup(
+      createElement(RetriedTranslations.Provider, { value: { retried: new Set(["m1", "m2"]), markRetried: () => {} } }, createElement(MessageTranslation, { ...props, id })),
+    );
+  expect(retried("m1")).toContain("Translating…");
+  expect(retried("m2")).toContain("Translating…");
+  // A message it didn't re-queue (one in the team's language) says nothing.
+  expect(retried("m3")).not.toContain("Translating…");
 });

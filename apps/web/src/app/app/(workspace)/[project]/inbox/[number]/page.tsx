@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, sameLanguage, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, composerTranslation, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
@@ -27,7 +27,7 @@ import {
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageDay } from "@/components/inbox/message-day";
 import { MessageText } from "@/components/inbox/message-text";
-import { MessageTranslation } from "@/components/inbox/message-translation";
+import { MessageTranslation, TranslationRetries } from "@/components/inbox/message-translation";
 import { DetailSection } from "@/components/inbox/detail-section";
 import { ConversationMore } from "@/components/inbox/more-actions";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -293,8 +293,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const snoozedUntil = canSnooze && conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null;
   const posts = conversation.posts.map((link) => link.post);
   // Replies go out in the customer's language, previewed under the composer (docs/plan.md L22).
-  const { teamLanguage, translate } = await translationSettings(projectId);
-  const translated = translate && conversation.language && !sameLanguage(conversation.language, teamLanguage) ? { language: conversation.language, teamLanguage } : undefined;
+  const translation = await translationSettings(projectId);
+  // Without AI on the server, nothing is translated: no preview, and replies go as written (as the server sends them).
+  const translated = composerTranslation(translation, conversation.language, aiEnabled());
   type Message = (typeof conversation.messages)[number];
   // Someone else on the email (in Cc) shows as their address.
   const byName = (message: Message) =>
@@ -382,6 +383,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 first={conversation.messages[0]?.id ?? ""}
                 more={conversation._count.messages > shown}
               />
+              {/* Try again re-queues each of these: each says "Translating…". */}
+              <TranslationRetries failed={conversation.messages.filter((m) => m.author === "USER" && !m.note && m.teamText === null && m.translationError).map((m) => m.id)}>
               <ol className="inbox-messages flex flex-col gap-1 pb-2" aria-label="Messages">
                 {conversation.messages.map((message, index) => {
                   const fromTeam = message.author !== "USER";
@@ -422,13 +425,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </p>
                             ) : (
                               <MessageTranslation
+                                id={message.id}
                                 body={message.body}
                                 teamText={message.teamText}
                                 language={message.language}
                                 error={message.translationError}
                                 fromTeam={fromTeam}
                                 // Try again runs only where it can: translation on, and AI on the server.
-                                canRetry={translate && aiEnabled()}
+                                canRetry={translation.translate && aiEnabled()}
                                 projectSlug={slug}
                                 number={conversation.number}
                               />
@@ -482,6 +486,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   );
                 })}
               </ol>
+              </TranslationRetries>
 
               {/* Opens at the newest message, and follows new ones. */}
               <ScrollToEnd count={conversation._count.messages} within="conversation" />
