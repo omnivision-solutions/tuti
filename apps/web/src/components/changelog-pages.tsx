@@ -1,4 +1,5 @@
 import { prisma, type ChangelogTag } from "@tuti/db";
+import { MESSAGES } from "@tuti/shared/messages";
 import { emailConfigured } from "@tuti/email";
 import { ArrowLeftIcon, ArrowRightIcon, BellIcon, ChevronDownIcon, RssIcon } from "lucide-react";
 import type { Metadata } from "next";
@@ -16,7 +17,7 @@ import { FilterPills } from "@/components/filter-pills";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { portalAddress } from "@/server/custom-domains";
 import { PortalMenuPart } from "@/components/portal-menu";
-import { formatDate } from "@/lib/format";
+import { dateLocale, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { changelogContents, changelogDates, publishedEntries } from "@/server/changelog-queries";
 import { reachSentence } from "@/server/changelog-subscription";
@@ -24,7 +25,8 @@ import { accountEmails } from "@/server/operations/email-preferences";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
-import { portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalLanguage, portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -45,10 +47,10 @@ export function changelogTag(param: string | string[] | undefined): ChangelogTag
   return (Object.keys(TAG_LABELS) as ChangelogTag[]).find((tag) => tag.toLowerCase() === param);
 }
 
-/** "October 2026" (UTC, as `formatDate`); its key "2026-10" is the anchor of its first entry on the list. */
-const monthOf = (date: Date) => ({
+/** "October 2026" in the page's `language` (UTC, as `formatDate`); its key "2026-10" is the anchor of its first entry on the list. */
+const monthOf = (date: Date, language = "en") => ({
   key: date.toISOString().slice(0, 7),
-  label: date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }),
+  label: date.toLocaleDateString(dateLocale(language), { month: "long", year: "numeric", timeZone: "UTC" }),
 });
 
 /**
@@ -56,15 +58,21 @@ const monthOf = (date: Date) => ({
  * each with its title, `current` (an entry's number, on its page) marked; then all of them.
  */
 export async function ChangelogMenu({ slug, current }: { slug: string; current?: number }) {
-  const [at, entries] = await Promise.all([portalLinks(), slugReader(slug).then((reader) => changelogContents(slug, reader))]);
-  if (entries.length === 0) {
+  const [at, entries, lang, project] = await Promise.all([
+    portalLinks(),
+    slugReader(slug).then((reader) => changelogContents(slug, reader)),
+    teamLanguage(),
+    prisma.project.findUnique({ where: { slug }, select: { id: true } }),
+  ]);
+  if (entries.length === 0 || !project) {
     return null;
   }
+  const { t, language } = await portalTranslator(project.id, "changelog");
   return (
     <PortalMenuPart>
-      <nav aria-label="Changelog entries" className="flex flex-col gap-0.5 text-sm">
+      <nav aria-label={t("entries")} className="flex flex-col gap-0.5 text-sm">
         <Link href={at("/changelog")} className="px-2 py-1 font-heading font-semibold">
-          Changelog
+          {MESSAGES[language].header.changelog}
         </Link>
         {entries.map((entry) => {
           const active = entry.number === current;
@@ -76,9 +84,12 @@ export async function ChangelogMenu({ slug, current }: { slug: string; current?:
               className={`flex flex-col rounded-md px-2 py-1.5 ${active ? "bg-accent" : "hover:bg-muted"}`}
             >
               <time dateTime={entry.publishedAt!.toISOString()} className={active ? "font-medium" : "text-muted-foreground"}>
-                {formatDate(entry.publishedAt!)}
+                {formatDate(entry.publishedAt!, language)}
               </time>
-              <span className="text-xs break-words text-muted-foreground">{entry.title}</span>
+              {/* The team's words (lang). */}
+              <span lang={lang} className="text-xs break-words text-muted-foreground">
+                {entry.title}
+              </span>
             </Link>
           );
         })}
@@ -89,17 +100,28 @@ export async function ChangelogMenu({ slug, current }: { slug: string; current?:
 
 /** A page of the changelog (`page`: 1 for /changelog); feed readers find the RSS feed from it: a full URL on the project's portal. */
 export async function changelogMetadata(slug: string, page = 1): Promise<Metadata> {
-  const [site, address] = await Promise.all([portalSite(slug), portalAddress(slug)]);
+  const [site, address, project, { prefix }] = await Promise.all([
+    portalSite(slug),
+    portalAddress(slug),
+    prisma.project.findUnique({ where: { slug }, select: { id: true } }),
+    portalLanguage(),
+  ]);
+  if (!project) {
+    return {};
+  }
+  const { t, language } = await portalTranslator(project.id, "changelog");
+  const title = MESSAGES[language].header.changelog;
   const metadata = await portalPageMetadata(slug, {
-    title: "Changelog",
-    description: changelogDescription(site?.project.name),
+    title,
+    description: changelogDescription(t, site?.project.name),
     path: page > 1 ? `/changelog/page/${page}` : "/changelog",
   });
-  return { ...metadata, alternates: { ...metadata.alternates, types: { "application/rss+xml": [{ url: `${address}/changelog/rss.xml`, title: "Changelog" }] } } };
+  return { ...metadata, alternates: { ...metadata.alternates, types: { "application/rss+xml": [{ url: `${address}${prefix}/changelog/rss.xml`, title }] } } };
 }
 
 /** Under the changelog's title. */
-const changelogDescription = (name: string | undefined) => `What's new, improved and fixed${name ? ` in ${name}` : ""}.`;
+const changelogDescription = (t: Awaited<ReturnType<typeof portalTranslator<"changelog">>>["t"], name: string | undefined) =>
+  name ? t("description", { name }) : t("descriptionBare");
 
 /**
  * The changelog by email (subscribeToChangelog; a private portal's pages are its readers' only), where email is set up: a signed-in reader's
@@ -116,16 +138,16 @@ export async function changelogByEmail(
   if (!emailConfigured()) {
     return null;
   }
-  const emails = session ? await accountEmails(project.id, session.user.id) : null;
+  const [emails, { t, language }] = await Promise.all([session ? accountEmails(project.id, session.user.id) : null, portalTranslator(project.id, "changelog")]);
   // Where they stand, as the subscription pages say it: getting it (or will, once paused emails resume), or their own
   // opt-out (another account's at the address isn't theirs to undo on Account: they get the form).
   const { email, reach, proven } = emails?.changelog ?? {};
   if (email && reach && (emails?.preferences.changelog || (emails?.preferences.unsubscribed && proven && reach === "opted-out"))) {
     return (
       <p className="text-sm break-words text-muted-foreground">
-        {reachSentence(reach, project.name, email)}{" "}
+        {reachSentence(reach, project.name, email, language)}{" "}
         <Link href={(await portalLinks())("/account")} className="text-foreground underline underline-offset-4">
-          Manage
+          {t("manage")}
         </Link>
       </p>
     );
@@ -150,7 +172,12 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     changelogDates(slug, reader),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
+  if (!project) {
+    notFound();
+  }
   const entries = found.slice(0, PAGE_SIZE);
+  // The portal's words in the page's language.
+  const { t, language } = await portalTranslator(project.id, "changelog");
   if (entries.length === 0 && page > 1) {
     notFound();
   }
@@ -167,7 +194,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const listed = tag ? dates.filter((entry) => entry.tags.includes(tag)) : dates;
   const months = new Map<string, { label: string; count: number; page: number }>();
   listed.forEach((entry, i) => {
-    const { key, label } = monthOf(entry.publishedAt!);
+    const { key, label } = monthOf(entry.publishedAt!, language);
     const month = months.get(key) ?? months.set(key, { label, count: 0, page: Math.floor(i / PAGE_SIZE) + 1 }).get(key)!;
     month.count++;
   });
@@ -179,8 +206,8 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const rss = (phone: boolean) => (
     <a
       href={at("/changelog/rss.xml")}
-      aria-label="RSS feed"
-      title="RSS feed"
+      aria-label={t("rssFeed")}
+      title={t("rssFeed")}
       className={buttonVariants({ variant: "outline", size: phone ? "icon-lg" : "icon", className: "rounded-full" })}
     >
       <RssIcon aria-hidden />
@@ -190,10 +217,10 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const subscribeButton = (round: boolean) => (
     <Popover>
       <PopoverTrigger
-        render={<Button size={round ? "icon-lg" : "default"} aria-label={round ? "Subscribe" : undefined} className={round ? "rounded-full" : "font-semibold"} />}
+        render={<Button size={round ? "icon-lg" : "default"} aria-label={round ? t("subscribe") : undefined} className={round ? "rounded-full" : "font-semibold"} />}
       >
         <BellIcon aria-hidden />
-        {!round && " Subscribe"}
+        {!round && ` ${t("subscribe")}`}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-4">
         {subscribe}
@@ -208,7 +235,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       key={key}
       href={`${at(changelogPath(month.page, tag))}#${key}`}
       // Read out as "October 2026, 3 entries", not "October 20263".
-      aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
+      aria-label={t("monthEntries", { month: month.label, count: month.count })}
       // Plain rows; the month this page opens on in the neutral fill.
       className={cn(
         "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors",
@@ -216,7 +243,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       )}
     >
       <span className="min-w-0 flex-1">{month.label}</span>
-      <span className="text-xs tabular-nums">{month.count}</span>
+      <span className="text-xs tabular-nums">{month.count.toLocaleString(language)}</span>
     </Link>
   );
   return (
@@ -227,17 +254,17 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
       {/* The tags as pills (each an address to share; picking one starts from the first page), RSS and Subscribe at the row's
           end; on phones both round, beside the title. */}
       <PortalPageHeader
-        title="Changelog"
-        description={changelogDescription(project?.name)}
+        title={MESSAGES[language].header.changelog}
+        description={changelogDescription(t, project?.name)}
         pills={
           tags.length > 0 && (
             <FilterPills
-              label="Tags"
+              label={t("tagsLabel")}
               current={at(changelogPath(1, tag))}
-              items={[undefined, ...tags].map((t) => ({
-                href: at(changelogPath(1, t)),
-                title: t ? TAG_LABELS[t] : "All",
-                count: t ? dates.filter((entry) => entry.tags.includes(t)).length : dates.length,
+              items={[undefined, ...tags].map((picked) => ({
+                href: at(changelogPath(1, picked)),
+                title: picked ? t(`tag.${picked}`) : t("all"),
+                count: (picked ? dates.filter((entry) => entry.tags.includes(picked)).length : dates.length).toLocaleString(language),
               }))}
             />
           )
@@ -265,12 +292,12 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
         {/* Beside the list on wide screens, staying in view: the month index; and where a reader who gets it stands. */}
         {(listed.length >= MONTH_INDEX_FROM || (subscribe && !subscribable)) && (
           <aside
-            aria-label="Follow the changelog"
+            aria-label={t("follow")}
             className="hidden flex-col gap-6 lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2rem)] lg:col-start-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-var(--portal-header-height,0px)-4rem)]"
           >
             {listed.length >= MONTH_INDEX_FROM && (
-              <nav aria-label="Months" className="flex min-h-0 flex-col overflow-y-auto">
-                <h2 className="mb-2 px-2.5 text-[0.8125rem] font-medium text-muted-foreground">Jump to month</h2>
+              <nav aria-label={t("months")} className="flex min-h-0 flex-col overflow-y-auto">
+                <h2 className="mb-2 px-2.5 text-[0.8125rem] font-medium text-muted-foreground">{t("jumpToMonth")}</h2>
                 <div className="flex flex-col">
                   {[...months].slice(0, RECENT_MONTHS).map(([key, month]) => monthLink(key, month))}
                 </div>
@@ -278,7 +305,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
                 {months.size > RECENT_MONTHS && (
                   <details className="group/months" open={[...months.keys()].indexOf(currentMonth ?? "") >= RECENT_MONTHS}>
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
-                      Earlier months
+                      {t("earlierMonths")}
                       <ChevronDownIcon aria-hidden className="size-3.5 transition-transform group-open/months:rotate-180" />
                     </summary>
                     <div className="flex flex-col">{[...months].slice(RECENT_MONTHS).map(([key, month]) => monthLink(key, month))}</div>
@@ -293,16 +320,16 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
           {entries.length === 0 ? (
             tag ? (
               <EmptyState
-                title={`No ${TAG_LABELS[tag]} entries yet`}
-                description="Entries with this tag show up here as they ship."
+                title={t("noTagEntries", { tag: t(`tag.${tag}`) })}
+                description={t("noTagDescription")}
                 action={
                   <Link href={at(changelogPath(1))} className={buttonVariants({ variant: "outline" })}>
-                    Show all entries
+                    {t("showAll")}
                   </Link>
                 }
               />
             ) : (
-              <EmptyState title="Nothing here yet" description="New features and fixes show up here as they ship." />
+              <EmptyState title={t("empty")} description={t("emptyDescription")} />
             )
           ) : (
             // On wide screens a timeline: the dates' dots on a line down the margin; a line between entries.
@@ -321,6 +348,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
                       mediaUrls={media}
                       base={base}
                       lang={lang}
+                      language={language}
                       dateMargin
                       excerpt
                       eager={i === 0}
@@ -332,17 +360,18 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
             </div>
           )}
           {(older || page > 1) && (
-            <nav aria-label="Changelog pages" className="flex justify-between gap-4 border-t pt-8 lg:ml-[8.375rem]">
+            // Wrapping onto two lines where both don't fit (a phone in a language with long words); Older stays at the end.
+            <nav aria-label={t("pages")} className="flex flex-wrap justify-between gap-4 border-t pt-8 lg:ml-[8.375rem]">
               {page > 1 ? (
                 <Link href={at(changelogPath(page - 1, tag))} className={buttonVariants({ variant: "outline", className: "font-semibold" })}>
-                  <ArrowLeftIcon aria-hidden /> Newer entries
+                  <ArrowLeftIcon aria-hidden /> {t("newer")}
                 </Link>
               ) : (
                 <span />
               )}
               {older && (
-                <Link href={at(changelogPath(page + 1, tag))} className={buttonVariants({ variant: "outline", className: "font-semibold" })}>
-                  Older entries <ArrowRightIcon aria-hidden />
+                <Link href={at(changelogPath(page + 1, tag))} className={buttonVariants({ variant: "outline", className: "ml-auto font-semibold" })}>
+                  {t("older")} <ArrowRightIcon aria-hidden />
                 </Link>
               )}
             </nav>
