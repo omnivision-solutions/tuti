@@ -151,10 +151,24 @@ test("a known user the team marked as spam is filed in the widget and by email, 
   expect(await widgetSendMessage(project.slug, auth, 2, "Anyone there?")).toEqual({});
   expect(await prisma.conversationMessage.count({ where: { projectId, body: "Anyone there?" } })).toBe(1);
   expect([await told(), emailed(owner.email), await messagesTold()]).toEqual([1, 1, 0]);
-  // Back in the inbox, their messages are told again.
+  // Not spam after all: the conversation is told as new, and then what they wrote meanwhile. From then on, as it comes.
   await call(updateConversation, admin, { number: 2, spam: false });
+  const deliveries = async () =>
+    (await prisma.webhookDelivery.findMany({ where: { webhook: { projectId } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { event: true, payload: true } }))
+      .slice(1)
+      .map(({ event, payload }) => {
+        const { data } = payload as { data: { messages?: { body: string }[]; message?: { body: string } } };
+        return `${event}: ${data.messages?.[0]?.body ?? data.message?.body}`;
+      });
+  expect(await deliveries()).toEqual(["conversation.created: Hello again", "conversation.message_created: Anyone there?"]);
   expect(await widgetSendMessage(project.slug, auth, 2, "Hello?")).toEqual({});
-  expect(await messagesTold()).toBe(1);
+  expect((await deliveries()).at(-1)).toBe("conversation.message_created: Hello?");
+
+  // The one a teammate marked (#1) only unmarks, but for what was written in it since the mark: never its first message again.
+  expect(await widgetSendMessage(project.slug, auth, 1, "Still there?")).toEqual({});
+  const before = (await deliveries()).length;
+  await call(updateConversation, admin, { number: 1, spam: false });
+  expect((await deliveries()).slice(before)).toEqual(["conversation.message_created: Still there?"]);
 });
 
 test("a conversation the team creates over the API skips the filter", async () => {
@@ -304,11 +318,11 @@ test("the flood limit is by the hour: conversations started longer ago don't cou
     await prisma.conversation.updateMany({ where: { projectId }, data: { createdAt: at } });
     await prisma.inboundEmail.updateMany({ where: { projectId }, data: { createdAt: at } });
   };
-  await backdate(61);
+  await backdate(90);
   await mail("e2e-kim@example.com");
   expect((await filed()).at(-1)).toBe("inbox");
-  // Just inside the hour, they count (the one since with them).
-  await backdate(59);
+  // Inside the hour, they count (the one since with them). Half an hour either side, so the test's own time is nothing.
+  await backdate(30);
   await mail("e2e-kim@example.com");
   expect((await filed()).at(-1)).toBe("flood");
 });

@@ -326,7 +326,15 @@ export function SpamNotice({ projectSlug, number, why, unblocks }: Props & { why
           Marked as spam{why && `: ${why}`}
         </span>
       </p>
-      <Button variant="outline" size="sm" className="h-auto min-h-7 max-w-full whitespace-normal wrap-anywhere" disabled={pending} focusableWhenDisabled onClick={() => mark(false)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-auto min-h-7 max-w-full whitespace-normal wrap-anywhere"
+        disabled={pending}
+        focusableWhenDisabled
+        // The line goes with the mark, and this button with it: the focus moves to one that stays.
+        onClick={() => mark(false, undefined, () => moreActions()?.focus())}
+      >
         {notSpamLabel(unblocks)}
       </Button>
     </div>

@@ -260,7 +260,8 @@ function view(row: ConversationRow, slug: string) {
     user: conversationPerson(row),
     assignee: row.assignee,
     spam: row.spam,
-    spamReason: row.spamReason as SpamReason | null,
+    // Only of what's in Spam: a release from before unmarks without clearing it, while a deploy overlaps the two.
+    spamReason: row.spam ? (row.spamReason as SpamReason | null) : null,
     lastMessageAt: row.lastMessageAt,
     waitingSince: row.waitingSince,
     /** Out of the inbox's views till then (null: not snoozed, or no longer; never closed or spam ones). */
@@ -956,6 +957,7 @@ export async function announceConversation(projectId: string, conversation: Conv
 /**
  * A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo
  * back). Not in a conversation in Spam, which tells nobody: someone the spam filter filed doesn't know it, and writes on.
+ * Webhooks hear of those once it's marked Not spam (conversations.update).
  */
 export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
   const result = messageView(message);
@@ -1460,11 +1462,13 @@ export const updateConversation = defineOperation({
     let notice: string | undefined;
     // The spam filter had filed it and a teammate says it isn't spam: told as a new conversation, once (its reason goes).
     let released = false;
+    // Marked Not spam: since when it was in Spam (null: since it started), for what the user wrote there meanwhile.
+    let unmarked: { since: Date | null } | undefined;
     const updated = await prisma.$transaction(async (tx) => {
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
-      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null }[]>`
-        SELECT "status", "spam", "snoozedUntil", "spamReason" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamMarkedAt: Date | null }[]>`
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamMarkedAt" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1491,6 +1495,10 @@ export const updateConversation = defineOperation({
         if (marked) {
           notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason);
           released = !input.spam && !!held!.spamReason;
+          // One marked before marks had a time has none to count from: nothing is told for it.
+          if (!input.spam && (released || held!.spamMarkedAt)) {
+            unmarked = { since: released ? null : held!.spamMarkedAt };
+          }
         }
         if (input.blockDomain) {
           await blockDomainOf(tx, sent, admin);
@@ -1522,15 +1530,25 @@ export const updateConversation = defineOperation({
       await notifyInbox(tx, { projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash, email: row.email });
       return row;
     });
-    if (released) {
-      const first = await prisma.conversationMessage.findFirst({
-        where: { conversationId: updated.id, author: "USER", note: false },
+    if (unmarked) {
+      // What the user wrote while it was in Spam, when nobody was told (announceUserMessage). ponytail: the first 100.
+      const [first, ...later] = await prisma.conversationMessage.findMany({
+        where: { conversationId: updated.id, author: "USER", note: false, ...(unmarked.since && { createdAt: { gt: unmarked.since } }) },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: 100,
         select: messageSelect,
       });
       // It's unmarked whatever happens here, and saying it again would tell nobody: a failure is logged, not thrown.
-      if (first) {
-        await announceConversation(projectId, updated, first).catch((error: unknown) => log.error("Announcing a conversation that isn't spam after all failed", { projectId, error }));
+      try {
+        // Filed by the filter: its first message is the new conversation's, told to the team too. The rest, to webhooks.
+        if (released && first) {
+          await announceConversation(projectId, updated, first);
+        }
+        for (const message of released ? later : first ? [first, ...later] : []) {
+          await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
+        }
+      } catch (error) {
+        log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
       }
     }
     return { ...view(updated, await projectSlug(projectId)), ...(notice && { notice }) };
