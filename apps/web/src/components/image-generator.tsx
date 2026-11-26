@@ -474,7 +474,8 @@ export function ImageGenerator({
             </div>
             {editing && shown && !pending && !error && (
               <figcaption className="text-xs text-muted-foreground">
-                Edited · {selected + 1} of {tries.length}
+                {/* Counted among this image's own tries; one made for another image is just its try. */}
+                {tries.filter(ours).includes(shown) ? `Edited · ${tries.filter(ours).indexOf(shown) + 1} of ${tries.filter(ours).length}` : `Try ${selected + 1}`}
               </figcaption>
             )}
             </figure>

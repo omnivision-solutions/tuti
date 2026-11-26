@@ -413,3 +413,44 @@ test("another image's dialog lists the page's tries but compares, picks and says
   expect(document.querySelector('[role="dialog"] [role="alert"]')).toBeNull();
   expect(document.body.textContent).toContain("Edited · 1 of 1");
 });
+
+test("the project's tries outlive the page's address: an article's new address (or another page of the project) still has them", async () => {
+  const first = await editor();
+  await first.pick();
+  await first.generate();
+  await vi.waitFor(() => expect(first.button("Try 1")).toBeTruthy());
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  // As a slug change moves the article: a new path, the editor made again.
+  window.history.pushState(null, "", "/app/acme/docs/renamed");
+  const second = await editor();
+  await second.pick();
+  await second.click("Edit with AI");
+  expect(second.button("Try 1")).toBeTruthy();
+});
+
+test("a try being made for one image doesn't hold another image's dialog: it can make its own", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  generateImage.mockReset();
+  generateImage.mockReturnValueOnce(new Promise(() => {}));
+  const { ref, generate, button, click } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await click("Edit with AI");
+  expect(document.body.textContent).not.toContain("Generating, up to half a minute…");
+  expect(button("Generate")).toBeTruthy();
+});

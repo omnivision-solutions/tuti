@@ -105,11 +105,11 @@ export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
 /** An editor's placeholder as its props say it now (see "placeholderNow"). */
 const PLACEHOLDER_NOW = new PluginKey<null>("placeholderNow");
 
-/** A try's error, kept with the image it was made for. */
-type PageTries = { tries: Try[]; generating: boolean; error: { root: string; message: string } | null };
+/** The images a try is being made for, and the last try's error, each kept with the image (its root) it was made for. */
+type PageTries = { tries: Try[]; generating: string[]; error: { root: string; message: string } | null };
 /**
- * The AI tries made on each page (by its path) since it loaded, and whether one is being made: outside the editor, so a
- * save that draws the editor again keeps them, and one list for all of a page's images (each was paid for).
+ * The AI tries made in each project's editors since the page loaded, and which are being made: outside the editor, so
+ * a save that draws it again, or an article's new address, keeps them; one list for all of its images (each was paid for).
  */
 const pageTries = new Map<string, PageTries>();
 /** The editors showing them: each drawn again when they change, so one made again while a try was being made gets it. */
@@ -254,7 +254,7 @@ export function RichEditor({
   // By project, not page: a new entry's first save moves it to its own address, with its tries.
   const pageKey = uploads?.projectSlug ?? "";
   const keptTries = (editedId: string): KeptTries => {
-    const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: false, error: null };
+    const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: [], error: null };
     const set = (next: PageTries) => {
       pageTries.set(pageKey, next);
       pageListeners.forEach((listener) => listener());
@@ -265,9 +265,10 @@ export function RichEditor({
     return {
       ...now(),
       root,
+      generating: now().generating.includes(root),
       error: error?.root === root ? error.message : null,
       add: (made) => set({ ...now(), tries: [...now().tries, { ...made, root }] }),
-      setGenerating: (generating) => set({ ...now(), generating }),
+      setGenerating: (on) => set({ ...now(), generating: on ? [...now().generating, root] : now().generating.filter((each) => each !== root) }),
       setError: (message) => set({ ...now(), error: message === null ? null : { root, message } }),
     };
   };
