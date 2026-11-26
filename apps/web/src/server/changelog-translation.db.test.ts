@@ -238,7 +238,15 @@ test("screenshots placed are kept even when queuing the entry's translations the
   } finally {
     reading.mockRestore();
   }
-  expect(((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
+  const placed = await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } });
+  expect((placed.content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
+  // Nothing set the German version's safety net; the retry job finds it behind and brings it up to date.
+  const { segments } = segmentsOf(translationSource(placed).doc);
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }));
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  await languageTranslationsDone();
+  expect((await translation()).sourceHash).toBe(translationSource(placed).hash);
+  expect(JSON.stringify((await translation()).content)).toContain("[de] The theme menu");
 });
 
 test("an announcement whose translation ends after the wait is sent by the email safety net (every 10 minutes, inline too)", async () => {
