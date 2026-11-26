@@ -28,8 +28,12 @@ export function screenshotAsked(block: Block): string | null {
   if (block.type !== "paragraph") {
     return null;
   }
-  // The syntax quoted as code is an example (an article about asking for screenshots), not a line to fill.
-  const text = toPlainText(withoutCode(block)).trim();
+  // The line quoted as code whole is an example (an article about asking for screenshots), not a line to fill; code
+  // inside a line ("the `Theme` menu") is part of what it asks for, read with it.
+  if (toPlainText(withoutCode(block)).trim() === "") {
+    return null;
+  }
+  const text = toPlainText(block).trim();
   const start = MARKER_START.exec(text);
   // Whole, however long: two lines alike up to a cut-off aren't the same line (the operations refuse one over
   // MAX_SHOW, which the agent isn't asked).

@@ -403,6 +403,23 @@ describe("marking where a screenshot goes (SC3)", () => {
     expect((await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true } })).body).not.toContain("dark");
   });
 
+  test("the new article's writer is told too, with Screenshots set up, and not without", async () => {
+    vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { redecide: { model: "off" } } }));
+    const proposing = async (number: number) => {
+      pullRequest(number);
+      model.decide(USERS);
+      model.reply(answer([], [{ title: "Pick a theme for everyone", probability: 0.9, collection: null, after: null, reason: "Team themes are new." }]), undefined, `"merge-${number}"`);
+      model.reply(PROPOSALS, undefined, '"proposals"');
+      model.reply(JSON.stringify({ title: "Pick a theme for everyone", reason: "It's new.", notes: "## Pick a theme for everyone\n\n1. Open **Settings**." }), undefined, '"article_needed"');
+      await merge(number);
+      return model.requests.findLast((request) => request.user.includes('"article_needed"'))!;
+    };
+    vi.stubEnv("BROWSER_USE_API_KEY", "bu-test-key");
+    expect((await proposing(39)).system).not.toContain("[Screenshot:");
+    await prisma.screenshotSettings.create({ data: { projectId: project.id, appUrl: "https://app.example.com" } });
+    expect((await proposing(40)).system).toContain(SCREENSHOT_RULE);
+  });
+
   test("without Screenshots set up (or on a server without them), the writers aren't told they may", async () => {
     await prisma.screenshotSettings.create({ data: { projectId: project.id, appUrl: "https://app.example.com" } });
     vi.stubEnv("BROWSER_USE_API_KEY", "");

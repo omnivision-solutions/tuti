@@ -379,7 +379,7 @@ export function ArticleForm({
             canTake={canTakeScreenshots}
             dirty={dirty}
             keepsUnsaved
-            className="rounded-lg border p-4 text-sm"
+            className="rounded-xl bg-card p-4 text-sm text-card-foreground shadow-xs ring-1 ring-card-edge"
           />
         )}
         {!article && (
