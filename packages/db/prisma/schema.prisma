@@ -441,6 +441,7 @@ model Project {
   mailSubdomain            MailSubdomain?
   inboundEmails            InboundEmail[]
   spamSenders              SpamSender[]
+  workflows                Workflow[]
   emailBlocks              EmailBlock[]
   emailDays                ProjectEmailDay[]
   emailMonths              ProjectEmailMonth[]
@@ -1275,6 +1276,31 @@ model SpamSender {
   @@map("spam_sender")
 }
 
+/// Something the team set to happen on its own in the inbox (docs/plan.md, Inbox automation, "A workflow"): when its
+/// trigger's moment comes for a conversation whose person its conditions match, its actions run (server/inbox-path.ts).
+model Workflow {
+  id         String   @id @default(cuid())
+  projectId  String
+  name       String
+  /// Its moment: `conversation_started` or `user_replied` (@/lib/workflows TRIGGERS). Text, not an enum: more moments
+  /// come, and a row with a value the previous release's client didn't know would fail its reads.
+  trigger    String
+  /// Its place in its trigger's list, 0 first: the list runs top to bottom.
+  position   Int
+  enabled    Boolean  @default(true)
+  /// Who it's for (@/lib/workflows WorkflowCondition[]), all of which must match; none is everyone.
+  conditions Json     @default("[]")
+  /// What it does, in order (@/lib/workflows WorkflowAction[]).
+  actions    Json     @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, trigger, position])
+  @@map("workflow")
+}
+
 /// A teammate's last opening of a conversation; customer messages after it are unread for that teammate.
 model ConversationRead {
   conversationId String
@@ -1507,6 +1533,9 @@ model ConversationMessage {
   language           String?
   /// Why a customer's message couldn't be translated (the checks failed, the provider didn't answer, no credits).
   translationError   String?
+  /// A user's message: when its trigger's workflows ran for it (server/inbox-path.ts), written with what they changed, so
+  /// they never run for it twice. Null until then, and on every message from before workflows.
+  workflowsRanAt     DateTime?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)

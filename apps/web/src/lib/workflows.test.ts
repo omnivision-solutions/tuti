@@ -1,0 +1,24 @@
+import { expect, test } from "vitest";
+
+import { ACTIONS, actionsFor, storedWorkflow, TRIGGER_KEYS } from "./workflows";
+
+test("every action says which triggers offer it, and each trigger offers one", () => {
+  for (const trigger of TRIGGER_KEYS) {
+    expect(actionsFor(trigger).length).toBeGreaterThan(0);
+  }
+  expect(actionsFor("conversation_started")).toEqual(["mark_priority"]);
+  // A marking action: the next workflow still runs.
+  expect(ACTIONS.mark_priority.deciding).toBe(false);
+});
+
+test("a stored workflow is read whole, or not at all", () => {
+  const stored = { trigger: "user_replied", conditions: [{ kind: "in_group", group: "vip" }], actions: [{ kind: "mark_priority" }] };
+  expect(storedWorkflow(stored)).toEqual({ conditions: stored.conditions, actions: stored.actions });
+  expect(storedWorkflow({ ...stored, conditions: [] })).toEqual({ conditions: [], actions: stored.actions });
+  // A trigger, a condition or an action from a later release; no action at all.
+  expect(storedWorkflow({ ...stored, trigger: "handover" })).toBeNull();
+  expect(storedWorkflow({ ...stored, conditions: [{ kind: "channel", channel: "email" }] })).toBeNull();
+  expect(storedWorkflow({ ...stored, actions: [{ kind: "mark_priority" }, { kind: "close" }] })).toBeNull();
+  expect(storedWorkflow({ ...stored, actions: [] })).toBeNull();
+  expect(storedWorkflow({ ...stored, actions: null })).toBeNull();
+});
