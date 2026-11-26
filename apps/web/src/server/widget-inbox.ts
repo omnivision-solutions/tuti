@@ -1,7 +1,7 @@
 "use server";
 
 import { type Prisma, prisma } from "@tuti/db";
-import { replyRecipient } from "@tuti/jobs";
+import { replyRecipient, translationSettings } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -136,6 +136,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     awaitingReply: boolean;
     emailedTo: string | null;
     replyMs: number | null;
+    /** The language the team writes in: a translated reply's original is in it. */
+    teamLanguage: string;
     messages: {
       id: string;
       fromTeam: boolean;
@@ -165,7 +167,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       data: { seenAt: new Date() },
     });
   }
-  const [messages, to, replyMs] = await Promise.all([
+  const [messages, to, replyMs, { teamLanguage }] = await Promise.all([
     prisma.conversationMessage.findMany({
       // The team's notes are theirs alone.
       where: { conversationId: conversation.id, note: false },
@@ -186,6 +188,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
     replyRecipient(conversation.id).then((recipient) => ("to" in recipient ? recipient.to : null)),
     usualReplyMs(who.projectId),
+    translationSettings(who.projectId),
   ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
   const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
@@ -194,6 +197,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     awaitingReply: conversation.status !== "CLOSED" && !conversation.spam,
     emailedTo: to,
     replyMs,
+    teamLanguage,
     messages: messages.map((m) => ({
       id: m.id,
       fromTeam: m.author !== "USER",

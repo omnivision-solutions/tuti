@@ -498,6 +498,8 @@ test("a translated reply reaches them in their language, with what the team wrot
     data: { body: "Unter Abrechnung → Rechnungen.", teamText: "In Billing → Invoices.", language: "de" },
   });
   expect(await widgetConversation(project.slug, auth, 1)).toMatchObject({
+    // The original's language: the team's.
+    teamLanguage: "en",
     messages: [
       { fromTeam: false, body: "Wo finde ich meine Rechnung?", original: null, language: null },
       { fromTeam: true, body: "Unter Abrechnung → Rechnungen.", original: "In Billing → Invoices.", language: "de" },

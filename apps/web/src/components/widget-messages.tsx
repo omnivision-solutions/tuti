@@ -886,12 +886,16 @@ function Conversation({
                   </p>
                   {m.original !== null && (
                     // A translated reply: what the team wrote, a click away (docs/plan.md L22).
-                    <details className="group mt-1 text-xs text-muted-foreground">
+                    <details
+                      className="group mt-1 text-xs text-muted-foreground"
+                      // Opened on the latest reply, its original would be under the reply box: brought into view.
+                      onToggle={(event) => event.currentTarget.open && event.currentTarget.lastElementChild?.scrollIntoView({ block: "nearest" })}
+                    >
                       <summary className="w-fit cursor-pointer list-none font-medium underline underline-offset-2 [&::-webkit-details-marker]:hidden">
                         <span className="group-open:hidden">Show original</span>
                         <span className="hidden group-open:inline">Hide original</span>
                       </summary>
-                      <p className="mt-1 text-sm break-words whitespace-pre-wrap text-foreground">
+                      <p lang={opened.teamLanguage} className="mt-1 scroll-mb-40 text-sm break-words whitespace-pre-wrap text-foreground">
                         <MessageText text={m.original} ugc={false} />
                       </p>
                     </details>
