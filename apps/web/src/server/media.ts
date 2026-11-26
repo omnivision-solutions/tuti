@@ -261,9 +261,9 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
 
 export type UploadStatus =
   | { status: "UPLOADING" | "PROCESSING" | "FAILED" }
-  | { status: "READY"; src: string; urls: MediaUrls; width: number; height: number };
+  | { status: "READY"; src: string; urls: MediaUrls; width: number; height: number; download: string };
 
-/** Whether the uploader's image is ready to show, and where: `src` at full size, `urls` for every file (for the editor). */
+/** Whether the uploader's image is ready to show, and where: `src` at full size, `urls` for every file (for the editor), `download` to save it. */
 export async function uploadStatus(mediaId: string): Promise<UploadStatus | { error: string }> {
   const session = await getSession();
   const storage = mediaStorage();
@@ -285,6 +285,7 @@ export async function uploadStatus(mediaId: string): Promise<UploadStatus | { er
       urls,
       width: media.width,
       height: media.height,
+      download: await storage.signedUrl(imageKey(media.id, media.width), undefined, "image.webp"),
     };
   }
   return { status: media.status === "READY" ? "PROCESSING" : media.status };

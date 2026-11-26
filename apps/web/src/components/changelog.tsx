@@ -32,6 +32,7 @@ import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters"
 import { useImageUpload } from "@/components/branding-settings";
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
+import { ImageGenerator, type PickedImage } from "@/components/image-generator";
 import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
@@ -191,19 +192,23 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
  * The entry's featured image (its `cover`), at the text column's width as readers see it: without one, a band to add
  * one (picked or dropped on it); with one, Replace and Remove over it (shown on hover and focus, always on touch screens).
  */
-function FeaturedImage({
+export function FeaturedImage({
   projectSlug,
   entry,
   covers,
+  generator,
   onBusy,
-  onRemove,
+  onChange,
 }: {
   projectSlug: string;
   entry: Entry | null;
   /** The cover designs "Make a cover" offers a saved entry; null for a new one. */
   covers?: CoverChoices | null;
+  /** "Generate" (AI images) for a saved entry; null where the server can't make images. */
+  generator?: ImageGeneratorProps | null;
   onBusy: (delta: number) => void;
-  onRemove: () => void;
+  /** Removed, or replaced by a generated image. */
+  onChange: () => void;
 }) {
   const id = useId();
   const add = useRef<HTMLButtonElement>(null);
@@ -245,6 +250,23 @@ function FeaturedImage({
   const make = entry && covers && (
     <Button type="button" variant="secondary" size="sm" disabled={uploading} focusableWhenDisabled onClick={() => setMaking(true)}>
       Make a cover
+    </Button>
+  );
+  // Generate: its dialog keeps its tries while the editor is open. A generated image used, focus goes to Replace.
+  const [generating, setGenerating] = useState(false);
+  const used = useRef(false);
+  const generate = entry && generator && (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      disabled={uploading || generator.paused}
+      focusableWhenDisabled
+      title={generator.paused ? "This project is out of credits" : undefined}
+      onClick={() => setGenerating(true)}
+    >
+      <SparklesIcon />
+      Generate
     </Button>
   );
   // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
@@ -295,11 +317,13 @@ function FeaturedImage({
           {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
           <img src={image.url} alt={entry?.title ?? ""} className={cn("h-auto w-full rounded-lg border", uploading && "opacity-50")} />
           {status && <div className="absolute inset-0 flex items-center justify-center">{status}</div>}
-          <div className="absolute top-2 right-2 flex gap-2 opacity-0 transition-opacity group-hover/cover:opacity-100 group-focus-within/cover:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100">
+          {/* Wraps on a narrow cover (a phone's) rather than running past its left edge. */}
+          <div className="absolute top-2 right-2 flex max-w-[calc(100%-1rem)] flex-wrap justify-end gap-2 opacity-0 transition-opacity group-hover/cover:opacity-100 group-focus-within/cover:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100">
             <Button type="button" variant="secondary" size="sm" aria-label="Replace featured image" ref={replace} disabled={uploading} focusableWhenDisabled onClick={pick}>
               Replace
             </Button>
             {make}
+            {generate}
             <Button
               type="button"
               variant="secondary"
@@ -312,7 +336,7 @@ function FeaturedImage({
                 // Remove goes with the image: focus moves to Add, not out of the form.
                 flushSync(() => setImage(null));
                 add.current?.focus();
-                onRemove();
+                onChange();
               }}
             >
               Remove
@@ -333,11 +357,40 @@ function FeaturedImage({
             Add featured image
           </Button>
           {make}
+          {generate}
           {status || <span className="text-xs text-muted-foreground">or drop one here · 1200×630 works best</span>}
         </div>
       )}
       {inputs}
       {error && <FieldError>{error}</FieldError>}
+      {entry && generator && (
+        <ImageGenerator
+          projectSlug={projectSlug}
+          open={generating}
+          onOpenChange={setGenerating}
+          subtitle={`Cover for “${entry.title}”`}
+          defaultSize={{ label: "Cover", width: 1200, height: 630 }}
+          // The form's cover (saved or not), then the text's images.
+          fromHere={{ label: "From this entry", images: [...(image ? [image] : []), ...generator.bodyImages.filter((each) => each.id !== image?.id)] }}
+          logo={generator.logo}
+          credits={generator.credits}
+          useLabel="Use as cover"
+          onUse={(made) => {
+            // As a finished upload: the form's cover, kept by Save.
+            setImage({ id: made.id, url: made.url });
+            used.current = true;
+            setGenerating(false);
+            onChange();
+          }}
+          finalFocus={() => {
+            if (used.current) {
+              used.current = false;
+              return replace.current;
+            }
+            return true;
+          }}
+        />
+      )}
       {entry && covers && (
         <MakeCover
           projectSlug={projectSlug}
@@ -361,6 +414,9 @@ function FeaturedImage({
 }
 
 /** The cover designs with something to show for an entry as it's saved, the one picked when nobody picks, and `version`, which changes with each save (its previews are drawn again). */
+/** What FeaturedImage's Generate needs: AI credits are on, the project is out of them, its logo and the entry's images to work from. */
+export type ImageGeneratorProps = { credits: boolean; paused: boolean; logo: PickedImage | null; bodyImages: PickedImage[] };
+
 export type CoverChoices = { designs: CoverDesign[]; automatic: CoverDesign; version: number };
 
 const COVER_DESIGN_NAMES: Record<CoverDesign, string> = { title: "Title", screenshot: "Screenshot", sections: "Sections", pattern: "Pattern", background: "Your background" };
@@ -527,6 +583,7 @@ export function ChangelogForm({
   covers = null,
   canEditWithAi = false,
   aiPaused = false,
+  imageGenerator = null,
   subscribers = 0,
   pullRequests = null,
   groups = [],
@@ -559,6 +616,8 @@ export function ChangelogForm({
   canEditWithAi?: boolean;
   /** The project is out of credits: the helpers show, disabled. */
   aiPaused?: boolean;
+  /** The featured image's Generate (AI images); null where the server can't make them. */
+  imageGenerator?: ImageGeneratorProps | null;
 }) {
   const editor = useRef<Editor | null>(null);
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
@@ -626,7 +685,8 @@ export function ChangelogForm({
               setUploading((n) => n + delta);
               setDirty(true);
             }}
-            onRemove={() => setDirty(true)}
+            generator={imageGenerator}
+            onChange={() => setDirty(true)}
           />
         )}
         <div className="flex flex-col gap-2">
