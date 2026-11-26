@@ -21,7 +21,7 @@ import {
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
 /** Signs out of this portal (or the app) and goes to its home page; `failed` says it couldn't. */
-function useSignOut(failed: string) {
+function useSignOut(failed: React.ReactNode) {
   const router = useRouter();
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -55,9 +55,9 @@ export function SignOutButton() {
 export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
   const at = usePortalHref();
   const t = useTranslations("header");
-  const signOut = useSignOut(t("signOutFailed"));
   // In the reader's language, until <html lang> follows it (L3).
   const lang = useLocale();
+  const signOut = useSignOut(<span lang={lang}>{t("signOutFailed")}</span>);
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])

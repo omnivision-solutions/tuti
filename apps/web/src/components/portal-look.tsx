@@ -132,18 +132,27 @@ export function IfSidebarLinks({ children }: { children: React.ReactNode }) {
   return usePortalLook().sidebarLinks.length > 0 ? children : null;
 }
 
+/**
+ * The language the team writes the portal's own words in (its default): their links' labels and boards' names carry it,
+ * inside landmarks named in the reader's language (`lang` on those), until <html lang> follows the reader (L3).
+ */
+export const TeamLanguageContext = createContext<string | undefined>(undefined);
+export const useTeamLanguage = () => useContext(TeamLanguageContext);
+
 /** The team's links in the header. On phones they get a line of their own. */
 export function PortalHeaderLinks() {
   const { headerLinks } = usePortalLook();
   const t = useTranslations("header");
+  const lang = useLocale();
+  const team = useTeamLanguage();
   if (headerLinks.length === 0) {
     return null;
   }
   return (
     // On phones and tablets they're in the header's menu (PortalMenu).
-    <nav aria-label={t("links")} className="flex flex-wrap gap-x-4 gap-y-1 max-md:hidden">
+    <nav lang={lang} aria-label={t("links")} className="flex flex-wrap gap-x-4 gap-y-1 max-md:hidden">
       {headerLinks.map((link, i) => (
-        <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
+        <a key={i} href={link.url} lang={team} className="text-sm text-muted-foreground hover:text-foreground">
           {link.label}
         </a>
       ))}
@@ -155,13 +164,15 @@ export function PortalHeaderLinks() {
 export function PortalLinksRow() {
   const { headerLinks } = usePortalLook();
   const t = useTranslations("header");
+  const lang = useLocale();
+  const team = useTeamLanguage();
   if (headerLinks.length === 0) {
     return null;
   }
   return (
-    <nav aria-label={t("links")} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 md:hidden">
+    <nav lang={lang} aria-label={t("links")} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 md:hidden">
       {headerLinks.map((link, i) => (
-        <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
+        <a key={i} href={link.url} lang={team} className="text-sm text-muted-foreground hover:text-foreground">
           {link.label}
         </a>
       ))}
@@ -179,6 +190,7 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
   const path = usePortalPath();
   const t = useTranslations("footer");
   const lang = useLocale();
+  const team = useTeamLanguage();
   // Docs pages have it under the page, beside the tree (DocsLayout): under the tree's column it would push the tree up as it scrolls into view.
   const onDocs = path === "/docs" || path.startsWith("/docs/");
   if ((footerLinks.length === 0 && !poweredBy && !themeSwitch) || onDocs !== docs) {
@@ -188,9 +200,9 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
     // Inside <main> on Docs, where a footer isn't the page's footer landmark unless it says so.
     <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "border-t px-6 py-6")}>
       {footerLinks.length > 0 && (
-        <nav aria-label={t("label")} className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+        <nav lang={lang} aria-label={t("label")} className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {footerLinks.map((link, i) => (
-            <a key={i} href={link.url} className="text-xs text-muted-foreground hover:text-foreground">
+            <a key={i} href={link.url} lang={team} className="text-xs text-muted-foreground hover:text-foreground">
               {link.label}
             </a>
           ))}

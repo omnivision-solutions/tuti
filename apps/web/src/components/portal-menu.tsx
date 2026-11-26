@@ -9,7 +9,7 @@ import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { feedbackHref, PORTAL_PARTS } from "@/components/portal-nav";
 import { LanguageList } from "@/components/portal-language";
-import { PortalLogo, usePortalLook } from "@/components/portal-look";
+import { PortalLogo, usePortalLook, useTeamLanguage } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { boardPath } from "@/lib/post-urls";
@@ -91,18 +91,21 @@ export function PortalMenu({
   const { headerLinks } = usePortalLook();
   const page = useContext(PartContext)?.part ?? null;
   const notFound = usePortalNotFound();
+  // The team's own words (boards' names, links' labels) in theirs, inside landmarks named in the reader's.
+  const team = useTeamLanguage();
 
   // What the page gave it (the docs' tree, the changelog's entries), or the boards on Feedback.
   const part = page ? (
     page
   ) : within(path, "/feedback") && boards.length > 1 ? (
-    <nav aria-label={t("boards")} className="flex flex-col gap-0.5 text-sm">
-      <p lang={lang} className="px-2 py-1 font-heading font-semibold">{t("boards")}</p>
+    <nav lang={lang} aria-label={t("boards")} className="flex flex-col gap-0.5 text-sm">
+      <p className="px-2 py-1 font-heading font-semibold">{t("boards")}</p>
       {boards.map((board) => {
         const active = within(path, boardPath(board));
         return (
           <Link
             key={board.slug}
+            lang={team}
             href={at(boardPath(board))}
             aria-current={active ? "page" : undefined}
             className={cn("rounded-md px-2 py-1.5", active ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground")}
@@ -178,9 +181,9 @@ export function PortalMenu({
           {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
           {languageList && <LanguageList languages={languages} current={language} />}
           {headerLinks.length > 0 && (
-            <nav aria-label={t("links")} className="flex flex-col gap-0.5 px-4 py-5">
+            <nav lang={lang} aria-label={t("links")} className="flex flex-col gap-0.5 px-4 py-5">
               {headerLinks.map((link, i) => (
-                <a key={i} href={link.url} className="rounded-md px-2 py-2 break-words text-muted-foreground hover:text-foreground">
+                <a key={i} href={link.url} lang={team} className="rounded-md px-2 py-2 break-words text-muted-foreground hover:text-foreground">
                   {link.label}
                 </a>
               ))}
