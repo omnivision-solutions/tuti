@@ -171,21 +171,27 @@ async function workflowsIn(tx: Prisma.TransactionClient, projectId: string, conv
 export async function settleHold(conversationId: string, judgement: SpamJudgement): Promise<boolean> {
   const settle = (workflows: boolean) =>
     prisma.$transaction(async (tx) => {
-      const [held] = await tx.$queryRaw<{ projectId: string; pathDueAt: Date | null; spamHeldAt: Date | null; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
-        SELECT "projectId", "pathDueAt", "spamHeldAt", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
-      if (!held?.pathDueAt) {
+      const [held] = await tx.$queryRaw<
+        { projectId: string; pathDueAt: Date | null; spamHeldAt: Date | null; spam: boolean; spamMarkedAt: Date | null; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]
+      >`
+        SELECT "projectId", "pathDueAt", "spamHeldAt", "spam", "spamMarkedAt", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+      // Still held, or its checks still due (one from before the hold: W3's). A release from before, running beside this
+      // one during a deploy, may clear `pathDueAt` alone: the hold itself is what's settled.
+      if (!held?.pathDueAt && !held?.spamHeldAt) {
         return null;
       }
       // Kept for the models alone (a sign): read, it goes, as it may be another of the sender's addresses.
       await tx.inboundEmail.updateMany({ where: { conversationId, replyTo: { not: null } }, data: { replyTo: null } });
       const spam = !!judgement?.spam;
+      // A teammate decided it meanwhile, by a release from before that doesn't know of the hold (it leaves `spamHeldAt`):
+      // marked Not spam (no longer spam) or Mark as spam (marked). Nothing to settle, nor to tell again.
+      const decided = !held.spamHeldAt || !held.spam || !!held.spamMarkedAt;
       await tx.conversation.update({
         where: { id: conversationId },
         // Released: how old it is for a plan's history starts now, as a new conversation's does.
-        data: { pathDueAt: null, ...(held.spamHeldAt && { spamHeldAt: null, ...(spam ? { spamReason: "model" } : { spam: false, activeAt: new Date() }) }) },
+        data: { pathDueAt: null, spamHeldAt: null, ...(!decided && (spam ? { spamReason: "model" } : { spam: false, activeAt: new Date() })) },
       });
-      if (!held.spamHeldAt) {
-        // Decided meanwhile (a teammate's mark), or from before the hold: nothing to settle.
+      if (decided) {
         return { projectId: held.projectId, release: null };
       }
       // The verdict in its Activity (W16): which model, never the model's own words, which a sender could steer.

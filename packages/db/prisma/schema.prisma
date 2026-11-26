@@ -1264,6 +1264,7 @@ model Conversation {
   @@index([projectId, email])
   @@index([snoozedUntil])
   @@index([pathDueAt])
+  @@index([spamHeldAt])
   /// The conversations a placeholder holds, for its handover.
   @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")

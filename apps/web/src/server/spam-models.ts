@@ -261,7 +261,13 @@ export function spamChecksAfter(conversationId: string) {
  * so a release at once with the models' verdict, or two minutes at once, settle it once. Returns how many this run settled.
  */
 export async function runDueInbox(now = new Date()): Promise<{ checked: number }> {
-  const due = await prisma.conversation.findMany({ where: { pathDueAt: { lte: now } }, orderBy: { pathDueAt: "asc" }, take: 100, select: { id: true } });
+  // Held for 2 minutes is due too, whatever `pathDueAt` says: a release from before may have cleared it alone.
+  const due = await prisma.conversation.findMany({
+    where: { OR: [{ pathDueAt: { lte: now } }, { spamHeldAt: { lte: new Date(now.getTime() - SPAM_HOLD_MS) } }] },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+    select: { id: true },
+  });
   let checked = 0;
   for (const { id } of due) {
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {

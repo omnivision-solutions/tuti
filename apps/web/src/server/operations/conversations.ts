@@ -1654,6 +1654,10 @@ export const updateConversation = defineOperation({
         if (input.blockDomain) {
           await blockDomainOf(tx, sent, admin);
         }
+        if (marked && held!.spamHeldAt) {
+          // The mark ends the hold: the Reply-To kept for the model (a sign, maybe another of the sender's addresses) goes.
+          await tx.inboundEmail.updateMany({ where: { conversationId: conversation.id, replyTo: { not: null } }, data: { replyTo: null } });
+        }
       }
       // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
       // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.

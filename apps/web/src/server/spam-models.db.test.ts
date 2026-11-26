@@ -10,8 +10,10 @@ vi.mock("next/server", async (original) => ({ ...(await original<typeof import("
 
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 
+import ConversationPage from "@/app/app/(workspace)/[project]/inbox/[number]/page";
 import SpamSettingsPage from "@/app/app/(workspace)/[project]/settings/(admin)/spam/page";
 import { POST as due } from "@/app/api/inbox/due/route";
+import { SpamNotice } from "@/components/inbox/conversation-controls";
 import { SpamSettings } from "@/components/inbox/spam-settings";
 import { tellEvent } from "@/lib/conversation-events";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -136,6 +138,21 @@ test("a new conversation the free checks left undecided is held: in no view or c
   expect(await told()).toEqual(nobodyTold);
   // Nothing was asked before the request answered; the free checks' verdict waits for the model's.
   expect([later.length, model.decisions, await activity(number)]).toEqual([1, [], []]);
+});
+
+test("a held conversation's page, reached by its address, says the spam filter is still checking it; once filed, why", async () => {
+  const { owner, projectId, mail, check } = await setup();
+  const number = await mail();
+  const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
+  actAs(owner);
+  const why = async () => {
+    const page = await ConversationPage({ params: Promise.resolve({ project: slug, number: String(number) }), searchParams: Promise.resolve({}) });
+    return find(page, SpamNotice)?.props.why;
+  };
+  expect(await why()).toBe("the spam filter is still checking it");
+  model.decide({ spam: 0.97 });
+  await check(number);
+  expect(await why()).toBe("the spam filter judged this spam");
 });
 
 test("0.95 or more from the decision model files it, with its reason; nothing is told, and a second run does nothing", async () => {
@@ -296,13 +313,15 @@ test("the model reads the sender, subject, start of the message, its signals, th
 });
 
 test("a teammate's mark during the hold wins over the verdict: Mark as spam keeps it from everyone, Not spam releases it with the notices, once", { timeout: 30_000 }, async () => {
-  const { admin, mail, check, state, told, activity } = await setup();
+  const { projectId, admin, mail, check, state, told, activity } = await setup();
   // Marked spam while the model answers "not spam": the answer is dropped, and nobody is told.
-  const marked = await mail("e2e-a@example.com");
+  const marked = await mail("e2e-a@example.com", { headers: { "Reply-To": "e2e-a-home@example.com" } });
   model.decide({ spam: 0.01 }, undefined, () => call(updateConversation, admin, { number: marked, spam: true }));
   expect(await check(marked)).toBe(false);
   expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: false, due: false });
   expect([await told(), await activity(marked)]).toEqual([nobodyTold, []]);
+  // The mark ended the hold: the Reply-To kept for the model goes with it.
+  expect(await prisma.inboundEmail.count({ where: { conversationId: (await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: marked } } })).id, replyTo: { not: null } } })).toBe(0);
 
   // Not spam while the model answers "spam": released with its notices, and the answer is dropped.
   const unmarked = await mail("e2e-b@example.com");
@@ -375,6 +394,26 @@ test("anything still held after 2 minutes (a model slow or down, a crash) is rel
   // The model's late answer finds nothing to settle: nothing asked, nothing told again.
   expect(await later[0]!()).toBe(false);
   expect([model.decisions, await told()]).toEqual([[], toldOnce]);
+});
+
+test("during a deploy, a hold the release from before left (its job clearing `pathDueAt`, its Not spam) is settled once, never told twice", { timeout: 30_000 }, async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
+  const { mail, conversation, state, told } = await setup();
+  await nothingElseDue();
+  // Its job cleared `pathDueAt` alone, the hold left: released by the hold's age.
+  const cleared = await mail("e2e-a@example.com");
+  await prisma.conversation.update({ where: { id: (await conversation(cleared)).id }, data: { pathDueAt: null } });
+  expect(await runDueInbox(new Date(Date.now() + 1000))).toEqual({ checked: 0 });
+  expect(await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000))).toEqual({ checked: 1 });
+  expect(await state(cleared)).toEqual(released);
+  expect(await told()).toEqual(toldOnce);
+
+  // Its Not spam, which knows nothing of the hold: unmarked and told by it; the job only lets go of the hold.
+  const unmarked = await mail("e2e-b@example.com");
+  await prisma.conversation.update({ where: { id: (await conversation(unmarked)).id }, data: { spam: false, spamMarkedAt: new Date() } });
+  expect(await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000))).toEqual({ checked: 1 });
+  expect(await state(unmarked)).toEqual(released);
+  expect([await told(), await later[1]!()]).toEqual([toldOnce, false]);
 });
 
 test("a conversation the free checks decided keeps no Reply-To: nothing will read it", async () => {
