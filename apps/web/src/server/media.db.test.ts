@@ -77,6 +77,10 @@ describe("processing", () => {
     const { src, urls } = status as { src: string; urls: Record<string, string> };
     expect(Object.keys(urls).sort()).toEqual([...keys, emailImageKey(id)].sort());
     expect(src).toBe(urls[imageKey(id, 2400)]);
+    // Saved, not shown, by its own link (the AI image dialog's Download).
+    const download = new URL((status as { download: string }).download);
+    expect(download.pathname).toBe(new URL(src).pathname);
+    expect(download.searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''image.webp");
     // The bucket is private: the signed URL reads the file, its bare address doesn't.
     expect(new URL(src).searchParams.get("X-Amz-Signature")).toBeTruthy();
     expect((await fetch(src)).status).toBe(200);

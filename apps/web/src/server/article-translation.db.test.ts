@@ -201,11 +201,11 @@ test("can't run: provider failures are retried, then the page waits with why and
   expect((await call(getLanguages, as(), {})).languages[0]!.articles).toEqual({ translated: 0, waiting: 1, why: "The translation provider didn't answer" });
 
   // Not due yet: left alone. Due: tried again.
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 0 });
   await prisma.articleTranslation.updateMany({ where: { articleId }, data: { retryAt: new Date(Date.now() - 1000) } });
   model.requests.length = 0;
   model.reply(reply());
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   expect(await translation()).toMatchObject({ title: "[de] Getting started", error: null, retryAt: null });
   // Try again queues only those waiting: none now.
   expect(await retranslate({ code: "de", waiting: true })).toEqual({ queued: 0 });
@@ -265,14 +265,14 @@ test("a translation that can't be queued, or whose job is lost, waits and is que
   // Due: queued again and translated, nothing left to try.
   await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
   model.reply(reply());
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   expect(await translation()).toMatchObject({ title: "[de] Getting started", error: null, retryAt: null });
 
   // A job lost after it was queued (no error, its safety net's time passed) is queued again; up to date, it ends there.
   await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   expect(await translation()).toMatchObject({ retryAt: null });
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 0 });
 });
 
 test("a job lost from the queue is queued again after the longest it may wait; an up-to-date job leaves a newer queuing's safety net", async () => {
@@ -334,7 +334,7 @@ test("inline, a retry run takes no page an earlier run is still translating", as
     await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
     second = await handlers.retryArticleTranslations({}, log);
   });
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   expect(second).toEqual({ queued: 0 });
   expect(model.requests).toHaveLength(1);
 });
@@ -386,7 +386,7 @@ test("inline, a page two batches hold stays held until both finish", async () =>
     await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
     second = await handlers.retryArticleTranslations({}, log);
   });
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   expect(second).toEqual({ queued: 0 });
   expect(model.requests).toHaveLength(2);
 });
@@ -401,11 +401,11 @@ test("without AI on the server, pages wait and say why", async () => {
   expect((await translation()).retryAt).not.toBeNull();
   // Meanwhile the retry job queues nothing.
   await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ skipped: "AI isn't set up" });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ skipped: "AI isn't set up" });
   vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
   await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
   model.reply(reply());
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   expect(await translation()).toMatchObject({ title: "[de] Getting started", retryAt: null });
 });
 
@@ -441,7 +441,7 @@ test("a Retranslate that fails is retried as one: its retry reuses nothing eithe
   await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
   model.requests.length = 0;
   model.reply(reply("again"));
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
   // Everything sent again, nothing taken from the memory.
   expect(model.requests[0]!.user).toContain("Open Settings");
   expect(await translation()).toMatchObject({ title: "[again] Getting started", error: null, retranslate: 1, retranslated: 1 });

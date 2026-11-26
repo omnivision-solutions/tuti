@@ -13,7 +13,7 @@ import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } fr
 import { redirectFor } from "@/server/portal-redirects";
 import { LANGUAGE, languagePrefix, ownAddress, preferredLanguage, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
 import { LANGUAGE_COOKIE } from "@/lib/reader-language";
-import { apiReferenceSlugs, portalLanguages } from "@/server/language-addresses";
+import { apiReferenceSlugs, inDefaultLanguage, portalLanguages } from "@/server/language-addresses";
 import type { Language } from "@tuti/shared/languages";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
@@ -230,7 +230,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
       seen.add(next);
       const rule = await ruleFor(next);
       const split = splitLanguage(next);
-      next = rule ? destinationKey(rule) : split && !isLive(split.code) ? redirectKey(split.path) : null;
+      next = rule ? destinationKey(rule) : split && !isLive(split.code) ? redirectKey(await inDefaultLanguage(slug, split.code, split.path)) : null;
     }
     if (to) {
       const response = NextResponse.redirect(redirectLocation(to, origin, request.nextUrl.search), 308);
@@ -245,7 +245,8 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   const preview =
     !!inLanguage && !live && !!languages?.stored.includes(inLanguage.code) && (await teamPreview(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value));
   if (inLanguage && !live && !preview && reading) {
-    const response = NextResponse.redirect(redirectLocation(inLanguage.path, origin, request.nextUrl.search), 307);
+    // An article by that language's slug goes to its default-language slug.
+    const response = NextResponse.redirect(redirectLocation(await inDefaultLanguage(slug, inLanguage.code, inLanguage.path), origin, request.nextUrl.search), 307);
     response.headers.set("cache-control", "no-store");
     return framedByApp(response);
   }

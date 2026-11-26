@@ -191,7 +191,12 @@ export async function changeLanguages(projectId: string, change: (current: Langu
     }
     await tx.project.update({ where: { id: projectId }, data: { language, sendToLanguage: input.sendVisitors } });
     // Only languages this release offers: one it doesn't know (a newer release's, during a deploy) can't be in the list, so it stays.
-    await tx.projectLanguage.deleteMany({ where: { projectId, code: { in: LANGUAGE_CODES, notIn: input.languages.map(({ code }) => code) } } });
+    const removed = { projectId, code: { in: LANGUAGE_CODES, notIn: input.languages.map(({ code }) => code) } };
+    // A removed language's versions go with it, but their addresses stay as old slugs, so /de/docs/<slug> still finds the
+    // article (and sends it to the default language's page, as for an offline language).
+    const kept = await tx.articleTranslation.findMany({ where: { projectId, language: removed.code, slug: { not: null }, article: { deletedAt: null } }, select: { language: true, slug: true, articleId: true } });
+    await tx.articleOldSlug.createMany({ data: kept.map(({ language, slug, articleId }) => ({ projectId, language, slug: slug!, articleId })), skipDuplicates: true });
+    await tx.projectLanguage.deleteMany({ where: removed });
     // Those added together keep the list's order: a millisecond apart.
     // After every language already there, even one added a moment ago (a millisecond per language, maybe ahead of the clock).
     const latest = await tx.projectLanguage.aggregate({ where: { projectId }, _max: { createdAt: true } });
