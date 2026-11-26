@@ -1372,7 +1372,7 @@ export const translateReply = defineOperation({
 
 export const retryTranslation = defineOperation({
   name: "conversations.retryTranslation",
-  title: "Translate a conversation's messages again",
+  title: "Retry failed translations",
   summary:
     "Where the project translates conversations: the user's messages whose translation failed (their `translationError`) are translated again, in the background. Their translation shows on the conversation once it's in. With none that failed, nothing happens.",
   method: "POST",
