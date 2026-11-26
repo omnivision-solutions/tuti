@@ -1,9 +1,18 @@
 "use client";
 
-import { AlarmClockIcon, CheckIcon, ChevronDownIcon, UserPlusIcon } from "lucide-react";
-import { useSyncExternalStore, useTransition } from "react";
+import { AlarmClockIcon, CheckIcon, ChevronDownIcon, ShieldAlertIcon, UserPlusIcon } from "lucide-react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -240,26 +249,95 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
   );
 }
 
-export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolean }) {
+/** The top bar's "More actions" that shows: where the focus goes back to from a dialog its menu opened. */
+const moreActions = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="More actions"]')].find((button) => button.checkVisibility());
+
+/** Marks it as spam or not, saying what Not spam left in place (the server's `notice`); `done` once it has. */
+function useSpamMark(projectSlug: string, number: number) {
   const [pending, startTransition] = useTransition();
-  return (
-    <DropdownMenuItem
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const moved = actOn(number, !spam);
-          const result = await markConversationSpam(projectSlug, number, !spam);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(spam ? "Moved back to the inbox" : "Marked as spam");
-            moved();
-          }
-        })
+  const mark = (spam: boolean, blockDomain?: string, done?: () => void) =>
+    startTransition(async () => {
+      const moved = actOn(number, spam);
+      const result = await markConversationSpam(projectSlug, number, spam, !!blockDomain).catch(() => ({ error: "Couldn't reach Tuti. Try again.", notice: undefined }));
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(spam ? (blockDomain ? `Marked as spam, and blocked ${blockDomain}` : "Marked as spam") : "Moved back to the inbox", { description: result.notice });
+        moved();
+        done?.();
       }
-    >
-      {spam ? "Not spam" : "Mark as spam"}
-    </DropdownMenuItem>
+    });
+  return { pending, mark };
+}
+
+/** Not spam, as its button says it: an owner or admin taking a blocked address off the list with it (`unblocks`). */
+const notSpamLabel = (unblocks: string | null) => (unblocks ? `Not spam, and unblock ${unblocks}` : "Not spam");
+
+/**
+ * More actions' Mark as spam (or Not spam). For an owner or admin, where the sender's domain can be blocked
+ * (`blockDomain`), a second choice blocks it too, asking first: it files everyone's at the domain from then on.
+ */
+export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }: Props & { spam: boolean; blockDomain: string | null; unblocks: string | null }) {
+  const { pending, mark } = useSpamMark(projectSlug, number);
+  const [asking, setAsking] = useState(false);
+  return (
+    <>
+      <DropdownMenuItem disabled={pending} onClick={() => mark(!spam)}>
+        {spam ? notSpamLabel(unblocks) : "Mark as spam"}
+      </DropdownMenuItem>
+      {!spam && blockDomain && (
+        <>
+          <DropdownMenuItem disabled={pending} onClick={() => setAsking(true)}>
+            <span className="min-w-0 wrap-anywhere">Mark as spam, also block {blockDomain}…</span>
+          </DropdownMenuItem>
+          {/* Opened from "More actions", which closes as it opens: the focus goes back to that button. */}
+          <AlertDialog open={asking} onOpenChange={(next) => (next || !pending) && setAsking(next)}>
+            <AlertDialogContent closeDisabled={pending} finalFocus={() => moreActions() ?? true}>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="wrap-anywhere">Also block {blockDomain}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This conversation is marked as spam, and new conversations from addresses at {blockDomain} go straight to Spam, where nobody is told
+                  about them. Senders an owner or admin marked Not spam still get through.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+                <Button disabled={pending} focusableWhenDisabled onClick={() => mark(true, blockDomain, () => setAsking(false))}>
+                  Mark as spam and block
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Over a conversation in Spam: why it's there (`why`, the filter's reason or a teammate's mark), with Not spam beside it. */
+export function SpamNotice({ projectSlug, number, why, unblocks }: Props & { why: string | null; unblocks: string | null }) {
+  const { pending, mark } = useSpamMark(projectSlug, number);
+  return (
+    // The reason takes the room and wraps; its button stays beside it, going under only where a long one (an address to unblock) leaves the reason no room.
+    <div className="inbox-spam-notice flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-muted/50 px-5 py-2 text-sm">
+      <p className="flex min-w-0 flex-1 basis-48 items-start gap-1.5 wrap-anywhere [&>svg]:mt-0.75 [&>svg]:size-3.5 [&>svg]:flex-none">
+        <ShieldAlertIcon aria-hidden />
+        <span>
+          Marked as spam{why && `: ${why}`}
+        </span>
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-auto min-h-7 max-w-full whitespace-normal wrap-anywhere"
+        disabled={pending}
+        focusableWhenDisabled
+        // The line goes with the mark, and this button with it: the focus moves to one that stays.
+        onClick={() => mark(false, undefined, () => moreActions()?.focus())}
+      >
+        {notSpamLabel(unblocks)}
+      </Button>
+    </div>
   );
 }
 

@@ -468,6 +468,11 @@ export const deleteUser = defineOperation({
           // Whichever address it came from (one users.sync has changed since too). A later email from it then finds none of
         // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
           await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
+          // What marking their conversations taught the spam filter about their address goes too, and every mark on the
+          // address erased. An entry an owner or admin put on a list stays: the team's own rule, not this person's record.
+          await tx.spamSender.deleteMany({
+            where: { projectId, conversationId: { not: null }, OR: [{ conversationId: { in: conversations } }, ...(email ? [{ sender: email }] : [])] },
+          });
           if (email) {
             // Wherever they wrote from it. In theirs, none: the conversation's person wrote it (Deleted user now). In someone
             // else's (Cc'd on it), "Deleted user" in its place, as none there would say that person wrote it. By the
