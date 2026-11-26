@@ -65,6 +65,13 @@ test("the team edits an image in an article's text with AI, replaces it and publ
   const { original, edited } = await editImageInText(team, text, "Text selection", "Exporting reports", checkpoint);
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByRole("button", { name: "Saved" })).toBeVisible();
+  // Typing a change and closing without using it changes nothing in the article.
+  await text.locator("figure.rich-image img").click();
+  await team.getByRole("toolbar", { name: "Text selection" }).getByRole("button", { name: "Edit with AI" }).click();
+  await team.getByRole("dialog", { name: /Edit image/ }).getByLabel("What to change").fill("Never mind");
+  await team.keyboard.press("Escape");
+  await expect(team.getByRole("dialog", { name: /Edit image/ })).toBeHidden();
+  await expect(team.getByRole("button", { name: "Saved" })).toBeVisible();
   await team.getByRole("button", { name: "Publish" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
   await expect(team.getByRole("button", { name: "More actions" })).toBeVisible();

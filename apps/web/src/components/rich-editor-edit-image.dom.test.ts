@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { Editor } from "@tiptap/react";
 import { act, createElement as h, createRef } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const generateImage = vi.fn();
@@ -19,7 +19,12 @@ beforeEach(() => {
   generateImage.mockReset();
   generateImage.mockResolvedValue({ image: { id: MADE, url: `https://media.example/${MADE}.png`, width: 1000, height: 500 } });
 });
-afterEach(() => document.body.replaceChildren());
+// Unmounted before the page is cleared: a dialog's portal left to an old root fails its next update.
+const roots: Root[] = [];
+afterEach(async () => {
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+});
 
 const doc = {
   type: "doc",
@@ -35,8 +40,10 @@ async function editor(props: Record<string, unknown> = {}) {
   const box = document.createElement("form");
   document.body.append(box);
   const ref = createRef<Editor | null>() as React.RefObject<Editor | null>;
+  const root = createRoot(box);
+  roots.push(root);
   await act(async () =>
-    createRoot(box).render(
+    root.render(
       h(RichEditor, {
         profile: "changelog",
         name: "content",
@@ -72,6 +79,7 @@ test("Edit with AI is on a picked image only where the server makes images; out 
   await shown.pick();
   expect(shown.button("Alt text")).toBeTruthy();
   expect(shown.button("Edit with AI")).toBeUndefined();
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
   document.body.replaceChildren();
   shown = await editor({ imageEditing: { ...imageEditing, paused: true } });
   await shown.pick();
@@ -124,4 +132,17 @@ test("an image too thin or too small for AI starts at its shape scaled into rang
   expect(generatable({ width: 1200, height: 40 })).toEqual({ width: 1920, height: 64 });
   expect(generatable({ width: 32, height: 32 })).toEqual({ width: 64, height: 64 });
   expect(generatable({ width: 2400, height: 10 })).toEqual({ width: 2400, height: 64 });
+});
+
+test("the dialog keeps its tries for the image while the text before it changes", async () => {
+  const { ref, pick, generate, button, click } = await editor();
+  await pick();
+  await generate();
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await act(async () => ref.current!.chain().insertContentAt(1, "Just ").run());
+  await act(async () => ref.current!.commands.setNodeSelection(13));
+  await click("Edit with AI");
+  expect(button("Try 1")).toBeTruthy();
+  expect(document.body.textContent).toContain("Edited · 1 of 1");
 });
