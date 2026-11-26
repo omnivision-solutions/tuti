@@ -6,6 +6,7 @@ import { beforeEach, expect, test } from "vitest";
 
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import DocsSlugPage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { generateMetadata as docsHomeMetadata } from "@/app/portal/[project]/(site)/docs/page";
 import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { DocsArticle } from "@/components/portal-docs";
@@ -14,7 +15,7 @@ import { request } from "@/test/next-headers";
 
 import { portalAddress } from "./custom-domains";
 import { docsPage } from "./docs-queries";
-import { createArticle, publishArticle } from "./operations/docs";
+import { createArticle, createTab, publishArticle, updateTab } from "./operations/docs";
 import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -145,4 +146,37 @@ test("its Markdown and llms-full.txt: the translation at its address there, else
   const english = await (await llmsFull(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
   expect(english).toContain("Pay by card.");
   expect(english).toContain(`Source: ${portal}/docs/billing`);
+});
+
+test("the docs home showing a translated article in its place: in German at its own address, its search data there too", async () => {
+  // The first tab shows Billing in its place.
+  const tab = await call(createTab, as(), { name: "Guides" });
+  await call(updateTab, as(), { slug: tab.slug, landing: "page", landingPage: "billing" });
+  at("de");
+  const metadata = await docsHomeMetadata({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
+  expect(metadata.alternates).toMatchObject({ canonical: `${portal}/de/docs`, languages: { en: `${portal}/docs`, de: `${portal}/de/docs`, "x-default": `${portal}/docs` } });
+  expect(metadata.openGraph?.images).toMatchObject([{ url: `${portal}/de/og/docs` }]);
+  // Its structured data: at the German address.
+  const page = await docsPage(project.slug, "abrechnung");
+  const tree = await DocsArticle({ project: project.slug, slug: "billing", article: (page as { article: Parameters<typeof DocsArticle>[0]["article"] }).article, path: "/docs" });
+  const found: unknown[] = [];
+  const walk = (node: ReactNode) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === "object" && "props" in node) {
+      const props = (node as ReactElement<Record<string, unknown>>).props;
+      if (typeof (props.dangerouslySetInnerHTML as { __html?: string } | undefined)?.__html === "string") found.push(JSON.parse((props.dangerouslySetInnerHTML as { __html: string }).__html));
+      walk(props.children as ReactNode);
+    }
+  };
+  walk(tree);
+  expect(found[0]).toMatchObject({ "@type": "TechArticle", headline: "Abrechnung", url: `${portal}/de/docs` });
+});
+
+test("a title the share card's fonts can't draw (Japanese) keeps the default language's card", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }, { code: "ja", live: true, newPages: "manual" }] });
+  await prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language: "ja", automatic: false, title: "請求について", slug: "seikyu", content: german, body: "x", publishedAt: new Date() } });
+  at("ja");
+  const metadata = await generateMetadata(params("seikyu"));
+  expect(metadata.alternates?.canonical).toBe(`${portal}/ja/docs/seikyu`);
+  expect(metadata.openGraph?.images).toMatchObject([{ url: `${portal}/og/docs/billing` }]);
 });

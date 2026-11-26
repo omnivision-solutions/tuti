@@ -508,6 +508,11 @@ export async function articleAddresses(projectSlug: string, slug: string): Promi
   return Object.fromEntries([[languages.default, `/docs/${slug}`], ...versions.map((version) => [version.language, `/docs/${version.slug ?? slug}`])]);
 }
 
+/** A page showing article `slug` in its place (the docs home, a tab's), at its own `path` in every language the article reads in. */
+export async function landingAddresses(projectSlug: string, slug: string, path: string): Promise<Record<string, string>> {
+  return Object.fromEntries(Object.keys(await articleAddresses(projectSlug, slug)).map((language) => [language, path]));
+}
+
 /**
  * The article `slug` names at this address (docs/plan.md, Languages: each language its own slug), looked up in order: its
  * slug in the address's language; its default-language slug; an old slug in the address's language; another language's

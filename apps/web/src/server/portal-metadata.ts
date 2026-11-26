@@ -27,6 +27,12 @@ export const SHARE_IMAGE = { width: 1200, height: 630 } as const;
  * all on the portal's real address (its custom domain, or the path of the team's site it's under). Twitter's card
  * comes from the layout and takes these. `noindex`: kept from search engines (still shareable).
  */
+/**
+ * Whether the share card's fonts can draw `text` (Latin, Cyrillic, Greek and math; see share-card.tsx): not Han, kana or Hangul.
+ * ponytail: just the launch languages' scripts the fonts lack; bundling CJK fonts for the card is the upgrade.
+ */
+const drawable = (text: string) => !/[\u1100-\u11ff\u2e80-\u9fff\ua960-\ua97f\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/u.test(text);
+
 export async function portalPageMetadata(
   slug: string,
   page: {
@@ -97,7 +103,9 @@ export async function portalPageMetadata(
           : site?.brand.seoImage && page.path === home
             ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
             : // A translated page's card is made at its address there, in its language (its title translated).
-              { url: current && page.addresses ? `${address}${prefix}/og${pathIn(current)}` : `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
+              // Not when its title is in a script the card's fonts can't draw (Japanese, Korean, Chinese: share-card.tsx), which
+              // would show as boxes: the default language's card then.
+              { url: current && page.addresses && drawable(page.title) ? `${address}${prefix}/og${pathIn(current)}` : `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
       ],
       ...(page.article
         ? { type: "article", ...(publishedTime && { publishedTime: publishedTime.toISOString() }), ...(modifiedTime && { modifiedTime: modifiedTime.toISOString() }) }

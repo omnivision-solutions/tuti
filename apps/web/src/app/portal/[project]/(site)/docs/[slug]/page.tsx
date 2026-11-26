@@ -4,7 +4,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { DocsArticle, DocsCollectionPage, docsPageListing, DocsTabPage } from "@/components/portal-docs";
 import { ApiReferenceLanding, referenceListing } from "@/components/portal-api-operation";
 import { apiReferencePage } from "@/server/api-reference-queries";
-import { articleAddresses, articleNamed, docsPage } from "@/server/docs-queries";
+import { articleAddresses, articleNamed, docsPage, landingAddresses } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 
@@ -32,7 +32,8 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
     if (page.landing.kind === "reference") {
       return portalPageMetadata(project, { ...((await referenceListing(project, page.landing.slug)) ?? { title: page.landing.name }), path });
     }
-    return portalPageMetadata(project, { ...docsPageListing(page.landing), path });
+    // An article in its place: in each language it's translated into, here.
+    return portalPageMetadata(project, { ...docsPageListing(page.landing), path, ...(page.landing.kind === "article" && { addresses: await landingAddresses(project, page.landing.slug, path) }) });
   }
   // An article's page: in each language it's translated into, at its slug there (its canonical there); else in the default
   // language's (canonical there, by its default-language slug), with its line saying so (docs/plan.md, "A page not yet translated").
