@@ -13,7 +13,7 @@ const WEEK_MS = 7 * 24 * 60 * 60_000;
  * Not "closed this week": a close isn't recorded with its time (`updatedAt` moves with any change).
  */
 export async function inboxStats(projectId: string, now = new Date()) {
-  const needsReply = { projectId, spam: false, status: "OPEN" as const, ...awake(now) };
+  const needsReply = { projectId, spam: false, handledBy: "TEAM" as const, status: "OPEN" as const, ...awake(now) };
   const [waiting, sinceWaiting, sinceMessage, newThisWeek, replyMs] = await Promise.all([
     prisma.conversation.count({ where: needsReply }),
     // As the Needs reply list: who's waited since their unanswered message, or (set back to Open by hand) since the latest.

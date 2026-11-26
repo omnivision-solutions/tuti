@@ -403,6 +403,10 @@ test("inbox: new conversations by day and where they began, the median first rep
   // Open now is said to be now, whatever the range; those from AI answers are a row of Where they began, not a tile too.
   expect(html).toContain("|Open now|||1|||Right now, whatever the range|");
   expect(html).not.toContain("From AI answers");
+
+  // One the AI has isn't the team's to answer: not open now, as it isn't in Needs reply, where the tile leads.
+  await prisma.conversation.updateMany({ where: { projectId: project.id, origin: "ESCALATION" }, data: { handledBy: "AI" } });
+  expect((await inboxReport(project.id, past30())).totals).toMatchObject({ conversations: 4, openNow: 0 });
 });
 
 test("each report's tiles compare it with as many days just before: those days' totals, their own turns only, searches not when pruned", async () => {

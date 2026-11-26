@@ -196,7 +196,7 @@ the list picks none to approve at once.
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox is panes (`PaneLayout`, under Panes): its views in a section pane titled "Inbox" (Needs reply, Mine,
-  Unassigned, Waiting on user, Snoozed, Closed, Spam, each with its count; on phones the list header's menu), the
+  Unassigned, Waiting on user, With AI, Snoozed, Closed, Spam, each with its count; on phones the list header's menu), the
   list and the open conversation side by side when the room beside the section pane has 52.5rem, each scrolling on
   its own (the page itself doesn't; `InboxPanes`). The list's pane header is its view and count, with the list's search
   (`PaneSearch`, "Search conversations") a row of its own under them, the pane's whole width: the list is too narrow
@@ -204,7 +204,7 @@ the list picks none to approve at once.
   two searches side by side read as one; ⌘K is the sidebar's and the key's). A search (on Enter, `?q=`) lists what
   it finds in every view but Spam, as `conversations.list`'s `q` does, the latest message first, under the title
   "Results" and their count, with no view marked current; a row shows the message that has the text instead of the
-  latest (around the text, which is marked; "Note:" before a note's), and "Closed" on a closed one. An open
+  latest (around the text, which is marked; "Note:" before a note's), "Closed" on a closed one and "With AI" on one the AI has. An open
   conversation stays open beside the results; matches past the plan's history are said above the results, as Closed says its own; "Clear search" (where nothing matched) and an emptied field go back to the view. The conversation's
   is its subject (no way back: the list is beside it), with Close, More actions and the details toggle. With less room, the list or the
   conversation ("Inbox ›" before its subject; "‹ Inbox" on phones, its subject on a line of its own under the header).
@@ -213,7 +213,9 @@ the list picks none to approve at once.
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since
   the latest message); the subject and the latest message's first line on separate lines, cut
   short, after a small "Needs reply" (the highlight colour) when it needs one (not in the Needs
-  reply view, where every row would say it; in Snoozed, when it's back first). Its number is in the conversation, and read out
+  reply view, where every row would say it; in Snoozed, when it's back first) and a small "Priority" (an `outline`
+  badge, the same size, and in the row's name to the ear) on one marked priority, in every view. With AI lists what the AI
+  has (not closed or spam), which is in none of the team's views or counts and never says "Needs reply". Its number is in the conversation, and read out
   with the row. Unread customer messages make the name and subject bold for each teammate; opening the
   conversation makes them normal-weight in a softer foreground, with a muted preview. Team replies and notes
   never make it unread. Only customer messages after deployment or the teammate joining start unread;
