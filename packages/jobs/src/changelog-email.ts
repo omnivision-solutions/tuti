@@ -1,7 +1,7 @@
 import { type Doc, emailImageKey, fromPlainText } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
-import { type JobInput, planIncludes, plansEnabled } from "@tuti/shared";
+import { type JobInput, languageLimit, liveLanguages, planIncludes, plansEnabled } from "@tuti/shared";
 import { type GroupRule, storedRule } from "@tuti/shared/group-conditions";
 
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
@@ -321,9 +321,10 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       sample: true,
       emailOnly: true,
       projectId: true,
-      project: { select: { name: true, slug: true, brandColor: true } },
-      // In a live language only: one taken offline is no reader's, here as on the portal.
-      translations: { where: { publishedAt: { not: null }, projectLanguage: { live: true } }, select: { language: true, automatic: true, title: true, body: true, content: true, sourceHash: true } },
+      project: {
+        select: { name: true, slug: true, brandColor: true, plan: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+      },
+      translations: { where: { publishedAt: { not: null } }, select: { language: true, automatic: true, title: true, body: true, content: true, sourceHash: true } },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -371,9 +372,12 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   // or one translated from the entry as it is now (a stale one, its translation still to come or failed, isn't: they get
   // the default language's, as readers of a page not yet translated do).
   const { hash } = translationSource(entry);
+  // Only a language the portal serves: live, and within the plan's limit (the portal's own rule, liveLanguages), never one
+  // taken offline or past a downgrade's limit.
+  const served = new Set<string>(liveLanguages(entry.project.languages, languageLimit(entry.project.plan)));
   const versions = new Map(
     entry.translations
-      .filter((t) => !t.automatic || t.sourceHash === hash)
+      .filter((t) => served.has(t.language) && (!t.automatic || t.sourceHash === hash))
       .map((t) => {
         const version = (t.content as Doc | null) ?? fromPlainText(t.body);
         // Its own images (one the team put in theirs, which the source hasn't), and the entry's cover.

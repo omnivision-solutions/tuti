@@ -1,7 +1,7 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeChangelogScreenshots, PRODUCT_SETTING_CHANGED, translationSource } from "@tuti/jobs";
-import { type ModelFake, startModelFake, startS3Fake } from "@tuti/testkit";
+import { billingFile, type ModelFake, startModelFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
@@ -418,4 +418,43 @@ test("screenshots placed are kept even when queuing the entry's translations the
     reading.mockRestore();
   }
   expect(((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
+});
+
+test("a language past the plan's limit (after a downgrade) isn't emailed in, as the portal doesn't serve it", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  // Pro: up to 3 languages, the default included: German and Spanish are served, French (added last) isn't.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  for (const [i, code] of ["de", "es", "fr"].entries()) {
+    await prisma.projectLanguage.create({ data: { projectId: project.id, code, live: true, automatic: false, createdAt: new Date(Date.now() - (3 - i) * 60_000) } });
+  }
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  for (const [code, title] of [["es", "Modo oscuro"], ["fr", "Mode sombre"]] as const) {
+    await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: code, automatic: false, title, body: title, publishedAt: new Date() } });
+  }
+  const spanish = `e2e-es-${project.slug}@example.com`;
+  const french = `e2e-fr-${project.slug}@example.com`;
+  await subscriber(spanish, "es");
+  await subscriber(french, "fr");
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => [spanish, french].some((a) => m.to.includes(a)))).toHaveLength(2));
+  expect(mailbox.emails.find((m) => m.to.includes(spanish))!.subject).toContain("Modo oscuro");
+  expect(mailbox.emails.find((m) => m.to.includes(french))!.subject).toContain(TITLE);
+});
+
+test("a signed-in reader subscribing on the default language's page gets their saved language", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  const form = new FormData();
+  form.set("email", reader.email);
+  request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
+  try {
+    expect(await subscribeToChangelog(project.slug, form)).toEqual({ sentTo: reader.email });
+  } finally {
+    request.headers = {};
+  }
+  expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).language).toBe("de");
 });
