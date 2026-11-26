@@ -112,7 +112,8 @@ async function query(sql: string, values: unknown[]) {
 }
 
 // On Tuti's cloud, which sells plans: Free has the default language alone.
-test("on a plan with no room for another language, Add language and Go live offer the upgrade", async ({ browser }) => {
+test("on a plan with no room for another language, Add language and Go live offer the upgrade", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
@@ -122,6 +123,7 @@ test("on a plan with no room for another language, Add language and Go live offe
   await add.click();
   const prompt = owner.getByRole("dialog", { name: /^Projects on the Free plan have 1 language/ });
   await expect(prompt.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await checkpoint(owner, "settings-languages-add-upgrade", { fullPage: false });
   await prompt.getByRole("button", { name: "Not now" }).click();
   await expect(prompt).toBeHidden();
 
@@ -134,6 +136,8 @@ test("on a plan with no room for another language, Add language and Go live offe
   await expect(goLive).toHaveAccessibleDescription(/^Projects on the Free plan have 1 language, the default included\. Upgrade to .* to make more live\.$/);
   await goLive.click();
   const goLivePrompt = owner.getByRole("dialog", { name: /to make more live\.$/ });
+  await expect(goLivePrompt).toBeVisible();
+  await checkpoint(owner, "settings-languages-go-live-upgrade", { fullPage: false });
   await goLivePrompt.getByRole("button", { name: "Not now" }).click();
   await expect(goLivePrompt).toBeHidden();
   await expect(german).toContainText("Offline");
