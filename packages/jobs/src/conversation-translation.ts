@@ -13,7 +13,7 @@ import type { JobLogger, JobResult, JobRun } from "./index";
  * `body` is the customer's side, its `teamText` the team's.
  */
 
-/** The team's language until projects have a default language of their own (docs/plan.md, Languages, L1). */
+/** The team's language where neither it nor the project's default language is set. */
 export const DEFAULT_TEAM_LANGUAGE = "en";
 
 /** A language code as stored: a BCP 47 tag, canonical ("pt-BR"), or null for one Intl doesn't take. */
@@ -50,8 +50,9 @@ async function asker(projectId: string) {
 
 /** A project's team language and whether it translates conversations. */
 export async function translationSettings(projectId: string) {
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { teamLanguage: true, translateConversations: true } });
-  return { teamLanguage: project.teamLanguage ?? DEFAULT_TEAM_LANGUAGE, translate: project.translateConversations };
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { language: true, teamLanguage: true, translateConversations: true } });
+  // Unset: the project's default language.
+  return { teamLanguage: project.teamLanguage ?? project.language ?? DEFAULT_TEAM_LANGUAGE, translate: project.translateConversations };
 }
 
 /**
