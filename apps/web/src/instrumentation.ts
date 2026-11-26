@@ -29,6 +29,7 @@ export async function register() {
     setInterval(() => void handlers.commentEmailsDue({}, log).catch((error) => log.error("Comment emails' minute failed", { error })), 60_000).unref();
     setInterval(() => void handlers.retryCodeChanges({}, log).catch((error) => log.error("Autopilot's retries failed", { error })), 10 * 60_000).unref();
     setInterval(() => void handlers.resumeImports({}, log).catch((error) => log.error("Resuming imports failed", { error })), 60_000).unref();
+    setInterval(() => void handlers.retryArticleTranslations({}, log).catch((error) => log.error("Retrying article translations failed", { error })), 15 * 60_000).unref();
     setInterval(() => void handlers.failStaleImports({}, log).catch((error) => log.error("Failing stale imports failed", { error })), 60 * 60_000).unref();
   }
 }

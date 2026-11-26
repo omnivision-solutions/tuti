@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
-import { importsSettled, resumeToken } from "@tuti/jobs";
+import { importsSettled, languageTranslationsDone, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
 import { billingFile, type BrowserUseFake, configFile, startBrowserUseFake, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -585,7 +585,16 @@ const matrix: Matrix = {
   languages: {
     // The fixture has German besides English, so the default stays as it is.
     setDefaultLanguage: { allowed: "ADMIN", call: (slug) => languages.setDefaultLanguage(slug, "en") },
-    addLanguage: { allowed: "ADMIN", call: (slug) => languages.addLanguage(slug, "fr") },
+    addLanguage: {
+      allowed: "ADMIN",
+      // French is Automatic for new pages: the published article is translated, in the background (done before the next case).
+      before: () => model.otherwise(JSON.stringify({ segments: { "1": "Article de la matrice" } }), "Matrix article"),
+      call: async (slug) => {
+        const result = await languages.addLanguage(slug, "fr");
+        await languageTranslationsDone();
+        return result;
+      },
+    },
     updateLanguage: { allowed: "ADMIN", call: (slug) => languages.updateLanguage(slug, "de", { live: true, instructions: "Use du." }) },
     removeLanguage: { allowed: "ADMIN", call: (slug) => languages.removeLanguage(slug, "de") },
   },
@@ -960,8 +969,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId, userId: users.MEMBER.id, role: "MEMBER" },
     ],
   });
-  // German besides English (Settings → Languages).
-  await prisma.projectLanguage.create({ data: { projectId, code: "de" } });
+  // German besides English (Settings → Languages): Manual for new pages, so publishing asks no model for a translation.
+  await prisma.projectLanguage.create({ data: { projectId, code: "de", automatic: false } });
   const target = await prisma.user.create({
     data: { id: crypto.randomUUID(), name: "Target", email: `e2e-${crypto.randomUUID()}@example.com` },
   });
