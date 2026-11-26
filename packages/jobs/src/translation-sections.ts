@@ -1,4 +1,4 @@
-import { type Doc, keyed, sameSection, sections } from "@tuti/content";
+import { canonicalBlocks, type Doc, keyed, sameSection, sections } from "@tuti/content";
 import { contentHash } from "@tuti/shared";
 
 /*
@@ -92,11 +92,12 @@ export function withTranslation(
 /** A section's text under its heading ("" for none), to know it again with its heading reworded. */
 const bodyOf = (blocks: Block[]) => {
   const rest = blocks[0]?.type === "heading" ? blocks.slice(1) : blocks;
-  return rest.length > 0 ? JSON.stringify(rest) : "";
+  return rest.length > 0 ? canonicalBlocks(rest) : "";
 };
 
 /** A section's heading text ("" for one with none), to know it again after the text around it moved. */
-const headingOf = (blocks: Block[]) => (blocks[0]?.type === "heading" ? JSON.stringify(blocks[0].content ?? []) : "");
+// Compared in one key order (canonicalBlocks): a section read back from Postgres has its keys in another than one sent.
+const headingOf = (blocks: Block[]) => (blocks[0]?.type === "heading" ? canonicalBlocks(blocks[0].content ?? []) : "");
 
 /**
  * The team's edit of `base` (the draft, else the published text) as sections. Each edited section is known again as the base

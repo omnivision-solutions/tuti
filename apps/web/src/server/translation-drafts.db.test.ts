@@ -515,3 +515,20 @@ test("a version the team writes: a section English renames or adds is behind, an
   ]);
   expect(after.behind).toEqual([]);
 });
+
+test("saved with a heading renamed and a section added, the renamed one keeps its source section", async () => {
+  const { id: articleId } = await (async () => {
+    await translated();
+    return prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  })();
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  // Billing's heading renamed (its text as it was), and an FAQ added at the end.
+  content.content!.at(-2)!.content![0]!.text = "Zahlung";
+  content.content!.push({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "FAQ" }] }, { type: "paragraph", content: [{ type: "text", text: "Fragen" }] });
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  const { draft } = await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } });
+  const { sections, removed } = draft as { sections: { key: string | null }[]; removed: string[] };
+  expect(sections.map(({ key }) => key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing", null]);
+  expect(removed).toEqual([]);
+});
