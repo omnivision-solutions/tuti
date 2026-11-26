@@ -1,17 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { FakeBrowserUseRun } from "@tuti/testkit";
+import { FAKE_CANT_SIGN_IN, FAKE_SIGN_IN_REFUSED } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
 import { createProject, signUp } from "./helpers";
-
-/** Scripts the Browser Use fake's next run (e2e/global-setup.ts): only this file's journey runs the agent. */
-async function nextRun(run: FakeBrowserUseRun) {
-  const response = await fetch(`${process.env.E2E_BROWSER_USE_URL}/_fake/next-run`, { method: "POST", body: JSON.stringify(run) });
-  expect(response.ok).toBe(true);
-}
 
 test("an owner sets up screenshots of their app, signing in with a password kept secret, and tests it: the screen it lands on, or why it couldn't sign in", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -45,6 +39,8 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   // The residential proxy stays off unless the app blocks cloud servers.
   await expect(owner.getByRole("switch", { name: "Use a residential proxy" })).not.toBeChecked();
   await owner.getByLabel("About your app").fill("After signing in, pick the Acme workspace. Close the welcome tour.");
+  // The browser opens only the app's own domain unless told of others (a sign-in elsewhere, a CDN).
+  await owner.getByLabel("Other domains your app loads from").fill("acme.auth0.com\ncdn.example.net");
   await save.click();
   await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
@@ -61,6 +57,7 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(owner.getByText("Saved. Enter a new one to replace it.")).toBeVisible();
   expect(await owner.content()).not.toContain(password);
   await expect(owner.getByLabel("Username")).toHaveValue("e2e-demo@example.com");
+  await expect(owner.getByLabel("Other domains your app loads from")).toHaveValue("acme.auth0.com\ncdn.example.net");
 
   // The Test: the agent signs in and shows the screen it lands on.
   await testButton.click();
@@ -78,13 +75,15 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await checkpoint(owner, "team-settings-screenshots-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // A password the app refuses: the Test says why, instead of a screen.
-  await nextRun({ signInFailed: "The app said the password is wrong." });
+  // A password the app refuses (Browser Use's fake can't sign in when the notes say so): the Test says why, instead of a screen.
+  await owner.getByLabel("About your app").fill(FAKE_CANT_SIGN_IN);
+  await save.click();
+  await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
   await testButton.click();
-  const refused = owner.getByText("The agent couldn't sign in: The app said the password is wrong.", { exact: true });
+  const refused = owner.getByText(`The agent couldn't sign in: ${FAKE_SIGN_IN_REFUSED}`, { exact: true });
   await expect(refused).toBeVisible();
   await refused.scrollIntoViewIfNeeded();
-  await expect(status).toHaveText("Test failed: The agent couldn't sign in: The app said the password is wrong.");
+  await expect(status).toHaveText(`Test failed: The agent couldn't sign in: ${FAKE_SIGN_IN_REFUSED}`);
   await expect(landed).toBeHidden();
   await checkpoint(owner, "team-settings-screenshots-sign-in-failed");
 });

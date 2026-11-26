@@ -36,7 +36,7 @@ const fields = {
     .trim()
     .min(1, "Name is required")
     .max(MAX_WORKFLOW_NAME)
-    .describe("Its name: the note it leaves in a conversation starts with it")
+    .describe("Its name, as the conversation's Activity names it")
     .meta({ examples: ["Enterprise first"] }),
   trigger: z
     .enum(TRIGGER_KEYS)
@@ -60,7 +60,7 @@ const fields = {
 const workflowOutput = z
   .object({
     id: workflowId,
-    name: z.string().describe("Its name: the note it leaves in a conversation starts with it").meta({ examples: ["Enterprise first"] }),
+    name: z.string().describe("Its name, as the conversation's Activity names it").meta({ examples: ["Enterprise first"] }),
     trigger: z.enum(TRIGGER_KEYS).describe("When it runs: `conversation_started` (a user's first message) or `user_replied` (every later one)").meta({ examples: ["conversation_started"] }),
     position: z.number().int().describe("Its place in its trigger's list, 0 first: the list runs top to bottom").meta({ examples: [0] }),
     enabled: fields.enabled,
@@ -177,7 +177,7 @@ export const createWorkflow = defineOperation({
   name: "workflows.create",
   title: "Create a workflow",
   summary:
-    "Add a workflow to the inbox, last in its trigger's list (workflows.move places it). When a user's message arrives, the trigger's workflows that are on run top to bottom; each that changed the conversation leaves a note in it, “<name> marked this priority”.",
+    "Add a workflow to the inbox, last in its trigger's list (workflows.move places it). When a user's message arrives, the trigger's workflows that are on run top to bottom; each run is a row in the conversation's Activity (conversations.activity): every workflow checked and what it did.",
   method: "POST",
   path: "/workflows",
   scope: "write",
@@ -272,7 +272,7 @@ export const moveWorkflow = defineOperation({
 export const deleteWorkflow = defineOperation({
   name: "workflows.delete",
   title: "Delete a workflow",
-  summary: "Delete a workflow. The notes it left in conversations stay, and so does what it changed.",
+  summary: "Delete a workflow. Its rows in conversations' Activity stay as they were, and so does what it changed.",
   method: "DELETE",
   path: "/workflows/{id}",
   scope: "write",

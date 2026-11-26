@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { getDomain } from "tldts";
 import { z } from "zod";
 
-import { SPAM_REASON_KEYS, spamWhy } from "@/lib/spam-reasons";
+import { SPAM_REASON_KEYS, spamPassedWhy, spamWhy } from "@/lib/spam-reasons";
 
 import { userWithAddress } from "../inbound";
 import { blockableDomain, listSender, spamVerdict } from "../spam";
@@ -178,12 +178,6 @@ export const updateSpamSettings = defineOperation({
   },
 });
 
-/** Why a message got through, by the check that let it (`spamVerdict`'s `check`). */
-const PASSED = {
-  decisions: "your lists and marks let this sender through",
-  trusted: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
-} as const;
-
 export const trySpamFilter = defineOperation({
   name: "spam.try",
   title: "Try the spam filter",
@@ -214,7 +208,7 @@ export const trySpamFilter = defineOperation({
     return {
       spam: verdict.spam,
       reason: verdict.reason,
-      why: verdict.spam ? spamWhy(verdict.reason, verdict.phrase)! : (PASSED[verdict.check as keyof typeof PASSED] ?? "no check filed it"),
+      why: verdict.spam ? spamWhy(verdict.reason, verdict.phrase)! : spamPassedWhy(verdict.check),
     };
   },
 });

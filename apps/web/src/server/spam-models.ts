@@ -3,13 +3,15 @@ import { historySince, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, complete, config, creditsEnabled, decide, decisionsAvailable, DEFAULT_AI_MODEL, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
+import { logEvents } from "./conversation-events";
 import { notifyInbox } from "./live";
 
 /**
  * The spam filter's model checks (docs/plan.md, Inbox automation, "The spam filter", checks 6 and 7), watching only: a
  * new conversation no free check decided (server/spam.ts) goes to the inbox as ever, and once the request has answered
  * the decision model is asked whether it's spam (at least 0.9 is, at most 0.3 isn't), then the chat model where it
- * wasn't sure. One that would have been filed gets a Tuti note saying so, and why; nothing is held, filed or told.
+ * wasn't sure. One that would have been filed gets a row in its Activity saying so, and why (`spam_would_file`);
+ * nothing is held, filed or told.
  *
  * It fails open and costs the project nothing: a model down, the day's cap reached (`spam.requestsPerDay`, the config
  * file) or a server without the models leaves the conversation as it is. The requests are recorded (`spam`), never
@@ -109,7 +111,7 @@ const oneLine = (text: string, max = 200) => {
 };
 
 /**
- * A model's verdict: `spam`, and why in words (for the note: Tuti's own words, never the model's, which a sender could
+ * A model's verdict: `spam`, and why in words (Tuti's own words, never the model's, which a sender could
  * steer); `reason`, what the chat model said, for the evaluation alone. `by` which check gave it. Null: no answer.
  */
 export type SpamJudgement = { spam: boolean; by: "decision" | "chat"; why: string; reason?: string; probability?: number } | null;
@@ -291,19 +293,11 @@ export async function runSpamChecks(conversationId: string): Promise<boolean> {
       // Kept for the models alone (a sign): read, it goes, as it may be another of the sender's addresses.
       await tx.inboundEmail.updateMany({ where: { conversationId, replyTo: { not: null } }, data: { replyTo: null } });
       if (judgement?.spam && !conversation.spam && !conversation.spamMarkedAt) {
-        // After the conversation's latest message, so it reads in order (as addMessage times them).
-        const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
-        await tx.conversationMessage.create({
-          data: {
-            projectId: read.projectId,
-            conversationId,
-            author: "TUTI",
-            channel: "APP",
-            note: true,
-            body: `The spam filter would have filed this: ${judgement.why}.`,
-            createdAt: new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0)),
-          },
-        });
+        // In its Activity (W16), with the check's result: which model, and the decision model's probability. Nothing of
+        // the sender's, nor the model's own words, which a sender could steer.
+        await logEvents(tx, conversationId, [
+          { kind: "spam_would_file", actor: "spam_filter", details: { by: judgement.by, ...(judgement.probability !== undefined && { probability: judgement.probability }) } },
+        ]);
         await notifyInbox(tx, { projectId: read.projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
       }
       return true;

@@ -253,6 +253,8 @@ const matrix: Matrix = {
     },
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     composeChangelogCover: { allowed: "MEMBER", call: (slug) => changelog.composeChangelogCover(slug, 1, "title") },
+    // Owners and admins, as screenshots.take: what's asked for goes into the agent's task beside the sign-in. Inline, by Browser Use's fake.
+    takeChangelogScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => changelog.takeChangelogScreenshots(slug, 3, ["The dashboard"])) },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
     deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },
     reactToChangelogEntry: {
@@ -536,6 +538,7 @@ const matrix: Matrix = {
     takeOverConversation: { allowed: "MEMBER", call: (slug) => inbox.takeOverConversation(slug, 1) },
     setConversationPriority: { allowed: "MEMBER", call: (slug) => inbox.setConversationPriority(slug, 1, true) },
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
+    loadConversationActivity: { allowed: "MEMBER", call: (slug) => inbox.loadConversationActivity(slug, 1, "all") },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
@@ -1052,11 +1055,13 @@ async function createFixture(own: "domain" | "site" = "domain") {
       source: "MANUAL",
     },
   });
-  await prisma.project.update({ where: { id: projectId }, data: { changelogCount: 2 } });
+  await prisma.project.update({ where: { id: projectId }, data: { changelogCount: 3 } });
   await prisma.changelogEntry.createMany({
     data: [
       { projectId, number: 1, title: "Matrix entry", publishedAt: new Date() },
       { projectId, number: 2, title: "Matrix draft", body: "Shipped" },
+      // A line asking for a screenshot, for Take screenshots.
+      { projectId, number: 3, title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
   const entryComment = await prisma.changelogComment.create({

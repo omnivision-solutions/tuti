@@ -133,6 +133,22 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               aria-describedby="screenshots-about-description"
               placeholder="After signing in, pick the Acme workspace. Close the welcome tour. Don't open Billing."
             />
+          </SettingBlock>
+          <SettingBlock className="gap-2">
+            <label htmlFor="screenshots-other-domains" className="font-medium">
+              Other domains your app loads from
+            </label>
+            <p id="screenshots-other-domains-description" className="-mt-1.5 text-sm text-muted-foreground">
+              The browser only opens your app&apos;s own address and its sign-in link&apos;s (with their subdomains). List every other host your app needs, one per line: its API (api.example.com), a sign-in page (login.example.com, acme.auth0.com) or a CDN. The password can be entered on any host listed, so list only hosts you trust with it.
+            </p>
+            <Textarea
+              id="screenshots-other-domains"
+              name="otherDomains"
+              defaultValue={settings.otherDomains.join("\n")}
+              rows={2}
+              aria-describedby="screenshots-other-domains-description"
+              placeholder="acme.auth0.com"
+            />
             {state.error && <FieldError>{state.error}</FieldError>}
           </SettingBlock>
         </form>

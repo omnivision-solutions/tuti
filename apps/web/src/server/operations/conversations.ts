@@ -3,12 +3,14 @@ import { enqueue, historySince, inSomePlansHistory, replyTranslation, translatio
 import { aiEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
+import type { NewEvent } from "@/lib/conversation-events";
 import { rowLine, subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 import { isAdminRole } from "@/lib/roles";
 import { SPAM_REASON_KEYS, type SpamReason } from "@/lib/spam-reasons";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload } from "../attachments";
+import { logEvents, teamActor } from "../conversation-events";
 import { conversationReads } from "../conversation-reads";
 import { portalAddress } from "../custom-domains";
 import { readerToSend, searchDocs } from "../docs-search";
@@ -1013,7 +1015,7 @@ export async function startConversation(
      * The spam filter (server/spam.ts), run under the project's lock for a conversation a user starts: one it files goes to
      * Spam with the reason, and the caller tells nobody (`conversation.spam`). Without it (the team's own, over the API): never spam.
      */
-    filter?: (tx: Prisma.TransactionClient, first: { subject: string | null; text: string }) => Promise<{ spam: boolean; reason: SpamReason | null; phrase?: string; askModels?: boolean }>;
+    filter?: (tx: Prisma.TransactionClient, first: { subject: string | null; text: string }) => Promise<{ spam: boolean; reason: SpamReason | null; check?: string | null; phrase?: string; askModels?: boolean }>;
     /** The first message came by email. */
     received?: ReceivedEmail;
     /** More to write in the same transaction (a received email's status, its attachments), with the conversation's and its first message's ids. */
@@ -1072,6 +1074,10 @@ export async function startConversation(
       },
       select: messageSelect,
     });
+    if (verdict) {
+      // The spam filter's verdict, in its Activity (W16).
+      await logEvents(tx, conversation.id, [{ kind: "spam_filter", actor: "spam_filter", details: { spam: verdict.spam, reason: verdict.spam ? verdict.reason : null, check: verdict.check ?? null, ...(verdict.spam && verdict.phrase && { phrase: verdict.phrase }) } }]);
+    }
     let first = message;
     if (start.alongside) {
       await start.alongside(tx, conversation.id, message.id);
@@ -1124,8 +1130,9 @@ export async function addMessage(
    * The team's reply closes it (Send and close), in the same transaction, rather than leaving it waiting on the user; `seen`,
    * the latest message the team saw: one from the user after it (that no teammate has answered since) keeps it open and
    * waiting on the team. `outcome` says what this reply did (not what someone else did after it): closed it, or kept it open.
+   * `by`: who a team reply that takes it over from the AI is credited to in its Activity (an API key), else its author.
    */
-  { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean } } = {},
+  { close = false, seen, outcome, by }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean }; by?: Awaited<ReturnType<typeof teamActor>> } = {},
 ) {
   // Whether it was in Spam as the message was written, read while the conversation is held: its user's message tells
   // nobody then (announceUserMessage), and Not spam, which holds it too, tells of exactly those.
@@ -1135,9 +1142,11 @@ export async function addMessage(
     // when the clock says no later, or another server's clock runs ahead), so messages' times are the order they're
     // written in. A user message is never older than a reply or note the team has already seen.
     // (The latest read in a statement of its own, after the wait: one written by whoever held it is seen.)
-    const [held] = await tx.$queryRaw<{ spam: boolean; spamMarkedAt: Date | null }[]>`
-      SELECT "spam", "spamMarkedAt" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [held] = await tx.$queryRaw<{ spam: boolean; spamMarkedAt: Date | null; handledBy: ConversationOwner; status: ConversationStatus; snoozedUntil: Date | null }[]>`
+      SELECT "spam", "spamMarkedAt", "handledBy", "status", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
     inSpam = !!held?.spam;
+    // As it was before this message, for the changes it makes on the way (its Activity, W16).
+    const before = { withAi: held?.handledBy === "AI", status: held?.status, snoozed: !!held?.snoozedUntil };
     const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
       SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
     // In Spam, after its mark too, whichever server's clock runs ahead: what was written since the mark is told by its time.
@@ -1179,11 +1188,27 @@ export async function addMessage(
         "snoozedUntil" = CASE WHEN (${close} AND NOT ${after}) OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END,
         "updatedAt" = ${now}
         WHERE "id" = ${conversationId}`;
+      // What the reply changed on the way, in its Activity with it: taken over, set waiting or closed.
+      const teammate = by ?? { actor: "teammate" as const, actorId: message.authorId };
+      const status = after ? before.status : close ? "CLOSED" : "WAITING";
+      await logEvents(tx, conversationId, [
+        ...(before.withAi ? [{ kind: "handled_by" as const, ...teammate, details: { handledBy: "team" as const, byReply: true } }] : []),
+        ...(status !== before.status ? [{ kind: "status" as const, ...teammate, details: { status: toApiStatus(status!), byMessage: true } }] : []),
+      ]);
       if (outcome) {
         outcome.closed = close && !after;
         outcome.keptOpen = after;
       }
     } else {
+      if (message.author === "USER") {
+        // Someone else on the email thread (a Cc'd colleague): said so, not credited to the conversation's person.
+        const other = !!message.fromAddress;
+        // What their message changed on the way, in its Activity with it: waiting or closed, it opens again; snoozed, it wakes.
+        await logEvents(tx, conversationId, [
+          ...(before.status !== "OPEN" ? [{ kind: "status" as const, actor: "user" as const, details: { status: "open" as const, byMessage: true, ...(other && { other }) } }] : []),
+          ...(before.snoozed ? [{ kind: "snooze" as const, actor: "user" as const, details: { until: null, ...(other && { other }) } }] : []),
+        ]);
+      }
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
       await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "activeAt" = ${now}, "snoozedUntil" = NULL, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
@@ -1369,7 +1394,7 @@ export const replyToConversation = defineOperation({
               { ...writer, channel: actor.kind === "user" ? "APP" : "API", body: input.body, note: input.note ?? false, requestId, ...translated },
               uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
               // Not saying (the API, MCP): what the conversation's latest message was as this reply was asked for, before writing it.
-              { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome },
+              { close: input.close, seen: input.seen ?? conversation.lastMessageAt, outcome, ...(actor.kind === "apiKey" && { by: await teamActor(prisma, actor) }) },
             );
     } catch (error) {
       // The same id sent twice at once: the unique index lets one write it, and the other answers with that one. Or the
@@ -1570,8 +1595,10 @@ export const updateConversation = defineOperation({
     const updated = await prisma.$transaction(async (tx) => {
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
-      const [held] = await tx.$queryRaw<{ status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamMarkedAt: Date | null }[]>`
-        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamMarkedAt" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+      const [held] = await tx.$queryRaw<
+        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamMarkedAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
+      >`
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamMarkedAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1648,6 +1675,28 @@ export const updateConversation = defineOperation({
         },
         select: { ...conversationSelect, userId: true, visitorHash: true },
       });
+      // Each change, in its Activity (W16), credited to the teammate or the API key: only what changed.
+      const by = await teamActor(tx, actor);
+      const changes: NewEvent[] = [];
+      if (marked) {
+        changes.push({ kind: "spam", ...by, details: { spam: input.spam! } });
+      }
+      if (input.status && input.status.toUpperCase() !== held!.status) {
+        changes.push({ kind: "status", ...by, details: { status: input.status } });
+      }
+      if (assigneeId !== undefined && assigneeId !== held!.assigneeId) {
+        changes.push({ kind: "assignee", ...by, details: { assigneeId } });
+      }
+      if (input.priority !== undefined && input.priority !== held!.priority) {
+        changes.push({ kind: "priority", ...by, details: { priority: input.priority } });
+      }
+      if (input.snoozedUntil !== undefined && input.snoozedUntil?.getTime() !== held!.snoozedUntil?.getTime() && (input.snoozedUntil || held!.snoozedUntil)) {
+        changes.push({ kind: "snooze", ...by, details: { until: input.snoozedUntil?.toISOString() ?? null } });
+      }
+      if (input.handledBy && input.handledBy.toUpperCase() !== held!.handledBy) {
+        changes.push({ kind: "handled_by", ...by, details: { handledBy: input.handledBy } });
+      }
+      await logEvents(tx, row.id, changes);
       await notifyInbox(tx, { projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash, email: row.email });
       return row;
     });

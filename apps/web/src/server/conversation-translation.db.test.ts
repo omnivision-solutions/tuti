@@ -15,11 +15,21 @@ import { call } from "./operations/run";
 import { getSupportSettings, updateSupportSettings } from "./operations/support";
 import { summarizeConversation } from "./operations/support-ai";
 
-/** Queuing a job fails for the keys in `failing` (Hatchet unreachable); everything else is queued as it is. */
-const jobs = vi.hoisted(() => ({ failing: new Set<string>() }));
+/**
+ * Queuing a job fails for the keys in `failing` (Hatchet unreachable), and for the `failingNth` key's call of that number
+ * (counted in `queued`, from 1); everything else is queued as it is.
+ */
+const jobs = vi.hoisted(() => ({ failing: new Set<string>(), failingNth: null as { key: string; n: number } | null, queued: new Map<string, number>() }));
 vi.mock("@tuti/jobs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tuti/jobs")>();
-  return { ...actual, enqueue: ((key, input) => (jobs.failing.has(key) ? Promise.reject(new Error("Hatchet unreachable")) : actual.enqueue(key, input))) as typeof actual.enqueue };
+  return {
+    ...actual,
+    enqueue: ((key, input) => {
+      const n = (jobs.queued.get(key) ?? 0) + 1;
+      jobs.queued.set(key, n);
+      return jobs.failing.has(key) || (jobs.failingNth?.key === key && jobs.failingNth.n === n) ? Promise.reject(new Error("Hatchet unreachable")) : actual.enqueue(key, input);
+    }) as typeof actual.enqueue,
+  };
 });
 
 /** Inbox in the team's language (docs/plan.md L22): customers' messages into the team's, replies into the customer's. */
@@ -443,4 +453,50 @@ test("Try again that can't be queued gives the message back its reason, so it sh
   }
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: null, translationError: why });
   expect(model.requests).toHaveLength(3);
+});
+
+test("Try again tells open Inbox pages even when a later message couldn't be queued, and that one shows its failure again", async () => {
+  const { owner, project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: "Hello" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  const [first, second] = await Promise.all(
+    ["Ich kann mich nicht anmelden.", "Und mein Passwort geht auch nicht."].map((body, i) =>
+      prisma.conversationMessage.create({
+        data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "EMAIL", body, translationError: "Out of credits", createdAt: new Date(Date.now() + i) },
+      }),
+    ),
+  );
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  actAs(owner);
+  await listening();
+  // Earlier notices (creating the conversation) heard first, so only the retry's count: NOTIFYs arrive in order.
+  const before: number[] = [];
+  const stopBefore = subscribeInbox((change) => change.projectId === project.id && change.conversationId === "before", () => before.push(1));
+  await notifyInboxNow({ projectId: project.id, conversationId: "before", userId: null, visitorHash: null });
+  await vi.waitFor(() => expect(before).toHaveLength(1));
+  stopBefore();
+  const heard: number[] = [];
+  const last: number[] = [];
+  const stops = [
+    subscribeInbox((change) => change.projectId === project.id && change.conversationId === conversation.id, () => heard.push(1)),
+    subscribeInbox((change) => change.projectId === project.id && change.conversationId === "last", () => last.push(1)),
+  ];
+  // The first is queued (its job held back), the second can't be.
+  const held = vi.spyOn(handlers, "translateMessage").mockResolvedValue({ skipped: "held" } as never);
+  jobs.queued.clear();
+  jobs.failingNth = { key: "translateMessage", n: 2 };
+  try {
+    await expect(inbox.retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
+    // NOTIFYs arrive in order: once the marker's heard, so is the retry's.
+    await notifyInboxNow({ projectId: project.id, conversationId: "last", userId: null, visitorHash: null });
+    await vi.waitFor(() => expect(last).toHaveLength(1));
+    expect(heard.length).toBeGreaterThan(0);
+  } finally {
+    jobs.failingNth = null;
+    held.mockRestore();
+    stops.forEach((stop) => stop());
+  }
+  // The first is on its way; the second has its reason back, so its Try again shows.
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: first!.id } })).toMatchObject({ translationError: null });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: second!.id } })).toMatchObject({ translationError: "Out of credits" });
 });
