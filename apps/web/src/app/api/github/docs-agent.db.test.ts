@@ -447,7 +447,7 @@ describe("screenshots a change made out of date (SC4)", () => {
     for (let i = 0; i < count; i++) {
       const media = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 1280, height: 800 } });
       await prisma.screenshot.create({
-        data: { projectId: project.id, runId: run.id, position: i, show: i === 0 ? SHOW : `${SHOW} ${i}`, imageId: media.id, description: "The Theme menu, open", url: "https://app.example.com/settings" },
+        data: { projectId: project.id, runId: run.id, position: i, show: i === 0 ? SHOW : `${SHOW} ${i}`, imageId: media.id, description: "The Theme menu, open", url: "https://app.example.com/settings", takenAt: new Date("2026-09-30T12:00:00Z") },
       });
       images.push(media.id);
     }
@@ -537,7 +537,7 @@ describe("screenshots a change made out of date (SC4)", () => {
 
   test("a screenshot taken after the merge isn't asked about: it may already show the change", async () => {
     await shooting();
-    await prisma.screenshot.updateMany({ where: { projectId: project.id }, data: { takenAt: new Date(Date.now() + 60 * 60 * 1000) } });
+    await prisma.screenshot.updateMany({ where: { projectId: project.id }, data: { takenAt: new Date("2027-01-01T00:00:00Z") } });
     await mergeVisual(65);
     expect(model.decisions.filter((request) => JSON.stringify(request).includes(ASKED))).toEqual([]);
   });
