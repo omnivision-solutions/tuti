@@ -15,8 +15,8 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   if (!found?.live) {
     return new NextResponse("This link doesn't work any more.", { status: 404 });
   }
-  // A private portal emails nobody: the page says so (and offers nothing to confirm).
-  if (found.project.portalAccess !== "PUBLIC") {
+  // A private portal emails its readers only: an address that isn't one is told so (and offered nothing to confirm).
+  if (found.reach === "private") {
     return new NextResponse("Updates by email aren't available here.", { status: 403 });
   }
   // The opted-out page's button turns the project's emails back on too.

@@ -65,7 +65,7 @@ export const updateEmailPreferences = defineOperation({
       .boolean()
       .optional()
       .describe(
-        "The changelog entries emailed to subscribers, at the address the project's emails go to: on confirms it at once, off is the unsubscribe link in every changelog email; a private portal emails none. `true` is refused while emails to that address are turned off (`unsubscribed`, or another account's at the same address; `unsubscribed: false` in the same update counts)",
+        "The changelog entries emailed to subscribers, at the address the project's emails go to: on confirms it at once, off is the unsubscribe link in every changelog email; a private portal emails only its readers (refused for anyone else). `true` is refused while emails to that address are turned off (`unsubscribed`, or another account's at the same address; `unsubscribed: false` in the same update counts)",
       ),
     author: author.describe("Someone from your app to act for (API keys only): their `id` in your app; without it, the key's creator"),
   }),

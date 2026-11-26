@@ -219,8 +219,9 @@ test("a private portal sends visitors to sign in and back to where they were; si
   for (const path of ["/sign-in", "/sign-in/link", "/sign-up", "/forgot-password", "/reset-password", "/sso", "/sso/error", "/continue", "/unsubscribe", "/robots.txt", "/widget"]) {
     expect(await visit(project.slug, path), path).toBe("served");
   }
-  // A changelog email's unsubscribe link works signed out, even once the portal is private (its subscribers get nothing more).
-  for (const path of ["/changelog/subscription", "/changelog/subscription/unsubscribe"]) {
+  // A changelog email's links work signed out (a mail app, another device): its page, unsubscribing, and for one of the
+  // portal's readers confirming and turning emails back on (each route checks the address itself).
+  for (const path of ["/changelog/subscription", "/changelog/subscription/unsubscribe", "/changelog/subscription/confirm", "/changelog/subscription/emails-on"]) {
     expect(await visit(project.slug, path), path).toBe("served");
   }
   expect(await visit(project.slug, "/changelog")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/changelog" })}`);
