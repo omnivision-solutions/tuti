@@ -82,7 +82,7 @@ const conversationFields = {
     .enum(SPAM_REASON_KEYS)
     .nullable()
     .describe(
-      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC) or flood (too many new conversations by email from this address in an hour). Null when it isn't spam, and when a teammate marked it",
+      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC), flood (too many new conversations by email from this address in an hour) or phrase (its subject or first message has one of the team's phrases). Null when it isn't spam, and when a teammate marked it",
     )
     .meta({ examples: [null] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
@@ -990,7 +990,7 @@ export async function startConversation(
      * The spam filter (server/spam.ts), run under the project's lock for a conversation a user starts: one it files goes to
      * Spam with the reason, and the caller tells nobody (`conversation.spam`). Without it (the team's own, over the API): never spam.
      */
-    filter?: (tx: Prisma.TransactionClient) => Promise<{ spam: boolean; reason: SpamReason | null }>;
+    filter?: (tx: Prisma.TransactionClient, first: { subject: string | null; text: string }) => Promise<{ spam: boolean; reason: SpamReason | null; phrase?: string }>;
     /** The first message came by email. */
     received?: ReceivedEmail;
     /** More to write in the same transaction (a received email's status, its attachments), with the conversation's and its first message's ids. */
@@ -1013,7 +1013,7 @@ export async function startConversation(
         throw new OperationError(429, "rate_limited", "You've started a lot of conversations today. Try again tomorrow, or add to one you have.");
       }
     }
-    const verdict = await start.filter?.(tx);
+    const verdict = await start.filter?.(tx, { subject: start.subject ?? null, text: start.body });
     const created = await tx.conversation.create({
       data: {
         projectId,
@@ -1026,6 +1026,7 @@ export async function startConversation(
         visitorHash: start.visitorHash ?? null,
         spam: verdict?.spam ?? false,
         spamReason: verdict?.spam ? verdict.reason : null,
+        spamPhrase: (verdict?.spam && verdict.phrase) || null,
         lastMessageAt: now,
         activeAt: now,
         waitingSince: now,

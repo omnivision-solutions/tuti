@@ -277,7 +277,7 @@ export async function widgetStartConversation(
       // Checked again under the project's lock: starts at once can't all pass the check above.
       perDay: { where: who.where, max: NEW_CONVERSATIONS_PER_DAY },
       // The spam filter: someone the team blocked is blocked here too. A visitor's typed address proves nothing to it.
-      filter: async (tx) => spamVerdict(tx, await arrivalOf(tx, who.projectId, who.userId)),
+      filter: async (tx, first) => spamVerdict(tx, { ...(await arrivalOf(tx, who.projectId, who.userId)), ...first }),
       ...(files.uploads.length > 0 && { alongside: (tx, _conversationId, messageId) => claimUploads(tx, files.uploads, messageId) }),
     });
   } catch (error) {

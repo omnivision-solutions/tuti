@@ -238,7 +238,8 @@ the list picks none to approve at once.
   field has no border or ring of its own (the card takes the focus ring while it's written in), and on Note the whole card
   takes the note's tint.
   A conversation in Spam says why on a line of its own under its meta line, with Not spam beside it (the reason wraps; a long "…and unblock <address>" goes under it):
-  "Marked as spam: you blocked this address", one line per reason (`SPAM_REASONS`), "a teammate marked it" for a mark.
+  "Marked as spam: you blocked this address", one line per reason (`SPAM_REASONS`; a phrase's names it: "it has your
+  phrase “facebook admin”"), "a teammate marked it" for a mark.
   Not spam's toast says what stays in the way (a blocked address or domain and who can change it, the hourly limit);
   where an owner's or admin's takes a blocked address off the list, the button says so first ("Not spam, and unblock
   <address>"). For owners and admins More actions has "Mark as spam, also block <domain>…" under Mark as spam, where
@@ -877,7 +878,8 @@ widths, in light and dark (in development only).
     it, in one `SettingBlock`: two a row on phones, three wider, and one muted line under it at most. An upload that
     makes one of the choices (Changelog's Your background) is a tile of its own in the grid until it holds an image,
     then that choice, with Replace and × under its name.
-  - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card) has its count beside the
+  - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card, as is the one field of
+    each of Spam's lists: Blocked, Allowed, Phrases) has its count beside the
     card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would
