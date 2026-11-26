@@ -289,7 +289,8 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
   // teammate's reply would take it over too, and the AI could answer mid-draft). Closed too: it's still the AI's.
   const withAi = !!conversation && triage?.handledBy === "ai";
   const [taking, setTaking] = useState(false);
-  // Taken over here: a screen reader's focus, on the button that's gone, goes to the reply field that took its place.
+  // Taken over here: a screen reader's focus, on the button that's gone, goes to the reply field that took its place,
+  // whichever answer brings it back (the change's, or a fetch the stream asked for that beat it).
   const replyField = useRef<ComponentRef<typeof TextInput>>(null);
   const tookOver = useRef(false);
   useEffect(() => {
@@ -306,14 +307,14 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
     }
     setTaking(true);
     setNotice(null);
+    tookOver.current = true;
     try {
-      const taken = await updateConversation(api, number, { handledBy: "team" });
-      tookOver.current = true;
-      showTriage(draftKey, taken);
+      showTriage(draftKey, await updateConversation(api, number, { handledBy: "team" }));
       AccessibilityInfo.announceForAccessibility("Taken over");
       // What's kept of it for reading offline says so too.
       refresh();
     } catch (e) {
+      tookOver.current = false;
       setNotice(e instanceof Error ? e.message : String(e));
     } finally {
       setTaking(false);

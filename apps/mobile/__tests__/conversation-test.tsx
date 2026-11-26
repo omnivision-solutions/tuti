@@ -402,7 +402,7 @@ describe("a conversation the AI has", () => {
   });
 
   it("says the AI is answering in place of the reply box; Take over makes it the team's, and then the reply box is there", async () => {
-    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
     serve(withAi);
     await render(<ConversationRoute />);
 
@@ -421,6 +421,33 @@ describe("a conversation the AI has", () => {
     expect(focus).toHaveBeenCalledWith(expect.objectContaining({ props: expect.objectContaining({ accessibilityLabel: "Reply" }) }), "focus");
     // Kept for reading offline as the team's.
     expect(cached<Conversation>(conversationKey(mockSession, 12), mockSession.owner)?.data.handledBy).toBe("team");
+  });
+
+  it("moves a screen reader to the reply field when a fetch brings it before Take over's own answer, and only then", async () => {
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
+    serve(withAi);
+    await render(<ConversationRoute />);
+    await screen.findByText("The AI is answering.");
+    // The change is made on the server, its answer still on its way, when the stream's fetch answers.
+    let answer!: (conversation: Conversation) => void;
+    const taken: Conversation = { ...withAi, handledBy: "team" };
+    mockApi.mockImplementation((path, init) => (init?.method === "PATCH" ? new Promise((resolve) => (answer = resolve as never)) : Promise.resolve(path === "/conversations/12" ? taken : {})));
+
+    await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+    await act(async () => mockFocus!());
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    expect(focus).toHaveBeenCalledTimes(1);
+    await act(async () => answer(taken));
+
+    // Later the AI gets it and a teammate elsewhere takes it over: focus stays where it is.
+    serve(withAi);
+    await act(async () => mockFocus!());
+    await screen.findByText("The AI is answering.");
+    serve(taken);
+    await act(async () => mockFocus!());
+    await screen.findByLabelText("Reply");
+    expect(focus).toHaveBeenCalledTimes(1);
+    focus.mockRestore();
   });
 
   it("shows the reply box for the team's own, with no Take over", async () => {
