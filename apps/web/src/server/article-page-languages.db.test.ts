@@ -87,6 +87,8 @@ test("not translated: the default language's version, its `lang`, and a line in 
   expect(await docsPage(project.slug, "billing")).toMatchObject({ kind: "article", article: { title: "Billing", language: "en", untranslated: true } });
   const elements = await page("billing");
   expect(elements.find(({ type }) => type === "h1")?.props).toMatchObject({ lang: "en" });
+  // "On this page" beside it on wide screens lists its English headings: in English too.
+  expect(elements.find(({ props }) => "headingsLang" in props)?.props.headingsLang).toBe("en");
   const line = elements.find(({ type, props }) => type === "p" && props.lang === "fr");
   expect(text(line?.props.children)).toContain("Cette page n'est pas encore disponible en français");
 });

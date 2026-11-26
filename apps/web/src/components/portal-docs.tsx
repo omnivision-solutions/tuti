@@ -425,7 +425,7 @@ export async function DocsArticle({
       ],
     }));
   return (
-    <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
+    <DocsLayout tree={tree} current={slug} headings={headings} headingsLang={textLang} reading={!!readable && outlined(headings)}>
       {jsonLd}
       {/* The team's words (its title, text and headings, its collection's name, the articles around it) carry the default
           language's `lang` under another's address (teamLanguage); the portal's own text around them doesn't. */}
@@ -687,11 +687,14 @@ export function DocsLayout({
   current,
   overview = false,
   headings = [],
+  headingsLang,
   reading = false,
   extra,
   wide = false,
   children,
 }: {
+  /** What `headings` are in (the article's text's language), for screen readers. */
+  headingsLang?: string;
   /** Null for none (a tab's overview, whose cards are its collections). */
   tree: DocsTree | null;
   current: string | null;
@@ -763,7 +766,7 @@ export function DocsLayout({
           {/* Stays in view as the article scrolls, under the header. */}
           {sections && (
             <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
-              <OnThisPage headings={headings} />
+              <OnThisPage headings={headings} lang={headingsLang} />
             </div>
           )}
         </aside>
