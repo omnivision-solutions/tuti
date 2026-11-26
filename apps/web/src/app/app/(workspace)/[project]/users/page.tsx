@@ -100,12 +100,12 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 255) : "";
   if (view === "subscribers") {
     const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { portalAccess: true } });
-    const notSending =
-      portalAccess !== "PUBLIC"
-        ? "Your portal is private, so its changelog isn't emailed to anyone."
-        : (await projectEmailWaits(project.id))
-          ? "Your project's email is paused, so nothing is sent until it's resumed."
-          : null;
+    // Paused first: then nothing's sent at all, private or not.
+    const notSending = (await projectEmailWaits(project.id))
+      ? "Your project's email is paused, so nothing is sent until it's resumed."
+      : portalAccess !== "PUBLIC"
+        ? "Your portal is private, so its changelog is emailed only to subscribers who can read it."
+        : null;
     return pane({
       description: "Who gets your changelog by email.",
       children: <SubscribersTable context={context} slug={slug} page={page} q={q} status={searchParams.status} admin={isAdminRole(membership.role)} notSending={notSending} />,

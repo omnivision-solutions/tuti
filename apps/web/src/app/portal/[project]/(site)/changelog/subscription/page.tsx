@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
+import { changelogReach } from "@tuti/jobs";
 
 import { Button } from "@/components/ui/button";
 import { CONFIRM_LINK_HOURS, findConfirmation, findSubscription, reachSentence } from "@/server/changelog-subscription";
@@ -37,8 +38,8 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
           <h1 className={heading}>This link doesn&apos;t work any more</h1>
           <p className={text}>
             A confirmation link works once, for {CONFIRM_LINK_HOURS} hours, and only the latest one you were sent.
-            {/* Only where there's a box to ask in: a private portal has none. */}
-            {project?.portalAccess === "PUBLIC" && <> To get updates by email, ask again on the {changelogLink}.</>}
+            {/* A private portal's box is its readers': the link has them sign in first. */}
+            {project && <> To get updates by email, ask again on the {changelogLink}.</>}
           </p>
         </Message>
       );
@@ -110,17 +111,20 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     </form>
   );
   switch (found.reach) {
-    case "unconfirmed":
+    case "unconfirmed": {
+      // The way back only for an address that could have it again: on a private portal, one of its readers.
+      const canReturn = (await changelogReach(found.projectId, { email: found.email, confirmed: true })) !== "private";
       // Unsubscribed (this link only unsubscribes): asking again on the changelog signs them up again.
       return (
         <Message>
           <h1 className={heading}>You&apos;re unsubscribed</h1>
           <p className={text}>
             {name}&apos;s changelog won&apos;t be emailed to {found.email} anymore.
-            {found.project.portalAccess === "PUBLIC" && <> To get it again, subscribe on the {changelogLink}.</>}
+            {canReturn && <> To get it again, subscribe on the {changelogLink}.</>}
           </p>
         </Message>
       );
+    }
     case "private":
       return <PrivatePortal name={name} email={found.email} unsubscribe={unsubscribe} />;
     case "opted-out":
@@ -168,7 +172,7 @@ function PrivatePortal({ name, email, unsubscribe }: { name: string; email?: str
     <Message>
       <h1 className={heading}>Updates by email aren&apos;t available here</h1>
       <p className={text}>
-        {name}&apos;s portal is private, so its changelog isn&apos;t emailed{email ? ` to ${email}` : ""}.
+        {name}&apos;s portal is private, and its changelog is emailed only to its readers{email ? `: ${email} isn't one of them` : ""}.
       </p>
       {unsubscribe}
     </Message>

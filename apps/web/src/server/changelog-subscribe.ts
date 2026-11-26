@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { emailConfirmation } from "./changelog-subscription";
+import { mayRead } from "./portal-access";
 import { countEmailedLink } from "./email-link-limits";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
@@ -14,13 +15,14 @@ const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z
 /**
  * "Get updates by email" on a portal's changelog: emails a link to confirm (double opt-in), so nothing else is sent
  * until the address's owner confirms. Counted with the other emailed links' limits. Says the same whether or not the
- * address gets it already (which gets nothing), so it tells nobody who's subscribed. Public portals only:
- * a private one's entries are for its readers, and an address can't show it's one. Nothing is sent while the project's
+ * address gets it already (which gets nothing), so it tells nobody who's subscribed. On a private portal, for its readers
+ * (signed in), and to an address that's one of them only (changelogReach's "private": nothing sent, the same answer):
+ * its entries are for them. Nothing is sent while the project's
  * email is paused (its bounces or complaints went over): typed-in addresses are what bounce.
  */
 export async function subscribeToChangelog(projectSlug: string, form: FormData): Promise<{ error?: string; sentTo?: string }> {
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true, name: true, portalAccess: true } });
-  if (!project || project.portalAccess !== "PUBLIC" || !emailConfigured()) {
+  if (!project || !emailConfigured() || (project.portalAccess !== "PUBLIC" && !(await mayRead(project.id)))) {
     return { error: "Updates by email aren't available here." };
   }
   const parsed = fields.safeParse({ email: form.get("email") });
@@ -32,7 +34,9 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   // counted as sending nothing.
   const existing = await prisma.changelogSubscriber.findUnique({ where: { projectId_email: { projectId: project.id, email } }, select: { confirmedAt: true } });
   const reach = await changelogReach(project.id, { email, confirmed: !!existing?.confirmedAt });
-  const sends = !reached(reach) && !(await projectEmailWaits(project.id));
+  // Not to an address that would get nothing confirmed: a private portal's, not one of its readers.
+  const forReaders = (await changelogReach(project.id, { email, confirmed: true })) !== "private";
+  const sends = !reached(reach) && forReaders && !(await projectEmailWaits(project.id));
   const limited = await countEmailedLink(project.id, email, await headers(), sends ? "address" : "nobody");
   if ("error" in limited) {
     return { error: limited.error };

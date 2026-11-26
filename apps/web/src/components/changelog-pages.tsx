@@ -102,7 +102,7 @@ export async function changelogMetadata(slug: string, page = 1): Promise<Metadat
 const changelogDescription = (name: string | undefined) => `What's new, improved and fixed${name ? ` in ${name}` : ""}.`;
 
 /**
- * The changelog by email, on public portals only (subscribeToChangelog), where email is set up: a signed-in reader's
+ * The changelog by email (subscribeToChangelog; a private portal's pages are its readers' only), where email is set up: a signed-in reader's
  * standing as their Account has it (accountEmails), so the pages agree; otherwise the form to subscribe. `inCard`: in a
  * card that has its own heading (a board's Get updates). A function the pages await, not a component, so they render
  * in one pass.
@@ -113,7 +113,7 @@ export async function changelogByEmail(
   inCard = false,
   bare = false,
 ) {
-  if (project.portalAccess !== "PUBLIC" || !emailConfigured()) {
+  if (!emailConfigured()) {
     return null;
   }
   const emails = session ? await accountEmails(project.id, session.user.id) : null;

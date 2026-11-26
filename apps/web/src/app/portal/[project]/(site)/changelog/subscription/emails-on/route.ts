@@ -9,7 +9,7 @@ import { portalHref } from "@/server/portal-base";
  * "Email me a link" on a confirmed subscription's page, for someone who turned all of the project's emails off (which
  * wins over the changelog): emails the address a fresh confirmation link, whose page turns them back on. The
  * subscription's own token is long-lived (forwarded emails have it), so it never turns them on itself. Counted with
- * the other emailed links' limits. Only where it could do something: a public portal (a private one emails nobody), and
+ * the other emailed links' limits. Only where it could do something: an address the changelog would go to (a private portal's reader's), and
  * an address that's turned them off (anyone holding the token could otherwise have links sent at will); nothing while
  * the project's email is paused.
  */
