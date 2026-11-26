@@ -644,6 +644,68 @@ describe("the details sheet's Activity", () => {
     expect(screen.queryByText(NETWORK)).toBeNull();
   });
 
+  it("reads it again as far back as shown, up to 100, and keeps only the newest 20 for offline", async () => {
+    let online = true;
+    const all = Array.from({ length: 25 }, (_, i) => event(`r${25 - i}`, "2026-11-25T10:00:00", { text: `closed it ${25 - i}` }));
+    serveActivity(({ before, limit }) => {
+      if (!online) {
+        return Promise.reject(new ApiError(0, "unreachable", NETWORK));
+      }
+      if (before === "r6") {
+        return Promise.resolve({ events: all.slice(20), next: null });
+      }
+      return Promise.resolve(limit ? { events: all.slice(0, Number(limit)), next: null } : { events: all.slice(0, 20), next: "r6" });
+    });
+    const first = await render(<Details />);
+    await screen.findByText(/ it 25$/);
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(await screen.findByText(/ it 1$/)).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Close" }));
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=25");
+    expect(screen.getAllByText(/closed it \d+$/)).toHaveLength(25);
+    await first.unmount();
+
+    // Kept: the newest 20, and Show earlier from the 20th.
+    online = false;
+    await render(<Details />);
+    expect(await screen.findByText(/ it 25$/)).toBeTruthy();
+    expect(screen.getAllByText(/closed it \d+$/)).toHaveLength(20);
+    expect(screen.queryByText(/ it 5$/)).toBeNull();
+    online = true;
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r6");
+  });
+
+  it("keeps the rows shown when a reload finds no connection, saying it's offline since they loaded", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    await render(<Details />);
+    await screen.findByText("A conversation starts");
+
+    online = false;
+    await act(() => jest.advanceTimersByTimeAsync(2 * 60_000));
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(await screen.findByText("Offline · updated 2 minutes ago")).toBeTruthy();
+    expect(screen.getByText("A conversation starts")).toBeTruthy();
+    expect(screen.queryByText(NETWORK)).toBeNull();
+  });
+
+  it("keeps the tab chosen when the conversation changes while it loads", async () => {
+    let answer: (value: unknown) => void = () => {};
+    serveActivity(({ filter }) => (filter === "workflows" ? new Promise((resolve) => (answer = resolve)) : Promise.resolve({ events: [RUN, CLOSED], next: null })));
+    await render(<Details />);
+    await screen.findByText("Olive Owner");
+
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=workflows");
+    await act(async () => answer({ events: [RUN], next: null }));
+    expect(await screen.findByRole("tab", { name: "Workflows", selected: true })).toBeTruthy();
+    expect(screen.queryByText("Olive Owner")).toBeNull();
+  });
+
   it("isn't shown by a server from before it", async () => {
     serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
     await render(<Details />);

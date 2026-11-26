@@ -386,6 +386,8 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
   const [now] = useMinutes();
   // The newest load wins; one answering late is dropped.
   const asked = useRef(0);
+  // The tab last asked for (shown, or still loading).
+  const wanted = useRef<ActivityFilter>("all");
   // When what's shown last came from the server: offline, it stays, said to be offline since then.
   const loadedAt = useRef<number | null>(null);
   const shown = useRef(0);
@@ -396,6 +398,9 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
   const load = useCallback(
     function load(to: ActivityFilter, before?: string, limit?: number) {
       const ask = ++asked.current;
+      if (!before) {
+        wanted.current = to;
+      }
       const since = cacheGeneration();
       const key = activityKey(session!, number);
       setLoading(true);
@@ -440,9 +445,11 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
     [api, number, session, filter],
   );
 
-  // On opening, and whenever the conversation's status changes: as far back as it's shown.
+  // On opening, and whenever the conversation's status changes: as far back as it's shown, in the tab last chosen (one
+  // still loading too, so its tap isn't lost).
   useEffect(() => {
-    load(filter, undefined, shown.current > 20 ? Math.min(shown.current, 100) : undefined);
+    const to = wanted.current;
+    load(to, undefined, to === filter && shown.current > 20 ? Math.min(shown.current, 100) : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed
   }, [triage, number]);
 
@@ -464,6 +471,11 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
       AccessibilityInfo.announceForAccessibility(failed.why);
     }
   }, [failed]);
+  useEffect(() => {
+    if (IOS && savedAt !== null) {
+      AccessibilityInfo.announceForAccessibility(offlineNote(savedAt));
+    }
+  }, [savedAt]);
 
   if (unknown) {
     return null;
