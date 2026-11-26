@@ -161,7 +161,7 @@ test("a teammate's reply takes it over and sets it waiting in its Activity, with
 
 test("what a message changes on the way: a reply closing it, the person's message reopening it or ending its snooze, and a snooze ending by itself", async () => {
   const { projectId, admin, viaKey, activity } = await setup();
-  await upsertProjectUser(projectId, "user-1", { name: "Sam Smith" });
+  await upsertProjectUser(projectId, "user-1", { name: "Sam Smith", email: "e2e-sam-smith@example.com", properties: { company: "Acme" } });
   const { number } = await call(createConversation, admin, { user: { id: "user-1" }, body: "Hello" });
   const write = () => call(replyToConversation, viaKey, { number, body: "And another thing", author: { id: "user-1" } });
 
@@ -187,8 +187,12 @@ test("what a message changes on the way: a reply closing it, the person's messag
   expect(await activity(number, "people")).toHaveLength(5);
   expect(await activity(number, "workflows")).toEqual(["Its snooze ended"]);
   // Nothing of theirs is in a row: erased by users.delete, their rows say so, as the conversation does.
-  expect(JSON.stringify(await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number } } }))).not.toContain("Sam");
+  const stored = async () => JSON.stringify(await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number } } }));
+  for (const theirs of ["Sam", "e2e-sam-smith@example.com", "Acme"]) {
+    expect(await stored()).not.toContain(theirs);
+  }
   await call(deleteUser, admin, { user: "user-1" });
+  expect(await stored()).not.toContain("e2e-sam-smith@example.com");
   expect((await activity(number)).filter((row) => row.startsWith("Deleted user "))).toEqual(["Deleted user ended its snooze · by writing", "Deleted user reopened it · by writing"]);
 });
 
