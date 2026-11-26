@@ -450,3 +450,27 @@ test("unnamed versions are named those waiting longest first, and one that fails
     nameBatch.size = size;
   }
 });
+
+test("articles sharing a slug that this reader can't see are ruled out together, not checked one by one", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] });
+  // The visible one's old slug first: the newer ones, the hidden articles', come before it in the lookup.
+  const visible = await billing();
+  await prisma.articleOldSlug.create({ data: { projectId: project.id, language: "de", slug: "konto", articleId: visible, createdAt: new Date(Date.now() - 60_000) } });
+  // Each an old slug "konto" in another language (one article per language and slug).
+  for (const [n, language] of (["fr", "es", "it", "nl", "pl"] as const).entries()) {
+    await call(createArticle, as(), { title: `Internal ${n}`, body: "Secret." });
+    await call(publishArticle, as(), { slug: `internal-${n}` });
+    const { id } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: `internal-${n}` } });
+    await prisma.article.update({ where: { id }, data: { listing: "AI_ONLY" } });
+    await prisma.articleOldSlug.create({ data: { projectId: project.id, language, slug: "konto", articleId: id } });
+  }
+  at(null);
+  const findFirst = vi.spyOn(prisma.article, "findFirst");
+  try {
+    expect(await docsPage(project.slug, "konto")).toEqual({ kind: "redirect", path: "/docs/billing" });
+    // The page's own check of the one it found (articleAt), not one per article sharing the slug.
+    expect(findFirst.mock.calls.length).toBeLessThanOrEqual(2);
+  } finally {
+    findFirst.mockRestore();
+  }
+});

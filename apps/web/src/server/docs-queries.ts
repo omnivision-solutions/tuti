@@ -497,15 +497,32 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
       prisma.articleOldSlug.findMany({ where: { projectId, slug, article }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take, select }).then(articles),
     ])
   ).flat();
+  // One article found by several lookups is checked once, at its first place; no more than `take` of them in all.
+  const ordered = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()].slice(0, take);
+  if (ordered.length === 0) {
+    return null;
+  }
+  // Which are served at all (not hidden, AI only, or a draft) and which this reader may read, in two queries: only the
+  // first readable one is checked in full (articleAt). One served but not readable may still be shown with a lock, so
+  // those before it are checked too (rare: a restricted article sharing the slug).
+  const ids = ordered.map((candidate) => candidate.id);
+  const [served, readableIds] = await Promise.all([
+    prisma.article.findMany({ where: { id: { in: ids }, ...servedArticle }, select: { id: true } }),
+    readableArticle(projectId, await currentReader(projectId)).then((visible) =>
+      prisma.article.findMany({ where: { AND: [{ id: { in: ids }, ...servedArticle }, visible] }, select: { id: true } }),
+    ),
+  ]);
+  const [isServed, isReadable] = [new Set(served.map((row) => row.id)), new Set(readableIds.map((row) => row.id))];
+  // In order, the first readable one, or served and shown with a lock (articleAt says so); none hidden from them counts.
   let found: { id: string; slug: string } | undefined;
-  // One article found by several lookups is checked once, at its first place.
-  for (const candidate of new Map(candidates.map((candidate) => [candidate.id, candidate])).values()) {
-    if (await articleAt(projectSlug, candidate.slug)) {
+  for (const candidate of ordered) {
+    if (isReadable.has(candidate.id) || (isServed.has(candidate.id) && (await articleAt(projectSlug, candidate.slug)))) {
       found = candidate;
       break;
     }
   }
-  if (!found) {
+  // Its page's own check, once (cached for the page that reads it next).
+  if (!found || !(await articleAt(projectSlug, found.slug))) {
     return null;
   }
   const version = other && (await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: other } }, select: { slug: true } }));
