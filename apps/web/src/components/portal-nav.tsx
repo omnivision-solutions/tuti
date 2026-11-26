@@ -3,6 +3,7 @@
 import { LockIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useRef } from "react";
 
 import { DocsSearchBox } from "@/components/docs-search-box";
@@ -12,12 +13,12 @@ import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
-/** The portal's parts, in the header's order (host-relative). Per-project names and paths will come from here. */
+/** The portal's parts, in the header's order (host-relative), each named by its `header` message. Per-project names and paths will come from here. */
 export const PORTAL_PARTS = [
-  { key: "feedback", label: "Feedback", href: "/feedback" },
-  { key: "roadmap", label: "Roadmap", href: "/roadmap" },
-  { key: "changelog", label: "Changelog", href: "/changelog" },
-  { key: "docs", label: "Documentation", href: "/docs" },
+  { key: "feedback", href: "/feedback" },
+  { key: "roadmap", href: "/roadmap" },
+  { key: "changelog", href: "/changelog" },
+  { key: "docs", href: "/docs" },
 ] as const;
 
 /** `path` is `href` or a page under it. */
@@ -47,10 +48,13 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   const at = usePortalHref();
   const nav = useScrollingRow(path, newChangelog);
   const notFound = usePortalNotFound();
+  const t = useTranslations("header");
   return (
     <nav
       ref={nav}
-      aria-label="Portal"
+      // In the reader's language, until <html lang> follows it (L3).
+      lang={useLocale()}
+      aria-label={t("portal")}
       className={cn(
         // Relative: the tabs' offsets (useScrollingRow) are measured from the row.
         // On phones they're in the header's menu (PortalMenu): the header stays one line.
@@ -58,7 +62,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
         SCROLLING_ROW,
       )}
     >
-      {PORTAL_PARTS.map(({ key, label, href }) => {
+      {PORTAL_PARTS.map(({ key, href }) => {
         if (key === "feedback" && boards.length === 0) {
           return null;
         }
@@ -78,11 +82,11 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            {label}
+            {t(key)}
             {/* Not on the changelog itself: being there is seeing it (recorded a moment later). */}
             {key === "changelog" && newChangelog && !active && (
               <span className="ml-1.5 inline-block size-2 rounded-full bg-unread align-middle">
-                <span className="sr-only">New</span>
+                <span className="sr-only">{t("new")}</span>
               </span>
             )}
           </Link>

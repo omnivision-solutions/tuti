@@ -4,6 +4,27 @@
     "menu": "Menu",
     "closeMenu": "Zamknij menu",
     "language": "Język: {language}",
-    "languages": "Język"
+    "languages": "Język",
+    "portal": "Portal",
+    "feedback": "Sugestie",
+    "roadmap": "Plan rozwoju",
+    "changelog": "Nowości",
+    "docs": "Dokumentacja",
+    "new": "Nowe",
+    "boards": "Tablice",
+    "menuDescription": "{name}: dokąd przejść dalej.",
+    "links": "Linki",
+    "account": "Konto",
+    "accountSettings": "Ustawienia konta",
+    "signOut": "Wyloguj się",
+    "signOutFailed": "Nie udało się wylogować. Spróbuj ponownie."
+  },
+  "footer": {
+    "label": "Stopka",
+    "poweredBy": "Działa dzięki <logo></logo>",
+    "theme": "Motyw",
+    "system": "Systemowy",
+    "light": "Jasny",
+    "dark": "Ciemny"
   }
 }
