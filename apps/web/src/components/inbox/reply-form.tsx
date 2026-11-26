@@ -3,6 +3,7 @@
 import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, LanguagesIcon, MailIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "cn";
 
@@ -82,6 +83,7 @@ export function ReplyForm({
    */
   translated?: { language: string; teamLanguage: string };
 }) {
+  const router = useRouter();
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
@@ -238,9 +240,14 @@ export function ReplyForm({
       // open, the reply there to read, though it's left the view (Needs reply), as Featurebase and Intercom do.
       const moved = close && sending === "reply" ? actOn(number, true) : () => {};
       const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen, translation);
-      // Not translated: said in the preview, beside "Send in English" (here, where the page doesn't know it's translated yet).
-      setError(result.translation === "outdated" ? "Their language changed since this preview: check the new one, then send again." : result.translation === "failed" && translated ? undefined : result.error);
+      // Not translated: said in the preview, beside "Send in English".
+      setError(result.translation === "outdated" ? "Their language changed since this preview: check the new one, then send again." : result.translation === "failed" ? undefined : result.error);
       setNotice(result.notice);
+      if (result.translation) {
+        // The page as it is now: the customer's new language (outdated), or translated at all, where it was loaded before
+        // the project translated (the preview box, with "Send in English", needs it). A refused send doesn't refresh it.
+        router.refresh();
+      }
       if (result.translation === "outdated") {
         setPreview(undefined);
         setPreviewAgain((n) => n + 1);
@@ -363,7 +370,16 @@ export function ReplyForm({
             ) : "failed" in shownPreview ? (
               <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                 <p className="text-muted-foreground">{shownPreview.failed}</p>
-                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={pending || drafting || files.uploading} onClick={() => send(shownPreview.close ?? false, true)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  disabled={pending || drafting || files.uploading}
+                  // It keeps the keyboard's focus while the reply sends.
+                  focusableWhenDisabled
+                  onClick={() => send(shownPreview.close ?? false, true)}
+                >
                   Send in {nativeLanguageName(translated.teamLanguage)}
                 </Button>
               </div>
