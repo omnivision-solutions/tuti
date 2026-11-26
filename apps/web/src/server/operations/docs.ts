@@ -168,7 +168,7 @@ const articleOutput = z
   .object({
     id: z
       .string()
-      .describe("Its ID: made once and never changed, so embeds and the API can refer to it whatever its slug becomes")
+      .describe("Its ID: made once and never changed, so embeds and `articles.get` can refer to it whatever its slug becomes (other operations take its slug)")
       .meta({ examples: ["a_7k2m9x4p"] }),
     slug: z
       .string()
