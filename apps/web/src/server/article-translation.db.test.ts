@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { handlers, PRODUCT_SETTING_CHANGED, translateArticle, translationSource } from "@tuti/jobs";
+import { handlers, languageTranslationsDone, PRODUCT_SETTING_CHANGED, retryDelay, translateArticle, translationSource } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -37,6 +37,18 @@ afterEach(() => {
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const log = { info: () => {}, warn: () => {} };
 
+/** languages.update and languages.retranslate, once the translating they start (in the background, inline) is done. */
+const languages = async (input: Parameters<typeof updateLanguages.run>[1]) => {
+  const result = await call(updateLanguages, as(), input);
+  await languageTranslationsDone();
+  return result;
+};
+const retranslate = async (input: Parameters<typeof retranslateLanguage.run>[1]) => {
+  const result = await call(retranslateLanguage, as(), input);
+  await languageTranslationsDone();
+  return result;
+};
+
 const BODY = "Open Settings and click New project.\n\nPick a plan that fits your team.";
 
 /** A reply translating every segment of "Getting started" with `body`: `[tag] ` before each one's text. */
@@ -54,7 +66,7 @@ async function draft() {
 const translation = (language = "de") => prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language } });
 
 test("publishing translates into each language kept up to date, its title, description, keywords and text, charged as Translation", async () => {
-  await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
+  await languages({ languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
   await draft();
   model.reply(reply());
   await call(publishArticle, as(), { slug: "getting-started" });
@@ -86,18 +98,18 @@ test("adding a language translates every published article; Retranslate sends ev
   await draft();
   await call(publishArticle, as(), { slug: "getting-started" });
   model.reply(reply());
-  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languages({ languages: [{ code: "de" }] });
   expect(await translation()).toMatchObject({ title: "[de] Getting started" });
 
   model.reply(reply("de2"));
-  expect(await call(retranslateLanguage, as(), { code: "de" })).toEqual({ queued: 1 });
+  expect(await retranslate({ code: "de" })).toEqual({ queued: 1 });
   expect(model.requests.at(-1)!.user).toContain("Open Settings");
   expect(await translation()).toMatchObject({ title: "[de2] Getting started" });
   await expect(call(retranslateLanguage, as(), { code: "it" })).rejects.toMatchObject({ status: 404 });
 });
 
 test("the product setting changing: versions kept up to date retranslated anew under it, manual ones marked behind", async () => {
-  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
   await call(publishArticle, as(), { slug: "getting-started" });
@@ -107,7 +119,7 @@ test("the product setting changing: versions kept up to date retranslated anew u
   await prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language: "fr", automatic: false, title: "Bien démarrer", publishedAt: new Date() } });
 
   model.reply(reply("on"));
-  await call(updateLanguages, as(), { languages: [{ code: "de", productAvailable: true }, { code: "fr", productAvailable: true }] });
+  await languages({ languages: [{ code: "de", productAvailable: true }, { code: "fr", productAvailable: true }] });
   const asked = model.requests.at(-1)!;
   expect(asked.system).toContain("translate the names of its buttons");
   // The memory came from the other setting: nothing of it is reused.
@@ -117,12 +129,12 @@ test("the product setting changing: versions kept up to date retranslated anew u
   expect(fr.title).toBe("Bien démarrer");
   expect(Object.values(fr.behind as Record<string, string>)).toEqual([PRODUCT_SETTING_CHANGED]);
   // Set again to what it is: nothing to do.
-  await call(updateLanguages, as(), { languages: [{ code: "de", productAvailable: true }, { code: "fr" }] });
+  await languages({ languages: [{ code: "de", productAvailable: true }, { code: "fr" }] });
   expect(model.requests).toHaveLength(2);
 });
 
 test("the setting changing between a job's translating and its write: it writes nothing, the switch's own job writes", async () => {
-  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
   await call(publishArticle, as(), { slug: "getting-started" });
@@ -130,14 +142,14 @@ test("the setting changing between a job's translating and its write: it writes 
   // Retranslate's job is waiting for its answer when the switch changes; the switch's job is answered first.
   model.reply(reply("stale"), () => call(updateLanguages, as(), { languages: [{ code: "de", productAvailable: true }] }));
   model.reply(reply("on"));
-  await call(retranslateLanguage, as(), { code: "de" });
+  await retranslate({ code: "de" });
   expect(model.requests).toHaveLength(3);
   expect(model.requests[2]!.system).toContain("translate the names of its buttons");
   expect(await translation()).toMatchObject({ title: "[on] Getting started", productAvailable: true });
 });
 
 test("a job queued under the old setting stops before asking anything", async () => {
-  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languages({ languages: [{ code: "de" }] });
   await draft();
   model.reply(reply());
   await call(publishArticle, as(), { slug: "getting-started" });
@@ -157,7 +169,7 @@ test("a job queued under the old setting stops before asking anything", async ()
 });
 
 test("can't run: provider failures are retried, then the page waits with why and is tried again on its own; out of credits too", async () => {
-  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languages({ languages: [{ code: "de" }] });
   await draft();
   // Inline, the job's first run is its last try: the provider failing (asked, then asked again once), the page waits.
   model.fail(500);
@@ -185,7 +197,7 @@ test("can't run: provider failures are retried, then the page waits with why and
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   expect(await translation()).toMatchObject({ title: "[de] Getting started", error: null, retryAt: null });
   // Try again queues only those waiting: none now.
-  expect(await call(retranslateLanguage, as(), { code: "de", waiting: true })).toEqual({ queued: 0 });
+  expect(await retranslate({ code: "de", waiting: true })).toEqual({ queued: 0 });
 
   // Out of credits: the model isn't asked.
   model.requests.length = 0;
@@ -193,4 +205,30 @@ test("can't run: provider failures are retried, then the page waits with why and
   expect(await translateArticle({ articleId, language: "de", fresh: true }, log)).toEqual({ failed: "Out of credits" });
   expect(model.requests).toHaveLength(0);
   expect(await translation()).toMatchObject({ title: "[de] Getting started", error: "Out of credits", tries: 1 });
+});
+
+test("tried again on its own after 15 minutes, twice as long each time, up to a day", () => {
+  expect([1, 2, 3, 7, 100].map(retryDelay)).toEqual([15, 30, 60, 960, 1440].map((minutes) => minutes * 60_000));
+});
+
+test("on its last try, any other error marks the page as waiting, to be tried again in a day", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  await draft();
+  model.reply(reply());
+  await call(publishArticle, as(), { slug: "getting-started" });
+  const { articleId } = await translation();
+  model.reply(reply("again"));
+  // Its write fails (the database, say): thrown for Hatchet's retry before the last try, kept on the page on it.
+  const spy = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database blip"));
+  try {
+    model.reply(reply("again"));
+    await expect(translateArticle({ articleId, language: "de", fresh: true }, log, { lastTry: false })).rejects.toThrow("database blip");
+    const before = Date.now();
+    expect(await translateArticle({ articleId, language: "de", fresh: true }, log)).toEqual({ failed: "error" });
+    const waiting = await translation();
+    expect(waiting).toMatchObject({ title: "[de] Getting started", error: "Couldn't translate it", tries: 1 });
+    expect(waiting.retryAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * 60 * 60_000);
+  } finally {
+    spy.mockRestore();
+  }
 });

@@ -56,6 +56,8 @@ export const jobs = {
     // The provider not answering is tried again a few times; the last try keeps why, and retryArticleTranslations goes on.
     retries: 3,
     backoff: { factor: 4, maxSeconds: 300 },
+    // One at a time per page and language: Retranslate twice, or Try again while it's queued, never pays twice at once.
+    concurrencyKey: "input.articleId + ':' + input.language",
   },
   /** Translations that couldn't be made (no credits, the provider failing) tried again on their own, backing off up to a day. */
   retryArticleTranslations: {

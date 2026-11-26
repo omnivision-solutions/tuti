@@ -66,6 +66,9 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
       scheduleTimeout: IMPORT_QUEUE,
       concurrency: [...(own ? [own] : []), { expression: "'import-step'", maxRuns: IMPORT_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
     }),
+    // A long article is several requests of up to a minute each, and one more round for segments that failed their
+    // checks (Hatchet's default is 60 seconds); a whole language queued at once waits its turn rather than being dropped.
+    ...(key === "translateArticle" && { executionTimeout: "10m" as const, scheduleTimeout: "24h" as const }),
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
     ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
