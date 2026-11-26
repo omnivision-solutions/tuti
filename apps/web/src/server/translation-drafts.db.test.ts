@@ -441,3 +441,33 @@ test("a version never translated can't be published without a title", async () =
   await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo"), version: saved.version });
   expect(await call(publishTranslation, as(), de)).toMatchObject({ title: "Bezahlt werden", draft: null });
 });
+
+test("a version the team writes remembers only what's usable: nothing from before the product setting changed, nothing of old English", async () => {
+  const articleId = await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  const [setup, billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  model.reply(sectionsReply("de2", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]));
+  await call(updateTranslationSections, as(), { ...de, sections: [setup!, billing!] });
+  await languageTranslationsDone();
+  // The product setting changes: its translations under the old one aren't to be reused.
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual", productAvailable: true }] });
+  model.reply(sectionsReply("on", ["Billing", "Pay by card or invoice"]));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  const before = model.requests.length;
+  // Setup next: asked of the model again (not taken from the old setting's memory).
+  model.reply(sectionsReply("on", ["Setup", "Install it now"]));
+  await call(updateTranslationSections, as(), { ...de, sections: [setup!] });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(before + 1);
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("[on] Install it now");
+  // English changes again: what it remembers is only of the English as it is.
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by invoice"]), publish: true });
+  model.reply(sectionsReply("on", ["Billing", "Pay by invoice"]));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  const { memory } = await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } });
+  expect(Object.keys(memory as object)).not.toContain("Pay by card or invoice");
+  expect(Object.keys(memory as object)).toContain("Pay by invoice");
+});

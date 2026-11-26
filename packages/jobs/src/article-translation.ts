@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, keyed, sections, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, segmentsOf, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
@@ -245,6 +245,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   // A version the team writes is translated only where it asked: just those sections are sent (no title, description or
   // keywords, which are the team's), and only their problems count.
   const askedParts = row.automatic ? null : parts.filter((part) => asked.includes(part.key));
+  // The source's segments as they are now: what a version the team writes may remember.
+  const current = new Set(askedParts ? segmentsOf(source.doc).segments.map((segment) => segment.text) : []);
   const toTranslate: Doc = askedParts ? { type: "doc", content: askedParts.flatMap((part) => part.blocks) } : source.doc;
   const result = await translateDoc(toTranslate, {
     from: languageName(article.project.language),
@@ -316,8 +318,9 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       updateSections: waiting,
       ...(!draftOnly && { publishedAt: now.publishedAt ?? new Date() }),
       productAvailable: setting.productAvailable,
-      // Only the sections asked for were sent: what's remembered of the others stays.
-      memory: askedParts ? { ...(row.memory as Record<string, string>), ...result.memory } : result.memory,
+      // Only the sections asked for were sent: what's remembered of the others stays, but only what this run could use (made
+      // under the same setting, not after a Retranslate) and only for the source's text as it is now.
+      memory: askedParts ? Object.fromEntries(Object.entries({ ...memory, ...result.memory }).filter(([text]) => current.has(text))) : result.memory,
       error: null,
       tries: 0,
       retryAt: null,
