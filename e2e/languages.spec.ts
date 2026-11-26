@@ -4,6 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
+import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 test("a reader chooses German in the portal's header and its text follows, on desktop and on phones", async ({ browser }, testInfo) => {
@@ -70,4 +71,22 @@ test("a reader chooses German in the portal's header and its text follows, on de
   await reader.reload();
   await expect(reader.getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(reader.getByRole("button", { name: /^Language/ })).toHaveCount(0);
+});
+
+test("on a private portal's sign-in page, a phone can still choose the language from the menu", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/sign-in");
+  // Nothing of the portal's in the menu: only the languages.
+  await reader.getByRole("button", { name: "Menu" }).click();
+  await reader.getByRole("dialog").getByRole("group", { name: "Language" }).getByRole("button", { name: "Deutsch" }).click();
+  await expect(reader.getByRole("dialog").getByRole("group", { name: "Sprache" })).toBeVisible();
+  await expect(reader.getByRole("dialog").getByRole("navigation", { name: "Portal" })).toHaveCount(0);
 });

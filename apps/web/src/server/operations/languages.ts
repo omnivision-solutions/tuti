@@ -108,7 +108,7 @@ export const updateLanguages = defineOperation({
         )
         .max(LANGUAGE_CODES.length - 1)
         .optional()
-        .describe("The other languages, in full"),
+        .describe("The other languages, in full (the plan's limit counts the default too, so it's included in how many)"),
       sendVisitors: z.boolean().optional().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (off by default; saved, not acted on until pages have an address per language)"),
     })
     .refine((input) => input.default !== undefined || input.languages !== undefined || input.sendVisitors !== undefined, "Send default, languages or sendVisitors")
