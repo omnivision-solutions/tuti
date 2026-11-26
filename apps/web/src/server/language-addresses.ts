@@ -1,4 +1,8 @@
 import { prisma } from "@tuti/db";
+
+import { SIGNED_OUT } from "@/lib/read-access";
+
+import { readableArticle, servedArticle } from "./docs-queries";
 import { cache } from "react";
 import { DEFAULT_LANGUAGE, isLanguage, type Language, languageLimit, liveLanguages } from "@tuti/shared";
 
@@ -73,7 +77,8 @@ export async function apiReferenceSlugs(slug: string): Promise<Set<string>> {
 /**
  * Where an offline or removed language's address goes in the default language (docs/plan.md, Languages): the same path, but
  * an article's page (/docs/<slug>, or its .md) found by that language's slug, current then old, goes to its
- * default-language slug (/de/docs/abrechnung → /docs/billing), never the path without the prefix.
+ * default-language slug (/de/docs/abrechnung → /docs/billing), never the path without the prefix. Only an article anyone
+ * may read on its page (served, and for people signed out): the redirect names its slug before the reader is known.
  */
 export async function inDefaultLanguage(slug: string, code: Language, path: string): Promise<string> {
   const match = /^\/docs\/([^/]+?)(\.md)?$/.exec(path);
@@ -86,7 +91,12 @@ export async function inDefaultLanguage(slug: string, code: Language, path: stri
   if (!match || !asked) {
     return path;
   }
-  const article = { project: { slug }, publishedAt: { not: null }, deletedAt: null };
+  // A private portal's readers are known only after this: nothing named for them.
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, portalAccess: true } });
+  if (!project || project.portalAccess !== "PUBLIC") {
+    return path;
+  }
+  const article = { projectId: project.id, ...servedArticle, ...(await readableArticle(project.id, SIGNED_OUT)) };
   const found =
     (await prisma.articleTranslation.findFirst({ where: { language: code, slug: asked, article }, select: { article: { select: { slug: true } } } })) ??
     (await prisma.articleOldSlug.findFirst({ where: { language: code, slug: asked, article }, orderBy: { createdAt: "desc" }, select: { article: { select: { slug: true } } } }));

@@ -61,6 +61,7 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
       return <DocsCollectionPage page={page} />;
     case "article":
     case "locked":
-      return <DocsArticle project={project} slug={slug} article={page.article} />;
+      // By its default-language slug (its Markdown, the tree's current page), whichever language's address it's at.
+      return <DocsArticle project={project} slug={(await articleNamed(project, slug))?.slug ?? slug} article={page.article} />;
   }
 }

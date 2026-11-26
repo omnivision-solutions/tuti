@@ -9,7 +9,11 @@ import { proxy } from "@/proxy";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
+import { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+
 import { docsPage } from "./docs-queries";
+import { createRedirect } from "./operations/redirects";
 import { createArticle, createCollection, customDocsSlug, publishArticle, setArticleLanguageSlug } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
@@ -199,4 +203,70 @@ test("a live language's address finds an article by its slug there; any other of
   expect(await docsPage(project.slug, "abrechnung")).toEqual({ kind: "redirect", path: "/docs/billing" });
   expect(await docsPage(project.slug, "konto")).toEqual({ kind: "redirect", path: "/docs/invoices" });
   expect(await docsPage(project.slug, "billing")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+});
+
+test("no address of an article anyone may not read leads to it: a private portal, a hidden or AI-only article", async () => {
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "Internal", body: "Secret." });
+  await call(publishArticle, as(), { slug: "internal" });
+  const hidden = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "internal" } })).id;
+  await prisma.article.update({ where: { id: hidden }, data: { listing: "AI_ONLY" } });
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] });
+  await version(articleId, "de", "abrechnung");
+  await version(hidden, "de", "intern");
+  await version(hidden, "fr", "interne");
+
+  // German offline: the AI-only article's German slug isn't sent on by its name.
+  expect(new URL((await visit("/de/docs/intern")).headers.get("location")!).pathname).toBe("/docs/intern");
+  // French live: its French slug, and in the default language, isn't a page or a redirect.
+  at("fr");
+  expect(await docsPage(project.slug, "interne")).toBeNull();
+  at(null);
+  expect(await docsPage(project.slug, "interne")).toBeNull();
+  // A private portal names nothing before its reader is known.
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  expect(new URL((await visit("/de/docs/abrechnung")).headers.get("location")!).pathname).toBe("/docs/abrechnung");
+});
+
+test("an old default-language address keeps its article, though another language's slug is the same", async () => {
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "Invoices", body: "Monthly." });
+  await call(publishArticle, as(), { slug: "invoices" });
+  const other = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "invoices" } })).id;
+  await prisma.docsRedirect.create({ data: { projectId: project.id, slug: "tuti-pro", articleId } });
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
+  await version(other, "de", "tuti-pro");
+  at(null);
+  expect(await docsPage(project.slug, "tuti-pro")).toEqual({ kind: "redirect", path: "/docs/billing" });
+  at("de");
+  expect(await docsPage(project.slug, "tuti-pro")).toMatchObject({ kind: "article", article: { title: "Invoices" } });
+});
+
+test("a team's redirect into an offline language's article address that comes back round is skipped", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await version(articleId, "de", "abrechnung");
+  // /docs/billing → /de/docs/abrechnung, which (German offline) is /docs/billing again: the page shows.
+  await call(createRedirect, as(), { from: "/docs/billing", to: "/de/docs/abrechnung" });
+  const response = await visit("/docs/billing");
+  expect(response.headers.get("location")).toBeNull();
+  expect(response.headers.get("x-middleware-rewrite")).toMatch(/\/docs\/billing$/);
+});
+
+test("at a language's slug, the page's canonical address and its Markdown are the article's default-language ones", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
+  await version(articleId, "de", "abrechnung");
+  at("de");
+  const params = Promise.resolve({ project: project.slug, slug: "abrechnung" });
+  const metadata = await slugMetadata({ params, searchParams: Promise.resolve({}) } as never);
+  expect(new URL(String(metadata.alternates?.canonical)).pathname).toBe("/docs/billing");
+
+  const md = await markdown(new Request("http://portal.test/"), { params } as never);
+  expect(md.status).toBe(200);
+  expect(md.headers.get("link")).toMatch(/\/docs\/billing>; rel="canonical"$/);
+  expect(await md.text()).toContain("Pay by card.");
+  // Another of its slugs goes to its own, as its page does.
+  const moved = await markdown(new Request("http://portal.test/"), { params: Promise.resolve({ project: project.slug, slug: "billing" }) } as never);
+  expect([moved.status, moved.headers.get("location")]).toEqual([308, "/de/docs/abrechnung.md"]);
 });
