@@ -57,6 +57,7 @@ export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
+export { inboxDue, inboxDueToken } from "./inbox-due";
 export { aiFor, duplicatesMeter, imagesMeter, screenshotsMeter } from "./ai-usage";
 export { behindKey, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, nameBatch, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
@@ -71,6 +72,7 @@ export { continueVerifyAll, noAi, RUN_STALE_MS, settleStale, verifyAllRunSelect,
 export { verifyAfterEdit } from "./verify-decision";
 export { addToRunningDraft, autopilotLines, changelogLineOf, closeRunningDraft, knownUrl, lockProject, onlyPullRequestTitles, removePullRequest, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
+import { inboxDue } from "./inbox-due";
 export { queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
 export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, COMMENT_UNSURE, composeComment, dueAt, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, VERIFY_WAITS, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, tooLong, waitsBecause } from "./autopilot";
@@ -144,6 +146,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   changelogEmailed,
   resubmitChangelogEmails,
   autopilotDue: () => autopilotDue(),
+  inboxDue: () => inboxDue(),
   syncApiReferences,
 };
 

@@ -360,6 +360,8 @@ model Project {
   /// The spam filter's phrases (check 5, server/spam.ts): a new conversation whose subject or first message has one, as
   /// whole words in any case, is filed as spam.
   spamPhrases                    String[]     @default([])
+  /// The team's guidance for the spam filter's models (checks 6 and 7, server/spam-models.ts): a line in its own words.
+  spamGuidance                   String       @default("")
   /// Unused: where "Ask a person" emailed questions before it started conversations in the
   /// inbox. Kept while the previous release reads them; dropped in a later one.
   supportEmail                   String?
@@ -1207,6 +1209,10 @@ model Conversation {
   spamPhrase    String?
   /// When a teammate last marked it Spam or Not spam (`spam` says which way).
   spamMarkedAt  DateTime?
+  /// The path's work left to do once its request has answered (the spam filter's model checks, server/spam-models.ts):
+  /// set in the transaction that started it, cleared when it's done. The inbox-due job runs what's still here at this
+  /// time (a deploy, a crash). Empty on every conversation from before, so none of those is ever picked up.
+  pathDueAt     DateTime?
   /// Who has it. The AI's are out of the team's views, counts, emails and pushes, in "With AI"; a teammate's reply (not a
   /// note) or Take over makes it the team's, Hand back to the AI the AI's. Closing and reopening leave it.
   handledBy     ConversationOwner  @default(TEAM)
@@ -1253,6 +1259,7 @@ model Conversation {
   @@index([visitorHash])
   @@index([projectId, email])
   @@index([snoozedUntil])
+  @@index([pathDueAt])
   /// The conversations a placeholder holds, for its handover.
   @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")
@@ -1484,6 +1491,9 @@ model InboundEmail {
   status         InboundStatus @default(RECEIVED)
   /// Why it was ignored, failed or refused.
   reason         String        @default("")
+  /// Its Reply-To address, lowercase, where it names one other than its From: a sign the spam filter's models read, kept
+  /// only till they have (server/spam-models.ts), and cleared by users.delete.
+  replyTo        String?
   conversationId String?
   createdAt      DateTime      @default(now())
 

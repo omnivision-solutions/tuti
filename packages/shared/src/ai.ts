@@ -74,9 +74,10 @@ export type AiFeature = (typeof AI_FEATURES)[number];
 
 /**
  * What AI usage is recorded and charged for: the features, duplicate detection (its model is the server's, from the
- * config file), screenshots (an agent in Browser Use's cloud browser, charged what its session cost) and images (generateImage).
+ * config file), screenshots (an agent in Browser Use's cloud browser, charged what its session cost), images
+ * (generateImage) and the spam filter's model checks (recorded, never charged: the server's models, capped per project a day).
  */
-export const USAGE_FEATURES = [...AI_FEATURES, "duplicates", "screenshots", "images"] as const;
+export const USAGE_FEATURES = [...AI_FEATURES, "duplicates", "screenshots", "images", "spam"] as const;
 export type UsageFeature = (typeof USAGE_FEATURES)[number];
 
 /**
