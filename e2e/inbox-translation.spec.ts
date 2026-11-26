@@ -34,6 +34,16 @@ test("a German conversation: the customer's message read in English, the reply p
   await expect(translate).toBeVisible();
   await checkpoint(owner, "settings-translation-on-phone");
   await owner.setViewportSize({ width: 1440, height: 900 });
+  // The team language is saved as it's picked; back to English for the conversation.
+  const language = owner.getByRole("combobox", { name: "Team language" });
+  for (const name of ["Deutsch", "English"]) {
+    await language.click();
+    await owner.getByRole("option", { name }).click();
+    await expect(owner.getByText("Team language saved").last()).toBeVisible();
+    await expect(language).toBeEnabled();
+    await owner.reload();
+    await expect(language).toContainText(name);
+  }
 
   // Its own words, so journeys side by side don't take each other's replies.
   const german = `Der Export-Knopf auf der Berichtsseite tut nichts (${slug}).`;
