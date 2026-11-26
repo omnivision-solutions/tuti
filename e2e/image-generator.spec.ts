@@ -61,6 +61,18 @@ test("the team generates an entry's cover with AI from a prompt and a reference,
   expect((await saved()).cover).toMatchObject({ width: 1200, height: 630 });
   await checkpoint(team, "editor-with-the-generated-cover");
 
+  // On a phone the buttons over the cover wrap inside it, none past its edges.
+  await team.setViewportSize({ width: 375, height: 800 });
+  const picture = (await featured.getByRole("img").boundingBox())!;
+  for (const name of ["Replace featured image", "Make a cover", "Generate", "Remove featured image"]) {
+    const box = (await featured.getByRole("button", { name, exact: true }).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(picture.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(picture.x + picture.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(picture.y + picture.height);
+  }
+  await checkpoint(team, "editor-cover-buttons-on-a-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
+
   // Published, readers see it.
   await team.getByRole("button", { name: "Publish", exact: true }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();

@@ -8,7 +8,7 @@ import { useId, useRef, useState, useTransition } from "react";
 import { flushSync } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -30,8 +30,10 @@ import { uploadStatus } from "@/server/media";
 
 /** A finished upload: its id and a link to show it. */
 export type PickedImage = { id: string; url: string };
-/** An image made in the dialog: its full size, and every stored size (for an editor that inserts it). */
-export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls; download?: string };
+/** An image made in the dialog, as used: its full size (a signed link, fresh when used), and every stored size (for an editor that inserts it). */
+export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
+/** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
+type Try = PickedImage & { width: number; height: number };
 export type ImageSize = { label: string; width: number; height: number };
 
 const PRESETS: ImageSize[] = [
@@ -58,7 +60,8 @@ function RatioGlyph({ width, height }: { width?: number; height?: number }) {
 
 /**
  * "Generate image" (docs/plan.md, AI image generator): a prompt, up to 14 of the project's images to work from and a
- * size make one image with AI (images.generate); each try is kept while the dialog's owner is there, to pick one and use it.
+ * size make one image with AI (images.generate); each try is kept while the dialog's owner is there, to pick one and use it
+ * (shown by its lasting link; Use and Download ask for fresh signed links to the full size).
  */
 export function ImageGenerator({
   projectSlug,
@@ -107,7 +110,11 @@ export function ImageGenerator({
   const sizes = [defaultSize, ...PRESETS];
   const [sizeLabel, setSizeLabel] = useState(defaultSize.label);
   const [custom, setCustom] = useState({ width: String(defaultSize.width), height: String(defaultSize.height) });
-  const [tries, setTries] = useState<GeneratedImage[]>([]);
+  const [tries, setTries] = useState<Try[]>([]);
+  // What the live region says once a try is in (while one runs, Generating…; errors are an alert of their own).
+  const [said, setSaid] = useState("");
+  const [using, startUsing] = useTransition();
+  const [useError, setUseError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -141,24 +148,36 @@ export function ImageGenerator({
   const generate = () =>
     startTransition(async () => {
       setError(null);
+      setUseError(null);
+      setSaid("");
       const result = await generateImage(projectSlug, { prompt, width: size.width, height: size.height, references: references.map((each) => each.id) }).catch(() => ({
         error: "Couldn't reach Tuti. Try again.",
         image: undefined,
       }));
       if (!result.image) {
+        setSaid("");
         setError(result.error ?? "The image couldn't be made. Try again.");
         return;
       }
-      // The action's link is the 480px size: the full one to show, download and use (as an upload's).
-      const status = await uploadStatus(result.image.id).catch(() => null);
-      const made: GeneratedImage =
-        status && "src" in status
-          ? { id: result.image.id, url: status.src, width: status.width, height: status.height, urls: status.urls, download: status.download }
-          : { ...result.image, urls: {} };
+      const { id: madeId, url, width, height } = result.image;
       // One runs at a time (Generate waits), so the list is still the one it started with.
-      setTries([...tries, made]);
+      setTries([...tries, { id: madeId, url, width, height }]);
       setSelected(tries.length);
+      setSaid(`Try ${tries.length + 1} is ready`);
     });
+  // The full size, signed now (a try may be hours old): to use it, or to save it.
+  const fresh = (image: Try, then: (status: { src: string; urls: MediaUrls; download: string }) => void) =>
+    startUsing(async () => {
+      setUseError(null);
+      const status = await uploadStatus(image.id).catch(() => null);
+      if (status && "src" in status) {
+        then(status);
+      } else {
+        setUseError("Couldn't reach Tuti. Try again.");
+      }
+    });
+  // Refining one that isn't a reference yet, at the limit, would drop the last reference.
+  const refineFull = shown !== undefined && full && !references.some((each) => each.id === shown.id);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -167,6 +186,11 @@ export function ImageGenerator({
         finalFocus={finalFocus}
         // Pasted or dropped anywhere on it: a reference.
         onPaste={(event) => {
+          // Text pasted into a field stays text, even with a picture of it on the clipboard too (Word, spreadsheets).
+          const intoField = event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement;
+          if (intoField && event.clipboardData.types.includes("text/plain")) {
+            return;
+          }
           const file = [...event.clipboardData.files].find((each) => each.type.startsWith("image/"));
           if (file) {
             event.preventDefault();
@@ -234,7 +258,7 @@ export function ImageGenerator({
                           aria-label="Add a reference"
                           disabled={full || uploading}
                           focusableWhenDisabled
-                          className="size-16 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground [&_svg:not([class*='size-'])]:size-5"
+                          className="size-16 rounded-lg border border-dashed text-muted-foreground hover:text-foreground [&_svg:not([class*='size-'])]:size-5"
                         />
                       }
                     >
@@ -339,12 +363,16 @@ export function ImageGenerator({
           </div>
 
           <div className="flex min-w-0 flex-col gap-3">
+            {/* Always there, so screen readers hear each change: Generating…, then the try that's ready. */}
+            <p role="status" className="sr-only">
+              {pending ? "Generating, up to half a minute…" : said}
+            </p>
             <div
               className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted"
               style={shown ? { aspectRatio: `${shown.width} / ${shown.height}` } : undefined}
             >
               {pending ? (
-                <p role="status" className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+                <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                   <LoaderCircleIcon className="size-4 animate-spin" aria-hidden />
                   Generating, up to half a minute…
                 </p>
@@ -375,6 +403,7 @@ export function ImageGenerator({
                         onClick={() => {
                           setSelected(index);
                           setError(null);
+                          setUseError(null);
                         }}
                         className={cn("size-12 overflow-hidden rounded-md border", index === selected && "ring-2 ring-primary")}
                       >
@@ -391,6 +420,9 @@ export function ImageGenerator({
                       type="button"
                       variant="outline"
                       size="sm"
+                      disabled={refineFull}
+                      focusableWhenDisabled
+                      title={refineFull ? `At most ${MAX_IMAGE_REFERENCES} references: remove one first` : undefined}
                       onClick={() => {
                         add(shown, true);
                         promptRef.current?.focus();
@@ -398,14 +430,26 @@ export function ImageGenerator({
                     >
                       Refine this one
                     </Button>
-                    <a href={shown.download ?? shown.url} download target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    {/* An attachment link: the browser saves it and stays here. */}
+                    <Button type="button" variant="outline" size="sm" disabled={using} focusableWhenDisabled onClick={() => fresh(shown, ({ download }) => window.location.assign(download))}>
                       <DownloadIcon />
                       Download
-                    </a>
-                    <Button type="button" size="sm" onClick={() => onUse(shown)}>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={using}
+                      focusableWhenDisabled
+                      onClick={() => fresh(shown, ({ src, urls }) => onUse({ id: shown.id, url: src, width: shown.width, height: shown.height, urls }))}
+                    >
                       {useLabel}
                     </Button>
                   </div>
+                )}
+                {useError && (
+                  <p role="alert" className="text-sm text-destructive-foreground">
+                    {useError}
+                  </p>
                 )}
               </>
             )}

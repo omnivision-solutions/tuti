@@ -317,7 +317,8 @@ export function FeaturedImage({
           {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
           <img src={image.url} alt={entry?.title ?? ""} className={cn("h-auto w-full rounded-lg border", uploading && "opacity-50")} />
           {status && <div className="absolute inset-0 flex items-center justify-center">{status}</div>}
-          <div className="absolute top-2 right-2 flex gap-2 opacity-0 transition-opacity group-hover/cover:opacity-100 group-focus-within/cover:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100">
+          {/* Wraps on a narrow cover (a phone's) rather than running past its left edge. */}
+          <div className="absolute top-2 right-2 flex max-w-[calc(100%-1rem)] flex-wrap justify-end gap-2 opacity-0 transition-opacity group-hover/cover:opacity-100 group-focus-within/cover:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100">
             <Button type="button" variant="secondary" size="sm" aria-label="Replace featured image" ref={replace} disabled={uploading} focusableWhenDisabled onClick={pick}>
               Replace
             </Button>

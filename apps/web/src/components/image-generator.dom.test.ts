@@ -109,7 +109,7 @@ test("an uploaded reference joins the end; a pasted image is uploaded too", asyn
   expect(uploadImage).toHaveBeenCalledWith("acme", file);
   expect(references()).toEqual(["https://media.example/ref1.png", "https://media.example/up1.png"]);
   const paste = new Event("paste", { bubbles: true }) as Event & { clipboardData: unknown };
-  paste.clipboardData = { files: [new File(["y"], "shot.png", { type: "image/png" })] };
+  paste.clipboardData = { types: ["Files"], files: [new File(["y"], "shot.png", { type: "image/png" })] };
   await act(async () => document.querySelector("textarea")!.dispatchEvent(paste));
   expect(references()).toEqual(["https://media.example/ref1.png", "https://media.example/up1.png", "https://media.example/up2.png"]);
 });
@@ -122,7 +122,7 @@ test("each Generate adds a try; Refine puts the picked try first among the refer
   expect(button("Try 2")!.getAttribute("aria-pressed")).toBe("true");
   await click("Try 1");
   await click("Refine this one");
-  expect(references()).toEqual(["https://media.example/made1-full.png", "https://media.example/ref1.png"]);
+  expect(references()).toEqual(["https://media.example/made1.png", "https://media.example/ref1.png"]);
   expect(document.activeElement).toBe(document.querySelector("textarea"));
   await click("Generate");
   expect(generateImage).toHaveBeenLastCalledWith("acme", expect.objectContaining({ references: ["made1", "ref1"] }));
@@ -175,7 +175,9 @@ test("after a failed try, the error replaces the image and its actions: nothing 
   await type("A parrot");
   await click("Generate");
   expect(button("Use as cover")).toBeTruthy();
-  expect(document.querySelector<HTMLAnchorElement>("a[download]")!.href).toBe("https://media.example/made1-download.webp");
+  const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  await click("Download");
+  expect(assign).toHaveBeenCalledWith("https://media.example/made1-download.webp");
   await click("Generate");
   expect(document.querySelector('[role="alert"]')).toBeTruthy();
   expect(button("Use as cover")).toBeUndefined();
@@ -201,4 +203,59 @@ test("while a reference uploads, + stays focusable (focus isn't dropped) but doe
   expect(document.querySelector('[role="menu"]')).toBeNull();
   await act(async () => finish({ mediaId: "up1", src: "https://media.example/up1.png" }));
   expect(disabled(add)).toBe(false);
+});
+
+test("screen readers hear Generating…, then that the try is ready, from one live region that stays", async () => {
+  let finish!: (value: unknown) => void;
+  generateImage.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+  const { click, type } = await dialog();
+  const region = document.querySelector('[role="status"]')!;
+  expect(region.textContent).toBe("");
+  await type("A parrot");
+  await click("Generate");
+  expect(document.querySelector('[role="status"]')).toBe(region);
+  expect(region.textContent).toBe("Generating, up to half a minute…");
+  await act(async () => finish({ image: { id: "made1", url: "https://media.example/made1.png", width: 1200, height: 630 } }));
+  expect(document.querySelector('[role="status"]')).toBe(region);
+  expect(region.textContent).toBe("Try 1 is ready");
+});
+
+test("text pasted into the prompt stays text, even with a picture of it on the clipboard; a picture alone is a reference", async () => {
+  uploadImage.mockResolvedValue({ mediaId: "up1", src: "https://media.example/up1.png" });
+  await dialog();
+  const prompt = document.querySelector("textarea")!;
+  const paste = (types: string[]) => {
+    const event = new Event("paste", { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    event.clipboardData = { types, files: [new File(["y"], "copied.png", { type: "image/png" })] };
+    return event;
+  };
+  const fromWord = paste(["text/plain", "text/html", "Files"]);
+  await act(async () => prompt.dispatchEvent(fromWord));
+  expect(fromWord.defaultPrevented).toBe(false);
+  expect(uploadImage).not.toHaveBeenCalled();
+  await act(async () => prompt.dispatchEvent(paste(["Files"])));
+  expect(uploadImage).toHaveBeenCalledTimes(1);
+});
+
+test("at 14 references, Refine this one is off and says why, rather than dropping the last", async () => {
+  const { button, click, type, references } = await dialog({ references: Array.from({ length: 14 }, (_, n) => image(n + 1)) });
+  await type("A parrot");
+  await click("Generate");
+  const refine = button("Refine this one")!;
+  expect(refine.getAttribute("aria-disabled")).toBe("true");
+  expect(refine.title).toBe("At most 14 references: remove one first");
+  await click("Refine this one");
+  expect(references()).toHaveLength(14);
+  expect(references().at(-1)).toBe("https://media.example/ref14.png");
+  await click("Remove reference 1");
+  expect(button("Refine this one")!.getAttribute("aria-disabled")).not.toBe("true");
+});
+
+test("tries show by their lasting links; Use and Download ask for fresh signed links when pressed", async () => {
+  const { click, type, onUse } = await dialog();
+  await type("A parrot");
+  await click("Generate");
+  expect(document.querySelector<HTMLImageElement>('img[alt="Try 1"]')!.src).toBe("https://media.example/made1.png");
+  await click("Use as cover");
+  expect(onUse).toHaveBeenCalledWith(expect.objectContaining({ id: "made1", url: "https://media.example/made1-full.png" }));
 });
