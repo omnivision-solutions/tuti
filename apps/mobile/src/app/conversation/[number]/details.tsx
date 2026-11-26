@@ -395,8 +395,11 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
   const asked = useRef(0);
   // The tab last asked for (shown, or still loading).
   const wanted = useRef<ActivityFilter>("all");
-  // Show earlier is loading: a reload meanwhile reads its page too.
+  // Show earlier is loading: a reload meanwhile reads its page too (it isn't cut at the oldest row shown).
   const paging = useRef(false);
+  // The oldest row shown, and whether what's shown is said to be offline: for the reloads below.
+  const oldest = useRef<string | undefined>(undefined);
+  const offline = useRef(false);
   // When what's shown last came from the server: offline, it stays, said to be offline since then.
   const loadedAt = useRef<number | null>(null);
   const shown = useRef(0);
@@ -405,7 +408,8 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
   const rows = useRef(new Map<string, HostInstance>());
 
   const load = useCallback(
-    function load(to: ActivityFilter, before?: string, limit?: number) {
+    /** `until`: a reload's answer is cut after that row (the oldest shown), so it shows what was shown and anything new above it. */
+    function load(to: ActivityFilter, before?: string, limit?: number, until?: string) {
       const ask = ++asked.current;
       if (!before) {
         wanted.current = to;
@@ -422,7 +426,9 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
           paging.current = false;
           setLoading(false);
           setFilter(to);
-          setPages((loaded) => (before ? [...(loaded ?? []), page] : [page]));
+          const end = until ? page.events.findIndex((event) => event.id === until) : -1;
+          const cut = end >= 0 && end < page.events.length - 1 ? { events: page.events.slice(0, end + 1), next: until! } : page;
+          setPages((loaded) => (before ? [...(loaded ?? []), cut] : [cut]));
           focusOn.current = before ? (page.events[0]?.id ?? null) : null;
           setFailed(null);
           // An earlier page says nothing of the newest rows: shown as kept, they're still said to be.
@@ -454,7 +460,7 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
             setSavedAt(saved.at);
             setFailed(null);
           } else {
-            setFailed({ why: e.message, retry: () => load(to, before, limit) });
+            setFailed({ why: e.message, retry: () => load(to, before, limit, until) });
           }
         },
       );
@@ -464,7 +470,8 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
 
   // On opening, and whenever the conversation's status changes (its fields, not a fetch bringing them as they were): as
   // far back as it's shown, in the tab last chosen (one still loading too, so its tap isn't lost). Its first status
-  // after none (the sheet's own fetch, opened by a link) is no change: the opening's load already has it.
+  // after none (the sheet's own fetch, opened by a link) is no change: the opening's load already has it. While it's
+  // shown offline, any fetch of the conversation (the screen under it, back online) reads it again.
   const changed = triage && JSON.stringify([triage.status, triage.assignee?.email ?? null, triage.spam, triage.snoozedUntil, triage.handledBy ?? null, triage.priority ?? null]);
   // The last status seen (none yet: null), and whether the opening's load has run.
   const lastChanged = useRef<string | null>(null);
@@ -472,28 +479,32 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
   useEffect(() => {
     if (opened.current) {
       // No status now, or the one last seen (back after none): nothing changed. The first one seen: the opening's load has it.
-      if (changed === null || changed === lastChanged.current) {
+      if (changed === null) {
         return;
       }
+      const same = changed === lastChanged.current;
       const first = lastChanged.current === null;
       lastChanged.current = changed;
-      if (first) {
+      if ((same || first) && !offline.current) {
         return;
       }
     } else {
       opened.current = true;
       lastChanged.current = changed;
     }
+    // A page more than shown, cut at the oldest row shown: new rows above don't push shown ones behind Show earlier.
     const to = wanted.current;
-    const far = to === filter ? shown.current + (paging.current ? 20 : 0) : 0;
-    load(to, undefined, far > 20 ? Math.min(far, 100) : undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed
-  }, [changed]);
+    const far = to === filter && shown.current > 0 ? shown.current + 20 : 0;
+    load(to, undefined, far > 20 ? Math.min(far, 100) : undefined, to === filter && !paging.current ? oldest.current : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed (or was fetched, offline)
+  }, [triage]);
 
   const seen = new Set<string>();
   const events = (pages ?? []).flatMap((page) => page.events).filter((event) => !seen.has(event.id) && !!seen.add(event.id));
   const next = pages?.at(-1)?.next ?? null;
   shown.current = events.length;
+  oldest.current = events.at(-1)?.id;
+  offline.current = savedAt !== null;
 
   useEffect(() => {
     const row = focusOn.current && rows.current.get(focusOn.current);
@@ -526,7 +537,8 @@ export function ActivitySection({ number, triage, colors }: { number: number; tr
             <Pressable
               key={option.key}
               // Any time, a load running or not: the newest asked for wins.
-              onPress={() => option.key !== wanted.current && load(option.key)}
+              // The tab shown, offline: read again (the connection may be back).
+              onPress={() => (option.key !== wanted.current || savedAt !== null) && load(option.key)}
               accessibilityRole="tab"
               accessibilityState={{ selected: chosen, busy: loading }}
               hitSlop={4}

@@ -656,10 +656,11 @@ describe("the details sheet's Activity", () => {
       if (!online) {
         return Promise.reject(new ApiError(0, "unreachable", NETWORK));
       }
-      if (before === "r6") {
-        return Promise.resolve({ events: all.slice(20), next: null });
+      if (before) {
+        return Promise.resolve({ events: all.slice(all.findIndex((one) => one.id === before) + 1), next: null });
       }
-      return Promise.resolve(limit ? { events: all.slice(0, Number(limit)), next: null } : { events: all.slice(0, 20), next: "r6" });
+      // Closed meanwhile: its row on top.
+      return Promise.resolve(limit ? { events: [CLOSED, ...all].slice(0, Number(limit)), next: null } : { events: all.slice(0, 20), next: "r6" });
     });
     const first = await render(<Details />);
     await screen.findByText(/ it 25$/);
@@ -668,19 +669,22 @@ describe("the details sheet's Activity", () => {
 
     await fireEvent.press(screen.getByRole("button", { name: "Close" }));
     await act(() => jest.advanceTimersByTimeAsync(0));
-    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=25");
+    // A page more than shown: the new row above, and every row shown still there.
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=45");
     expect(screen.getAllByText(/closed it \d+$/)).toHaveLength(25);
+    expect(screen.getByText(/closed it$/)).toBeTruthy();
+    expect(screen.getByText(/ it 1$/)).toBeTruthy();
     await first.unmount();
 
-    // Kept: the newest 20, and Show earlier from the 20th.
+    // Kept: the newest 20 (the new row and 19 more), and Show earlier from the 20th.
     online = false;
     await render(<Details />);
     expect(await screen.findByText(/ it 25$/)).toBeTruthy();
-    expect(screen.getAllByText(/closed it \d+$/)).toHaveLength(20);
-    expect(screen.queryByText(/ it 5$/)).toBeNull();
+    expect(screen.getAllByText(/closed it( \d+)?$/)).toHaveLength(20);
+    expect(screen.queryByText(/ it 6$/)).toBeNull();
     online = true;
     await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
-    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r6");
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r7");
     // The newest rows are still as kept: still said to be.
     expect(await screen.findByText(/ it 1$/)).toBeTruthy();
     expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
@@ -829,6 +833,49 @@ describe("the details sheet's Activity", () => {
     await screen.rerender(<Section triage={null} />);
     await screen.rerender(<Section triage={{ ...OPEN, status: "closed" }} />);
     expect(activityAsked()).toHaveLength(2);
+  });
+
+  it("cuts a reload at the oldest row shown, Show earlier going on from there", async () => {
+    let closed = false;
+    const all = Array.from({ length: 25 }, (_, i) => event(`r${25 - i}`, "2026-11-25T10:00:00", { text: `closed it ${25 - i}` }));
+    serveActivity(({ limit }) => Promise.resolve(limit ? { events: [...(closed ? [CLOSED] : []), ...all].slice(0, Number(limit)), next: null } : { events: all.slice(0, 20), next: "r6" }));
+    await render(<Details />);
+    await screen.findByText(/ it 25$/);
+
+    closed = true;
+    await act(async () => showTriage(KEY, { ...OPEN, status: "closed" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=40");
+    expect(await screen.findByText(/closed it$/)).toBeTruthy();
+    // The 20 shown and the new one: none of the older ones, which Show earlier reads from the oldest shown.
+    expect(screen.getAllByText(/closed it( \d+)?$/)).toHaveLength(21);
+    expect(screen.queryByText(/ it 5$/)).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r6");
+  });
+
+  it("shown offline, reads it again once the conversation is fetched again, or its tab is tapped", async () => {
+    let online = true;
+    serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    const first = await render(<Details />);
+    await screen.findByText("A conversation starts");
+    await first.unmount();
+
+    online = false;
+    await render(<Details />);
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+    // Tapping All, the tab shown, asks again: still offline.
+    const asked = activityAsked().length;
+    await fireEvent.press(screen.getByRole("tab", { name: "All" }));
+    expect(activityAsked()).toHaveLength(asked + 1);
+    expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+
+    // Back online: the screen under it fetches the conversation, as it was.
+    online = true;
+    await act(async () => showTriage(KEY, { ...OPEN }));
+    expect(activityAsked()).toHaveLength(asked + 2);
+    await act(() => jest.advanceTimersByTimeAsync(0));
+    expect(screen.queryByText(/^Offline · updated/)).toBeNull();
+    expect(screen.getByText("A conversation starts")).toBeTruthy();
   });
 
   it("isn't shown by a server from before it", async () => {
