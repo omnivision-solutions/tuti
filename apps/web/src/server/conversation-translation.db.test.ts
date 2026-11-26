@@ -80,6 +80,20 @@ test("the team language defaults to English and Translate conversations to off; 
   await expect(call(updateSupportSettings, team, { teamLanguage: "not a language" })).rejects.toThrow();
 });
 
+test("Settings → Inbox: the switch and the team language are saved; without AI on the server the switch can't turn on", async () => {
+  const { owner, project, team } = await setup({ translate: false });
+  actAs(owner);
+  expect(await inbox.setTranslation(project.slug, { translate: true })).toEqual({});
+  expect(await inbox.setTranslation(project.slug, { teamLanguage: "de" })).toEqual({});
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "de", translate: true });
+
+  vi.stubEnv("OPENAI_API_KEY", "");
+  // Off still turns off; on says why it can't.
+  expect(await inbox.setTranslation(project.slug, { translate: false })).toEqual({});
+  expect(await inbox.setTranslation(project.slug, { translate: true })).toEqual({ error: "AI isn't set up on this server, so conversations can't be translated" });
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ translate: false });
+});
+
 test("incoming, de → en: translated in the request that detects its language, the original kept, charged as Translation", async () => {
   const { project, team, conversation } = await german();
   expect(model.requests).toHaveLength(1);

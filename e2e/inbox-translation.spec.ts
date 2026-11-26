@@ -18,7 +18,22 @@ test("a German conversation: the customer's message read in English, the reply p
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
-  await api("/support", { translate: true }, "PATCH");
+
+  // Settings → Inbox and email: off by default, turned on there; the team language is English.
+  await owner.goto(`/app/${slug}/settings/support`);
+  const translate = owner.getByRole("switch", { name: "Translate conversations" });
+  await expect(translate).not.toBeChecked();
+  await expect(owner.getByRole("combobox", { name: "Team language" })).toContainText("English");
+  await translate.click();
+  await expect(owner.getByText("Translation on")).toBeVisible();
+  await expect(translate).toBeChecked();
+  // Saved: the switch takes clicks again.
+  await expect(translate).toBeEnabled();
+  await checkpoint(owner, "settings-translation-on");
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(translate).toBeVisible();
+  await checkpoint(owner, "settings-translation-on-phone");
+  await owner.setViewportSize({ width: 1440, height: 900 });
 
   // Its own words, so journeys side by side don't take each other's replies.
   const german = `Der Export-Knopf auf der Berichtsseite tut nichts (${slug}).`;
