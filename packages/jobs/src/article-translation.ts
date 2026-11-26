@@ -318,7 +318,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     // A version the team writes that it never published: only its draft is written (nothing of it goes live by itself).
     const draftOnly = !now.automatic && !now.publishedAt;
     // A version the team writes keeps its other reasons (the product setting's, the glossary's) but where it was updated.
-    const kept = now.automatic ? {} : Object.fromEntries(Object.entries(now.behind as Record<string, string>).filter(([key]) => !asked.includes(key)));
+    const kept = now.automatic ? {} : Object.fromEntries(Object.entries(now.behind as Record<string, string>).filter(([key]) => !still.has(key)));
     return {
       ...(now.automatic && {
         ...(!ownTitle && { title: text(0), titleSource: null }),

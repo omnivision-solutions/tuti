@@ -557,3 +557,71 @@ test("saved with a heading renamed and a section added, the renamed one keeps it
   expect(sections.map(({ key }) => key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing", null]);
   expect(removed).toEqual([]);
 });
+
+test("kept up to date: a section asked for, then kept on publishing while its translation waits, is the team's and behind", async () => {
+  await translated();
+  // The team's own Billing, published; then English changes it and the retranslation can't run.
+  await editBilling();
+  await call(publishTranslation, as(), de);
+  model.fail(500);
+  model.fail(500);
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Asked for (no longer the team's), still waiting.
+  model.fail(500);
+  model.fail(500);
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  // A draft that edits only the intro, published keeping Billing.
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![0]!.content![0]!.text = "Guten Tag";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  const published = await call(publishTranslation, as(), { ...de, keep: [billing!] });
+  expect(text(published.content)).toContain("Unsere Abrechnung");
+  expect(published.behind.map(({ section }) => section)).toEqual([billing]);
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
+  expect(row.updateSections).toEqual([]);
+  expect((row.sections as { key: string; own?: boolean; kept?: boolean }[]).find(({ key }) => key === billing)).toMatchObject({ own: true, kept: true });
+});
+
+test("a section deleted after asking for it isn't put back by the update", async () => {
+  const articleId = await manualVersion();
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  model.fail(500);
+  model.fail(500);
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  // The team deletes Billing from the draft.
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content = content.content!.slice(0, -2);
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ updateSections: [] });
+  // The retry job later: nothing asked for, Billing not back in the draft.
+  await prisma.articleTranslation.updateMany({ where: { articleId }, data: { retryAt: new Date(Date.now() - 1000) } });
+  await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).draft!.content)).not.toContain("Unsere Zahlung");
+});
+
+test("a request cancelled mid-run keeps the section's other reason to be behind", async () => {
+  await manualVersion();
+  // "Our product is available in" changes: every section of the team's version is behind for it.
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual", productAvailable: true }] });
+  const [, setup] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Setup asked for; while it's translated, the team edits it in the draft (cancelling the request).
+  model.reply(sectionsReply("de2", ["Setup", "Install it"]), async () => {
+    const now = await call(getTranslation, as(), de);
+    const content = structuredClone(now.content) as Doc;
+    content.content![2]!.content![0]!.text = "Unsere neue Installation";
+    await call(saveTranslation, as(), { ...de, content, version: now.version });
+  });
+  await call(updateTranslationSections, as(), { ...de, sections: [setup!] });
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("Unsere Installation");
+  expect(after.behind).toContainEqual({ section: setup, reason: "The product's language setting changed." });
+});

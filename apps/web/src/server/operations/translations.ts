@@ -220,7 +220,8 @@ export const saveTranslation = defineOperation({
         data: {
           draft: next as Prisma.InputJsonValue,
           behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out }),
-          updateSections: (version.updateSections as string[]).filter((key) => !editedNow.has(key)),
+          // (Taken out now too: an update asked for it would put it back.)
+          updateSections: (version.updateSections as string[]).filter((key) => !editedNow.has(key) && !removed.includes(key)),
         },
         select: versionSelect,
       });
@@ -277,7 +278,8 @@ export const publishTranslation = defineOperation({
       const out = drafted.map((part): Section => {
         const { key } = part.meta;
         // On a version the team writes, every section is theirs: each behind is theirs to update or keep.
-        const own = part.meta.own || !version.automatic;
+        // Kept: the team's, even where an update asked earlier had made it no longer theirs.
+        const own = part.meta.own || !version.automatic || keep.has(key ?? "");
         if (!own || key === null) return part;
         const stale = hashes.get(key) !== part.meta.hash;
         if (stale && !keep.has(key)) {
@@ -288,7 +290,7 @@ export const publishTranslation = defineOperation({
         }
         // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
         // version kept up to date, publishing the source again replaces edits only in the sections it touches).
-        return stale ? { blocks: part.blocks, meta: { ...part.meta, kept: true } } : part;
+        return stale ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
       });
       const content = docOfSections(out);
       const saved = await tx.articleTranslation.update({
