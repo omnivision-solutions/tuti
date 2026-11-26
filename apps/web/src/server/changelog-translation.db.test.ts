@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeChangelogScreenshots, PRODUCT_SETTING_CHANGED, translationSource } from "@tuti/jobs";
+import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeChangelogScreenshots, PRODUCT_SETTING_CHANGED, setChangelogLine, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -239,4 +239,40 @@ test("screenshots placed are kept even when queuing the entry's translations the
     reading.mockRestore();
   }
   expect(((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
+});
+
+test("an announcement whose translation ends after the wait is sent by the email safety net (every 10 minutes, inline too)", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry, email } = await draft();
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  model.reply(reply("de"), () => held);
+  await call(publishChangelogEntry, as(), { number: entry.number, emailSubscribers: true });
+  expect(entryEmails(email)).toHaveLength(0);
+  // The translation ends long after the wait: it no longer sends the announcement itself.
+  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailDueAt: new Date(Date.now() - ANNOUNCEMENT_WAITS_MS - 60_000) } });
+  release();
+  await languageTranslationsDone();
+  expect(entryEmails(email)).toHaveLength(0);
+  // The safety net (Hatchet's cron, the server's own timer inline) sends it, translated by then.
+  await handlers.resubmitChangelogEmails({}, log);
+  await vi.waitFor(() => expect(entryEmails(email)).toHaveLength(1));
+});
+
+test("an Autopilot line approved into a published entry brings its translations up to date", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  const pr = { repo: "acme/app", number: 7, url: "https://github.com/acme/app/pull/7", title: "Add dark mode" };
+  await prisma.changelogEntryPullRequest.create({ data: { entryId, ...pr } });
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: created.number });
+  await languageTranslationsDone();
+  // The line goes into the published entry (as an approved CHANGELOG_LINE writes it): its German follows.
+  const line = "Dark mode, everywhere.";
+  // Only the new bullet is asked (the rest comes from memory), its link kept.
+  model.reply(JSON.stringify({ segments: { "3": `<a1>[de] ${line}</a1>` } }));
+  expect(await setChangelogLine(project.id, pr, line)).toMatchObject({ number: created.number });
+  await languageTranslationsDone();
+  expect((await translation()).body).toContain(`[de] ${line}`);
 });
