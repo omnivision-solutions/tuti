@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getTriage, holdTriage, showTriage, snoozeChoices, standing, statusWords, type Triage } from "./details";
+import { activityTime, getActivity, getTriage, holdTriage, showTriage, snoozeChoices, standing, statusWords, type Triage } from "./details";
 
 const at = (local: string) => new Date(local);
 
@@ -54,5 +54,22 @@ describe("a conversation the AI has", () => {
     expect(getTriage("key")?.handledBy).not.toBe("ai");
     expect(getTriage("key")?.priority).toBeFalsy();
     release();
+  });
+});
+
+describe("the Activity", () => {
+  it("asks for a filter's newest page, or the one before a row, or as far back as shown", async () => {
+    const asked: string[] = [];
+    const api = (async (path: string) => void asked.push(path)) as never;
+    await getActivity(api, 12, "all");
+    await getActivity(api, 12, "workflows", { before: "e2" });
+    await getActivity(api, 12, "people", { limit: 40 });
+    expect(asked).toEqual(["/conversations/12/activity?filter=all", "/conversations/12/activity?filter=workflows&before=e2", "/conversations/12/activity?filter=people&limit=40"]);
+  });
+
+  it("says a row's time as the web does: the time today, else the day too", () => {
+    const now = at("2026-11-25T14:00:00");
+    expect(activityTime(at("2026-11-25T09:05:00").toISOString(), now)).toBe("09:05");
+    expect(activityTime(at("2026-11-24T23:30:00").toISOString(), now)).toBe("24 Nov, 23:30");
   });
 });
