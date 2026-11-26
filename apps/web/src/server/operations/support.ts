@@ -15,7 +15,7 @@ export const MAX_DRAFT_INSTRUCTIONS = 2000;
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
   const [project, subdomain, last, own] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, teamLanguage: true, translateConversations: true, emailPausedAt: true, emailPausedReason: true, plan: true },
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, language: true, teamLanguage: true, translateConversations: true, emailPausedAt: true, emailPausedReason: true, plan: true },
     }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
@@ -26,7 +26,8 @@ export const supportSettings = async (projectId: string) => {
     // The team's standing instructions for replies drafted by AI (conversations.suggestReply).
     draftInstructions: project.supportDraftInstructions,
     // Inbox in the team's language (docs/plan.md L22).
-    teamLanguage: project.teamLanguage ?? DEFAULT_TEAM_LANGUAGE,
+    // Unset: the project's default language.
+    teamLanguage: project.teamLanguage ?? project.language ?? DEFAULT_TEAM_LANGUAGE,
     translate: project.translateConversations,
     // Email: whether this server receives it, the project's address (once it has one) and the latest email's time.
     email: domain

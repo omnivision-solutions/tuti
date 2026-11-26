@@ -1,6 +1,6 @@
 "use client";
 
-import { LANGUAGE_CODES } from "@tuti/shared/languages";
+import { isLanguage, LANGUAGE_CODES, LANGUAGES } from "@tuti/shared/languages";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -71,7 +71,8 @@ export function TranslationSettings({
   const [language, setLanguage] = useState(teamLanguage);
   // A language set through the API that isn't offered here is still shown as it is.
   const languages = (LANGUAGE_CODES as readonly string[]).includes(language) ? LANGUAGE_CODES : [...LANGUAGE_CODES, language];
-  const items = languages.map((code) => ({ value: code, label: nativeLanguageName(code) }));
+  // The portal's own names for its languages (as Settings → Languages shows them); Intl's only for one set through the API.
+  const items = languages.map((code) => ({ value: code, label: isLanguage(code) ? LANGUAGES[code].native : nativeLanguageName(code) }));
   const save = (change: { translate?: boolean; teamLanguage?: string }, undo: () => void, done: string) =>
     startTransition(async () => {
       const result = await setTranslation(projectSlug, change);

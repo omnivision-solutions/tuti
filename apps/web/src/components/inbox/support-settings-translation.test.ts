@@ -23,6 +23,11 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+test("the launch languages are named as the portal names them (Chinese as 简体中文, whatever the browser's Intl says)", async () => {
+  const { root } = await render({ teamLanguage: "zh-CN" });
+  expect(root.querySelector("#team-language")?.textContent).toContain("简体中文");
+});
+
 test("a team language set through the API that isn't offered here is still shown as it is", async () => {
   const { root } = await render({ teamLanguage: "sv" });
   expect(root.querySelector("#team-language")?.textContent).toContain("Svenska");
