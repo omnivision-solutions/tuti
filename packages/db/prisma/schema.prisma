@@ -21,6 +21,9 @@ model User {
   autopilotEmails      AutopilotEmails @default(AS_THEY_HAPPEN)
   /// The time zone their browser reported when they chose the digest (an IANA name).
   autopilotTimeZone    String?
+  /// The portal language they last chose (docs/plan.md, Languages: the header's switcher), a code from @tuti/shared's
+  /// LANGUAGES; a portal honours it only while it's one of its live languages (or its default).
+  language             String?
   emailVerified        Boolean         @default(false)
   image                String?
   /// The upload `image` links to when they chose it from Account (a media id; the release-media job keeps it while it's here).
@@ -301,6 +304,9 @@ model Project {
   /// The language the team writes in (docs/plan.md, Languages: a code from @tuti/shared's LANGUAGES). Its pages keep
   /// their addresses; it changes only while the project has no other languages.
   language                       String       @default("en")
+  /// "Send visitors to their language" (Settings → Languages): a first visit to the portal's home goes to the language
+  /// the browser asks for (Accept-Language), if it's live. Only saved until pages have an address per language (L3).
+  sendToLanguage                 Boolean      @default(false)
   seoImageId                     String?
   /// More of the look (Customize → Branding): light or dark mode for readers who haven't picked one
   /// ("system": their device's), text beside the logo (empty: none, or the project's name without a

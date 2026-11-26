@@ -23,7 +23,7 @@ async function setUp() {
 
 test("a project starts in English alone; other languages are added offline and automatic, and keep what isn't sent", async () => {
   const { get, update } = await setUp();
-  expect(await get()).toEqual({ default: { code: "en", name: "English" }, languages: [] });
+  expect(await get()).toEqual({ default: { code: "en", name: "English" }, languages: [], sendVisitors: false });
 
   await update({ languages: [{ code: "pt-BR", newPages: "manual", productAvailable: true }, { code: "de", instructions: "  Use du.  " }] });
   await update({ languages: [{ code: "de", live: true }, { code: "pt-BR" }] });
@@ -35,6 +35,13 @@ test("a project starts in English alone; other languages are added offline and a
 
   // Left out: removed.
   expect((await update({ languages: [{ code: "pt-BR" }] })).languages.map(({ code }) => code)).toEqual(["pt-BR"]);
+});
+
+test("Send visitors to their language is off until it's turned on, and keeps its value when the languages change", async () => {
+  const { update } = await setUp();
+  expect((await update({ sendVisitors: true })).sendVisitors).toBe(true);
+  expect(await update({ languages: [{ code: "de" }] })).toMatchObject({ default: { code: "en" }, sendVisitors: true });
+  expect((await update({ languages: [], sendVisitors: false })).sendVisitors).toBe(false);
 });
 
 test("only the launch languages, each once, never the default one", async () => {

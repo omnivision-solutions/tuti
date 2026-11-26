@@ -32,8 +32,7 @@ type Db = Pick<typeof prisma, "$queryRaw" | "project">;
  * - "gets": it's emailed to them.
  * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the entries published meanwhile aren't.
  * - "unconfirmed": they haven't confirmed (or unsubscribed since).
- * - "private": the portal is private. Nothing makes its entries due yet (publish, its box: S5 part two); one due from
- *   before it went private goes to those who may read it (audienceSql's readsPortalSql).
+ * - "private": the portal is private and they can't read it (readsPortalSql), so it isn't emailed to them.
  * - "opted-out": they've turned all of the project's emails off ("Unsubscribe" in a shipped email, say). That wins,
  *   however the subscription was made, until they turn them back on (a confirmation link's page).
  */
@@ -87,13 +86,13 @@ export async function changelogReach(
   subscriber: { email: string; confirmed: boolean },
   db: Prisma.TransactionClient = prisma,
 ): Promise<ChangelogReach> {
-  const [{ optedOut }] = await db.$queryRaw<[{ optedOut: boolean }]>`SELECT ${optedOutSql(projectId, Prisma.sql`${subscriber.email}`)} AS "optedOut"`;
-  const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
+  const address = Prisma.sql`${subscriber.email}`;
+  const [{ optedOut, reads }] = await db.$queryRaw<[{ optedOut: boolean; reads: boolean }]>`
+    SELECT ${optedOutSql(projectId, address)} AS "optedOut", ${readsPortalSql(projectId, address, await hasReaders(projectId, db))} AS "reads"`;
+  const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } });
   // Paused only where projects are paused at all (projectEmailWaits).
   const paused = plansEnabled() && project.emailPausedAt !== null;
-  // ponytail: per address (readsPortalSql) in S5 part two, with publish and the box: a release apart, as the previous
-  // release's worker lets a private portal's due entry go, so nothing may make one due while it runs.
-  return !subscriber.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : optedOut ? "opted-out" : paused ? "paused" : "gets";
+  return !subscriber.confirmed ? "unconfirmed" : !reads ? "private" : optedOut ? "opted-out" : paused ? "paused" : "gets";
 }
 
 /** Whether ChangelogReach means it's (or will be) emailed to them. */
@@ -160,9 +159,7 @@ async function audience(
  */
 export async function emailedOf(db: Db, projectId: string, emails: string[]): Promise<Set<string>> {
   const rows = await db.$queryRaw<{ email: string }[]>`
-    SELECT s."email" ${audienceSql(projectId, new Date(), await hasReaders(projectId, db))} AND s."email" = ANY(${emails}::text[])
-      -- As changelogReach has it this release: a private portal's are nobody's yet (S5 part two).
-      AND EXISTS (SELECT 1 FROM "project" ep WHERE ep."id" = ${projectId} AND ep."portalAccess" = 'PUBLIC')`;
+    SELECT s."email" ${audienceSql(projectId, new Date(), await hasReaders(projectId, db))} AND s."email" = ANY(${emails}::text[])`;
   return new Set(rows.map((row) => row.email));
 }
 
@@ -182,17 +179,11 @@ async function audienceSize(projectId: string, emailedAt: Date, unsentOf?: strin
 
 /**
  * How many people publishing an entry with Email subscribers would email now: the editor's count (audienceSql, so
- * changelogReach), of `entryId`'s groups' subscribers when it's for some. Null on a private portal, where publishing emails
- * nobody yet (S5 part two).
+ * changelogReach), of `entryId`'s groups' subscribers when it's for some; on a private portal, those who may read it.
  */
-export async function subscriberCount(projectId: string, entryId?: string): Promise<number | null> {
-  const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
+export async function subscriberCount(projectId: string, entryId?: string): Promise<number> {
   // While the project's email is paused nothing is: the resume lets what it held go.
-  return portalAccess !== "PUBLIC"
-    ? null
-    : (await projectEmailWaits(projectId))
-      ? 0
-      : audienceSize(projectId, new Date(), undefined, entryId ? await entryGroups(entryId) : null);
+  return (await projectEmailWaits(projectId)) ? 0 : audienceSize(projectId, new Date(), undefined, entryId ? await entryGroups(entryId) : null);
 }
 
 /**

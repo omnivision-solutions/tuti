@@ -1,0 +1,9 @@
+{
+  "header": {
+    "signIn": "Se connecter",
+    "menu": "Menu",
+    "closeMenu": "Fermer le menu",
+    "language": "Langue : {language}",
+    "languages": "Langue"
+  }
+}

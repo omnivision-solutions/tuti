@@ -95,7 +95,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     entry.subscribersEmailedAt &&
     sent === 0 &&
     (await prisma.importedRecord.findFirst({ where: { projectId: membership.project.id, source: { in: Object.values(ImportSource) }, kind: "changelog-emailed", localId: entry.id }, select: { source: true } }));
-  // Counted as the email job picks them (changelogReach, the entry's groups); null on a private portal, which emails nobody.
+  // Counted as the email job picks them (changelogReach, the entry's groups; a private portal's, its readers).
   const subscribers = await subscriberCount(membership.project.id, entry.id);
   // A draft not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to
   // edit). Published as it was, Edit with AI is back (Draft with AI is for drafts). Still the pull requests' titles,
@@ -235,6 +235,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 tags: entry.tags.map((t) => t.toLowerCase() as TagName),
                 groups: claimsOf(entry),
                 emailOnly: entry.emailOnly,
+                privatePortal: (await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { portalAccess: true } })).portalAccess !== "PUBLIC",
                 posts: listed,
                 published: entry.publishedAt !== null,
                 cover,

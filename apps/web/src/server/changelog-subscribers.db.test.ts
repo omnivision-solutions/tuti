@@ -267,7 +267,23 @@ describe("subscribing", () => {
     expect(entryEmailsTo(kim).map((email) => email.subject)).toEqual([`${project.name}: Search`]);
   });
 
-  test("on a portal gone private, the page says the changelog isn't emailed: nothing to confirm (refused too), Unsubscribe still works", async () => {
+  test("on a private portal, the box is its readers': it emails a link to one of them, nothing to an address that isn't one (the same answer), and refuses anyone who may not read it", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    const ada = await signUp("Ada");
+    await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada.email } });
+    const stranger = newAddress();
+    actAs(null);
+    expect(await subscribe(ada.email)).toEqual({ error: "Updates by email aren't available here." });
+    actAs(ada);
+    expect(await subscribe(ada.email)).toEqual({ sentTo: ada.email });
+    expect(emailsTo(ada.email)).toHaveLength(1);
+    expect(await subscribe(stranger)).toEqual({ sentTo: stranger });
+    expect(emailsTo(stranger)).toEqual([]);
+    actAs(null);
+  });
+
+  test("on a portal gone private, to someone who isn't one of its readers the page says the changelog isn't emailed: nothing to confirm (refused too), Unsubscribe still works", async () => {
     const [kim, lee] = [newAddress(), newAddress()];
     const kimToken = await confirmed(kim);
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
@@ -275,13 +291,20 @@ describe("subscribing", () => {
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
 
     expect(await page({ token: kimToken })).toContain(
-      `Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed to ${kim}. Unsubscribe`,
+      `Updates by email aren't available here ${project.name}'s portal is private, and its changelog is emailed only to its readers: ${kim} isn't one of them. Unsubscribe`,
     );
-    expect(await page({ confirm: leeLink })).toBe(`Updates by email aren't available here ${project.name}'s portal is private, so its changelog isn't emailed.`);
+    expect(await page({ confirm: leeLink })).toBe(`Updates by email aren't available here ${project.name}'s portal is private, and its changelog is emailed only to its readers.`);
     expect((await confirm(leeLink)).status).toBe(403);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
     expect((await unsubscribe(kimToken)).status).toBe(303);
+    // Kim isn't one of the private portal's readers: no way back is offered (the box is its readers').
     expect(await page({ token: kimToken })).toBe(`You're unsubscribed ${project.name}'s changelog won't be emailed to ${kim} anymore.`);
+    // A reader who unsubscribes is pointed back to the box.
+    const ada = newAddress();
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada } });
+    const { token: adaToken } = await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: ada, confirmedAt: new Date() } });
+    expect((await unsubscribe(adaToken)).status).toBe(303);
+    expect(await page({ token: adaToken })).toContain("To get it again, subscribe on the changelog");
   });
 
   test("a confirmation link confirms only its own request: not once a newer one replaced it, nor after unsubscribing, used or expired", async () => {
@@ -328,10 +351,10 @@ describe("subscribing", () => {
     expect(await page({ confirm: late })).toContain("To get updates by email, ask again on the changelog");
     expect((await confirm(late)).status).toBe(404);
     expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: lee } })).confirmedAt).toBeNull();
-    // On a portal gone private there's nowhere to ask again: the page doesn't say to.
+    // On a private portal too: its box is its readers' (the link has them sign in first).
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
     await dead(late);
-    expect(await page({ confirm: late })).not.toContain("ask again");
+    expect(await page({ confirm: late })).toContain("To get updates by email, ask again on the changelog");
   });
 
   test("a link sent before the address turned the project's emails off can't turn them back on: the newer word stands", async () => {
@@ -422,7 +445,7 @@ describe("subscribing", () => {
 describe("one rule (changelogReach): the sender and every page agree", () => {
   // Each state, made for one subscriber in a project of its own: what the rule says, what their page says, and
   // whether the sender's audience (the editor's count) has them.
-  const states: { reach: ChangelogReach; page: string; emailed: boolean | null; make: (subscriber: { token: string; email: string; userId: string }) => Promise<unknown> }[] = [
+  const states: { reach: ChangelogReach; page: string; emailed: boolean; make: (subscriber: { token: string; email: string; userId: string }) => Promise<unknown> }[] = [
     { reach: "gets", page: "You get {name}'s updates by email The changelog entries {name} emails to subscribers go to {email}.", emailed: true, make: async () => {} },
     {
       reach: "paused",
@@ -432,7 +455,13 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
       make: () => prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } }),
     },
     { reach: "unconfirmed", page: "You're unsubscribed", emailed: false, make: ({ token }) => unsubscribe(token) },
-    { reach: "private", page: "Updates by email aren't available here", emailed: null, make: () => prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } }) },
+    // A private portal's, at an address that isn't one of its readers.
+    {
+      reach: "private",
+      page: "{name}'s portal is private, and its changelog is emailed only to its readers: {email} isn't one of them.",
+      emailed: false,
+      make: () => prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } }),
+    },
     { reach: "opted-out", page: "You've turned off all of {name}'s emails, so its changelog isn't emailed to {email} either.", emailed: false, make: ({ userId }) => optOut(userId) },
   ];
   test.each(states)("$reach", async ({ reach, page: says, emailed, make }) => {
@@ -443,8 +472,8 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     const { confirmedAt } = await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: ada.email } });
     expect(await changelogReach(project.id, { email: ada.email, confirmed: confirmedAt !== null })).toBe(reach);
     expect(await page({ token })).toContain(says.replaceAll("{email}", ada.email).replaceAll("{name}", project.name));
-    // The editor's count is the sender's audience: null where nothing's emailed at all (a private portal).
-    expect(await subscriberCount(project.id)).toBe(emailed === null ? null : emailed ? 1 : 0);
+    // The editor's count is the sender's audience.
+    expect(await subscriberCount(project.id)).toBe(emailed ? 1 : 0);
   });
 
   test("the editor's counts are the sender's audience, counted in the database: paused (none), private, unconfirmed, opted out, already sent", async () => {
@@ -481,10 +510,13 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     const kimId = (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).id;
     await prisma.changelogEmail.create({ data: { entryId, subscriberId: kimId, sentAt: new Date() } });
     expect(await count(subscribersLeft(entryId))).toBe(1);
-    // Private: nobody.
-    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
-    expect(await count(subscriberCount(project.id))).toBeNull();
+    // Private: only its readers, none yet; then Lee, one of them, is left.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } });
+    expect(await count(subscriberCount(project.id))).toBe(0);
     expect(await count(subscribersLeft(entryId))).toBe(0);
+    await prisma.portalReader.create({ data: { projectId: project.id, email: lee } });
+    expect(await count(subscriberCount(project.id))).toBe(1);
+    expect(await count(subscribersLeft(entryId))).toBe(1);
 
     // Public and resumed, the sender emails exactly who was left.
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC", emailPausedAt: null } });
@@ -816,6 +848,18 @@ describe("publishing with Email subscribers", () => {
     expect(await entryTold(id)).toEqual({ asked: 1, subscribers: 0 });
   });
 
+  test("on a private portal, a reader who turned the project's emails off gets a link to turn them back on; someone who isn't one is refused", async () => {
+    const [ada, kim] = [await signUp("Ada"), await signUp("Kim")];
+    const [adaToken, kimToken] = [await confirmed(ada.email), await confirmed(kim.email)];
+    await optOut(ada.id);
+    await optOut(kim.id);
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada.email } });
+    expect((await emailsOn(adaToken)).headers.get("location")).toBe(`/changelog/subscription?token=${adaToken}&sent=1`);
+    expect((await mailbox.latestTo(ada.email)).text).toContain("turn them back on");
+    expect((await emailsOn(kimToken)).status).toBe(403);
+  });
+
   test("turned all of the project's emails off after confirming: no changelog either; the long-lived link (forwarded, say) can't turn them back on, only a fresh one emailed to the address", async () => {
     const ada = await signUp("Ada");
     const token = await confirmed(ada.email);
@@ -957,14 +1001,37 @@ describe("publishing with Email subscribers", () => {
     expect([lee, viaDomain, sso, member.email, unverified.email].map((to) => entryEmailsTo(to).length)).toEqual([0, 0, 0, 1, 0]);
   });
 
-  test("never from a private portal", async () => {
-    const kim = newAddress();
-    await confirmed(kim);
-    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  test("from a private portal, only to subscribers who may read it: its readers (by address or domain), people its app named, its team", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    const domain = `e2e-${randomUUID().slice(0, 8)}.example.com`;
+    const [kim, lee, viaDomain, sso] = [newAddress(), newAddress(), `e2e-${randomUUID()}@${domain}`, newAddress()];
+    const member = await signUp("Mo Member");
+    await prisma.user.update({ where: { id: member.id }, data: { emailVerified: true } });
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
+    await ssoUser(sso);
+    for (const address of [kim, lee, viaDomain, sso, member.email]) {
+      await confirmed(address);
+    }
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } });
+    await prisma.portalReader.createMany({ data: [{ projectId: project.id, email: lee }, { projectId: project.id, email: `@${domain}` }] });
     await publishEntry("Dark mode");
-    expect(entryEmailsTo(kim)).toEqual([]);
-    // Not counted as emailed: public again, it can be.
-    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).subscribersEmailedAt).toBeNull();
+    expect([kim, lee, viaDomain, sso, member.email].map((to) => entryEmailsTo(to).length)).toEqual([0, 1, 1, 1, 1]);
+    expect(await changelogReach(project.id, { email: kim, confirmed: true })).toBe("private");
+  });
+
+  test("on a plan without private portals, a private portal's changelog goes only to its team", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    const lee = newAddress();
+    const member = await signUp("Mo Member");
+    await prisma.user.update({ where: { id: member.id }, data: { emailVerified: true } });
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
+    await confirmed(lee);
+    await confirmed(member.email);
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "pro" } });
+    await prisma.portalReader.create({ data: { projectId: project.id, email: lee } });
+    await publishEntry("Dark mode");
+    // Published from the private portal: the team member gets it, the reader (no readers on this plan) doesn't.
+    expect([lee, member.email].map((to) => entryEmailsTo(to).length)).toEqual([0, 1]);
   });
 });
 
@@ -1470,17 +1537,16 @@ describe("the Account's changelog switch", () => {
     expect(await emailPreferences(project.id, ada.id)).toEqual({ ownPosts: true, followedPosts: true, unsubscribed: true, changelog: false });
   });
 
-  test("a private portal emails nobody its changelog: no switch, and turning it on is refused", async () => {
+  test("a private portal's reader has the switch, and turning it on subscribes them", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
-    // One of its readers, who gets its emails about posts.
     const ada = await verified("Ada");
     await prisma.portalReader.create({ data: { projectId: project.id, email: ada.email } });
     actAs(ada);
     const html = renderToStaticMarkup(await AccountPage({ params: params() } as never));
     expect(html).toContain('id="email-followedPosts"');
-    expect(await changelogSwitch()).toBeUndefined();
-    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({ error: "Updates by email aren't available here." });
-    expect(await prisma.changelogSubscriber.count({ where: { projectId: project.id } })).toBe(0);
+    expect(await changelogSwitch()).toMatchObject({ on: false });
+    expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});
+    expect(await changelogSwitch()).toMatchObject({ on: true });
   });
 
   test("the switch says what the sender does (changelogReach), at the address the project's emails go to (its SSO's)", async () => {
@@ -1633,7 +1699,18 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "api", allEmails: false }]);
   });
 
-  test("nothing where it wasn't being emailed: a portal gone private, or an address whose emails another account there turned off", async () => {
+  test("a private portal's reader getting the changelog who unsubscribes is told to webhooks (it was being emailed to them)", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } });
+    const ada = newAddress();
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada } });
+    await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: ada, confirmedAt: new Date() } });
+    await unsubscribe(await tokenOf(ada));
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada, userId: null, source: "email", allEmails: false }]);
+  });
+
+  test("nothing where it wasn't being emailed: a portal gone private (to someone who isn't one of its readers), or an address whose emails another account there turned off", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     const [kim, shared] = [newAddress(), newAddress()];
     const kimUser = await appUser(kim);
     actAs(kimUser);
@@ -1646,7 +1723,8 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     await unsubscribe(await tokenOf(shared));
     expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: shared, userId: first.appId, source: "email", allEmails: true }]);
 
-    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    // Private on a plan without readers: Kim, whom the app named, isn't one.
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "pro" } });
     await optOut(kimUser.id);
     await unsubscribe(await tokenOf(kim));
     expect(await told()).toHaveLength(1);
