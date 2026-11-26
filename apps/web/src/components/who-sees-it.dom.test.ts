@@ -3,13 +3,14 @@ import { act, createElement as h, useContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 
-vi.mock("@/server/changelog", () => ({}));
+const publishChangelogEntry = vi.fn(async () => ({}));
+vi.mock("@/server/changelog", () => ({ publishChangelogEntry }));
 vi.mock("@/server/images", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
 
-const { ChangelogSaving, ChangelogSavingContext, WhoSeesIt } = await import("./changelog");
+const { ChangelogEntryActions, ChangelogSaving, ChangelogSavingContext, WhoSeesIt } = await import("./changelog");
 
 afterEach(() => document.body.replaceChildren());
 
@@ -64,6 +65,7 @@ test("Publish is told of an unsaved pick only while the picker that has it is th
     act(async () => root.render(h(ChangelogSaving, null, h(Held), picker && h(WhoSeesIt, { groups, picked: [], upgrade: null, onChange: () => {} }))));
   await render(true);
   expect(box.querySelector("output")?.textContent).toBe("false");
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
   await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
   expect(box.querySelector("output")?.textContent).toBe("true");
   await render(false);
@@ -74,7 +76,7 @@ test("while a save runs the picks wait: one made then would be dropped as the pi
   const box = document.createElement("form");
   document.body.append(box);
   const onChange = vi.fn();
-  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, saving: true, onChange })));
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: ["enterprise"], upgrade: null, saving: true, onChange })));
   const beta = box.querySelector<HTMLInputElement>('input[value="beta"]')!;
   // Off, but focusable: the keyboard keeps its place.
   expect(beta.getAttribute("aria-disabled")).toBe("true");
@@ -87,29 +89,134 @@ test("while a save runs the picks wait: one made then would be dropped as the pi
   expect(onChange).not.toHaveBeenCalled();
 });
 
-test("Email only is sent only once it changes, and holds Publish until saved; with no groups, it's all there is", async () => {
+/** Its switches, by their names (the labels they're named by). */
+const switchNamed = (box: HTMLElement, name: string) =>
+  [...box.querySelectorAll<HTMLInputElement>('input[role="switch"]')].find((input) => input.labels?.[0]?.textContent === name)!;
+const lineOf = (input: HTMLInputElement) => document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent ?? null;
+
+const entry = {
+  number: 7,
+  title: "Dark mode",
+  content: { type: "doc" as const, content: [] },
+  tags: [],
+  groups: [],
+  posts: [],
+  published: false,
+  cover: null,
+  told: null,
+  announced: false,
+  emailedSubscribers: false,
+  subscribersLeft: 0,
+  subscribersSent: 0,
+};
+
+test("Audience: Everyone shows no chips; Some groups shows them; going back to Everyone drops the picks and sends that", async () => {
   const box = document.createElement("form");
   document.body.append(box);
-  const root = createRoot(box);
-  const Held = () => h("output", null, String(useContext(ChangelogSavingContext)?.groupsChanged));
-  await act(async () => root.render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups: [], picked: [], emailOnly: true, upgrade: null, onChange: () => {} }))));
+  const onChange = vi.fn();
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, onChange })));
+  expect(box.querySelector<HTMLInputElement>('input[value="everyone"]')!.checked).toBe(true);
   expect(box.querySelector('input[name="groups"]')).toBeNull();
-  const only = box.querySelector<HTMLInputElement>('input[name="emailOnly"]')!;
-  expect(only.checked).toBe(true);
-  expect(box.querySelector('input[name="emailOnlyEditable"]')).toBeNull();
-  await act(async () => only.click());
-  expect(only.checked).toBe(false);
-  expect(box.querySelector('input[name="emailOnlyEditable"]')).not.toBeNull();
-  expect(box.querySelector("output")?.textContent).toBe("true");
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
+  // Only showing the chips is no change.
+  expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
+  expect(box.querySelector<HTMLInputElement>('input[value="beta"]')!.checked).toBe(true);
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="everyone"]')!.click());
+  expect(box.querySelector('input[name="groups"]')).toBeNull();
+  expect(new FormData(box).getAll("groups")).toEqual([]);
+  expect(box.querySelector('input[name="groupsEditable"]')).not.toBeNull();
 });
 
-test("Email only says what happens where no email can go (published without it, or a private portal): listed nowhere, the team's only", async () => {
+test("an entry saved for some groups opens on Some groups, its chips picked", async () => {
   const box = document.createElement("form");
   document.body.append(box);
-  const root = createRoot(box);
-  await act(async () => root.render(h(WhoSeesIt, { groups: [], picked: [], emailable: false, upgrade: null, onChange: () => {} })));
-  expect(box.textContent).toContain("Listed nowhere: only your team sees it.");
-  expect(box.textContent).not.toContain("Emailed to subscribers");
-  await act(async () => root.render(h(WhoSeesIt, { groups: [], picked: [], upgrade: null, onChange: () => {} })));
-  expect(box.textContent).toContain("Emailed to subscribers and listed nowhere.");
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: ["beta"], upgrade: null, onChange: () => {} })));
+  expect(box.querySelector<HTMLInputElement>('input[value="some"]')!.checked).toBe(true);
+  expect(new FormData(box).getAll("groups")).toEqual(["beta"]);
+});
+
+test("Goes to: a draft goes to the changelog list, the widget popup and an email announcement, all on to start with", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(WhoSeesIt, { groups: [], picked: [], entry, subscribers: 3, upgrade: null, onChange: () => {} }))));
+  for (const name of ["Changelog list", "Widget popup", "Email announcement"]) {
+    expect(switchNamed(box, name).checked).toBe(true);
+    expect(switchNamed(box, name).disabled).toBe(false);
+  }
+  expect(lineOf(switchNamed(box, "Email announcement"))).toBe("3 subscribers");
+  // No hint lines: the list and the popup have none.
+  expect(switchNamed(box, "Changelog list").hasAttribute("aria-describedby")).toBe(false);
+  expect(switchNamed(box, "Widget popup").hasAttribute("aria-describedby")).toBe(false);
+  // Without groups, there's no Audience.
+  expect(box.textContent).not.toContain("Audience");
+});
+
+test("a new entry has the changelog list only: the popup and the email are picked once it's saved, for Publish", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(WhoSeesIt, { groups: [], picked: [], upgrade: null, onChange: () => {} }))));
+  expect([...box.querySelectorAll('input[role="switch"]')].map((input) => (input as HTMLInputElement).labels?.[0]?.textContent)).toEqual(["Changelog list"]);
+});
+
+test("the changelog list off: email only, sent once changed and holding Publish until saved; the popup is off and disabled, and back as it was once the list is on", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  const Held = () => h("output", null, String(useContext(ChangelogSavingContext)?.groupsChanged));
+  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups: [], picked: [], entry, subscribers: 3, upgrade: null, onChange: () => {} }))));
+  expect(box.querySelector('input[name="emailOnlyEditable"]')).toBeNull();
+  await act(async () => switchNamed(box, "Changelog list").click());
+  expect(switchNamed(box, "Changelog list").checked).toBe(false);
+  expect(new FormData(box).get("emailOnly")).toBe("1");
+  expect(new FormData(box).get("emailOnlyEditable")).toBe("1");
+  expect(box.querySelector("output")?.textContent).toBe("true");
+  const popup = () => switchNamed(box, "Widget popup");
+  expect(popup().checked).toBe(false);
+  expect(popup().disabled).toBe(true);
+  expect(lineOf(popup())).toBe("Needs the changelog list");
+  // The email still goes: that's what email only is.
+  expect(switchNamed(box, "Email announcement").checked).toBe(true);
+  await act(async () => switchNamed(box, "Changelog list").click());
+  expect(popup().checked).toBe(true);
+  expect(popup().disabled).toBe(false);
+  // Back as saved: nothing to send, nothing to hold.
+  expect(box.querySelector('input[name="emailOnlyEditable"]')).toBeNull();
+  expect(box.querySelector("output")?.textContent).toBe("false");
+
+  // A popup turned off stays off through the list's off and on.
+  await act(async () => popup().click());
+  await act(async () => switchNamed(box, "Changelog list").click());
+  await act(async () => switchNamed(box, "Changelog list").click());
+  expect(popup().checked).toBe(false);
+});
+
+test("an entry saved as email only opens with the list off, and sends nothing until it changes", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () => createRoot(box).render(h(WhoSeesIt, { groups: [], picked: [], emailOnly: true, upgrade: null, onChange: () => {} })));
+  expect(switchNamed(box, "Changelog list").checked).toBe(false);
+  // Its own value goes only with emailOnlyEditable (changelog.ts reads neither without it).
+  expect(new FormData(box).get("emailOnlyEditable")).toBeNull();
+});
+
+test("Publish with Email announcement off emails no subscriber", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () =>
+    createRoot(box).render(
+      h(
+        ChangelogSaving,
+        null,
+        h(WhoSeesIt, { groups: [], picked: [], entry, subscribers: 3, upgrade: null, onChange: () => {} }),
+        h(ChangelogEntryActions, { projectSlug: "acme", number: 7, title: "Dark mode", published: false, postCount: 0, subscribers: 3, emails: 0, canDraftWithAi: false, part: "publish" }),
+      ),
+    ),
+  );
+  await act(async () => switchNamed(box, "Email announcement").click());
+  expect(switchNamed(box, "Email announcement").checked).toBe(false);
+  const publish = () => [...document.querySelectorAll("button")].filter((button) => button.textContent === "Publish");
+  await act(async () => publish()[0].click());
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("It goes on your portal and in your widget.");
+  await act(async () => publish().at(-1)!.click());
+  expect(publishChangelogEntry).toHaveBeenCalledWith("acme", 7, true, false, undefined);
 });

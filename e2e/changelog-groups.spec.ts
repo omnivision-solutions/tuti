@@ -88,20 +88,27 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(newDot(bea)).toHaveCount(0);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
-  // The team makes Dark mode for enterprise customers too, in the editor's "Who sees it": now Bea has none.
+  // The team makes Dark mode for enterprise customers too, in the editor's Audience: now Bea has none.
   await owner.goto(`/app/${slug}/changelog/1`);
-  const whoSees = owner.getByRole("group", { name: "Who sees it" });
-  await expect(whoSees.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
-  await whoSees.getByRole("checkbox", { name: "Enterprise" }).check();
-  await checkpoint(owner, "editor-who-sees-it");
+  const audience = owner.getByRole("group", { name: "Audience" });
+  // Everyone to start with: no chips until Some groups.
+  await expect(audience.getByRole("radio", { name: "Everyone" })).toBeChecked();
+  await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toHaveCount(0);
+  await audience.getByText("Some groups", { exact: true }).click();
+  await expect(audience.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
+  await audience.getByRole("checkbox", { name: "Enterprise" }).check();
+  await checkpoint(owner, "editor-audience");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await owner.reload();
-  await expect(owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
+  await expect(audience.getByRole("radio", { name: "Some groups" })).toBeChecked();
+  await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveCount(0);
   await owner.goto(`/app/${slug}/changelog/1`);
-  await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).uncheck();
+  // Everyone again: the picks go.
+  await audience.getByText("Everyone", { exact: true }).click();
+  await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toHaveCount(0);
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   // Groups set meanwhile (by the API here; a teammate alike) stay when the open editor saves something else.
@@ -114,7 +121,8 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await api("/changelog/1", { groups: [] }, "PATCH");
   // Ticked and unticked again, then saved: nothing changed, so the next save (of its tags) still keeps groups set meanwhile.
   await owner.reload();
-  const enterprise = owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" });
+  const enterprise = audience.getByRole("checkbox", { name: "Enterprise" });
+  await audience.getByText("Some groups", { exact: true }).click();
   await enterprise.check();
   await enterprise.uncheck();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
@@ -139,17 +147,20 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await owner.getByRole("checkbox", { name: "Breaking" }).check();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(enterprise).toBeDisabled();
+  await expect(audience.getByRole("radio", { name: "Everyone" })).toBeDisabled();
   releaseSave();
-  await expect(enterprise).toBeEnabled();
+  // Saved for everyone (set meanwhile by the API), it starts afresh on Everyone.
+  await expect(audience.getByRole("radio", { name: "Everyone" })).toBeEnabled();
   await owner.unroute("**/*");
 
-  // A draft: picking who sees it holds Publish until it's saved (Publish sends what's saved, to whoever that's for).
+  // A draft: picking its audience holds Publish until it's saved (Publish sends what's saved, to whoever that's for).
   await api("/changelog", { title: "Roles", body: "Give teammates roles." });
   await owner.goto(`/app/${slug}/changelog/3`);
-  await owner.getByRole("group", { name: "Who sees it" }).getByRole("checkbox", { name: "Enterprise" }).check();
+  await audience.getByText("Some groups", { exact: true }).click();
+  await audience.getByRole("checkbox", { name: "Enterprise" }).check();
   await owner.getByRole("button", { name: "Publish" }).click();
   const publish = owner.getByRole("alertdialog");
-  await expect(publish.getByRole("heading", { name: "Save who sees it before publishing" })).toBeVisible();
+  await expect(publish.getByRole("heading", { name: "Save Audience and Goes to before publishing" })).toBeVisible();
   await expect(publish.getByRole("button", { name: "Publish" })).toBeDisabled();
   await publish.getByRole("button", { name: "Cancel" }).click();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
