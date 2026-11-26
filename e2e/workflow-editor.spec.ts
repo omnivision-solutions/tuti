@@ -67,10 +67,18 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await owner.getByRole("button", { name: "Add an action" }).click();
   await owner.getByRole("menuitem", { name: "Mark priority" }).click();
   await checkpoint(owner, "editor-new");
-  // While a new one saves nothing changes: it goes to the list once added.
+  // Saved with Enter from the name. While a new one saves nothing changes (it goes to the list once added), and the
+  // focus stays where it was.
   const releaseAdd = await holdActions(owner);
-  await save.click();
-  await expect(owner.getByRole("textbox", { name: "Name" })).toBeDisabled();
+  const name = owner.getByRole("textbox", { name: "Name" });
+  await name.focus();
+  await owner.keyboard.press("Enter");
+  await expect(name).toHaveAttribute("readonly");
+  await expect(name).toBeFocused();
+  await owner.keyboard.type(" (typed while saving)");
+  await expect(name).toHaveValue("Enterprise first");
+  await expect(owner.getByRole("button", { name: "Remove Mark priority" })).toBeDisabled();
+  await expect(name).toBeFocused();
   await releaseAdd();
   await expect(owner.getByText("Added Enterprise first")).toBeVisible();
   await owner.waitForURL(`**/app/${slug}/settings/workflows`);

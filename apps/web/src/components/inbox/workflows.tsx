@@ -219,10 +219,11 @@ function Row({
   onDelete: (sent: boolean) => void;
 }) {
   // The switch as turned, until the page has it: never disabled or drawn again meanwhile, so it keeps the focus.
-  // Kept until the page has the last turn's: turned twice quickly, the first save's page mustn't show its state between.
+  // Kept while any turn saves (the transition covers each save and the page it brings): turned twice quickly, the
+  // first save's page mustn't show its state between. Then the page's, whatever it says (a teammate's turn too).
   const [turned, setTurned] = useState<boolean | null>(null);
   const [switching, startSwitching] = useTransition();
-  if (turned !== null && workflow.enabled === turned && !switching) {
+  if (turned !== null && !switching) {
     setTurned(null);
   }
   const [confirming, setConfirming] = useState(false);

@@ -34,11 +34,16 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
   const { register } = usePreview();
   const [saved, setSaved] = useState(workflow);
   const [draft, setDraft] = useState(workflow);
-  const set = (change: Partial<Draft>) => setDraft((current) => ({ ...current, ...change }));
+  const [saving, startSaving] = useTransition();
+  // A new one goes to the list once added: nothing changes while it saves, as a change then wouldn't be saved. Its
+  // controls stay focusable (read-only, or disabled but focusable), so the focus stays where it was.
+  const locked = saving && id === null;
+  const set = (change: Partial<Draft>) => {
+    if (!locked) setDraft((current) => ({ ...current, ...change }));
+  };
   // Tried to save: from then on what's missing says so.
   const [tried, setTried] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saving, startSaving] = useTransition();
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   useEffect(() => register(formId, { dirty, pending: saving, saving }), [register, formId, dirty, saving]);
   useEffect(() => () => register(formId, null), [register, formId]);
@@ -111,16 +116,22 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
       }}
       className="flex flex-col gap-7"
     >
-      {/* A new one goes to the list once added: nothing changes while it saves, as a change then wouldn't be saved. */}
-      <fieldset disabled={saving && id === null} className="contents">
       <SettingsCard>
         <SettingRow label="Name" htmlFor="workflow-name">
           <div className="flex flex-col gap-1.5 @min-[34rem]/settings:w-64">
             <Input
               id="workflow-name"
               value={draft.name}
+              readOnly={locked}
               maxLength={MAX_WORKFLOW_NAME}
               onChange={(event) => set({ name: event.currentTarget.value })}
+              // Enter saves, as "Save changes" would (the selects' own fields keep the browser from doing it).
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  if (dirty && !saving) event.currentTarget.form?.requestSubmit();
+                }
+              }}
               aria-invalid={nameError ? true : undefined}
               aria-describedby={nameError ? "workflow-name-error" : undefined}
             />
@@ -128,7 +139,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
           </div>
         </SettingRow>
         <SettingRow label={<span id="workflow-when-label">When</span>} description={<span id="workflow-when-description">{TRIGGER_HINTS[draft.trigger]}</span>}>
-          <Select items={triggerItems} value={draft.trigger} onValueChange={(next) => set({ trigger: next as WorkflowTrigger })}>
+          <Select items={triggerItems} value={draft.trigger} readOnly={locked} onValueChange={(next) => set({ trigger: next as WorkflowTrigger })}>
             <SelectTrigger className={ROW_SELECT} aria-labelledby="workflow-when-label" aria-describedby="workflow-when-description">
               <SelectValue />
             </SelectTrigger>
@@ -143,7 +154,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
         </SettingRow>
         <SettingRow label={<span id="workflow-if-label">If</span>} description={<span id="workflow-if-description">Their groups are checked each time it runs.</span>}>
           <div className="flex flex-col gap-1.5">
-            <Select items={groupItems} value={draft.group} onValueChange={(next) => set({ group: next as string | null })}>
+            <Select items={groupItems} value={draft.group} readOnly={locked} onValueChange={(next) => set({ group: next as string | null })}>
               <SelectTrigger
                 className={ROW_SELECT}
                 aria-labelledby="workflow-if-label"
@@ -164,7 +175,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
           </div>
         </SettingRow>
         <SettingRow label="On" description="One that's off never runs." htmlFor="workflow-on" inline>
-          <Switch id="workflow-on" aria-describedby="workflow-on-description" checked={draft.enabled} onChange={(event) => set({ enabled: event.currentTarget.checked })} />
+          <Switch id="workflow-on" aria-describedby="workflow-on-description" aria-readonly={locked || undefined} checked={draft.enabled} onChange={(event) => set({ enabled: event.currentTarget.checked })} />
         </SettingRow>
       </SettingsCard>
 
@@ -173,7 +184,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
         count={actions.length}
         action={
           <DropdownMenu>
-            <DropdownMenuTrigger id="workflow-add-action" render={<Button type="button" variant="outline" size="sm" />}>
+            <DropdownMenuTrigger id="workflow-add-action" render={<Button type="button" variant="outline" size="sm" disabled={locked} focusableWhenDisabled />}>
               Add an action
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-auto min-w-40">
@@ -198,6 +209,8 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    disabled={locked}
+                    focusableWhenDisabled
                     aria-label={`Remove ${ACTIONS[kind].label}`}
                     onClick={() => {
                       const next = actions[at + 1] ?? actions[at - 1];
@@ -220,7 +233,6 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
       </p>
       {error && <FieldError className="-mt-5">{error}</FieldError>}
 
-      </fieldset>
       {id !== null && <DeleteWorkflow projectSlug={projectSlug} id={id} name={saved.name} onDeleted={() => router.push(list)} />}
     </form>
   );

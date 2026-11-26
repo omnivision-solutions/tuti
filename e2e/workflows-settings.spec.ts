@@ -166,6 +166,21 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   expect(await owner.evaluate(() => ((window as unknown as { watching: boolean }).watching = false, (window as unknown as { flashed: boolean }).flashed))).toBe(false);
   await expect(thirdSwitch).toBeChecked();
 
+  // Turned off, but stored on (as when a teammate turns it back on as this saves; here a trigger on its row in the
+  // journeys' own database keeps it on): once nothing saves, the switch shows what's stored, not the turn.
+  const thirdId = (await order("conversation_started")).find((workflow) => workflow.name === "Third")!.id;
+  const keepOn = `e2e_keep_on_${randomUUID().replaceAll("-", "")}`;
+  await query(`CREATE FUNCTION ${keepOn}() RETURNS trigger AS $$ BEGIN NEW.enabled := true; RETURN NEW; END $$ LANGUAGE plpgsql`);
+  await query(`CREATE TRIGGER ${keepOn} BEFORE UPDATE ON workflow FOR EACH ROW WHEN (NEW.id = '${thirdId}') EXECUTE FUNCTION ${keepOn}()`);
+  try {
+    await thirdSwitch.click();
+    await expect(owner.getByText("Third turned off")).toBeVisible();
+    await expect(thirdSwitch).toBeChecked();
+  } finally {
+    await query(`DROP TRIGGER ${keepOn} ON workflow`);
+    await query(`DROP FUNCTION ${keepOn}()`);
+  }
+
   // Deleted, asking first.
   await menu("First").click();
   await owner.getByRole("menuitem", { name: "Delete" }).click();
