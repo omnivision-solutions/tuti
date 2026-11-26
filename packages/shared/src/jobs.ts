@@ -48,11 +48,11 @@ export const jobs = {
   },
   /**
    * An article into one of the project's languages (docs/plan.md, Languages, L6): after a publish, a language added,
-   * Retranslate, Try again or "Our product is available in" changing. `fresh`: no segment's remembered translation reused.
+   * Retranslate, Try again or "Our product is available in" changing (Retranslate marks the page, so its retries send everything too).
    */
   translateArticle: {
     name: "translate-article",
-    input: z.object({ articleId: z.string(), language: z.string(), fresh: z.boolean().optional() }),
+    input: z.object({ articleId: z.string(), language: z.string() }),
     // The provider not answering is tried again a few times; the last try keeps why, and retryArticleTranslations goes on.
     retries: 3,
     backoff: { factor: 4, maxSeconds: 300 },

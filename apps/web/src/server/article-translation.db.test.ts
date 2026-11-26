@@ -69,6 +69,9 @@ async function draft() {
   await prisma.article.updateMany({ where: { projectId: project.id }, data: { description: "How to start", keywords: ["setup"] } });
 }
 
+/** As Retranslate marks a page: its next translation reuses nothing. */
+const markRetranslate = (articleId: string) => prisma.articleTranslation.updateMany({ where: { articleId }, data: { retranslate: true } });
+
 const translation = (language = "de") => prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language } });
 
 test("publishing translates into each language kept up to date, its title, description, keywords and text, charged as Translation", async () => {
@@ -161,6 +164,7 @@ test("a job queued under the old setting stops before asking anything", async ()
   model.reply(reply());
   await publish();
   const { articleId } = await translation();
+  await markRetranslate(articleId);
   // As a job would see it partway: the setting counted a change since it read it (its first read, mocked to the old one).
   const findUnique = prisma.articleTranslation.findUnique.bind(prisma.articleTranslation);
   const spy = vi.spyOn(prisma.articleTranslation, "findUnique").mockImplementation((async (args: Parameters<typeof findUnique>[0]) => {
@@ -168,7 +172,7 @@ test("a job queued under the old setting stops before asking anything", async ()
     return row && { ...row, projectLanguage: { ...row.projectLanguage, productVersion: row.projectLanguage.productVersion - 1 } };
   }) as never);
   try {
-    expect(await translateArticle({ articleId, language: "de", fresh: true }, log)).toEqual({ skipped: "the product's language setting changed" });
+    expect(await translateArticle({ articleId, language: "de" }, log)).toEqual({ skipped: "the product's language setting changed" });
   } finally {
     spy.mockRestore();
   }
@@ -209,7 +213,8 @@ test("can't run: provider failures are retried, then the page waits with why and
   // Out of credits: the model isn't asked.
   model.requests.length = 0;
   vi.stubEnv("TUTI_CONFIG", creditsOn());
-  expect(await translateArticle({ articleId, language: "de", fresh: true }, log)).toEqual({ failed: "Out of credits" });
+  await markRetranslate(articleId);
+  expect(await translateArticle({ articleId, language: "de" }, log)).toEqual({ failed: "Out of credits" });
   expect(model.requests).toHaveLength(0);
   expect(await translation()).toMatchObject({ title: "[de] Getting started", error: "Out of credits", tries: 1 });
 });
@@ -224,14 +229,15 @@ test("on its last try, any other error marks the page as waiting, to be tried ag
   model.reply(reply());
   await publish();
   const { articleId } = await translation();
-  model.reply(reply("again"));
+  await markRetranslate(articleId);
   // Its write fails (the database, say): thrown for Hatchet's retry before the last try, kept on the page on it.
   const spy = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database blip"));
   try {
     model.reply(reply("again"));
-    await expect(translateArticle({ articleId, language: "de", fresh: true }, log, { lastTry: false })).rejects.toThrow("database blip");
+    model.reply(reply("again"));
+    await expect(translateArticle({ articleId, language: "de" }, log, { lastTry: false })).rejects.toThrow("database blip");
     const before = Date.now();
-    expect(await translateArticle({ articleId, language: "de", fresh: true }, log)).toEqual({ failed: "error" });
+    expect(await translateArticle({ articleId, language: "de" }, log)).toEqual({ failed: "error" });
     const waiting = await translation();
     expect(waiting).toMatchObject({ title: "[de] Getting started", error: "Couldn't translate it", tries: 1 });
     expect(waiting.retryAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * 60 * 60_000);
@@ -243,11 +249,13 @@ test("on its last try, any other error marks the page as waiting, to be tried ag
 test("a translation that can't be queued, or whose job is lost, waits and is queued again by the retry job", async () => {
   await draft();
   await publish();
-  // Hatchet can't be reached when German is added: the page waits with a time to try again.
-  vi.stubEnv("JOBS_DRIVER", "hatchet");
-  vi.stubEnv("HATCHET_CLIENT_TOKEN", "not-a-token");
-  await languages({ languages: [{ code: "de" }] });
-  vi.stubEnv("JOBS_DRIVER", "inline");
+  // Queuing fails when German is added (Hatchet unreachable, say): the page waits with a time to try again.
+  const unreachable = vi.spyOn(handlers, "translateArticle").mockRejectedValue(new Error("Hatchet unreachable"));
+  try {
+    await languages({ languages: [{ code: "de" }] });
+  } finally {
+    unreachable.mockRestore();
+  }
   const waiting = await translation();
   expect(waiting).toMatchObject({ publishedAt: null, error: "Couldn't translate it" });
   expect(waiting.retryAt!.getTime()).toBeGreaterThan(Date.now());
@@ -283,4 +291,30 @@ test("pages a language queues all get their safety net before the first is trans
   expect(during).toHaveLength(2);
   expect(during.every(({ retryAt }) => retryAt !== null && retryAt.getTime() > Date.now())).toBe(true);
   expect(await prisma.articleTranslation.count({ where: { projectId: project.id, retryAt: null } })).toBe(2);
+});
+
+test("a Retranslate that fails is retried as one: its retry reuses nothing either", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  await draft();
+  model.reply(reply());
+  await publish();
+  model.fail(500);
+  model.fail(500);
+  await retranslate({ code: "de" });
+  expect(await translation()).toMatchObject({ error: "The translation provider didn't answer", retranslate: true });
+
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  model.requests.length = 0;
+  model.reply(reply("again"));
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  // Everything sent again, nothing taken from the memory.
+  expect(model.requests[0]!.user).toContain("Open Settings");
+  expect(await translation()).toMatchObject({ title: "[again] Getting started", error: null, retranslate: false });
+});
+
+test("a language's reason to wait counts only the articles counted as waiting: never sample content", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
+  const sample = await prisma.article.create({ data: { projectId: project.id, slug: "sample", title: "Sample", publishedAt: new Date(), sample: true } });
+  await prisma.articleTranslation.create({ data: { articleId: sample.id, projectId: project.id, language: "de", error: "Out of credits" } });
+  expect((await call(getLanguages, as(), {})).languages[0]!.articles).toEqual({ translated: 0, waiting: 0, why: null });
 });

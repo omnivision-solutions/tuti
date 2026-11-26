@@ -51,7 +51,7 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
       where: { projectId, automatic: true, article: { publishedAt: { not: null }, sample: false }, OR: [{ publishedAt: null }, { error: { not: null } }] },
       _count: true,
     }),
-    prisma.articleTranslation.groupBy({ by: ["language", "error"], where: { projectId, automatic: true, error: { not: null }, article: { publishedAt: { not: null } } }, _count: true, orderBy: { _count: { id: "desc" } } }),
+    prisma.articleTranslation.groupBy({ by: ["language", "error"], where: { projectId, automatic: true, error: { not: null }, article: { publishedAt: { not: null }, sample: false } }, _count: true, orderBy: { _count: { id: "desc" } } }),
   ]);
   const count = (rows: { language: string; _count: number }[], code: string) => rows.find((row) => row.language === code)?._count ?? 0;
   // Past the plan's limit (after a downgrade) only the oldest within it are live; the rest are kept, offline until an upgrade.

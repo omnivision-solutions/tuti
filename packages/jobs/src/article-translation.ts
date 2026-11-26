@@ -102,7 +102,7 @@ export async function translateArticle(input: JobInput<"translateArticle">, log:
   }
 }
 
-async function translateOne({ articleId, language, fresh = false }: JobInput<"translateArticle">, log: JobLogger, { lastTry }: JobRun): Promise<JobResult> {
+async function translateOne({ articleId, language }: JobInput<"translateArticle">, log: JobLogger, { lastTry }: JobRun): Promise<JobResult> {
   const row = await prisma.articleTranslation.findUnique({
     where: { articleId_language: { articleId, language } },
     select: {
@@ -114,6 +114,7 @@ async function translateOne({ articleId, language, fresh = false }: JobInput<"tr
       memory: true,
       error: true,
       tries: true,
+      retranslate: true,
       projectLanguage: { select: { productAvailable: true, productVersion: true, instructions: true } },
       article: { select: sourceSelect },
     },
@@ -127,6 +128,7 @@ async function translateOne({ articleId, language, fresh = false }: JobInput<"tr
   }
   const source = translationSource(article);
   const sameSetting = row.productAvailable === setting.productAvailable;
+  const fresh = row.retranslate;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
     return { skipped: "up to date" };
   }
@@ -218,14 +220,15 @@ async function translateOne({ articleId, language, fresh = false }: JobInput<"tr
     error: null,
     tries: 0,
     retryAt: null,
+    retranslate: false,
   });
   return written ? { translated: language } : { skipped: CHANGED };
 }
 
 /** Queues a translate job, never failing the caller: the page waits, and the retry job or Try again picks it up. */
-async function queue(articleId: string, language: string, fresh?: boolean) {
+async function queue(articleId: string, language: string) {
   try {
-    await enqueue("translateArticle", { articleId, language, ...(fresh && { fresh }) });
+    await enqueue("translateArticle", { articleId, language });
   } catch (error) {
     serverLog.error("Queuing an article's translation failed", { articleId, language, error });
     // It waits like a failed translation, so the retry job queues it again (and Try again counts it).
@@ -243,18 +246,17 @@ async function queue(articleId: string, language: string, fresh?: boolean) {
 const safetyNet = (where: Prisma.ArticleTranslationWhereInput) =>
   prisma.articleTranslation.updateMany({ where: { ...where, retryAt: null }, data: { retryAt: new Date(Date.now() + LOST_AFTER_MS) } });
 
-/** Translating queued inline (JOBS_DRIVER=inline: no Hatchet), still going after the request or publish answered. */
+/** Queuing (inline, translating) still going after the request or publish answered. */
 const inBackground = new Set<Promise<void>>();
 /** Runs `queuing`: inline, where each job runs as it's queued, in the background, so a save or request never waits on the model. */
-async function queueAll(queuing: () => Promise<void>) {
-  const running = queuing();
-  if (process.env.JOBS_DRIVER !== "inline") {
-    return running;
-  }
+function queueAll(queuing: () => Promise<void>) {
+  // Never awaited: a language's every page queued (or, inline, translated) one by one would hold the request for long. Each
+  // page already has its safety net, so one a restart keeps this from reaching is queued again by the retry job.
+  const running = queuing().catch((error: unknown) => serverLog.error("Queuing article translations failed", { error }));
   inBackground.add(running);
   void running.finally(() => inBackground.delete(running));
 }
-/** Resolves once every whole language queued inline is translated (tests). */
+/** Resolves once everything queued in the background is queued (inline: translated). For tests. */
 export async function languageTranslationsDone() {
   // Those queued meanwhile too (a job's translating that changed the setting).
   while (inBackground.size > 0) {
@@ -281,7 +283,7 @@ export async function queueArticleTranslations(articleId: string) {
   await prisma.articleTranslation.createMany({ data: missing.map(({ code }) => ({ articleId, projectId: article.projectId, language: code })), skipDuplicates: true });
   const languages = [...article.translations.filter((t) => t.automatic).map((t) => t.language), ...missing.map(({ code }) => code)];
   await safetyNet({ articleId, language: { in: languages } });
-  await queueAll(async () => {
+  queueAll(async () => {
     for (const language of languages) {
       await queue(articleId, language);
     }
@@ -308,9 +310,13 @@ export async function queueLanguageTranslations(projectId: string, language: str
     select: { id: true, articleId: true },
   });
   await safetyNet({ id: { in: rows.map(({ id }) => id) } });
-  await queueAll(async () => {
+  if (fresh) {
+    // On the row, so the retries of one that fails send everything too.
+    await prisma.articleTranslation.updateMany({ where: { id: { in: rows.map(({ id }) => id) } }, data: { retranslate: true } });
+  }
+  queueAll(async () => {
     for (const { articleId } of rows) {
-      await queue(articleId, language, fresh);
+      await queue(articleId, language);
     }
   });
   return rows.length;
@@ -325,10 +331,12 @@ export async function productSettingChanged(projectId: string, language: string)
     where: { projectId, language, automatic: false, article: { deletedAt: null } },
     select: { id: true, article: { select: { title: true, description: true, keywords: true, body: true, content: true } } },
   });
-  for (const { id, article } of manual) {
-    const behind = Object.fromEntries(keyed(translationSource(article).text).map(([key]) => [behindKey(key), PRODUCT_SETTING_CHANGED]));
-    await prisma.articleTranslation.update({ where: { id }, data: { behind } });
-  }
+  queueAll(async () => {
+    for (const { id, article } of manual) {
+      const behind = Object.fromEntries(keyed(translationSource(article).text).map(([key]) => [behindKey(key), PRODUCT_SETTING_CHANGED]));
+      await prisma.articleTranslation.update({ where: { id }, data: { behind } });
+    }
+  });
   return queueLanguageTranslations(projectId, language);
 }
 
