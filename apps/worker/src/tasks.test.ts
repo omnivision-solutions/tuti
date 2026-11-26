@@ -5,8 +5,11 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { stopSignal, taskFn, taskOptions } from "./tasks";
 
-const { importStep } = vi.hoisted(() => ({ importStep: vi.fn(async (_input: unknown, _log: unknown, stop: () => boolean) => ({ stopped: stop() })) }));
-vi.mock("@tuti/jobs", () => ({ importStep, codeChange: vi.fn(), handlers: {} }));
+const { importStep, translateArticle } = vi.hoisted(() => ({
+  importStep: vi.fn(async (_input: unknown, _log: unknown, stop: () => boolean) => ({ stopped: stop() })),
+  translateArticle: vi.fn(async (_input: unknown, _log: unknown, run: { lastTry: boolean }) => run),
+}));
+vi.mock("@tuti/jobs", () => ({ importStep, translateArticle, codeChange: vi.fn(), handlers: {} }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -72,4 +75,21 @@ test("an import's run is told to stop going from page to page once the worker is
   const interrupt = stopSignal(interrupted as never);
   interrupted.emit("SIGINT");
   expect(interrupt()).toBe(true);
+});
+
+test("an article's translation may take ten minutes and wait a day for its turn, one run per page and language, told which try is its last", async () => {
+  expect(taskOptions("translateArticle")).toMatchObject({
+    name: "translate-article",
+    retries: 3,
+    executionTimeout: "10m",
+    scheduleTimeout: "24h",
+    concurrency: [
+      { expression: "input.articleId + ':' + input.language", maxRuns: 1 },
+      // …and a few on the whole server.
+      { expression: "'translate-article'", maxRuns: 4 },
+    ],
+  });
+  const run = (retryCount: number) => taskFn("translateArticle", 3, () => false)({ articleId: "a", language: "de" }, { retryCount: () => retryCount, cancelled: false });
+  expect(await run(2)).toEqual({ lastTry: false });
+  expect(await run(3)).toEqual({ lastTry: true });
 });

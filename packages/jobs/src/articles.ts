@@ -2,6 +2,7 @@ import { type Doc, fromPlainText, toChunks } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { articleChunkText, contentHash, embed, EMBEDDING_MODEL, embeddingsEnabled, type JobInput, toVectorLiteral } from "@tuti/shared";
 
+import { queueArticleTranslations } from "./article-translation";
 import type { JobLogger, JobResult } from "./index";
 
 const articleSelect = { projectId: true, title: true, body: true, content: true, keywords: true, publishedAt: true, sample: true } as const;
@@ -26,6 +27,8 @@ function chunksOf(article: ArticleText | null) {
  * order: chunks are only written while the article still has the text they came from.
  */
 export async function articleChanged({ articleId }: JobInput<"articleChanged">, log: JobLogger): Promise<JobResult> {
+  // Its languages kept up to date follow (each its own job: a failure there never holds up search).
+  await queueArticleTranslations(articleId).catch((error: unknown) => log.warn(`Queuing article ${articleId}'s translations failed: ${String(error)}`));
   if (!embeddingsEnabled()) {
     log.info("OPENAI_API_KEY not set: docs search matches words only");
     return { skipped: true };
