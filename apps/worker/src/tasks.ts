@@ -7,10 +7,12 @@ type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: 
 
 /**
  * Translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. Split
- * between articles and changelog entries (few: one per publish), as a task's concurrency group is its own (Hatchet's
- * SDK: entries are workflow-scoped unless tenant-scoped, which not every Hatchet server has): together never more than 4.
+ * between articles and changelog entries, as a task's concurrency group is its own (Hatchet's SDK: entries are
+ * workflow-scoped unless tenant-scoped, which not every Hatchet server has): together never more than 4. Entries get two:
+ * an announcement waits for its languages (ANNOUNCEMENT_WAITS_MS), and an entry in many of them shouldn't use the wait up
+ * one at a time; articles' are background work, where one run fewer only stretches the whole.
  */
-const TRANSLATE_RUNS = { translateArticle: 3, translateChangelogEntry: 1 } as const;
+const TRANSLATE_RUNS = { translateArticle: 2, translateChangelogEntry: 2 } as const;
 
 /**
  * The team's email and push about a customer's message, each at once on the whole server: one may wait in its slot for

@@ -95,7 +95,7 @@ test("an article's translation may take ten minutes and wait a day for its turn,
     concurrency: [
       { expression: "input.articleId + ':' + input.language", maxRuns: 1 },
       // …and a few on the whole server.
-      { expression: "'translate-article'", maxRuns: 3 },
+      { expression: "'translate-article'", maxRuns: 2 },
     ],
   });
   const run = (retryCount: number) => taskFn("translateArticle", 3, () => false)({ articleId: "a", language: "de" }, { retryCount: () => retryCount, cancelled: false });
@@ -103,7 +103,7 @@ test("an article's translation may take ten minutes and wait a day for its turn,
   expect(await run(3)).toEqual({ lastTry: true });
 });
 
-test("a changelog entry's translation is an article's: the same limits, its group one run beside articles' three (each task's group is its own), told which try is its last", () => {
+test("a changelog entry's translation is an article's: the same limits, its group two runs beside articles' two (each task's group is its own), told which try is its last", () => {
   expect(taskOptions("translateChangelogEntry")).toMatchObject({
     name: "translate-changelog-entry",
     retries: 3,
@@ -111,7 +111,7 @@ test("a changelog entry's translation is an article's: the same limits, its grou
     scheduleTimeout: "24h",
     concurrency: [
       { expression: "input.entryId + ':' + input.language", maxRuns: 1 },
-      { expression: "'translate-changelog-entry'", maxRuns: 1 },
+      { expression: "'translate-changelog-entry'", maxRuns: 2 },
     ],
   });
   return expect(taskFn("translateChangelogEntry", 3, () => false)({ entryId: "e", language: "de" }, { retryCount: () => 3, cancelled: false })).resolves.toEqual({ lastTry: true });
