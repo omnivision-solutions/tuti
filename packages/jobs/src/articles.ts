@@ -138,7 +138,7 @@ export async function embedTranslation(translationId: string, log: JobLogger): P
 }
 
 /** For the backfill: embeds every published article (unchanged ones are skipped), carrying on past failures. */
-export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; embedded: number; failed: string[] }> {
+export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; embedded: number; failed: string[]; translations: number; translationsEmbedded: number; translationsFailed: string[] }> {
   const articles = await prisma.article.findMany({
     // Not sample content, which is never embedded (chunksOf).
     where: { publishedAt: { not: null }, sample: false },
@@ -164,17 +164,19 @@ export async function embedPublishedArticles(log: JobLogger): Promise<{ articles
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });
+  const translationsFailed: string[] = [];
+  let translationsEmbedded = 0;
   for (const { id } of translations) {
     try {
       if (Number((await embedTranslation(id, log)).embedded) > 0) {
-        embedded++;
+        translationsEmbedded++;
       }
     } catch (error) {
       log.warn(`translation ${id} wasn't embedded: ${error instanceof Error ? error.message : String(error)}`);
-      failed.push(id);
+      translationsFailed.push(id);
     }
   }
-  return { articles: articles.length + translations.length, embedded, failed };
+  return { articles: articles.length, embedded, failed, translations: translations.length, translationsEmbedded, translationsFailed };
 }
 
 /** How long a deleted article can be restored; then `purgeArticles` removes it for good. */

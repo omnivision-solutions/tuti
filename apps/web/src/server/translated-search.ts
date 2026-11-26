@@ -86,6 +86,8 @@ async function wordMatches(language: string, query: string, limit: number, found
     return rows.map(({ slug, title, passage, description, inText }) => ({ slug, title, snippet: snippet(!inText && description ? description : passage) }));
   }
   // Written without spaces between words: each term the reader typed (split where they put spaces) found inside the text.
+  // ponytail: the body's trigram index serves terms of three characters or more; the title and keywords, and shorter
+  // terms, are read from the project's rows in the language. A stored, indexed search text per row if docs get big.
   const terms = query.split(/\s+/u).filter(Boolean).slice(0, 8);
   if (terms.length === 0) {
     return [];

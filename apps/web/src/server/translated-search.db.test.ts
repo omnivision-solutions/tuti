@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { embedTranslation, languageTranslationsDone, translationSource } from "@tuti/jobs";
+import { embedPublishedArticles, embedTranslation, handlers, languageTranslationsDone, translateArticle, translationSource } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
 import { SEARCH_CONFIGS } from "@tuti/shared/languages";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
@@ -50,7 +50,8 @@ async function article(slug: string, translations: Record<string, { title: strin
   await prisma.projectLanguage.createMany({ data: Object.keys(translations).map((code) => ({ projectId: project.id, code, automatic: false })), skipDuplicates: true });
   const { id: articleId } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug } });
   for (const [language, { title, body, published = true }] of Object.entries(translations)) {
-    await prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language, title, body, ...(published && { publishedAt: new Date() }) } });
+    // Manual versions (not kept up to date), so nothing here sends them to the model again.
+    await prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language, title, body, automatic: false, ...(published && { publishedAt: new Date() }) } });
   }
   return created.slug;
 }
@@ -96,6 +97,15 @@ test("only published translations of published, listed articles the reader may r
   expect((await searchTranslatedDocs(project.id, "de", "Rechnung", 10, SIGNED_OUT, { meaning: false, unlisted: true })).map((result) => result.title)).toEqual(["Versteckt"]);
 });
 
+test("a restricted article's translation is found only by readers who may read it", async () => {
+  const slug = await article("members", { de: { title: "Mitglieder", body: "Rechnungen für Mitglieder." } });
+  await prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { access: "SIGNED_IN" } });
+  expect(await search("de", "Rechnung")).toEqual([]);
+  expect((await searchTranslatedDocs(project.id, "de", "Rechnung", 10, { signedIn: true, groups: [] }, { meaning: false })).map((result) => result.slug)).toEqual([slug]);
+  // The team: everything.
+  expect((await searchTranslatedDocs(project.id, "de", "Rechnung", 10, null, { meaning: false })).map((result) => result.slug)).toEqual([slug]);
+});
+
 test("a translation's sections are embedded in its language, and found by meaning", async () => {
   const slug = await article("invoices", { de: { title: "Abrechnung", body: "Laden Sie Ihre Belege als PDF herunter." } });
   const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
@@ -131,4 +141,45 @@ test("a version is indexed for search as the translate job writes it", async () 
   expect(await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { language: true, text: true } })).toEqual([
     { language: "de", text: "[de] Open Settings and click New project." },
   ]);
+});
+
+test("a version whose search data couldn't be written is tried again by the retry job, and only embedded then", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languageTranslationsDone();
+  const body = "Open Settings and click New project.";
+  await call(createArticle, as(), { title: "Getting started", body });
+  const { segments } = segmentsOf(translationSource({ title: "Getting started", description: "", keywords: [], body, content: null }).doc);
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }));
+  await call(publishArticle, as(), { slug: "getting-started" });
+  await languageTranslationsDone();
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  // Its sections gone, and the embeddings provider failing: the version, up to date, waits for its search data.
+  await prisma.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
+  model.embeddings.failNext(500);
+  expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ failed: "its search data couldn't be written" });
+  const waiting = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
+  expect(waiting).toMatchObject({ error: null, publishedAt: row.publishedAt });
+  expect(waiting.retryAt).not.toBeNull();
+  // The retry job brings it back: embedded, nothing translated again, and its retry time cleared.
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  await handlers.retryArticleTranslations({}, log);
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(1);
+  expect((await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).retryAt).toBeNull();
+  expect(model.requests).toHaveLength(1);
+});
+
+test("the backfill embeds published translations too, carrying on past one that fails", async () => {
+  await article("invoices", { de: { title: "Abrechnung", body: "Rechnungen herunterladen." }, fr: { title: "Factures", body: "Télécharger les factures." } });
+  await article("drafted", { de: { title: "Entwurf", body: "Noch nicht veröffentlicht.", published: false } });
+  const result = await embedPublishedArticles(log);
+  expect(result).toMatchObject({ failed: [], translations: 2, translationsEmbedded: 2, translationsFailed: [] });
+  expect((await prisma.articleTranslationChunk.findMany({ where: { projectId: project.id }, select: { language: true } })).map((c) => c.language).sort()).toEqual(["de", "fr"]);
+  // One failing (the provider down for it) doesn't stop the rest.
+  await prisma.articleTranslationChunk.deleteMany({ where: { projectId: project.id } });
+  model.embeddings.failNext(500);
+  const again = await embedPublishedArticles(log);
+  expect(again).toMatchObject({ failed: [], translationsEmbedded: 1 });
+  expect(again.translationsFailed).toHaveLength(1);
+  expect(await prisma.articleTranslationChunk.count({ where: { projectId: project.id } })).toBe(1);
 });

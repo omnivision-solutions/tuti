@@ -150,7 +150,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
-    return { skipped: "up to date" };
+    // Its search data too: one whose embedding failed is embedded here when the retry job brings it back (none to do: a lookup).
+    return (await searchable(row.id, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
   if (!aiEnabled()) {
@@ -246,10 +247,28 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   if (!written) {
     return { skipped: CHANGED };
   }
-  // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: the backfill, or its next
-  // version, embeds it.
-  await embedTranslation(row.id, log).catch((error: unknown) => log.warn(`Embedding translation ${row.id} failed: ${String(error)}`));
+  // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: it's embedded later.
+  await searchable(row.id, log);
   return { translated: language };
+}
+
+/** Why a version up to date is tried again: its sections couldn't be embedded for search. */
+const SEARCH_WAITS = "its search data couldn't be written";
+
+/**
+ * Embeds a written version's sections for search in its language (embedTranslation). Failing (the embeddings provider
+ * didn't answer), its retry time is set: the retry job brings it back here, where, up to date, it's only embedded. The
+ * version itself is shown as written meanwhile, its error left alone.
+ */
+async function searchable(translationId: string, log: JobLogger) {
+  try {
+    await embedTranslation(translationId, log);
+    return true;
+  } catch (error) {
+    log.warn(`Embedding translation ${translationId} for search failed: ${String(error).slice(0, 300)}`);
+    await prisma.articleTranslation.updateMany({ where: { id: translationId }, data: { retryAt: new Date(Date.now() + retryDelay(1)) } });
+    return false;
+  }
 }
 
 /** Queues a translate job, never failing the caller: the page waits, and the retry job or Try again picks it up. */

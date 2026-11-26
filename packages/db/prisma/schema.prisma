@@ -2573,6 +2573,8 @@ model ArticleTranslation {
   @@index([retryAt])
   /// Search in Japanese, Korean and Chinese (docs/plan.md, Search in every language): words inside words, by trigrams
   /// (pg_trgm, as the Inbox's search). Built CONCURRENTLY in a migration of its own (see ConversationMessage's).
+  /// ponytail: serves a term of three characters or more in the body; the title and keywords (OR'd with it) and shorter
+  /// terms are read from the project's rows in that language. A stored, indexed search text per row if docs get big.
   @@index([projectId(ops: raw("text_ops")), body(ops: raw("gin_trgm_ops"))], type: Gin, map: "article_translation_project_body_trgm_idx")
   @@map("article_translation")
 }
