@@ -58,7 +58,7 @@ const side = (name: string) =>
 export const generateImageOperation = defineOperation({
   name: "images.generate",
   title: "Generate an image",
-  summary: `Make one image with AI from a prompt, at exactly the size asked, optionally from up to ${MAX_IMAGE_REFERENCES} of the project's images: kept as an upload to use as a cover or in content (one no content uses is deleted after a day or two). Takes 10 to 30 seconds. Needs OpenRouter as the server's AI provider`,
+  summary: `Make one image with AI from a prompt, at exactly the size asked, optionally from up to ${MAX_IMAGE_REFERENCES} of the project's images: kept as an upload (deleted after a day or two if no content uses it). Takes 10 to 30 seconds; up to ${AI_IMAGES_PER_HOUR} an hour per project (then 429). Needs OpenRouter`,
   method: "POST",
   path: "/images/generate",
   scope: "write",
@@ -101,10 +101,11 @@ export const generateImageOperation = defineOperation({
     if (!(await roomForImage(projectId, uploaderOf(actor), Math.ceil(height * (width * 4 + 1) * 1.01) + 1024))) {
       throw noRoom();
     }
-    await countAiImage(projectId);
     const meter = await imagesMeter(projectId).catch((error: unknown) => {
       throw error instanceof OutOfCredits ? new OperationError(402, "no_credits", NO_CREDITS) : error;
     });
+    // Last before the model: a request refused for anything else doesn't use up the hour's images.
+    await countAiImage(projectId);
     // In the order given: the first is the one an edit starts from.
     const widths = new Map(found.map((media) => [media.id, imageWidths(media.width!).findLast((w) => w <= REFERENCE_WIDTH)!]));
     const sent = await Promise.all(ids.map(async (id) => `data:image/webp;base64,${Buffer.from(await storage.get(imageKey(id, widths.get(id)!))).toString("base64")}`)).catch((error: unknown) => {

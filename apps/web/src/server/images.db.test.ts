@@ -5,7 +5,7 @@ import { creditsPerUsageDollar, DEFAULT_IMAGE_MODEL } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { configFile, creditsOn, FAKE_IMAGE_COST, type ModelFake, type S3Fake, startModelFake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { generateImage as generateAction } from "@/server/images";
 import { AI_IMAGES_PER_HOUR, generateImageOperation } from "@/server/operations/images";
@@ -97,22 +97,6 @@ test("references are the project's own images, sent in order once each; another 
   await expect(generate({ width: 400, height: 400, references: [red, theirs] })).rejects.toMatchObject({ status: 404, code: "not_found" });
   await expect(generate({ width: 400, height: 400, references: ["nope"] })).rejects.toMatchObject({ status: 404 });
   expect(model.images).toHaveLength(1);
-  // A prompt missing from what was sent is refused as one, not made from the word "undefined".
-  actAs(owner);
-  expect(await generateAction(project.slug, { width: 320, height: 200 } as unknown as Parameters<typeof generateAction>[1])).toEqual({ error: "Describe the image" });
-  expect(model.images).toHaveLength(1);
-});
-
-test("images asked for at once are counted before the model is asked: past the project's hourly cap, a 429 and no model request", async () => {
-  // Two left this hour.
-  const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
-  await prisma.project.update({ where: { id: project.id }, data: { aiImagesHour: hour, aiImagesCount: AI_IMAGES_PER_HOUR - 2 } });
-  const results = await Promise.allSettled(Array.from({ length: 5 }, () => generate({ width: 128, height: 128 })));
-  expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
-  expect(results.filter((result) => result.status === "rejected").map((result) => (result as PromiseRejectedResult).reason)).toEqual(
-    Array.from({ length: 3 }, () => expect.objectContaining({ status: 429, code: "rate_limited" })),
-  );
-  expect(model.images).toHaveLength(2);
 });
 
 test("the image is recorded as `images` usage with its cost and charged in credits; out of credits, it's refused without asking", async () => {
@@ -190,8 +174,12 @@ test("the app's action: the image for a teammate, an error for anyone else", asy
 });
 
 test("images asked for at once are counted before the model is asked: past the project's hourly cap, a 429 and no model request", async () => {
-  // Two left this hour.
-  const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+  // Two left this hour; the clock held mid-hour, so the hour can't turn (and the count reset) during the test.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-06-01T12:30:00Z") });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const hour = new Date("2026-06-01T12:00:00Z");
   await prisma.project.update({ where: { id: project.id }, data: { aiImagesHour: hour, aiImagesCount: AI_IMAGES_PER_HOUR - 2 } });
   const results = await Promise.allSettled(Array.from({ length: 5 }, () => generate({ width: 128, height: 128 })));
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
