@@ -13,6 +13,32 @@ describe("the app's Expo config", () => {
     expect(config.android?.package).toBe("so.tuti.app");
   });
 
+  it("gives over-the-air updates only to builds with the same native code, from no project unless the environment names one", () => {
+    expect(appConfig({}).runtimeVersion).toEqual({ policy: "fingerprint" });
+    expect(appConfig({}).updates).toBeUndefined();
+  });
+
+  it("leaves out of the runtime version what differs between Expo's builders and where updates are published", async () => {
+    // On the builders the Firebase config is a secret file outside the project, and android/ and ios/ are generated there;
+    // left in, a build's runtime version differs from its updates' and EAS refuses the build.
+    const { ignorePaths } = (await import("../fingerprint.config.js")) as { ignorePaths: string[] };
+    expect(ignorePaths).toEqual(expect.arrayContaining(["../../../eas-environment-secrets/**", "android", "android/**", "ios", "ios/**"]));
+  });
+
+  it("builds development, preview and store builds, each on its own update channel", () => {
+    const eas = JSON.parse(readFileSync(new URL("../eas.json", import.meta.url), "utf8")) as {
+      build: Record<string, { channel?: string; distribution?: string; developmentClient?: boolean; android?: { buildType?: string } }>;
+    };
+    expect(eas.build.development).toMatchObject({ channel: "development", developmentClient: true, distribution: "internal" });
+    expect(eas.build.preview).toMatchObject({ channel: "preview", distribution: "internal", android: { buildType: "apk" } });
+    expect(eas.build.production).toMatchObject({ channel: "production" });
+    expect(eas.build.production!.distribution).toBeUndefined();
+  });
+
+  it("declares the app exempt from export compliance: its only encryption is the system's HTTPS", () => {
+    expect(appConfig({}).ios?.infoPlist?.ITSAppUsesNonExemptEncryption).toBe(false);
+  });
+
   it("takes an empty variable as not set", () => {
     const config = appConfig({ EXPO_OWNER: "", EAS_PROJECT_ID: "", APP_ID: "" });
     expect(config.owner).toBeUndefined();
@@ -25,6 +51,8 @@ describe("the app's Expo config", () => {
     const config = appConfig({ EXPO_OWNER: "acme", EAS_PROJECT_ID: "project-1", APP_ID: "com.acme.inbox" });
     expect(config.owner).toBe("acme");
     expect(config.extra).toEqual({ eas: { projectId: "project-1" } });
+    // Its updates come from that project too.
+    expect(config.updates).toEqual({ url: "https://u.expo.dev/project-1" });
     expect(config.ios?.bundleIdentifier).toBe("com.acme.inbox");
     expect(config.android?.package).toBe("com.acme.inbox");
   });

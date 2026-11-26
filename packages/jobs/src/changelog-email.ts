@@ -24,7 +24,7 @@ const RENEW_MS = 60_000;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
-type Db = Pick<typeof prisma, "$queryRaw">;
+type Db = Pick<typeof prisma, "$queryRaw" | "project">;
 
 /**
  * Where a subscriber stands with the changelog: one rule, which the subscription and confirmation pages ask, and the
@@ -32,7 +32,8 @@ type Db = Pick<typeof prisma, "$queryRaw">;
  * - "gets": it's emailed to them.
  * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the entries published meanwhile aren't.
  * - "unconfirmed": they haven't confirmed (or unsubscribed since).
- * - "private": the portal is private, which emails nobody its changelog.
+ * - "private": the portal is private. Nothing makes its entries due yet (publish, its box: S5 part two); one due from
+ *   before it went private goes to those who may read it (audienceSql's readsPortalSql).
  * - "opted-out": they've turned all of the project's emails off ("Unsubscribe" in a shipped email, say). That wins,
  *   however the subscription was made, until they turn them back on (a confirmation link's page).
  */
@@ -52,6 +53,32 @@ export const optedOutSql = (projectId: string, email: Prisma.Sql) => Prisma.sql`
 )`;
 
 /**
+ * Whether the project lets readers in on a private portal (its plan has private portals): who readsPortalSql counts.
+ * As @tuti/db reads the plan (a free trial's included).
+ */
+async function hasReaders(projectId: string, db: Pick<typeof prisma, "project"> = prisma): Promise<boolean> {
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { plan: true } });
+  return !!project && planIncludes(project.plan, "privatePortal");
+}
+
+/**
+ * SQL: whether the owner of `email` (a subscriber's, so a proven address) may read the project's portal, as
+ * canReadPortal has it: anyone on a public one; on a private one, its team (a member at the address, verified), and
+ * where the plan lets readers in (`readers`, hasReaders), someone the project's app gave the address (SSO, the API)
+ * or one of its readers (the address, or its domain).
+ */
+const readsPortalSql = (projectId: string, email: Prisma.Sql, readers: boolean) => Prisma.sql`(
+  EXISTS (SELECT 1 FROM "project" rp WHERE rp."id" = ${projectId} AND rp."portalAccess" = 'PUBLIC')
+  OR EXISTS (SELECT 1 FROM "team_member" tm JOIN "user" tu ON tu."id" = tm."userId"
+    WHERE tm."projectId" = ${projectId} AND tu."emailVerified" AND lower(tu."email") = lower(${email}))
+  OR (${readers} AND (
+    EXISTS (SELECT 1 FROM "sso_identity" ri WHERE ri."projectId" = ${projectId} AND ri."email" = lower(${email}))
+    OR EXISTS (SELECT 1 FROM "portal_reader" pr WHERE pr."projectId" = ${projectId}
+      AND pr."email" IN (lower(${email}), substring(lower(${email}) from '@[^@]*$')))
+  ))
+)`;
+
+/**
  * ChangelogReach for one subscriber's address (`confirmed`: whether they are, or as if, for a confirmation link). audienceSql is its SQL.
  * `db`: a transaction to read it in (one holding a lock, so it needs no second connection).
  */
@@ -64,6 +91,8 @@ export async function changelogReach(
   const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, emailPausedAt: true } });
   // Paused only where projects are paused at all (projectEmailWaits).
   const paused = plansEnabled() && project.emailPausedAt !== null;
+  // ponytail: per address (readsPortalSql) in S5 part two, with publish and the box: a release apart, as the previous
+  // release's worker lets a private portal's due entry go, so nothing may make one due while it runs.
   return !subscriber.confirmed ? "unconfirmed" : project.portalAccess !== "PUBLIC" ? "private" : optedOut ? "opted-out" : paused ? "paused" : "gets";
 }
 
@@ -98,23 +127,29 @@ const inGroupsSql = (projectId: string, groups: GroupRule[]) => Prisma.sql`EXIST
 
 /**
  * SQL: who an entry goes to, as `s`: the project's subscribers confirmed by the time it was published with Email
- * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts here:
+ * subscribers (`emailedAt`) that changelogReach reaches, who may read the portal (readsPortalSql, `readers` its plan's) and not opted out (paused still counts here:
  * the job waits while the project's email is paused, and the editor's counts are 0 then). `unsentOf`: of those, the ones with no email of that
  * entry sent yet. `groups`: the entry's (entryGroups), whose subscribers only it goes to. The sender reads its rows and
  * the editor counts them, both from this.
  */
-const audienceSql = (projectId: string, emailedAt: Date, unsentOf?: string, groups: EntryGroups = null) => Prisma.sql`
+const audienceSql = (projectId: string, emailedAt: Date, readers: boolean, unsentOf?: string, groups: EntryGroups = null) => Prisma.sql`
   FROM "changelog_subscriber" s
-  JOIN "project" p ON p."id" = s."projectId" AND p."portalAccess" = 'PUBLIC'
   WHERE s."projectId" = ${projectId} AND s."confirmedAt" IS NOT NULL AND s."confirmedAt" <= ${emailedAt}
+    AND ${readsPortalSql(projectId, Prisma.raw(`s."email"`), readers)}
     AND NOT ${optedOutSql(projectId, Prisma.raw(`s."email"`))}
     ${unsentOf ? Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "changelog_email" e WHERE e."entryId" = ${unsentOf} AND e."subscriberId" = s."id" AND e."sentAt" IS NOT NULL)` : Prisma.empty}
     ${groups ? Prisma.sql`AND ${inGroupsSql(projectId, groups)}` : Prisma.empty}`;
 
 /** audienceSql's people, oldest first. `only`: just this one (as they are now, in a claim's transaction). */
-async function audience(projectId: string, emailedAt: Date, { only, unsentOf, groups }: { only?: string; unsentOf?: string; groups?: EntryGroups } = {}, db: Db = prisma) {
+async function audience(
+  projectId: string,
+  emailedAt: Date,
+  { only, unsentOf, groups }: { only?: string; unsentOf?: string; groups?: EntryGroups } = {},
+  db: Prisma.TransactionClient = prisma,
+) {
+  const readers = await hasReaders(projectId, db);
   return db.$queryRaw<{ id: string; email: string; token: string }[]>`
-    SELECT s."id", s."email", s."token" ${audienceSql(projectId, emailedAt, unsentOf, groups)}
+    SELECT s."id", s."email", s."token" ${audienceSql(projectId, emailedAt, readers, unsentOf, groups)}
       ${only ? Prisma.sql`AND s."id" = ${only}` : Prisma.empty}
     ORDER BY s."createdAt", s."id"`;
 }
@@ -124,7 +159,10 @@ async function audience(projectId: string, emailedAt: Date, { only, unsentOf, gr
  * reaches (audienceSql, as of now), read in `db` (a transaction holding their rows' locks).
  */
 export async function emailedOf(db: Db, projectId: string, emails: string[]): Promise<Set<string>> {
-  const rows = await db.$queryRaw<{ email: string }[]>`SELECT s."email" ${audienceSql(projectId, new Date())} AND s."email" = ANY(${emails}::text[])`;
+  const rows = await db.$queryRaw<{ email: string }[]>`
+    SELECT s."email" ${audienceSql(projectId, new Date(), await hasReaders(projectId, db))} AND s."email" = ANY(${emails}::text[])
+      -- As changelogReach has it this release: a private portal's are nobody's yet (S5 part two).
+      AND EXISTS (SELECT 1 FROM "project" ep WHERE ep."id" = ${projectId} AND ep."portalAccess" = 'PUBLIC')`;
   return new Set(rows.map((row) => row.email));
 }
 
@@ -136,14 +174,16 @@ export async function optedOutOf(db: Db, projectId: string, emails: string[]): P
 }
 
 /** How many audienceSql has, counted in the database (a big list's rows never leave it). */
-async function audienceSize(...args: Parameters<typeof audienceSql>) {
-  const [row] = await prisma.$queryRaw<{ count: number }[]>`SELECT count(*)::int AS "count" ${audienceSql(...args)}`;
+async function audienceSize(projectId: string, emailedAt: Date, unsentOf?: string, groups: EntryGroups = null) {
+  const sql = audienceSql(projectId, emailedAt, await hasReaders(projectId), unsentOf, groups);
+  const [row] = await prisma.$queryRaw<{ count: number }[]>`SELECT count(*)::int AS "count" ${sql}`;
   return row!.count;
 }
 
 /**
  * How many people publishing an entry with Email subscribers would email now: the editor's count (audienceSql, so
- * changelogReach), of `entryId`'s groups' subscribers when it's for some. Null on a private portal, which emails nobody its changelog.
+ * changelogReach), of `entryId`'s groups' subscribers when it's for some. Null on a private portal, where publishing emails
+ * nobody yet (S5 part two).
  */
 export async function subscriberCount(projectId: string, entryId?: string): Promise<number | null> {
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
@@ -156,15 +196,13 @@ export async function subscriberCount(projectId: string, entryId?: string): Prom
 }
 
 /**
- * How many subscribers an entry is still to be emailed to: 0 when none are due (never asked for, or all sent), and on
- * a private portal, which emails nobody (changelogEmailed).
+ * How many subscribers an entry is still to be emailed to: 0 when none are due (never asked for, or all sent).
  */
 export async function subscribersLeft(entryId: string): Promise<number> {
   const entry = await prisma.changelogEntry.findUniqueOrThrow({
     where: { id: entryId },
     select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true },
   });
-  // audienceSql (changelogReach) leaves out a private portal's: none are left there.
   return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && !(await projectEmailWaits(entry.projectId))
     ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId, await entryGroups(entryId))
     : 0;
@@ -172,23 +210,24 @@ export async function subscribersLeft(entryId: string): Promise<number> {
 
 /**
  * Takes on emailing one subscriber, while they still want it and the entry is still for them: their consent, the
- * entry's being published, its groups (they're in one, or it's for everyone) and its portal's being public, all read again now, with their rows locked (so
- * unsubscribing, unpublishing or making the portal private waits for this, or this sees it), not as the run began.
+ * entry's being published, its groups (they're in one, or it's for everyone) and their reading the portal (a private
+ * one's reader), all read again now, with their rows locked (so unsubscribing, unpublishing or making the portal
+ * private waits for this, or this sees it), not as the run began.
  * A new claim, or one a crashed run left unsent. Returns the claim's time, which the run then uses to mark it sent or
  * release it (never touching a claim another run took over); null when they don't want it any more, someone else has
- * it, or it's sent; "stop" when the entry is unpublished, its portal private or its emails let go now.
+ * it, or it's sent; "stop" when the entry is unpublished or its emails let go now.
  */
 async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
     // The project's row first, then the entry's, as publishing takes them (lockProject, then the entry), so the two
     // can't each hold one the other waits for; the subscriber's last.
     // Shared, so the entry's groups stay as read below till this commits: changelog.update changes them holding it.
-    const [project] = await tx.$queryRaw<{ portalAccess: string }[]>`
-      SELECT "portalAccess" FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
+    // A private portal's readers (its access, its readers) are checked by audience below, under this lock.
+    await tx.$queryRaw`SELECT 1 FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
     const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null }[]>`
       SELECT "publishedAt", "subscribersEmailDueAt" AS due FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
     // Its emails let go meanwhile (a resume drops a pause's): nobody else.
-    if (!current?.publishedAt || !current.due || project?.portalAccess !== "PUBLIC") {
+    if (!current?.publishedAt || !current.due) {
       return "stop";
     }
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
@@ -272,7 +311,7 @@ function entryImages(doc: Doc, coverId: string | null, log: JobLogger) {
 /**
  * A changelog entry was published with Email subscribers: emails it to the project's subscribers who had confirmed
  * by then, each once (an entry for some reader groups, to those in them), with the project's sender, daily cap and pause. Not to anyone who turned the project's emails
- * off (the unsubscribe link in its other emails), and never from a private portal (its subscribers may not be readers).
+ * off (the unsubscribe link in its other emails); from a private portal, only to those who may read it (readsPortalSql).
  */
 export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">, log: JobLogger): Promise<JobResult> {
   const entry = await prisma.changelogEntry.findUnique({
@@ -289,7 +328,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       subscribersEmailDueAt: true,
       sample: true,
       projectId: true,
-      project: { select: { name: true, slug: true, portalAccess: true, brandColor: true } },
+      project: { select: { name: true, slug: true, brandColor: true } },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -298,11 +337,6 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   }
   // Every clear is of the due time this run read, so one set since (published again) stays.
   const dueAsRead = { id: entryId, subscribersEmailDueAt: entry.subscribersEmailDueAt };
-  // On a private portal (since it was published): let go, while it still is.
-  if (entry.project.portalAccess === "PRIVATE") {
-    await prisma.changelogEntry.updateMany({ where: { ...dueAsRead, project: { portalAccess: "PRIVATE" } }, data: { subscribersEmailDueAt: null } });
-    return { skipped: true };
-  }
   // Taken off the portal meanwhile: still due, so publishing it again sends the rest.
   if (!entry.publishedAt) {
     return { waiting: "the entry isn't published" };
@@ -385,9 +419,9 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     throw new Error(`${failed} changelog email(s) for entry ${entryId} failed; retrying those`);
   }
   if (stopped) {
-    // Still due: published again, the rest go; on a private portal, the next run lets them go.
-    log.info(`changelog entry ${entryId}: emailed ${emailed}, then it was unpublished or its portal made private`);
-    return { emailed, waiting: "the entry was unpublished, or its portal made private" };
+    // Still due: published again, the rest go.
+    log.info(`changelog entry ${entryId}: emailed ${emailed}, then it was unpublished`);
+    return { emailed, waiting: "the entry was unpublished" };
   }
   if (held) {
     // Due from now, so the cron keeps bringing it back (it looks back two days) until the rest may go; past the month's limit, from next month.

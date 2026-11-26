@@ -20,7 +20,12 @@ export function appConfig(env: Env): ExpoConfig {
     orientation: "default",
     userInterfaceStyle: "automatic",
     icon: "./assets/icon.png",
-    ios: { bundleIdentifier: appId, supportsTablet: true },
+    ios: {
+      bundleIdentifier: appId,
+      supportsTablet: true,
+      // Export compliance: exempt. The app's only encryption is the system's HTTPS; it has none of its own.
+      infoPlist: { ITSAppUsesNonExemptEncryption: false },
+    },
     android: {
       package: appId,
       // Firebase's config for this app id, which Android's push tokens need: a file EAS keeps with the build (M10), never this directory.
@@ -41,8 +46,11 @@ export function appConfig(env: Env): ExpoConfig {
       ],
     ],
     experiments: { reactCompiler: true },
+    // Over-the-air updates (EAS Update) reach only builds with the same native code: the runtime version is the
+    // fingerprint of everything native (modules, their patches, this config). A native change needs a new build.
+    runtimeVersion: { policy: "fingerprint" },
     ...(env.EXPO_OWNER ? { owner: env.EXPO_OWNER } : {}),
-    ...(env.EAS_PROJECT_ID ? { extra: { eas: { projectId: env.EAS_PROJECT_ID } } } : {}),
+    ...(env.EAS_PROJECT_ID ? { extra: { eas: { projectId: env.EAS_PROJECT_ID } }, updates: { url: `https://u.expo.dev/${env.EAS_PROJECT_ID}` } } : {}),
   };
 }
 

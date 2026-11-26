@@ -408,10 +408,19 @@ describe("OpenAPI", () => {
     expect(spec.paths["/posts"].get.tags).toEqual(["Feedback"]);
     expect(spec.paths["/code-change-actions/{id}/stop"].post.tags).toEqual(["Autopilot"]);
     expect(spec.paths["/portal/readers"].get.tags).toEqual(["Users"]);
-    // The overview: getting a key, signing requests, errors, paging and rate limits. (Nothing of the mobile app's session until there's an app to get.)
+    // The mobile app refuses a server whose reply takes no requestId, reading it from this spec in exactly this shape
+    // (apps/mobile src/lib/sign-in.ts `replyTakesRequestId`): changing the shape would make every app refuse this server.
+    // It also knows a Tuti server by the spec's title, even where a proxy blocks /api/auth/ok.
+    expect(spec.info.title).toBe("Tuti API");
+    const reply = spec.paths["/conversations/{number}/messages"].post;
+    expect(reply.operationId).toBe("conversations.reply");
+    expect(reply.requestBody.content["application/json"].schema.properties).toHaveProperty("requestId");
+    // The overview: getting a key, signing requests (with how the mobile app's session is accepted), errors, paging and rate limits.
     expect(spec.info.description.match(/^## .+/gm)).toEqual(["## Getting a key", "## Authentication", "## Errors", "## Paging", "## Rate limits"]);
     expect(spec.info.description).toContain("Up to 600 requests a minute per key");
-    expect(spec.info.description).not.toMatch(/mobile app/i);
+    expect(spec.info.description).toContain(
+      "Tuti's mobile app signs in as a teammate instead of with a key: it sends the teammate's session as the bearer token, with the project's slug in a `Tuti-Project` header",
+    );
     // Written as plain text: rendered as the Markdown a description is, the words come back as written.
     const words = (name: string) => operations.find((operation) => operation.name === name)!.summary;
     const shown = async (path: string, method: string) => firstLine(spec.paths[path][method].description);

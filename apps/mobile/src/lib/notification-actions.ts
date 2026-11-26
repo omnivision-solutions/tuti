@@ -3,7 +3,7 @@ import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import { AppState, Platform } from "react-native";
 
-import { ApiError, createApi } from "./api";
+import { ApiError, createApi, fetchUntil } from "./api";
 import { draftsGeneration, sendReply, trackSend, type Unsent, updateDraft } from "./conversation";
 import { screenKey, updateConversation } from "./details";
 import { CHANNEL, forThisSignIn, isTheirs, type Target, targetOf } from "./notifications";
@@ -51,31 +51,6 @@ const done = new Set<string>();
  * the one saved, not a second.
  */
 export const ACTION_TIMEOUT_MS = 12_000;
-
-/** A fetch whose requests all give up at one deadline, ACTION_TIMEOUT_MS from when it's made. */
-function fetchUntil(deadlineAt: number): typeof fetch {
-  return async (input, init) => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => {
-          controller.abort();
-          reject(new TypeError("Timed out"));
-        },
-        Math.max(0, deadlineAt - Date.now()),
-      );
-    });
-    try {
-      // The answer's body too: headers can come and the body never (the network gone in between).
-      const response = await Promise.race([fetch(input, { ...init, signal: controller.signal }), deadline]);
-      const body = await Promise.race([response.text(), deadline]);
-      return new Response(body || null, { status: response.status, statusText: response.statusText, headers: response.headers });
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-}
 
 /** What the failure notification says, in the server's words where it gave them. */
 const reasonOf = (error: unknown) => (error instanceof ApiError || error instanceof Error ? error.message : "Something went wrong.");
