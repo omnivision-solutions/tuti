@@ -18,11 +18,33 @@ test("live languages: those set live, only the oldest within the plan's limit (t
   expect(liveLanguages(languages, 1)).toEqual([]);
 });
 
+/**
+ * A message's arguments ("{language}", "{count, plural, …}": count) and rich-text tags ("<link>"). Only the outermost braces
+ * name arguments: inside a plural's branches ("one {vote}") are a language's own words.
+ */
+function placeholders(message: string): string[] {
+  const found: string[] = [];
+  let depth = 0;
+  for (const [token, name, tag] of message.matchAll(/\{(\w+)?|\}|<(\w+)>/g)) {
+    if (token === "}") {
+      depth--;
+    } else if (tag) {
+      found.push(`<${tag}>`);
+    } else {
+      if (depth === 0 && name) {
+        found.push(name);
+      }
+      depth++;
+    }
+  }
+  return found.sort();
+}
+
 /** Each message by its path ("header.signIn"), with the placeholders it takes ("{language}"). */
 function flatten(messages: object, prefix = ""): Record<string, string[]> {
   return Object.fromEntries(
     Object.entries(messages).flatMap(([key, value]) =>
-      typeof value === "string" ? [[`${prefix}${key}`, [...value.matchAll(/\{(\w+)|<(\w+)>/g)].map((match) => (match[1] ?? `<${match[2]}>`)).sort()]] : Object.entries(flatten(value, `${prefix}${key}.`)),
+      typeof value === "string" ? [[`${prefix}${key}`, placeholders(value)]] : Object.entries(flatten(value, `${prefix}${key}.`)),
     ),
   );
 }

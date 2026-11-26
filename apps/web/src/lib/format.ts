@@ -1,6 +1,7 @@
+import { dateLocale } from "@tuti/shared/dates";
+
 import { formatOf, formatProperty, propertyLabel, type PropertyFormats } from "./property-formats";
 
-const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 365 * 24 * 60 * 60],
@@ -11,19 +12,20 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["minute", 60],
 ];
 
-/** "3 days ago", "yesterday", "just now". */
-export function timeAgo(date: Date, now = new Date()): string {
+/** "3 days ago", "yesterday", "just now", in `language` (a portal's: "vor 3 Tagen", "jetzt"). */
+export function timeAgo(date: Date, now = new Date(), language = "en"): string {
+  const relative = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
   const seconds = Math.round((date.getTime() - now.getTime()) / 1000);
   for (const [unit, size] of UNITS) {
     if (Math.abs(seconds) >= size) {
       return relative.format(Math.round(seconds / size), unit);
     }
   }
-  return "just now";
+  return language === "en" ? "just now" : relative.format(0, "second");
 }
 
 /** A day, like "19 October 2026" (UTC, so server and browser agree); shared with the emails. */
-export { formatDate } from "@tuti/shared/dates";
+export { dateLocale, formatDate } from "@tuti/shared/dates";
 
 /** A day in a tight row, like "18 Dec" (UTC, as formatDate), with its year when it isn't this one's: "18 Nov 2027". */
 export function formatShortDate(date: Date, now = new Date()): string {
@@ -32,8 +34,8 @@ export function formatShortDate(date: Date, now = new Date()): string {
 }
 
 /** A day, short, like "6 Oct" (UTC, as formatDate). */
-export function formatDay(date: Date): string {
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+export function formatDay(date: Date, language = "en"): string {
+  return date.toLocaleDateString(dateLocale(language), { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
 /** A calendar day in the viewer's explicit time zone, independent of the server's zone and DST. */
@@ -52,8 +54,8 @@ export function conversationDay(date: Date, timeZone: string, now = new Date()):
 }
 
 /** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */
-export function formatMonth(date: Date): string {
-  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+export function formatMonth(date: Date, language = "en"): string {
+  return date.toLocaleDateString(dateLocale(language), { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
 /**

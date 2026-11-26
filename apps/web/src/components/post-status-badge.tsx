@@ -4,6 +4,7 @@ import { CalendarIcon, CircleCheckIcon, CircleDashedIcon, CircleXIcon, EyeIcon }
 import type { ComponentType, SVGProps } from "react";
 import { cn } from "cn";
 
+import { T } from "@/components/portal-text";
 import { Badge } from "@/components/ui/badge";
 
 export const STATUS_LABELS: Record<PostStatus, string> = {
@@ -37,7 +38,7 @@ export function PostStatusBadge({ status }: { status: PostStatus }) {
   return (
     <Badge variant="outline" className={cn("border-transparent text-foreground", STATUS_STYLES[status].badge)}>
       <StatusDot status={status} />
-      {STATUS_LABELS[status]}
+      <T id={`feedback.status.${status}`} />
     </Badge>
   );
 }
@@ -78,7 +79,8 @@ export function StatusLabel({ status, className }: { status: PostStatus; classNa
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-[0.8125rem] font-semibold", STATUS_TEXT[status], className)}>
       <Icon aria-hidden className="size-[0.9375rem] shrink-0" />
-      {STATUS_LABELS[status]}
+      {/* In the page's language on the portal; English in the app and the widget (the root layout's messages). */}
+      <T id={`feedback.status.${status}`} />
     </span>
   );
 }

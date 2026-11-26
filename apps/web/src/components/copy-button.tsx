@@ -6,12 +6,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 /** Puts `value` on the clipboard, and says so. */
-export async function copyText(value: string) {
+export async function copyText(value: string, said: { copied: React.ReactNode; failed: React.ReactNode } = { copied: "Copied", failed: "Couldn't copy it. Your browser may not allow it here." }) {
   try {
     await navigator.clipboard.writeText(value);
-    toast.success("Copied");
+    toast.success(said.copied);
   } catch {
-    toast.error("Couldn't copy it. Your browser may not allow it here.");
+    toast.error(said.failed);
   }
 }
 
