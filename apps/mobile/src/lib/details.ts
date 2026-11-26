@@ -154,3 +154,28 @@ export const POST_STATUS: Record<PostStatus, string> = {
 
 /** A day as the web's details show it: "12 November". */
 export const dayOf = (at: string) => new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+
+/** A conversation's Activity (`conversations.activity`, W16): each row told in the server's words, newest first. */
+export type ActivityFilter = "all" | "workflows" | "people";
+export type ActivityEvent = {
+  id: string;
+  kind: string;
+  actor: "teammate" | "api_key" | "user" | "workflow" | "spam_filter" | "ai" | "tuti";
+  who: string | null;
+  text: string;
+  detail: string | null;
+  workflows: { name: string; what: string }[];
+  createdAt: string;
+};
+export type Activity = { events: ActivityEvent[]; next: string | null };
+
+/** A page of it: the newest (`before` none), or the ones earlier than `before`; `limit` past the server's 20 to read again as far back as shown. */
+export const getActivity = (api: Api, number: number, filter: ActivityFilter, { before, limit }: { before?: string; limit?: number } = {}) =>
+  api<Activity>(`/conversations/${number}/activity?${new URLSearchParams({ filter, ...(before && { before }), ...(limit && { limit: String(limit) }) })}`);
+
+/** When a row happened, as the web's Activity says it: the time today, else the day and the time ("12 Nov, 09:30"). */
+export function activityTime(at: string, now = new Date()) {
+  const date = new Date(at);
+  const time = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return date.toDateString() === now.toDateString() ? time : `${date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}, ${time}`;
+}

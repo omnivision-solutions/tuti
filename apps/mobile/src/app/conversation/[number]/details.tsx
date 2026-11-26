@@ -4,10 +4,16 @@ import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState, use
 import { AccessibilityInfo, ActivityIndicator, BackHandler, type HostInstance, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getConversation } from "@/lib/conversation";
+import { ApiError } from "@/lib/api";
 import {
+  type Activity,
+  type ActivityEvent,
+  type ActivityFilter,
+  activityTime,
   type Assignee,
   type Change,
   dayOf,
+  getActivity,
   getAssignees,
   getPerson,
   getTriage,
@@ -26,6 +32,7 @@ import {
   updateConversation,
 } from "@/lib/details";
 import { lookAt } from "@/lib/notifications";
+import { activityKey, cached, cacheGeneration, isOffline, keep, offlineNote, useMinutes } from "@/lib/offline";
 import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
@@ -33,8 +40,8 @@ const IOS = Platform.OS === "ios";
 
 type Pane = "details" | "assign" | "snooze";
 
-// The sheet over a conversation (its header opens it): who it's with, as the web's panel shows them, and assigning,
-// snoozing, closing, priority and spam. iOS's sheet, Android's bottom sheet (`_layout.tsx` sets its sizes).
+// The sheet over a conversation (its header opens it): who it's with, as the web's panel shows them, assigning,
+// snoozing, closing, priority and spam, and its Activity. iOS's sheet, Android's bottom sheet (`_layout.tsx` sets its sizes).
 export default function Details() {
   const { number: param } = useLocalSearchParams<{ number: string }>();
   const number = Number(param);
@@ -344,7 +351,207 @@ export default function Details() {
           )}
         </Group>
       )}
+      <ActivitySection number={number} triage={triage} colors={colors} />
     </ScrollView>
+  );
+}
+
+const FILTERS: { key: ActivityFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "workflows", label: "Workflows" },
+  { key: "people", label: "People" },
+];
+const EMPTY: Record<ActivityFilter, string> = { all: "Nothing yet.", workflows: "No workflow has run yet.", people: "Nobody has changed anything yet." };
+
+/** Each row's dot by who did it, as the web's: workflows and built-in steps blue, the spam filter green, the AI violet, a teammate or key orange, the person and Tuti grey. */
+const dotOf = (actor: ActivityEvent["actor"], colors: Colors) =>
+  ({ workflow: colors.faces[4], spam_filter: colors.primary, ai: colors.faces[5], teammate: colors.onNote, api_key: colors.onNote, user: colors.muted, tuti: colors.border })[actor];
+
+/**
+ * The conversation's Activity (docs/plan.md, Inbox automation, W16 and W17), from `conversations.activity`: newest first,
+ * All, Workflows and People, and Show earlier. All's newest page is kept for reading offline; with no connection it's
+ * shown as kept, saying so. Read again, as far back as shown, whenever the conversation's status changes (a change made
+ * here, or the screen under it fetching it anew). A server from before W16 has none: the section isn't shown.
+ */
+function ActivitySection({ number, triage, colors }: { number: number; triage: ReturnType<typeof getTriage>; colors: Colors }) {
+  const api = useApi();
+  const { session } = useSession();
+  const [filter, setFilter] = useState<ActivityFilter>("all");
+  const [pages, setPages] = useState<Activity[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  // Why the latest load didn't happen, in the server's words, and Try again's load.
+  const [failed, setFailed] = useState<{ why: string; retry: () => void } | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [unknown, setUnknown] = useState(false);
+  const [now] = useMinutes();
+  // The newest load wins; one answering late is dropped.
+  const asked = useRef(0);
+  // When what's shown last came from the server: offline, it stays, said to be offline since then.
+  const loadedAt = useRef<number | null>(null);
+  const shown = useRef(0);
+  // Show earlier: the first of the earlier rows takes a screen reader's focus once they're in.
+  const focusOn = useRef<string | null>(null);
+  const rows = useRef(new Map<string, HostInstance>());
+
+  const load = useCallback(
+    function load(to: ActivityFilter, before?: string, limit?: number) {
+      const ask = ++asked.current;
+      const since = cacheGeneration();
+      const key = activityKey(session!, number);
+      setLoading(true);
+      getActivity(api, number, to, { before, limit }).then(
+        (page) => {
+          if (ask !== asked.current) {
+            return;
+          }
+          setLoading(false);
+          setFilter(to);
+          setPages((loaded) => (before ? [...(loaded ?? []), page] : [page]));
+          focusOn.current = before ? (page.events[0]?.id ?? null) : null;
+          setFailed(null);
+          setSavedAt(null);
+          loadedAt.current = Date.now();
+          if (to === "all" && !before) {
+            keep(key, { ...page, events: page.events.slice(0, 20), next: page.events.length > 20 ? page.events[19].id : page.next }, since, session!.owner);
+          }
+        },
+        (e: Error) => {
+          if (ask !== asked.current) {
+            return;
+          }
+          setLoading(false);
+          if (e instanceof ApiError && e.status === 404) {
+            setUnknown(true);
+            return;
+          }
+          const saved = isOffline(e) && to === "all" && !before ? cached<Activity>(key, session!.owner) : null;
+          if (isOffline(e) && !before && loadedAt.current !== null && filter === to) {
+            setSavedAt(loadedAt.current);
+          } else if (saved) {
+            setFilter("all");
+            setPages([saved.data]);
+            setSavedAt(saved.at);
+          } else {
+            setFailed({ why: e.message, retry: () => load(to, before, limit) });
+          }
+        },
+      );
+    },
+    [api, number, session, filter],
+  );
+
+  // On opening, and whenever the conversation's status changes: as far back as it's shown.
+  useEffect(() => {
+    load(filter, undefined, shown.current > 20 ? Math.min(shown.current, 100) : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed
+  }, [triage, number]);
+
+  const seen = new Set<string>();
+  const events = (pages ?? []).flatMap((page) => page.events).filter((event) => !seen.has(event.id) && !!seen.add(event.id));
+  const next = pages?.at(-1)?.next ?? null;
+  shown.current = events.length;
+
+  useEffect(() => {
+    const row = focusOn.current && rows.current.get(focusOn.current);
+    focusOn.current = null;
+    if (row) {
+      AccessibilityInfo.sendAccessibilityEvent(row, "focus");
+    }
+  }, [pages]);
+
+  useEffect(() => {
+    if (IOS && failed) {
+      AccessibilityInfo.announceForAccessibility(failed.why);
+    }
+  }, [failed]);
+
+  if (unknown) {
+    return null;
+  }
+  return (
+    <Group title="Activity" colors={colors}>
+      <View style={styles.filters} accessibilityRole="tablist" accessibilityLabel="Show">
+        {FILTERS.map((option) => {
+          const chosen = filter === option.key;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => !loading && !chosen && load(option.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: chosen, busy: loading }}
+              hitSlop={4}
+              style={[styles.filter, { borderColor: chosen ? colors.primary : colors.border, backgroundColor: chosen ? colors.soft : "transparent" }]}
+            >
+              <Text style={[styles.filterText, { color: chosen ? colors.onSoft : colors.text }]}>{option.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {savedAt !== null && (
+        <Text style={[styles.meta, styles.activityNote, { color: colors.muted }]} accessibilityLiveRegion="polite">
+          {offlineNote(savedAt, now)}
+        </Text>
+      )}
+      {failed && (
+        <View style={styles.activityNote}>
+          <Text style={[styles.meta, { color: colors.error }]} accessibilityLiveRegion="polite">
+            {failed.why}
+          </Text>
+          <TextButton label="Try again" colors={colors} onPress={failed.retry} />
+        </View>
+      )}
+      {pages === null ? (
+        !failed && <Empty text="Loading…" colors={colors} />
+      ) : events.length === 0 ? (
+        <Empty text={EMPTY[filter]} colors={colors} />
+      ) : (
+        events.map((event) => (
+          <View
+            key={event.id}
+            ref={(row) => {
+              if (row) {
+                rows.current.set(event.id, row);
+              } else {
+                rows.current.delete(event.id);
+              }
+            }}
+            accessible
+            // Read as one: the sentence, when and its detail, then each workflow a run checked.
+            accessibilityLabel={[`${event.who ? `${event.who} ` : ""}${event.text}`, activityTime(event.createdAt, new Date(now)), event.detail, ...event.workflows.map((w) => `${w.name}: ${w.what}`)]
+              .filter(Boolean)
+              .join(", ")}
+            style={styles.event}
+          >
+            <View style={[styles.eventDot, { backgroundColor: dotOf(event.actor, colors) }]} />
+            <View style={styles.eventText}>
+              <Text style={[styles.meta, { color: colors.text }]}>
+                {event.who && <Text style={styles.whoDid}>{event.who}</Text>}
+                {event.who && " "}
+                {event.text}
+              </Text>
+              <Text style={[styles.meta, { color: colors.muted }]}>
+                {activityTime(event.createdAt, new Date(now))}
+                {event.detail && ` · ${event.detail}`}
+              </Text>
+              {event.workflows.length > 0 && (
+                <View style={[styles.workflows, { backgroundColor: colors.secondary }]}>
+                  {event.workflows.map((workflow, i) => (
+                    <Text key={i} style={[styles.meta, { color: colors.muted }]}>
+                      <Text style={{ color: colors.text }}>{workflow.name}</Text> · {workflow.what}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+        ))
+      )}
+      {next && pages && !failed && (
+        <View style={styles.earlier}>
+          {loading ? <ActivityIndicator color={colors.muted} /> : <TextButton label="Show earlier" colors={colors} onPress={() => load(filter, next)} />}
+        </View>
+      )}
+    </Group>
   );
 }
 
@@ -516,4 +723,14 @@ const styles = StyleSheet.create({
   back: { flexDirection: "row", alignItems: "center", gap: 4 },
   barTitle: { fontSize: 17, fontWeight: "600", flex: 1 },
   choiceText: { flex: 1, gap: 1, paddingLeft: IOS ? 0 : 16 },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 10, paddingRight: IOS ? 12 : 0 },
+  filter: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, minHeight: 28, justifyContent: "center" },
+  filterText: { fontSize: 13, fontWeight: "500" },
+  activityNote: { gap: 6, paddingBottom: 8, alignItems: "flex-start" },
+  event: { flexDirection: "row", gap: 10, paddingVertical: 6, paddingRight: IOS ? 12 : 0 },
+  eventDot: { width: 9, height: 9, borderRadius: 5, marginTop: 4.5 },
+  eventText: { flex: 1, gap: 1 },
+  whoDid: { fontWeight: "600" },
+  workflows: { marginTop: 4, gap: 2, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6 },
+  earlier: { alignItems: "flex-start", paddingVertical: 10 },
 });
