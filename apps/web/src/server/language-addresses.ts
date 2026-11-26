@@ -1,4 +1,8 @@
 import { prisma } from "@tuti/db";
+
+import { SIGNED_OUT } from "@/lib/read-access";
+
+import { readableArticle, servedArticle } from "./docs-queries";
 import { cache } from "react";
 import { DEFAULT_LANGUAGE, isLanguage, type Language, languageLimit, liveLanguages } from "@tuti/shared";
 
@@ -68,4 +72,40 @@ export function forgetLanguages(slug: string) {
 export async function apiReferenceSlugs(slug: string): Promise<Set<string>> {
   const references = await prisma.apiReference.findMany({ where: { project: { slug } }, select: { slug: true } });
   return new Set(references.map((reference) => reference.slug));
+}
+
+/**
+ * Where an offline or removed language's address goes in the default language (docs/plan.md, Languages): the same path, but
+ * an article's page (/docs/<slug>, or its .md) found by that language's slug, current then old, goes to its
+ * default-language slug (/de/docs/abrechnung → /docs/billing), never the path without the prefix. Only an article anyone
+ * may read on its page (served, and for people signed out): the redirect names its slug before the reader is known.
+ */
+export async function inDefaultLanguage(slug: string, code: Language, path: string): Promise<string> {
+  const match = /^\/docs\/([^/]+?)(\.md)?$/.exec(path);
+  let asked: string;
+  try {
+    asked = decodeURIComponent(match?.[1] ?? "");
+  } catch {
+    return path;
+  }
+  if (!match || !asked) {
+    return path;
+  }
+  // A private portal's readers are known only after this: nothing named for them.
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, portalAccess: true } });
+  if (!project || project.portalAccess !== "PUBLIC") {
+    return path;
+  }
+  const article = { projectId: project.id, ...servedArticle, ...(await readableArticle(project.id, SIGNED_OUT)) };
+  // In the order the language's own address would find it (articleNamed): its slug there, then an article's default-language
+  // slug (the same page without the prefix), then an old slug there.
+  const select = { article: { select: { slug: true } } } as const;
+  const [current, byDefault, old] = await Promise.all([
+    prisma.articleTranslation.findFirst({ where: { language: code, slug: asked, article }, select }),
+    // Any it serves, shown with a lock too (as articleNamed counts it): it only keeps the path, naming nothing.
+    prisma.article.findFirst({ where: { projectId: project.id, ...servedArticle, slug: asked }, select: { id: true } }),
+    prisma.articleOldSlug.findFirst({ where: { language: code, slug: asked, article }, orderBy: { createdAt: "desc" }, select }),
+  ]);
+  const found = current ?? (byDefault ? null : old);
+  return found ? `/docs/${encodeURIComponent(found.article.slug)}${match[2] ?? ""}` : path;
 }

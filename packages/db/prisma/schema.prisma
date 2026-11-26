@@ -478,6 +478,7 @@ model Project {
   changelogEntries         ChangelogEntry[]
   changelogSubscribers     ChangelogSubscriber[]
   languages                ProjectLanguage[]
+  articleOldSlugs          ArticleOldSlug[]
   articles                 Article[]
   articleChunks            ArticleChunk[]
   apiOperationEntries      ApiOperationEntry[]
@@ -2544,6 +2545,7 @@ model Article {
   changes           ArticleChanges?
   redirects         DocsRedirect[]
   translations      ArticleTranslation[]
+  oldSlugs          ArticleOldSlug[]
   /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
   groups            ArticleGroup[]
   /// Tabs that show it at their path.
@@ -2569,6 +2571,11 @@ model ArticleTranslation {
   /// "Keep up to date": publishing the source again retranslates it (edits in the sections it touches are replaced).
   automatic        Boolean   @default(true)
   title            String    @default("")
+  /// Its address in the language (/de/docs/<slug>): from its first translated title unless the team set one (`customSlug`);
+  /// null until then. Unique in the project and language, and no tab's, collection's or API reference's slug, current or
+  /// old (they keep one slug in every language). A renamed one's old slug goes to ArticleOldSlug.
+  slug             String?
+  customSlug       Boolean   @default(false)
   description      String    @default("")
   keywords         String[]  @default([])
   /// Plain text (derived from `content`).
@@ -2601,9 +2608,32 @@ model ArticleTranslation {
   projectLanguage ProjectLanguage @relation(fields: [projectId, language], references: [projectId, code], onDelete: Cascade)
 
   @@unique([articleId, language])
+  @@unique([projectId, language, slug])
   @@index([projectId, language])
+  @@index([projectId, slug])
   @@index([retryAt])
   @@map("article_translation")
+}
+
+/// An article's old address in one of the project's other languages (docs/plan.md, Languages: "Old slugs get a language"):
+/// a renamed version's, or a removed language's (kept, so an address in it still finds the article). The default language's
+/// old slugs stay in docs_redirect, whose one slug per project the previous release still writes by.
+model ArticleOldSlug {
+  id        String   @id @default(cuid())
+  projectId String
+  /// A code from @tuti/shared's LANGUAGES: not tied to project_language, so a removed language's stay.
+  language  String
+  slug      String
+  articleId String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, language, slug])
+  @@index([articleId])
+  @@index([projectId, slug])
+  @@map("article_old_slug")
 }
 
 /// A saved version of an article: every save that changes its title, text or collection adds
