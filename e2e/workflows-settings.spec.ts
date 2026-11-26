@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
+import { query } from "./db";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
@@ -15,9 +16,17 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
-  for (const name of ["First", "Second", "Third"]) {
-    await api("/workflows", { name, trigger: "conversation_started", actions: [{ kind: "mark_priority" }] });
-  }
+  const create = (name: string) => api("/workflows", { name, trigger: "conversation_started", actions: [{ kind: "mark_priority" }] });
+  await create("First");
+  // One a later release made, with an action this one can't read: not shown, yet it keeps its place in the list.
+  await query(
+    `INSERT INTO workflow (id, "projectId", name, trigger, position, actions, "updatedAt") SELECT $2, id, 'Later', 'conversation_started', 1, '[{"kind":"later_kind"}]', NOW() FROM project WHERE slug = $1`,
+    [slug, randomUUID()],
+  );
+  await create("Second");
+  await create("Third");
+  /** The whole list as stored, the one this page doesn't show too. */
+  const stored = async () => (await query(`SELECT w.name FROM workflow w JOIN project p ON p.id = w."projectId" WHERE p.slug = $1 AND w.trigger = 'conversation_started' ORDER BY w.position`, [slug])).map((row) => row.name as string);
   await api("/workflows", { name: "Enterprise replies", trigger: "user_replied", conditions: [{ kind: "in_group", group: "enterprise" }], actions: [{ kind: "mark_priority" }] });
   /** The trigger's list, top to bottom, as the API runs it. */
   const order = async (trigger: string) =>
@@ -31,7 +40,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   const main = owner.getByRole("main");
   await expect(main.getByRole("heading", { level: 2, name: /^When/ })).toHaveText(["When a conversation starts 3", "When a user replies 1"]);
   await expect(main.getByText("Built in")).toHaveCount(3);
-  await expect(main).toContainText("“Answer with AI first” is on in the widget");
+  await expect(main).toContainText("On in the widget, where it answers before a conversation starts");
   await expect(main.getByRole("link", { name: "Spam filter settings" })).toHaveAttribute("href", `/app/${slug}/settings/spam`);
   const started = main.getByRole("list", { name: "When a conversation starts" });
   const replied = main.getByRole("list", { name: "When a user replies" });
@@ -46,17 +55,21 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await row("Third").dragTo(row("First"));
   await expect(owner.getByText("Moved Third")).toBeVisible();
   await expect(names()).toHaveText(["Third", "First", "Second"]);
-  await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "First", "Second"]);
+  await expect.poll(stored).toEqual(["Third", "First", "Later", "Second"]);
 
-  // From the keyboard: the row's menu moves it down, and its menu has the focus again.
+  // From the keyboard: the row's menu moves it down, past the one not shown, and its menu has the focus again.
   const menu = (name: string) => owner.getByRole("button", { name: `Actions for ${name}` });
   await menu("Third").focus();
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("menuitem", { name: "Move up" })).toBeDisabled();
+  await owner.keyboard.press("Escape");
+  await menu("First").focus();
+  await owner.keyboard.press("Enter");
   await owner.getByRole("menuitem", { name: "Move down" }).click();
-  await expect(names()).toHaveText(["First", "Third", "Second"]);
-  await expect(menu("Third")).toBeFocused();
-  await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["First", "Third", "Second"]);
+  await expect(names()).toHaveText(["Third", "Second", "First"]);
+  await expect(menu("First")).toBeFocused();
+  await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
+  await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
 
   // Turned off from the keyboard: it saves at once, and keeps the focus.
   await owner.getByRole("switch", { name: "Second" }).focus();
@@ -75,8 +88,16 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(owner.getByText("Deleted First")).toBeVisible();
   await expect(dialog).toHaveCount(0);
   await expect(names()).toHaveText(["Third", "Second"]);
-  await expect(menu("Third")).toBeFocused();
+  // The focus goes to its neighbour's menu.
+  await expect(menu("Second")).toBeFocused();
   await expect(main.getByRole("heading", { level: 2, name: /^When/ }).first()).toHaveText("When a conversation starts 2");
+
+  // A group's last one deleted: the group says it has none, and has the focus.
+  await menu("Enterprise replies").click();
+  await owner.getByRole("menuitem", { name: "Delete" }).click();
+  await owner.getByRole("alertdialog", { name: "Delete Enterprise replies?" }).getByRole("button", { name: "Delete" }).click();
+  await expect(owner.getByText("Deleted Enterprise replies")).toBeVisible();
+  await expect(main.getByText("No workflows. Replies go on to the next step.")).toBeFocused();
 
   // On a phone: no handle to drag, the menu moves it; the switch stays as saved.
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -87,7 +108,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await menu("Second").click();
   await owner.getByRole("menuitem", { name: "Move up" }).click();
   await expect(names()).toHaveText(["Second", "Third"]);
-  await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Second", "Third"]);
+  await expect.poll(stored).toEqual(["Second", "Third", "Later"]);
   // Nothing wider than the screen.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "workflows-phone");
