@@ -184,7 +184,15 @@ test("refused for a member, without Screenshots set up, without lines, for a lin
   expect(browserUse.runs.at(-1)!.body.task).not.toContain("evil.example.net");
 });
 
-test("a screenshot marker anywhere holds publishing back, not only a line of its own: in a step, inside a sentence", async () => {
+test("a screenshot marker anywhere holds publishing back, not only a line of its own: in a step, inside a sentence; the syntax quoted as code doesn't", async () => {
+  const code = await write(
+    doc(paragraph("Ask for one with a line like this:"), { type: "codeBlock", attrs: { language: null }, content: [{ type: "text", text: "[Screenshot: the billing page]" }] }, {
+      type: "paragraph",
+      content: [{ type: "text", text: "or " }, { type: "text", text: "[Screenshot: the menu]", marks: [{ type: "code" }] }, { type: "text", text: " in a sentence." }],
+    }),
+  );
+  await call(publishArticle, as(), { slug: code });
+  expect((await article(code)).publishedAt).not.toBeNull();
   const step = { type: "orderedList", attrs: { start: 1 }, content: [{ type: "listItem", content: [paragraph("Open Billing. [Screenshot: the billing page]")] }] };
   const slug = await write(doc(step));
   await expect(call(publishArticle, as(), { slug })).rejects.toMatchObject({ status: 409, code: "markers", message: expect.stringContaining("[Screenshot: the billing page]") });

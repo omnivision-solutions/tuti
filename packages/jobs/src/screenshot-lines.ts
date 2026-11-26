@@ -65,16 +65,23 @@ function markersOf(text: string, kind: keyof typeof MARKERS): string[] {
 }
 
 /**
- * The markers still in a text ("[Check: …]" and "[Screenshot: …]", or only the latter), as written, each one: on a line
- * of its own as asked, or inside a sentence, a list item, a heading or a code block where it was put instead, which
- * would go out to readers just the same. What publishing refuses (a changelog entry's, an article's), wider than the
+ * The markers still in a text ("[Check: …]" and "[Screenshot: …]", or only the latter outside code), as written, each
+ * one: on a line of its own as asked, or inside a sentence, a list item, a heading or a code block where it was put
+ * instead, which would go out to readers just the same. What publishing refuses (a changelog entry's, an article's), wider than the
  * lines a run can fill (screenshotsAsked).
  */
 export function markersIn(doc: Doc, kind: keyof typeof MARKERS = "any"): string[] {
   const found: string[] = [];
+  // An article quoting the syntax as code (how to ask for a screenshot) is an example, not a marker: only drafts'
+  // markers, which the model may have put in a code block, count there.
+  const code = kind === "any";
   (function read(node: Block | Doc) {
+    if (node.type === "codeBlock" && !code) {
+      return;
+    }
     if (node.type === "paragraph" || node.type === "heading" || node.type === "codeBlock") {
-      found.push(...toPlainText(node).split("\n").flatMap((line) => markersOf(line, kind)));
+      const text = code ? node : { ...node, content: node.content?.filter((inline) => !inline.marks?.some((mark) => mark.type === "code")) };
+      found.push(...toPlainText(text).split("\n").flatMap((line) => markersOf(line, kind)));
       return;
     }
     node.content?.forEach(read);

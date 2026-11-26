@@ -9,8 +9,10 @@ import { articleScreenshotsRunning } from "@/server/operations/screenshots";
 export async function GET(_request: Request, context: RouteContext<"/app/[project]/docs/[slug]/screenshots">) {
   const { project: slug, slug: articleSlug } = await context.params;
   const membership = await getMembership(slug);
-  if (!membership) {
+  // Off the team, or the article gone (deleted while a run went): the editor stops asking rather than reloading into a 404.
+  const answer = membership && (await articleScreenshotsRunning(membership.project.id, articleSlug));
+  if (!answer) {
     return Response.json({ error: "Not found" }, { status: 404, headers: { "cache-control": "private, no-store" } });
   }
-  return Response.json(await articleScreenshotsRunning(membership.project.id, articleSlug), { headers: { "cache-control": "private, no-store" } });
+  return Response.json(answer, { headers: { "cache-control": "private, no-store" } });
 }

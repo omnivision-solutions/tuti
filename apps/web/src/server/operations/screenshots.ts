@@ -588,10 +588,13 @@ export async function entryScreenshotsRunning(projectId: string, number: number)
   );
 }
 
-/** An article's (screenshotsRunning): `savedAt` its newest version's id. */
+/** An article's (screenshotsRunning): `savedAt` its newest version's id. Null when it's gone (deleted since): nothing more to ask. */
 export async function articleScreenshotsRunning(projectId: string, slug: string) {
   const article = await prisma.article.findFirst({ where: { projectId, slug, deletedAt: null }, select: { id: true } });
-  return screenshotsRunning(projectId, article && { articleId: article.id }, async () =>
-    article ? ((await prisma.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? null) : null,
+  if (!article) {
+    return null;
+  }
+  return screenshotsRunning(projectId, { articleId: article.id }, async () =>
+    (await prisma.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? null,
   );
 }
