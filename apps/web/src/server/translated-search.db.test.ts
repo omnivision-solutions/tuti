@@ -202,11 +202,13 @@ test("an unpublish that comes while a version's sections are written waits for t
     // The article held, as an unpublish holds it.
     await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.articleId} FOR UPDATE`;
     embedding = embedTranslation(row.id, log);
-    // It waits for the article (it locks it before writing), so the unpublish below commits first.
+    // It waits for the article (it locks it before writing), so the unpublish below commits first: a wait in this file's
+    // database (other test files share the server), never this query's own.
     await vi.waitFor(
       async () => {
         const [{ waiting }] = await prisma.$queryRaw<{ waiting: bigint }[]>`
-          SELECT count(*) AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%FROM article WHERE id%FOR UPDATE%'`;
+          SELECT count(*) AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query LIKE '%FROM article WHERE id%FOR UPDATE%'`;
         expect(Number(waiting)).toBeGreaterThan(0);
       },
       { timeout: 4_000 },
