@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
-import { updateLanguages } from "./operations/languages";
+import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
 
@@ -644,4 +644,22 @@ test("publishing a version makes a translate job already running (the previous r
   const after = await prisma.articleTranslation.findFirstOrThrow({ where: { id: before.id } });
   expect(after.retranslate - after.retranslated).toBe(before.retranslate - before.retranslated);
   expect(text(after.content)).toContain("Unsere Abrechnung");
+});
+
+test("a Retranslate running while a draft is published is answered by the run publishing queues again, not left to the retry job", async () => {
+  await translated();
+  // Retranslate: while its job waits for its answer, the team publishes an edit (that run then writes nothing).
+  model.reply(reply(V1, "re"), async () => {
+    await editBilling();
+    await call(publishTranslation, as(), de);
+  });
+  model.reply(reply(V1, "re2"));
+  await call(retranslateLanguage, as(), { code: "de" });
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("[re2] Intro");
+  // The team's Billing, its English unchanged, stays theirs.
+  expect(text(after.content)).toContain("Unsere Abrechnung");
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
+  expect(row.retranslate).toBe(row.retranslated);
 });

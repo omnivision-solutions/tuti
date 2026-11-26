@@ -17,7 +17,17 @@ type Block = NonNullable<Doc["content"]>[number];
  * section changes (publishing the source again replaces edits only in the sections it touches), unless `kept` (the team
  * chose to keep it over a newer translation), when it stays for good, behind, until Update those sections.
  */
-export type SectionMeta = { key: string | null; hash: string | null; own?: true; kept?: true };
+export type SectionMeta = {
+  key: string | null;
+  hash: string | null;
+  own?: true;
+  kept?: true;
+  /** The hash of the section's own text as written with this: text written another way since (the previous release's job, during a deploy, rewrote it) isn't what this says. */
+  text?: string;
+};
+
+/** A section's own text as a hash (see SectionMeta.text). */
+const textHash = (blocks: Block[]) => contentHash(canonicalBlocks(blocks));
 export type Section = { blocks: Block[]; meta: SectionMeta };
 export type SourceSection = { key: string; hash: string; blocks: Block[] };
 
@@ -36,11 +46,16 @@ export function sourceSections(text: Doc): SourceSection[] {
 export function versionSections(content: Doc | null, meta: unknown, source: SourceSection[]): Section[] {
   const blocks = sections(content?.content ?? []);
   const stored = Array.isArray(meta) && meta.length === blocks.length ? (meta as SectionMeta[]) : null;
-  return blocks.map((section, i) => ({ blocks: section, meta: stored?.[i] ?? { key: source[i]?.key ?? null, hash: source[i]?.hash ?? null } }));
+  // A section whose text isn't what its metadata was written with (rewritten without it: the previous release's job during a
+  // deploy) is a translation of the source as it is, by position, none of it the team's.
+  return blocks.map((section, i) => {
+    const known = stored?.[i];
+    return { blocks: section, meta: known && (known.text === undefined || known.text === textHash(section)) ? known : { key: source[i]?.key ?? null, hash: source[i]?.hash ?? null } };
+  });
 }
 
 export const docOfSections = (list: Section[]): Doc => ({ type: "doc", content: list.flatMap((section) => section.blocks) });
-export const metaOf = (list: Section[]) => list.map((section) => section.meta);
+export const metaOf = (list: Section[]) => list.map((section) => ({ ...section.meta, text: textHash(section.blocks) }));
 
 /**
  * `current` with the translator's new text: `translated`, lined up with `source` by position. Every section of the source

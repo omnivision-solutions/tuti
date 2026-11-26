@@ -80,8 +80,6 @@ const versionSelect = {
   draft: true,
   behind: true,
   updateSections: true,
-  sourceHash: true,
-  error: true,
 } as const;
 type Version = Prisma.ArticleTranslationGetPayload<{ select: typeof versionSelect }>;
 
@@ -94,8 +92,7 @@ async function sourceOf(db: Prisma.TransactionClient, articleId: string) {
   if (!article.publishedAt) {
     throw new OperationError(409, "not_published", "Publish the article first: its other languages are made from what's published");
   }
-  const source = translationSource(article);
-  return { parts: sourceSections(source.text), sourceLanguage: article.project.language, titleHash: contentHash(article.title), sourceHash: source.hash };
+  return { parts: sourceSections(translationSource(article).text), sourceLanguage: article.project.language, titleHash: contentHash(article.title) };
 }
 
 /** A version's sections: published, and in the draft. The team's own on a version not kept up to date (for what's behind). */
@@ -263,7 +260,7 @@ export const publishTranslation = defineOperation({
       if (input.version !== undefined && versionToken(version) !== input.version) {
         throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
       }
-      const { parts, sourceLanguage, titleHash, sourceHash } = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage, titleHash } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
         throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
@@ -320,9 +317,9 @@ export const publishTranslation = defineOperation({
         },
         select: versionSelect,
       });
-      // Not up to date with the source (a run may be on its way, and now writes nothing): queued again.
-      const behindSource = version.automatic && (version.sourceHash !== sourceHash || version.error !== null);
-      if (update.length > 0 || behindSource) retranslate = { articleId, language: input.language };
+      // A run on its way now writes nothing (above): queued again wherever one may be (kept up to date, or sections asked for).
+      // One with nothing to do ends at once.
+      if (update.length > 0 || version.automatic || (version.updateSections as string[]).length > 0) retranslate = { articleId, language: input.language };
       return output(saved, parts, sourceLanguage);
     });
     if (retranslate) await queueTranslation(retranslate);

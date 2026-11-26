@@ -241,3 +241,16 @@ test("Update those sections: the sections asked for take the new translation, th
   const draft = withTranslation(ours, translated, source, { only: new Set([billing]) });
   expect(texts(docOfSections(draft))).toEqual(["Hallo", "Einrichtung", "Unsere", "Abrechnung", "Mit Karte zahlen"]);
 });
+
+test("a section whose text was rewritten without its metadata (the previous release's job, in a deploy) isn't the team's any more", () => {
+  const source = sourceSections(v1);
+  const { sections: edited } = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Unsere Abrechnung"]), source);
+  const kept = edited.map((section, i) => (i === 2 ? { ...section, meta: { ...section.meta, kept: true as const } } : section));
+  const meta = metaOf(kept);
+  // As written: Billing the team's, kept.
+  expect(versionSections(docOfSections(kept), meta, source)[2]!.meta).toMatchObject({ own: true, kept: true });
+  // Rewritten by a job that knows nothing of it: a translation, by position, nobody's.
+  const rewritten = versionSections(de1, meta, source);
+  expect(rewritten[2]!.meta).toEqual({ key: source[2]!.key, hash: source[2]!.hash });
+  expect(rewritten[0]!.meta.key).toBe(source[0]!.key);
+});
