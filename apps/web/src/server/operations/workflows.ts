@@ -7,6 +7,7 @@ import {
   actionsFor,
   MAX_WORKFLOW_NAME,
   MAX_WORKFLOWS,
+  storedWorkflow,
   TRIGGER_KEYS,
   TRIGGERS,
   type WorkflowAction,
@@ -40,7 +41,7 @@ const fields = {
   trigger: z
     .enum(TRIGGER_KEYS)
     .describe(
-      "When it runs: `conversation_started` (a user's first message, once per conversation, after the spam filter passed it) or `user_replied` (every later message from the user, one that reopens a closed conversation included)",
+      "When it runs: `conversation_started` (a user's first message, once per conversation, after the spam filter passed it) or `user_replied` (every later message from the user, one that reopens a closed conversation included; never one written while the conversation is in Spam)",
     )
     .meta({ examples: ["conversation_started"] }),
   conditions: workflowConditions
@@ -77,23 +78,28 @@ const workflowOutput = z
 const select = { id: true, name: true, trigger: true, position: true, enabled: true, conditions: true, actions: true } satisfies Prisma.WorkflowSelect;
 type Row = Prisma.WorkflowGetPayload<{ select: typeof select }>;
 
-/** A workflow as the API returns it: its conditions and actions as they're stored. */
-const view = (row: Row) => ({
-  ...row,
-  trigger: row.trigger as WorkflowTrigger,
-  conditions: row.conditions as WorkflowCondition[],
-  actions: row.actions as WorkflowAction[],
-});
+type View = Omit<Row, "trigger" | "conditions" | "actions"> & { trigger: WorkflowTrigger; conditions: WorkflowCondition[]; actions: WorkflowAction[] };
+
+/**
+ * A workflow as the API returns it, or null for one this release can't read (a later release's trigger, condition or
+ * action, while a deploy overlaps the two): to this release's API it isn't there, as it isn't to its engine. It keeps
+ * its place in its list all the same.
+ */
+function view(row: Row): View | null {
+  const stored = storedWorkflow(row);
+  return stored && { ...row, trigger: row.trigger as WorkflowTrigger, ...stored };
+}
 
 const notFound = () => new OperationError(404, "not_found", "There's no workflow with that id");
 
-/** One of the project's workflows (of a trigger this release knows), or 404. */
+/** One of the project's workflows, or 404. */
 async function found(tx: Prisma.TransactionClient, projectId: string, id: string) {
-  const row = await tx.workflow.findFirst({ where: { id, projectId, trigger: { in: TRIGGER_KEYS } }, select });
-  if (!row) {
+  const row = await tx.workflow.findFirst({ where: { id, projectId }, select });
+  const workflow = row && view(row);
+  if (!workflow) {
     throw notFound();
   }
-  return row;
+  return workflow;
 }
 
 /** A trigger's list, top to bottom. */
@@ -136,7 +142,7 @@ function full(count: number, trigger: WorkflowTrigger) {
 /** The project's workflows, each trigger's list top to bottom, the triggers in the path's order. */
 export async function workflowsOf(projectId: string) {
   const rows = await prisma.workflow.findMany({ where: { projectId, trigger: { in: TRIGGER_KEYS } }, orderBy: [{ position: "asc" }, { id: "asc" }], select });
-  return TRIGGER_KEYS.flatMap((trigger) => rows.filter((row) => row.trigger === trigger)).map(view);
+  return TRIGGER_KEYS.flatMap((trigger) => rows.filter((row) => row.trigger === trigger)).flatMap((row) => view(row) ?? []);
 }
 
 export const listWorkflows = defineOperation({
@@ -163,7 +169,7 @@ export const getWorkflow = defineOperation({
   access: "admin",
   input: z.object({ id: workflowId }),
   output: workflowOutput.describe("The workflow"),
-  run: async ({ projectId }, { id }) => view(await found(prisma, projectId, id)),
+  run: async ({ projectId }, { id }) => found(prisma, projectId, id),
 });
 
 export const createWorkflow = defineOperation({
@@ -186,16 +192,15 @@ export const createWorkflow = defineOperation({
   example: { name: "Enterprise first", trigger: "conversation_started", conditions: [{ kind: "in_group", group: "enterprise" }], actions: [{ kind: "mark_priority" }] },
   output: workflowOutput.describe("The new workflow"),
   run: async ({ projectId }, input) =>
-    view(
-      // Under the project's lock: workflows made at once get places one after the other.
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        await check(tx, projectId, input);
-        const count = await tx.workflow.count({ where: { projectId, trigger: input.trigger } });
-        full(count, input.trigger);
-        return tx.workflow.create({ data: { projectId, ...input, position: count }, select });
-      }),
-    ),
+    // Under the project's lock: workflows made at once get places one after the other.
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      await check(tx, projectId, input);
+      const count = await tx.workflow.count({ where: { projectId, trigger: input.trigger } });
+      full(count, input.trigger);
+      const created = await tx.workflow.create({ data: { projectId, ...input, position: count }, select: { id: true } });
+      return found(tx, projectId, created.id);
+    }),
 });
 
 export const updateWorkflow = defineOperation({
@@ -219,26 +224,24 @@ export const updateWorkflow = defineOperation({
   example: { enabled: false },
   output: workflowOutput.describe("The workflow as it is now"),
   run: async ({ projectId }, { id, ...input }) =>
-    view(
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const current = view(await found(tx, projectId, id));
-        const trigger = input.trigger ?? current.trigger;
-        const moved = trigger !== current.trigger;
-        // Checked whole, as it will be: what it keeps against what changes (its actions against another trigger).
-        await check(tx, projectId, { trigger, conditions: input.conditions ?? current.conditions, actions: input.actions ?? current.actions });
-        const last = moved ? await tx.workflow.count({ where: { projectId, trigger } }) : current.position;
-        if (moved) {
-          full(last, trigger);
-        }
-        const updated = await tx.workflow.update({ where: { id }, data: { ...input, position: last }, select });
-        if (moved) {
-          // The list it left closes up.
-          await renumber(tx, (await listOf(tx, projectId, current.trigger)).map((row) => row.id));
-        }
-        return updated;
-      }),
-    ),
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const current = await found(tx, projectId, id);
+      const trigger = input.trigger ?? current.trigger;
+      const moved = trigger !== current.trigger;
+      // Checked whole, as it will be: what it keeps against what changes (its actions against another trigger).
+      await check(tx, projectId, { trigger, conditions: input.conditions ?? current.conditions, actions: input.actions ?? current.actions });
+      const last = moved ? await tx.workflow.count({ where: { projectId, trigger } }) : current.position;
+      if (moved) {
+        full(last, trigger);
+      }
+      await tx.workflow.update({ where: { id }, data: { ...input, position: last } });
+      if (moved) {
+        // The list it left closes up.
+        await renumber(tx, (await listOf(tx, projectId, current.trigger)).map((row) => row.id));
+      }
+      return found(tx, projectId, id);
+    }),
 });
 
 export const moveWorkflow = defineOperation({
@@ -253,17 +256,15 @@ export const moveWorkflow = defineOperation({
   example: { position: 0 },
   output: workflowOutput.describe("The workflow, moved"),
   run: async ({ projectId }, input) =>
-    view(
-      // Under the project's lock: moves at the same time renumber one after the other, never over each other.
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const { id, trigger } = await found(tx, projectId, input.id);
-        const ids = (await listOf(tx, projectId, trigger)).map((row) => row.id).filter((other) => other !== id);
-        ids.splice(Math.min(input.position ?? ids.length, ids.length), 0, id);
-        await renumber(tx, ids);
-        return tx.workflow.findUniqueOrThrow({ where: { id }, select });
-      }),
-    ),
+    // Under the project's lock: moves at the same time renumber one after the other, never over each other.
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const { id, trigger } = await found(tx, projectId, input.id);
+      const ids = (await listOf(tx, projectId, trigger)).map((row) => row.id).filter((other) => other !== id);
+      ids.splice(Math.min(input.position ?? ids.length, ids.length), 0, id);
+      await renumber(tx, ids);
+      return found(tx, projectId, id);
+    }),
 });
 
 export const deleteWorkflow = defineOperation({

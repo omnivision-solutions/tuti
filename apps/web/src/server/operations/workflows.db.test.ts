@@ -22,9 +22,10 @@ async function setup() {
     /** Each list as it runs: "trigger: name, name". */
     lists: async () => {
       const { workflows } = await call(listWorkflows, admin, {});
-      // Places are 0, 1, … in each list, with no gaps.
+      // Places are 0, 1, … in each list as it's stored, with no gaps.
       for (const trigger of ["conversation_started", "user_replied"]) {
-        expect(workflows.filter((w) => w.trigger === trigger).map((w) => w.position)).toEqual(workflows.filter((w) => w.trigger === trigger).map((_, at) => at));
+        const places = (await prisma.workflow.findMany({ where: { projectId: project.id, trigger }, orderBy: { position: "asc" }, select: { position: true } })).map((w) => w.position);
+        expect(places).toEqual(places.map((_, at) => at));
       }
       return workflows.map((w) => `${w.trigger}: ${w.name}${w.enabled ? "" : " (off)"}`);
     },
@@ -108,4 +109,38 @@ test("a trigger's list holds so many workflows, by creating or by changing a wor
   const reply = await add("A reply's", "user_replied");
   await expect(call(updateWorkflow, admin, { id: reply.id, trigger: "conversation_started" })).rejects.toMatchObject({ status: 409 });
   expect(await prisma.workflow.findUniqueOrThrow({ where: { id: reply.id } })).toMatchObject({ trigger: "user_replied", position: 0 });
+});
+
+test("a workflow this release can't read isn't there for its API, and keeps its place in its list", async () => {
+  const { projectId, admin, add, lists } = await setup();
+  const a = await add("A");
+  // As a later release would store them, while a deploy overlaps the two: an action, and a trigger, from after this one.
+  const later = await prisma.workflow.create({
+    data: { projectId, name: "Later's", trigger: "conversation_started", position: 1, actions: [{ kind: "mark_priority" }, { kind: "close" }] },
+  });
+  const handover = await prisma.workflow.create({ data: { projectId, name: "Handover's", trigger: "handover", position: 0, actions: [{ kind: "keep" }] } });
+  const b = await add("B");
+  expect(b.position).toBe(2);
+  expect((await call(listWorkflows, admin, {})).workflows.map((w) => `${w.name} ${w.position}`)).toEqual(["A 0", "B 2"]);
+
+  // Not read, changed (turned off or renamed, which would otherwise look harmless), moved or deleted here.
+  for (const id of [later.id, handover.id]) {
+    for (const attempt of [
+      () => call(getWorkflow, admin, { id }),
+      () => call(updateWorkflow, admin, { id, enabled: false }),
+      () => call(moveWorkflow, admin, { id, position: 0 }),
+      () => call(deleteWorkflow, admin, { id }),
+    ]) {
+      await expect(attempt()).rejects.toMatchObject({ status: 404, code: "not_found" });
+    }
+  }
+  // Moving and deleting the others keeps it in its list, in order.
+  await call(moveWorkflow, admin, { id: b.id, position: 0 });
+  await call(deleteWorkflow, admin, { id: a.id });
+  expect(await prisma.workflow.findMany({ where: { projectId }, orderBy: [{ trigger: "asc" }, { position: "asc" }], select: { name: true, position: true, enabled: true } })).toEqual([
+    { name: "B", position: 0, enabled: true },
+    { name: "Later's", position: 1, enabled: true },
+    { name: "Handover's", position: 0, enabled: true },
+  ]);
+  expect(await lists()).toEqual(["conversation_started: B"]);
 });
