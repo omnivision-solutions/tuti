@@ -49,12 +49,14 @@ export const metaOf = (list: Section[]) => list.map((section) => section.meta);
  * (the rest stay, missing ones aren't added): a version the team writes, updating the sections it asked for. `published`:
  * the published text of a version kept up to date, where the team's edits (not those it kept) give way where their source
  * section changed; in a draft they never do. `removed`: source sections the team took out of it, which aren't put back.
+ * `asked`: sections the team asked to translate again (Update those sections; `only` by default): they take the new
+ * translation whoever owns them, kept ones included; the team's other sections stay as they are.
  */
 export function withTranslation(
   current: Section[],
   translated: Doc,
   source: SourceSection[],
-  { only, published = false, removed }: { only?: Set<string>; published?: boolean; removed?: Set<string> } = {},
+  { only, published = false, removed, asked = only }: { only?: Set<string>; published?: boolean; removed?: Set<string>; asked?: Set<string> } = {},
 ): Section[] {
   const fresh = sections(translated.content ?? []);
   const inSource = new Set(source.map((section) => section.key));
@@ -67,7 +69,7 @@ export function withTranslation(
     if (key !== null && inSource.has(key) && !byKey.has(key)) {
       byKey.set(key, section);
       previous = key;
-    } else if (key === null || (section.meta.own && (!published || section.meta.kept)) || (only && !only.has(key))) {
+    } else if (key === null || (section.meta.own && (!published || section.meta.kept) && !asked?.has(key)) || (only && !only.has(key))) {
       // (Published on a version kept up to date, the team's edit whose source section went goes too, unless they kept it.)
       // (A version the team writes keeps its sections whose source went, but where it asked for them.)
       after.set(previous, [...(after.get(previous) ?? []), section]);
@@ -76,7 +78,7 @@ export function withTranslation(
   const out: Section[] = [...(after.get(null) ?? [])];
   for (const [i, { key, hash }] of source.entries()) {
     const had = byKey.get(key);
-    const theirs = !!had?.meta.own && (!published || !!had.meta.kept || had.meta.hash === hash);
+    const theirs = !asked?.has(key) && !!had?.meta.own && (!published || !!had.meta.kept || had.meta.hash === hash);
     // Not there because the team took it out (and didn't ask for it back): left out.
     const keep = theirs || (only && !only.has(key)) || (!had && !!removed?.has(key) && !only?.has(key));
     if (keep) {
@@ -104,7 +106,7 @@ export function withTranslation(
     out.splice(
       0,
       2,
-      only?.has(introKey)
+      asked?.has(introKey)
         ? { blocks: [...sources.blocks, ...theirs.blocks], meta: { key: introKey, hash: sources.meta.hash, own: true } }
         : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true } },
     );

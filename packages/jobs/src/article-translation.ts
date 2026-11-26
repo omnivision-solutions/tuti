@@ -303,10 +303,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       return null;
     }
     const only = now.automatic ? undefined : new Set(asked);
-    // (Asking for sections already made them no longer the team's: an edit made since, in the draft or published, is theirs.)
-    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, published: now.automatic, removed: new Set(now.removedSections as string[]) });
+    // The sections asked for take the new translation, whoever owns them (an edit made since included): that's what was asked.
+    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: new Set(asked), published: now.automatic, removed: new Set(now.removedSections as string[]) });
     const draft = now.draft as Draft | null;
-    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, removed: new Set(draft.removed) });
+    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, asked: new Set(asked), removed: new Set(draft.removed) });
     const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
     more = waiting.length > 0;
     // The team's published title stays theirs until the source's title changes.

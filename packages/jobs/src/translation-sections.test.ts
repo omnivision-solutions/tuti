@@ -226,3 +226,18 @@ test("the team's intro standing for the source's stays through later runs, and g
   expect(texts(docOfSections(asked))).toEqual(["Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
   expect(versionSections(docOfSections(asked), metaOf(asked), source2)).toHaveLength(3);
 });
+
+test("Update those sections: the sections asked for take the new translation, the team's or kept; the team's others stay", () => {
+  const source = sourceSections(v1);
+  const { sections: edited } = editedSections(versionSections(de1, [], source), doc(["", "Hallo"], ["Einrichtung", "Unsere"], ["Abrechnung", "Unsere Zahlung"]), source);
+  // Billing kept over a newer translation; the intro and Setup the team's too.
+  const ours = edited.map((section, i) => (i === 2 ? { ...section, meta: { ...section.meta, kept: true as const } } : section));
+  const translated = doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const [setup, billing] = [source[1]!.key, source[2]!.key];
+  // Kept up to date (no `only`): asked for Setup and Billing.
+  const published = withTranslation(ours, translated, source, { published: true, asked: new Set([setup, billing]) });
+  expect(texts(docOfSections(published))).toEqual(["Hallo", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+  // A version the team writes (`only`), in its draft: Billing asked for, Setup and the intro stay theirs.
+  const draft = withTranslation(ours, translated, source, { only: new Set([billing]) });
+  expect(texts(docOfSections(draft))).toEqual(["Hallo", "Einrichtung", "Unsere", "Abrechnung", "Mit Karte zahlen"]);
+});

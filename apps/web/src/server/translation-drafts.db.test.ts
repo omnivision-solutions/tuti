@@ -269,7 +269,7 @@ test("a version the team writes with sections waiting to update is tried again b
   expect(text((await call(getTranslation, as(), de)).content)).toContain("[de2] Pay by card or invoice");
 });
 
-test("an edit saved while the job updates that section stays the team's", async () => {
+test("a section asked for takes the new translation, even one the team edited while the job ran", async () => {
   const articleId = await manualVersion();
   const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
   await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
@@ -283,7 +283,9 @@ test("an edit saved while the job updates that section stays the team's", async 
   await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
   await languageTranslationsDone();
   const after = await call(getTranslation, as(), de);
-  expect(text(after.draft!.content)).toContain("Neu von uns");
+  // Asked for, it takes the new translation in the draft too (that's what Update those sections is for).
+  expect(text(after.draft!.content)).not.toContain("Neu von uns");
+  expect(text(after.draft!.content)).toContain("[de2] Pay by card or invoice");
   expect(text(after.content)).toContain("[de2] Pay by card or invoice");
   expect(articleId).toBeTruthy();
 });
