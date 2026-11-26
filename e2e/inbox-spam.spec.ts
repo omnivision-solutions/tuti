@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { createProject, expectMoreView, moreView, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, moreView, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 
 // Wide enough for the Inbox's four panes: its views, the list, the conversation and its details.
@@ -78,6 +78,8 @@ test("a sender marked as spam is filed next time, with the reason on the convers
     return button.x >= reason.x + reason.width && button.y < reason.y + reason.height;
   };
   expect(await beside()).toBe(true);
+  // A dense control's height, as the buttons over it.
+  expect((await notice.getByRole("button", { name: "Not spam" }).boundingBox())!.height).toBe(32);
   await checkpoint(owner, "why-its-in-spam");
   // On a phone too, the reason wrapping beside it, and nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
@@ -102,4 +104,43 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await owner.goto(`/app/${slug}/inbox`);
   await expectMoreView(owner, "Needs reply 3");
   await expectMoreView(owner, "Spam 3");
+});
+
+test("Not spam on a conversation from a blocked address says it unblocks it, a long address wrapping inside More actions and on the Spam line", async ({ browser }, testInfo) => {
+  // Signing up, a project, an API key and an email, on a shared runner.
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
+
+  // An address on the blocked list, far longer than the menu is wide, with nowhere a line would break by itself.
+  const sender = "e2e-newslettersandspecialoffersdepartment@mailserver.spamcorp.example";
+  const api = await apiFor(owner, slug);
+  await api("/spam", { block: [sender] }, "PATCH");
+  await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail(`Kim Lee <${sender}>`, "Cheap followers", "Buy 10,000 followers today."));
+
+  await owner.goto(`/app/${slug}/inbox/1?view=spam`);
+  const notice = owner.locator(".inbox-spam-notice");
+  await expect(notice).toContainText("Marked as spam: you blocked this address");
+  const label = `Not spam, and unblock ${sender}`;
+  for (const width of [1440, 390]) {
+    await owner.setViewportSize({ width, height: 900 });
+    // On the Spam line the button wraps inside the conversation.
+    await expect(notice.getByRole("button", { name: label })).toBeVisible();
+    expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    // In More actions the address wraps too: the item is no wider than its menu, with nothing cut off.
+    await owner.getByRole("button", { name: "More actions" }).click();
+    const item = owner.getByRole("menuitem", { name: label });
+    const [menu, box] = [(await owner.getByRole("menu").boundingBox())!, (await item.boundingBox())!];
+    expect(box.x).toBeGreaterThanOrEqual(menu.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(menu.x + menu.width);
+    expect(await item.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await checkpoint(owner, `not-spam-unblock-${width}`, { fullPage: false });
+    await owner.keyboard.press("Escape");
+    await expect(item).toBeHidden();
+  }
 });

@@ -4,6 +4,7 @@ import { focusClearOfFade, SCROLLING_ROW, showMore, wheelSideways } from "@tuti/
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon, LayoutListIcon } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { type ReactNode, useEffect, useRef } from "react";
 
 import { pillClass } from "@/components/filter-pills";
@@ -24,19 +25,23 @@ export function BoardSwitcher({
   boards: { name: string; href: string; count: number; current: boolean }[];
   className?: string;
 }) {
+  const t = useTranslations("feedback");
+  const lang = useLocale();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label={`Board: ${name}`} className={pillClass(false, className)}>
+      <DropdownMenuTrigger aria-label={t("boardMenu", { board: name })} className={pillClass(false, className)}>
         <LayoutListIcon aria-hidden />
         <span className="truncate">{name}</span>
         <ChevronDownIcon aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-auto min-w-56">
-        <DropdownMenuItem render={<Link href={allHref} />}>All boards</DropdownMenuItem>
+        <DropdownMenuItem render={<Link href={allHref} />}>
+          {t("allBoards")}
+        </DropdownMenuItem>
         {boards.map((board) => (
           <DropdownMenuItem key={board.href} render={<Link href={board.href} aria-current={board.current ? "page" : undefined} />}>
             {board.name}
-            <span className="ml-auto pl-4 text-xs text-muted-foreground tabular-nums">{board.count}</span>
+            <span className="ml-auto pl-4 text-xs text-muted-foreground tabular-nums">{board.count.toLocaleString(lang)}</span>
             <CheckIcon aria-hidden className={board.current ? "text-primary" : "invisible"} />
           </DropdownMenuItem>
         ))}

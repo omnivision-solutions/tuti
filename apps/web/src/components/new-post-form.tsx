@@ -4,6 +4,7 @@ import type { MediaUrls } from "@tuti/content";
 import { LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useActionState, useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
-import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
 import { boardPath, postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
@@ -36,7 +36,7 @@ export function ShareIdeaBox({ signedIn, ...form }: { signedIn: boolean } & Omit
       {/* What the box is for, then the box: its title first, the details once it's opened. */}
       <h2 id="share-idea" className="flex items-center gap-2 font-semibold">
         <LightbulbIcon aria-hidden className="size-4 text-soft-foreground" />
-        Share an idea
+        {useTranslations("feedback")("shareIdea")}
       </h2>
       <NewPostForm {...form} collapsible signedOut={!signedIn} />
     </Card>
@@ -51,9 +51,9 @@ export function NewPostForm({
   linkTarget,
   submit,
   defaultTitle,
-  titlePlaceholder = BOARD_TEXT_DEFAULTS.titlePlaceholder,
-  detailsPlaceholder = BOARD_TEXT_DEFAULTS.detailsPlaceholder,
-  postButton = BOARD_TEXT_DEFAULTS.postButton,
+  titlePlaceholder,
+  detailsPlaceholder,
+  postButton,
   collapsible = false,
   signedOut = false,
   onPosted,
@@ -89,6 +89,7 @@ export function NewPostForm({
   const at = usePortalHref();
   // In the page's language: signing in comes back to it.
   const path = usePortalHere();
+  const t = useTranslations("feedback");
   const router = useRouter();
   const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState(!collapsible || !!defaultTitle);
@@ -123,7 +124,7 @@ export function NewPostForm({
       searched.current = "";
       latestQuery.current++;
       setSimilar([]);
-      toast.success("Feedback posted");
+      toast.success(t("feedbackPosted"));
       onPosted?.();
     }
     return result;
@@ -177,7 +178,9 @@ export function NewPostForm({
   // keyboard goes from the title to the button).
   const similarList = similar.length > 0 && (
     <div className={cn("flex flex-col gap-1 rounded-lg border bg-muted/50 p-3", oneLine && "basis-full")} role="status">
-      <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
+      <p className="text-sm font-medium">
+        {t("alreadyPosted")}
+      </p>
       <ul className="flex flex-col">
         {similar.map((post) => (
           <li key={post.id} className="flex items-center gap-2">
@@ -189,7 +192,7 @@ export function NewPostForm({
             >
               {!similarVote && (
                 <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                  {t("votes", { count: post.voteCount })}
                 </span>
               )}
               <span className="min-w-0 flex-1 truncate">{post.title}</span>
@@ -239,9 +242,9 @@ export function NewPostForm({
             key={submitted}
             id="post-title"
             name="title"
-            aria-label="Title"
+            aria-label={t("titleField")}
             defaultValue={submitted === 0 ? initialTitle : undefined}
-            placeholder={titlePlaceholder}
+            placeholder={titlePlaceholder ?? t("titlePlaceholder")}
             required
             autoComplete="off"
             onFocus={() => setExpanded(true)}
@@ -266,7 +269,7 @@ export function NewPostForm({
           // Submits the form (its sign-in GET, or the push above), so a title typed before the script ran goes too;
           // an empty title may sign in as well.
           <Button type="submit" formNoValidate className={cn(!oneLine && "self-end")}>
-            Sign in to post
+            {t("signInToPost")}
           </Button>
         ) : (
           <>
@@ -276,13 +279,13 @@ export function NewPostForm({
                 bare
                 profile="post"
                 name="content"
-                label="Details"
-                placeholder={detailsPlaceholder}
+                label={t("details")}
+                placeholder={detailsPlaceholder ?? t("detailsPlaceholder")}
                 uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
               />
             )}
             <Button type="submit" disabled={pending} className={cn(!oneLine && "self-end")}>
-              {pending ? "Posting…" : postButton}
+              {pending ? t("posting") : (postButton ?? t("submitPost"))}
             </Button>
           </>
         )}

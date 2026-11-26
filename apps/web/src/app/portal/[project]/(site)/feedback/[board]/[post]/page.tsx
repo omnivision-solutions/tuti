@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { MESSAGES } from "@tuti/shared/messages";
 import type { Metadata } from "next";
 import { postAudience } from "@tuti/jobs";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -38,6 +39,7 @@ import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { portalAddress } from "@/server/custom-domains";
+import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
 
@@ -127,6 +129,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // A post they may not see (post-visibility.ts), with its comments and votes, is as good as missing; so is one merged
   // into a post they may not see.
   const viewer = await currentPostViewer(post.projectId);
+  const { t, language } = await portalTranslator(post.projectId, "feedback");
   if (!canSeePost(viewer, post) || (post.duplicateOf && !canSeePost(viewer, post.duplicateOf))) {
     notFound();
   }
@@ -169,11 +172,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const subscribe = subscribable && (!voter || hears.length > 0) && (
     <SubscribeButton postId={post.id} status={post.status} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
   );
-  const shippedIn = post.changelogEntries[0] && (
-    <Link href={at(`/changelog/${post.changelogEntries[0].entry.number}`)} className="font-medium text-foreground hover:underline">
-      {post.changelogEntries[0].entry.title}
-    </Link>
-  );
+  const shippedIn = post.changelogEntries[0]?.entry;
   const sort = commentSort((await props.searchParams).sort);
   // Images only once signed in: uploads are someone's.
   const uploads = session && mediaStorage() ? { projectSlug, mediaUrls: {} } : undefined;
@@ -181,16 +180,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const voterFaces = post.voteCount > 0 && (
     // The faces, then how many more (the vote button has the count).
     <VoterFaces
-      voters={voters.map((vote) => vote.user)}
+      // Faces only (VoterFaces is a client component): no names or ids in the page's data, as a vote isn't signed.
+      voters={voters.map(({ user }, i) => ({ id: String(i), name: user.name.slice(0, 1), image: user.image }))}
       count={post.voteCount}
       // Short beside the faces; the whole sentence for screen readers (the faces are hidden from them).
       label={
         <>
           <span aria-hidden>
-            {post.voteCount > voters.length ? `+${post.voteCount - voters.length} more` : `${post.voteCount === 1 ? "wants" : "want"} this`}
+            {post.voteCount > voters.length ? t("moreVoters", { count: post.voteCount - voters.length }) : t("wantThis", { count: post.voteCount })}
           </span>
           <span className="sr-only">
-            {post.voteCount} {post.voteCount === 1 ? "person wants this" : "people want this"}
+            {t("peopleWantThis", { count: post.voteCount })}
           </span>
         </>
       }
@@ -210,9 +210,13 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             // not to a board only the team may open.
             onTeamBoard ? (
               (await firstBoardPath(projectSlug)) ? (
-                <BackLink href={at("/feedback")}>Feedback</BackLink>
+                <BackLink href={at("/feedback")}>
+                  {MESSAGES[language].header.feedback}
+                </BackLink>
               ) : (
-                <BackLink href={at("/")}>Home</BackLink>
+                <BackLink href={at("/")}>
+                  {t("home")}
+                </BackLink>
               )
             ) : (
               <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
@@ -224,14 +228,16 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <PortalAvatar person={post.author} className="size-6 text-xs" />
           <span className="text-foreground">{post.author.name}</span>
           <span aria-hidden>·</span>
-          <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
+          <time dateTime={post.createdAt.toISOString()}>
+            {timeAgo(post.createdAt, undefined, language)}
+          </time>
         </div>
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-sm">
           <StatusPill status={post.status} />
           {eta && (
             <span className="inline-flex items-center gap-1.5 text-muted-foreground">
               <CalendarIcon aria-hidden className="size-4" />
-              Expected {formatMonth(eta)}
+              {t("expectedIn", { month: formatMonth(eta, language) })}
             </span>
           )}
           {post.sample && <SampleBadge />}
@@ -251,7 +257,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           the voters, its details, its link and the way to a new idea. On phones and tablets the actions in one row under the
           post, the voters under them (the details and the way to a new idea aren't). */}
       <aside
-        aria-label="About this idea"
+        aria-label={t("aboutIdea")}
         className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-[2.375rem] lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-5 max-lg:[&>:first-child]:grow lg:[&>a]:w-full lg:[&>button]:w-full"
       >
         <VoteButton shape="upvote" postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
@@ -260,7 +266,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <div className="flex flex-col gap-2 max-lg:order-last max-lg:basis-full">
             {/* Beside the rail's other parts: named. */}
             <span aria-hidden className="text-[0.8125rem] text-muted-foreground max-lg:hidden">
-              Voters
+              {t("voters")}
             </span>
             {voterFaces}
           </div>
@@ -271,15 +277,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <div>
               <dt>
                 <LayoutListIcon aria-hidden />
-                Board
+                {t("board")}
               </dt>
-              <dd className="min-w-0 truncate">{post.board.name}</dd>
+              <dd className="min-w-0 truncate">
+                {post.board.name}
+              </dd>
             </div>
           )}
           <div>
             <dt>
               <CircleDotIcon aria-hidden />
-              Status
+              {t("statusLabel")}
             </dt>
             <dd>
               <StatusLabel status={post.status} className="text-sm [&>svg]:hidden" />
@@ -289,39 +297,54 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <div>
               <dt>
                 <CalendarIcon aria-hidden />
-                Expected
+                {t("expected")}
               </dt>
-              <dd>{formatMonth(eta)}</dd>
+              <dd>{formatMonth(eta, language)}</dd>
             </div>
           )}
           <div>
             <dt>
               <ClockIcon aria-hidden />
-              Posted
+              {t("posted")}
             </dt>
-            <dd>{formatDate(post.createdAt)}</dd>
+            <dd>{formatDate(post.createdAt, language)}</dd>
           </div>
         </dl>
-        {shippedIn && <p className="text-muted-foreground max-lg:order-last max-lg:basis-full">Shipped in {shippedIn}</p>}
+        {shippedIn && (
+          <p className="text-muted-foreground max-lg:order-last max-lg:basis-full">
+            {t.rich("shippedIn", {
+              title: shippedIn.title,
+              // The entry's title is the team's words.
+              entry: (chunks) => (
+                <Link href={at(`/changelog/${shippedIn.number}`)} lang={lang} className="font-medium text-foreground hover:underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <CopyLinkButton url={address} />
           <ShareButton url={address} title={post.title} />
         </div>
         {!onTeamBoard && (
           <p className="text-muted-foreground max-lg:hidden">
-            Have another idea?{" "}
-            <Link href={`${at(boardPath(post.board))}?new`} className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px] hover:decoration-primary">
-              Post it
-            </Link>
+            {t.rich("anotherIdea", {
+              link: (chunks) => (
+                <Link href={`${at(boardPath(post.board))}?new`} className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px] hover:decoration-primary">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </p>
         )}
       </aside>
 
       <div className="flex min-w-0 flex-col gap-10 lg:col-start-1">
-        <section className="flex flex-col pt-6" aria-label="Comments">
+        <section className="flex flex-col pt-6" aria-label={t("commentsLabel")}>
           <div className="flex items-center justify-between gap-3 pb-1.5">
             <h2 className="font-sans text-lg font-semibold">
-              {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+              {t("comments", { count: post.comments.length })}
             </h2>
             {post.comments.length > 1 && <CommentSortMenu sort={sort} />}
           </div>
@@ -340,12 +363,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                 <MessageCircleIcon className="size-[1.125rem]" />
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <h2 className="font-sans text-base font-semibold">Join the conversation</h2>
-                <p className="text-[0.9375rem] text-muted-foreground">Sign in to comment and vote.</p>
+                <h2 className="font-sans text-base font-semibold">{t("joinConversation")}</h2>
+                <p className="text-[0.9375rem] text-muted-foreground">{t("signInToComment")}</p>
               </div>
               {/* A secondary: Upvote is the page's primary. On the fill, the card's white. */}
               <SignInLink className={buttonVariants({ variant: "outline", size: "lg", className: "font-semibold portal:bg-card portal:hover:bg-card/70" })}>
-                Sign in
+                {MESSAGES[language].header.signIn}
               </SignInLink>
             </div>
           )}
@@ -358,6 +381,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
               comments={post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 }))}
               teamUserIds={teamUserIds}
               events={post.events}
+              language={language}
               mediaUrls={await mediaUrls(...post.comments.map(displayDoc))}
             />
           </div>
@@ -367,7 +391,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         {similar.length > 0 && (
           <section aria-labelledby="similar-ideas" className="flex flex-col gap-2">
             <h2 id="similar-ideas" className="font-sans text-lg font-semibold">
-              Similar ideas
+              {t("similarIdeas")}
             </h2>
             <ItemList>
               {similar.map((like) => (
@@ -384,7 +408,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                       <StatusLabel status={like.status} />
                     </>
                   }
-                  meta={`${like.voteCount} ${like.voteCount === 1 ? "vote" : "votes"}`}
+                  meta={t("votes", { count: like.voteCount })}
                 />
               ))}
             </ItemList>

@@ -12,7 +12,7 @@ import { NewIdea, NewIdeaButton, NewIdeaLink } from "@/components/new-idea";
 import { postButtonText } from "@/components/new-post-menu";
 import { ShareIdeaBox } from "@/components/new-post-form";
 import { PortalAvatar } from "@/components/portal-avatar";
-import { STATUS_LABELS, StatusLabel } from "@/components/post-status-badge";
+import { StatusLabel } from "@/components/post-status-badge";
 import { SampleBadge } from "@/components/sample-badge";
 import { BoardPillRow, BoardSwitcher } from "@/components/board-switcher";
 import { FilterPills } from "@/components/filter-pills";
@@ -30,16 +30,17 @@ import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
 import { seesBoard } from "@/server/post-visibility";
 import { portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
 
-/** A board's tabs, its orders: Trending (the most votes in the last 7 days, then the most votes) first. */
+/** A board's tabs, its orders (each named by its message): Trending (the most votes in the last 7 days, then the most votes) first. */
 const TABS = [
-  ["trending", "Trending"],
-  ["top", "Top"],
-  ["new", "New"],
+  ["trending", "trending"],
+  ["top", "top"],
+  ["new", "newest"],
 ] as const;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -55,10 +56,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/feedb
   if (!board || !seesBoard(await currentPostViewer(board.projectId), board)) {
     return {};
   }
-  return portalPageMetadata(project, { title: board.name, description: board.description || BOARD_DESCRIPTION, path: boardPath({ slug }) });
+  const { t } = await portalTranslator(board.projectId, "feedback");
+  return portalPageMetadata(project, { title: board.name, description: board.description || t("description"), path: boardPath({ slug }) });
 }
-
-const BOARD_DESCRIPTION = "Vote for the ideas you want most, or share your own.";
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const at = await portalLinks();
@@ -108,7 +108,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     boardsWithCounts(board.projectId, viewer),
     boardStatusCounts(board.id, viewer),
   ]);
-  const texts = boardTexts(board);
+  const { t, language } = await portalTranslator(board.projectId, "feedback");
+  const texts = boardTexts(board, { postButton: t("submitPost"), titlePlaceholder: t("titlePlaceholder"), detailsPlaceholder: t("detailsPlaceholder") });
   // The board's own links built from its address (Load more) leave out `new` and `title`: New idea's, taken out of the
   // address as it opens (NewIdea), never to open it again.
   const ownParams = Object.fromEntries(Object.entries(searchParams).filter(([name]) => name !== "new" && name !== "title"));
@@ -131,27 +132,27 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const paramOf = (status: string) => Object.keys(STATUS_PARAMS).find((key) => STATUS_PARAMS[key] === status)!;
   const searching = !!q || mine;
   const statusChoices: StatusChoice[] = [
-    { label: "Not done yet", count: count(ACTIVE_STATUSES), href: listHref(tab, searching ? "active" : null), current: !!statuses && statuses.length > 1, group: 0 },
+    { label: t("notDoneYet"), count: count(ACTIVE_STATUSES), href: listHref(tab, searching ? "active" : null), current: !!statuses && statuses.length > 1, group: 0 },
     ...(["IN_PROGRESS", "PLANNED", "UNDER_REVIEW", "OPEN", "COMPLETED", "CLOSED"] as const)
       .filter((status) => counts[status] || (statuses?.length === 1 && statuses[0] === status))
       .map((status) => ({
-        label: STATUS_LABELS[status],
+        label: t(`status.${status}`),
         count: counts[status] ?? 0,
         href: listHref(tab, paramOf(status)),
         status,
         current: statuses?.length === 1 && statuses[0] === status,
         group: ACTIVE_STATUSES.includes(status) ? 1 : 2,
       })),
-    { label: "Every idea", count: count(Object.values(STATUS_PARAMS)), href: listHref(tab, searching ? null : "all"), current: !statuses, group: 3 },
+    { label: t("everyIdea"), count: count(Object.values(STATUS_PARAMS)), href: listHref(tab, searching ? null : "all"), current: !statuses, group: 3 },
   ];
   const latest = shipped[0];
   const shippedLine = latest && (
     // One line: the latest shipped idea and when; the rest under Completed in the status menu.
-    <section role="region" aria-label="Recently shipped" className="flex gap-2 text-sm leading-snug text-muted-foreground">
+    <section role="region" aria-label={t("recentlyShipped")} className="flex gap-2 text-sm leading-snug text-muted-foreground">
       <CircleCheckIcon aria-hidden className="mt-px size-4 shrink-0 text-status-completed" />
       <p className="min-w-0 break-words">
-        Shipped {formatDay(latest.shippedAt)}:{" "}
-        <Link href={at(postPath({ ...latest, board }))} className="font-medium text-foreground hover:underline">
+        {t("shippedOn", { date: formatDay(latest.shippedAt, language) })}{" "}
+        <Link href={at(postPath({ ...latest, board }))} lang={lang} className="font-medium text-foreground hover:underline">
           {latest.title}
         </Link>
       </p>
@@ -159,9 +160,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   );
   const getUpdates = await boardGetUpdates({ project: board.project, session, voter, back: boardPath(board) });
   // The header's primary: the board's own button text (Boards → Button), else "New post".
-  const postLabel = postButtonText(board);
+  const postLabel = postButtonText(board, t("newPost"));
   // A search that found nothing: it's the next step, and says so.
-  const newIdeaLabel = q && posts.length === 0 ? "Not here? Post it" : postLabel;
+  const newIdeaLabel = q && posts.length === 0 ? t("notHerePostIt") : postLabel;
   const sortIcons = { trending: FlameIcon, top: TrendingUpIcon, new: Clock3Icon, mine: UserIcon } as const;
   const search = (className?: string) => (
     <BoardSearch action={at(boardPath(board))} q={q ?? ""} className={className}>
@@ -184,7 +185,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     >
       <PortalPageHeader
         title={board.name}
-        description={board.description || BOARD_DESCRIPTION}
+        description={board.description || t("description")}
         // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
         // Below `lg` two rows (the rail's boards are on wide screens only): the board switcher and the status menu, then the
         // sorts; the status menu is in the page twice (one shown), so Tab and screen readers follow the rows. With one board,
@@ -207,18 +208,18 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             )}
             <div className={cn("shrink-0 max-lg:max-w-full max-lg:min-w-0", boards.length > 1 && "max-lg:basis-full")}>
               <FilterPills
-                label="Sort"
+                label={t("sort")}
                 current={tabHref(tab)}
                 // Signed in, Mine makes four: too wide for a 360px phone, so they wrap there too.
                 className="gap-y-2 max-lg:flex-wrap"
-                items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, name]) => {
+                items={[...TABS, ...(voter ? [["mine", "mine"] as const] : [])].map(([key, name]) => {
                   const Icon = sortIcons[key];
                   return {
                     href: tabHref(key),
                     title: (
                       <>
                         <Icon aria-hidden />
-                        {name}
+                        {t(name)}
                       </>
                     ),
                   };
@@ -241,7 +242,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         phoneActions={
           <>
             <Popover>
-              <PopoverTrigger aria-label="Search" render={<Button variant="outline" size="icon-lg" className="rounded-full" />}>
+              <PopoverTrigger aria-label={t("search")} render={<Button variant="outline" size="icon-lg" className="rounded-full" />}>
                 <SearchIcon aria-hidden />
               </PopoverTrigger>
               <PopoverContent align="end" className="w-[calc(100vw-2rem)] p-2">
@@ -254,7 +255,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       />
       <div className={cn("flex flex-col gap-6", (boards.length > 1 || shippedLine) && "lg:grid lg:grid-cols-[minmax(0,1fr)_15.5rem] lg:items-start lg:gap-14")}>
         <div className="flex min-w-0 flex-col gap-6">
-          <section aria-label="Ideas" className="flex flex-col gap-2">
+          <section aria-label={t("ideas")} className="flex flex-col gap-2">
             {/* Without JavaScript New idea can't open its dialog: the board's box in the page instead (signed out, it goes to sign in
               and back with the title; ShareIdeaBox). */}
             <noscript>
@@ -266,12 +267,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             </noscript>
             {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
             <p role="status" className="sr-only">
-              {q &&
-                (posts.length === 0
-                  ? `No ideas match "${q}"`
-                  : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
+              {q && (posts.length === 0 ? t("noMatchFor", { q }) : more ? t("moreMatchFor", { count: posts.length, q }) : t("matchesFor", { count: posts.length, q }))}
             </p>
             {posts.length > 0 && (
+              // The ideas are people's words (the portal's own carry theirs).
               <ul className="flex flex-col divide-y border-b">
                 {posts.map((post) => (
                   <li key={post.id} className="flex items-start gap-4 py-5 sm:gap-5 sm:py-[1.375rem]">
@@ -289,14 +288,16 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                         <span className="flex max-w-full min-w-0 items-center gap-2 whitespace-nowrap">
                           <PortalAvatar person={post.author} className="size-6 text-xs" />
                           <span className="min-w-0 truncate font-semibold text-foreground/80">{post.author.name}</span>
-                          <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
+                          <time dateTime={post.createdAt.toISOString()}>
+                            {timeAgo(post.createdAt, undefined, language)}
+                          </time>
                           {post.commentCount > 0 && (
                             // The icon and the number for the eye, "3 comments" for screen readers (a label on a plain span isn't read).
                             <span className="ml-1 inline-flex items-center gap-1">
                               <MessageSquareIcon aria-hidden className="size-3.5" />
-                              <span aria-hidden>{post.commentCount}</span>
+                              <span aria-hidden>{post.commentCount.toLocaleString(language)}</span>
                               <span className="sr-only">
-                                {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
+                                {t("comments", { count: post.commentCount })}
                               </span>
                             </span>
                           )}
@@ -317,16 +318,16 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           </section>
           {posts.length === 0 && (
             <EmptyState
-              action={q ? <NewIdeaLink>Post it as a new idea</NewIdeaLink> : undefined}
-              title={q ? "No ideas match" : mine ? "Nothing of yours yet" : statuses?.length === 1 ? "No posts with this status yet" : statuses ? "No ideas waiting" : "No feedback yet"}
+              action={q ? <NewIdeaLink>{t("postAsNewIdea")}</NewIdeaLink> : undefined}
+              title={t(q ? "noMatch" : mine ? "nothingOfYours" : statuses?.length === 1 ? "noPostsWithStatus" : statuses ? "noIdeasWaiting" : "noFeedbackYet")}
               description={
                 q
-                  ? "Try other words. Not here yet?"
+                  ? t("tryOtherWords")
                   : mine
-                    ? "Ideas you share or vote for on this board show up here."
+                    ? t("mineEmpty")
                     : statuses?.length === 1
-                      ? "Try another status."
-                      : "Be the first to share an idea."
+                      ? t("tryAnotherStatus")
+                      : t("beTheFirst")
               }
             />
           )}
@@ -336,7 +337,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               scroll={false}
               className={buttonVariants({ variant: "outline", className: "self-center" })}
             >
-              Load more
+              {t("loadMore")}
             </Link>
           ) : (
             // The end of the default list (what's still to come; shipped ones are in Recently shipped): how many, and the way
@@ -346,7 +347,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             !mine &&
             !first(searchParams.status) && (
               <p className="pt-2 text-center text-sm text-muted-foreground">
-                That&apos;s all {posts.length} ideas still to come in {board.name}. <NewIdeaLink>Share yours</NewIdeaLink>
+                {t.rich("thatsAll", {
+                  count: posts.length,
+                  board: board.name,
+                  link: (chunks) => <NewIdeaLink>{chunks}</NewIdeaLink>,
+                })}
               </p>
             )
           )}
@@ -354,7 +359,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           {/* A search that found some: the way to post it if it isn't among them. */}
           {q && posts.length > 0 && !more && (
             <p className="pt-2 text-center text-sm text-muted-foreground">
-              Not here? <NewIdeaLink>Post it</NewIdeaLink>
+              {t.rich("notHere", { link: (chunks) => <NewIdeaLink>{chunks}</NewIdeaLink> })}
             </p>
           )}
 
@@ -365,10 +370,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
 
         {/* A plain column (no card): the boards, the open one a neutral fill, and the latest shipped idea. */}
         {(boards.length > 1 || shippedLine) && (
-          <aside aria-label="About this board" className="hidden flex-col gap-7 lg:flex">
+          <aside aria-label={t("aboutBoard")} className="hidden flex-col gap-7 lg:flex">
             {boards.length > 1 && (
-              <nav aria-label="Boards" className="flex flex-col gap-1.5">
-                <h2 className="text-[0.8125rem] font-medium text-muted-foreground">Boards</h2>
+              <nav aria-label={t("boards")} className="flex flex-col gap-1.5">
+                <h2 className="text-[0.8125rem] font-medium text-muted-foreground">{t("boards")}</h2>
                 <ul className="flex flex-col gap-0.5">
                   {boards.map((other) => (
                     <li key={other.id}>
@@ -376,14 +381,16 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                         href={at(boardPath(other))}
                         aria-current={other.id === board.id ? "page" : undefined}
                         // Read out as "Bugs, 3 open ideas", not "Bugs3".
-                        aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
+                        aria-label={t("openIdeas", { board: other.name, count: other._count.posts })}
                         className={cn(
                           "-mx-2.5 flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.9375rem] font-medium transition-colors",
                           other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                         )}
                       >
-                        <span className="min-w-0 flex-1 break-words">{other.name}</span>
-                        <span className="text-[0.8125rem] tabular-nums">{other._count.posts}</span>
+                        <span className="min-w-0 flex-1 break-words">
+                          {other.name}
+                        </span>
+                        <span className="text-[0.8125rem] tabular-nums">{other._count.posts.toLocaleString(language)}</span>
                       </Link>
                     </li>
                   ))}
@@ -392,7 +399,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             )}
             {shippedLine && (
               <div className="flex flex-col gap-2">
-                <h2 className="text-[0.8125rem] font-medium text-muted-foreground">Recently shipped</h2>
+                <h2 className="text-[0.8125rem] font-medium text-muted-foreground">{t("recentlyShipped")}</h2>
                 {shippedLine}
               </div>
             )}

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
-import { lockProject } from "@tuti/jobs";
-import { isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
+import { lockProject, markProductSettingBehind, queueLanguageTranslations } from "@tuti/jobs";
+import { aiEnabled, isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
 import { forgetLanguages } from "../language-addresses";
@@ -21,6 +21,13 @@ const languageOutput = z
     instructions: z.string().describe("The team's instructions for translating into it").meta({ examples: ["Use du, not Sie."] }),
     productAvailable: z.boolean().describe("“Our product is available in <language>”: the team's own product has its words in this language").meta({ examples: [false] }),
     live: z.boolean().describe("Whether readers get it; until then only the team can open its pages").meta({ examples: [false] }),
+    articles: z
+      .object({
+        translated: z.number().int().describe("Articles with a version in it").meta({ examples: [42] }),
+        waiting: z.number().int().describe("Articles kept up to date in it that wait for a translation (being translated, or couldn't be)").meta({ examples: [0] }),
+        why: z.string().nullable().describe("Why some wait, when they couldn't be translated (tried again on their own)").meta({ examples: ["Out of credits"] }),
+      })
+      .describe("Its articles' translations"),
   })
   .meta({ id: "Language", description: "A language the portal is in besides its default one" });
 
@@ -32,6 +39,9 @@ const languagesOutput = z
   })
   .describe("The portal's languages");
 
+/** Why pages wait on a server with no AI set up: nothing translates them until it is. */
+export const NO_AI = "AI isn't set up on this server";
+
 const languageSelect = { code: true, automatic: true, instructions: true, productAvailable: true, live: true } as const;
 
 export async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
@@ -39,6 +49,16 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
     where: { id: projectId },
     select: { plan: true, language: true, sendToLanguage: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
   });
+  const [translated, waiting, reasons] = await Promise.all([
+    prisma.articleTranslation.groupBy({ by: ["language"], where: { projectId, publishedAt: { not: null }, article: { deletedAt: null } }, _count: true }),
+    prisma.articleTranslation.groupBy({
+      by: ["language"],
+      where: { projectId, automatic: true, article: { publishedAt: { not: null }, sample: false }, OR: [{ publishedAt: null }, { error: { not: null } }] },
+      _count: true,
+    }),
+    prisma.articleTranslation.groupBy({ by: ["language", "error"], where: { projectId, automatic: true, error: { not: null }, article: { publishedAt: { not: null }, sample: false } }, _count: true, orderBy: { _count: { id: "desc" } } }),
+  ]);
+  const count = (rows: { language: string; _count: number }[], code: string) => rows.find((row) => row.language === code)?._count ?? 0;
   // Past the plan's limit (after a downgrade) only the oldest within it are live; the rest are kept, offline until an upgrade.
   const limit = languageLimit(project.plan);
   const named = (code: string) => (isLanguage(code) ? { code, name: LANGUAGES[code].name } : null);
@@ -50,6 +70,8 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
       return language ? [{ ...rest, ...language }] : [];
     }).map(({ automatic, live, ...rest }, index) => ({
       ...rest,
+      // The most common reason first.
+      articles: { translated: count(translated, rest.code), waiting: count(waiting, rest.code), why: reasons.find((row) => row.language === rest.code)?.error ?? (count(waiting, rest.code) > 0 && !aiEnabled() ? NO_AI : null) },
       newPages: automatic ? ("automatic" as const) : ("manual" as const),
       // Counted among those offered only.
       live: live && (limit === null || index < limit - 1),
@@ -132,10 +154,13 @@ export const updateLanguages = defineOperation({
  * What `change` returns is checked as `languages.update`'s input.
  */
 export async function changeLanguages(projectId: string, change: (current: Language[]) => z.input<typeof updateInput>) {
+  // Languages added, and those whose "Our product is available in" changed: their articles are translated once saved.
+  const added: string[] = [];
+  const switched: string[] = [];
   await prisma.$transaction(async (tx) => {
     // One change at a time per project: the limit and the default language's rule hold for what's saved.
     await lockProject(tx, projectId);
-    const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } } });
+    const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true, live: true, productAvailable: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } } });
     const current = project.languages.map(({ code }) => code);
     const parsed = updateInput.safeParse(change(current.filter(isLanguage)));
     if (!parsed.success) {
@@ -172,12 +197,48 @@ export async function changeLanguages(projectId: string, change: (current: Langu
     const latest = await tx.projectLanguage.aggregate({ where: { projectId }, _max: { createdAt: true } });
     const now = Math.max(Date.now(), (latest._max.createdAt?.getTime() ?? 0) + 1);
     for (const [index, { code, newPages, ...rest }] of input.languages.entries()) {
-      const data = { ...(newPages && { automatic: newPages === "automatic" }), ...rest };
-      await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, createdAt: new Date(now + index), ...data }, update: data });
+      const saved = project.languages.find((language) => language.code === code);
+      const flipped = saved !== undefined && rest.productAvailable !== undefined && rest.productAvailable !== saved.productAvailable;
+      // Counted, so a translate job that started under the other setting writes nothing (see @tuti/jobs translateArticle).
+      const data = { ...(newPages && { automatic: newPages === "automatic" }), ...rest, ...(flipped && { productVersion: { increment: 1 } }) };
+      await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, createdAt: new Date(now + index), ...data, productVersion: 0 }, update: data });
+      if (!saved) added.push(code);
+      if (flipped) {
+        // Versions kept up to date are retranslated once it's saved (below); jobs already running write nothing.
+        await markProductSettingBehind(tx, projectId, code);
+        switched.push(code);
+      }
     }
   });
   // The proxy's copy catches up within its few seconds (server/language-addresses.ts).
   const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
   forgetLanguages(slug);
+  for (const code of [...added, ...switched]) {
+    await queueLanguageTranslations(projectId, code);
+  }
   return projectLanguages(projectId);
 }
+
+export const retranslateLanguage = defineOperation({
+  name: "languages.retranslate",
+  title: "Retranslate a language",
+  summary:
+    "Translate a language's articles kept up to date again, in the background: all of them anew (Retranslate), or with `waiting`, only those that couldn't be translated yet (Try again). Costs AI credits where they're on.",
+  method: "POST",
+  path: "/languages/{code}/retranslate",
+  scope: "write",
+  access: "admin",
+  errors: [404],
+  input: z.object({
+    code: code.describe("The language's code").meta({ examples: ["de"] }),
+    waiting: z.boolean().optional().describe("Only the articles waiting for a translation (Try again)"),
+  }),
+  output: z.object({ queued: z.number().int().describe("How many articles are being translated").meta({ examples: [42] }) }).describe("What was queued"),
+  run: async ({ projectId }, { code, waiting = false }) => {
+    const language = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code } }, select: { code: true } });
+    if (!language) {
+      throw new OperationError(404, "not_found", "The project doesn't have that language");
+    }
+    return { queued: await queueLanguageTranslations(projectId, code, { fresh: !waiting, waiting }) };
+  },
+});

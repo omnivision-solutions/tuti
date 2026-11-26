@@ -24,6 +24,7 @@ import { imageUploaded } from "./images";
 import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
+import { retryArticleTranslations, translateArticle } from "./article-translation";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";
@@ -57,7 +58,8 @@ export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
-export { DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, replyTranslation, sameLanguage, translateMessage, translationPending, translationFailed, translationSettings } from "./conversation-translation";
+export { behindKey, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
+export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
@@ -102,6 +104,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   conversationMessage,
   conversationPush,
   translateMessage,
+  translateArticle,
+  retryArticleTranslations: () => retryArticleTranslations(),
   checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,
   checkEmailDomains,

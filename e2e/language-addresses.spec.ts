@@ -20,7 +20,8 @@ test("a reader opens the portal's German addresses while German is live; an offl
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr" }] }, "PATCH");
+  // Manual for new pages: this journey is about addresses, and nothing here asks the model for translations.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", newPages: "manual" }] }, "PATCH");
   await api("/changelog", { title: "CSV export is here" });
   await api("/changelog/1/publish", {});
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
@@ -55,7 +56,7 @@ test("a reader opens the portal's German addresses while German is live; an offl
   const langOf = (locator: import("@playwright/test").Locator) => locator.evaluate((element) => element.closest("[lang]")?.getAttribute("lang"));
   await reader.goto("/de/feedback/feature-requests");
   expect(await langOf(reader.getByRole("link", { name: "Dark mode" }))).toBe("en");
-  expect(await langOf(reader.getByRole("main").locator("[aria-label*=\"vote\" i]").first())).toBe("de");
+  expect(await langOf(reader.getByRole("main").locator("[aria-label*=\"Abstimmen\"]").first())).toBe("de");
   // Posting signed out comes back to the board in German after signing in, and so does the account page.
   await expect(reader.locator('input[type="hidden"][name="next"]').first()).toHaveValue("/de/feedback/feature-requests");
   await reader.goto("/de/docs");

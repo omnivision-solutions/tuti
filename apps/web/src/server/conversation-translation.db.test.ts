@@ -10,6 +10,7 @@ import { mailSubdomain } from "./inbound";
 import * as inbox from "./inbox";
 import { addMessage, announceUserMessage, createConversation, getConversation, listConversations, replyToConversation, translateReply } from "./operations/conversations";
 import { OperationError } from "./operations/define";
+import { listening, notifyInboxNow, subscribeInbox } from "./live";
 import { call } from "./operations/run";
 import { getSupportSettings, updateSupportSettings } from "./operations/support";
 import { summarizeConversation } from "./operations/support-ai";
@@ -336,8 +337,28 @@ test("the app: Try again translates a failed message again; the composer preview
   const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
   expect(failed.translationError).not.toBeNull();
 
-  // Try again: asked again, translated this time.
+  // Try again: open Inbox pages (other teammates' too) hear of it at once, before its job runs (held back here).
+  await listening();
+  const heard: number[] = [];
+  const last: number[] = [];
+  const stops = [
+    subscribeInbox((change) => change.projectId === project.id && change.conversationId === conversation.id, () => heard.push(1)),
+    subscribeInbox((change) => change.projectId === project.id && change.conversationId === "last", () => last.push(1)),
+  ];
+  const held = vi.spyOn(handlers, "translateMessage").mockResolvedValueOnce({ skipped: "held" } as never);
+  try {
+    expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
+    // NOTIFYs arrive in order: once the marker's heard, so is the retry's.
+    await notifyInboxNow({ projectId: project.id, conversationId: "last", userId: null, visitorHash: null });
+    await vi.waitFor(() => expect(last).toHaveLength(1));
+    expect(heard.length).toBeGreaterThan(0);
+  } finally {
+    held.mockRestore();
+    stops.forEach((stop) => stop());
+  }
+  // Then translated, asked again.
   model.reply(translated("I haven't been able to sign in since yesterday."));
+  await prisma.conversationMessage.update({ where: { id: failed.id }, data: { translationError: "The translation provider didn't answer" } });
   expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({
     teamText: "I haven't been able to sign in since yesterday.",

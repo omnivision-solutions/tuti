@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { brandFonts } from "@tuti/ui/brand-fonts";
 
+import { MESSAGES } from "@tuti/shared/messages";
+
+import { PortalIntl } from "@/components/portal-language";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { languageFrom } from "@/lib/language-addresses";
@@ -21,7 +24,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang={language ?? "en"} className={`${brandFonts} h-full antialiased`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
+          {/* The portal's messages in English wherever no page gives the reader's (the app, the widget): components shared
+              with the portal use them. The portal's layout gives its own (PortalIntl). */}
+          <PortalIntl language="en" teamLanguage="en" messages={MESSAGES.en}>
+            {children}
+          </PortalIntl>
           {/* Top center: the bottom right is the widget launcher's (components/app-widget.tsx), and the top right has pages' actions. */}
           <Toaster position="top-center" />
         </ThemeProvider>
