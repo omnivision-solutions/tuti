@@ -14,10 +14,11 @@ export async function generateImage(
   let image: LastingImage | undefined;
   const result = await asTeam(projectSlug, "Only the project's team can make images", async (context) => {
     image = await call(generateImageOperation, context, {
-      prompt: String(input.prompt),
-      width: Number(input.width),
-      height: Number(input.height),
-      references: input.references?.map(String),
+      // As sent: the operation's own schema refuses what isn't a prompt, a size or ids (a missing prompt isn't "undefined").
+      prompt: input.prompt,
+      width: input.width,
+      height: input.height,
+      references: input.references,
     });
   });
   return image ? { image } : result;

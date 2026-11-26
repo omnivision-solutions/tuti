@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { generateImage as generateAction } from "@/server/images";
-import { generateImageOperation } from "@/server/operations/images";
+import { AI_IMAGES_PER_HOUR, generateImageOperation } from "@/server/operations/images";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -55,7 +55,7 @@ test("an image is made in the closest ratio and resolution, cropped to exactly t
   expect(image).toEqual({ id: media.id, url: expect.stringContaining(`/api/media/${media.id}/480.webp`), width: 1600, height: 840 });
   const stored = await sharp(Buffer.from(await mediaStorage()!.get(imageKey(media.id, 1600)))).metadata();
   expect([stored.width, stored.height]).toEqual([1600, 840]);
-  // 16:9 is the closest ratio to 1600:840, and 1K's 1365×768 can't hold it: 2K. Its top and bottom are cropped off, so the prompt says.
+  // 16:9 is the closest ratio to 1600:840, and 1K's 1376×768 can't hold it: 2K. Its top and bottom are cropped off, so the prompt says.
   expect(model.images).toEqual([
     {
       model: DEFAULT_IMAGE_MODEL,
@@ -97,6 +97,22 @@ test("references are the project's own images, sent in order once each; another 
   await expect(generate({ width: 400, height: 400, references: [red, theirs] })).rejects.toMatchObject({ status: 404, code: "not_found" });
   await expect(generate({ width: 400, height: 400, references: ["nope"] })).rejects.toMatchObject({ status: 404 });
   expect(model.images).toHaveLength(1);
+  // A prompt missing from what was sent is refused as one, not made from the word "undefined".
+  actAs(owner);
+  expect(await generateAction(project.slug, { width: 320, height: 200 } as unknown as Parameters<typeof generateAction>[1])).toEqual({ error: "Describe the image" });
+  expect(model.images).toHaveLength(1);
+});
+
+test("images asked for at once are counted before the model is asked: past the project's hourly cap, a 429 and no model request", async () => {
+  // Two left this hour.
+  const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+  await prisma.project.update({ where: { id: project.id }, data: { aiImagesHour: hour, aiImagesCount: AI_IMAGES_PER_HOUR - 2 } });
+  const results = await Promise.allSettled(Array.from({ length: 5 }, () => generate({ width: 128, height: 128 })));
+  expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
+  expect(results.filter((result) => result.status === "rejected").map((result) => (result as PromiseRejectedResult).reason)).toEqual(
+    Array.from({ length: 3 }, () => expect.objectContaining({ status: 429, code: "rate_limited" })),
+  );
+  expect(model.images).toHaveLength(2);
 });
 
 test("the image is recorded as `images` usage with its cost and charged in credits; out of credits, it's refused without asking", async () => {
@@ -167,4 +183,20 @@ test("the app's action: the image for a teammate, an error for anyone else", asy
   actAs(outsider);
   expect(await generateAction(project.slug, { prompt: "A lighthouse", width: 320, height: 200 })).toEqual({ error: "Only the project's team can make images" });
   expect(model.images).toHaveLength(1);
+  // A prompt missing from what was sent is refused as one, not made from the word "undefined".
+  actAs(owner);
+  expect(await generateAction(project.slug, { width: 320, height: 200 } as unknown as Parameters<typeof generateAction>[1])).toEqual({ error: "Describe the image" });
+  expect(model.images).toHaveLength(1);
+});
+
+test("images asked for at once are counted before the model is asked: past the project's hourly cap, a 429 and no model request", async () => {
+  // Two left this hour.
+  const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+  await prisma.project.update({ where: { id: project.id }, data: { aiImagesHour: hour, aiImagesCount: AI_IMAGES_PER_HOUR - 2 } });
+  const results = await Promise.allSettled(Array.from({ length: 5 }, () => generate({ width: 128, height: 128 })));
+  expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
+  expect(results.filter((result) => result.status === "rejected").map((result) => (result as PromiseRejectedResult).reason)).toEqual(
+    Array.from({ length: 3 }, () => expect.objectContaining({ status: 429, code: "rate_limited" })),
+  );
+  expect(model.images).toHaveLength(2);
 });

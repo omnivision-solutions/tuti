@@ -425,7 +425,28 @@ export const imageModel = () => config().ai.imageModel;
 /** The aspect ratios it makes (OpenRouter's image_config.aspect_ratio). */
 export const IMAGE_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"] as const;
 
-/** Its resolutions (image_config.image_size): 1K is about a 1024×1024 image's pixels in its ratio (16:9 came back 1376×768), 2K and 4K twice and four times as wide and tall. */
+/**
+ * What the model makes at 1K in each ratio, wide × high (Google's table for Gemini's image models, the default's family);
+ * 2K and 4K are twice and four times as wide and tall.
+ */
+const IMAGE_1K: Record<(typeof IMAGE_RATIOS)[number], readonly [number, number]> = {
+  "1:1": [1024, 1024],
+  "1:4": [512, 2048],
+  "1:8": [384, 3072],
+  "2:3": [848, 1264],
+  "3:2": [1264, 848],
+  "3:4": [896, 1200],
+  "4:1": [2048, 512],
+  "4:3": [1200, 896],
+  "4:5": [928, 1152],
+  "5:4": [1152, 928],
+  "8:1": [3072, 384],
+  "9:16": [768, 1376],
+  "16:9": [1376, 768],
+  "21:9": [1584, 672],
+};
+
+/** Its resolutions (image_config.image_size), with how much larger than 1K each side is. */
 const IMAGE_SIZES = [
   ["1K", 1],
   ["2K", 2],
@@ -449,8 +470,9 @@ export function imageShape(width: number, height: number): { aspectRatio: (typeo
   const distance = (name: string) => Math.abs(Math.log(ratioOf(name) / wanted));
   const aspectRatio = IMAGE_RATIOS.reduce((best, name) => (distance(name) < distance(best) ? name : best));
   const ratio = ratioOf(aspectRatio);
-  // The model's image, about 1024² pixels a step in its ratio; cropped to width:height, it keeps all of one side.
-  const holds = (scale: number) => Math.min((1024 * scale * Math.sqrt(ratio)) / width, (1024 * scale) / Math.sqrt(ratio) / height) >= 1;
+  // The model's image, cropped to width:height, keeps all of one side: it holds the size if neither side is short of it.
+  const [made1kWide, made1kHigh] = IMAGE_1K[aspectRatio];
+  const holds = (scale: number) => made1kWide * scale >= width && made1kHigh * scale >= height;
   const imageSize = (IMAGE_SIZES.find(([, scale]) => holds(scale)) ?? IMAGE_SIZES[2])[0];
   const kept = Math.min(ratio, wanted) / Math.max(ratio, wanted);
   return { aspectRatio, imageSize, cropped: 1 - kept <= NOTABLE_CROP ? null : wanted > ratio ? "top and bottom" : "left and right" };

@@ -4,6 +4,24 @@ import { crc32, deflateSync } from "node:zlib";
 
 import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "./openai-fake";
 
+/** What Gemini's image models make at 1K in each ratio, wide × high (Google's table), as the fake answers. */
+const GEMINI_1K: Record<string, [number, number]> = {
+  "1:1": [1024, 1024],
+  "1:4": [512, 2048],
+  "1:8": [384, 3072],
+  "2:3": [848, 1264],
+  "3:2": [1264, 848],
+  "3:4": [896, 1200],
+  "4:1": [2048, 512],
+  "4:3": [1200, 896],
+  "4:5": [928, 1152],
+  "5:4": [1152, 928],
+  "8:1": [3072, 384],
+  "9:16": [768, 1376],
+  "16:9": [1376, 768],
+  "21:9": [1584, 672],
+};
+
 export const FAKE_MODEL_KEY = "sk-or-test-fake";
 
 /**
@@ -91,7 +109,7 @@ export type ModelFake = {
   fail(status: number): void;
   /**
    * Every image request, in order. Each is answered, unscripted, with a real PNG in its aspect ratio and resolution
-   * (1K about 1024² pixels: 1024×1024 at 1:1, 1365×768 at 16:9; 2K and 4K twice and four times as wide and tall), costing FAKE_IMAGE_COST.
+   * (1K as Gemini's table has it: 1024×1024 at 1:1, 1376×768 at 16:9; 2K and 4K twice and four times as wide and tall), costing FAKE_IMAGE_COST.
    */
   images: ImageRequest[];
   /** The next image request fails with this HTTP status, or without one gets a reply with no image in it (still paid for). */
@@ -296,8 +314,8 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
           }
           return send(200, { id: `fake-image-${images.length}`, model: body.model, choices: [{ index: 0, message: { role: "assistant", content: "I can't draw that." } }], usage: { prompt_tokens: prompt.length, completion_tokens: 5, cost: 0.001 } });
         }
-        const side = 1024 * scale;
-        const png = solidPng(Math.round(side * Math.sqrt(w / h)), Math.round(side / Math.sqrt(w / h)));
+        const [wide, high] = GEMINI_1K[String(ratio)] ?? [Math.round(1024 * Math.sqrt(w / h)), Math.round(1024 / Math.sqrt(w / h))];
+        const png = solidPng(wide * scale, high * scale);
         return send(200, {
           id: `fake-image-${images.length}`,
           object: "chat.completion",

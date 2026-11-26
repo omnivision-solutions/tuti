@@ -23,6 +23,28 @@ export const MIN_GENERATED_SIDE = 64;
 /** The size references are sent at: enough for the model to work from, a fraction of a full-size one's bytes. */
 const REFERENCE_WIDTH = 1600;
 
+/** AI images a project may ask for per clock hour, all of its team and its API keys together. */
+export const AI_IMAGES_PER_HOUR = 60;
+
+/**
+ * Counts an image against the project's hourly cap before the model is asked, or refuses it (429): atomic, so images
+ * asked for at once each get their own count and can't all get past the upload limit and the credits check, which
+ * only see images already kept and charged.
+ */
+async function countAiImage(projectId: string) {
+  // ponytail: a fixed clock hour, as changelog's AI edits: up to twice the cap fits across an hour's edge.
+  const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+  const [row] = await prisma.$queryRaw<{ count: number }[]>`
+    UPDATE project
+    SET "aiImagesCount" = CASE WHEN "aiImagesHour" = ${hour} THEN "aiImagesCount" + 1 ELSE 1 END,
+        "aiImagesHour" = ${hour}
+    WHERE id = ${projectId}
+    RETURNING "aiImagesCount" AS count`;
+  if (!row || row.count > AI_IMAGES_PER_HOUR) {
+    throw new OperationError(429, "rate_limited", `Your team has made ${AI_IMAGES_PER_HOUR} AI images this hour. Try again later.`);
+  }
+}
+
 const noRoom = () =>
   new OperationError(409, "no_room", "The image can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour");
 
@@ -41,7 +63,7 @@ export const generateImageOperation = defineOperation({
   path: "/images/generate",
   scope: "write",
   access: "team",
-  errors: [402, 404, 409, 502, 503],
+  errors: [402, 404, 409, 429, 502, 503],
   input: z.object({
     prompt: z
       .string({ error: "Describe the image" })
@@ -74,10 +96,12 @@ export const generateImageOperation = defineOperation({
       throw new OperationError(404, "not_found", "One of the images to work from isn't in this project");
     }
     // Before paying for an image that couldn't be kept (storeImage checks again: only a race between them pays for nothing).
-    // The PNG kept is at most its pixels' bytes uncompressed.
-    if (!(await roomForImage(projectId, uploaderOf(actor), width * height * 3 + 1024))) {
+    // The PNG kept is at most its pixels' bytes uncompressed, four a pixel if it keeps transparency, a filter byte a row,
+    // and deflate's own overhead (well under 1%).
+    if (!(await roomForImage(projectId, uploaderOf(actor), Math.ceil(height * (width * 4 + 1) * 1.01) + 1024))) {
       throw noRoom();
     }
+    await countAiImage(projectId);
     const meter = await imagesMeter(projectId).catch((error: unknown) => {
       throw error instanceof OutOfCredits ? new OperationError(402, "no_credits", NO_CREDITS) : error;
     });

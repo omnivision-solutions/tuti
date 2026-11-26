@@ -263,6 +263,8 @@ test("an image's shape: the closest aspect ratio, the smallest resolution that h
   // A changelog cover, 1600×840 (1.9): 16:9 is closest, with 7% cropped off the top and bottom; 1300×720, 2%, isn't notable.
   expect(imageShape(1600, 840)).toEqual({ aspectRatio: "16:9", imageSize: "2K", cropped: "top and bottom" });
   expect(imageShape(1300, 720)).toEqual({ aspectRatio: "16:9", imageSize: "1K", cropped: null });
+  // Google's own sizes, not a constant area: 3:2 at 1K is 1264×848, which holds 1260×840.
+  expect(imageShape(1260, 840)).toEqual({ aspectRatio: "3:2", imageSize: "1K", cropped: null });
   // Compared in log space: 2.2 is nearer 21:9 (2.33) than 16:9 (1.78).
   expect(imageShape(2200, 1000).aspectRatio).toBe("21:9");
   // Narrower and wider than any ratio: the most extreme, cropped to the size's shape (1:8's 1K is 362×2896).
