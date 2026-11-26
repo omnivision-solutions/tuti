@@ -5,7 +5,8 @@ import { handlers } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { AUTOMATED_REPLIES_PER_HOUR } from "@/lib/workflows";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { widgetToken } from "@/lib/widget-session";
+import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
@@ -13,10 +14,11 @@ import { request } from "@/test/next-headers";
 import { escalateDocs } from "./docs-readers";
 import { handOver } from "./inbox-path";
 import { mailSubdomain, supportAddress } from "./inbound";
-import { createConversation, replyToConversation } from "./operations/conversations";
+import { addMessage, createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { createWorkflow } from "./operations/workflows";
 import { upsertProjectUser } from "./project-users";
+import { widgetConversation, widgetStartConversation } from "./widget-inbox";
 
 /**
  * "About to go to a person" (docs/plan.md, Inbox automation, W11): every conversation the AI doesn't answer (nothing
@@ -52,6 +54,7 @@ async function setup() {
   const conversation = (number: number) => prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });
   return {
     owner,
+    admin,
     project,
     projectId,
     to,
@@ -197,4 +200,40 @@ test("a set reply is emailed only where the address is proven, as an automated r
   expect(sent).toHaveLength(1);
   expect(sent[0]!.headers["auto-submitted"]).toBe("auto-replied");
   expect(mailbox.emails.filter((email) => email.to.includes("e2e-unproven@example.com"))).toEqual([]);
+});
+
+test("a set reply seen in the widget isn't emailed", async () => {
+  const { project, projectId, workflow, state } = await setup();
+  await workflow("Hello", [{ kind: "reply_text", text: "Thanks, we got it." }, { kind: "dont_hand_over" }]);
+  const sam = await upsertProjectUser(projectId, "sam-1", { name: "Sam", email: "e2e-sam-seen@example.com" });
+  const widget = { token: widgetToken(projectId, sam) };
+  expect(await widgetStartConversation(project.slug, widget, "Hello")).toEqual({ number: 1 });
+  expect((await state(1)).replies).toEqual(["Thanks, we got it."]);
+  // Read there: not emailed a minute on.
+  expect(await widgetConversation(project.slug, widget, 1)).not.toHaveProperty("error");
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${projectId}`;
+  await handlers.sendConversationReplies({}, log);
+  expect(mailbox.emails.filter((email) => email.to.includes("e2e-sam-seen@example.com"))).toEqual([]);
+});
+
+test("a handover that fails gives the conversation to the team, so its user's message is told", async () => {
+  const { projectId, conversation, workflow, start, told } = await setup();
+  await workflow("Keep", [{ kind: "dont_hand_over" }]);
+  expect(await start("free-1")).toBe(1);
+  const { id, handledBy } = await conversation(1);
+  expect(handledBy).toBe("AI");
+  const message = await addMessage(id, projectId, { author: "USER", authorId: null, channel: "API", body: "Anyone?" });
+  failTransaction(new Error("connection reset"));
+  expect(await handOver(projectId, id, message.id, "ai_off", { onlyFromAi: true })).toEqual({ handedOver: "ai_off", changed: { handledBy: "TEAM" } });
+  expect((await conversation(1)).handledBy).toBe("TEAM");
+  expect(await told()).toEqual(["conversation.created"]);
+});
+
+test("Not spam on what the filter filed answers with the conversation as its handover left it", async () => {
+  const { projectId, admin, to, workflow, state } = await setup();
+  await workflow("Keep", [{ kind: "dont_hand_over" }]);
+  await prisma.spamSender.create({ data: { projectId, sender: "spam.example", blocked: true, byAdmin: true } });
+  await postEmail(rawEmail({ from: "e2e-kim@spam.example", to }), { recipient: to });
+  expect(await call(updateConversation, admin, { number: 1, spam: false })).toMatchObject({ spam: false, handledBy: "ai" });
+  expect((await state(1)).handledBy).toBe("AI");
 });

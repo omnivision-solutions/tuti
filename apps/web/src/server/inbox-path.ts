@@ -225,8 +225,8 @@ type Handed = { handedOver: HandoverReason | null; changed: { priority?: boolean
  *
  * One transaction holding the conversation, as runWorkflows: the workflows' changes, the set reply, its owner, the
  * Activity rows and the fact that it ran for this message (`handedOverAt`), so running it again does nothing. The caller
- * tells the team (whose email and push skip one the AI has) and the webhooks. Never throws: a handover that fails leaves
- * the conversation as it was, which for a new one is the team's, so it's never left with nobody told.
+ * tells the team (whose email and push skip one the AI has) and the webhooks. Never throws: a handover that fails gives
+ * the conversation to the team (a new one is the team's already), so it's never left with nobody told.
  */
 export async function handOver(projectId: string, conversationId: string, messageId: string, reason: HandoverReason, { onlyFromAi = false } = {}): Promise<Handed> {
   try {
@@ -276,11 +276,18 @@ export async function handOver(projectId: string, conversationId: string, messag
         ...(checked.length > 0 ? [{ kind: "workflows_ran" as const, actor: "workflow" as const, details: { trigger: "about_to_hand_over", reason: why, workflows: checked } }] : []),
         ...(held.keep ? [] : [{ kind: "handed_over" as const, actor: "tuti" as const, details: { reason: why } }]),
       ]);
-      await notifyInbox(tx, { projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
+      // Open pages hear of what they show changing: a workflow's run, a reply, a new owner. A conversation that was the
+      // team's and stays so (every new one with no workflows) changed nothing a list shows.
+      if (checked.length > 0 || held.reply !== undefined || handledBy !== conversation.handledBy) {
+        await notifyInbox(tx, { projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
+      }
       return { handedOver: held.keep ? null : why, changed: { priority: held.priority, handledBy } };
     });
   } catch (error) {
     log.error("Handing a conversation over failed", { projectId, conversationId, messageId, reason, error });
-    return { handedOver: null, changed: {} };
+    // To the team all the same, so its user's message is never left with nobody told (nothing answers for the AI). A new
+    // conversation is the team's already.
+    const { count } = await prisma.conversation.updateMany({ where: { id: conversationId, handledBy: "AI", spam: false }, data: { handledBy: "TEAM" } }).catch(() => ({ count: 0 }));
+    return { handedOver: count > 0 ? reason : null, changed: count > 0 ? { handledBy: "TEAM" } : {} };
   }
 }

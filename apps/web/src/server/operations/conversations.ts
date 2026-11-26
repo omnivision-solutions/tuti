@@ -1591,7 +1591,8 @@ export const updateConversation = defineOperation({
     // (its workflows, then told), once (its reason goes).
     let released = false;
     // Whether a workflow marked it priority on the way.
-    let priority: boolean | undefined;
+    // As the path left it, where Not spam ran it (marked priority, kept with the AI).
+    let path: { priority: boolean; handledBy: string } | undefined;
     // Marked Not spam: what its user wrote while it was in Spam, when nobody was told, oldest first.
     let unheard: MessageRow[] = [];
     const updated = await prisma.$transaction(async (tx) => {
@@ -1708,7 +1709,7 @@ export const updateConversation = defineOperation({
       // told to the team too. The rest, to webhooks: written in Spam, they fire no trigger of their own.
       const first = released ? unheard.shift() : undefined;
       if (first) {
-        ({ priority } = await inboxPath(projectId, { started: updated, message: first }));
+        path = await inboxPath(projectId, { started: updated, message: first });
       }
       for (const message of unheard) {
         await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
@@ -1716,7 +1717,7 @@ export const updateConversation = defineOperation({
     } catch (error) {
       log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
     }
-    return { ...view(updated, await projectSlug(projectId)), ...(priority !== undefined && { priority }), ...(notice && { notice }) };
+    return { ...view(updated, await projectSlug(projectId)), ...(path && { priority: path.priority, handledBy: path.handledBy }), ...(notice && { notice }) };
   },
 });
 

@@ -99,7 +99,7 @@ export const ACTIONS: Record<WorkflowAction["kind"], { label: string; hint: stri
   },
   reply_text: {
     label: "Reply with set text",
-    hint: "Sent as the AI, once per conversation.",
+    hint: "Sent as the AI, at most once per conversation.",
     triggers: ["about_to_hand_over"],
     deciding: false,
     did: "replied",
