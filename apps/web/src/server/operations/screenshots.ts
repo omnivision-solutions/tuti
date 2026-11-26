@@ -256,6 +256,15 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   if (signIn === "LINK" && !signInLink) {
     throw new OperationError(400, "invalid_input", `Enter the sign-in link${moved}`);
   }
+  // A domain added sends the browser, and the password typed there, somewhere new: as when the app moves, only with the
+  // secret sent again, so whoever adds one (another admin, a key) must know it. Taking domains off needs nothing.
+  const added = (input.otherDomains ?? []).filter((domain) => !(saved?.otherDomains ?? []).includes(domain));
+  if (added.length > 0 && signIn === "PASSWORD" && password && !input.password) {
+    throw new OperationError(400, "invalid_input", "Enter the password again to add another domain: it can be typed there");
+  }
+  if (added.length > 0 && signIn === "LINK" && signInLink && !input.signInLink) {
+    throw new OperationError(400, "invalid_input", "Enter the sign-in link again to add another domain: the browser can go there with it");
+  }
   const data = {
     appUrl,
     signIn,

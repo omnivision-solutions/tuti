@@ -724,7 +724,7 @@ test("a run's retry uses the policy its first try made: none left unused at Brow
 
 test("the other domains the team lists are opened too: kept in the settings, in the policy, and checked as domains", async () => {
   await setUp();
-  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["Acme.Auth0.com", "cdn.example.net", "acme.auth0.com"] })).toMatchObject({ otherDomains: ["acme.auth0.com", "cdn.example.net"] });
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["Acme.Auth0.com", "cdn.example.net", "acme.auth0.com"], password: PASSWORD })).toMatchObject({ otherDomains: ["acme.auth0.com", "cdn.example.net"] });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   const policy = browserUse.policies.get((browserUse.runs.at(-1)!.body.browserSettings as { networkPolicyId: string }).networkPolicyId)!;
   expect(policy.allow.domains).toEqual(["acme.auth0.com", "cdn.example.net", "example.com"]);
@@ -746,7 +746,7 @@ test("the password is typed only on hosts named: the app's own and those listed,
   expect(binding()[0]!.allowedDomains).toEqual(["app.example.com"]);
   expect(policy().allow.domains).toEqual(["example.com"]);
   // Listed, a sign-in page on another host gets it.
-  await call(updateScreenshotSettings, as(), { otherDomains: ["login.example.com", "acme.auth0.com"] });
+  await call(updateScreenshotSettings, as(), { otherDomains: ["login.example.com", "acme.auth0.com"], password: PASSWORD });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect(binding()).toEqual([{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["acme.auth0.com", "app.example.com", "login.example.com"] }]);
   expect(policy().allow.domains).toEqual(["acme.auth0.com", "example.com", "login.example.com"]);
@@ -757,7 +757,7 @@ test("a shared suffix isn't another domain the browser may open: it'd open every
   for (const suffix of ["vercel.app", "github.io", "co.uk"]) {
     await expect(call(updateScreenshotSettings, as(), { otherDomains: [suffix] })).rejects.toMatchObject({ status: 400, message: `${suffix} is shared by many sites: enter your own domain under it, like acme.${suffix}` });
   }
-  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["acme.vercel.app"] })).toMatchObject({ otherDomains: ["acme.vercel.app"] });
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["acme.vercel.app"], password: PASSWORD })).toMatchObject({ otherDomains: ["acme.vercel.app"] });
 });
 
 test("a run refused with a 404 for another reason keeps its policy: only one Browser Use no longer has is made again", async () => {
@@ -784,4 +784,28 @@ test("a policy made while another run saved one keeps the saved one: the made on
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect((browserUse.runs.at(-1)!.body.browserSettings as { networkPolicyId: string }).networkPolicyId).toBe(other);
   expect([...browserUse.policies.values()].filter((policy) => policy.name === `Tuti screenshots ${project.id}`)).toHaveLength(1);
+});
+
+test("adding another domain while a password or sign-in link is saved needs it sent again; taking one off doesn't", async () => {
+  await setUp();
+  // Another admin, or a key, that doesn't know the password can't send it somewhere new.
+  await expect(call(updateScreenshotSettings, as(), { otherDomains: ["login.attacker.example"] })).rejects.toMatchObject({
+    status: 400,
+    message: "Enter the password again to add another domain: it can be typed there",
+  });
+  expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ otherDomains: [] });
+  // With it: saved, and the password bound there.
+  await call(updateScreenshotSettings, as(), { otherDomains: ["acme.auth0.com"], password: PASSWORD });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect((browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[])[0]!.allowedDomains).toEqual(["acme.auth0.com", "app.example.com"]);
+  // The same list, or less: nothing asked.
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["acme.auth0.com"], about: "Close the tour." })).toMatchObject({ otherDomains: ["acme.auth0.com"] });
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: [] })).toMatchObject({ otherDomains: [] });
+  // A sign-in link the same.
+  await call(updateScreenshotSettings, as(), { signIn: "link", signInLink: LINK });
+  await expect(call(updateScreenshotSettings, as(), { otherDomains: ["evil.example.net"] })).rejects.toMatchObject({
+    status: 400,
+    message: "Enter the sign-in link again to add another domain: the browser can go there with it",
+  });
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["evil.example.net"], signInLink: LINK })).toMatchObject({ otherDomains: ["evil.example.net"] });
 });
