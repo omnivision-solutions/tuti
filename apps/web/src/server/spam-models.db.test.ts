@@ -1,7 +1,8 @@
 import { prisma } from "@tuti/db";
-import { creditBalance, inboxDueToken } from "@tuti/jobs";
+import { creditBalance, inboxDue, inboxDueToken } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { configFile, type ModelFake, startModelFake } from "@tuti/testkit";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 // What the path leaves to `after`: kept here to run by hand, as Next.js would once the request has answered.
 const later = vi.hoisted(() => [] as (() => unknown)[]);
@@ -433,6 +434,53 @@ test("the job's endpoint runs only with the server's token", async () => {
   expect((await due(request("not-the-token"))).status).toBe(401);
   const response = await due(request(inboxDueToken()));
   expect([response.status, await response.json()]).toEqual([200, { checked: 0 }]);
+});
+
+test("the worker's minute: without the web app's address or the secret it says so only while a check is due; with them it runs the endpoint with its token", async () => {
+  const { mail, conversation, notes } = await setup();
+  await nothingElseDue();
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  onTestFinished(() => logged.mockRestore());
+  // Nothing due: nothing to say each minute, whichever is missing.
+  for (const missing of ["APP_URL", "BETTER_AUTH_SECRET"]) {
+    vi.stubEnv("APP_URL", "https://tuti.example");
+    vi.stubEnv(missing, "");
+    expect(await inboxDue()).toEqual({ skipped: true });
+  }
+  expect(logged).not.toHaveBeenCalled();
+
+  // A check left due: said, each minute it's still there.
+  const number = await mail();
+  await prisma.conversation.update({ where: { id: (await conversation(number)).id }, data: { pathDueAt: new Date(Date.now() - 1000) } });
+  for (const missing of ["APP_URL", "BETTER_AUTH_SECRET"]) {
+    vi.stubEnv("APP_URL", "https://tuti.example");
+    vi.stubEnv("BETTER_AUTH_SECRET", process.env.BETTER_AUTH_SECRET || "test-secret-at-least-32-characters-long");
+    vi.stubEnv(missing, "");
+    logged.mockClear();
+    expect(await inboxDue()).toEqual({ skipped: true });
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("set APP_URL and BETTER_AUTH_SECRET on the worker"));
+  }
+
+  // With both: it posts to the web app's /api/inbox/due with the token, which runs the check.
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  vi.stubEnv("BETTER_AUTH_SECRET", process.env.BETTER_AUTH_SECRET || "test-secret-at-least-32-characters-long");
+  const realFetch = globalThis.fetch;
+  const sent: { url: string; authorization: string | null }[] = [];
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (!url.startsWith("https://tuti.example/")) {
+      // The model fake, which the check asks.
+      return realFetch(input, init);
+    }
+    const request = new Request(url, init);
+    sent.push({ url, authorization: request.headers.get("authorization") });
+    return due(request);
+  });
+  onTestFinished(() => void vi.unstubAllGlobals());
+  model.decide({ spam: 0.95 });
+  expect(await inboxDue()).toEqual({ checked: 1 });
+  expect(sent).toEqual([{ url: "https://tuti.example/api/inbox/due", authorization: `Bearer ${inboxDueToken()}` }]);
+  expect(await notes(number)).toEqual([`${NOTE}the decision model was 95% sure it's spam.`]);
 });
 
 test("signals are hints in words, and none for ordinary mail", () => {
