@@ -1,7 +1,7 @@
 "use client";
 
 import { MoreHorizontalIcon } from "lucide-react";
-import { type ReactNode, useActionState, useEffect, useRef, useTransition } from "react";
+import { type ReactNode, useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
@@ -38,6 +38,8 @@ export function SpamSettings({
   maxPhrase: number;
   maxGuidance: number;
 }) {
+  // Decided once per visit: removing the last entry leaves the card, with its empty line and the keyboard's focus in it.
+  const [showAllowed] = useState(settings.allowed.length > 0);
   return (
     <>
       <EntryList
@@ -54,7 +56,7 @@ export function SpamSettings({
         remove={(entry) => removeSpamSender(projectSlug, entry)}
       />
       {/* Not offered for new entries; any already there stay listed, as they still let senders through, so they can be removed. */}
-      {settings.allowed.length > 0 && (
+      {showAllowed && (
         <EntryList
           id="spam-allowed"
           title="Allowed"

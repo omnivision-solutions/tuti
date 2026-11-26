@@ -121,5 +121,10 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
   await card("Allowed").getByRole("button", { name: "Actions for e2e-forms@relay.example" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("e2e-forms@relay.example removed")).toBeVisible();
+  // The card stays for this visit, with the keyboard's focus in it; on the next it's gone.
+  await expect(card("Allowed")).toContainText("Nobody is allowed by name");
+  await expect(card("Allowed").getByLabel("Address or domain to allow")).toBeFocused();
+  await owner.reload();
+  await expect(card("Phrases")).toBeVisible();
   await expect(owner.getByRole("heading", { name: /^Allowed/, level: 2 })).toHaveCount(0);
 });
