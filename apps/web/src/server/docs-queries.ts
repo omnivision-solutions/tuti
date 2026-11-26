@@ -590,6 +590,14 @@ export async function isArticleSlug(projectSlug: string, slug: string): Promise<
 /** An article's ID (Article.publicId): `a_` and 8 lowercase letters and digits, which no slug can be (they have no `_`). */
 export const ARTICLE_ID = /^a_[a-z0-9]{8}$/;
 
+/**
+ * The article read at the slug an ID led to, if it's still the one asked for: renamed and its slug reused
+ * between the two reads, it's another article, and the reader gets "not found" rather than that one.
+ */
+export function stillAsked<T extends { publicId: string }>(asked: string, byId: boolean, found: T | null): T | null {
+  return byId && found?.publicId !== asked ? null : found;
+}
+
 /** The slug of the live article with ID `id` in the project (null for none, or for a slug), for the widget to open it by. */
 export async function articleById(projectSlug: string, id: string): Promise<string | null> {
   if (!ARTICLE_ID.test(id)) {

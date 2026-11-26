@@ -14,7 +14,7 @@ import { WidgetLocked } from "@/components/widget-locked";
 import { WIDGET_LABEL, WIDGET_ROW, WIDGET_TILE } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
-import { articleById, articleCount, articleTabs, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { articleById, articleCount, articleTabs, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle, stillAsked } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
 import { portalHref, portalLinks } from "@/server/portal-base";
@@ -208,8 +208,7 @@ async function WidgetArticle({
   const slug = moved ?? asked;
   // One locked for this reader: its title, and what to do.
   const found = (await publishedArticle(projectSlug, slug)) ?? (await lockedForReader(projectSlug, slug));
-  // Opened by ID: the one read at its slug must still be it (renamed and its slug reused in between: not found).
-  const article = byId && found?.publicId !== asked ? null : found;
+  const article = stillAsked(asked, byId !== null, found);
   if (!article) {
     return (
       <EmptyState

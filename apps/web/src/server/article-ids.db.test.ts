@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { articleById } from "./docs-queries";
+import { articleById, stillAsked } from "./docs-queries";
 import { createArticle, deleteArticle, getArticle, listArticles, publishArticle, updateArticle } from "./operations/docs";
 import { call } from "./operations/run";
 
@@ -55,4 +55,13 @@ describe("an article's ID", () => {
     expect(await articleById(project.slug, id)).toBe("billing");
     expect(await articleById(project.slug, "billing")).toBeNull();
   });
+});
+
+test("opened by ID, the article read at its slug must still be that one", () => {
+  const asked = { publicId: "a_aaaaaaaa" };
+  // Renamed and its slug reused between the two reads: another article, so not found.
+  expect(stillAsked("a_aaaaaaaa", true, { publicId: "a_bbbbbbbb" })).toBeNull();
+  expect(stillAsked("a_aaaaaaaa", true, asked)).toBe(asked);
+  // Opened by slug, whichever article is there.
+  expect(stillAsked("billing", false, asked)).toBe(asked);
 });
