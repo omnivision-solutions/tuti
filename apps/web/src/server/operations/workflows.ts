@@ -115,16 +115,17 @@ async function renumber(tx: Prisma.TransactionClient, ids: string[]) {
 }
 
 /**
- * Refuses what a workflow can't be made of: an action its trigger doesn't offer, a group the project doesn't have.
+ * Refuses what a workflow can't be made of: an action its trigger doesn't offer, a group the project doesn't have. Only
+ * of what it's given: a change that leaves the conditions as they are isn't refused for them.
  * Call it with the project locked: groups.delete locks it too, so a group is here or the workflow isn't saved for it.
  */
-async function check(tx: Prisma.TransactionClient, projectId: string, workflow: { trigger: WorkflowTrigger; conditions: WorkflowCondition[]; actions: WorkflowAction[] }) {
+async function check(tx: Prisma.TransactionClient, projectId: string, workflow: { trigger: WorkflowTrigger; conditions?: WorkflowCondition[]; actions?: WorkflowAction[] }) {
   const offered = actionsFor(workflow.trigger);
-  const other = workflow.actions.find((action) => !offered.includes(action.kind));
+  const other = workflow.actions?.find((action) => !offered.includes(action.kind));
   if (other) {
     throw new OperationError(400, "invalid_input", `“${TRIGGERS[workflow.trigger]}” doesn't offer ${ACTIONS[other.kind].label}`);
   }
-  const keys = workflow.conditions.map((condition) => condition.group);
+  const keys = (workflow.conditions ?? []).map((condition) => condition.group);
   const groups = await tx.readerGroup.findMany({ where: { projectId, key: { in: keys } }, select: { key: true } });
   const missing = keys.find((key) => !groups.some((group) => group.key === key));
   if (missing !== undefined) {
@@ -229,8 +230,9 @@ export const updateWorkflow = defineOperation({
       const current = await found(tx, projectId, id);
       const trigger = input.trigger ?? current.trigger;
       const moved = trigger !== current.trigger;
-      // Checked whole, as it will be: what it keeps against what changes (its actions against another trigger).
-      await check(tx, projectId, { trigger, conditions: input.conditions ?? current.conditions, actions: input.actions ?? current.actions });
+      // What changes is checked, the actions it keeps against another trigger too. Not the conditions it keeps: one
+      // whose group is gone (deleted through the release before, which doesn't refuse that) can still be turned off.
+      await check(tx, projectId, { trigger, conditions: input.conditions, actions: input.actions ?? (moved ? current.actions : undefined) });
       const last = moved ? await tx.workflow.count({ where: { projectId, trigger } }) : current.position;
       if (moved) {
         full(last, trigger);

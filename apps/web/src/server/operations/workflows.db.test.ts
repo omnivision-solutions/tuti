@@ -100,6 +100,21 @@ test("a workflow is for a group the project has, which can't be deleted while a 
   expect(await call(deleteGroup, admin, { group: "vip" })).toEqual({ deleted: "vip" });
 });
 
+test("a workflow whose group is gone can still be renamed, turned off and moved to another trigger: only what changes is checked", async () => {
+  const { projectId, admin } = await setup();
+  const vips = await call(createWorkflow, admin, { name: "VIPs first", trigger: "conversation_started", conditions: [{ kind: "in_group", group: "vip" }], actions: [{ kind: "mark_priority" }] });
+  // Deleted as the release before would, while a deploy overlaps the two: it doesn't know of workflows.
+  await prisma.readerGroup.delete({ where: { projectId_key: { projectId, key: "vip" } } });
+  expect(await call(updateWorkflow, admin, { id: vips.id, name: "VIPs", enabled: false, trigger: "user_replied" })).toMatchObject({
+    name: "VIPs",
+    enabled: false,
+    trigger: "user_replied",
+    conditions: [{ kind: "in_group", group: "vip" }],
+  });
+  // Given its conditions again, they're checked.
+  await expect(call(updateWorkflow, admin, { id: vips.id, conditions: [{ kind: "in_group", group: "vip" }] })).rejects.toMatchObject({ status: 400 });
+});
+
 test("a trigger's list holds so many workflows, by creating or by changing a workflow's trigger", async () => {
   const { projectId, admin, add } = await setup();
   await prisma.workflow.createMany({
