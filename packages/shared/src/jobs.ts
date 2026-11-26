@@ -41,7 +41,8 @@ export const jobs = {
   /** A customer wrote in another language while the project translates conversations: translate it into the team's (docs/plan.md L22). */
   translateMessage: {
     name: "translate-message",
-    input: z.object({ messageId: z.string() }),
+    // `notify`: the team's email and push about the message wait for its translation, and go once it's done (or failed).
+    input: z.object({ messageId: z.string(), notify: z.boolean().optional() }),
     // The provider not answering is tried again a few times; the last try keeps why, for the team's Try again.
     retries: 3,
     backoff: { factor: 4, maxSeconds: 300 },

@@ -1,3 +1,4 @@
+import { nativeLanguageName } from "@tuti/shared/languages";
 import { randomUUID } from "node:crypto";
 
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
@@ -55,6 +56,8 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     select: {
       author: true,
       body: true,
+      teamText: true,
+      language: true,
       createdAt: true,
       fromAddress: true,
       conversation: {
@@ -97,7 +100,9 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     // The user's first message is the conversation's start.
     isNew: earlier === 0,
     subject: conversation.subject,
-    body: message.body,
+    // Translated (docs/plan.md L22): what the team reads in the Inbox, with the language it came in named.
+    body: message.teamText ?? message.body,
+    ...(message.teamText !== null && message.language && { translatedFrom: nativeLanguageName(message.language) }),
     url: `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`,
     assigned: !!conversation.assigneeId,
   });

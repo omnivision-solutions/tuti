@@ -943,15 +943,24 @@ export const createConversation = defineOperation({
  */
 async function tellTeam(projectId: string, messageId: string) {
   const { translateConversations } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { translateConversations: true } });
-  // Side by side: with jobs inline (JOBS_DRIVER=inline) each runs as it's queued, so the push doesn't wait on the email.
-  await Promise.all([
-    // Translated into the team's language in the background (docs/plan.md L22): the message is already in.
-    translateConversations &&
-      enqueue("translateMessage", { messageId }).catch(async (error: unknown) => {
+  // Translated into the team's language in the background (docs/plan.md L22): the message is already in. The team's email
+  // and push wait for it (the job queues them once it's done or has failed), so they read the translation.
+  if (translateConversations && aiEnabled()) {
+    const queued = await enqueue("translateMessage", { messageId, notify: true }).then(
+      () => true,
+      async (error: unknown) => {
         // Shown as written, and marked so the team can try again (L22b): never left looking untranslatable.
         log.error("Enqueueing a message's translation failed", { error, messageId });
         await translationFailed(messageId, "Couldn't queue its translation");
-      }),
+        return false;
+      },
+    );
+    if (queued) {
+      return;
+    }
+  }
+  // Side by side: with jobs inline (JOBS_DRIVER=inline) each runs as it's queued, so the push doesn't wait on the email.
+  await Promise.all([
     enqueue("conversationMessage", { messageId }).catch((error: unknown) => {
       // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
       log.error("Enqueueing the team's email about a message failed", { error, messageId });

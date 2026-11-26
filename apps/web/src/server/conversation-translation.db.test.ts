@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { handlers, translateMessage, translationSettings } from "@tuti/jobs";
-import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type ModelFake, startExpoPushFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -422,4 +422,39 @@ test("Try again that can't be queued gives the message back its reason, so it sh
   }
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: null, translationError: why });
   expect(model.requests).toHaveLength(3);
+});
+
+test("the team's email and push about a message wait for its translation, and show it with the language named; Try again tells nobody again", async () => {
+  const expo = await startExpoPushFake();
+  try {
+    vi.stubEnv("EXPO_PUSH_URL", expo.env.EXPO_PUSH_URL);
+    vi.stubEnv("EXPO_ACCESS_TOKEN", "");
+    const { owner, project, team } = await setup();
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
+    await prisma.device.create({ data: { userId: owner.id, deviceId: "phone", token: "ExponentPushToken[phone]", platform: "ios", sessionId: session.id } });
+    model.reply(translated(ENGLISH, "de"));
+    await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: GERMAN });
+    const owners = await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { email: true } });
+    const email = await mailbox.latestTo(owners.email);
+    expect(email.subject).toMatch(/^New conversation: /);
+    expect(email.text).toContain(ENGLISH);
+    expect(email.text).toContain("Translated from Deutsch");
+    expect(expo.sent.map((message) => message.body)).toEqual([`Translated from Deutsch: ${ENGLISH}`]);
+
+    // A message whose translation fails is told about as written, once its tries are over.
+    model.fail(500);
+    model.fail(500);
+    const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+    const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+    expect(failed.translationError).not.toBeNull();
+    expect(expo.sent.at(-1)!.body).toBe("Ich kann mich seit gestern nicht mehr anmelden.");
+    const told = expo.sent.length;
+    // Try again translates it, and nobody is told about it a second time.
+    actAs(owner);
+    model.reply(translated("I haven't been able to sign in since yesterday."));
+    await inbox.retryTranslation(project.slug, 1);
+    expect(expo.sent).toHaveLength(told);
+  } finally {
+    await expo.close();
+  }
 });

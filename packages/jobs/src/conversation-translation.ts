@@ -4,7 +4,7 @@ import { aiEnabled, complete, type JobInput, log as serverLog } from "@tuti/shar
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
-import type { JobLogger, JobResult, JobRun } from "./index";
+import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 
 /**
  * Inbox in the team's language (docs/plan.md L22): with "Translate conversations" on, a customer's message in another
@@ -61,13 +61,13 @@ export async function translationSettings(projectId: string) {
  * language. A failure is kept on the message (`translationError`), never thrown past the last try: the message is in.
  */
 export async function translateMessage(input: JobInput<"translateMessage">, log: JobLogger, run: JobRun = { lastTry: true }): Promise<JobResult> {
+  let result: JobResult;
   try {
-    const result = await translateOne(input, log, run);
+    result = await translateOne(input, log, run);
     if ("skipped" in result) {
       // Nothing to translate after all (the team's language, too short, spam, no AI): a mark from a queue that failed goes.
       await prisma.conversationMessage.updateMany({ where: { id: input.messageId, teamText: null, translationError: { not: null } }, data: { translationError: null } });
     }
-    return result;
   } catch (error) {
     if (!run.lastTry) {
       throw error;
@@ -75,8 +75,25 @@ export async function translateMessage(input: JobInput<"translateMessage">, log:
     // Out of tries, whatever went wrong: the message says so, so the team can try again (L22b), never left looking untranslatable.
     log.warn(`Translating message ${input.messageId} failed: ${String(error).slice(0, 300)}`);
     await translationFailed(input.messageId, "Couldn't translate it");
-    return { failed: "error" };
+    result = { failed: "error" };
   }
+  if (input.notify) {
+    await tellTeamAbout(input.messageId, log);
+  }
+  return result;
+}
+
+/**
+ * The team's email and push about a customer's message (packages/jobs, conversation-message and conversation-push), which
+ * read its translation where it has one. Never fails: a notice that can't be queued is logged (the email's resubmit cron
+ * finds it again).
+ */
+export async function tellTeamAbout(messageId: string, log: Pick<JobLogger, "warn">) {
+  await Promise.all(
+    (["conversationMessage", "conversationPush"] as const).map((key) =>
+      enqueue(key, { messageId }).catch((error: unknown) => log.warn(`Couldn't queue ${key} for message ${messageId}: ${String(error)}`)),
+    ),
+  );
 }
 
 /** Marks a message's translation as failed, where nothing else is stored for it yet (logged, never thrown). */

@@ -9,8 +9,10 @@ type ConversationProps = {
   /** A new conversation, rather than a reply in one. */
   isNew: boolean;
   subject: string;
-  /** The message, as plain text. */
+  /** The message, as plain text: its translation into the team's language, where it was translated. */
   body: string;
+  /** Translated (Translate conversations): the language it was written in, by its own name ("Deutsch"). */
+  translatedFrom?: string;
   /** The conversation in the team's inbox. */
   url: string;
   /** Why they get it: it's assigned to them, or they asked for new conversations. */
@@ -21,7 +23,7 @@ type ConversationProps = {
 const MAX_QUOTED = 2000;
 
 /** To a project's team: someone wrote in the support inbox (docs/plan.md, Support inbox). */
-export function ConversationEmail({ projectName, from, isNew, subject, body, url, assigned }: ConversationProps) {
+export function ConversationEmail({ projectName, from, isNew, subject, body, translatedFrom, url, assigned }: ConversationProps) {
   const quoted = body.length > MAX_QUOTED ? `${body.slice(0, MAX_QUOTED - 1)}…` : body;
   return (
     <Layout
@@ -45,6 +47,10 @@ export function ConversationEmail({ projectName, from, isNew, subject, body, url
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", backgroundColor: "#fafaf9", borderRadius: 12, padding: "14px 16px", margin: 0 }}>
         {quoted}
       </Text>
+      {translatedFrom && (
+        // As the Inbox says it under a translated message; the original is there.
+        <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "18px", margin: "6px 0 0" }}>Translated from {translatedFrom}</Text>
+      )}
       <Buttons href={url} label="Reply in the inbox" />
     </Layout>
   );
