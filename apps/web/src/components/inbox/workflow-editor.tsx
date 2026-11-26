@@ -2,7 +2,7 @@
 
 import { XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { usePreview } from "@/components/customize-shell";
@@ -57,6 +57,14 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
   ];
   const triggerItems = TRIGGER_KEYS.map((trigger) => ({ value: trigger, label: TRIGGERS[trigger] }));
   const list = `/app/${projectSlug}/settings/workflows`;
+  // Where the focus goes once a removed action's row (and its button) is gone: the next action's Remove, else Add an action.
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (refocus.current) {
+      document.getElementById(refocus.current)?.focus();
+      refocus.current = null;
+    }
+  });
 
   const save = () => {
     setTried(true);
@@ -76,6 +84,8 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
       });
       if (result.error) {
         setError(result.error);
+        // What may have changed meanwhile (a group deleted) comes in, so the editor says so itself.
+        router.refresh();
         return;
       }
       setSaved(sent);
@@ -101,6 +111,8 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
       }}
       className="flex flex-col gap-7"
     >
+      {/* A new one goes to the list once added: nothing changes while it saves, as a change then wouldn't be saved. */}
+      <fieldset disabled={saving && id === null} className="contents">
       <SettingsCard>
         <SettingRow label="Name" htmlFor="workflow-name">
           <div className="flex flex-col gap-1.5 @min-[34rem]/settings:w-64">
@@ -161,7 +173,9 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
         count={actions.length}
         action={
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />}>Add an action</DropdownMenuTrigger>
+            <DropdownMenuTrigger id="workflow-add-action" render={<Button type="button" variant="outline" size="sm" />}>
+              Add an action
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-auto min-w-40">
               {offered.map((kind) => (
                 <DropdownMenuItem key={kind} disabled={actions.includes(kind)} onClick={() => set({ actions: [...actions, kind] })}>
@@ -176,10 +190,21 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
           <p className="px-4 py-3.5 text-sm text-muted-foreground @min-[34rem]/settings:px-5">No actions yet.</p>
         ) : (
           <ol aria-label="Actions" className="flex flex-col divide-y">
-            {actions.map((kind) => (
+            {actions.map((kind, at) => (
               <li key={kind}>
                 <SettingRow label={ACTIONS[kind].label} description={ACTIONS[kind].hint} inline>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${ACTIONS[kind].label}`} onClick={() => set({ actions: actions.filter((other) => other !== kind) })}>
+                  <Button
+                    id={`workflow-remove-${kind}`}
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove ${ACTIONS[kind].label}`}
+                    onClick={() => {
+                      const next = actions[at + 1] ?? actions[at - 1];
+                      refocus.current = next ? `workflow-remove-${next}` : "workflow-add-action";
+                      set({ actions: actions.filter((other) => other !== kind) });
+                    }}
+                  >
                     <XIcon />
                   </Button>
                 </SettingRow>
@@ -195,6 +220,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
       </p>
       {error && <FieldError className="-mt-5">{error}</FieldError>}
 
+      </fieldset>
       {id !== null && <DeleteWorkflow projectSlug={projectSlug} id={id} name={saved.name} onDeleted={() => router.push(list)} />}
     </form>
   );

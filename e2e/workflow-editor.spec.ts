@@ -60,8 +60,18 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await owner.getByRole("button", { name: "Add an action" }).click();
   await expect(owner.getByRole("menuitem", { name: "Mark priority" })).toBeDisabled();
   await owner.keyboard.press("Escape");
+  // Removed: the focus goes to Add an action, as its row is gone.
+  await owner.getByRole("button", { name: "Remove Mark priority" }).click();
+  await expect(owner.getByRole("button", { name: "Add an action" })).toBeFocused();
+  await expect(sentence).toHaveText("When a conversation starts, if the person is in Enterprise: nothing yet.");
+  await owner.getByRole("button", { name: "Add an action" }).click();
+  await owner.getByRole("menuitem", { name: "Mark priority" }).click();
   await checkpoint(owner, "editor-new");
+  // While a new one saves nothing changes: it goes to the list once added.
+  const releaseAdd = await holdActions(owner);
   await save.click();
+  await expect(owner.getByRole("textbox", { name: "Name" })).toBeDisabled();
+  await releaseAdd();
   await expect(owner.getByText("Added Enterprise first")).toBeVisible();
   await owner.waitForURL(`**/app/${slug}/settings/workflows`);
   const started = main.getByRole("list", { name: "When a conversation starts" });
@@ -98,7 +108,7 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await owner.getByRole("combobox", { name: "If" }).click();
   await owner.getByRole("option", { name: "People in Enterprise" }).click();
   // The page's refreshes (the live stream's, on the conversations written above) are held meanwhile: one bringing the
-  // groups without Enterprise would have the editor refuse it before the server could.
+  // groups without Enterprise would have the editor refuse it before the server could. Refused, the editor refreshes.
   let refreshed!: () => void;
   const held = new Promise<void>((done) => (refreshed = done));
   const holdRefresh = async (route: Route) => {
