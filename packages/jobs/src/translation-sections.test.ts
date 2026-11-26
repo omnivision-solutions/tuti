@@ -81,3 +81,12 @@ test("a draft written before the version's first translation lines up with the s
   // Translated later: no section twice.
   expect(texts(docOfSections(withTranslation(drafted, de1, source)))).toEqual(texts(de1));
 });
+
+test("`only`: a version the team writes keeps its sections whose source went, but those it asked for", () => {
+  const source = sourceSections(v1);
+  const version = versionSections(de1, [], source);
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"]);
+  const billing = source[2]!.key;
+  expect(texts(docOfSections(withTranslation(version, doc(["", "NEU"], ["NEU", "NEU"]), sourceSections(v2), { only: new Set() })))).toEqual(texts(de1));
+  expect(texts(docOfSections(withTranslation(version, doc(["", "NEU"], ["NEU", "NEU"]), sourceSections(v2), { only: new Set([billing]) })))).toEqual(texts(de1).slice(0, 3));
+});

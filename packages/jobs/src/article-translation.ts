@@ -276,10 +276,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   const titleHash = contentHash(article.title);
   const written = await settle((now) => {
     const only = now.automatic ? undefined : new Set(asked);
-    const unowned = (list: Section[]) => list.map((section) => (section.meta.key !== null && asked.includes(section.meta.key) ? { ...section, meta: { key: section.meta.key, hash: section.meta.hash } } : section));
-    const published = withTranslation(unowned(versionSections(now.content as Doc | null, now.sections, parts)), translated, parts, { only, published: now.automatic });
+    // (Asking for sections already made them no longer the team's: an edit made since, in the draft or published, is theirs.)
+    const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, published: now.automatic });
     const draft = now.draft as Draft | null;
-    const drafted = draft && withTranslation(unowned(versionSections(draft.content, draft.sections, parts)), translated, parts, { only });
+    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only });
     const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
     more = waiting.length > 0;
     // The team's published title stays theirs until the source's title changes.
@@ -299,7 +299,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       sections: metaOf(published) as Prisma.InputJsonValue,
       ...(draft &&
         drafted && {
-          draft: { ...draft, title: draft.titleEdited ? draft.title : now.automatic ? text(0) : draft.title, content: docOfSections(drafted), sections: metaOf(drafted) } as Prisma.InputJsonValue,
+          // Its title the team's while it's edited there, or while the published one is theirs.
+          draft: { ...draft, title: draft.titleEdited || ownTitle || !now.automatic ? draft.title : text(0), content: docOfSections(drafted), sections: metaOf(drafted) } as Prisma.InputJsonValue,
         }),
       behind: behindOf(article.project.language, parts, (drafted ? [published, drafted] : [published]).map((list) => (now.automatic ? list : ownedByTeam(list))), kept),
       updateSections: waiting,
@@ -474,6 +475,9 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 
 /** The retry-article-translations job: versions that couldn't be translated, whose wait is over, tried again. */
 export async function retryArticleTranslations(): Promise<JobResult> {
+  // Sections asked for with no time to try again (a job the previous release's worker skipped during a deploy, as it doesn't
+  // know them): due now, so this run queues them.
+  await prisma.articleTranslation.updateMany({ where: { retryAt: null, NOT: { updateSections: { equals: [] } } }, data: { retryAt: new Date() } });
   // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
   const named = await nameUnnamed();
   // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.

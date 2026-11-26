@@ -287,7 +287,8 @@ export const updateTranslationSections = defineOperation({
       const { parts, sourceLanguage } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       const behind = Object.keys(behindNow(version, parts, sourceLanguage, drafted ? [published, drafted] : [published]));
-      const asked = (input.sections ?? behind).filter((key) => parts.some((part) => part.key === key));
+      // Those still in the source, and those behind because theirs went (the job takes them out).
+      const asked = (input.sections ?? behind).filter((key) => behind.includes(key) || parts.some((part) => part.key === key));
       if (asked.length === 0) {
         throw new OperationError(409, "nothing_behind", "No section is behind the source");
       }

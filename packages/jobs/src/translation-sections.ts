@@ -62,7 +62,8 @@ export function withTranslation(current: Section[], translated: Doc, source: Sou
     if (key !== null && inSource.has(key) && !byKey.has(key)) {
       byKey.set(key, section);
       previous = key;
-    } else if (key === null || section.meta.own) {
+    } else if (key === null || section.meta.own || (only && !only.has(key))) {
+      // (A version the team writes keeps its sections whose source went, but where it asked for them.)
       after.set(previous, [...(after.get(previous) ?? []), section]);
     }
   }
