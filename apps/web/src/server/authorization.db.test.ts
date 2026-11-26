@@ -37,6 +37,7 @@ import * as docsReaders from "./docs-readers";
 import * as emailPause from "./email-pause";
 import * as emailPreferences from "./email-preferences";
 import * as groups from "./groups";
+import * as images from "./images";
 import * as imports from "./imports";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
@@ -95,6 +96,7 @@ const modules = {
   "email-pause": emailPause,
   "email-preferences": emailPreferences,
   groups,
+  images,
   imports,
   inbox,
   invitations,
@@ -857,6 +859,10 @@ const matrix: Matrix = {
     },
     // Browser Use (the fake) signs in and takes the screen it lands on, inline; the fixture's project is set up for it.
     testScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => screenshots.testScreenshots(slug)) },
+  },
+  images: {
+    // The model fake makes it; uploads keep it.
+    generateImage: { allowed: "MEMBER", call: (slug) => images.generateImage(slug, { prompt: "A lighthouse", width: 320, height: 200 }) },
   },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },

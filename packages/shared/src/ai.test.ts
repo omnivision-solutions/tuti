@@ -251,3 +251,61 @@ test("a request's cost is what OpenRouter charged, plus the provider's charge wh
   expect(replyCost({ cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } })).toBeNull();
   expect(replyCost({ cost: 0, is_byok: true })).toBeNull();
 });
+
+test("an image's shape: the closest aspect ratio, the smallest resolution that holds the size once cropped, and the crop that's notable", async () => {
+  const { imageShape } = await import("./ai");
+  // Exactly a ratio: nothing cropped; 1K holds 1376×768-ish, 2K a size past it.
+  expect(imageShape(1024, 1024)).toEqual({ aspectRatio: "1:1", imageSize: "1K", cropped: null });
+  expect(imageShape(1280, 720)).toEqual({ aspectRatio: "16:9", imageSize: "1K", cropped: null });
+  expect(imageShape(1920, 1080)).toEqual({ aspectRatio: "16:9", imageSize: "2K", cropped: null });
+  // Square past 2K's 2048: 4K.
+  expect(imageShape(2400, 2400)).toEqual({ aspectRatio: "1:1", imageSize: "4K", cropped: null });
+  // A changelog cover, 1600×840 (1.9): 16:9 is closest, with 7% cropped off the top and bottom; 1300×720, 2%, isn't notable.
+  expect(imageShape(1600, 840)).toEqual({ aspectRatio: "16:9", imageSize: "2K", cropped: "top and bottom" });
+  expect(imageShape(1300, 720)).toEqual({ aspectRatio: "16:9", imageSize: "1K", cropped: null });
+  // Compared in log space: 2.2 is nearer 21:9 (2.33) than 16:9 (1.78).
+  expect(imageShape(2200, 1000).aspectRatio).toBe("21:9");
+  // Narrower and wider than any ratio: the most extreme, cropped to the size's shape (1:8's 1K is 362×2896).
+  expect(imageShape(64, 2400)).toEqual({ aspectRatio: "1:8", imageSize: "1K", cropped: "left and right" });
+  expect(imageShape(2400, 200)).toEqual({ aspectRatio: "8:1", imageSize: "1K", cropped: "top and bottom" });
+  // 0.9, between 4:5 and 1:1: the square, its sides cropped off.
+  expect(imageShape(900, 1000)).toMatchObject({ aspectRatio: "1:1", cropped: "left and right" });
+});
+
+test("an image: the image model gets the prompt, the references and the image config with OpenRouter's fields; its usage is metered and its bytes returned", async () => {
+  useFake();
+  const { generateImage, imageModel, imagesEnabled } = await import("./ai");
+  const { DEFAULT_IMAGE_MODEL } = await import("./config");
+  expect(imagesEnabled()).toBe(true);
+  expect(imageModel()).toBe("google/gemini-nano-banana-2.1");
+  const used: AiUsage[] = [];
+  const png = await generateImage({ prompt: "A lighthouse", references: ["data:image/webp;base64,AAAA"], aspectRatio: "16:9", imageSize: "1K", meter: async (usage) => void used.push(usage) });
+  // A PNG, as the fake made it.
+  expect([...png.subarray(1, 4)].map((c) => String.fromCharCode(c)).join("")).toBe("PNG");
+  expect(model.images).toEqual([
+    {
+      model: DEFAULT_IMAGE_MODEL,
+      prompt: "A lighthouse",
+      references: ["data:image/webp;base64,AAAA"],
+      aspectRatio: "16:9",
+      imageSize: "1K",
+      provider: { data_collection: "deny" },
+      usage: { include: true },
+    },
+  ]);
+  expect(used).toEqual([{ kind: "chat", model: DEFAULT_IMAGE_MODEL, inputTokens: "A lighthouse".length, outputTokens: 1290, cost: 0.01 }]);
+
+  // The config file's model is the one asked.
+  vi.stubEnv("TUTI_CONFIG", configFile({ ai: { imageModel: "acme/painter" } }));
+  await generateImage({ prompt: "A boat", references: [], aspectRatio: "1:1", imageSize: "2K", meter });
+  expect(model.images[1]).toMatchObject({ model: "acme/painter", references: [], aspectRatio: "1:1", imageSize: "2K" });
+  model.images.length = 0;
+});
+
+test("images need OpenRouter: off without a key, and with another provider's", async () => {
+  const { imagesEnabled } = await import("./ai");
+  expect(imagesEnabled()).toBe(false);
+  vi.stubEnv("OPENAI_API_KEY", "sk-other");
+  vi.stubEnv("OPENAI_BASE_URL", "https://api.example.com/v1");
+  expect(imagesEnabled()).toBe(false);
+});

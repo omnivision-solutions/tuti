@@ -3207,7 +3207,7 @@ model ImportedRecord {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots.
+  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots, images.
   feature      String
   /// chat, decision or agent (a browser agent's run; embeddings aren't recorded).
   kind         String

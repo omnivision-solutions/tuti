@@ -164,6 +164,13 @@
           },
           "additionalProperties": false
         },
+        "imageModel": {
+          "default": "google/gemini-nano-banana-2.1",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The AI image generator's model, an OpenRouter model that makes images in Gemini's aspect ratios (1:1 to 21:9, 1:8 and 8:1) at 1K, 2K and 4K (image_config). Image generation needs OpenRouter"
+        },
         "maxPrice": {
           "default": null,
           "anyOf": [
