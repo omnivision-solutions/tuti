@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { changelogTag } from "@/components/changelog-pages";
-import { TAG_LABELS } from "@/components/changelog-tag";
+import { TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPills } from "@/components/filter-pills";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -30,7 +30,7 @@ const plural = (count: number, one: string, many = `${one}s`) => `${count} ${cou
  * The team's changelog, one list: the drafts (the one whose release notes wait first, then the running draft, then the
  * latest edited), then the published entries by year, newest first, each a line: its cover, title, date and tags, and
  * how many reactions it had. `?q=` searches titles and text, `?tag=` picks a
- * tag (pills with their counts). Old `?tab=` links land here too: the param is ignored.
+ * tag (pills, no counts: most entries have most tags). Old `?tab=` links land here too: the param is ignored.
  */
 export default async function TeamChangelogPage(props: PageProps<"/app/[project]/changelog">) {
   const { project: slug } = await props.params;
@@ -141,8 +141,21 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
             <span className="sr-only">{entry.publishedAt ? "Published " : "Edited "}</span>
             {entry.publishedAt ? formatDay(date) : formatShortDate(date)}
           </time>,
+          // Its tags as words, Breaking in the destructive colour (TAG_VARIANTS), as its chip elsewhere.
+          ...(entry.tags.length > 0
+            ? [
+                <span key="tags">
+                  {" · "}
+                  {entry.tags.map((t, i) => (
+                    <span key={t}>
+                      {i > 0 && ", "}
+                      <span className={TAG_VARIANTS[t] === "destructive" ? "text-destructive-foreground" : undefined}>{TAG_LABELS[t]}</span>
+                    </span>
+                  ))}
+                </span>,
+              ]
+            : []),
           ...[
-            entry.tags.map((t) => TAG_LABELS[t]).join(", "),
             !entry.publishedAt && entry._count.pullRequests > 0 && plural(entry._count.pullRequests, "merged pull request"),
             entry._count.posts > 0 && plural(entry._count.posts, "post"),
             entry._count.comments > 0 && plural(entry._count.comments, "comment"),

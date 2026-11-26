@@ -248,6 +248,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/changelog`);
   // Its tags in its row's line, as words.
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("New, Breaking");
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("Breaking", { exact: true })).toHaveCSS("color", breaking);
 
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
@@ -1342,7 +1343,7 @@ test("the next release waits to be written; its entry gets a featured image read
   expect(listCover.y).toBeGreaterThan((await older.getByRole("heading").boundingBox())!.y);
   expect(listCover.y + listCover.height).toBeLessThanOrEqual((await older.getByRole("link", { name: /Built from an idea/ }).boundingBox())!.y);
   // The team's list shows an entry's featured image small at the row's end (decorative: the title names it), loaded;
-  // an entry without one shows none, and the date column keeps the titles lined up. (An old link to a tab lands here too.)
+  // an entry without one keeps its place, so the titles line up. (An old link to a tab lands here too.)
   await team.goto(`/app/${slug}/changelog?tab=published`);
   const thumbnail = team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).locator("img");
   await expect(thumbnail).toHaveAttribute("alt", "");
@@ -1353,7 +1354,9 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(noCover.locator("svg.lucide-image")).toHaveCount(0);
   const titleX = async (title: string) => (await team.getByRole("link", { name: title, exact: true }).boundingBox())!.x;
   expect(await titleX("Faster exports")).toBe(await titleX("Dark mode is here"));
-  expect((await thumbnail.boundingBox())!.x).toBeGreaterThan(await titleX("Dark mode is here"));
+  // The cover leads the row; one without has its place kept (a dashed box), so the titles line up.
+  expect((await thumbnail.boundingBox())!.x).toBeLessThan(await titleX("Dark mode is here"));
+  await expect(noCover.locator("span[aria-hidden].border-dashed")).toHaveCount(1);
   await checkpoint(team, "team-changelog-thumbnails");
   await team.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(70);
