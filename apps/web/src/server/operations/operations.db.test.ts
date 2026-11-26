@@ -82,6 +82,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
   "articles.publish": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
+  "articles.languageSlug": () => ({ slug: "matrix-article", language: "de", newSlug: "matrix-seite" }),
   "articles.publishChanges": () => ({ slug: "matrix-article" }),
   "articles.discardChanges": () => ({ slug: "matrix-article" }),
   "articles.unpublish": () => ({ slug: "matrix-article" }),
@@ -392,6 +393,11 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
       { projectId: project.id, slug: "matrix-draft", title: "Matrix draft" },
     ],
+  });
+  // The published article's German version (German is the fixture's language), to give its own slug.
+  const matrixArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "matrix-article" }, select: { id: true } });
+  await prisma.articleTranslation.create({
+    data: { articleId: matrixArticle.id, projectId: project.id, language: "de", automatic: false, title: "Matrix-Artikel", slug: "matrix-artikel" },
   });
   // An earlier version of the draft, to restore.
   const revision = await prisma.articleRevision.create({

@@ -4,6 +4,8 @@ import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES,
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
+import { freeLanguageSlug } from "./docs-slugs";
+import { lockProject } from "./running-draft";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 
 /**
@@ -51,6 +53,7 @@ const sourceSelect = {
   content: true,
   publishedAt: true,
   sample: true,
+  slug: true,
   project: { select: { language: true } },
 } as const;
 type Source = Prisma.ArticleGetPayload<{ select: typeof sourceSelect }>;
@@ -160,16 +163,28 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   /**
    * Writes `data` only while the article's published source is still `source` (locked, so a publish can't slip in
    * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
-   * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
+   * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead. With `title`
+   * (a translation), a version with no slug yet gets one from it, the project locked first as slugs are picked.
    */
-  const settle: Settle = (data) =>
+  const settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput, title?: string) =>
     prisma.$transaction(async (tx) => {
+      if (title !== undefined) {
+        await lockProject(tx, article.projectId);
+      }
       await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${articleId} FOR UPDATE`;
       const now = await tx.article.findUnique({ where: { id: articleId }, select: sourceSelect });
       if (!now?.publishedAt || translationSource(now).hash !== source.hash) {
         return false;
       }
       const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
+      if (count > 0 && title !== undefined) {
+        // Its first translation names it; later ones keep the address (a rename is the team's: languageSlug).
+        const named = await tx.articleTranslation.findUniqueOrThrow({ where: { id: row.id }, select: { slug: true } });
+        if (!named.slug) {
+          const slug = await freeLanguageSlug(tx, article.projectId, language, title, { id: row.id, articleId, slug: null }, now.slug);
+          await tx.articleTranslation.update({ where: { id: row.id }, data: { slug } });
+        }
+      }
       return count > 0;
     });
   started.settle = settle;
@@ -241,7 +256,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     tries: 0,
     retryAt: null,
     retranslated: row.retranslate,
-  });
+  }, text(0));
   return written ? { translated: language } : { skipped: CHANGED };
 }
 

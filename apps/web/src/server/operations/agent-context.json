@@ -13,6 +13,7 @@
   "articles.discardChanges": ["article","articles","autopilot","back","changes","dismissed","docs","drop","edits","nothing","published","revisions","saved","stay","unpublished","version","waiting"],
   "articles.feedback": ["answer","answering","article","behalf","creator","help","helpful","missing","published","replaces","someone","under"],
   "articles.get": ["article","articles","changes","docs","drafts","gets","hidden","slug","team","unpublished"],
+  "articles.languageSlug": ["address","another","article","collection","docs","give","language","languages","project","reference","refused","slug","title","translated"],
   "articles.list": ["articles","deleted","docs","drafts","edited","every","everywhere","first","latest","list","listed","listing","ones","published","restore","sees","still","team","title"],
   "articles.publish": ["actions","among","article","articles","autopilot","changed","codechanges","docs","draft","edits","exists","fine","first","gone","including","later","limit","live","newest","none","null","optional","past","plan","portal","project","publish","published","publishes","refused","required","reviewed","revision","revisions","save","since","still","target","version","wait","waiting"],
   "articles.publishChanges": ["allows","answers","approved","article","articles","autopilot","changes","docs","edits","first","limit","nothing","plan","project","publish","published","readers","refused","search","unpublish","unpublished","update","waiting"],

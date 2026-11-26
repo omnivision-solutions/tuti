@@ -4,7 +4,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { DocsArticle, DocsCollectionPage, docsPageListing, DocsTabPage } from "@/components/portal-docs";
 import { ApiReferenceLanding, referenceListing } from "@/components/portal-api-operation";
 import { apiReferencePage } from "@/server/api-reference-queries";
-import { docsPage } from "@/server/docs-queries";
+import { articleNamed, docsPage } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 
@@ -34,7 +34,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
     }
     return portalPageMetadata(project, { ...docsPageListing(page.landing), path });
   }
-  return portalPageMetadata(project, { ...docsPageListing(page), path, markdown: page.kind === "article" });
+  // An article's page is in the default language until its translations (L8): canonical there, by its default-language slug.
+  const article = page.kind === "article" || page.kind === "locked" ? await articleNamed(project, slug) : null;
+  return portalPageMetadata(project, { ...docsPageListing(page), path: article ? `/docs/${article.slug}` : path, markdown: page.kind === "article" });
 }
 
 /** /docs/<slug>: an article, a tab, a collection or an API reference (one name each), or where one went since. */

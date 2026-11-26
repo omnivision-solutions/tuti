@@ -18,6 +18,8 @@ import {
   type TaggedEdit,
   withSectionsOf,
   claimDocsSlug,
+  claimLanguageSlug,
+  languageSlugRefused,
   docsSlugsTaken,
   freeDocsSlug,
   RESERVED_ARTICLE_SLUGS,
@@ -27,7 +29,7 @@ import {
   settleWaitingEdits,
   editName,
 } from "@tuti/jobs";
-import { articleVersionsKept, collectionName, log, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { articleVersionsKept, collectionName, LANGUAGE_CODES, LANGUAGES, log, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
 import { inArticleOrder } from "@/lib/article-order";
@@ -437,7 +439,7 @@ export async function customDocsSlug(
   if (kind === "article" && RESERVED_ARTICLE_SLUGS.includes(slug)) {
     throw new OperationError(400, "invalid_input", `“${slug}” is reserved; pick another`);
   }
-  const [taken] = await docsSlugsTaken(tx, projectId, slug, page);
+  const [taken] = await docsSlugsTaken(tx, projectId, slug, page, { languages: kind !== "article" });
   if (taken) {
     throw new OperationError(409, "conflict", `That address is taken by ${taken.kind} “${taken.name}”`);
   }
@@ -2366,5 +2368,47 @@ export const deleteTab = defineOperation({
     });
     // movedTo: where its collections went (null: there are no tabs left).
     return { deleted: input.slug, movedTo };
+  },
+});
+
+export const setArticleLanguageSlug = defineOperation({
+  name: "articles.languageSlug",
+  title: "Set an article's language slug",
+  summary:
+    "Give an article its own address in one of the project's other languages, /<language>/docs/<slug>, instead of one from its translated title. Its old one there still leads to it. Refused (409) when another article has it in that language, or a tab, collection or API reference has it",
+  method: "PATCH",
+  path: "/articles/{slug}/languages/{language}",
+  scope: "write",
+  access: "team",
+  errors: [409],
+  input: z.object({
+    slug: articleSlug,
+    language: z.enum(LANGUAGE_CODES).describe("The language's code").meta({ examples: ["de"] }),
+    newSlug: customSlug.describe("Its slug in that language: lowercase letters, digits and hyphens").meta({ examples: ["abrechnung"] }),
+  }),
+  output: z
+    .object({
+      language: z.string().describe("The language's code").meta({ examples: ["de"] }),
+      slug: z.string().describe("Its slug in that language").meta({ examples: ["abrechnung"] }),
+    })
+    .describe("The article's address in that language"),
+  run: async ({ projectId }, input) => {
+    const article = await teamArticle(projectId, input.slug);
+    return prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const version = await tx.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: input.language } }, select: { id: true, slug: true } });
+      if (!version) {
+        throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[input.language].name}`);
+      }
+      if (version.slug !== input.newSlug) {
+        const refused = await languageSlugRefused(tx, projectId, input.language, input.newSlug, version);
+        if (refused) {
+          throw new OperationError(refused.includes("reserved") ? 400 : 409, refused.includes("reserved") ? "invalid_input" : "conflict", refused);
+        }
+        await claimLanguageSlug(tx, projectId, input.language, input.newSlug, { ...version, articleId: article.id });
+      }
+      await tx.articleTranslation.update({ where: { id: version.id }, data: { slug: input.newSlug, customSlug: true } });
+      return { language: input.language, slug: input.newSlug };
+    });
   },
 });

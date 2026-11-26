@@ -11,6 +11,7 @@ import { displayDoc } from "./content";
 import { portalAddress } from "./custom-domains";
 import { mediaUrls } from "./media-urls";
 import { currentReader } from "./portal-access";
+import { portalLanguage } from "./portal-base";
 
 /** Reads for the docs pages: the team's editor and the portal. */
 
@@ -442,7 +443,12 @@ export function findCollection(docs: DocsContents, slug: string) {
  * (a 404).
  */
 export const docsPage = cache(async (projectSlug: string, slug: string): Promise<DocsPage | null> => {
-  const found = await articleAt(projectSlug, slug);
+  // Each language its own slug (docs/plan.md, Languages): an article's other slugs go to its own in the address's language.
+  const named = await articleNamed(projectSlug, slug);
+  if (named && named.own !== slug) {
+    return { kind: "redirect", path: `/docs/${named.own}` };
+  }
+  const found = await articleAt(projectSlug, named?.slug ?? slug);
   if (found) {
     return found.kind === "article" ? { kind: "article", article: found.article } : { kind: "locked", article: found.locked };
   }
@@ -452,6 +458,30 @@ export const docsPage = cache(async (projectSlug: string, slug: string): Promise
   }
   const moved = await movedPage(projectSlug, slug);
   return moved && { kind: "redirect", path: moved.path };
+});
+
+/**
+ * The published article `slug` names, looked up as docs/plan.md's Languages says: in the address's language its slug
+ * there, then the default language's, then the other languages' in their Settings order. `slug`: its default-language
+ * slug (what the rest of the docs read it by); `own`: its slug in the address's language (the default's where it has
+ * none yet). Null: no published article has it (a tab's, a collection's, an old one, or nothing).
+ */
+export const articleNamed = cache(async (projectSlug: string, slug: string): Promise<{ slug: string; own: string } | null> => {
+  const { language, defaultLanguage } = await portalLanguage().catch(() => ({ language: null, defaultLanguage: null }));
+  const other = language && defaultLanguage && language !== defaultLanguage ? language : null;
+  const live = { project: { slug: projectSlug }, ...published };
+  const ownSlug = async (article: { id: string; slug: string }) =>
+    other ? ((await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: other } }, select: { slug: true } }))?.slug ?? article.slug) : article.slug;
+  if (other) {
+    const version = await prisma.articleTranslation.findFirst({ where: { language: other, slug, article: live }, select: { article: { select: { slug: true } } } });
+    if (version) {
+      return { slug: version.article.slug, own: slug };
+    }
+  }
+  const article =
+    (await prisma.article.findFirst({ where: { ...live, slug }, select: { id: true, slug: true } })) ??
+    (await prisma.articleTranslation.findFirst({ where: { slug, article: live }, orderBy: { projectLanguage: { createdAt: "asc" } }, select: { article: { select: { id: true, slug: true } } } }))?.article;
+  return article ? { slug: article.slug, own: await ownSlug(article) } : null;
 });
 
 /** A published article on the portal (unless it's hidden or AI only) that this reader may read, once per request (its page and its metadata both read it). */
@@ -562,10 +592,20 @@ async function movedPage(projectSlug: string, slug: string): Promise<{ path: str
     where: { slug, project: { slug: projectSlug } },
     select: { tab: { select: { slug: true } }, collection: { select: { slug: true } }, article: { select: { slug: true, deletedAt: true } } },
   });
-  const article = redirect?.article;
+  // A language's old slug (a renamed version's, a removed language's), the address's language first, else the newest.
+  const { language } = await portalLanguage().catch(() => ({ language: null }));
+  const oldSlug = (where: Prisma.ArticleOldSlugWhereInput) =>
+    prisma.articleOldSlug.findFirst({
+      where: { ...where, slug, project: { slug: projectSlug }, article: { deletedAt: null } },
+      orderBy: { createdAt: "desc" },
+      select: { article: { select: { slug: true, deletedAt: true } } },
+    });
+  const old = redirect ? null : ((language && (await oldSlug({ language }))) || (await oldSlug({})));
+  const article = redirect?.article ?? old?.article;
   if (article) {
-    // A deleted article's slug may be another's now.
-    return !article.deletedAt && (await articleAt(projectSlug, article.slug)) ? { path: `/docs/${article.slug}`, article: article.slug } : null;
+    // A deleted article's slug may be another's now. Sent to its own slug in the address's language.
+    const named = !article.deletedAt && (await articleAt(projectSlug, article.slug)) ? await articleNamed(projectSlug, article.slug) : null;
+    return named ? { path: `/docs/${named.own}`, article: article.slug } : null;
   }
   const to = redirect?.tab ?? redirect?.collection;
   const page = to && (await listingPage(projectSlug, to.slug));

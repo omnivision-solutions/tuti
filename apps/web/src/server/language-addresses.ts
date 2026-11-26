@@ -69,3 +69,26 @@ export async function apiReferenceSlugs(slug: string): Promise<Set<string>> {
   const references = await prisma.apiReference.findMany({ where: { project: { slug } }, select: { slug: true } });
   return new Set(references.map((reference) => reference.slug));
 }
+
+/**
+ * Where an offline or removed language's address goes in the default language (docs/plan.md, Languages): the same path, but
+ * an article's page (/docs/<slug>, or its .md) found by that language's slug, current then old, goes to its
+ * default-language slug (/de/docs/abrechnung → /docs/billing), never the path without the prefix.
+ */
+export async function inDefaultLanguage(slug: string, code: Language, path: string): Promise<string> {
+  const match = /^\/docs\/([^/]+?)(\.md)?$/.exec(path);
+  let asked: string;
+  try {
+    asked = decodeURIComponent(match?.[1] ?? "");
+  } catch {
+    return path;
+  }
+  if (!match || !asked) {
+    return path;
+  }
+  const article = { project: { slug }, publishedAt: { not: null }, deletedAt: null };
+  const found =
+    (await prisma.articleTranslation.findFirst({ where: { language: code, slug: asked, article }, select: { article: { select: { slug: true } } } })) ??
+    (await prisma.articleOldSlug.findFirst({ where: { language: code, slug: asked, article }, orderBy: { createdAt: "desc" }, select: { article: { select: { slug: true } } } }));
+  return found ? `/docs/${encodeURIComponent(found.article.slug)}${match[2] ?? ""}` : path;
+}
