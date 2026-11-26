@@ -377,11 +377,16 @@ test("Retranslate asked for while an ordinary translation runs: the older job wr
   // job (everything sent again) writes first.
   let written = false;
   model.reply(reply("old", changed), async () => {
-    await call(retranslateLanguage, as(), { code: "de" });
-    for (let i = 0; i < 250 && !written; i++) {
-      written = (await translation()).retranslated === 1;
-      if (!written) await new Promise((resolve) => setTimeout(resolve, 20));
+    // The Retranslate's job, run here and awaited (its queued copy held back), rather than waited for by the clock.
+    const held = vi.spyOn(handlers, "translateArticle").mockResolvedValueOnce({ skipped: "held" } as never);
+    try {
+      await call(retranslateLanguage, as(), { code: "de" });
+    } finally {
+      held.mockRestore();
     }
+    const { articleId } = await translation();
+    await translateArticle({ articleId, language: "de" }, log);
+    written = (await translation()).retranslated === 1;
   });
   model.reply(reply("new", changed));
   await call(updateArticle, as(), { slug: "getting-started", body: changed, publish: true });
@@ -418,11 +423,16 @@ test("an older job's unexpected error never marks a newer translation as failed"
   // Retranslate's job waits for its answer while the article is published again and that job writes the newer
   // translation; then the older job's write fails unexpectedly.
   model.reply(reply("old"), async () => {
-    await call(updateArticle, as(), { slug: "getting-started", body: changed, publish: true });
-    for (let i = 0; i < 250 && !written; i++) {
-      written = (await translation()).title.startsWith("[new]");
-      if (!written) await new Promise((resolve) => setTimeout(resolve, 20));
+    // The publish's job, run here and awaited (its queued copy held back), rather than waited for by the clock.
+    const held = vi.spyOn(handlers, "translateArticle").mockResolvedValueOnce({ skipped: "held" } as never);
+    try {
+      await call(updateArticle, as(), { slug: "getting-started", body: changed, publish: true });
+    } finally {
+      held.mockRestore();
     }
+    const { articleId } = await translation();
+    await translateArticle({ articleId, language: "de" }, log);
+    written = (await translation()).title.startsWith("[new]");
     spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database blip"));
   });
   model.reply(reply("new", changed));
