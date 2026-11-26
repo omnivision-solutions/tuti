@@ -107,16 +107,16 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(details).toBeVisible();
   // A run across midnight can make the first message yesterday by the time it opens.
   await expect(owner.locator(".inbox-day")).toHaveText(/^(Today|Yesterday) · /);
-  // Who they are first and open (company and plan are their properties like any other); the posts open once there are
-  // some; the rest folded. Every heading the same height, a line between each.
+  // Who they are first and open (company and plan are their properties like any other), and what happened to it (Activity);
+  // the posts open once there are some; the rest folded. Every heading the same height, a line between each.
   const sectionNamed = (within: typeof details, name: string) => within.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
-  await expect(details.locator("summary > span")).toHaveText(["Customer details", "Other conversations", "Linked posts", "Looks related", "Conversation attributes"]);
+  await expect(details.locator("summary > span")).toHaveText(["Customer details", "Other conversations", "Activity", "Linked posts", "Looks related", "Conversation attributes"]);
   const folded = ["Other conversations", "Conversation attributes"];
   for (const name of folded) {
     await expect(sectionNamed(details, name)).not.toHaveAttribute("open");
     await expect(sectionNamed(details, name).locator("summary small")).toHaveText(/^\d+$/);
   }
-  for (const name of ["Customer details", "Linked posts", "Looks related"]) await expect(sectionNamed(details, name)).toHaveAttribute("open");
+  for (const name of ["Customer details", "Activity", "Linked posts", "Looks related"]) await expect(sectionNamed(details, name)).toHaveAttribute("open");
   await expect(sectionNamed(details, "Customer details").getByRole("definition")).toContainText(["Business", "12", "Northwind"]);
   const heights = await details.locator("summary").evaluateAll((summaries) => summaries.map((summary) => summary.getBoundingClientRect().height));
   expect(new Set(heights).size).toBe(1);

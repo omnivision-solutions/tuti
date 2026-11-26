@@ -27,8 +27,8 @@ test("what credits pay for names emails past the allowance only for a project wh
   const { billingFile } = await import("@tuti/testkit");
   const { emailsSpendCredits } = await import("./plans");
   const { creditFeatures } = await import("./credits");
-  expect(creditFeatures()).toBe("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot and Verify");
-  expect(creditFeatures(true)).toBe("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and emails past the plan's monthly allowance");
+  expect(creditFeatures()).toBe("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and AI images");
+  expect(creditFeatures(true)).toBe("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify, AI images and emails past the plan's monthly allowance");
   // Self-hosted (no billing file): never.
   vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
   expect(emailsSpendCredits("pro")).toBe(false);

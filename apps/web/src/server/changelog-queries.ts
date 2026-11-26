@@ -1,3 +1,4 @@
+import { type Doc, mediaIdsIn } from "@tuti/content";
 import { prisma, type ChangelogTag } from "@tuti/db";
 
 import type { PublishedEntry } from "@/components/changelog-entry";
@@ -6,6 +7,7 @@ import { REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
 import { visibleEntry } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
+import { lastingImage } from "./media-urls";
 
 /** Reads for the changelog pages: the team's editor and the portal. */
 
@@ -176,4 +178,19 @@ export async function publishedEntries(
       sample: e.sample,
     }),
   );
+}
+
+/** The images Generate offers to work from: the entry's text's (in its order) and the project's brand logo. */
+export async function generatorSources(projectId: string, content: Doc) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { brandLogoId: true } });
+  const ids = mediaIdsIn(content);
+  const found = await prisma.media.findMany({
+    where: { id: { in: [...ids, ...(project.brandLogoId ? [project.brandLogoId] : [])] }, projectId, status: "READY", filename: null, width: { not: null } },
+    select: { id: true, status: true, width: true, height: true },
+  });
+  const image = (id: string | null) => {
+    const shown = lastingImage(found.find((media) => media.id === id) ?? null);
+    return shown && { id: shown.id, url: shown.url };
+  };
+  return { bodyImages: ids.map(image).filter((each) => each !== null), logo: image(project.brandLogoId) };
 }

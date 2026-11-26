@@ -20,6 +20,7 @@ import {
   unlinkConversationPost,
   updateConversation,
 } from "./conversations";
+import { getConversationActivity } from "./conversation-activity";
 import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
@@ -62,6 +63,7 @@ import {
   listArticles,
   listCollections,
   publishArticle,
+  setArticleLanguageSlug,
   searchArticles,
   unpublishArticle,
   updateArticle,
@@ -98,6 +100,7 @@ import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
 import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
+import { generateImageOperation } from "./images";
 import { getScreenshots, getScreenshotSettings, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
@@ -120,6 +123,7 @@ const all = [
   listArticlesToInsert,
   getConversation,
   getConversationPerson,
+  getConversationActivity,
   createConversation,
   replyToConversation,
   translateReply,
@@ -157,6 +161,7 @@ const all = [
   updateChangelogEntry,
   editChangelogSection,
   composeChangelogCover,
+  generateImageOperation,
   listMissingChanges,
   addChangelogPullRequests,
   removeChangelogPullRequest,
@@ -181,6 +186,7 @@ const all = [
   createArticle,
   updateArticle,
   publishArticle,
+  setArticleLanguageSlug,
   publishChanges,
   discardChanges,
   unpublishArticle,

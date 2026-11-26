@@ -4,6 +4,8 @@ import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES,
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
+import { freeLanguageSlug } from "./docs-slugs";
+import { lockProject } from "./running-draft";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 import { embedTranslation } from "./articles";
 
@@ -52,6 +54,7 @@ const sourceSelect = {
   content: true,
   publishedAt: true,
   sample: true,
+  slug: true,
   project: { select: { language: true } },
 } as const;
 type Source = Prisma.ArticleGetPayload<{ select: typeof sourceSelect }>;
@@ -132,6 +135,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       error: true,
       retryAt: true,
       tries: true,
+      slug: true,
       retranslate: true,
       retranslated: true,
       projectLanguage: { select: { productAvailable: true, productVersion: true, instructions: true } },
@@ -151,6 +155,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
+    if (!row.slug) {
+      // Translated, but its naming failed then: named now.
+      await nameVersion(article.projectId, row.id);
+    }
     // Its search data too: one whose embedding failed is embedded here when the retry job brings it back (none to do: a lookup).
     return (await searchable(row.id, row.tries, row.retryAt, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
   }
@@ -253,6 +261,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   if (!written) {
     return { skipped: CHANGED };
   }
+  // Named first (its own transaction, the project locked), then searchable.
+  await nameVersion(article.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${articleId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
   // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: it's embedded later.
   // Its retry time as this run left it: the write just cleared it.
   await searchable(row.id, 0, null, log);
@@ -431,9 +441,11 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 
 /** The retry-article-translations job: versions that couldn't be translated, whose wait is over, tried again. */
 export async function retryArticleTranslations(): Promise<JobResult> {
+  // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
+  const named = await nameUnnamed();
   // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.
   if (!aiEnabled()) {
-    return { skipped: NO_AI };
+    return { skipped: NO_AI, ...(named > 0 && { named }) };
   }
   // Pages a batch here will still queue (its own runs' too) are left to it; the rest is claimed in one update, so a run
   // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
@@ -465,5 +477,56 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   });
   // Each job's end sets the next try's time, or clears it.
   await queueEach(due);
-  return { queued: due.length };
+  return { queued: due.length, ...(named > 0 && { named }) };
+}
+
+/**
+ * A version's first translation names it: a slug in its language from its title (freeLanguageSlug); later ones keep the
+ * address (a rename is the team's: articles.languageSlug). Its own transaction, after the translation's: slugs are picked
+ * with the project locked, and that lock is never taken while holding the article's (whose other writers, search's
+ * sections, wait on the project's row by its foreign key). Left unnamed if this fails: the page's next job names it.
+ */
+async function nameVersion(projectId: string, versionId: string) {
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const version = await tx.articleTranslation.findUnique({
+      where: { id: versionId },
+      select: { slug: true, title: true, language: true, articleId: true, article: { select: { slug: true, deletedAt: true } } },
+    });
+    if (!version || version.slug || version.article.deletedAt) {
+      return;
+    }
+    const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { id: versionId, articleId: version.articleId, slug: null }, version.article.slug);
+    await tx.articleTranslation.update({ where: { id: versionId }, data: { slug } });
+  });
+}
+
+/** Unnamed versions named per run of the retry job. */
+/** Unnamed versions named per run of the retry job (a test can change it). */
+export const nameBatch = { size: 200 };
+
+/**
+ * Versions translated before versions had slugs of their own (L6 part one) have none: named a batch per run of the retry job
+ * (meanwhile, served at the article's default-language slug), those waiting longest first. One that fails goes to the back
+ * (its time moved on), so a few that always fail never take every run's batch. How many it named.
+ * ponytail: a scan for unnamed versions every run; a partial index on them is the upgrade if the table grows large.
+ */
+async function nameUnnamed(): Promise<number> {
+  const unnamed = await prisma.articleTranslation.findMany({
+    where: { slug: null, publishedAt: { not: null }, article: { deletedAt: null } },
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    take: nameBatch.size,
+    select: { id: true, projectId: true },
+  });
+  let named = 0;
+  for (const { id, projectId } of unnamed) {
+    try {
+      await nameVersion(projectId, id);
+      named++;
+    } catch (error) {
+      serverLog.error("Naming an article's version failed", { versionId: id, error });
+      await prisma.articleTranslation.updateMany({ where: { id }, data: { updatedAt: new Date() } }).catch(() => {});
+    }
+  }
+  return named;
 }

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { languageFrom, portalPathOf, preferredLanguage, splitLanguage, withLanguage } from "./language-addresses";
+import { isPortalPath, languageFrom, portalPathOf, preferredLanguage, splitLanguage, withLanguage } from "./language-addresses";
 
 test("links add the language's prefix back (portalHref, usePortalHref); not to the API, Next.js's files or other sites", () => {
   expect(["/", "/docs/billing", "/?tab=new", "/#top", "/sign-in?next=%2Fdocs"].map((path) => withLanguage("/de", path))).toEqual([
@@ -60,4 +60,13 @@ test("a page's portal path (usePortalPath): the site's path and the language's p
   expect(portalPathOf("/portal/acme/de/docs", { ...acme, base: "/portal/acme" })).toBe("/docs");
   // In the default language nothing more comes off.
   expect(portalPathOf("/docs/billing", { ...acme, prefix: "" })).toBe("/docs/billing");
+});
+
+test("a path that came back over the network is gone to only if it's one of the portal's own", () => {
+  for (const path of ["/", "/docs/abrechnung", "/docs/caf%C3%A9", "/feedback?tab=new"]) {
+    expect([path, isPortalPath(path)]).toEqual([path, true]);
+  }
+  for (const path of ["", "docs/x", "//evil.example", "/\\evil.example", "https://evil.example/", "javascript:alert(1)", "/docs/x\nSet-Cookie: a", "/ docs", "/docs\\x", null, 1]) {
+    expect([path, isPortalPath(path)]).toEqual([path, false]);
+  }
 });

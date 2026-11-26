@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useActionState, useId } from "react";
 
 import { keepingFields } from "@/lib/forms";
@@ -25,6 +26,7 @@ export function ChangelogSubscribe({
   bare?: boolean;
 }) {
   // Its own ids: the changelog shows it in its rail on wide screens and after the list below them.
+  const t = useTranslations("changelog");
   const headingId = useId();
   const errorId = useId();
   const [state, action, pending] = useActionState(
@@ -35,13 +37,13 @@ export function ChangelogSubscribe({
     // The form stays (and its button keeps focus), with what was typed if it's refused; the answer is read out from here.
     <form {...keepingFields(action)} className="flex flex-col gap-2">
       <p className="text-sm text-muted-foreground">
-        {inCard ? "Or get every update by email:" : "New entries in your inbox, each with a link to unsubscribe."}
+        {inCard ? t("byEmailInCard") : t("byEmailIntro")}
       </p>
       <div className="flex flex-wrap gap-2">
         <Input
           name="email"
           type="email"
-          aria-label="Email"
+          aria-label={t("email")}
           placeholder="you@example.com"
           autoComplete="email"
           defaultValue={email}
@@ -52,12 +54,12 @@ export function ChangelogSubscribe({
         />
         {/* Disabled while it sends, but keeping its focus. */}
         <Button type="submit" variant={inCard ? "outline" : "default"} disabled={pending} focusableWhenDisabled>
-          {pending ? "Sending…" : "Subscribe"}
+          {pending ? t("sending") : t("subscribe")}
         </Button>
       </div>
       {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
       <p role="status" className="text-sm break-words text-muted-foreground">
-        {state.sentTo && !state.error ? `Check your inbox: we sent a link to ${state.sentTo} to confirm.` : ""}
+        {state.sentTo && !state.error ? t("checkInbox", { email: state.sentTo }) : ""}
       </p>
     </form>
   );
@@ -65,7 +67,7 @@ export function ChangelogSubscribe({
     return (
       <section role="region" aria-labelledby={headingId} className="flex flex-col gap-2">
         <h2 id={headingId} className="font-sans text-[0.9375rem] font-semibold">
-          Get updates by email
+          {t("getByEmail")}
         </h2>
         {form}
       </section>
@@ -76,7 +78,7 @@ export function ChangelogSubscribe({
   ) : (
     <section role="region" aria-labelledby={headingId} className="flex flex-col gap-1">
       <h2 id={headingId} className="font-heading text-lg font-semibold">
-        Get updates by email
+        {t("getByEmail")}
       </h2>
       {form}
     </section>

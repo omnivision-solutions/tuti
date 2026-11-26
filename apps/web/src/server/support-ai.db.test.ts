@@ -181,3 +181,25 @@ test("the team's instructions for drafts: owners and admins save up to 2,000 cha
   // The summary: none of them.
   expect(summary!.system + summary!.user).not.toContain("whether that helped");
 });
+
+test("where the project translates conversations, a reply is drafted from their messages' translations, in the team's language", async () => {
+  const { project, team } = await setup();
+  await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
+  const GERMAN = "Wie füge ich eine Kollegin hinzu?";
+  await call(createConversation, team, { email: "e2e-sam@example.com", body: GERMAN });
+  // As the translate-message job leaves it (docs/plan.md L22).
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, author: "USER" }, data: { teamText: QUESTION, language: "de" } });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  openai.setVector(QUESTION, along(1));
+  model.reply(JSON.stringify({ answer: "Owners and admins invite people from the Team page.", sources: ["s1"] }));
+  expect((await call(suggestReply, team, { number: 1 })).status).toBe("suggested");
+  // Asked (and searched) in the team's language: the draft is in it, and goes out translated like a typed reply.
+  expect((JSON.parse(model.requests[0]!.user.slice(model.requests[0]!.user.indexOf("{"))) as { question: string }).question).toBe(QUESTION);
+
+  // Translation off: their own words, as before.
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: false } });
+  openai.setVector(GERMAN, along(1));
+  model.reply(JSON.stringify({ answer: "Owners and admins invite people from the Team page.", sources: ["s1"] }));
+  await call(suggestReply, team, { number: 1 });
+  expect((JSON.parse(model.requests[1]!.user.slice(model.requests[1]!.user.indexOf("{"))) as { question: string }).question).toBe(GERMAN);
+});
