@@ -7,7 +7,7 @@ import { NextIntlClientProvider, useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
-import { useAddressIn, usePortalSlug } from "@/components/portal-base";
+import { useAddressIn, usePortalPath, usePortalSlug } from "@/components/portal-base";
 import { TeamLanguageContext } from "@/components/portal-look";
 import { languagePrefix } from "@/lib/language-addresses";
 import { Button } from "@/components/ui/button";
@@ -38,19 +38,21 @@ export function PortalIntl({ language, teamLanguage, messages, children }: { lan
  * Reads the portal in `code`: kept by chooseLanguage (this browser's and a signed-in reader's language, for emails and
  * "Send visitors to their language"), then the same page at that language's address. `languages`: the default one first.
  */
-function useChooseLanguage(languages: Language[]) {
+function useChooseLanguage(languages: Language[], current: Language) {
   const slug = usePortalSlug();
   const addressIn = useAddressIn();
+  const path = usePortalPath();
   const [pending, startTransition] = useTransition();
   const choose = (code: Language) =>
     startTransition(async () => {
-      const { error } = await chooseLanguage(slug, code);
+      // The same page there: an article's at its own slug in that language.
+      const { error, path: there } = await chooseLanguage(slug, code, { from: current, path });
       if (error) {
         toast.error(error);
         return;
       }
       // A full load: both addresses are one route to Next.js's router, which would keep the layout (the header's language) as it was.
-      window.location.assign(addressIn(code === languages[0] ? "" : languagePrefix(code)));
+      window.location.assign(addressIn(code === languages[0] ? "" : languagePrefix(code), there));
     });
   return { choose, pending };
 }
@@ -62,7 +64,7 @@ function useChooseLanguage(languages: Language[]) {
  */
 export function LanguageSwitcher({ languages, current }: { languages: Language[]; current: Language }) {
   const t = useTranslations("header");
-  const { choose, pending } = useChooseLanguage(languages);
+  const { choose, pending } = useChooseLanguage(languages, current);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -89,7 +91,7 @@ export function LanguageSwitcher({ languages, current }: { languages: Language[]
 /** The languages in the header's menu on phones, where the header has no room for its switcher. */
 export function LanguageList({ languages, current }: { languages: Language[]; current: Language }) {
   const t = useTranslations("header");
-  const { choose, pending } = useChooseLanguage(languages);
+  const { choose, pending } = useChooseLanguage(languages, current);
   return (
     <div role="group" lang={current} aria-label={t("languages")} className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
       <p aria-hidden="true" className="flex items-center gap-2 px-2 py-1 font-heading font-semibold">

@@ -14,6 +14,7 @@ import { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/
 
 import { docsPage } from "./docs-queries";
 import { createRedirect } from "./operations/redirects";
+import { chooseLanguage } from "./reader-language";
 import { createArticle, createCollection, customDocsSlug, publishArticle, setArticleLanguageSlug } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
@@ -144,9 +145,9 @@ test("the team's slug: the old one stays an old slug in the language; refused wh
 });
 
 /** A portal request through proxy.ts. */
-const visit = (path: string) => {
+const visit = (path: string, headers: Record<string, string> = {}) => {
   const host = `${project.slug}.localhost:3100`;
-  return proxy(new NextRequest(`http://${host}${path}`, { headers: { host } }));
+  return proxy(new NextRequest(`http://${host}${path}`, { headers: { host, ...headers } }));
 };
 
 test("an offline or removed language's article address goes to its default-language slug, found by that language's slug, current then old", async () => {
@@ -269,4 +270,40 @@ test("at a language's slug, the page's canonical address and its Markdown are th
   // Another of its slugs goes to its own, as its page does.
   const moved = await markdown(new Request("http://portal.test/"), { params: Promise.resolve({ project: project.slug, slug: "billing" }) } as never);
   expect([moved.status, moved.headers.get("location")]).toEqual([308, "/de/docs/abrechnung.md"]);
+});
+
+test("the switcher goes to the same article at its own slug in the chosen language, though two languages share a slug", async () => {
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "Invoices", body: "Monthly." });
+  await call(publishArticle, as(), { slug: "invoices" });
+  const other = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "invoices" } })).id;
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] });
+  // Billing's French slug is Invoices' default-language one, and German and French share "konto" for two articles.
+  await version(articleId, "fr", "invoices");
+  await version(articleId, "de", "konto");
+  await version(other, "fr", "konto");
+
+  const switched = async (from: string, path: string, to: string) => (await chooseLanguage(project.slug, to, { from, path })).path;
+  expect(await switched("en", "/docs/invoices", "fr")).toBe("/docs/konto");
+  expect(await switched("fr", "/docs/invoices", "en")).toBe("/docs/billing");
+  expect(await switched("de", "/docs/konto", "fr")).toBe("/docs/invoices");
+  // No version in German yet: its default-language slug, which the German address finds too.
+  expect(await switched("fr", "/docs/konto", "de")).toBe("/docs/invoices");
+  expect(await switched("en", "/roadmap", "de")).toBe("/roadmap");
+});
+
+test("a locked article shows its lock at its language slug too, and an AI tool asking there for Markdown gets it", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
+  await version(articleId, "de", "abrechnung");
+  await prisma.articleOldSlug.create({ data: { projectId: project.id, language: "de", slug: "zahlungen", articleId } });
+  // The proxy hands a Markdown request for an article's page, by a language's slug current or old, to its Markdown route.
+  for (const path of ["/de/docs/abrechnung", "/de/docs/zahlungen"]) {
+    expect((await visit(path, { accept: "text/markdown" })).headers.get("x-middleware-rewrite")).toMatch(/\/docs\/(abrechnung|zahlungen)\/md$/);
+  }
+  // For signed-in readers only, shown with a lock to the rest.
+  await prisma.article.update({ where: { id: articleId }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
+  at("de");
+  expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "locked", article: { title: "Billing" } });
+  expect(await docsPage(project.slug, "zahlungen")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
 });

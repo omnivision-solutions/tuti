@@ -465,8 +465,8 @@ export const docsPage = cache(async (projectSlug: string, slug: string): Promise
  * slug in the address's language; its default-language slug; an old slug in the address's language; another language's
  * slug, in their Settings order; another language's old slug, the newest. `slug`: its default-language slug (what the rest
  * of the docs read it by); `own`: its slug in the address's language (the default's where it has none yet). Only an
- * article this reader may read on its page counts, so no other address of a hidden, AI-only or restricted article leads
- * to it. Null: none (a tab's, a collection's, or nothing).
+ * article this reader sees on its page counts (readable, or shown with a lock, which its default slug shows them too), so no
+ * other address of a hidden, AI-only or restricted article leads to it. Null: none (a tab's, a collection's, or nothing).
  */
 export const articleNamed = cache(async (projectSlug: string, slug: string): Promise<{ slug: string; own: string } | null> => {
   const { language, defaultLanguage } = await portalLanguage().catch(() => ({ language: null, defaultLanguage: null }));
@@ -486,7 +486,7 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
   for (const step of steps) {
     const found = await step();
     if (found) {
-      if ((await articleAt(projectSlug, found.slug))?.kind !== "article") {
+      if (!(await articleAt(projectSlug, found.slug))) {
         return null;
       }
       const version = other && (await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: other } }, select: { slug: true } }));
@@ -495,6 +495,30 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
   }
   return null;
 });
+
+/**
+ * The language switcher's target for `path` (the portal's own, without a prefix) read in `from`, in `to` (docs/plan.md,
+ * Languages: "the switcher links each language's own slug, found by the article"): an article's page at its slug in `to`
+ * (its default-language one where it has none there); any other path as it is. `defaultLanguage`: the project's.
+ */
+export async function pathIn(projectSlug: string, path: string, from: string, to: string, defaultLanguage: string): Promise<string> {
+  const match = /^\/docs\/([^/]+)$/.exec(path);
+  if (!match || from === to) {
+    return path;
+  }
+  const slug = decodeURIComponent(match[1]!);
+  const article = { project: { slug: projectSlug }, ...published };
+  const select = { id: true, slug: true } as const;
+  const found =
+    (from !== defaultLanguage ? (await prisma.articleTranslation.findFirst({ where: { language: from, slug, article }, select: { article: { select } } }))?.article : null) ??
+    (await prisma.article.findFirst({ where: { ...article, slug }, select }));
+  // Only an article this reader sees: another's slug says nothing about it.
+  if (!found || !(await articleAt(projectSlug, found.slug))) {
+    return path;
+  }
+  const own = to === defaultLanguage ? found.slug : ((await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: to } }, select: { slug: true } }))?.slug ?? found.slug);
+  return `/docs/${encodeURIComponent(own)}`;
+}
 
 /** A published article on the portal (unless it's hidden or AI only) that this reader may read, once per request (its page and its metadata both read it). */
 export const publishedArticle = cache(async (projectSlug: string, slug: string) => {
