@@ -58,7 +58,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
       <EntryList
         id="spam-phrases"
         title="Phrases"
-        description="A new conversation with one in its subject or first message goes to Spam. Whole words, any case."
+        description="A new conversation with one in its subject or first message goes to Spam, unless its sender is allowed or trusted (one of your users, a teammate, someone you've replied to). Whole words, any case."
         label="Phrase to add"
         placeholder="facebook admin"
         maxLength={maxPhrase}

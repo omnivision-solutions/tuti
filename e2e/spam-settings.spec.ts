@@ -52,7 +52,7 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await add("Allowed", "Address or domain to allow", "e2e-forms@relay.example");
   await expect(card("Allowed").getByRole("listitem")).toHaveText(["e2e-forms@relay.example"]);
 
-  await expect(card("Phrases")).toContainText("A new conversation with one in its subject or first message goes to Spam. Whole words, any case.");
+  await expect(card("Phrases")).toContainText("A new conversation with one in its subject or first message goes to Spam, unless its sender is allowed or trusted (one of your users, a teammate, someone you've replied to). Whole words, any case.");
   await add("Phrases", "Phrase to add", "Facebook Admin");
   await expect(card("Phrases").getByRole("listitem")).toHaveText(["Facebook Admin"]);
   // One that's there already, however it's written, says so.
