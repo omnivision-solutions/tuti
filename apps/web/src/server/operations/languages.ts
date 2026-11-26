@@ -42,11 +42,15 @@ async function projectLanguages(projectId: string): Promise<z.output<typeof lang
   return {
     default: named(project.language) ?? { code: "en", name: LANGUAGES.en.name },
     // A code no longer offered isn't one this server can serve.
-    languages: project.languages.flatMap(({ code, automatic, live, ...rest }, index) => {
+    languages: project.languages.flatMap(({ code, ...rest }) => {
       const language = named(code);
-      const withinLimit = limit === null || index < limit - 1;
-      return language ? [{ ...language, newPages: automatic ? ("automatic" as const) : ("manual" as const), ...rest, live: live && withinLimit }] : [];
-    }),
+      return language ? [{ ...rest, ...language }] : [];
+    }).map(({ automatic, live, ...rest }, index) => ({
+      ...rest,
+      newPages: automatic ? ("automatic" as const) : ("manual" as const),
+      // Counted among those offered only.
+      live: live && (limit === null || index < limit - 1),
+    })),
   };
 }
 
@@ -140,7 +144,9 @@ export const updateLanguages = defineOperation({
       await tx.project.update({ where: { id: projectId }, data: { language } });
       await tx.projectLanguage.deleteMany({ where: { projectId, code: { notIn: input.languages.map(({ code }) => code) } } });
       // Those added together keep the list's order: a millisecond apart.
-      const now = Date.now();
+      // After every language already there, even one added a moment ago (a millisecond per language, maybe ahead of the clock).
+      const latest = await tx.projectLanguage.aggregate({ where: { projectId }, _max: { createdAt: true } });
+      const now = Math.max(Date.now(), (latest._max.createdAt?.getTime() ?? 0) + 1);
       for (const [index, { code, newPages, ...rest }] of input.languages.entries()) {
         const data = { ...(newPages && { automatic: newPages === "automatic" }), ...rest };
         await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, createdAt: new Date(now + index), ...data }, update: data });

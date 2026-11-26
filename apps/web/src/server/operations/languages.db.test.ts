@@ -103,3 +103,26 @@ test("the plan limits the languages, the default counted; past it (after a downg
   vi.stubEnv("BILLING_CONFIG", billingFile());
   await update({ languages: [{ code: "fr" }, { code: "es", live: true }, { code: "it" }] });
 });
+
+test("languages added in quick saves keep the order they were added in", async () => {
+  const { get, update } = await setUp();
+  const now = Date.now();
+  vi.spyOn(Date, "now").mockReturnValue(now);
+  try {
+    await update({ languages: [{ code: "de" }, { code: "fr" }, { code: "es" }] });
+    // Same millisecond: the first save's languages took now, now + 1 and now + 2.
+    await update({ languages: [{ code: "it" }, { code: "de" }, { code: "fr" }, { code: "es" }] });
+  } finally {
+    vi.restoreAllMocks();
+  }
+  expect((await get()).languages.map(({ code }) => code)).toEqual(["de", "fr", "es", "it"]);
+});
+
+test("a language no longer offered takes none of the plan's room", async () => {
+  const { project, get } = await setUp();
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "xx", createdAt: new Date(0) } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await prisma.projectLanguage.createMany({ data: [{ projectId: project.id, code: "de", live: true, createdAt: new Date(1) }, { projectId: project.id, code: "fr", live: true, createdAt: new Date(2) }] });
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect((await get()).languages.map(({ code, live }) => [code, live])).toEqual([["de", true], ["fr", true]]);
+});
