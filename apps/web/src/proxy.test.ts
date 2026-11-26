@@ -13,7 +13,12 @@ vi.mock("@/server/portal-redirects", async () => {
   return { redirectFor: async (_slug: string, path: string) => portal.rules.get(redirectKey(path)) ?? null };
 });
 // /docs/api/<operation> is an API operation's page (with the database: language-addresses.db.test.ts).
-vi.mock("@/server/language-addresses", () => ({ portalLanguages: async () => portal.languages, apiReferenceSlugs: async () => new Set(["api"]) }));
+// An offline language's article found by its own slug: with the database (language-addresses.db.test.ts); here, the same path.
+vi.mock("@/server/language-addresses", () => ({
+  portalLanguages: async () => portal.languages,
+  apiReferenceSlugs: async () => new Set(["api"]),
+  inDefaultLanguage: async (_slug: string, _code: string, path: string) => path,
+}));
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-access", () => ({
   portalVisitor: async () => portal.visitor,

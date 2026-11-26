@@ -1,4 +1,4 @@
-import { BoxesIcon, CameraIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, LanguagesIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldBanIcon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
+import { BoxesIcon, CameraIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, LanguagesIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldBanIcon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon, WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
@@ -44,6 +44,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
       pages: [
         { title: "Inbox and email", href: at("support"), icon: <InboxIcon aria-hidden /> },
         { title: "Spam", href: at("spam"), icon: <ShieldBanIcon aria-hidden /> },
+        { title: "Workflows", href: at("workflows"), icon: <WorkflowIcon aria-hidden /> },
       ],
     },
     {
