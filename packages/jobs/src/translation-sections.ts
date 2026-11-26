@@ -99,8 +99,15 @@ export function withTranslation(
     const introKey = source[0]!.key;
     const [first, second] = [out[0]!, out[1]!];
     const [sources, theirs] = first.meta.key === introKey ? [first, second] : [second, first];
-    // Asked for (Update those sections): its new translation, as asked. Else the team's, kept (so a later run keeps it too).
-    out.splice(0, 2, only?.has(introKey) ? sources : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true } });
+    // Asked for (Update those sections, on a version the team writes): its new translation, and the team's own paragraph after
+    // it (it asked to add the intro, not to drop its text). Else the team's, kept (so a later run keeps it too).
+    out.splice(
+      0,
+      2,
+      only?.has(introKey)
+        ? { blocks: [...sources.blocks, ...theirs.blocks], meta: { key: introKey, hash: sources.meta.hash, own: true } }
+        : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true } },
+    );
   }
   return out;
 }

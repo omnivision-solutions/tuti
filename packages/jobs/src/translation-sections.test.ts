@@ -221,7 +221,8 @@ test("the team's intro standing for the source's stays through later runs, and g
   const v3 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by invoice"]);
   const twice = withTranslation(versionSections(docOfSections(once), metaOf(once), source2), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v3), { published: true });
   expect(texts(docOfSections(twice))).toEqual(["Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Per Rechnung"]);
-  // A version the team writes, asking for the intro: its translation, as asked.
+  // A version the team writes, asking for the intro it lacks: its translation in, the team's own paragraph kept after it.
   const asked = withTranslation(ours, translated, source2, { only: new Set([source2[0]!.key]) });
-  expect(texts(docOfSections(asked))).toEqual(["Einleitung", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+  expect(texts(docOfSections(asked))).toEqual(["Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+  expect(versionSections(docOfSections(asked), metaOf(asked), source2)).toHaveLength(3);
 });
