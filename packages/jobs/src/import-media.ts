@@ -188,6 +188,21 @@ async function copyThrough(
 export const storeImage = (body: Uint8Array, { projectId, uploaderId }: { projectId: string; uploaderId: string }) =>
   keep(projectId, uploaderId, { kind: "image", body, path: null, filename: null, extension: "", late: undefined, upload: true });
 
+/** Whether `size` more bytes fit the project's quota and, for `uploaderId`, their hourly uploads (storeImage's checks). */
+async function hasRoom(db: Pick<typeof prisma, "media">, projectId: string, uploaderId: string | null, size: number): Promise<boolean> {
+  if (uploaderId && (await db.media.count({ where: { uploaderId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } } })) >= UPLOADS_PER_HOUR_TEAM) {
+    return false;
+  }
+  const { _sum } = await db.media.aggregate({ where: { projectId, status: { not: "FAILED" } }, _sum: { size: true } });
+  return (_sum.size ?? 0) + size <= mediaLimit("projectQuota");
+}
+
+/**
+ * Whether storeImage would have room for one more image by `uploaderId` now (an hourly upload left, and any quota left):
+ * for work that costs before it has an image to keep. Not a reservation: storeImage checks again.
+ */
+export const roomForImage = (projectId: string, uploaderId: string) => hasRoom(prisma, projectId, uploaderId, 1);
+
 /** A fetched file kept in the project's media: its row reserved under the quota, then stored (an image processed). */
 async function keep(
   projectId: string,
@@ -213,11 +228,7 @@ async function keep(
   const media = await prisma.$transaction(async (tx) => {
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
-    if (upload && (await tx.media.count({ where: { uploaderId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } } })) >= UPLOADS_PER_HOUR_TEAM) {
-      return null;
-    }
-    const { _sum } = await tx.media.aggregate({ where: { projectId, status: { not: "FAILED" } }, _sum: { size: true } });
-    if ((_sum.size ?? 0) + size > mediaLimit("projectQuota")) {
+    if (!(await hasRoom(tx, projectId, upload ? uploaderId : null, size))) {
       return null;
     }
     return tx.media.create({

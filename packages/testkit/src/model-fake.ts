@@ -94,6 +94,8 @@ export type ModelFake = {
    * (1K about 1024² pixels: 1024×1024 at 1:1, 1365×768 at 16:9; 2K and 4K twice and four times as wide and tall), costing FAKE_IMAGE_COST.
    */
   images: ImageRequest[];
+  /** The next image request fails with this HTTP status, or without one gets a reply with no image in it (still paid for). */
+  failImage(status?: number): void;
   /** Every decision request, in order (also `GET /_fake/decisions`). */
   decisions: DecisionRequest[];
   /**
@@ -134,6 +136,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
   };
   const requests: ModelRequest[] = [];
   const images: ImageRequest[] = [];
+  const imageFailures: (number | undefined)[] = [];
   const decisionSteps: { answers: FakeDecision; match?: string; during?: () => Promise<unknown> }[] = [];
   const decisions: DecisionRequest[] = [];
   const standingDecisions: { answers: FakeDecision; match: string }[] = [];
@@ -286,6 +289,13 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
           provider: body.provider,
           usage: body.usage,
         });
+        if (imageFailures.length > 0) {
+          const status = imageFailures.shift();
+          if (status !== undefined) {
+            return send(status, { error: { message: "fake failure" } });
+          }
+          return send(200, { id: `fake-image-${images.length}`, model: body.model, choices: [{ index: 0, message: { role: "assistant", content: "I can't draw that." } }], usage: { prompt_tokens: prompt.length, completion_tokens: 5, cost: 0.001 } });
+        }
         const side = 1024 * scale;
         const png = solidPng(Math.round(side * Math.sqrt(w / h)), Math.round(side / Math.sqrt(w / h)));
         return send(200, {
@@ -362,6 +372,9 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     embeddings,
     requests,
     images,
+    failImage(status) {
+      imageFailures.push(status);
+    },
     reply(content, during, match) {
       steps.push({ status: 200, content, during, match });
     },
@@ -390,6 +403,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
           .splice(0)
           .map((step) => `an unused step: ${step.content ?? (step.toolCalls ? `tool calls ${step.toolCalls.map((call) => call.name).join(", ")}` : `status ${step.status}`)}`),
         ...decisionSteps.splice(0).map((step) => `an unused decision: ${JSON.stringify(step.answers)}`),
+        ...imageFailures.splice(0).map((status) => `an unused image failure: ${status ?? "no image"}`),
       ];
       if (problems.length > 0) {
         throw new Error(`The model fake got:\n${problems.join("\n")}`);

@@ -1,6 +1,6 @@
 import { imageKey, imageWidths, MAX_IMAGE_SIZE } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
-import { imagesMeter, OutOfCredits, storeImage } from "@tuti/jobs";
+import { imagesMeter, OutOfCredits, roomForImage, storeImage } from "@tuti/jobs";
 import { aiEnabled, generateImage, imageShape, imagesEnabled, log } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import sharp from "sharp";
@@ -22,6 +22,9 @@ export const MAX_IMAGE_REFERENCES = 14;
 export const MIN_GENERATED_SIDE = 64;
 /** The size references are sent at: enough for the model to work from, a fraction of a full-size one's bytes. */
 const REFERENCE_WIDTH = 1600;
+
+const noRoom = () =>
+  new OperationError(409, "no_room", "The image can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour");
 
 const side = (name: string) =>
   z
@@ -70,6 +73,10 @@ export const generateImageOperation = defineOperation({
     if (found.length < ids.length) {
       throw new OperationError(404, "not_found", "One of the images to work from isn't in this project");
     }
+    // Before paying for an image that couldn't be kept (storeImage checks again: only a race between them pays for nothing).
+    if (!(await roomForImage(projectId, uploaderOf(actor)))) {
+      throw noRoom();
+    }
     const meter = await imagesMeter(projectId).catch((error: unknown) => {
       throw error instanceof OutOfCredits ? new OperationError(402, "no_credits", NO_CREDITS) : error;
     });
@@ -100,7 +107,7 @@ export const generateImageOperation = defineOperation({
     const stored = await storeImage(png, { projectId, uploaderId: uploaderOf(actor) });
     if (!("mediaId" in stored)) {
       throw stored.leftOut === "quota"
-        ? new OperationError(409, "no_room", "The image can't be kept: this project has no space left for images, or you've uploaded a lot of images in the last hour")
+        ? noRoom()
         : new OperationError(503, "copy_failed", "Couldn't keep the image just now: try again in a moment");
     }
     return lastingImage({ id: stored.mediaId, status: "READY", width: stored.width, height: stored.height })!;

@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { creditBalance, grantCredits, storeImage, UPLOADS_PER_HOUR_TEAM } from "@tuti/jobs";
 import { creditsPerUsageDollar, DEFAULT_IMAGE_MODEL } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
-import { creditsOn, FAKE_IMAGE_COST, type ModelFake, type S3Fake, startModelFake, startS3Fake } from "@tuti/testkit";
+import { configFile, creditsOn, FAKE_IMAGE_COST, type ModelFake, type S3Fake, startModelFake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -129,15 +129,32 @@ test("images need AI through OpenRouter, and uploads", async () => {
   expect(model.images).toHaveLength(0);
 });
 
-test("past the hourly uploads or the quota, the image isn't kept (409); sizes outside the limits are refused", async () => {
+test("past the hourly uploads or the quota, it's refused (409) before the model is asked; sizes outside the limits are refused", async () => {
   await prisma.media.createMany({
     data: Array.from({ length: UPLOADS_PER_HOUR_TEAM }, () => ({ projectId: project.id, uploaderId: owner.id, size: 1, status: "READY" as const })),
   });
   await expect(generate({ width: 300, height: 300 })).rejects.toMatchObject({ status: 409, code: "no_room" });
+  // The quota: a teammate with uploads to spare, in a project with no space left.
+  await prisma.media.deleteMany({ where: { projectId: project.id } });
+  vi.stubEnv("TUTI_CONFIG", configFile({ media: { projectQuotaMb: 1 } }));
+  await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1024 * 1024, status: "READY" } });
+  await expect(generate({ width: 300, height: 300 })).rejects.toMatchObject({ status: 409, code: "no_room" });
+  expect(model.images).toHaveLength(0);
+  expect(await prisma.aiUsage.count({ where: { projectId: project.id } })).toBe(0);
 
   await expect(generate({ width: 2401, height: 300 })).rejects.toMatchObject({ status: 400, message: "The width is at most 2,400 pixels" });
   await expect(generate({ width: 300, height: 63 })).rejects.toMatchObject({ status: 400, message: "The height is at least 64 pixels" });
   await expect(generate({ prompt: "  ", width: 300, height: 300 })).rejects.toMatchObject({ status: 400, message: "Describe the image" });
+});
+
+test("a model that fails, or answers without an image, is a 502 and keeps nothing; an answer is paid for all the same", async () => {
+  model.failImage(503);
+  await expect(generate({ width: 300, height: 300 })).rejects.toMatchObject({ status: 502, code: "ai_failed", message: "The AI couldn't make the image. Try again in a moment." });
+  model.failImage();
+  await expect(generate({ width: 300, height: 300 })).rejects.toMatchObject({ status: 502, code: "ai_failed" });
+  expect(model.images).toHaveLength(2);
+  expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.aiUsage.findMany({ where: { projectId: project.id }, select: { feature: true } })).toEqual([{ feature: "images" }]);
 });
 
 test("the app's action: the image for a teammate, an error for anyone else", async () => {
