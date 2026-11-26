@@ -1,6 +1,12 @@
+import { USAGE_FEATURES } from "@tuti/shared";
 import { expect, test } from "vitest";
 
-import { costOf, count, credits, money } from "./usage-format";
+import { AI_FEATURE_NAMES, costOf, count, credits, money } from "./usage-format";
+
+test("every usage feature has its name on Usage", () => {
+  expect(USAGE_FEATURES.filter((feature) => !AI_FEATURE_NAMES[feature])).toEqual([]);
+  expect(AI_FEATURE_NAMES.images).toBe("AI images");
+});
 
 test("dollars: cents, four places below a cent, and a sliver said so", () => {
   expect([money(12.345), money(0.0044), money(0.00002), money(0)]).toEqual(["$12.35", "$0.0044", "under $0.0001", "$0.00"]);

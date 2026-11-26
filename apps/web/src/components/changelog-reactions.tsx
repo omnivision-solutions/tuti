@@ -1,6 +1,7 @@
 "use client";
 
 import { useOptimistic, useTransition } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ export function ChangelogReactions({
   onReact?: (reaction: Reaction, reacted: boolean) => Promise<{ error?: string }>;
 }) {
   const [pending, startTransition] = useTransition();
+  const t = useTranslations("changelog");
+  const locale = useLocale();
   const [optimistic, setOptimistic] = useOptimistic({ counts, reacted });
 
   return (
@@ -55,9 +58,9 @@ export function ChangelogReactions({
                 "border-primary bg-soft hover:bg-soft/80 portal:border-transparent portal:bg-soft portal:text-soft-foreground portal:ring-1 portal:ring-primary/45 portal:ring-inset portal:hover:bg-soft/80 portal:focus-visible:ring-3 portal:focus-visible:ring-ring/50",
             )}
             disabled={!signedIn || pending}
-            title={signedIn ? undefined : "Sign in to react"}
+            title={signedIn ? undefined : t("signInToReact")}
             aria-pressed={on}
-            aria-label={`React with ${REACTION_EMOJI[reaction]}${count > 0 ? ` (${count})` : ""}`}
+            aria-label={count > 0 ? t("reactWithCount", { emoji: REACTION_EMOJI[reaction], count }) : t("reactWith", { emoji: REACTION_EMOJI[reaction] })}
             onClick={() =>
               startTransition(async () => {
                 setOptimistic((s) => ({
@@ -74,7 +77,7 @@ export function ChangelogReactions({
             }
           >
             <span aria-hidden className={quiet ? "text-sm" : "text-base"}>{REACTION_EMOJI[reaction]}</span>
-            {count > 0 && <span className="tabular-nums">{count}</span>}
+            {count > 0 && <span className="tabular-nums">{count.toLocaleString(locale)}</span>}
           </Button>
         );
       })}

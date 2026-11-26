@@ -344,7 +344,7 @@ async function refusedBeforeCopying(projectId: string, { cover, postIds, sample 
   }
 }
 
-const uploaderOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+export const uploaderOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
 
 /** A cover given by URL, not by an upload's id (cuids, which never hold one). */
 const isCoverUrl = (cover: string | null | undefined): cover is string => !!cover?.includes("://");

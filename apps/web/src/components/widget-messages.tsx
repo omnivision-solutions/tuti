@@ -881,9 +881,25 @@ function Conversation({
                   <p className="text-xs text-muted-foreground">
                     {m.fromTeam ? (m.name ?? "The team") : "You"} · {timeAgo(new Date(m.createdAt))}
                   </p>
-                  <p className="text-sm break-words whitespace-pre-wrap">
+                  <p lang={m.language ?? undefined} className="text-sm break-words whitespace-pre-wrap">
                     <MessageText text={m.body} ugc={!m.fromTeam} />
                   </p>
+                  {m.original !== null && (
+                    // A translated reply: what the team wrote, a click away (docs/plan.md L22).
+                    <details
+                      className="group mt-1 text-xs text-muted-foreground"
+                      // Opened on the latest reply, its original would be under the reply box: brought into view.
+                      onToggle={(event) => event.currentTarget.open && event.currentTarget.lastElementChild?.scrollIntoView({ block: "nearest" })}
+                    >
+                      <summary className="w-fit cursor-pointer list-none font-medium underline underline-offset-2 [&::-webkit-details-marker]:hidden">
+                        <span className="group-open:hidden">Show original</span>
+                        <span className="hidden group-open:inline">Hide original</span>
+                      </summary>
+                      <p lang={opened.teamLanguage} className="mt-1 scroll-mb-40 text-sm break-words whitespace-pre-wrap text-foreground">
+                        <MessageText text={m.original} ugc={false} />
+                      </p>
+                    </details>
+                  )}
                   <MessageAttachments attachments={m.attachments} dropped={m.dropped} imported />
                 </div>
               </li>

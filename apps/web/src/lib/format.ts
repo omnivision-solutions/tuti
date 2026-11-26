@@ -33,6 +33,17 @@ export function formatShortDate(date: Date, now = new Date()): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year, timeZone: "UTC" });
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "7 Nov 2026": the timeline's margin (in English every month three letters, as "Sep", not en-GB's "Sept"); in another
+ * language, its own short month ("7. Nov. 2026").
+ */
+export const shortDate = (date: Date, language: string) =>
+  language === "en"
+    ? `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+    : date.toLocaleDateString(dateLocale(language), { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
 /** A day, short, like "6 Oct" (UTC, as formatDate). */
 export function formatDay(date: Date, language = "en"): string {
   return date.toLocaleDateString(dateLocale(language), { day: "numeric", month: "short", timeZone: "UTC" });

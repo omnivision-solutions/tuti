@@ -37,3 +37,13 @@ export function liveLanguages(languages: { code: string; live: boolean }[], limi
     .filter(({ live }, index) => live && (limit === null || index < limit - 1))
     .map(({ code }) => code as Language);
 }
+
+/** A language's name in itself ("Deutsch" for de, "Français" for fr), as its speakers know it; the code where Intl doesn't know it. */
+export function nativeLanguageName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([code], { type: "language" }).of(code) ?? code;
+    return name.charAt(0).toLocaleUpperCase(code) + name.slice(1);
+  } catch {
+    return code;
+  }
+}

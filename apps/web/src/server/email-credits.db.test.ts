@@ -85,7 +85,7 @@ test("past a paid plan's included emails, each spends credits.perEmail (0.2) and
   const low = mailbox.emails.filter((email) => email.to.includes(owner.email) && email.subject.endsWith("is running low on credits"));
   expect(low).toHaveLength(1);
   // And says the emails past the allowance pause with the AI when they run out.
-  expect(low[0]!.text).toContain("Autopilot, Verify and emails past the plan's monthly allowance pause until it has more.");
+  expect(low[0]!.text).toContain("Autopilot, Verify, AI images and emails past the plan's monthly allowance pause until it has more.");
 });
 
 test("the charge is the paid emails times credits.perEmail, as it's set: no dollar rate turns it", async () => {
