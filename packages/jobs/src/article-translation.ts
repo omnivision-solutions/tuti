@@ -373,6 +373,19 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   return written ? { translated: language } : { skipped: CHANGED };
 }
 
+/**
+ * A version the team published (articles.publishTranslation), after its own transaction: named, on its first publish, and
+ * its new text made searchable (a failure is retried by the retry job, as the job's is). Never throws.
+ */
+export async function versionPublished(projectId: string, versionId: string, first: boolean) {
+  const log = { info: () => {}, warn: (message: string) => serverLog.warn(message) };
+  if (first) {
+    await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+  }
+  const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
+  await searchable(versionId, tries, retryAt, log).catch((error: unknown) => serverLog.error("Embedding an article's version failed", { versionId, error }));
+}
+
 /** Why a version up to date is tried again: its sections couldn't be embedded for search. */
 const SEARCH_WAITS = "its search data couldn't be written";
 
@@ -604,7 +617,7 @@ export async function retryArticleTranslations(): Promise<JobResult> {
  * with the project locked, and that lock is never taken while holding the article's (whose other writers, search's
  * sections, wait on the project's row by its foreign key). Left unnamed if this fails: the page's next job names it.
  */
-async function nameVersion(projectId: string, versionId: string) {
+export async function nameVersion(projectId: string, versionId: string) {
   await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const version = await tx.articleTranslation.findUnique({

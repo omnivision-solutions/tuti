@@ -60,7 +60,7 @@ export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, mo
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { inboxDue, inboxDueToken } from "./inbox-due";
 export { aiFor, duplicatesMeter, imagesMeter, screenshotsMeter } from "./ai-usage";
-export { behindOf, type BehindList, type Draft, otherReasons, queueVersion, sourceAdded, sourceChanged, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, nameBatch, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
+export { behindOf, type BehindList, type Draft, nameVersion, otherReasons, queueVersion, versionPublished, sourceAdded, sourceChanged, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, nameBatch, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";

@@ -8,6 +8,7 @@ import {
   metaOf,
   otherReasons,
   queueVersion,
+  versionPublished,
   type Section,
   sourceSections,
   translationSource,
@@ -92,7 +93,8 @@ async function sourceOf(db: Prisma.TransactionClient, articleId: string) {
   if (!article.publishedAt) {
     throw new OperationError(409, "not_published", "Publish the article first: its other languages are made from what's published");
   }
-  return { parts: sourceSections(translationSource(article).text), sourceLanguage: article.project.language, titleHash: contentHash(article.title) };
+  const source = translationSource(article);
+  return { parts: sourceSections(source.text), sourceLanguage: article.project.language, titleHash: contentHash(article.title), sourceHash: source.hash };
 }
 
 /** A version's sections: published, and in the draft. The team's own on a version not kept up to date (for what's behind). */
@@ -114,10 +116,14 @@ function behindNow(version: Version, parts: ReturnType<typeof sourceSections>, s
   return behindOf(sourceLanguage, parts, lists, otherReasons(version.behind, sourceLanguage));
 }
 
-/** What a version says now (title, text and draft): a save is made against it. */
-const versionToken = (version: Version) => contentHash(JSON.stringify([version.title, version.content, version.draft]));
+/**
+ * What a version says now (title, text and draft) and the source it's compared with (`sourceHash`): a save is made against
+ * both, so one from a read taken before the source changed is refused (it would mark a section up to date with source text
+ * its editor never saw).
+ */
+const versionToken = (version: Version, sourceHash: string) => contentHash(JSON.stringify([version.title, version.content, version.draft, sourceHash]));
 
-function output(version: Version, parts: ReturnType<typeof sourceSections>, sourceLanguage: string): z.output<typeof translationOutput> {
+function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts: ReturnType<typeof sourceSections>; sourceLanguage: string; sourceHash: string }): z.output<typeof translationOutput> {
   const { published, draft, drafted } = versionParts(version, parts);
   const behind = behindNow(version, parts, sourceLanguage, published);
   const draftBehind = drafted ? Object.keys(behindOf(sourceLanguage, parts, [{ list: drafted, teamWrites: !version.automatic, removed: draft?.removed }])) : [];
@@ -128,7 +134,7 @@ function output(version: Version, parts: ReturnType<typeof sourceSections>, sour
     title: version.title,
     content: displayDoc(version) as Record<string, unknown>,
     publishedAt: version.publishedAt?.toISOString() ?? null,
-    version: versionToken(version),
+    version: versionToken(version, sourceHash),
     behind: Object.entries(behind).map(([key, reason]) => ({ section: key, reason })),
     draft: draft && { title: draft.title, content: draft.content as Record<string, unknown>, behind: draftBehind },
   };
@@ -136,10 +142,24 @@ function output(version: Version, parts: ReturnType<typeof sourceSections>, sour
 
 /**
  * Runs `change` on an article's version in `language`, both locked in that order (as the translate job locks them), so a
- * translation written meanwhile is never lost and never loses the team's change.
+ * translation written meanwhile is never lost and never loses the team's change. `read`: only reading, nothing locked (a
+ * save made from it is checked by its `version`).
  */
-async function withVersion<T>(projectId: string, slug: string, lang: (typeof LANGUAGE_CODES)[number], change: (tx: Prisma.TransactionClient, version: Version, articleId: string) => Promise<T>) {
+async function withVersion<T>(
+  projectId: string,
+  slug: string,
+  lang: (typeof LANGUAGE_CODES)[number],
+  change: (tx: Prisma.TransactionClient, version: Version, articleId: string) => Promise<T>,
+  { read = false } = {},
+) {
   const article = await teamArticle(projectId, slug);
+  if (read) {
+    const version = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: lang } }, select: versionSelect });
+    if (!version) {
+      throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[lang].name}`);
+    }
+    return change(prisma, version, article.id);
+  }
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${article.id} FOR UPDATE`;
     const found = await tx.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: lang } }, select: { id: true } });
@@ -165,10 +185,7 @@ export const getTranslation = defineOperation({
   input: z.object({ slug: articleSlug, language }),
   output: translationOutput,
   run: async ({ projectId }, input) =>
-    withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
-      const { parts, sourceLanguage } = await sourceOf(tx, articleId);
-      return output(version, parts, sourceLanguage);
-    }),
+    withVersion(projectId, input.slug, input.language, async (db, version, articleId) => output(version, await sourceOf(db, articleId)), { read: true }),
 });
 
 export const saveTranslation = defineOperation({
@@ -200,11 +217,12 @@ export const saveTranslation = defineOperation({
       throw new OperationError(400, "invalid_content", text.error);
     }
     return withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
+      const source = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage } = source;
       // Compared with what it was made from, not with what's there now: an older copy would undo a newer translation.
-      if (versionToken(version) !== input.version) {
+      if (versionToken(version, source.sourceHash) !== input.version) {
         throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
       }
-      const { parts, sourceLanguage } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       const { sections: edited, removed } = editedSections(drafted ?? published, text.doc, parts, { automatic: version.automatic });
       // The source's sections the team took out, this time and before (but one it has again).
@@ -225,7 +243,7 @@ export const saveTranslation = defineOperation({
         },
         select: versionSelect,
       });
-      return output(saved, parts, sourceLanguage);
+      return output(saved, source);
     });
   },
 });
@@ -255,12 +273,14 @@ export const publishTranslation = defineOperation({
   output: translationOutput,
   run: async ({ projectId }, input) => {
     let retranslate: { articleId: string; language: string } | null = null;
+    let wentLive: { id: string; first: boolean } | null = null;
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
+      const source = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage, titleHash } = source;
       // Only the draft that was reviewed: one saved or retranslated since would go live unseen, `keep` meant for other sections.
-      if (input.version !== undefined && versionToken(version) !== input.version) {
+      if (input.version !== undefined && versionToken(version, source.sourceHash) !== input.version) {
         throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
       }
-      const { parts, sourceLanguage, titleHash } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
         throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
@@ -317,11 +337,18 @@ export const publishTranslation = defineOperation({
         },
         select: versionSelect,
       });
+      // Its old search sections go with its old text: the new one's are embedded after (versionPublished).
+      await tx.articleTranslationChunk.deleteMany({ where: { translationId: version.id } });
+      wentLive = { id: version.id, first: version.publishedAt === null };
       // A run on its way now writes nothing (above): queued again wherever one may be (kept up to date, or sections asked for).
       // One with nothing to do ends at once.
       if (update.length > 0 || version.automatic || (version.updateSections as string[]).length > 0) retranslate = { articleId, language: input.language };
-      return output(saved, parts, sourceLanguage);
+      return output(saved, { parts, sourceLanguage, sourceHash: source.sourceHash });
     });
+    // Named on its first publish (its address there), then searchable in its language.
+    // (Set in the transaction's callback, which TypeScript doesn't follow.)
+    const live = wentLive as { id: string; first: boolean } | null;
+    if (live) await versionPublished(projectId, live.id, live.first);
     if (retranslate) await queueTranslation(retranslate);
     return result;
   },
@@ -346,7 +373,8 @@ export const updateTranslationSections = defineOperation({
   run: async ({ projectId }, input) => {
     let queued: { articleId: string; language: string } | null = null;
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
-      const { parts, sourceLanguage } = await sourceOf(tx, articleId);
+      const source = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage } = source;
       const { published, draft, drafted } = versionParts(version, parts);
       const behind = Object.keys(behindNow(version, parts, sourceLanguage, published, drafted && { list: drafted, removed: draft?.removed }));
       // Those still in the source, and those behind because theirs went (the job takes them out).
@@ -368,7 +396,7 @@ export const updateTranslationSections = defineOperation({
         select: versionSelect,
       });
       queued = { articleId, language: input.language };
-      return output(saved, parts, sourceLanguage);
+      return output(saved, { parts, sourceLanguage, sourceHash: source.sourceHash });
     });
     if (queued) await queueTranslation(queued);
     return result;

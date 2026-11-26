@@ -467,6 +467,8 @@ test("a version never translated can't be published without a title", async () =
   model.reply(reply(V1, "de"));
   expect(await call(publishTranslation, as(), de)).toMatchObject({ title: "Bezahlt werden", draft: null });
   await languageTranslationsDone();
+  // Published for the first time: named at once, from its title (not left to the retry job).
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ slug: "bezahlt-werden" });
 });
 
 test("a version the team writes remembers only what's usable: nothing from before the product setting changed, nothing of old English", async () => {
@@ -662,4 +664,25 @@ test("a Retranslate running while a draft is published is answered by the run pu
   expect(text(after.content)).toContain("Unsere Abrechnung");
   const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
   expect(row.retranslate).toBe(row.retranslated);
+});
+
+test("a save made from a read taken before the English changed is refused: it would mark the section up to date unseen", async () => {
+  await manualVersion();
+  const read = await call(getTranslation, as(), de);
+  // English Billing changes (a version the team writes isn't retranslated: its own text is as it was).
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  const content = structuredClone(read.content) as Doc;
+  content.content!.at(-1)!.content![0]!.text = "Unsere Zahlung!";
+  await expect(call(saveTranslation, as(), { ...de, content, version: read.version })).rejects.toMatchObject({ status: 409, code: "changed" });
+});
+
+test("publishing a draft makes its new text searchable in its language, the old text's sections gone", async () => {
+  await translated();
+  await editBilling();
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  const { id } = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
+  const chunks = await prisma.articleTranslationChunk.findMany({ where: { translationId: id }, select: { text: true } });
+  expect(chunks.map(({ text }) => text).join(" ")).toContain("Unsere Abrechnung");
+  expect(chunks.map(({ text }) => text).join(" ")).not.toContain("[de] Pay by card");
 });

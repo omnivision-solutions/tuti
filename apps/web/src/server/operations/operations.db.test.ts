@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { billingFile, type BrowserUseFake, configFile, type DnsFake, startBrowserUseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
-import { languageTranslationsDone } from "@tuti/jobs";
+import { languageTranslationsDone, translationSource } from "@tuti/jobs";
 import { contentHash } from "@tuti/shared";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
@@ -410,7 +410,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     ],
   });
   // The published article's German version (German is the fixture's language), to give its own slug.
-  const matrixArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "matrix-article" }, select: { id: true } });
+  const matrixArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "matrix-article" } });
   const translation = await prisma.articleTranslation.create({
     data: {
       articleId: matrixArticle.id,
@@ -537,7 +537,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   return {
     marker,
     // What articles.saveTranslation's `version` is for the German version as it is (articles.getTranslation's).
-    translationVersion: contentHash(JSON.stringify([translation.title, translation.content, translation.draft])),
+    translationVersion: contentHash(JSON.stringify([translation.title, translation.content, translation.draft, translationSource(matrixArticle).hash])),
     screenshotRunId: screenshotRun.id,
     linkId: link.id,
     commentId: comment.id,
