@@ -692,13 +692,13 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await expect(completes.getByRole("link")).toHaveCount(0);
   // Quietly: no widget popup.
   const goesTo = team.getByRole("group", { name: "Goes to" });
-  await goesTo.getByRole("switch", { name: "Widget popup" }).uncheck();
+  await goesTo.getByRole("switch", { name: "Widget" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
   // What's saved is published: the post taken off here is still in it.
   await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget, completes 1 post.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
-  await expect(goesTo.getByRole("switch", { name: "Widget popup" })).not.toBeChecked();
+  await expect(goesTo.getByRole("switch", { name: "Widget" })).not.toBeChecked();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   // While it's taken down (its answer held here), Save waits: it would save over what that changes.
   let releaseUnpublish!: () => void;
@@ -1798,7 +1798,7 @@ test("readers get the changelog by email: confirmed first, each entry published 
   const email = announced.getByRole("switch", { name: "Email announcement" });
   await expect(email).toBeChecked();
   await expect(email).toHaveAccessibleDescription("1 subscriber");
-  await expect(announced.getByRole("switch", { name: "Widget popup" })).toBeChecked();
+  await expect(announced.getByRole("switch", { name: "Widget" })).toBeChecked();
   // The sidebar scrolls on its own: to its end, where this is.
   await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
   await checkpoint(team, "team-changelog-goes-to");

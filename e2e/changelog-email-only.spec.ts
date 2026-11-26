@@ -22,7 +22,7 @@ test("an email-only entry: the team marks it in the editor, it's emailed to subs
   await team.goto(`/app/${slug}/changelog/1`);
   const goesTo = team.getByRole("group", { name: "Goes to" });
   const list = goesTo.getByRole("switch", { name: "Changelog list" });
-  const popup = goesTo.getByRole("switch", { name: "Widget popup" });
+  const popup = goesTo.getByRole("switch", { name: "Widget" });
   const email = goesTo.getByRole("switch", { name: "Email announcement" });
   for (const each of [list, popup, email]) {
     await expect(each).toBeChecked();
@@ -85,7 +85,7 @@ test("an owner publishes a release note without email: Email announcement off, n
   await team.goto(`/app/${slug}/changelog/1`);
   const goesTo = team.getByRole("group", { name: "Goes to" });
   const list = goesTo.getByRole("switch", { name: "Changelog list" });
-  const popup = goesTo.getByRole("switch", { name: "Widget popup" });
+  const popup = goesTo.getByRole("switch", { name: "Widget" });
   const email = goesTo.getByRole("switch", { name: "Email announcement" });
   // The list off and on again: the popup is back on, as it was.
   await list.uncheck();

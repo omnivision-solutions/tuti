@@ -296,7 +296,7 @@ the list picks none to approve at once.
   published, the first chip saying to pick one or choose Everyone; on a plan without groups, Some groups opens the
   upgrade prompt and stays on Everyone); **Goes to**, three bordered
   rows of an icon, a label and a switch, all on for a draft: Changelog list (off: email only; saved with the entry,
-  so Publish waits for a change to it, as for Audience), Widget popup (off and disabled while the list is, "Needs the
+  so Publish waits for a change to it, as for Audience), Widget (off and disabled while the list is, "Needs the
   changelog list" under it, back as it was once the list is on) and Email announcement (the subscribers' count under it,
   "3 subscribers", "No subscribers yet"; off and disabled with one short reason where it can't go). The popup and the
   email are picked there, so Publish only confirms; published, they say what happened ("Sent to 3 subscribers",

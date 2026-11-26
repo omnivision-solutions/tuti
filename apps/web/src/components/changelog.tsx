@@ -1014,13 +1014,13 @@ function AnnounceRows({
   };
   const quietReason = entry.sample ? "Not for sample entries" : entry.importedOn ? `Published ${entry.importedOn}, before the import` : null;
   const popup = entry.published ? (
-    <GoesToRow icon={<BellDotIcon />} label="Widget popup" checked={listed && entry.announced} disabled line={listed ? null : "Needs the changelog list"} readOnly />
+    <GoesToRow icon={<BellDotIcon />} label="Widget" checked={listed && entry.announced} disabled line={listed ? null : "Needs the changelog list"} readOnly />
   ) : quietReason ? (
-    <GoesToRow icon={<BellDotIcon />} label="Widget popup" checked={false} disabled line={quietReason} readOnly />
+    <GoesToRow icon={<BellDotIcon />} label="Widget" checked={false} disabled line={quietReason} readOnly />
   ) : (
     <GoesToRow
       icon={<BellDotIcon />}
-      label="Widget popup"
+      label="Widget"
       // Off with the list, and back as it was once the list is on again: the pick is kept.
       checked={listed && announce.markNew}
       disabled={!listed}

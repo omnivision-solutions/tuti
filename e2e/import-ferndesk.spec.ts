@@ -151,7 +151,7 @@ test("changelog entries published in Ferndesk come as drafts by default; publish
   await owner.goto(`/app/${slug}/changelog/1`);
   // The popup and the email are off, each saying why.
   const goesTo = owner.getByRole("group", { name: "Goes to" });
-  for (const name of ["Widget popup", "Email announcement"]) {
+  for (const name of ["Widget", "Email announcement"]) {
     await expect(goesTo.getByRole("switch", { name })).not.toBeChecked();
     await expect(goesTo.getByRole("switch", { name })).toBeDisabled();
     await expect(goesTo.getByRole("switch", { name })).toHaveAccessibleDescription("Published 2 April 2024, before the import");

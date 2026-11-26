@@ -106,8 +106,8 @@ describe("published, who it told", () => {
 });
 
 test("a draft's Goes to says no more than the subscribers' count: no hints", () => {
-  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 3)).toBe("Goes to Changelog list Widget popup Email announcement 3 subscribers");
-  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 1)).toBe("Goes to Changelog list Widget popup Email announcement 1 subscriber");
+  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 3)).toBe("Goes to Changelog list Widget Email announcement 3 subscribers");
+  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 1)).toBe("Goes to Changelog list Widget Email announcement 1 subscriber");
 });
 
 test("while the project's email is paused, a draft says so, not that nobody subscribed", () => {
@@ -128,11 +128,11 @@ test("where publishing can't announce it (a sample entry, an imported one, one p
     [{ ...draft, importedOn: "2 April 2024" }, "Published 2 April 2024, before the import"],
   ] as const) {
     const html = markup(entry);
-    for (const label of ["Widget popup", "Email announcement"]) {
+    for (const label of ["Widget", "Email announcement"]) {
       expect(switchFor(html, label)).toContain('disabled=""');
       expect(switchFor(html, label)).not.toContain('checked=""');
     }
-    expect(sidebar(entry)).toContain(`Widget popup ${reason} Email announcement ${reason}`);
+    expect(sidebar(entry)).toContain(`Widget ${reason} Email announcement ${reason}`);
   }
   const quietly = markup({ ...draft, published: true });
   expect(switchFor(quietly, "Email announcement")).toContain('disabled=""');
@@ -168,9 +168,9 @@ describe("the Publish dialog's line", () => {
 test("an email-only entry's widget popup is off and disabled (it's in no widget), before publishing or after", () => {
   for (const published of [false, true]) {
     const entry = { published, emailOnly: true, emailedSubscribers: false, subscribersLeft: 0 };
-    expect(switchFor(markup(entry, 1), "Widget popup")).toContain('disabled=""');
-    expect(switchFor(markup(entry, 1), "Widget popup")).not.toContain('checked=""');
-    expect(sidebar(entry, 1)).toContain("Widget popup Needs the changelog list");
+    expect(switchFor(markup(entry, 1), "Widget")).toContain('disabled=""');
+    expect(switchFor(markup(entry, 1), "Widget")).not.toContain('checked=""');
+    expect(sidebar(entry, 1)).toContain("Widget Needs the changelog list");
   }
 });
 

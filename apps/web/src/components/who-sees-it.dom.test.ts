@@ -195,14 +195,14 @@ test("Goes to: a draft goes to the changelog list, the widget popup and an email
   const box = document.createElement("form");
   document.body.append(box);
   await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(WhoSeesIt, { groups: [], picked: [], entry, subscribers: 3, upgrade: null, onChange: () => {} }))));
-  for (const name of ["Changelog list", "Widget popup", "Email announcement"]) {
+  for (const name of ["Changelog list", "Widget", "Email announcement"]) {
     expect(switchNamed(box, name).checked).toBe(true);
     expect(switchNamed(box, name).disabled).toBe(false);
   }
   expect(lineOf(switchNamed(box, "Email announcement"))).toBe("3 subscribers");
   // No hint lines: the list and the popup have none.
   expect(switchNamed(box, "Changelog list").hasAttribute("aria-describedby")).toBe(false);
-  expect(switchNamed(box, "Widget popup").hasAttribute("aria-describedby")).toBe(false);
+  expect(switchNamed(box, "Widget").hasAttribute("aria-describedby")).toBe(false);
   // Without groups, there's no Audience.
   expect(box.textContent).not.toContain("Audience");
 });
@@ -225,7 +225,7 @@ test("the changelog list off: email only, sent once changed and holding Publish 
   expect(new FormData(box).get("emailOnly")).toBe("1");
   expect(new FormData(box).get("emailOnlyEditable")).toBe("1");
   expect(box.querySelector("output")?.textContent).toBe("true");
-  const popup = () => switchNamed(box, "Widget popup");
+  const popup = () => switchNamed(box, "Widget");
   expect(popup().checked).toBe(false);
   expect(popup().disabled).toBe(true);
   expect(lineOf(popup())).toBe("Needs the changelog list");
