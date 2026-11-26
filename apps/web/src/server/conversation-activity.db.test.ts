@@ -209,6 +209,19 @@ test("what a message changes on the way: a reply setting it waiting or closing i
   expect((await activity(number)).filter((row) => row.startsWith("Deleted user "))).toEqual(["Deleted user ended its snooze · by writing", "Deleted user reopened it · by writing"]);
 });
 
+test("a reply that leaves it open (the person wrote after what the teammate saw) writes no status row; it still takes it over", async () => {
+  const { projectId, admin, viaKey, activity } = await setup();
+  await upsertProjectUser(projectId, "user-1", { name: "Sam Smith" });
+  const { number } = await call(createConversation, admin, { user: { id: "user-1" }, body: "Hello" });
+  await call(updateConversation, admin, { number, handledBy: "ai" });
+  // The teammate's page shows the conversation as it is; then the person writes again.
+  const { lastMessageAt: seen } = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });
+  await call(replyToConversation, viaKey, { number, body: "Hello?", author: { id: "user-1" } });
+  expect(await call(replyToConversation, admin, { number, body: "On it", seen: seen.toISOString() })).toMatchObject({ keptOpen: true });
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } })).toMatchObject({ status: "OPEN", handledBy: "TEAM" });
+  expect(await activity(number)).toEqual(["Olive Owner took it over from the AI · by replying", "Olive Owner handed it back to the AI"]);
+});
+
 test("newest first, a page at a time, the team's only; deleted with its conversation", async () => {
   const { project, projectId, admin, activity } = await setup();
   const { number } = await call(createConversation, admin, { email: "e2e-sam@example.com", body: "Hello" });
