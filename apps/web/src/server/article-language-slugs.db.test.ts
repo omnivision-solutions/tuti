@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { freeLanguageSlug, handlers, languageTranslationsDone, lockProject, translateArticle, translationSource } from "@tuti/jobs";
+import { freeLanguageSlug, handlers, languageTranslationsDone, lockProject, nameBatch, translateArticle, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -12,10 +12,10 @@ import { request } from "@/test/next-headers";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 
-import { docsPage } from "./docs-queries";
+import { articleNamed, docsPage } from "./docs-queries";
 import { createRedirect } from "./operations/redirects";
 import { chooseLanguage } from "./reader-language";
-import { createArticle, createCollection, customDocsSlug, deleteArticle, publishArticle, restoreArticle, setArticleLanguageSlug } from "./operations/docs";
+import { createArticle, createCollection, customDocsSlug, deleteArticle, publishArticle, restoreArticle, setArticleLanguageSlug, updateArticle } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -362,4 +362,88 @@ test("versions translated before they had slugs are served at the default-langua
   expect(await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} })).toMatchObject({ named: expect.any(Number) });
   expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ slug: "abrechnung" });
   expect(await docsPage(project.slug, "billing")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
+});
+
+test("restored, a version whose slug or old slug a collection took meanwhile gives it up: the collection keeps its address", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
+  await version(articleId, "de", "abrechnung", "Abrechnung");
+  await prisma.articleOldSlug.create({ data: { projectId: project.id, language: "de", slug: "zahlungen", articleId } });
+  await call(deleteArticle, as(), { slug: "billing" });
+  // While it's deleted, collections take both (a deleted article holds no slugs).
+  expect((await call(createCollection, as(), { name: "Abrechnung" })).slug).toBe("abrechnung");
+  expect((await call(createCollection, as(), { name: "Zahlungen" })).slug).toBe("zahlungen");
+  await call(restoreArticle, as(), { slug: "billing" });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId, language: "de" } })).toMatchObject({ slug: "abrechnung-2" });
+  expect(await prisma.articleOldSlug.count({ where: { articleId } })).toBe(0);
+  // Restored as a draft: published again, its addresses are its own and the collections keep theirs.
+  await call(publishArticle, as(), { slug: "billing" });
+  at("de");
+  // Neither address leads to the article any more (the collections, with nothing in them yet, have no page to show).
+  expect(await articleNamed(project.slug, "abrechnung")).toBeNull();
+  expect(await articleNamed(project.slug, "zahlungen")).toBeNull();
+  expect(await docsPage(project.slug, "abrechnung-2")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+});
+
+test("an offline language's address finds an article by its default-language slug before another's old slug there", async () => {
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "Invoices", body: "Monthly." });
+  await call(publishArticle, as(), { slug: "invoices" });
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await version(articleId, "de", "abrechnung");
+  // Billing's German slug renamed: "abrechnung" is its old one. Invoices then takes it as its default-language slug.
+  await call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "rechnungen" });
+  await call(updateArticle, as(), { slug: "invoices", newSlug: "abrechnung" });
+  expect(new URL((await visit("/de/docs/abrechnung")).headers.get("location")!).pathname).toBe("/docs/abrechnung");
+  expect(new URL((await visit("/de/docs/rechnungen")).headers.get("location")!).pathname).toBe("/docs/billing");
+});
+
+test("an article this reader can't see never hides one they can behind it, by a current or an old slug", async () => {
+  const hidden = await billing();
+  await call(createArticle, as(), { title: "Invoices", body: "Monthly." });
+  await call(publishArticle, as(), { slug: "invoices" });
+  const visible = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "invoices" } })).id;
+  await prisma.article.update({ where: { id: hidden }, data: { listing: "AI_ONLY" } });
+  // German (first in Settings) has the hidden one's, French the visible one's: the same slugs.
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] });
+  await version(hidden, "de", "konto");
+  await version(visible, "fr", "konto");
+  await prisma.articleOldSlug.createMany({
+    data: [
+      { projectId: project.id, language: "de", slug: "alt", articleId: hidden },
+      { projectId: project.id, language: "fr", slug: "alt", articleId: visible },
+    ],
+  });
+  at(null);
+  expect(await docsPage(project.slug, "konto")).toEqual({ kind: "redirect", path: "/docs/invoices" });
+  expect(await docsPage(project.slug, "alt")).toEqual({ kind: "redirect", path: "/docs/invoices" });
+});
+
+test("unnamed versions are named those waiting longest first, and one that fails goes to the back", async () => {
+  const log = { info: () => {}, warn: () => {} };
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "Invoices", body: "Monthly." });
+  await call(publishArticle, as(), { slug: "invoices" });
+  const other = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "invoices" } })).id;
+  // This file's other tests leave some: named first.
+  while (Number((await handlers.retryArticleTranslations({}, log)).named ?? 0) > 0);
+  const first = await version(articleId, "de", null, "Abrechnung");
+  await version(other, "de", null, "Rechnungen");
+  const size = nameBatch.size;
+  nameBatch.size = 1;
+  // The longest waiting fails (the database, say): it goes to the back, so the next run names the other.
+  const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database blip"));
+  try {
+    await handlers.retryArticleTranslations({}, log);
+    spy.mockRestore();
+    await handlers.retryArticleTranslations({}, log);
+    expect(await prisma.articleTranslation.findMany({ where: { projectId: project.id, language: "de" }, orderBy: { title: "asc" }, select: { title: true, slug: true } })).toEqual([
+      { title: "Abrechnung", slug: null },
+      { title: "Rechnungen", slug: "rechnungen" },
+    ]);
+    expect(first.id).toBeTruthy();
+  } finally {
+    spy.mockRestore();
+    nameBatch.size = size;
+  }
 });

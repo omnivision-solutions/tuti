@@ -480,19 +480,31 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
   const projectId = project.id;
   const article = published;
   const select = { article: { select: { id: true, slug: true } } } as const;
-  // Each by an index ((projectId, language, slug), (projectId, slug)), all at once; the first in order that has one decides.
-  const found = (
+  // ponytail: up to this many articles share a slug across the other languages (current or old) before one this reader
+  // sees is missed; raise it if teams reuse a slug that often.
+  const take = 20;
+  const articles = (rows: { article: { id: string; slug: string } | null }[]) => rows.flatMap((row) => (row.article ? [row.article] : []));
+  // Each by an index ((projectId, language, slug), (projectId, slug)), all at once. In order, the first this reader sees on
+  // its page decides: one they don't (hidden, AI only, restricted) never hides one behind it.
+  const candidates = (
     await Promise.all([
-      other ? prisma.articleTranslation.findFirst({ where: { projectId, language: other, slug, article }, select }).then((row) => row?.article) : null,
-      prisma.article.findFirst({ where: { projectId, slug, ...article }, select: { id: true, slug: true } }),
+      other ? prisma.articleTranslation.findMany({ where: { projectId, language: other, slug, article }, select }).then(articles) : [],
+      prisma.article.findMany({ where: { projectId, slug, ...article }, select: { id: true, slug: true } }),
       other
-        ? prisma.articleOldSlug.findFirst({ where: { projectId, language: other, slug, article }, orderBy: { createdAt: "desc" }, select }).then((row) => row?.article)
-        : prisma.docsRedirect.findFirst({ where: { projectId, slug, article }, select }).then((row) => row?.article),
-      prisma.articleTranslation.findFirst({ where: { projectId, slug, article }, orderBy: { projectLanguage: { createdAt: "asc" } }, select }).then((row) => row?.article),
-      prisma.articleOldSlug.findFirst({ where: { projectId, slug, article }, orderBy: { createdAt: "desc" }, select }).then((row) => row?.article),
+        ? prisma.articleOldSlug.findMany({ where: { projectId, language: other, slug, article }, orderBy: { createdAt: "desc" }, select }).then(articles)
+        : prisma.docsRedirect.findMany({ where: { projectId, slug, article }, select }).then(articles),
+      prisma.articleTranslation.findMany({ where: { projectId, slug, article }, orderBy: [{ projectLanguage: { createdAt: "asc" } }, { id: "asc" }], take, select }).then(articles),
+      prisma.articleOldSlug.findMany({ where: { projectId, slug, article }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], take, select }).then(articles),
     ])
-  ).find(Boolean);
-  if (!found || !(await articleAt(projectSlug, found.slug))) {
+  ).flat();
+  let found: { id: string; slug: string } | undefined;
+  for (const candidate of candidates) {
+    if (await articleAt(projectSlug, candidate.slug)) {
+      found = candidate;
+      break;
+    }
+  }
+  if (!found) {
     return null;
   }
   const version = other && (await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: other } }, select: { slug: true } }));

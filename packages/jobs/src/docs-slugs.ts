@@ -210,6 +210,15 @@ export async function restoreLanguageSlugs(tx: Prisma.TransactionClient, project
     tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { slug: true } }),
     tx.articleTranslation.findMany({ where: { articleId, publishedAt: { not: null } }, select: { id: true, language: true, slug: true, title: true } }),
   ]);
+  // Its old slugs too: one taken meanwhile (a tab's, a collection's or API reference's, another article's default-language
+  // one, or its current one in that language) goes, else it would lead away from that page.
+  const olds = await tx.articleOldSlug.findMany({ where: { articleId }, select: { id: true, language: true, slug: true } });
+  for (const old of olds) {
+    const other = { id: "", articleId };
+    if (await languageSlugRefused(tx, projectId, old.language, old.slug, other)) {
+      await tx.articleOldSlug.delete({ where: { id: old.id } });
+    }
+  }
   for (const version of versions) {
     const own = { id: version.id, articleId };
     if (version.slug && !(await languageSlugRefused(tx, projectId, version.language, version.slug, own))) {

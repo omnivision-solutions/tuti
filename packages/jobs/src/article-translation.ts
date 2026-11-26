@@ -460,25 +460,31 @@ async function nameVersion(projectId: string, versionId: string) {
 }
 
 /** Unnamed versions named per run of the retry job. */
-export const NAME_BATCH = 200;
+/** Unnamed versions named per run of the retry job (a test can change it). */
+export const nameBatch = { size: 200 };
 
 /**
  * Versions translated before versions had slugs of their own (L6 part one) have none: named a batch per run of the retry job
- * (meanwhile, served at the article's default-language slug). How many it named.
+ * (meanwhile, served at the article's default-language slug), those waiting longest first. One that fails goes to the back
+ * (its time moved on), so a few that always fail never take every run's batch. How many it named.
  * ponytail: a scan for unnamed versions every run; a partial index on them is the upgrade if the table grows large.
  */
 async function nameUnnamed(): Promise<number> {
   const unnamed = await prisma.articleTranslation.findMany({
     where: { slug: null, publishedAt: { not: null }, article: { deletedAt: null } },
-    take: NAME_BATCH,
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    take: nameBatch.size,
     select: { id: true, projectId: true },
   });
   let named = 0;
   for (const { id, projectId } of unnamed) {
-    await nameVersion(projectId, id).then(
-      () => named++,
-      (error: unknown) => serverLog.error("Naming an article's version failed", { versionId: id, error }),
-    );
+    try {
+      await nameVersion(projectId, id);
+      named++;
+    } catch (error) {
+      serverLog.error("Naming an article's version failed", { versionId: id, error });
+      await prisma.articleTranslation.updateMany({ where: { id }, data: { updatedAt: new Date() } }).catch(() => {});
+    }
   }
   return named;
 }
