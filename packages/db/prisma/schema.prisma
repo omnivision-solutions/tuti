@@ -1140,6 +1140,12 @@ enum ConversationStatus {
   CLOSED
 }
 
+/// Who has a conversation (docs/plan.md, Inbox automation): the AI answers it, or the team does.
+enum ConversationOwner {
+  AI
+  TEAM
+}
+
 /// Where a conversation began.
 enum ConversationOrigin {
   WIDGET
@@ -1193,6 +1199,11 @@ model Conversation {
   spamPhrase    String?
   /// When a teammate last marked it Spam or Not spam (`spam` says which way).
   spamMarkedAt  DateTime?
+  /// Who has it. The AI's are out of the team's views, counts, emails and pushes, in "With AI"; a teammate's reply (not a
+  /// note) or Take over makes it the team's, Hand back to the AI the AI's. Closing and reopening leave it.
+  handledBy     ConversationOwner  @default(TEAM)
+  /// Marked priority (one flag, not levels): said on its row in the Inbox's list.
+  priority      Boolean            @default(false)
   lastMessageAt DateTime           @default(now())
   /// The last thing done in it (a message that isn't a note, closing or opening it, marking it spam or not): how old it
   /// is for a plan's history (docs/plan.md, Plans; @tuti/jobs history.ts). Null on rows from before it: their `updatedAt`

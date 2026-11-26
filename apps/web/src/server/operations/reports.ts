@@ -347,8 +347,8 @@ export async function inboxReport(projectId: string, range: ReportRange) {
     firstReplies(since, until, new Date()),
     // The previous days' given no longer to be replied to than the range's have had (all of them till now): a reply after it isn't one.
     firstReplies(previous.since, since, new Date(Date.now() - (since.getTime() - previous.since.getTime()))),
-    // As the inbox counts what needs a reply: snoozed ones aren't.
-    prisma.conversation.count({ where: { ...counted, status: "OPEN", ...awake() } }),
+    // As the inbox counts what needs a reply (the tile opens Needs reply): snoozed ones aren't, nor those the AI has.
+    prisma.conversation.count({ where: { ...counted, handledBy: "TEAM", status: "OPEN", ...awake() } }),
     prisma.$queryRaw<{ id: string | null; name: string | null; replies: number; conversations: number }[]>`
       SELECT u.id, u.name, count(*)::int AS replies, count(DISTINCT m."conversationId")::int AS conversations
       FROM conversation_message m JOIN conversation c ON c.id = m."conversationId" LEFT JOIN "user" u ON u.id = m."authorId"

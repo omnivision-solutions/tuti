@@ -67,7 +67,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner).toHaveTitle(/^\(2\) /);
   await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
   // What needs the team first: Needs reply, Mine, Unassigned; then the rest, Waiting on user first.
-  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/, /^Waiting on user/, /^Snoozed/, /^Closed/, /^Spam/]);
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/, /^Waiting on user/, /^With AI/, /^Snoozed/, /^Closed/, /^Spam/]);
   await checkpoint(owner, "inbox-views");
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
@@ -1042,7 +1042,7 @@ test("the Inbox's views are its section pane's links with their counts, where th
   const list = owner.getByRole("region", { name: "Conversations", exact: true });
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(views.getByRole("link")).toHaveText([/^Needs reply\s*12$/, /^Mine\s*0$/, /^Unassigned\s*12$/, /^Waiting on user\s*12$/, /^Snoozed\s*0$/, /^Closed\s*0$/, /^Spam\s*0$/]);
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply\s*12$/, /^Mine\s*0$/, /^Unassigned\s*12$/, /^Waiting on user\s*12$/, /^With AI\s*0$/, /^Snoozed\s*0$/, /^Closed\s*0$/, /^Spam\s*0$/]);
   await expect(views.getByRole("link", { name: "Needs reply 12" })).toHaveAttribute("aria-current", "page");
   // The list's pane is titled by its view, with its count.
   await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^Needs reply\s*12$/);

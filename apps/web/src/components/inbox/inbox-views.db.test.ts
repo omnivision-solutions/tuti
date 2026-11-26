@@ -33,11 +33,19 @@ test("conversations.views counts each view as the web Inbox's section does, and 
     // A snooze left on a closed one: closed, not snoozed. One whose time has passed: back in the views.
     { status: "CLOSED", snoozedUntil: soon },
     { snoozedUntil: before },
+    // Those the AI has: in With AI alone, whatever else is true of them (open, assigned, waiting, snoozed)…
+    { handledBy: "AI" },
+    { handledBy: "AI", assigneeId: owner.id },
+    { handledBy: "AI", status: "WAITING" },
+    { handledBy: "AI", snoozedUntil: soon },
+    // …till they're done with: closed and spam are in Closed and Spam, whoever had them.
+    { handledBy: "AI", status: "CLOSED" },
+    { handledBy: "AI", spam: true },
   ] as const;
   for (const [i, data] of conversations.entries()) {
     await prisma.conversation.create({ data: { projectId: project.id, number: i + 1, subject: `Conversation ${i + 1}`, origin: "API", email: `e2e-${i + 1}@example.com`, ...data } });
   }
-  const olive = { open: [1, 2, 3, 9], mine: [2, 4], unassigned: [1, 9], waiting: [4], snoozed: [5], closed: [6, 8], spam: [7] };
+  const olive = { open: [1, 2, 3, 9], mine: [2, 4], unassigned: [1, 9], waiting: [4], ai: [10, 11, 12, 13], snoozed: [5], closed: [14, 6, 8], spam: [15, 7] };
 
   const asUser = (userId: string) => ({ actor: { kind: "user", userId } as Actor, projectId: project.id });
   const { views } = await call(listInboxViews, asUser(owner.id), {});
@@ -56,7 +64,7 @@ test("conversations.views counts each view as the web Inbox's section does, and 
   }
   // A view narrows with the other filters, and decides spam by itself.
   expect((await call(listConversations, asUser(owner.id), { view: "open", assignee: "none" })).conversations.map((c) => c.number).sort()).toEqual([1, 9]);
-  expect((await call(listConversations, asUser(owner.id), { view: "spam", spam: "false" })).total).toBe(1);
+  expect((await call(listConversations, asUser(owner.id), { view: "spam", spam: "false" })).total).toBe(2);
 
   // Mine is whoever asks: another teammate's own, and for an API key its creator's.
   const mine = async (actor: Actor) => (await call(listConversations, { actor, projectId: project.id }, { view: "mine" })).conversations.map((c) => c.number).sort();

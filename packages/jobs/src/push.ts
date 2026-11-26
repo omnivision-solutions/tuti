@@ -107,6 +107,8 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
           projectId: true,
           number: true,
           spam: true,
+          sample: true,
+          handledBy: true,
           email: true,
           name: true,
           assigneeId: true,
@@ -117,7 +119,9 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     },
   });
   const conversation = message?.conversation;
-  if (!message || !conversation || message.author !== "USER" || conversation.spam) {
+  // Nor sample content (Home's "Add sample content": its person isn't real), nor one the AI has (docs/plan.md, Inbox
+  // automation): nothing about it reaches the team till it's theirs.
+  if (!message || !conversation || message.author !== "USER" || conversation.spam || conversation.sample || conversation.handledBy === "AI") {
     return { skipped: "nothing to tell" };
   }
   const told = await prisma.device.findMany({
