@@ -3,6 +3,7 @@
 import { LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +25,7 @@ function useSignOut() {
   const router = useRouter();
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
+  const t = useTranslations("header");
   return async () => {
     // Refused, or never sent (offline): still signed in, so they're told and stay where they are.
     const failed = await authClient.signOut().then(
@@ -31,7 +33,7 @@ function useSignOut() {
       () => true,
     );
     if (failed) {
-      toast.error("Couldn't sign you out. Try again.");
+      toast.error(t("signOutFailed"));
       return;
     }
     router.push(at("/"));
@@ -43,9 +45,11 @@ function useSignOut() {
 export function SignOutButton() {
   const signOut = useSignOut();
   const [pending, startTransition] = useTransition();
+  const t = useTranslations("header");
   return (
-    <Button variant="ghost" className="shrink-0" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
-      Sign out
+    // In the reader's language, until <html lang> follows it (L3).
+    <Button variant="ghost" className="shrink-0" lang={useLocale()} disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
+      {t("signOut")}
     </Button>
   );
 }
@@ -53,6 +57,9 @@ export function SignOutButton() {
 export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
   const at = usePortalHref();
   const signOut = useSignOut();
+  const t = useTranslations("header");
+  // In the reader's language, until <html lang> follows it (L3).
+  const lang = useLocale();
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -62,7 +69,7 @@ export function UserMenu({ name, image, accountHref = "/account" }: { name: stri
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="rounded-full" aria-label="Account" />}>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="rounded-full" lang={lang} aria-label={t("account")} />}>
         <Avatar className="size-7">
           {image && <AvatarImage src={image} alt="" />}
           <AvatarFallback>{initials}</AvatarFallback>
@@ -73,13 +80,13 @@ export function UserMenu({ name, image, accountHref = "/account" }: { name: stri
           <DropdownMenuLabel className="truncate">{name}</DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href={at(accountHref)} />}>
+        <DropdownMenuItem lang={lang} render={<Link href={at(accountHref)} />}>
           <UserIcon />
-          Account settings
+          {t("accountSettings")}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={signOut}>
+        <DropdownMenuItem lang={lang} onClick={signOut}>
           <LogOutIcon />
-          Sign out
+          {t("signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

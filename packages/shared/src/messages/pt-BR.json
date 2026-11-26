@@ -4,6 +4,27 @@
     "menu": "Menu",
     "closeMenu": "Fechar o menu",
     "language": "Idioma: {language}",
-    "languages": "Idioma"
+    "languages": "Idioma",
+    "portal": "Portal",
+    "feedback": "Sugestões",
+    "roadmap": "Roadmap",
+    "changelog": "Novidades",
+    "docs": "Documentação",
+    "new": "Novo",
+    "boards": "Quadros",
+    "menuDescription": "{name}: para onde ir a partir daqui.",
+    "links": "Links",
+    "account": "Conta",
+    "accountSettings": "Configurações da conta",
+    "signOut": "Sair",
+    "signOutFailed": "Não foi possível sair. Tente novamente."
+  },
+  "footer": {
+    "label": "Rodapé",
+    "poweredBy": "Desenvolvido com <logo></logo>",
+    "theme": "Tema",
+    "system": "Sistema",
+    "light": "Claro",
+    "dark": "Escuro"
   }
 }

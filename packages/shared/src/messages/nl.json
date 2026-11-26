@@ -4,6 +4,27 @@
     "menu": "Menu",
     "closeMenu": "Menu sluiten",
     "language": "Taal: {language}",
-    "languages": "Taal"
+    "languages": "Taal",
+    "portal": "Portaal",
+    "feedback": "Feedback",
+    "roadmap": "Roadmap",
+    "changelog": "Changelog",
+    "docs": "Documentatie",
+    "new": "Nieuw",
+    "boards": "Borden",
+    "menuDescription": "{name}: waar je heen kunt.",
+    "links": "Links",
+    "account": "Account",
+    "accountSettings": "Accountinstellingen",
+    "signOut": "Uitloggen",
+    "signOutFailed": "Uitloggen is mislukt. Probeer het opnieuw."
+  },
+  "footer": {
+    "label": "Voettekst",
+    "poweredBy": "Mogelijk gemaakt door <logo></logo>",
+    "theme": "Thema",
+    "system": "Systeem",
+    "light": "Licht",
+    "dark": "Donker"
   }
 }

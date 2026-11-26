@@ -39,7 +39,18 @@ test("a reader chooses German in the portal's header and its text follows, on de
   await expect(german).toHaveAttribute("lang", "de");
   await expect(german).toBeFocused();
   await expect(reader.getByRole("link", { name: "Anmelden" }).locator("[lang=de]")).toHaveText("Anmelden");
+  // The header's parts and the footer follow it too, each in its language.
+  const parts = reader.getByRole("navigation", { name: "Portal" });
+  await expect(parts).toHaveAttribute("lang", "de");
+  await expect(parts.getByRole("link", { name: "Dokumentation" })).toBeVisible();
+  const footer = reader.getByRole("contentinfo");
+  await expect(footer.getByRole("link", { name: /^Bereitgestellt von/ })).toHaveAttribute("lang", "de");
+  const theme = footer.getByRole("radiogroup", { name: "Darstellung" });
+  await expect(theme).toHaveAttribute("lang", "de");
+  await expect(theme.getByRole("radio")).toHaveCount(3);
+  await expect(theme.getByRole("radio", { name: "Dunkel" })).toBeAttached();
   await checkpoint(reader, "header-in-german", { fullPage: false });
+  await checkpoint(reader, "footer-in-german");
   // Kept: another page, and the next visit.
   await reader.goto("/changelog");
   await expect(reader.getByRole("link", { name: "Anmelden" })).toBeVisible();
@@ -55,6 +66,7 @@ test("a reader chooses German in the portal's header and its text follows, on de
   const languages = dialog.getByRole("group", { name: "Sprache" });
   await expect(languages).toHaveAttribute("lang", "de");
   await expect(languages.getByRole("button", { name: "Deutsch" })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Dokumentation" })).toBeVisible();
   await checkpoint(reader, "phone-menu-in-german", { fullPage: false });
   // The menu stays open, now in English.
   const english = reader.getByRole("dialog").getByRole("button", { name: "English", exact: true });

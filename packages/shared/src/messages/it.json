@@ -4,6 +4,27 @@
     "menu": "Menu",
     "closeMenu": "Chiudi il menu",
     "language": "Lingua: {language}",
-    "languages": "Lingua"
+    "languages": "Lingua",
+    "portal": "Portale",
+    "feedback": "Feedback",
+    "roadmap": "Roadmap",
+    "changelog": "Novità",
+    "docs": "Documentazione",
+    "new": "Nuovo",
+    "boards": "Bacheche",
+    "menuDescription": "{name}: dove andare da qui.",
+    "links": "Link",
+    "account": "Account",
+    "accountSettings": "Impostazioni account",
+    "signOut": "Esci",
+    "signOutFailed": "Impossibile uscire. Riprova."
+  },
+  "footer": {
+    "label": "Piè di pagina",
+    "poweredBy": "Realizzato con <logo></logo>",
+    "theme": "Tema",
+    "system": "Sistema",
+    "light": "Chiaro",
+    "dark": "Scuro"
   }
 }
