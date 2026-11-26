@@ -469,3 +469,19 @@ test("turning the changelog on from Account keeps an unconfirmed subscription's 
   expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
   expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
 });
+
+test("on an SSO portal, the switch moves the subscription at the sign-on's address, not the account's", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Sam SSO");
+  const signOn = `e2e-sso-${project.slug}@example.com`;
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: reader.id, userId: reader.id, email: signOn } });
+  // A subscription at each address: the project's emails go to the sign-on's.
+  await subscriber(reader.email.toLowerCase(), null);
+  await subscriber(signOn, null);
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  const languageOf = async (email: string) => (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).language;
+  expect(await languageOf(signOn)).toBe("de");
+  expect(await languageOf(reader.email.toLowerCase())).toBeNull();
+});
