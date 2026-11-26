@@ -78,6 +78,7 @@
   "comments.like": ["back","behalf","comment","creator","like","post","someone","take"],
   "comments.list": ["caller","comment","comments","first","followed","internal","like","liked","likes","list","many","member","newest","notes","oldest","post","replies","replyto","sort","team","true","whether"],
   "companies.list": ["asking","askingproperty","biggest","companies","company","first","list","lists","many","number","picked","posts","project","property","sort","total","update","users","votes"],
+  "conversations.activity": ["change","checked","conversation","every","filter","first","happened","made","newest","spam","teammate","verdict","workflow"],
   "conversations.articles": ["article","articles","conversation","insert","list","listed","matching","offers","person","portal","published","read","sent","theirs","tuti","unlisted","words"],
   "conversations.assignees": ["address","assigned","assignee","conversation","conversations","joined","list","offers","order","takes","teammates","tuti","update"],
   "conversations.create": ["address","conversation","email","first","message","someone","start","user"],

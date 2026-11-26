@@ -29,6 +29,7 @@ import { MessageDay } from "@/components/inbox/message-day";
 import { MessageText } from "@/components/inbox/message-text";
 import { MessageTranslation } from "@/components/inbox/message-translation";
 import { DetailSection } from "@/components/inbox/detail-section";
+import { ConversationActivity } from "@/components/inbox/conversation-activity";
 import { ConversationMore } from "@/components/inbox/more-actions";
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { RefreshAt } from "@/components/inbox/refresh-at";
@@ -53,6 +54,7 @@ import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { assignableTeam, conversationPerson } from "@/server/operations/conversations";
+import { conversationActivity } from "@/server/operations/conversation-activity";
 import { postsLikeConversation } from "@/server/post-lists";
 import { spamChoices } from "@/server/spam";
 import { pageTitle } from "@/lib/page-title";
@@ -537,6 +539,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             person={{ ...conversation, name: person.name }}
             besides={conversation.number}
             inbox={{ view, pages, userId: membership.userId, q }}
+          />
+          <ConversationActivity
+            projectSlug={slug}
+            number={conversation.number}
+            count={await prisma.conversationEvent.count({ where: { conversationId: conversation.id } })}
+            first={await conversationActivity(conversation.id)}
           />
           <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
           <DetailSection title="Conversation attributes" count={3} icon={ListIcon}>
