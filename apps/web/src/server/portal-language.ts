@@ -1,19 +1,26 @@
 import { prisma } from "@tuti/db";
-import { DEFAULT_LANGUAGE, isLanguage } from "@tuti/shared";
+import { DEFAULT_LANGUAGE, isLanguage, languageLimit } from "@tuti/shared";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { LANGUAGE_COOKIE, type PortalLanguages, readerLanguage } from "@/lib/reader-language";
 
-/** A project's default language and its live others, in the order added (the header's switcher lists them so). */
+/**
+ * A project's default language and its live others, in the order added (the header's switcher lists them so). Past the plan's
+ * limit (after a downgrade) only the oldest within it are live, as languages.get says.
+ */
 export const portalLanguages = cache(async (projectId: string): Promise<PortalLanguages> => {
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { language: true, languages: { where: { live: true }, select: { code: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+    select: { plan: true, language: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
   });
+  const limit = languageLimit(project.plan);
   return {
     default: isLanguage(project.language) ? project.language : DEFAULT_LANGUAGE,
-    live: project.languages.map(({ code }) => code).filter(isLanguage),
+    live: project.languages
+      .filter(({ live }, index) => live && (limit === null || index < limit - 1))
+      .map(({ code }) => code)
+      .filter(isLanguage),
   };
 });
 

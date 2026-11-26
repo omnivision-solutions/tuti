@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { billingFile } from "@tuti/testkit";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { LANGUAGE_COOKIE } from "@/lib/reader-language";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -14,6 +15,8 @@ async function portalIn(...live: string[]) {
   await prisma.projectLanguage.createMany({ data: [...live.map((code) => ({ projectId: project.id, code, live: true })), { projectId: project.id, code: "fr" }] });
   return project;
 }
+
+afterEach(() => vi.unstubAllEnvs());
 
 const language = async (userId: string) => (await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { language: true } })).language;
 
@@ -55,4 +58,16 @@ test("signed out, the choice is kept in the browser only", async () => {
   expect(request.written.map(({ name, value }) => [name, value])).toEqual([[LANGUAGE_COOKIE, "de"]]);
   request.cookie = `${LANGUAGE_COOKIE}=de`;
   expect((await currentLanguage(project.id, null)).language).toBe("de");
+});
+
+test("past the plan's limit (after a downgrade) only the oldest languages within it are live for readers", async () => {
+  const project = await portalIn("de", "es");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  // Pro: up to 3 languages, the default included.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  await prisma.projectLanguage.update({ where: { projectId_code: { projectId: project.id, code: "fr" } }, data: { live: true } });
+  actAs(null);
+  request.cookie = `${LANGUAGE_COOKIE}=fr`;
+  expect(await currentLanguage(project.id, null)).toEqual({ languages: { default: "en", live: ["de", "es"] }, language: "en" });
+  expect(await chooseLanguage(project.slug, "fr")).toEqual({ error: "This portal isn't in that language" });
 });
