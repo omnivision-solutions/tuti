@@ -105,8 +105,8 @@ export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
 /** An editor's placeholder as its props say it now (see "placeholderNow"). */
 const PLACEHOLDER_NOW = new PluginKey<null>("placeholderNow");
 
-/** The images a try is being made for, and the last try's error, each kept with the image (its root) it was made for. */
-type PageTries = { tries: Try[]; generating: string[]; error: { root: string; message: string } | null };
+/** The images a try is being made for, and each one's last error, kept by the image (its root) it was made for. */
+type PageTries = { tries: Try[]; generating: string[]; errors: Record<string, string> };
 /**
  * The AI tries made in each project's editors since the page loaded, and which are being made: outside the editor, so
  * a save that draws it again, or an article's new address, keeps them; one list for all of its images (each was paid for).
@@ -254,22 +254,24 @@ export function RichEditor({
   // By project, not page: a new entry's first save moves it to its own address, with its tries.
   const pageKey = uploads?.projectSlug ?? "";
   const keptTries = (editedId: string): KeptTries => {
-    const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: [], error: null };
+    const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: [], errors: {} };
     const set = (next: PageTries) => {
       pageTries.set(pageKey, next);
       pageListeners.forEach((listener) => listener());
     };
     // The image this one came from (a try placed in the text is its source's), so its own tries are told from others.
     const root = now().tries.find((each) => each.id === editedId)?.root ?? editedId;
-    const error = now().error;
     return {
       ...now(),
       root,
       generating: now().generating.includes(root),
-      error: error?.root === root ? error.message : null,
+      error: now().errors[root] ?? null,
       add: (made) => set({ ...now(), tries: [...now().tries, { ...made, root }] }),
       setGenerating: (on) => set({ ...now(), generating: on ? [...now().generating, root] : now().generating.filter((each) => each !== root) }),
-      setError: (message) => set({ ...now(), error: message === null ? null : { root, message } }),
+      setError: (message) => {
+        const { [root]: _was, ...others } = now().errors;
+        set({ ...now(), errors: message === null ? others : { ...others, [root]: message } });
+      },
     };
   };
   const [edited, setEdited] = useState<{ pos: number; image: { id: string; url: string; width: number; height: number } } | null>(null);

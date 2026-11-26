@@ -2,7 +2,7 @@
 import type { Editor } from "@tiptap/react";
 import { act, createElement as h, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 const generateImage = vi.fn();
 vi.mock("@/server/images", () => ({ generateImage }));
@@ -422,6 +422,8 @@ test("the project's tries outlive the page's address: an article's new address (
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
   document.body.replaceChildren();
   // As a slug change moves the article: a new path, the editor made again.
+  const was = window.location.pathname;
+  onTestFinished(() => window.history.replaceState(null, "", was));
   window.history.pushState(null, "", "/app/acme/docs/renamed");
   const second = await editor();
   await second.pick();
@@ -453,4 +455,43 @@ test("a try being made for one image doesn't hold another image's dialog: it can
   await click("Edit with AI");
   expect(document.body.textContent).not.toContain("Generating, up to half a minute…");
   expect(button("Generate")).toBeTruthy();
+});
+
+test("each image keeps its own last error, two failing at once", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  let failA!: (value: unknown) => void;
+  generateImage.mockReset();
+  generateImage.mockReturnValueOnce(new Promise((resolve) => (failA = resolve))).mockResolvedValueOnce({ error: "B's failure" });
+  const { ref, generate } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  const close = async () => {
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  };
+  const alert = () => document.querySelector('[role="dialog"] [role="alert"]')?.textContent;
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await generate();
+  await vi.waitFor(() => expect(alert()).toBe("B's failure"));
+  await close();
+  await act(async () => failA({ error: "A's failure" }));
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")].find((each) => each.getAttribute("aria-label") === "Edit with AI" || each.textContent?.trim() === "Edit with AI")!.click());
+  expect(alert()).toBe("A's failure");
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")].find((each) => each.getAttribute("aria-label") === "Edit with AI" || each.textContent?.trim() === "Edit with AI")!.click());
+  expect(alert()).toBe("B's failure");
 });

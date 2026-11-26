@@ -168,8 +168,9 @@ export function ImageGenerator({
   const error = kept ? kept.error : ownError;
   const setError = kept ? kept.setError : setOwnError;
   const [running, startTransition] = useTransition();
-  // Made here, or (kept) still being made from before.
-  const pending = running || !!kept?.generating;
+  // Kept: whether one is being made for this image, as the owner keeps it (React's pending transitions are entangled, so
+  // another image's still running would hold this one too); else made here.
+  const pending = kept ? kept.generating : running;
 
   const preset = sizes.find((size) => size.label === sizeLabel);
   const size = preset ?? { width: Number(custom.width), height: Number(custom.height) };
