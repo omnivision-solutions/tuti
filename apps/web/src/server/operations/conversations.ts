@@ -17,7 +17,7 @@ import { readerToSend, searchDocs } from "../docs-search";
 import { emitEvent } from "../events";
 import { conversationCompanies } from "../inbox-companies";
 import { inboxPath } from "../inbox-path";
-import { notifyInbox } from "../live";
+import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { blockDomainOf, recordMark } from "../spam";
@@ -1484,20 +1484,28 @@ export const retryTranslation = defineOperation({
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
     }
     let retried = 0;
-    // One at a time, as each arrived: the job settles the conversation's language by the newest.
-    for (const { id, translationError } of failed) {
-      // Claimed by clearing why it failed: a second Try again meanwhile finds nothing to queue (no second paid translation),
-      // and the job sets it again if this one fails too.
-      const { count } = await prisma.conversationMessage.updateMany({ where: { id, teamText: null, translationError: { not: null } }, data: { translationError: null } });
-      if (count === 0) {
-        continue;
+    try {
+      // One at a time, as each arrived: the job settles the conversation's language by the newest.
+      for (const { id, translationError } of failed) {
+        // Claimed by clearing why it failed: a second Try again meanwhile finds nothing to queue (no second paid translation),
+        // and the job sets it again if this one fails too.
+        const { count } = await prisma.conversationMessage.updateMany({ where: { id, teamText: null, translationError: { not: null } }, data: { translationError: null } });
+        if (count === 0) {
+          continue;
+        }
+        retried++;
+        await enqueue("translateMessage", { messageId: id }).catch(async (error: unknown) => {
+          // Not queued: it shows its Try again again.
+          await translationFailed(id, translationError!);
+          throw error;
+        });
       }
-      retried++;
-      await enqueue("translateMessage", { messageId: id }).catch(async (error: unknown) => {
-        // Not queued: it shows its Try again again.
-        await translationFailed(id, translationError!);
-        throw error;
-      });
+    } finally {
+      // Open Inbox pages (other teammates' too) refresh, so an old failure goes, even when a later message couldn't be queued;
+      // only the clicking page says "Translating…" (it knows what it re-queued).
+      if (retried > 0) {
+        await notifyInboxNow({ projectId, conversationId: conversation.id, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
+      }
     }
     return { retried };
   },

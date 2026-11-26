@@ -189,6 +189,23 @@ export async function snoozeConversation(projectSlug: string, conversation: numb
 }
 
 /**
+ * Take over: a conversation the AI has becomes the team's, with nothing else about it moved (conversations.update's
+ * `handledBy`). The app never hands one back: nothing answers for the AI yet (docs/plan.md W6, W12).
+ */
+export async function takeOverConversation(projectSlug: string, conversation: number): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can take over conversations", async (context) =>
+    call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "team" }),
+  );
+}
+
+/** Mark priority, or Remove priority. */
+export async function setConversationPriority(projectSlug: string, conversation: number, priority: boolean): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can mark conversations priority", async (context) =>
+    call(updateConversation, context, { number: conversationNumber(conversation), priority: priority === true }),
+  );
+}
+
+/**
  * Marks a conversation as spam (with `blockDomain`, its sender's domain too: owners and admins) or not: `notice` is what
  * Not spam leaves in place or undid (conversations.update's), to say with it.
  */
