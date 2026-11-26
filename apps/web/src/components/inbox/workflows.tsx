@@ -111,8 +111,9 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
         setMoved(null);
       } else {
         toast.success(`Moved ${byId.get(id)?.name ?? "the workflow"}`);
-        // The page has it now (the action refreshed it in this transition): its order, whatever the rows show.
-        setMoved(null);
+        // The page has it now: its order, whatever the rows show. After an await a set state is no longer part of the
+        // transition, so it's wrapped again, to land with the refreshed page rather than before it (no flash of the old order).
+        startSaving(() => setMoved(null));
       }
     });
   };
