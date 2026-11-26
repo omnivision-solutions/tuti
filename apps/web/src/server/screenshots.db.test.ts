@@ -87,7 +87,7 @@ test("moving the app to another host forgets the saved password and link, so the
   // With a new one, it moves, and the agent gets only that one, bound to the new host.
   expect(await call(updateScreenshotSettings, as(), { appUrl: "https://demo.example.net", password: "a-new-password" })).toMatchObject({ passwordSet: true });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
-  expect(browserUse.runs.at(-1)!.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: "a-new-password" }, allowedDomains: ["example.net"] }]);
+  expect(browserUse.runs.at(-1)!.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: "a-new-password" }, allowedDomains: ["demo.example.net"] }]);
   // A link too.
   await call(updateScreenshotSettings, as(), { signIn: "link", signInLink: LINK, appUrl: "https://app.example.com" });
   await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({ message: "Enter the sign-in link again: the app's address moved to another site" });
@@ -175,7 +175,7 @@ test("a run signs in once, takes every screenshot as an upload, stops its browse
     model: "bu-4.0-mini",
     maxCostUsd: 1,
     browserSettings: { screenWidth: 1440, screenHeight: 900, proxyCountryCode: null, networkPolicyId: expect.any(String) },
-    secretBindings: [{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["example.com"] }],
+    secretBindings: [{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["app.example.com"] }],
   });
   expect(sent.task).toContain("Open https://app.example.com/home.");
   expect(sent.task).toContain('the username "e2e-demo@example.com" and the password app_password');
@@ -737,13 +737,19 @@ test("the other domains the team lists are opened too: kept in the settings, in 
   expect(await call(updateScreenshotSettings, as(), { otherDomains: [] })).toMatchObject({ otherDomains: [] });
 });
 
-test("the password is typed only on the domains the browser may open: a sign-in elsewhere the team listed gets it too", async () => {
-  await setUp({ otherDomains: ["acme.auth0.com"] });
+test("the password is typed only on hosts named: the app's own and those listed, not its siblings the browser may open", async () => {
+  await setUp();
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
-  const run = browserUse.runs.at(-1)!;
-  const policy = browserUse.policies.get((run.body.browserSettings as { networkPolicyId: string }).networkPolicyId)!;
-  expect(run.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["acme.auth0.com", "example.com"] }]);
-  expect(policy.allow.domains).toEqual(["acme.auth0.com", "example.com"]);
+  const binding = () => browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[];
+  const policy = () => browserUse.policies.get((browserUse.runs.at(-1)!.body.browserSettings as { networkPolicyId: string }).networkPolicyId)!;
+  // The browser may open example.com and its hosts; the password only app.example.com (another tenant's host could be under example.com).
+  expect(binding()[0]!.allowedDomains).toEqual(["app.example.com"]);
+  expect(policy().allow.domains).toEqual(["example.com"]);
+  // Listed, a sign-in page on another host gets it.
+  await call(updateScreenshotSettings, as(), { otherDomains: ["login.example.com", "acme.auth0.com"] });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(binding()).toEqual([{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["acme.auth0.com", "app.example.com", "login.example.com"] }]);
+  expect(policy().allow.domains).toEqual(["acme.auth0.com", "example.com", "login.example.com"]);
 });
 
 test("a shared suffix isn't another domain the browser may open: it'd open every site under it", async () => {

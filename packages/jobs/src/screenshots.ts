@@ -331,6 +331,12 @@ export function policyDomains(settings: Pick<Settings, "appUrl" | "signIn" | "si
   return [...new Set([...hosts.map((host) => getDomain(host, { allowPrivateDomains: true }) ?? host), ...settings.otherDomains])].sort();
 }
 
+/** The hosts the password may be typed on: the app's and the sign-in link's own hosts, and the other domains listed. */
+export function passwordDomains(settings: Pick<Settings, "appUrl" | "signIn" | "signInLink" | "otherDomains">): string[] {
+  const link = signInLink(settings);
+  return [...new Set([new URL(settings.appUrl).hostname, ...(link && URL.canParse(link) ? [new URL(link).hostname] : []), ...settings.otherDomains])].sort();
+}
+
 async function networkPolicy(client: BrowserUse, projectId: string, settings: Settings, tries = 2): Promise<string> {
   const domains = policyDomains(settings);
   const policy = { defaultAction: "block" as const, allow: { domains } };
@@ -400,9 +406,9 @@ async function agentRun(
     workspaceId: workspace.id,
     maxCostUsd,
     outputSchema: OUTPUT_SCHEMA,
-    // Typed only on the domains its browser may open (policyDomains): the app's own, its sign-in link's, and the other
-    // domains the team listed, such as a sign-in page elsewhere.
-    ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: policyDomains(settings) }] }),
+    // Typed only on hosts named: the app's own, and those the team listed (a sign-in page elsewhere). Not the wider
+    // domains the browser may open: on a multi-tenant app (acme.saas.com), saas.com covers other tenants' hosts.
+    ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: passwordDomains(settings) }] }),
     // Always said: Browser Use's residential proxy is on by default and billed per GB at residential rates, so it's off
     // unless the project turned it on (an app that blocks cloud servers).
     browserSettings: { screenWidth: WINDOWS[settings.window].width, screenHeight: WINDOWS[settings.window].height, proxyCountryCode: settings.residentialProxy ? ("us" as const) : null, networkPolicyId },
