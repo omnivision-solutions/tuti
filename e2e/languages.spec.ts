@@ -477,10 +477,11 @@ test("on a phone, a changelog page with both its page links fits, in French's lo
   const api = await apiFor(team, slug);
   await api("/languages", { languages: [{ code: "fr", live: true, newPages: "manual" }] }, "PATCH");
   // 41 entries: page 2 of 3 has both Newer and Older.
+  // One at a time: each publish takes the project's lock.
   for (let n = 1; n <= 41; n++) {
     await api("/changelog", { title: `Update ${n}`, body: "Small fixes." });
+    await api(`/changelog/${n}/publish`, {});
   }
-  await Promise.all(Array.from({ length: 41 }, (_, i) => api(`/changelog/${i + 1}/publish`, {})));
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 390, height: 844 });
