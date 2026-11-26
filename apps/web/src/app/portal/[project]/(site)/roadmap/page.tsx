@@ -1,4 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
+import { MESSAGES } from "@tuti/shared/messages";
 import { ArrowRightIcon, CalendarIcon, CheckIcon, LayoutListIcon, MessageSquareIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -7,7 +8,7 @@ import { PortalAvatar } from "@/components/portal-avatar";
 import { etaOnPortal, formatMonth } from "@/lib/format";
 import { notFound } from "next/navigation";
 
-import { STATUS_ICONS, STATUS_LABELS, STATUS_TEXT } from "@/components/post-status-badge";
+import { STATUS_ICONS, STATUS_TEXT } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { FilterPills } from "@/components/filter-pills";
 import { NewPostMenu } from "@/components/new-post-menu";
@@ -19,6 +20,7 @@ import { canActIn } from "@/server/membership";
 import { visiblePosts } from "@/server/post-visibility";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
 import { currentPostViewer, currentReader } from "@/server/portal-access";
@@ -27,19 +29,16 @@ import { VisibilityBadge } from "@/components/visibility-badge";
 import { cn } from "@/lib/utils";
 import { shownBoards } from "@/server/post-visibility";
 
-/** What each column means, under its name. */
-const MEANINGS: Partial<Record<PostStatus, string>> = {
-  PLANNED: "We've decided to build these.",
-  IN_PROGRESS: "We're building these now.",
-  COMPLETED: "Shipped and ready to use.",
-};
-
 /** One address for search engines, whichever board it shows (`?board=`). */
 export async function generateMetadata(props: PageProps<"/portal/[project]/roadmap">): Promise<Metadata> {
-  return portalPageMetadata((await props.params).project, { title: "Roadmap", description: ROADMAP_DESCRIPTION, path: "/roadmap" });
+  const { project } = await props.params;
+  const found = await prisma.project.findUnique({ where: { slug: project }, select: { id: true } });
+  if (!found) {
+    return {};
+  }
+  const { t, language } = await portalTranslator(found.id, "roadmap");
+  return portalPageMetadata(project, { title: MESSAGES[language].header.roadmap, description: t("description"), path: "/roadmap" });
 }
-
-const ROADMAP_DESCRIPTION = "What's planned, what we're building and what's done.";
 
 /** What's planned, being built and done, from the posts' statuses; a board at a time (`?board=`), voted on from the cards. */
 export default async function RoadmapPage(props: PageProps<"/portal/[project]/roadmap">) {
@@ -52,6 +51,10 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   if (!found) {
     notFound();
   }
+  // The portal's words in the page's language: the roadmap's own, and the feedback ones its cards share.
+  const [{ t, language }, { t: f }] = await Promise.all([portalTranslator(found.id, "roadmap"), portalTranslator(found.id, "feedback")]);
+  // What each column means, under its name.
+  const meaning = (status: PostStatus) => t(`meaning.${status as "PLANNED" | "IN_PROGRESS" | "COMPLETED"}`);
   // The posts they may see, on the boards they may (post-visibility.ts).
   const viewer = await currentPostViewer(found.id);
   const project = {
@@ -107,15 +110,15 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   return (
     <div className="flex flex-col gap-6 sm:gap-8">
       <PortalPageHeader
-        title="Roadmap"
+        title={MESSAGES[language].header.roadmap}
         description={
           <>
-            {ROADMAP_DESCRIPTION}
+            {t("description")}
             {/* Said on the cards' vote buttons too. */}
             {!voter && (
               <>
                 {" "}
-                <SignInLink className="font-medium text-primary underline underline-offset-[3px]">Sign in</SignInLink> to vote.
+                {t.rich("signInToVote", { link: (chunks) => <SignInLink className="font-medium text-primary underline underline-offset-[3px]">{chunks}</SignInLink> })}
               </>
             )}
           </>
@@ -124,22 +127,22 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
           // The boards, one at a time or all, with their ideas' counts.
           project.boards.length > 1 && (
             <FilterPills
-              label="Board"
+              label={f("board")}
               current={boardHref(board?.slug)}
               items={[
-                { title: "All boards", href: boardHref(), count: [...counts.values()].reduce((sum, n) => sum + n, 0) },
-                ...project.boards.map((b) => ({ title: b.name, href: boardHref(b.slug), count: counts.get(b.id) ?? 0 })),
+                { title: f("allBoards"), href: boardHref(), count: [...counts.values()].reduce((sum, n) => sum + n, 0).toLocaleString(language) },
+                ...project.boards.map((b) => ({ title: b.name, href: boardHref(b.slug), count: (counts.get(b.id) ?? 0).toLocaleString(language) })),
               ]}
             />
           )
         }
-        actions={<NewPostMenu boards={postBoards} />}
-        phoneActions={<NewPostMenu boards={postBoards} round />}
+        actions={<NewPostMenu boards={postBoards} newPost={f("newPost")} />}
+        phoneActions={<NewPostMenu boards={postBoards} newPost={f("newPost")} round />}
       />
       {/* Below tablet width, a column at a time, picked from a segmented control that sticks under the header, on the
           paper, so it's always clear which column the cards are in. */}
       <div data-roadmap-switcher data-roadmap-sticky className="sticky top-[var(--portal-header-height,0px)] z-10 -my-2 bg-background py-2 md:hidden">
-        <nav aria-label="Columns" className="flex rounded-xl bg-muted p-1">
+        <nav aria-label={t("columns")} className="flex rounded-xl bg-muted p-1">
           {ROADMAP.map(({ status, key }, i) => {
             const active = key === column;
             return (
@@ -152,8 +155,8 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                   active ? "bg-card text-foreground shadow-card ring-1 ring-card-edge" : "text-muted-foreground",
                 )}
               >
-                <span className="truncate">{STATUS_LABELS[status]}</span>{" "}
-                <span className="text-xs font-semibold text-muted-foreground tabular-nums">{columns[i]!.length}</span>
+                <span className="truncate">{f(`status.${status}`)}</span>{" "}
+                <span className="text-xs font-semibold text-muted-foreground tabular-nums">{columns[i]!.length.toLocaleString(language)}</span>
               </RoadmapColumnLink>
             );
           })}
@@ -168,7 +171,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
           return (
             <section
               key={status}
-              aria-label={STATUS_LABELS[status]}
+              aria-label={f(`status.${status}`)}
               aria-describedby={`roadmap-${status}-meaning`}
               className={cn("flex min-w-0 flex-col gap-3", key !== column && "max-md:hidden")}
             >
@@ -178,15 +181,15 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                 {/* Below tablet width the control over the column names it. */}
                 <h2 className="flex items-center gap-2.5 font-heading text-[1.1875rem] font-[650] tracking-[-0.01em] max-md:sr-only">
                   <Icon aria-hidden data-status-icon className={cn("size-5 shrink-0", STATUS_TEXT[status])} />
-                  {STATUS_LABELS[status]}
-                  <span className="font-sans text-base font-medium text-muted-foreground tabular-nums">{posts.length}</span>
+                  {f(`status.${status}`)}
+                  <span className="font-sans text-base font-medium text-muted-foreground tabular-nums">{posts.length.toLocaleString(language)}</span>
                 </h2>
                 <p id={`roadmap-${status}-meaning`} className="text-[0.9375rem] text-muted-foreground max-md:hidden">
-                  {MEANINGS[status]}
+                  {meaning(status)}
                 </p>
               </div>
               {posts.length === 0 ? (
-                <p className="rounded-xl bg-muted px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
+                <p className="rounded-xl bg-muted px-3 py-8 text-center text-sm text-muted-foreground">{t("nothingHere")}</p>
               ) : (
                 <ul className="flex flex-col gap-2.5">
                   {posts.map((post) => {
@@ -205,7 +208,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                         {eta && (
                           <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                             <CalendarIcon aria-hidden className="size-3.5" />
-                            Expected {formatMonth(eta)}
+                            {f("expectedIn", { month: formatMonth(eta, language) })}
                           </p>
                         )}
                         <div className="mt-3 flex items-center gap-2.5 text-sm text-muted-foreground">
@@ -214,10 +217,8 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           {post.commentCount > 0 && (
                             <span className="inline-flex items-center gap-1">
                               <MessageSquareIcon aria-hidden className="size-3.5" />
-                              <span aria-hidden>{post.commentCount}</span>
-                              <span className="sr-only">
-                                {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
-                              </span>
+                              <span aria-hidden>{post.commentCount.toLocaleString(language)}</span>
+                              <span className="sr-only">{f("comments", { count: post.commentCount })}</span>
                             </span>
                           )}
                           {status === "COMPLETED" ? (
@@ -229,11 +230,11 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                         {entry && (
                           <Link
                             href={at(`/changelog/${entry.number}`)}
-                            aria-label={`In the changelog: ${entry.title}`}
+                            aria-label={t("inChangelogLabel", { title: entry.title })}
                             className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary hover:underline"
                           >
                             <CheckIcon aria-hidden className="size-3.5" />
-                            In the changelog
+                            {t("inChangelog")}
                             <ArrowRightIcon aria-hidden className="size-3.5" />
                           </Link>
                         )}
