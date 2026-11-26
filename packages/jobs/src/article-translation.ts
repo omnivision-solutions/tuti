@@ -285,6 +285,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     // The team's published title stays theirs until the source's title changes.
     const ownTitle = now.titleSource === titleHash;
     const content = docOfSections(published);
+    // A version the team writes that it never published: only its draft is written (nothing of it goes live by itself).
+    const draftOnly = !now.automatic && !now.publishedAt;
     // A version the team writes keeps its other reasons (the product setting's, the glossary's) but where it was updated.
     const kept = now.automatic ? {} : Object.fromEntries(Object.entries(now.behind as Record<string, string>).filter(([key]) => !asked.includes(key)));
     return {
@@ -294,17 +296,15 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
         keywords: article.keywords.map((_, i) => text(2 + i)),
         sourceHash: source.hash,
       }),
-      content: content as Prisma.InputJsonValue,
-      body: toPlainText(content),
-      sections: metaOf(published) as Prisma.InputJsonValue,
+      ...(!draftOnly && { content: content as Prisma.InputJsonValue, body: toPlainText(content), sections: metaOf(published) as Prisma.InputJsonValue }),
       ...(draft &&
         drafted && {
           // Its title the team's while it's edited there, or while the published one is theirs.
           draft: { ...draft, title: draft.titleEdited || ownTitle || !now.automatic ? draft.title : text(0), content: docOfSections(drafted), sections: metaOf(drafted) } as Prisma.InputJsonValue,
         }),
-      behind: behindOf(article.project.language, parts, (drafted ? [published, drafted] : [published]).map((list) => (now.automatic ? list : ownedByTeam(list))), kept),
+      behind: behindOf(article.project.language, parts, (draftOnly ? (drafted ? [drafted] : []) : drafted ? [published, drafted] : [published]).map((list) => (now.automatic ? list : ownedByTeam(list))), kept),
       updateSections: waiting,
-      publishedAt: now.publishedAt ?? new Date(),
+      ...(!draftOnly && { publishedAt: now.publishedAt ?? new Date() }),
       productAvailable: setting.productAvailable,
       memory: result.memory,
       error: null,
@@ -527,9 +527,10 @@ async function nameVersion(projectId: string, versionId: string) {
     await lockProject(tx, projectId);
     const version = await tx.articleTranslation.findUnique({
       where: { id: versionId },
-      select: { slug: true, title: true, language: true, articleId: true, article: { select: { slug: true, deletedAt: true } } },
+      select: { slug: true, title: true, language: true, articleId: true, publishedAt: true, article: { select: { slug: true, deletedAt: true } } },
     });
-    if (!version || version.slug || version.article.deletedAt) {
+    // Only once it's published: an address is for reading it.
+    if (!version || version.slug || version.article.deletedAt || !version.publishedAt) {
       return;
     }
     const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { id: versionId, articleId: version.articleId, slug: null }, version.article.slug);

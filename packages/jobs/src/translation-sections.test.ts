@@ -90,3 +90,25 @@ test("`only`: a version the team writes keeps its sections whose source went, bu
   expect(texts(docOfSections(withTranslation(version, doc(["", "NEU"], ["NEU", "NEU"]), sourceSections(v2), { only: new Set() })))).toEqual(texts(de1));
   expect(texts(docOfSections(withTranslation(version, doc(["", "NEU"], ["NEU", "NEU"]), sourceSections(v2), { only: new Set([billing]) })))).toEqual(texts(de1).slice(0, 3));
 });
+
+test("published on a version kept up to date, an edit whose source section was renamed or removed goes, unless kept", () => {
+  const source = sourceSections(v1);
+  const edited = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Unsere Abrechnung"]), source);
+  // English renames "Billing" to "Payments": its key is gone.
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Payments", "Pay by card"]);
+  const translated = doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlungen", "Mit Karte zahlen"]);
+  expect(texts(docOfSections(withTranslation(edited, translated, sourceSections(v2), { published: true })))).toEqual(texts(translated));
+  // Kept, it stays (behind); in a draft, it stays too.
+  const kept = edited.map((section, i) => (i === 2 ? { ...section, meta: { ...section.meta, kept: true as const } } : section));
+  expect(texts(docOfSections(withTranslation(kept, translated, sourceSections(v2), { published: true })))).toContain("Unsere Abrechnung");
+  expect(texts(docOfSections(withTranslation(edited, translated, sourceSections(v2))))).toContain("Unsere Abrechnung");
+});
+
+test("an edit of a section translated from older source text is behind: it keeps the hash of what it was edited from", () => {
+  const old = sourceSections(v1);
+  const version = versionSections(de1, [], old);
+  // English Billing changed since that translation (the new one not made yet).
+  const now = sourceSections(doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]));
+  const edited = editedSections(version, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen!"]), now);
+  expect(behindSections(edited, now).map((key) => key.split("\u001f")[0])).toEqual(["Billing"]);
+});

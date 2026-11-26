@@ -225,11 +225,22 @@ export const publishTranslation = defineOperation({
     slug: articleSlug,
     language,
     keep: z.array(section).max(500).optional().describe("Sections behind the source (the draft's `behind`) whose edit to keep; the rest take the new translation"),
+    version: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("Optional: the `version` of the read you reviewed. It publishes only if it's still that (else 409 `changed`), so `keep` applies to the sections you saw. Left out, there's no check")
+      .meta({ examples: ["5f2c9a…"] }),
   }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
     let retranslate: { articleId: string; language: string } | null = null;
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
+      // Only the draft that was reviewed: one saved or retranslated since would go live unseen, `keep` meant for other sections.
+      if (input.version !== undefined && versionToken(version) !== input.version) {
+        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+      }
       const { parts, sourceLanguage, titleHash } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {

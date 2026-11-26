@@ -344,3 +344,44 @@ test("the retry job leaves sections asked for on an article that isn't published
   await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} });
   expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ retryAt: null });
 });
+
+test("a version the team writes and never published: updating its draft's sections publishes nothing", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const stored = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  const sections = sourceSections(translationSource(stored).text).map(({ key, hash }) => ({ key, hash, own: true }));
+  const ours = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]);
+  await prisma.articleTranslation.create({ data: { articleId: stored.id, projectId: project.id, language: "de", automatic: false, draft: { title: "Bezahlt werden", titleEdited: true, content: ours, sections } } });
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  const [billing] = (await call(getTranslation, as(), de)).draft!.behind;
+  model.reply(reply(V2, "de2"));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  const after = await prisma.articleTranslation.findFirstOrThrow({ where: { articleId: stored.id } });
+  expect(after).toMatchObject({ publishedAt: null, content: null, slug: null, updateSections: [] });
+  expect(text((after.draft as { content: Doc }).content)).toContain("[de2] Pay by card or invoice");
+  expect(text((after.draft as { content: Doc }).content)).toContain("Unsere Installation");
+});
+
+test("an edit saved while a retranslation waits is behind: it was made from the translation of the English before", async () => {
+  await translated();
+  // English Billing changes; the provider doesn't answer (asked, then once more), so German keeps its old translation.
+  model.fail(500);
+  model.fail(500);
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const saved = await editBilling();
+  expect(saved.draft!.behind).toHaveLength(1);
+});
+
+test("a publish from an older read is refused: it would publish a draft never seen, `keep` meant for other sections", async () => {
+  await translated();
+  await editBilling();
+  const read = await call(getTranslation, as(), de);
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card"]), "de2");
+  await expect(call(publishTranslation, as(), { ...de, version: read.version })).rejects.toMatchObject({ status: 409, code: "changed" });
+  const now = await call(getTranslation, as(), de);
+  expect((await call(publishTranslation, as(), { ...de, version: now.version })).draft).toBeNull();
+});

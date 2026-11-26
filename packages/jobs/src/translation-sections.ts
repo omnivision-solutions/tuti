@@ -62,7 +62,8 @@ export function withTranslation(current: Section[], translated: Doc, source: Sou
     if (key !== null && inSource.has(key) && !byKey.has(key)) {
       byKey.set(key, section);
       previous = key;
-    } else if (key === null || section.meta.own || (only && !only.has(key))) {
+    } else if (key === null || (section.meta.own && (!published || section.meta.kept)) || (only && !only.has(key))) {
+      // (Published on a version kept up to date, the team's edit whose source section went goes too, unless they kept it.)
       // (A version the team writes keeps its sections whose source went, but where it asked for them.)
       after.set(previous, [...(after.get(previous) ?? []), section]);
     }
@@ -95,8 +96,13 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
     if (was && sameSection(was.blocks, blocks)) {
       return was;
     }
-    // Nothing to line up with yet (written before its first translation): the source's section in its place.
-    const key = was ? was.meta.key : base.length === 0 ? (source[i]?.key ?? null) : null;
+    // Edited from what it was, which was made from the source as it was then (its hash): an edit of a translation of older
+    // source text is behind. Nothing to line up with yet (written before its first translation): the source's section in its
+    // place, as it is now.
+    if (was) {
+      return { blocks, meta: { key: was.meta.key, hash: was.meta.hash, own: true } };
+    }
+    const key = base.length === 0 ? (source[i]?.key ?? null) : null;
     return { blocks, meta: { key, hash: key === null ? null : (hashes.get(key) ?? null), own: true } };
   });
 }
