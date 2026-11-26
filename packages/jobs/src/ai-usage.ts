@@ -26,6 +26,9 @@ export async function duplicatesMeter(projectId: string): Promise<Meter | null> 
   return (await aiPaused(projectId)) ? null : meter(projectId, "duplicates");
 }
 
+/** The meter for screenshot runs in `projectId`, recorded and charged as `screenshots` (what each browser session cost). */
+export const screenshotsMeter = (projectId: string): Meter => meter(projectId, "screenshots");
+
 /**
  * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project),
  * and with credits on charges its cost in credits, at the rate of the time (a request with no

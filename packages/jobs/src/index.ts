@@ -15,6 +15,7 @@ import { checkEmailDomains } from "./email-domains";
 import { tellEmailPauses } from "./email-pause";
 import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
+import { screenshotRun } from "./screenshots";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 export { replyRecipient, type ReplyRecipient } from "./conversations";
 export { checkPushReceipts, PUSH_TEXT_MAX, RECEIPT_AFTER_MS } from "./push";
@@ -54,7 +55,8 @@ export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
-export { aiFor, duplicatesMeter } from "./ai-usage";
+export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
+export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords } from "./code-change-docs";
@@ -121,6 +123,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   retryCodeChanges: () => retryCodeChanges(),
   verifyArticle,
   verifyAllArticle: verifyArticle,
+  screenshotRun,
   importStep,
   resumeImports: (_, log) => resumeImports(log),
   failStaleImports: () => failStaleImports(),

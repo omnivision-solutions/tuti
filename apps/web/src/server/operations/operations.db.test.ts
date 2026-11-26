@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { billingFile, configFile, type DnsFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { billingFile, type BrowserUseFake, configFile, type DnsFake, startBrowserUseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
@@ -227,6 +227,12 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Like the rest of Customize: admins only in the app.
   "redirects.create": () => ({ from: "/hc/en-us/articles/1", to: "/docs" }),
   "redirects.delete": (f) => ({ id: f.redirectId }),
+  // Like the rest of Settings: admins only in the app. The agent is Browser Use's fake; the secret never comes back.
+  "screenshotSettings.get": () => ({}),
+  "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
+  "screenshotSettings.test": () => ({}),
+  "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
+  "screenshots.get": (f) => ({ id: f.screenshotRunId }),
 };
 
 let owner: TestUser;
@@ -237,6 +243,7 @@ let stripe: StripeFake;
 let ses: SesFake;
 let s3: S3Fake;
 let github: GithubFake;
+let browserUse: BrowserUseFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -260,6 +267,7 @@ beforeAll(async () => {
   }
   ses = await startSesFake();
   s3 = await startS3Fake();
+  browserUse = await startBrowserUseFake();
   // GitHub, for the changelog's pull requests: a merged one on the fixture's repository.
   github = await startGithubFake();
   github.pullRequest("acme/matrix", { number: 5, title: "Add a dark theme" });
@@ -278,7 +286,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close(), s3.close(), github.close()]));
+afterAll(() => Promise.all([model.close(), dns.close(), site.close(), stripe.close(), ses.close(), s3.close(), github.close(), browserUse.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -460,8 +468,19 @@ async function createFixture(own: "domain" | "site" = "domain") {
     },
     select: { id: true, actions: { select: { id: true, kind: true, status: true } } },
   });
+  // Screenshots set up (a demo account), and a run of them to read.
+  await prisma.screenshotRun.deleteMany({ where: { projectId: project.id } });
+  await prisma.screenshotSettings.upsert({
+    where: { projectId: project.id },
+    create: { projectId: project.id, appUrl: "https://app.example.com" },
+    update: { appUrl: "https://app.example.com", signIn: "NONE", username: "", password: null, window: "DESKTOP" },
+  });
+  const screenshotRun = await prisma.screenshotRun.create({
+    data: { projectId: project.id, startedById: owner.id, state: "DONE", screenshots: { create: { projectId: project.id, position: 0, show: marker, failed: "Not reached" } } },
+  });
   return {
     marker,
+    screenshotRunId: screenshotRun.id,
     linkId: link.id,
     commentId: comment.id,
     entryCommentId: entryComment.id,
@@ -561,6 +580,8 @@ const snapshot = () =>
     prisma.device.findMany({ where: { userId: owner.id } }),
     prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { pushShowsText: true } }),
     prisma.articleVerification.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } }),
+    prisma.screenshotSettings.findUnique({ where: { projectId: project.id } }),
+    prisma.screenshotRun.findMany({ where: { projectId: project.id }, include: { screenshots: true }, orderBy: { id: "asc" } }),
   ]);
 
 test("every operation is in this matrix", () => {
@@ -579,9 +600,13 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   for (const [name, value] of Object.entries(ses.env)) {
     vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
   }
-  // Uploads, for the cover an entry's composed one is kept as.
+  // Uploads, for the cover an entry's composed one is kept as, and screenshots' images; Browser Use, for screenshots.
+  const screenshots = operation.name.startsWith("screenshot");
   for (const [name, value] of Object.entries(s3.env)) {
-    vi.stubEnv(name, operation.name === "changelog.composeCover" ? value : "");
+    vi.stubEnv(name, operation.name === "changelog.composeCover" || screenshots ? value : "");
+  }
+  for (const [name, value] of Object.entries(browserUse.env)) {
+    vi.stubEnv(name, screenshots ? value : "");
   }
   // Adding a pull request to the changelog would analyse it (inline here, asking the model): off for that one, as a
   // team turns it off (the analysis has its own tests, code-changes.db.test.ts).

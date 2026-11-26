@@ -1,4 +1,4 @@
-import { BoxesIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
+import { BoxesIcon, CameraIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
@@ -55,6 +55,8 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
               ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot"), icon: <GitPullRequestArrowIcon aria-hidden /> }] : []),
             ]
           : []),
+        // Its own key (Browser Use), not the AI provider's: the page says when this server has none.
+        { title: "Screenshots", href: at("screenshots"), icon: <CameraIcon aria-hidden /> },
       ],
     },
     {
