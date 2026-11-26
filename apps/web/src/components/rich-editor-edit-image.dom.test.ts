@@ -217,6 +217,46 @@ test("after Replace image, Edit with AI on the new image has the tries it came f
   expect(document.body.textContent).toContain("Edited · 1 of 2");
 });
 
+test("Replace image again after an undo keeps tries the replaced image got meanwhile", async () => {
+  let made = 0;
+  generateImage.mockImplementation(async () => ({ image: { id: `madeimage0000000000${++made}x`, url: `https://media.example/made${made}.png`, width: 1000, height: 500 } }));
+  const { ref, pick, generate, button, click } = await editor();
+  const closed = () => vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await pick();
+  await generate();
+  await click("Try again");
+  await click("Try 1");
+  await click("Replace image");
+  await closed();
+  // On the image it became, a third try; then back to the original.
+  await pick();
+  await click("Edit with AI");
+  const prompt = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(prompt, "Orange sky");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Try again");
+  await vi.waitFor(() => expect(button("Try 3")).toBeTruthy());
+  // Beside the original, the edited one takes only its own shape (no minimum height), so the two line up.
+  const edited = document.querySelector<HTMLImageElement>('[role="dialog"] img[alt="Try 3"]')!.parentElement!;
+  expect(edited.className).not.toContain("min-h-48");
+  expect(edited.style.aspectRatio).toBe("1000 / 500");
+  await act(async () => document.querySelector<HTMLElement>('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await closed();
+  await act(async () => ref.current!.commands.undo());
+  expect(ref.current!.state.doc.child(1).attrs.mediaId).toBe(ORIGINAL);
+  // Replaced with Try 1 again: the image it becomes still has Try 3.
+  await pick();
+  await click("Edit with AI");
+  await click("Try 1");
+  await click("Replace image");
+  await closed();
+  await pick();
+  await click("Edit with AI");
+  await vi.waitFor(() => expect(button("Try 3")).toBeTruthy());
+});
+
 test("a try still being made when the dialog closes lands with its image's tries, after another image was edited too", async () => {
   const OTHER = "otherimage0000000000c";
   const two = {

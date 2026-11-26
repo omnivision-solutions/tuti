@@ -448,7 +448,8 @@ export function ImageGenerator({
             )}
             <figure className="flex min-w-0 flex-col gap-1">
             <div
-              className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted"
+              // Beside the original, its own shape only (as the original's), so the two line up; alone, at least room for the states.
+              className={cn("flex items-center justify-center overflow-hidden rounded-xl border bg-muted", !(editing && shown && !pending && !error) && "min-h-48")}
               style={shown ? { aspectRatio: `${shown.width} / ${shown.height}` } : undefined}
             >
               {pending ? (

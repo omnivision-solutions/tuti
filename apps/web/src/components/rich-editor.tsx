@@ -293,7 +293,10 @@ export function RichEditor({
       const at = replace ? pos : pos + node.nodeSize;
       // The image it becomes keeps the tries (and Edit with AI on it again picks the one placed); undone, the old one has its own still.
       if (replace) {
-        triesFor.set(made.id, { tries: triesFor.get(edited.image.id)?.tries ?? [], generating: false, error: null });
+        // Merged, not overwritten: tries made on that image before (edited, undone, replaced again) stay.
+        const from = triesFor.get(edited.image.id)?.tries ?? [];
+        const had = triesFor.get(made.id)?.tries ?? [];
+        triesFor.set(made.id, { tries: [...from, ...had.filter((one) => !from.some((each) => each.id === one.id))], generating: false, error: null });
       }
       editor
         .chain()
