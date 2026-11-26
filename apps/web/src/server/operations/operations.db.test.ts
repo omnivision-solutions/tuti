@@ -115,6 +115,13 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "apiReferences.sync": () => ({ slug: "matrix-url-reference" }),
   "apiReferences.delete": () => ({ slug: "matrix-reference" }),
   "githubRepositories.list": () => ({}),
+  "workflows.list": () => ({}),
+  "workflows.get": (f) => ({ id: f.workflowId }),
+  // For a group the fixture has. Owners and admins only in the app (see the authorization matrix).
+  "workflows.create": () => ({ name: "Beta first", trigger: "conversation_started", conditions: [{ kind: "in_group", group: "beta" }], actions: [{ kind: "mark_priority" }] }),
+  "workflows.update": (f) => ({ id: f.workflowId, name: "Renamed by the matrix", trigger: "user_replied", enabled: false }),
+  "workflows.move": (f) => ({ id: f.workflowId, position: 0 }),
+  "workflows.delete": (f) => ({ id: f.workflowId }),
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
   "groups.create": () => ({ name: "Enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] }),
@@ -236,6 +243,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "redirects.delete": (f) => ({ id: f.redirectId }),
   "languages.get": () => ({}),
   "languages.update": () => ({ languages: [{ code: "de", instructions: "Use du." }] }),
+  // German, which the fixture adds (Manual for new pages, so nothing is asked of the model).
+  "languages.retranslate": () => ({ code: "de", waiting: true }),
   // Like the rest of Settings: admins only in the app. The agent is Browser Use's fake; the secret never comes back.
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
@@ -309,6 +318,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   ses.identities.set("matrix.example.com", { tags: { "tuti-project": project.id }, tokens: ["matrixtoken1"], configurationSet: "tuti-test", verified: true });
   await prisma.post.deleteMany({ where: { projectId: project.id } });
+  await prisma.projectLanguage.upsert({ where: { projectId_code: { projectId: project.id, code: "de" } }, create: { projectId: project.id, code: "de", automatic: false }, update: {} });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
   // Who's asking on `seats`, so companies.list has a total to return.
   await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2, askingProperty: "seats" } });
@@ -416,6 +426,12 @@ async function createFixture(own: "domain" | "site" = "domain") {
       },
     });
   }
+  // A workflow for everyone (no group's, so groups.delete has nothing in its way), second in its list, to move first.
+  await prisma.workflow.deleteMany({ where: { projectId: project.id } });
+  await prisma.workflow.create({ data: { projectId: project.id, name: "Another", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
+  const workflow = await prisma.workflow.create({
+    data: { projectId: project.id, name: `${marker} workflow`, trigger: "conversation_started", position: 1, actions: [{ kind: "mark_priority" }] },
+  });
   const comment = await prisma.comment.create({ data: { projectId: project.id, postId: first!.id, authorId: owner.id, body: "A comment to like" } });
   const link = await prisma.postLink.create({
     data: {
@@ -497,6 +513,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     revisionId: revision.id,
     questionId: question.id,
     redirectId: redirect.id,
+    workflowId: workflow.id,
     codeChangeId: codeChange.id,
     postId: first!.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
@@ -575,6 +592,7 @@ const snapshot = () =>
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.apiReference.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: { key: "asc" } }),
+    prisma.workflow.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.docsGapDismissal.findMany({ where: { projectId: project.id } }),
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),

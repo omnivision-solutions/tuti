@@ -441,6 +441,7 @@ model Project {
   mailSubdomain            MailSubdomain?
   inboundEmails            InboundEmail[]
   spamSenders              SpamSender[]
+  workflows                Workflow[]
   emailBlocks              EmailBlock[]
   emailDays                ProjectEmailDay[]
   emailMonths              ProjectEmailMonth[]
@@ -1275,6 +1276,31 @@ model SpamSender {
   @@map("spam_sender")
 }
 
+/// Something the team set to happen on its own in the inbox (docs/plan.md, Inbox automation, "A workflow"): when its
+/// trigger's moment comes for a conversation whose person its conditions match, its actions run (server/inbox-path.ts).
+model Workflow {
+  id         String   @id @default(cuid())
+  projectId  String
+  name       String
+  /// Its moment: `conversation_started` or `user_replied` (@/lib/workflows TRIGGERS). Text, not an enum: more moments
+  /// come, and a row with a value the previous release's client didn't know would fail its reads.
+  trigger    String
+  /// Its place in its trigger's list, 0 first: the list runs top to bottom.
+  position   Int
+  enabled    Boolean  @default(true)
+  /// Who it's for (@/lib/workflows WorkflowCondition[]), all of which must match; none is everyone.
+  conditions Json     @default("[]")
+  /// What it does, in order (@/lib/workflows WorkflowAction[]).
+  actions    Json     @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, trigger, position])
+  @@map("workflow")
+}
+
 /// A teammate's last opening of a conversation; customer messages after it are unread for that teammate.
 model ConversationRead {
   conversationId String
@@ -1507,6 +1533,9 @@ model ConversationMessage {
   language           String?
   /// Why a customer's message couldn't be translated (the checks failed, the provider didn't answer, no credits).
   translationError   String?
+  /// A user's message: when its trigger's workflows ran for it (server/inbox-path.ts), written with what they changed, so
+  /// they never run for it twice. Null until then, and on every message from before workflows.
+  workflowsRanAt     DateTime?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1907,9 +1936,12 @@ model ProjectLanguage {
   productAvailable Boolean  @default(false)
   /// Readers get it; until then only the team can open its pages.
   live             Boolean  @default(false)
+  /// Counts changes to `productAvailable`: a translate job writes only while it's still the one it started under.
+  productVersion   Int      @default(0)
   createdAt        DateTime @default(now())
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  translations ArticleTranslation[]
 
   @@id([projectId, code])
   @@map("project_language")
@@ -2476,6 +2508,7 @@ model Article {
   revisions         ArticleRevision[]
   changes           ArticleChanges?
   redirects         DocsRedirect[]
+  translations      ArticleTranslation[]
   /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
   groups            ArticleGroup[]
   /// Tabs that show it at their path.
@@ -2488,6 +2521,54 @@ model Article {
   @@index([collectionId])
   @@index([deletedAt])
   @@map("article")
+}
+
+/// An article in another of the project's languages (docs/plan.md, Languages, L6): translated by the `translate-article`
+/// job from the published article, or written by the team. Removing the language removes it.
+model ArticleTranslation {
+  id               String    @id @default(cuid())
+  articleId        String
+  projectId        String
+  /// A code from @tuti/shared's LANGUAGES, one of the project's languages.
+  language         String
+  /// "Keep up to date": publishing the source again retranslates it (edits in the sections it touches are replaced).
+  automatic        Boolean   @default(true)
+  title            String    @default("")
+  description      String    @default("")
+  keywords         String[]  @default([])
+  /// Plain text (derived from `content`).
+  body             String    @default("")
+  content          Json?
+  /// Null until its first translation: readers get the source's version meanwhile.
+  publishedAt      DateTime?
+  /// The hash of the published source it was made from (translationSourceHash): another one means the source changed since.
+  sourceHash       String?
+  /// The "Our product is available in" setting it was made under; `memory` is reused only under the same one.
+  productAvailable Boolean?
+  /// Its segments' translations by their source text (@tuti/content translateDoc), so a publish sends only what changed.
+  memory           Json      @default("{}")
+  /// Sections behind the source, by the source's section key (@tuti/jobs behindKey): why ("The product's language setting changed.").
+  behind           Json      @default("{}")
+  /// Why it waits: it couldn't be translated ("Out of credits", …). Null once it is.
+  error            String?
+  /// Tries that failed in a row, for the backoff; `retryAt`: when it's tried again on its own.
+  tries            Int       @default(0)
+  retryAt          DateTime?
+  /// Retranslate requests for it, counted; `retranslated`: the count the latest translation written answered. While they
+  /// differ nothing remembered is reused (through retries too), and a job writes only while the count is the one it read,
+  /// so one started before a request never takes the request's place.
+  retranslate      Int       @default(0)
+  retranslated     Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  article         Article         @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  projectLanguage ProjectLanguage @relation(fields: [projectId, language], references: [projectId, code], onDelete: Cascade)
+
+  @@unique([articleId, language])
+  @@index([projectId, language])
+  @@index([retryAt])
+  @@map("article_translation")
 }
 
 /// A saved version of an article: every save that changes its title, text or collection adds

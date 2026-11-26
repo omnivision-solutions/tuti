@@ -238,7 +238,7 @@ export const deleteGroup = defineOperation({
   name: "groups.delete",
   title: "Delete a reader group",
   summary:
-    "Delete a reader group. One a tab, collection, article or changelog entry is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go.",
+    "Delete a reader group. One a tab, collection, article, changelog entry or workflow is for is refused (409): taking it away would change who can read them or who it runs for, so remove it from them first. Deleted articles let it go.",
   method: "DELETE",
   path: "/groups/{group}",
   scope: "write",
@@ -247,7 +247,7 @@ export const deleteGroup = defineOperation({
   input: z.object({ group: readerGroup.describe("The group's key") }),
   output: z.object({ deleted: z.string().describe("The deleted group's key").meta({ examples: ["beta"] }) }).describe("The group is gone"),
   run: async ({ projectId }, input) => {
-    // Locked, so a tab, collection, article or changelog entry being saved with it lands first (and is named here) or finds it gone.
+    // Locked, so a tab, collection, article, changelog entry or workflow being saved with it lands first (and is named here) or finds it gone.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const group = await tx.readerGroup.findUnique({
@@ -263,7 +263,19 @@ export const deleteGroup = defineOperation({
       if (!group) {
         throw notFound(input.group);
       }
-      const users = [...group.tabs.map((t) => t.tab.name), ...group.collections.map((c) => c.collection.name), ...group.articles.map((a) => a.article.title), ...group.changelogEntries.map((e) => e.entry.title)];
+      // The inbox's workflows for it (@/lib/workflows): they name it by key in their conditions.
+      const workflows = await tx.workflow.findMany({
+        where: { projectId, conditions: { array_contains: [{ kind: "in_group", group: input.group }] } },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: { name: true },
+      });
+      const users = [
+        ...group.tabs.map((t) => t.tab.name),
+        ...group.collections.map((c) => c.collection.name),
+        ...group.articles.map((a) => a.article.title),
+        ...group.changelogEntries.map((e) => e.entry.title),
+        ...workflows.map((w) => w.name),
+      ];
       if (users.length > 0) {
         throw new OperationError(409, "conflict", `Used by ${new Intl.ListFormat("en-GB").format(users)}; remove it from them first`);
       }

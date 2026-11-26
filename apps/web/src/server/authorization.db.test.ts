@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
-import { importsSettled, resumeToken } from "@tuti/jobs";
+import { importsSettled, languageTranslationsDone, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
 import { billingFile, type BrowserUseFake, configFile, startBrowserUseFake, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -61,6 +61,7 @@ import * as team from "./team";
 import * as webhooks from "./webhooks";
 import * as widget from "./widget";
 import * as widgetInbox from "./widget-inbox";
+import * as workflows from "./workflows";
 import { createApiReference } from "./operations/api-references";
 import { call } from "./operations/run";
 
@@ -118,6 +119,7 @@ const modules = {
   webhooks,
   widget,
   "widget-inbox": widgetInbox,
+  workflows,
 };
 
 const MATRIX_SPEC = JSON.stringify({ openapi: "3.1.0", info: { title: "Matrix", version: "1" }, paths: { "/posts": { get: { summary: "List posts", responses: { 200: { description: "OK" } } } } } });
@@ -583,7 +585,16 @@ const matrix: Matrix = {
   languages: {
     // The fixture has German besides English, so the default stays as it is.
     setDefaultLanguage: { allowed: "ADMIN", call: (slug) => languages.setDefaultLanguage(slug, "en") },
-    addLanguage: { allowed: "ADMIN", call: (slug) => languages.addLanguage(slug, "fr") },
+    addLanguage: {
+      allowed: "ADMIN",
+      // French is Automatic for new pages: the published article is translated, in the background (done before the next case).
+      before: () => model.otherwise(JSON.stringify({ segments: { "1": "Article de la matrice" } }), "Matrix article"),
+      call: async (slug) => {
+        const result = await languages.addLanguage(slug, "fr");
+        await languageTranslationsDone();
+        return result;
+      },
+    },
     updateLanguage: { allowed: "ADMIN", call: (slug) => languages.updateLanguage(slug, "de", { live: true, instructions: "Use du." }) },
     removeLanguage: { allowed: "ADMIN", call: (slug) => languages.removeLanguage(slug, "de") },
   },
@@ -848,6 +859,17 @@ const matrix: Matrix = {
     deleteWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.deleteWebhook(slug, f.webhookId) },
     sendTestWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.sendTestWebhook(slug, f.webhookId) },
   },
+  // The inbox's workflows are settings: owners and admins only, like Settings → Inbox.
+  workflows: {
+    // Saving an existing one, so another project's workflow id is refused too (creating, with null, is the same check without an id).
+    saveWorkflow: {
+      allowed: "ADMIN",
+      takesIds: true,
+      call: (slug, f) => workflows.saveWorkflow(slug, f.workflowId, { name: "Priority", trigger: "conversation_started", actions: [{ kind: "mark_priority" }] }),
+    },
+    moveWorkflow: { allowed: "ADMIN", takesIds: true, call: (slug, f) => workflows.moveWorkflow(slug, f.workflowId, 0) },
+    deleteWorkflow: { allowed: "ADMIN", takesIds: true, call: (slug, f) => workflows.deleteWorkflow(slug, f.workflowId) },
+  },
 };
 
 const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
@@ -947,8 +969,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId, userId: users.MEMBER.id, role: "MEMBER" },
     ],
   });
-  // German besides English (Settings → Languages).
-  await prisma.projectLanguage.create({ data: { projectId, code: "de" } });
+  // German besides English (Settings → Languages): Manual for new pages, so publishing asks no model for a translation.
+  await prisma.projectLanguage.create({ data: { projectId, code: "de", automatic: false } });
   const target = await prisma.user.create({
     data: { id: crypto.randomUUID(), name: "Target", email: `e2e-${crypto.randomUUID()}@example.com` },
   });
@@ -1039,6 +1061,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
+  // A workflow, to move and delete.
+  const workflow = await prisma.workflow.create({ data: { projectId, name: "Matrix workflow", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
   // Screenshots set up, for their Test.
   await prisma.screenshotSettings.create({ data: { projectId, appUrl: "https://app.example.com" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
@@ -1172,6 +1196,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     githubRepoId,
     specRepoId: 95_000 + githubRepoId,
     redirectId: redirect.id,
+    workflowId: workflow.id,
     linkId: link.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,

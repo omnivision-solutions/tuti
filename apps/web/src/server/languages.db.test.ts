@@ -22,12 +22,12 @@ test("Settings → Languages: adding, changing one and removing one leave the ot
   expect(await addLanguage(slug, "fr")).toEqual({});
   expect(await updateLanguage(slug, "fr", { live: true, newPages: "manual" })).toEqual({});
   expect(await languages()).toEqual([
-    { code: "de", name: "German", newPages: "automatic", instructions: "Use du.", productAvailable: true, live: false },
-    { code: "fr", name: "French", newPages: "manual", instructions: "", productAvailable: false, live: true },
+    { code: "de", name: "German", newPages: "automatic", instructions: "Use du.", productAvailable: true, live: false, articles: { translated: 0, waiting: 0, why: null } },
+    { code: "fr", name: "French", newPages: "manual", instructions: "", productAvailable: false, live: true, articles: { translated: 0, waiting: 0, why: null } },
   ]);
 
   expect(await removeLanguage(slug, "de")).toEqual({});
-  expect(await languages()).toEqual([{ code: "fr", name: "French", newPages: "manual", instructions: "", productAvailable: false, live: true }]);
+  expect(await languages()).toEqual([{ code: "fr", name: "French", newPages: "manual", instructions: "", productAvailable: false, live: true, articles: { translated: 0, waiting: 0, why: null } }]);
   expect(await updateLanguage(slug, "de", { live: true })).toEqual({ error: "That language was removed" });
   expect(await addLanguage(slug, "fr")).toEqual({ error: "Each language once" });
 });

@@ -20,7 +20,8 @@ test("a reader opens the portal's German addresses while German is live; an offl
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr" }] }, "PATCH");
+  // Manual for new pages: this journey is about addresses, and nothing here asks the model for translations.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", newPages: "manual" }] }, "PATCH");
   await api("/changelog", { title: "CSV export is here" });
   await api("/changelog/1/publish", {});
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
