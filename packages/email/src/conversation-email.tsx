@@ -11,7 +11,7 @@ type ConversationProps = {
   subject: string;
   /** The message, as plain text: its translation into the team's language, where it was translated. */
   body: string;
-  /** Translated (Translate conversations): the language it was written in, by its own name ("Deutsch"). */
+  /** Translated (Translate conversations): the language it was written in, by its own name ("Deutsch"); "" where it isn't known. */
   translatedFrom?: string;
   /** The conversation in the team's inbox. */
   url: string;
@@ -47,9 +47,9 @@ export function ConversationEmail({ projectName, from, isNew, subject, body, tra
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", backgroundColor: "#fafaf9", borderRadius: 12, padding: "14px 16px", margin: 0 }}>
         {quoted}
       </Text>
-      {translatedFrom && (
+      {translatedFrom !== undefined && (
         // As the Inbox says it under a translated message; the original is there.
-        <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "18px", margin: "6px 0 0" }}>Translated from {translatedFrom}</Text>
+        <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "18px", margin: "6px 0 0" }}>{translatedFrom ? `Translated from ${translatedFrom}` : "Translated"}</Text>
       )}
       <Buttons href={url} label="Reply in the inbox" />
     </Layout>

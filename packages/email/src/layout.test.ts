@@ -330,5 +330,9 @@ test("the team's email about a translated message quotes the translation and nam
   const translated = await render(conversationEmail({ ...props, translatedFrom: "Deutsch" }).body, { plainText: true });
   expect(translated).toContain("Where are my invoices?");
   expect(translated).toContain("Translated from Deutsch");
-  expect(await render(conversationEmail(props).body, { plainText: true })).not.toContain("Translated from");
+  expect(await render(conversationEmail(props).body, { plainText: true })).not.toContain("Translated");
+  // Its language not known: said translated, unnamed.
+  const unnamed = await render(conversationEmail({ ...props, translatedFrom: "" }).body, { plainText: true });
+  expect(unnamed).toContain("Translated");
+  expect(unnamed).not.toContain("Translated from");
 });

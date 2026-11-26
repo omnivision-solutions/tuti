@@ -478,9 +478,12 @@ const quiet = { info: () => {}, warn: () => {} };
 
 test("the team's notices wait for a translation still to come, and give up after a while: the text as it is", async () => {
   const { messages } = await pending(GERMAN);
-  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: GERMAN, translatedFrom: null });
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: GERMAN, translated: false, translatedFrom: null });
   await prisma.conversationMessage.update({ where: { id: messages[0]!.id }, data: { teamText: ENGLISH, language: "de" } });
-  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translatedFrom: "de" });
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translated: true, translatedFrom: "de" });
+  // A translation saved without a language (the model named none it could be read as): still the translation.
+  await prisma.conversationMessage.update({ where: { id: messages[0]!.id }, data: { language: null } });
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translated: true, translatedFrom: null });
 });
 
 test("the email waits for its message's translation after claiming its turn: a quick message after it doesn't take its place", async () => {

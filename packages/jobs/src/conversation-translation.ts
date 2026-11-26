@@ -91,7 +91,7 @@ const NOTICE_LOOKS_MS = 1_000;
  * lands); the job telling the notices when it's done frees the slots, once a release can rely on the worker running it.
  * A translation the job leaves unchanged (the model gave it back as it was) isn't foreseen: that wait runs its course.
  */
-export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): Promise<{ text: string; translatedFrom: string | null }> {
+export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): Promise<{ text: string; translated: boolean; translatedFrom: string | null }> {
   const until = Date.now() + waitMs;
   for (;;) {
     const message = await prisma.conversationMessage.findUniqueOrThrow({
@@ -106,11 +106,12 @@ export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): P
         conversation: { select: { spam: true, language: true, project: { select: { language: true, teamLanguage: true, translateConversations: true } } } },
       },
     });
-    if (message.teamText !== null && message.language) {
-      return { text: message.teamText, translatedFrom: message.language };
+    // Translated: as the Inbox shows it, its language named where it's known.
+    if (message.teamText !== null) {
+      return { text: message.teamText, translated: true, translatedFrom: message.language };
     }
     if (!translationPending(message) || Date.now() >= until) {
-      return { text: message.body, translatedFrom: null };
+      return { text: message.body, translated: false, translatedFrom: null };
     }
     await new Promise((resolve) => setTimeout(resolve, NOTICE_LOOKS_MS));
   }

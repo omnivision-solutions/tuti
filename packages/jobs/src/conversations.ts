@@ -96,7 +96,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   });
   const url = `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`;
   // Its translation, where it gets one (docs/plan.md L22). Never throws: the text as it is, where it can't be read.
-  const emailOf = (told: { text: string; translatedFrom: string | null }) => conversationEmail({
+  const emailOf = (told: { text: string; translated: boolean; translatedFrom: string | null }) => conversationEmail({
     projectName: conversation.project.name,
     from: whoWrote(message, conversation),
     // The user's first message is the conversation's start.
@@ -104,11 +104,11 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     subject: conversation.subject,
     // Translated: what the team reads in the Inbox, with the language it came in named.
     body: told.text,
-    ...(told.translatedFrom && { translatedFrom: nativeLanguageName(told.translatedFrom) }),
+    ...(told.translated && { translatedFrom: told.translatedFrom ? nativeLanguageName(told.translatedFrom) : "" }),
     url,
     assigned: !!conversation.assigneeId,
   });
-  const textOf = (waitMs?: number) => noticeText(messageId, waitMs).catch(() => ({ text: message.body, translatedFrom: null }));
+  const textOf = (waitMs?: number) => noticeText(messageId, waitMs).catch(() => ({ text: message.body, translated: false, translatedFrom: null }));
   if (only) {
     // A retry for the addresses the first run couldn't reach (not waited for: its first run did): each failure fails the job, for another try.
     const email = emailOf(await textOf(0));
