@@ -1,10 +1,10 @@
-import { translateText } from "@tuti/content";
+import { hasTextToTranslate, translateText } from "@tuti/content";
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
 import { aiEnabled, complete, type JobInput, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
-import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
+import type { JobLogger, JobResult, JobRun } from "./index";
 
 /**
  * Inbox in the team's language (docs/plan.md L22): with "Translate conversations" on, a customer's message in another
@@ -61,13 +61,13 @@ export async function translationSettings(projectId: string) {
  * language. A failure is kept on the message (`translationError`), never thrown past the last try: the message is in.
  */
 export async function translateMessage(input: JobInput<"translateMessage">, log: JobLogger, run: JobRun = { lastTry: true }): Promise<JobResult> {
-  let result: JobResult;
   try {
-    result = await translateOne(input, log, run);
+    const result = await translateOne(input, log, run);
     if ("skipped" in result) {
       // Nothing to translate after all (the team's language, too short, spam, no AI): a mark from a queue that failed goes.
       await prisma.conversationMessage.updateMany({ where: { id: input.messageId, teamText: null, translationError: { not: null } }, data: { translationError: null } });
     }
+    return result;
   } catch (error) {
     if (!run.lastTry) {
       throw error;
@@ -75,25 +75,69 @@ export async function translateMessage(input: JobInput<"translateMessage">, log:
     // Out of tries, whatever went wrong: the message says so, so the team can try again (L22b), never left looking untranslatable.
     log.warn(`Translating message ${input.messageId} failed: ${String(error).slice(0, 300)}`);
     await translationFailed(input.messageId, "Couldn't translate it");
-    result = { failed: "error" };
+    return { failed: "error" };
   }
-  if (input.notify) {
-    await tellTeamAbout(input.messageId, log);
+}
+
+/** How long the team's email and push about a message wait for its translation, and how often they look. */
+const NOTICE_WAITS_MS = 25_000;
+const NOTICE_LOOKS_MS = 1_000;
+
+/**
+ * A customer's message as the team's email and push tell it (docs/plan.md L22): its translation into the team's language,
+ * where it gets one. Both are queued beside the translate-message job, so while it's on its way they wait for it, a
+ * little: a translation the job is still to settle (`translationPending`), up to NOTICE_WAITS_MS. Then the text as it is.
+ * ponytail: polls the message while waiting (at most ~25 lookups); the job telling the notices when it's done is the
+ * upgrade, once a release can rely on the worker that runs it.
+ */
+export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): Promise<{ text: string; translatedFrom: string | null }> {
+  const until = Date.now() + waitMs;
+  for (;;) {
+    const message = await prisma.conversationMessage.findUniqueOrThrow({
+      where: { id: messageId },
+      select: {
+        author: true,
+        note: true,
+        body: true,
+        teamText: true,
+        language: true,
+        translationError: true,
+        conversation: { select: { spam: true, language: true, project: { select: { teamLanguage: true, translateConversations: true } } } },
+      },
+    });
+    if (message.teamText !== null && message.language) {
+      return { text: message.teamText, translatedFrom: message.language };
+    }
+    if (!translationPending(message) || Date.now() >= until) {
+      return { text: message.body, translatedFrom: null };
+    }
+    await new Promise((resolve) => setTimeout(resolve, NOTICE_LOOKS_MS));
   }
-  return result;
 }
 
 /**
- * The team's email and push about a customer's message (packages/jobs, conversation-message and conversation-push), which
- * read its translation where it has one. Never fails: a notice that can't be queued is logged (the email's resubmit cron
- * finds it again).
+ * Whether the translate-message job is still to settle this message: it translates it, or says why it couldn't, or that
+ * it's in the team's language (its `language`). Not one it skips without a word (as translateOne does): too short to tell
+ * with no language known for the conversation, or in the team's; spam; translation off or no AI.
  */
-export async function tellTeamAbout(messageId: string, log: Pick<JobLogger, "warn">) {
-  await Promise.all(
-    (["conversationMessage", "conversationPush"] as const).map((key) =>
-      enqueue(key, { messageId }).catch((error: unknown) => log.warn(`Couldn't queue ${key} for message ${messageId}: ${String(error)}`)),
-    ),
-  );
+export function translationPending(message: {
+  author: string;
+  note: boolean;
+  body: string;
+  teamText: string | null;
+  language: string | null;
+  translationError: string | null;
+  conversation: { spam: boolean; language: string | null; project: { teamLanguage: string | null; translateConversations: boolean } };
+}) {
+  const { conversation } = message;
+  const teamLanguage = conversation.project.teamLanguage ?? DEFAULT_TEAM_LANGUAGE;
+  if (message.author !== "USER" || message.note || conversation.spam || !conversation.project.translateConversations || !aiEnabled()) {
+    return false;
+  }
+  if (message.teamText !== null || message.translationError !== null || message.language !== null || !hasTextToTranslate(message.body)) {
+    return false;
+  }
+  return !isShort(message.body) || (!!conversation.language && !sameLanguage(conversation.language, teamLanguage));
 }
 
 /** Marks a message's translation as failed, where nothing else is stored for it yet (logged, never thrown). */

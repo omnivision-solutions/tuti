@@ -1,4 +1,6 @@
 import { nativeLanguageName } from "@tuti/shared/languages";
+
+import { noticeText } from "./conversation-translation";
 import { randomUUID } from "node:crypto";
 
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
@@ -56,8 +58,6 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     select: {
       author: true,
       body: true,
-      teamText: true,
-      language: true,
       createdAt: true,
       fromAddress: true,
       conversation: {
@@ -91,6 +91,8 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     return { skipped: "nobody to tell" };
   }
   // Worked out before the claim, so nothing between claiming and sending can fail and leave the claim unsent.
+  // Its translation, where it gets one (docs/plan.md L22): waited for a little, unless this is a retry for some addresses.
+  const told = await noticeText(messageId, only ? 0 : undefined);
   const earlier = await prisma.conversationMessage.count({
     where: { conversationId: conversation.id, author: "USER", createdAt: { lt: message.createdAt } },
   });
@@ -100,9 +102,9 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     // The user's first message is the conversation's start.
     isNew: earlier === 0,
     subject: conversation.subject,
-    // Translated (docs/plan.md L22): what the team reads in the Inbox, with the language it came in named.
-    body: message.teamText ?? message.body,
-    ...(message.teamText !== null && message.language && { translatedFrom: nativeLanguageName(message.language) }),
+    // Translated: what the team reads in the Inbox, with the language it came in named.
+    body: told.text,
+    ...(told.translatedFrom && { translatedFrom: nativeLanguageName(told.translatedFrom) }),
     url: `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`,
     assigned: !!conversation.assigneeId,
   });

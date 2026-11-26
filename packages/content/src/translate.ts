@@ -517,6 +517,9 @@ export async function translateDoc(doc: Doc, options: TranslateOptions): Promise
 }
 
 /** Plain text (an Inbox message) in another language, and the language it was in when `from` isn't given. */
+/** Whether a message has words to translate: not one only of links, code, numbers or emoji (translateText leaves those as they are). */
+export const hasTextToTranslate = (text: string) => hasWords(segmentOfText(text).segment.text);
+
 export async function translateText(text: string, options: TranslateOptions): Promise<{ text: string; detected?: string; problem?: Problem; providerError?: string }> {
   const { segment, apply, check } = segmentOfText(text);
   // Nothing to translate (a link, code, numbers, emoji): the message is already readable as it is.

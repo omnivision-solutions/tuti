@@ -1,4 +1,6 @@
 import { nativeLanguageName } from "@tuti/shared/languages";
+
+import { noticeText } from "./conversation-translation";
 import { prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
 
@@ -101,8 +103,6 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     select: {
       author: true,
       body: true,
-      teamText: true,
-      language: true,
       createdAt: true,
       fromAddress: true,
       conversation: {
@@ -151,8 +151,9 @@ export async function conversationPush({ messageId }: JobInput<"conversationPush
     return { skipped: "no devices" };
   }
   const title = `${whoWrote(message, conversation)} · ${conversation.project.name}`;
-  // Translated (docs/plan.md L22): the translation, saying so, as the Inbox shows it.
-  const text = pushText(message.teamText !== null && message.language ? `Translated from ${nativeLanguageName(message.language)}: ${message.teamText}` : message.body);
+  // Its translation, where it gets one (docs/plan.md L22), waited for a little: saying so, as the Inbox shows it.
+  const notice = await noticeText(messageId);
+  const text = pushText(notice.translatedFrom ? `Translated from ${nativeLanguageName(notice.translatedFrom)}: ${notice.text}` : notice.text);
   // What opens the conversation, and `at`, the message's time, which a reply from the notification says it saw
   // (conversations.reply's `seen`), so a message after it keeps the conversation waiting on the team.
   const opens = { project: conversation.project.slug, conversation: conversation.number, at: message.createdAt.toISOString() };
