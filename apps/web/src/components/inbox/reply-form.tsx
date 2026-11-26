@@ -1,8 +1,9 @@
 "use client";
 
-import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, MailIcon } from "lucide-react";
+import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, LanguagesIcon, MailIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "cn";
 
@@ -17,13 +18,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
-import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
+import { nativeLanguageName } from "@/lib/language-name";
+import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "@/lib/reply-preview";
+import { draftReplyWithAi, previewReplyTranslation, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
 
 /** Reply and Note: tabs underlined across the top of the box. */
 const TAB =
   "-mb-px inline-flex items-center gap-1.25 rounded-none border-b-2 border-transparent px-0.5 py-2 text-xs leading-5 data-active:border-primary data-active:bg-transparent data-active:font-semibold data-active:shadow-none dark:data-active:bg-transparent";
+
+/** How long typing stops before the reply's translation is previewed. */
+const PREVIEW_AFTER_MS = 800;
 
 /** Why Draft with AI is off, while the project is out of credits. */
 const PAUSED = "This project is out of credits";
@@ -51,6 +57,7 @@ export function ReplyForm({
   articles = false,
   seen,
   emailWaits,
+  translated,
 }: {
   projectSlug: string;
   recipient?: string;
@@ -71,7 +78,13 @@ export function ReplyForm({
    * used): said over the reply box before Send (with where to see more, for owners and admins), and why as it's sent.
    */
   emailWaits?: { why: string; warning: string; link?: { label: string; href: string } };
+  /**
+   * Where the conversation is translated (docs/plan.md L22): the customer's language, which replies go out in (previewed
+   * under the reply as it's written), and the team's, which "Send in English" sends one in when it can't be translated.
+   */
+  translated?: { language: string; teamLanguage: string };
 }) {
+  const router = useRouter();
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
@@ -118,6 +131,46 @@ export function ReplyForm({
       caret.current = undefined;
     }
   }, [drafts]);
+  // The reply in the customer's language, for the text it was made from: what Send sends while that's still the reply.
+  // `failed`: why it couldn't be translated, with "Send in English" beside it.
+  const [preview, setPreview] = useState<ReplyPreview>();
+  // Asked for again (the customer's language changed since): the preview is made afresh for the same text.
+  const [previewAgain, setPreviewAgain] = useState(0);
+  const toTranslate = translated && drafts.reply.trim();
+  const shownPreview = previewToShow(preview, toTranslate || undefined, translated?.language);
+  // Asked for once they stop typing, but not while this text's failure shows (with "Send in English"), nor while it sends
+  // (a timer started before Send would pay for a second translation, or overwrite the send's outcome).
+  // Only on the Reply tab: switching to Note cancels a timer already started.
+  const askForPreview = wantsPreview(shownPreview, toTranslate || undefined, pending, kind === "reply");
+  useEffect(() => {
+    if (!askForPreview || !toTranslate) {
+      return;
+    }
+    // Written on since (or sent): that text's preview, if any, comes next.
+    let stale = false;
+    // Once they stop typing for a moment: each preview is a model call (the project's credits).
+    const timer = setTimeout(async () => {
+      const result = await previewReplyTranslation(projectSlug, number, toTranslate).catch(() => ({ failed: "The translation couldn't be fetched" }));
+      if (stale) {
+        return;
+      }
+      // Cancelled (stale) once a send starts; a failure that still replaces a failed send's keeps its Send and close.
+      setPreview((shown) => previewAfter(shown,
+        "error" in result
+          ? { for: toTranslate, failed: result.error, language: translated.language }
+          : "failed" in result
+            ? { for: toTranslate, failed: result.failed, language: translated.language }
+            : result.preview
+              ? { for: toTranslate, ...result.preview }
+              : // Nothing in it to translate (a link, a number): it goes as written.
+                { for: toTranslate, asWritten: true },
+      ));
+    }, PREVIEW_AFTER_MS);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [projectSlug, number, toTranslate, translated?.language, previewAgain, askForPreview]);
   const errorId = useId();
   const shortcutId = useId();
   const pausedId = useId();
@@ -179,21 +232,43 @@ export function ReplyForm({
     setDrafts((drafts) => ({ ...drafts, reply: `${text.slice(0, start)}${insert}${text.slice(end)}` }));
   };
 
-  const send = (close = false) =>
+  const send = (close = false, untranslated = false) =>
     startTransition(async () => {
       const sending = kind;
       const text = drafts[sending];
+      // The preview they saw, sent as it is; none yet (or out of date): translated as it's sent.
+      const translation =
+        sending === "note" ? undefined : untranslated ? ("untranslated" as const) : shownPreview && "text" in shownPreview ? { text: shownPreview.text, language: shownPreview.language } : undefined;
       const attached = files.ids;
       // Closed with it, it's done with: out of the view, the next one opens. Only answered (waiting on them now), it stays
       // open, the reply there to read, though it's left the view (Needs reply), as Featurebase and Intercom do.
       const moved = close && sending === "reply" ? actOn(number, true) : () => {};
-      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen);
-      setError(result.error);
+      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen, translation);
+      // Not translated: said in the preview, beside "Send in English".
+      setError(result.translation === "outdated" ? "Their language changed since this preview: check the new one, then send again." : result.translation === "failed" ? undefined : result.error);
       setNotice(result.notice);
+      if (result.translation) {
+        // The page as it is now: the customer's new language (outdated), or translated at all, where it was loaded before
+        // the project translated (the preview box, with "Send in English", needs it). A refused send doesn't refresh it.
+        router.refresh();
+      }
+      if (result.translation === "outdated") {
+        setPreview(undefined);
+        setPreviewAgain((n) => n + 1);
+      }
+      if (result.translation === "failed") {
+        // "Send in English" then sends it as they chose: closing it too, from Send and close.
+        setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", language: result.language ?? translated?.language, close });
+        toast.error("Not sent: it couldn't be translated");
+      }
       if (!result.error) {
         // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
+        // Sent from "Send in English", whose box goes with the reply: back to the reply.
+        if (untranslated) {
+          textarea.current?.focus();
+        }
         // Said as it goes: closed, the next conversation opens in its place (with why it isn't emailed yet, which its
         // message says too).
         if (sending === "reply") {
@@ -284,6 +359,43 @@ export function ReplyForm({
           />
           {error && <FieldError id={errorId}>{error}</FieldError>}
         </Field>
+        {!note && toTranslate && translated && !(shownPreview && "asWritten" in shownPreview) && (
+          // The reply as the customer will get it, under what the team wrote (docs/plan.md L22).
+          <div className="inbox-reply-translation mx-1 mt-1 mb-1.5 rounded-lg bg-muted px-2.5 py-1.5 text-xs leading-normal">
+            {/* Only the status is announced: the translation itself would be read out at every pause in typing. */}
+            <p aria-live="polite" className="flex items-center gap-1 font-medium text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none">
+              <LanguagesIcon aria-hidden />
+              {shownPreview && "failed" in shownPreview
+                ? `Couldn't translate it into ${nativeLanguageName(translated.language)}`
+                : `They'll get it in ${nativeLanguageName(translated.language)}`}
+            </p>
+            {!shownPreview ? (
+              <p className="mt-0.5 text-muted-foreground">Translating…</p>
+            ) : "failed" in shownPreview ? (
+              <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                <p className="text-muted-foreground">{shownPreview.failed}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  disabled={pending || drafting || files.uploading}
+                  // It keeps the keyboard's focus while the reply sends.
+                  focusableWhenDisabled
+                  onClick={() => send(shownPreview.close ?? false, true)}
+                >
+                  Send in {nativeLanguageName(translated.teamLanguage)}
+                </Button>
+              </div>
+            ) : (
+              // Held to a third of the screen, so the reply box stays in view above it (a phone with its keyboard open);
+              // scrolled inside, from the keyboard too.
+              <p lang={shownPreview.language} tabIndex={0} className="mt-0.5 max-h-[30vh] overflow-y-auto text-sm break-words whitespace-pre-wrap">
+                {shownPreview.text}
+              </p>
+            )}
+          </div>
+        )}
         <UploadList uploads={files.uploads} remove={files.remove} />
         {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
         {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}

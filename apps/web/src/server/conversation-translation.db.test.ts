@@ -3,10 +3,11 @@ import { handlers, translateMessage } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain } from "./inbound";
+import * as inbox from "./inbox";
 import { addMessage, announceUserMessage, createConversation, getConversation, listConversations, replyToConversation, translateReply } from "./operations/conversations";
 import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
@@ -50,10 +51,9 @@ async function setup({ translate = true } = {}) {
   const project = await createProject(owner);
   const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
   if (translate) {
-    // In the database: support.update refuses it until the Inbox shows translated conversations (part two).
-    await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+    await call(updateSupportSettings, team, { translate: true });
   }
-  return { project, team };
+  return { owner, project, team };
 }
 
 /** A conversation in German, its first message translated. */
@@ -72,12 +72,11 @@ async function customerWrites(projectId: string, conversationId: string, body: s
   return prisma.conversationMessage.findUniqueOrThrow({ where: { id: message.id } });
 }
 
-test("the team language defaults to English and Translate conversations to off; the language is saved, translating refused until the Inbox shows it", async () => {
+test("the team language defaults to English and Translate conversations to off; both are saved", async () => {
   const { team } = await setup({ translate: false });
   expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "en", translate: false });
-  expect(await call(updateSupportSettings, team, { teamLanguage: "pt-br", translate: false })).toMatchObject({ teamLanguage: "pt-BR", translate: false });
-  await expect(call(updateSupportSettings, team, { translate: true })).rejects.toMatchObject({ status: 409, code: "not_available_yet" });
-  expect(await call(getSupportSettings, team, {})).toMatchObject({ translate: false });
+  expect(await call(updateSupportSettings, team, { teamLanguage: "pt-br", translate: true })).toMatchObject({ teamLanguage: "pt-BR", translate: true });
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "pt-BR", translate: true });
   await expect(call(updateSupportSettings, team, { teamLanguage: "not a language" })).rejects.toThrow();
 });
 
@@ -306,4 +305,100 @@ test("out of credits: the message keeps why, and the model isn't asked", async (
   expect(await translateMessage({ messageId: id }, { info: () => {}, warn: () => {} })).toEqual({ failed: "out of credits" });
   expect(model.requests).toHaveLength(0);
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id } })).toMatchObject({ teamText: null, translationError: "Out of credits" });
+});
+
+test("the app: Try again translates a failed message again; the composer previews a reply, sends it, and hears why one wasn't sent", async () => {
+  const { owner, project, conversation } = await german();
+  actAs(owner);
+  model.fail(500);
+  model.fail(500);
+  const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+  expect(failed.translationError).not.toBeNull();
+
+  // Try again: asked again, translated this time.
+  model.reply(translated("I haven't been able to sign in since yesterday."));
+  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({
+    teamText: "I haven't been able to sign in since yesterday.",
+    translationError: null,
+  });
+  // Nothing failed now: nothing is asked.
+  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
+  expect(model.requests).toHaveLength(4);
+
+  // The preview under the composer, then sent as it is.
+  model.reply(translated("Danke! Eine Lösung ist unterwegs."));
+  const preview = await inbox.previewReplyTranslation(project.slug, 1, "Thanks! A fix is on its way.");
+  expect(preview).toEqual({ preview: { text: "Danke! Eine Lösung ist unterwegs.", language: "de" } });
+  expect(await inbox.replyInConversation(project.slug, 1, "Thanks! A fix is on its way.", false, [], false, undefined, "preview" in preview ? preview.preview! : undefined)).toEqual({});
+  expect(model.requests).toHaveLength(5);
+  expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id, author: "TEAM" } })).toMatchObject({
+    body: "Danke! Eine Lösung ist unterwegs.",
+    teamText: "Thanks! A fix is on its way.",
+  });
+
+  // A preview in a language that's no longer theirs: refused, for a new preview.
+  expect(await inbox.replyInConversation(project.slug, 1, "Merci!", false, [], false, undefined, { text: "Merci !", language: "fr" })).toMatchObject({
+    translation: "outdated",
+    error: expect.any(String),
+  });
+
+  // Can't be translated: not sent, why without the API's advice, and "Send in English" sends it as written.
+  model.fail(500);
+  model.fail(500);
+  const refused = await inbox.replyInConversation(project.slug, 1, "Anything else?");
+  expect(refused).toEqual({ error: "The translation provider didn't answer. Try again in a moment.", translation: "failed", language: "de" });
+  expect(await inbox.replyInConversation(project.slug, 1, "Anything else?", false, [], false, undefined, "untranslated")).toEqual({});
+  expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(2);
+});
+
+test("Try again twice at once translates the message once", async () => {
+  const { owner, project, conversation } = await german();
+  actAs(owner);
+  model.fail(500);
+  model.fail(500);
+  const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+  model.reply(translated("I haven't been able to sign in since yesterday."));
+  expect(await Promise.all([inbox.retryTranslation(project.slug, 1), inbox.retryTranslation(project.slug, 1)])).toEqual([{}, {}]);
+  // German's, the two failed asks, and one translation: the second Try again found it claimed.
+  expect(model.requests).toHaveLength(4);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: "I haven't been able to sign in since yesterday.", translationError: null });
+});
+
+test("Try again is refused with translation off or without AI, and the message keeps why it failed", async () => {
+  const { owner, project, team, conversation } = await german();
+  actAs(owner);
+  model.fail(500);
+  model.fail(500);
+  const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+  const why = failed.translationError;
+  expect(why).not.toBeNull();
+
+  await call(updateSupportSettings, team, { translate: false });
+  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({ error: "This project doesn't translate conversations" });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
+
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  vi.stubEnv("OPENAI_API_KEY", "");
+  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({ error: "AI isn't set up on this server, so conversations can't be translated" });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
+  expect(model.requests).toHaveLength(3);
+});
+
+test("Try again that can't be queued gives the message back its reason, so it shows Try again again", async () => {
+  const { owner, project, conversation } = await german();
+  actAs(owner);
+  model.fail(500);
+  model.fail(500);
+  const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+  const why = failed.translationError;
+  expect(why).not.toBeNull();
+  jobs.failing.add("translateMessage");
+  try {
+    await expect(inbox.retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
+  } finally {
+    jobs.failing.clear();
+  }
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: null, translationError: why });
+  expect(model.requests).toHaveLength(3);
 });
