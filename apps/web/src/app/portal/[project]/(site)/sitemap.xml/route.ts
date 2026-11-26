@@ -147,14 +147,17 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const sitemap = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
-    ...pages.flatMap(({ path, lastmod, teamText }) => {
-      if (teamText || live.length === 0 || !languages) {
-        return [url(`${portal}${path}`, lastmod, "")];
-      }
-      const addresses = [[languages.default, `${portal}${path}`], ...live.map((code) => [code, `${portal}${languagePrefix(code)}${path}`])];
-      const alternates = [...addresses.map(([code, href]) => alternate(code!, href!)), alternate("x-default", `${portal}${path}`)].join("");
-      return addresses.map(([, href]) => url(href!, lastmod, alternates));
-    }),
+    ...pages
+      .flatMap(({ path, lastmod, teamText }) => {
+        if (teamText || live.length === 0 || !languages) {
+          return [url(`${portal}${path}`, lastmod, "")];
+        }
+        const addresses = [[languages.default, `${portal}${path}`], ...live.map((code) => [code, `${portal}${languagePrefix(code)}${path}`])];
+        const alternates = [...addresses.map(([code, href]) => alternate(code!, href!)), alternate("x-default", `${portal}${path}`)].join("");
+        return addresses.map(([, href]) => url(href!, lastmod, alternates));
+      })
+      // Within the limit with each language's addresses too (the oldest posts left out first).
+      .slice(0, MAX_URLS),
     "</urlset>",
   ].join("\n");
   return new Response(sitemap, {
