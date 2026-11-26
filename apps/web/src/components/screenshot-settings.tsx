@@ -139,7 +139,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               Other domains your app loads from
             </label>
             <p id="screenshots-other-domains-description" className="-mt-1.5 text-sm text-muted-foreground">
-              The browser only opens your app&apos;s own domain and its sign-in link&apos;s. Add any other your app needs, one per line: a CDN, an API, or a sign-in page on another host (login.example.com, acme.auth0.com), which must be listed here for the password to be entered on it.
+              The browser only opens your app&apos;s own domain and its sign-in link&apos;s. Add any other your app needs, one per line: a CDN, an API, or a sign-in page on another host (login.example.com, acme.auth0.com), which must be listed here for the password to be entered on it. The password can be entered on any domain listed, so list only domains you trust with it.
             </p>
             <Textarea
               id="screenshots-other-domains"
