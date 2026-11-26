@@ -264,3 +264,37 @@ test("a failed embedding's cleanup keeps the sections of a newer version written
   await expect(failing).rejects.toThrow();
   expect(await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { text: true } })).toEqual([{ text: "Dritte Fassung." }]);
 });
+
+test("while a new version's sections are being embedded, search by meaning finds nothing of the old version's", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languageTranslationsDone();
+  const body = "Open Settings and click New project.";
+  await call(createArticle, as(), { title: "Getting started", body });
+  const { segments } = segmentsOf(translationSource({ title: "Getting started", description: "", keywords: [], body, content: null }).doc);
+  const answer = (tag: string) => JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[${tag}] ${text}`])) });
+  // The old version's section close in meaning to a query that shares no word with it.
+  const query = "Wie lege ich etwas Neues an?";
+  model.embeddings.setVector(query, along(1));
+  model.embeddings.setVector(articleChunkText("[alt] Getting started", { heading: "", text: "[alt] Open Settings and click New project." }, []), along(0.9));
+  model.reply(answer("alt"));
+  await call(publishArticle, as(), { slug: "getting-started" });
+  await languageTranslationsDone();
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  const [old] = await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { text: true } });
+  expect(old?.text).toBe("[alt] Open Settings and click New project.");
+  expect((await search("de", query, { meaning: true })).map((result) => result.title)).toEqual(["[alt] Getting started"]);
+  // Translated again; its embedding held once the new version is written.
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { retranslate: { increment: 1 } } });
+  model.reply(answer("neu"));
+  const release = model.embeddings.holdNext();
+  const before = model.embeddings.received;
+  const translating = translateArticle({ articleId: row.articleId, language: "de" }, log);
+  await vi.waitFor(() => expect(model.embeddings.received).toBeGreaterThan(before));
+  // Written, not yet embedded: the old section is gone with it, so nothing answers by meaning.
+  expect((await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).body).toBe("[neu] Open Settings and click New project.");
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(0);
+  expect(await search("de", query, { meaning: true })).toEqual([]);
+  release();
+  expect(await translating).toEqual({ translated: "de" });
+  expect(await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { text: true } })).toEqual([{ text: "[neu] Open Settings and click New project." }]);
+});

@@ -114,7 +114,8 @@ export async function translateArticle(input: JobInput<"translateArticle">, log:
   }
 }
 
-type Settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput) => Promise<boolean>;
+/** `newVersion`: the write is a new translation, whose old sections go with it (search by meaning never answers with them). */
+type Settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput, newVersion?: boolean) => Promise<boolean>;
 /** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
 type Started = { settle?: Settle; retryAt?: Date | null };
 
@@ -164,7 +165,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
    * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
    * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
    */
-  const settle: Settle = (data) =>
+  const settle: Settle = (data, newVersion = false) =>
     prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${articleId} FOR UPDATE`;
       const now = await tx.article.findUnique({ where: { id: articleId }, select: sourceSelect });
@@ -172,6 +173,11 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
         return false;
       }
       const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
+      if (count > 0 && newVersion) {
+        // The old version's sections go in the same transaction: until the new one's are embedded (searchable, next),
+        // search by meaning finds nothing of it, never the old text under the new title (its words still find it).
+        await tx.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
+      }
       return count > 0;
     });
   started.settle = settle;
@@ -243,7 +249,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     tries: 0,
     retryAt: null,
     retranslated: row.retranslate,
-  });
+  }, true);
   if (!written) {
     return { skipped: CHANGED };
   }
