@@ -21,3 +21,11 @@ export const SPAM_REASON_KEYS = Object.keys(SPAM_REASONS) as [SpamReason, ...Spa
 /** A reason as the page says it; for a phrase, which one where it was kept (`conversation.spamPhrase`). */
 export const spamWhy = (reason: string | null, phrase?: string | null): string | null =>
   reason === "phrase" && phrase ? `it has your phrase “${phrase}”` : ((SPAM_REASONS as Record<string, string>)[reason ?? ""] ?? null);
+
+/** Why a message got through, by the check that let it (`spamVerdict`'s `check`). */
+const PASSED: Record<string, string> = {
+  decisions: "your lists and marks let this sender through",
+  trusted: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
+};
+
+export const spamPassedWhy = (check: string | null): string => PASSED[check ?? ""] ?? "no check filed it";

@@ -90,6 +90,7 @@ model User {
   dataImports           DataImport[]
   conversations         Conversation[]        @relation("ConversationUser")
   assignedConversations Conversation[]        @relation("ConversationAssignee")
+  conversationEvents    ConversationEvent[]   @relation("ConversationEventActor")
   heldConversations     Conversation[]        @relation("ConversationHeldBy")
   conversationReads     ConversationRead[]
   conversationMessages  ConversationMessage[]
@@ -248,6 +249,11 @@ model Project {
   /// changelogAiHour, for the per-project hourly cap.
   changelogAiHour                DateTime     @default(now())
   changelogAiCount               Int          @default(0)
+  /// AI images (images.generate) in the hour that started at aiImagesHour, for the
+  /// per-project hourly cap: counted before the model is asked, so images asked for at
+  /// once can't all get past it.
+  aiImagesHour                   DateTime     @default(now())
+  aiImagesCount                  Int          @default(0)
   /// The widget's launcher on customers' sites (see the widget.* operations): its
   /// label, colour (`#rrggbb`; null is the brand green, with its dark-mode shade),
   /// corner ("bottom-right" or "bottom-left"), and up to 5 quick links shown at the
@@ -1237,6 +1243,7 @@ model Conversation {
   reads    ConversationRead[]
   posts    ConversationPost[]
   spamMark SpamSender?
+  events   ConversationEvent[]
 
   @@unique([projectId, number])
   @@index([projectId, spam, status, lastMessageAt(sort: Desc)])
@@ -1248,6 +1255,32 @@ model Conversation {
   /// The conversations a placeholder holds, for its handover.
   @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")
+}
+
+/// Something that happened to a conversation, for its Activity (docs/plan.md, Inbox automation, W16): a trigger's
+/// workflows running, the spam filter's verdict, a teammate's change. Written in the transaction of the change it
+/// describes; deleted with its conversation.
+model ConversationEvent {
+  id             String   @id @default(cuid())
+  conversationId String
+  /// What happened (@/lib/conversation-events EVENTS): text, not an enum, as more kinds come with later items.
+  kind           String
+  /// Who did it: `teammate` (actorId), `api_key` (actorName), `workflow`, `spam_filter`, `ai` or `tuti`.
+  actor          String
+  /// The teammate; null for the rest, and once their account is gone (the row then reads "A former teammate").
+  actorId        String?
+  /// An API key's name as it was then: a key renamed or deleted later changes nothing here.
+  actorName      String?
+  /// What it was, by its kind's schema (@/lib/conversation-events).
+  details        Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  actorUser    User?        @relation("ConversationEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([actorId])
+  @@map("conversation_event")
 }
 
 /// What the team decided about a sender (docs/plan.md, Inbox automation, "The spam filter": check 1, server/spam.ts): an
@@ -3257,7 +3290,7 @@ model ImportedRecord {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots.
+  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots, images.
   feature      String
   /// chat, decision or agent (a browser agent's run; embeddings aren't recorded).
   kind         String

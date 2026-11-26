@@ -8,7 +8,7 @@ export function creditsEnabled(): boolean {
   return config().credits.enabled;
 }
 
-const FEATURES = ["AI answers", "Ask a person summaries", "inbox drafts and summaries", "changelog drafts", "Autopilot", "Verify"];
+const FEATURES = ["AI answers", "Ask a person summaries", "inbox drafts and summaries", "changelog drafts", "Autopilot", "Verify", "AI images"];
 
 /**
  * Everything that spends credits, as one phrase for the out-of-credits banner and the credits emails: with `emails`, for

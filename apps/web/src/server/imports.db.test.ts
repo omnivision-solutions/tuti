@@ -715,6 +715,10 @@ test("a placeholder's admin who joins the team takes over what they wrote, their
     { number: unassigned!.number, assigneeId: null, heldById: null },
     { number: olderRelease!.number, assigneeId: teammate.id, heldById: null },
   ]);
+  // The one it assigned says so in its Activity (W16), by Tuti; no other is.
+  expect(await prisma.conversationEvent.findMany({ where: { conversation: { projectId: project.id }, actor: "tuti" }, select: { conversationId: true, actor: true, kind: true, details: true } })).toEqual([
+    { conversationId: taken!.id, actor: "tuti", kind: "assignee", details: { assigneeId: joiner.id, imported: true } },
+  ]);
   // Later imports find them as the team member they are.
   expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "admin" } })).toMatchObject({ externalId: "65f0000000000000000000a2", localId: joiner.id });
 });

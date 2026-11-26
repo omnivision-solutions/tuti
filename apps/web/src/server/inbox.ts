@@ -22,6 +22,7 @@ import {
   unlinkConversationPost,
   updateConversation,
 } from "./operations/conversations";
+import { ACTIVITY_FILTERS, type Activity, getConversationActivity } from "./operations/conversation-activity";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -252,6 +253,20 @@ export async function findArticlesToInsert(
     }
     throw error;
   }
+}
+
+/** The conversation's Activity (conversations.activity): "Show earlier", and its All, Workflows and People filters. */
+export async function loadConversationActivity(projectSlug: string, conversation: number, filter: string, before?: string, limit?: number): Promise<{ error?: string; activity?: Activity }> {
+  let activity: Activity | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can see a conversation's activity", async (context) => {
+    activity = await call(getConversationActivity, context, {
+      number: conversationNumber(conversation),
+      filter: ACTIVITY_FILTERS.includes(filter as never) ? (filter as (typeof ACTIVITY_FILTERS)[number]) : "all",
+      ...(typeof before === "string" && before && { before }),
+      ...(Number.isInteger(limit) && { limit: Math.min(Math.max(limit!, 1), 100) }),
+    });
+  });
+  return activity ? { activity } : result;
 }
 
 /** Links a conversation to a post it's about (by the post's number), or unlinks it. */

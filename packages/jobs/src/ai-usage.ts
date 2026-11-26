@@ -9,13 +9,24 @@ import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } f
  * a little below 0, which the next credits cover first).
  */
 export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
+  await refuseIfPaused(projectId);
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
+  return { model: roleModel(project ?? { plan: null, aiModels: {}, aiLevels: {} }, role), meter: meter(projectId, AI_ROLES[role].feature) };
+}
+
+/** Throws OutOfCredits once the project's balance is 0 or below (credits on). */
+async function refuseIfPaused(projectId: string): Promise<void> {
   if (await aiPaused(projectId)) {
     // Also where credits that expired (no charge) first stop the AI.
     await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that credits are out failed", { projectId, error }));
     throw new OutOfCredits(projectId);
   }
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
-  return { model: roleModel(project ?? { plan: null, aiModels: {}, aiLevels: {} }, role), meter: meter(projectId, AI_ROLES[role].feature) };
+}
+
+/** The meter for an AI image in `projectId`, recorded and charged as `images`; throws OutOfCredits as aiFor does. */
+export async function imagesMeter(projectId: string): Promise<Meter> {
+  await refuseIfPaused(projectId);
+  return meter(projectId, "images");
 }
 
 /**
