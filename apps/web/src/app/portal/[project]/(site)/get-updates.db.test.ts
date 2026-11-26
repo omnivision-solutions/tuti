@@ -135,8 +135,8 @@ test("a board's Get updates offers the changelog by email: the form, or where a 
   expect(subscribed).not.toMatch(/<input[^>]*name="email"/);
   expect(subscribed).not.toContain("The changelog by email:");
 
-  // A private portal emails no changelog: nothing offered.
+  // A private portal emails its changelog to its readers: whoever may read its pages (here its owner) gets the form.
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
   actAs(owner);
-  expect(await getUpdates()).not.toMatch(/<input[^>]*name="email"/);
+  expect(await getUpdates()).toMatch(/<input[^>]*name="email"/);
 });

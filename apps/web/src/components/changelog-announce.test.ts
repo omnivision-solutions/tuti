@@ -18,7 +18,7 @@ const line = (input: Partial<Parameters<typeof publishSummary>[0]>) => {
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
   entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean; groups?: string[] },
-  subscribers: number | null = 3,
+  subscribers = 3,
 ) =>
   renderToStaticMarkup(
     createElement(HowAnnounced, {
@@ -70,27 +70,29 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
     expect(line({ email: true, subscribers: 2, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget, and sends 2 emails.");
   });
 
-  test("on a portal gone private (nobody's left to email: subscribersLeft is 0 there), the draft says the rest won't get it", () => {
-    expect(sidebar({ published: false, emailedSubscribers: true, subscribersLeft: 0 }, null)).toContain(
-      "Your portal is private now: nobody else gets it.",
-    );
-  });
-
   test("published, it says how many it went to: a send stopped short (its portal made private) says so, never just \"emailed\"", () => {
-    expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 200 }, null)).toContain("Emailed to 200 subscribers.");
+    expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 200 }, 0)).toContain("Emailed to 200 subscribers.");
     expect(sidebar({ published: true, emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 1 })).toContain("Emailed to 1 subscriber.");
   });
 
-  test("a draft on a private portal (subscribers null: nothing is emailed from one) offers no email: the checkbox off and disabled, and says why", () => {
+  test("with nobody to email (none subscribed, or on a private portal none who may read it), the box is off and disabled", () => {
     const html = renderToStaticMarkup(
       createElement(HowAnnounced, {
         entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], groups: [], posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
-        subscribers: null,
+        subscribers: 0,
       }),
     );
     expect(html).toMatch(/<input type="checkbox"[^>]*disabled=""[^>]*\/>[\s\S]*Email subscribers/);
     expect(html).not.toMatch(/<input type="checkbox"[^>]*checked=""[^>]*disabled=""/);
-    expect(html).toContain("Your portal is private, so it isn&#x27;t emailed.");
+    expect(html).toContain("Nobody has subscribed yet.");
+    // On a private portal, it's its readers who're counted.
+    const forReaders = renderToStaticMarkup(
+      createElement(HowAnnounced, {
+        entry: { number: 1, title: "Dark mode", content: { type: "doc", content: [] }, tags: [], groups: [], privatePortal: true, posts: [], cover: null, told: null, announced: true, published: false, emailedSubscribers: false, subscribersLeft: 0, subscribersSent: 0 },
+        subscribers: 0,
+      }),
+    );
+    expect(forReaders).toContain("None of your portal&#x27;s readers has subscribed.");
     expect(line({ email: true, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })).toBe("It goes on your portal and in your widget.");
   });
 });

@@ -45,7 +45,7 @@ test("with AI, the page has its AI model too, and its link is still with the por
     vi.stubEnv(name, value);
   }
   expect((await form()).props.model).toBeTruthy();
-  expect(portal()).toEqual(["Branding", "Navigation", "Docs home", "Content actions", "Changelog", "Widget", "SEO", "Custom code"]);
+  expect(portal()).toEqual(["Branding", "Navigation", "Docs home", "Content actions", "Changelog", "Widget", "SEO", "Languages", "Custom code"]);
   expect(ai()).not.toContain("Changelog");
   vi.unstubAllEnvs();
 });
