@@ -166,5 +166,18 @@
     "unsubscribed": "Du hast diese E-Mails abbestellt.",
     "readChangelog": "Changelog lesen",
     "rss": "RSS"
+  },
+  "roadmap": {
+    "description": "Was geplant ist, woran wir arbeiten und was fertig ist.",
+    "signInToVote": "<link>Melde dich an</link>, um abzustimmen.",
+    "columns": "Spalten",
+    "meaning": {
+      "PLANNED": "Diese werden wir umsetzen.",
+      "IN_PROGRESS": "Daran arbeiten wir gerade.",
+      "COMPLETED": "Veröffentlicht und einsatzbereit."
+    },
+    "nothingHere": "Hier ist noch nichts.",
+    "inChangelog": "Im Changelog",
+    "inChangelogLabel": "Im Changelog: {title}"
   }
 }

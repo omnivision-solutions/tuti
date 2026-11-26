@@ -166,5 +166,18 @@
     "unsubscribed": "你已退订这些邮件。",
     "readChangelog": "查看更新日志",
     "rss": "RSS"
+  },
+  "roadmap": {
+    "description": "已计划的、正在构建的和已完成的。",
+    "signInToVote": "<link>登录</link>后即可投票。",
+    "columns": "列",
+    "meaning": {
+      "PLANNED": "我们已决定开发这些。",
+      "IN_PROGRESS": "我们正在开发这些。",
+      "COMPLETED": "已发布，可以使用。"
+    },
+    "nothingHere": "这里还没有内容。",
+    "inChangelog": "查看更新日志",
+    "inChangelogLabel": "查看更新日志：{title}"
   }
 }
