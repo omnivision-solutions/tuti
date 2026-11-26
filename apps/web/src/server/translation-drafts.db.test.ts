@@ -1,6 +1,6 @@
 import { type Doc, segmentsOf, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
+import { handlers, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -177,4 +177,76 @@ test("publishing with nothing to publish, or a version that isn't there, says so
   await expect(call(publishTranslation, as(), de)).rejects.toMatchObject({ status: 409, code: "no_changes" });
   await expect(call(getTranslation, as(), { ...de, language: "fr" })).rejects.toMatchObject({ status: 404 });
   await expect(call(updateTranslationSections, as(), de)).rejects.toMatchObject({ status: 409, code: "nothing_behind" });
+});
+
+/** The team edits the German draft's Setup section (its second paragraph) and publishes it. */
+async function publishOwnSetup(title?: string) {
+  const version = await call(getTranslation, as(), de);
+  const content = structuredClone(version.content) as Doc;
+  content.content![2]!.content![0]!.text = "Unsere Einrichtung";
+  await call(saveTranslation, as(), { ...de, content, ...(title && { title }) });
+  return call(publishTranslation, as(), de);
+}
+
+test("published, the team's edits on a version kept up to date stay theirs until their English changes, as does its title", async () => {
+  await translated();
+  expect(text((await publishOwnSetup("Bezahlung")).content)).toContain("Unsere Einrichtung");
+  // English changes elsewhere: Setup and the title stay the team's.
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  let now = await call(getTranslation, as(), de);
+  expect(text(now.content)).toContain("Unsere Einrichtung");
+  expect(text(now.content)).toContain("[de2] Pay by card or invoice");
+  expect(now.title).toBe("Bezahlung");
+  // Setup's English changes: the new translation replaces the edit there (Keep up to date), and nothing is behind.
+  await republish(doc("Intro", ["Setup", "Install it today"], ["Billing", "Pay by card or invoice"]), "de3");
+  now = await call(getTranslation, as(), de);
+  expect(text(now.content)).toContain("[de3] Install it today");
+  expect(now.behind).toEqual([]);
+  // The English title changes: the translated one replaces the team's.
+  model.reply(reply(doc("Intro", ["Setup", "Install it today"], ["Billing", "Pay by card or invoice"]), "de4").replace("[de4] Getting paid", "[de4] Getting paid fast"));
+  await call(updateArticle, as(), { slug: "getting-paid", title: "Getting paid fast", publish: true });
+  await languageTranslationsDone();
+  expect((await call(getTranslation, as(), de)).title).toBe("[de4] Getting paid fast");
+});
+
+/** A version of "Getting paid" the team writes, made against the English as published now. */
+async function manualVersion() {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const stored = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  const sections = sourceSections(translationSource(stored).text).map(({ key, hash }) => ({ key, hash }));
+  const ours = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]);
+  await prisma.articleTranslation.create({ data: { articleId: stored.id, projectId: project.id, language: "de", automatic: false, title: "Bezahlt werden", content: ours, sections, publishedAt: new Date() } });
+  return stored.id;
+}
+
+test("sections asked for while the job translates are kept for its next run, which it queues", async () => {
+  const articleId = await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  await languageTranslationsDone();
+  const [setup, billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Billing asked for; while it's being translated, Setup too (as a second request writes it).
+  model.reply(reply(V2, "de2"), () => prisma.articleTranslation.updateMany({ where: { articleId }, data: { updateSections: [billing!, setup!] } }));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("[de2] Install it now");
+  expect(text(after.content)).toContain("[de2] Pay by card or invoice");
+  expect(after.behind).toEqual([]);
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ updateSections: [] });
+});
+
+test("a version the team writes with sections waiting to update is tried again by the retry job", async () => {
+  const articleId = await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Asked for, but its job was lost: its safety net's time has passed.
+  await prisma.articleTranslation.updateMany({ where: { articleId }, data: { updateSections: [billing!], retryAt: new Date(Date.now() - 1000) } });
+  model.reply(reply(V2, "de2"));
+  expect(await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} })).toMatchObject({ queued: 1 });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("[de2] Pay by card or invoice");
 });

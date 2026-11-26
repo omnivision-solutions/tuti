@@ -14,7 +14,7 @@ import {
   translationSource,
   versionSections,
 } from "@tuti/jobs";
-import { LANGUAGE_CODES, LANGUAGES, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
 import { displayDoc, readContent } from "../content";
@@ -91,7 +91,7 @@ async function sourceOf(db: Prisma.TransactionClient, articleId: string) {
   if (!article.publishedAt) {
     throw new OperationError(409, "not_published", "Publish the article first: its other languages are made from what's published");
   }
-  return { parts: sourceSections(translationSource(article).text), sourceLanguage: article.project.language };
+  return { parts: sourceSections(translationSource(article).text), sourceLanguage: article.project.language, titleHash: contentHash(article.title) };
 }
 
 /** A version's sections: published, and in the draft. The team's own on a version not kept up to date (for what's behind). */
@@ -215,7 +215,7 @@ export const publishTranslation = defineOperation({
   run: async ({ projectId }, input) => {
     let retranslate: { articleId: string; language: string } | null = null;
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
-      const { parts, sourceLanguage } = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage, titleHash } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
         throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
@@ -236,15 +236,17 @@ export const publishTranslation = defineOperation({
           update.push(key);
           return { blocks: part.blocks, meta: { key, hash: part.meta.hash } };
         }
-        // A version kept up to date retranslates the rest of the team's edits when the source changes, as publishing the
-        // source would; kept ones and those of a version the team writes stay theirs.
-        return stale || !version.automatic ? part : { blocks: part.blocks, meta: { key, hash: part.meta.hash } };
+        // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
+        // version kept up to date, publishing the source again replaces edits only in the sections it touches).
+        return stale ? { blocks: part.blocks, meta: { ...part.meta, kept: true } } : part;
       });
       const content = docOfSections(out);
       const saved = await tx.articleTranslation.update({
         where: { id: version.id },
         data: {
           title: draft.title,
+          // The team's own title stays theirs until the source's title changes.
+          ...(draft.titleEdited && { titleSource: titleHash }),
           content: content as Prisma.InputJsonValue,
           body: toPlainText(content),
           sections: metaOf(out) as Prisma.InputJsonValue,

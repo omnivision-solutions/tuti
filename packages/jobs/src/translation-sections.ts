@@ -12,7 +12,12 @@ import { contentHash } from "@tuti/shared";
 
 type Block = NonNullable<Doc["content"]>[number];
 
-export type SectionMeta = { key: string | null; hash: string | null; own?: true };
+/**
+ * `own`: the team's edit. In a draft it always stays; published on a version kept up to date, it stays until its source
+ * section changes (publishing the source again replaces edits only in the sections it touches), unless `kept` (the team
+ * chose to keep it over a newer translation), when it stays for good, behind, until Update those sections.
+ */
+export type SectionMeta = { key: string | null; hash: string | null; own?: true; kept?: true };
 export type Section = { blocks: Block[]; meta: SectionMeta };
 export type SourceSection = { key: string; hash: string; blocks: Block[] };
 
@@ -41,9 +46,11 @@ export const metaOf = (list: Section[]) => list.map((section) => section.meta);
  * `current` with the translator's new text: `translated`, lined up with `source` by position. Every section of the source
  * takes its new translation, but those the team owns stay as they are, as do those it added (after the section before them);
  * a section whose source section is gone goes, unless it's the team's. `only`: just these sections take the new translation
- * (the rest stay, missing ones aren't added): a version the team writes, updating the sections it asked for.
+ * (the rest stay, missing ones aren't added): a version the team writes, updating the sections it asked for. `published`:
+ * the published text of a version kept up to date, where the team's edits (not those it kept) give way where their source
+ * section changed; in a draft they never do.
  */
-export function withTranslation(current: Section[], translated: Doc, source: SourceSection[], only?: Set<string>): Section[] {
+export function withTranslation(current: Section[], translated: Doc, source: SourceSection[], { only, published = false }: { only?: Set<string>; published?: boolean } = {}): Section[] {
   const fresh = sections(translated.content ?? []);
   const inSource = new Set(source.map((section) => section.key));
   const byKey = new Map<string, Section>();
@@ -62,7 +69,8 @@ export function withTranslation(current: Section[], translated: Doc, source: Sou
   const out: Section[] = [...(after.get(null) ?? [])];
   for (const [i, { key, hash }] of source.entries()) {
     const had = byKey.get(key);
-    const keep = had?.meta.own || (only && !only.has(key));
+    const theirs = !!had?.meta.own && (!published || !!had.meta.kept || had.meta.hash === hash);
+    const keep = theirs || (only && !only.has(key));
     if (keep) {
       if (had) out.push(had);
     } else if (fresh[i]) {
@@ -86,7 +94,8 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
     if (was && sameSection(was.blocks, blocks)) {
       return was;
     }
-    const key = was?.meta.key ?? null;
+    // Nothing to line up with yet (written before its first translation): the source's section in its place.
+    const key = was ? was.meta.key : base.length === 0 ? (source[i]?.key ?? null) : null;
     return { blocks, meta: { key, hash: key === null ? null : (hashes.get(key) ?? null), own: true } };
   });
 }
