@@ -1,5 +1,5 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { codeChange, handlers, importStep } from "@tuti/jobs";
+import { codeChange, handlers, importStep, translateMessage } from "@tuti/jobs";
 import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tuti/shared";
 
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
@@ -89,7 +89,9 @@ export function taskFn(key: JobKey, retries: number, stopping: () => boolean) {
   return (input: unknown, ctx: Run) =>
     key === "codeChange"
       ? codeChange(input as JobInput<"codeChange">, log, { lastTry: ctx.retryCount() >= retries })
-      : key === "importStep"
+      : key === "translateMessage"
+        ? translateMessage(input as JobInput<"translateMessage">, log, { lastTry: ctx.retryCount() >= retries })
+        : key === "importStep"
         ? importStep(input as JobInput<"importStep">, log, () => stopping() || ctx.cancelled)
         : handlers[key](input as never, log);
 }

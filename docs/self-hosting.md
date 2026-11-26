@@ -183,6 +183,7 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `ai.features.support` | `null` | The inbox's drafted replies and summaries' model, instead of `ai.model` |
 | `ai.features.changelog` | `null` | Changelog drafts' model, instead of `ai.model` |
 | `ai.features.codeChanges` | `null` | Autopilot's articles' model, instead of `ai.model` (without either, Autopilot's write model) |
+| `ai.features.translation` | `null` | Translating conversations' model, instead of `ai.model` (without either, openai/gpt-6.1-terra) |
 | `ai.maxPrice` | `null` | The most a model projects pick may cost, in dollars per million output tokens (a model without a price can't be picked under a cap); no cap without |
 | `ai.levels` | `null` | The Affordable and Best levels' models, by role: a level left out isn't offered, a role left out runs on Balanced's (the server's) model. Without, Tuti's own rows, unless a model above is set (then only Balanced and Custom) |
 | `autopilot.decisions.model` | `"nace-ai/drex-max"` | The decision model, a Decisions API model through OpenRouter (not a chat model): it answers the gate, what a pull request does to posts and articles, and whether edits call for Verify. The default did best on code changes' evaluation set (a model id) |

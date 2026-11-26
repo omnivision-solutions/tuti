@@ -38,6 +38,14 @@ export const jobs = {
     // A push is worth little late: a couple of quick tries, then it's let go.
     retries: 2,
   },
+  /** A customer wrote in another language while the project translates conversations: translate it into the team's (docs/plan.md L22). */
+  translateMessage: {
+    name: "translate-message",
+    input: z.object({ messageId: z.string() }),
+    // The provider not answering is tried again a few times; the last try keeps why, for the team's Try again.
+    retries: 3,
+    backoff: { factor: 4, maxSeconds: 300 },
+  },
   /** Reads Expo's receipts for pushes sent 15 minutes ago or more, dropping devices whose token is no longer registered. */
   checkPushReceipts: {
     name: "check-push-receipts",

@@ -95,6 +95,7 @@ const ROLE_LINES: Record<AiRole, string> = {
   code_changes_decide: "Autopilot deciding what a code change means for the docs, changelog and posts",
   code_changes_check: "Autopilot checking its own work (`off` skips the checks)",
   code_changes: "Autopilot writing, and Verify",
+  translation: "Translating the Inbox's conversations into the team's language and replies into the customer's",
 };
 const groupLevelOutput = z
   .object({
@@ -111,7 +112,7 @@ const aiModelsOutput = z
     ...(Object.fromEntries(AI_ROLE_NAMES.map((role) => [role, roleModelOutput.describe(ROLE_LINES[role])])) as Record<AiRole, typeof roleModelOutput>),
     levels: z
       .object(Object.fromEntries(AI_GROUP_NAMES.map((group) => [group, groupLevelOutput])) as Record<AiGroup, typeof groupLevelOutput>)
-      .describe("Each group's level (answers, support, changelog, code_changes), which its roles run on"),
+      .describe("Each group's level (answers, support, changelog, code_changes, translation), which its roles run on"),
   })
   .describe("Each AI role's model and each group's level");
 

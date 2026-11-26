@@ -15,6 +15,7 @@ const row = z.strictObject({
   code_changes_decide: role(),
   code_changes_check: role(),
   code_changes: role(),
+  translation: role(),
 } satisfies Record<AiRole, unknown>);
 
 /**
@@ -31,6 +32,7 @@ export const ai = z
         support: model("The inbox's drafted replies and summaries' model, instead of `ai.model`"),
         changelog: model("Changelog drafts' model, instead of `ai.model`"),
         codeChanges: model("Autopilot's articles' model, instead of `ai.model` (without either, Autopilot's write model)"),
+        translation: model("Translating conversations' model, instead of `ai.model` (without either, openai/gpt-6.1-terra)"),
       })
       .prefault({}),
     maxPrice: z

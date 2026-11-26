@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
-import { checkEmailDomain, dropEmailDomain, forgetIdentity, withEmailDomainLocks } from "@tuti/jobs";
-import { planIncludes, plansEnabled } from "@tuti/shared";
+import { checkEmailDomain, DEFAULT_TEAM_LANGUAGE, dropEmailDomain, forgetIdentity, languageCode, withEmailDomainLocks } from "@tuti/jobs";
+import { aiEnabled, planIncludes, plansEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import { z } from "zod";
 
@@ -15,7 +15,8 @@ export const MAX_DRAFT_INSTRUCTIONS = 2000;
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
   const [project, subdomain, last, own] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, emailPausedAt: true, emailPausedReason: true, plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, supportDraftInstructions: true, teamLanguage: true, translateConversations: true, emailPausedAt: true, emailPausedReason: true, plan: true },
+    }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
     prisma.emailDomain.findUnique({ where: { projectId } }),
@@ -24,6 +25,9 @@ export const supportSettings = async (projectId: string) => {
     inbox: project.supportInbox,
     // The team's standing instructions for replies drafted by AI (conversations.suggestReply).
     draftInstructions: project.supportDraftInstructions,
+    // Inbox in the team's language (docs/plan.md L22).
+    teamLanguage: project.teamLanguage ?? DEFAULT_TEAM_LANGUAGE,
+    translate: project.translateConversations,
     // Email: whether this server receives it, the project's address (once it has one) and the latest email's time.
     email: domain
       ? {
@@ -93,6 +97,14 @@ const supportSettingsFields = {
     .string()
     .describe("The team's standing instructions for replies drafted by AI (conversations.suggestReply)")
     .meta({ examples: ["Keep it short and friendly; sign off as the Acme team."] }),
+  teamLanguage: z
+    .string()
+    .describe("The language the team reads and writes conversations in (a BCP 47 code): the project's default language unless set")
+    .meta({ examples: ["en"] }),
+  translate: z
+    .boolean()
+    .describe("Translate conversations: the user's messages in another language are translated into the team's, and the team's replies into the user's (AI credits, as the translation role)")
+    .meta({ examples: [false] }),
   email: supportEmailOutput.nullable().describe("Email; null where the server doesn't receive email"),
 };
 
@@ -218,7 +230,7 @@ export const removeEmailDomain = defineOperation({
 export const getSupportSettings = defineOperation({
   name: "support.get",
   title: "Get the support settings",
-  summary: "Get the support inbox's settings: whether it's on, the team's instructions for replies drafted by AI, and its email.",
+  summary: "Get the support inbox's settings: whether it's on, the team's instructions for replies drafted by AI, the team's language and whether conversations are translated, and its email.",
   method: "GET",
   path: "/support",
   scope: "read",
@@ -232,12 +244,12 @@ export const updateSupportSettings = defineOperation({
   name: "support.update",
   title: "Update the support settings",
   summary:
-    "Turn the support inbox on or off, give the project its support email address, or set the team's standing instructions for replies drafted by AI. Turning the inbox on gives the project its address too, where the server receives email.",
+    "Turn the support inbox on or off, give the project its support email address, set the team's standing instructions for replies drafted by AI, or set the team's language and whether conversations are translated. Turning the inbox on gives the project its address too, where the server receives email.",
   method: "PATCH",
   path: "/support",
   scope: "write",
   access: "admin",
-  errors: [409],
+  errors: [409, 503],
   input: z
     .object({
       inbox: z
@@ -257,12 +269,35 @@ export const updateSupportSettings = defineOperation({
         .optional()
         .describe("The team's standing instructions for replies drafted by AI (conversations.suggestReply): their tone and form, up to 2,000 characters; a draft still says only what the docs say")
         .meta({ examples: ["Keep it short and friendly; sign off as the Acme team."] }),
+      teamLanguage: z
+        .string()
+        .trim()
+        .max(35)
+        .transform((value, ctx) => languageCode(value) ?? (ctx.addIssue("Give a language code, like en or pt-BR"), z.NEVER))
+        .optional()
+        .describe("The language the team reads and writes conversations in: a BCP 47 code, like en or pt-BR")
+        .meta({ examples: ["en"] }),
+      translate: z
+        .boolean()
+        .optional()
+        .describe(
+          "Turn Translate conversations on or off: the user's messages translated into the team's language, and replies into theirs. Not available yet: true is refused (409) until the Inbox shows translated conversations",
+        )
+        .meta({ examples: [true] }),
     })
-    .refine((input) => input.inbox !== undefined || input.email !== undefined || input.draftInstructions !== undefined, "Send inbox, email or draftInstructions")
-    .meta({ anyOf: [{ required: ["inbox"] }, { required: ["email"] }, { required: ["draftInstructions"] }] }),
+    .refine((input) => Object.values(input).some((value) => value !== undefined), "Send inbox, email, draftInstructions, teamLanguage or translate")
+    .meta({ anyOf: [{ required: ["inbox"] }, { required: ["email"] }, { required: ["draftInstructions"] }, { required: ["teamLanguage"] }, { required: ["translate"] }] }),
   example: { inbox: true },
   output: settingsOutput,
   run: async ({ projectId }, input) => {
+    // Until the Inbox shows translated conversations (docs/plan.md L22, part two), nothing in the app could read or send
+    // one: on is refused. Part two lifts this.
+    if (input.translate) {
+      throw new OperationError(409, "not_available_yet", "Translating conversations isn't available yet: the Inbox can't show translated conversations");
+    }
+    if (input.translate && !aiEnabled()) {
+      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
+    }
     if (input.email && !supportDomain()) {
       throw new OperationError(409, "email_off", "This server doesn't receive email (SUPPORT_EMAIL_DOMAIN isn't set)");
     }
@@ -271,10 +306,15 @@ export const updateSupportSettings = defineOperation({
     if (input.email || (input.inbox && supportDomain())) {
       await mailSubdomain(projectId);
     }
-    if (input.inbox !== undefined || input.draftInstructions !== undefined) {
+    if (input.inbox !== undefined || input.draftInstructions !== undefined || input.teamLanguage !== undefined || input.translate !== undefined) {
       await prisma.project.update({
         where: { id: projectId },
-        data: { ...(input.inbox !== undefined && { supportInbox: input.inbox }), ...(input.draftInstructions !== undefined && { supportDraftInstructions: input.draftInstructions }) },
+        data: {
+          ...(input.inbox !== undefined && { supportInbox: input.inbox }),
+          ...(input.draftInstructions !== undefined && { supportDraftInstructions: input.draftInstructions }),
+          ...(input.teamLanguage !== undefined && { teamLanguage: input.teamLanguage }),
+          ...(input.translate !== undefined && { translateConversations: input.translate }),
+        },
       });
     }
     return supportSettings(projectId);

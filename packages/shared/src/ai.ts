@@ -10,6 +10,8 @@ import { answeredBy, dollars, type Meter, replyCost, tokens } from "./usage";
  * compatible endpoint (where: ./provider). Optional: without a key, AI features are off.
  */
 export const DEFAULT_AI_MODEL = "anthropic/claude-haiku-5.5";
+/** Translation's own default (the Inbox's conversations; docs/plan.md, Languages), chosen by an evaluation of translations. */
+export const DEFAULT_TRANSLATION_MODEL = "openai/gpt-6.1-terra";
 
 /** Every request asks for providers that neither train on prompts nor keep them (OpenRouter's data policy; other endpoints ignore it). */
 const PROVIDER = { data_collection: "deny" } as const;
@@ -67,7 +69,7 @@ export function codeChangesOff(): string | null {
 }
 
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
-export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
+export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support", "translation"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 /**
@@ -84,7 +86,7 @@ export type UsageFeature = (typeof USAGE_FEATURES)[number];
  * role, so only models with tool calls; `off`: a role a project may switch off.
  * Autopilot has three: code_changes_decide (Decides: reads a lot and judges, at volume), code_changes (Writes: the text,
  * Verify's too) and code_changes_check (Checks: a second opinion on another step's work, today the new-article
- * double-check). The Inbox has two: drafting a reply, and summarising a conversation.
+ * double-check). The Inbox has two: drafting a reply, and summarising a conversation. Translation (conversations, L22) is its own.
  */
 export const AI_ROLES = {
   answers: { feature: "answers" },
@@ -95,6 +97,7 @@ export const AI_ROLES = {
   code_changes_decide: { feature: "code_changes", tools: true },
   code_changes_check: { feature: "code_changes", tools: true, off: true },
   code_changes: { feature: "code_changes", tools: true },
+  translation: { feature: "translation" },
 } as const satisfies Record<string, { feature: AiFeature; tools?: true; off?: true }>;
 export type AiRole = keyof typeof AI_ROLES;
 export const AI_ROLE_NAMES = Object.keys(AI_ROLES) as AiRole[];
@@ -119,11 +122,12 @@ export function roleDefaultModel(role: AiRole): string {
 
 /**
  * A feature's model for every project: the config file's ai.features.<feature> (e.g. ai.features.answers, a model id),
- * else ai.model, else Tuti's default (for code changes, Autopilot's write model: autopilot.write.model).
+ * else ai.model, else Tuti's default (for code changes, Autopilot's write model: autopilot.write.model; for translation, DEFAULT_TRANSLATION_MODEL).
  */
 export function defaultModel(feature: AiFeature): string {
   const { model, features } = config().ai;
-  return features[feature === "code_changes" ? "codeChanges" : feature] ?? model ?? (feature === "code_changes" ? codeChangesSettings().write.model : DEFAULT_AI_MODEL);
+  const builtIn = feature === "code_changes" ? codeChangesSettings().write.model : feature === "translation" ? DEFAULT_TRANSLATION_MODEL : DEFAULT_AI_MODEL;
+  return features[feature === "code_changes" ? "codeChanges" : feature] ?? model ?? builtIn;
 }
 
 /** What a piece of a feature's work asks the AI with: the model, and the meter recording each request for its project. */

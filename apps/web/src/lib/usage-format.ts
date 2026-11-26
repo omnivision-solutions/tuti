@@ -7,6 +7,7 @@ export const AI_FEATURE_NAMES: Record<string, string> = {
   support: "Support inbox (drafts and summaries)",
   changelog: "Changelog drafts and edits",
   code_changes: "Autopilot",
+  translation: "Translation",
   duplicates: "Duplicate detection",
   screenshots: "Screenshots",
 };

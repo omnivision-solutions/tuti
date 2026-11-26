@@ -37,6 +37,7 @@ test("a level gives each role the server's model for it; Balanced is the server'
     code_changes_decide: "sonnet-5.5",
     code_changes_check: "opus-5.5",
     code_changes: "opus-5.5",
+    translation: "opus-5.5",
   });
   // A group with no level saved is on Custom where it has a model picked (one from before levels), else on Balanced.
   expect(roleModel({ plan: null, aiLevels: {}, aiModels: { answers: "acme/own" } }, "answers")).toBe("acme/own");

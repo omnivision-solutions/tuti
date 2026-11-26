@@ -311,6 +311,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       select: {
         id: true,
         body: true,
+        teamText: true,
         authorUser: { select: { name: true } },
         attachments: { orderBy: { createdAt: "asc" }, select: { key: true, filename: true, contentType: true } },
       },
@@ -380,7 +381,8 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       ...conversationReplyEmail({
         ...brand,
         subject: conversation.subject,
-        messages: messages.map((m) => ({ name: m.authorUser?.name ?? conversation.project.name, body: m.body })),
+        // A translated reply quotes the team's own text below the translation (docs/plan.md L22).
+        messages: messages.map((m) => ({ name: m.authorUser?.name ?? conversation.project.name, body: m.body, original: m.teamText ?? undefined })),
       }),
     });
   } catch (error) {

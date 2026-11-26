@@ -212,6 +212,12 @@ model Project {
   supportInbox                   Boolean      @default(false)
   /// The team's standing instructions for replies drafted by AI in the inbox (Settings → AI → Inbox; support.update).
   supportDraftInstructions       String       @default("")
+  /// The language the team reads and writes the Inbox in (a BCP 47 code; support.update). Null: the project's default
+  /// language, English until projects have one.
+  teamLanguage                   String?
+  /// "Translate conversations" (Settings → Inbox; docs/plan.md L22): customers' messages in another language are
+  /// translated into the team's, and the team's replies into the customer's, by the `translation` AI role.
+  translateConversations         Boolean      @default(false)
   // "emailRequestedAt" and "emailApprovedAt" (projects were once approved before emailing their users) are
   // still in the database, unread, so the release before this one keeps working: a later release drops them.
   /// On a server selling plans, its email to its users is paused (its bounces or complaints went over,
@@ -1184,6 +1190,9 @@ model Conversation {
   replyToken    String             @unique @default(dbgenerated("replace(gen_random_uuid()::text, '-', '')"))
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
   sample        Boolean            @default(false)
+  /// The customer's language (a BCP 47 code), as their latest message long enough to tell was in; replies are
+  /// translated into it while the project translates conversations. Null until one is known.
+  language      String?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -1425,6 +1434,14 @@ model ConversationMessage {
   importId           String?
   /// The id its writer's client made for it (conversations.reply's `requestId`): sending it again gets this message, not a second one.
   requestId          String?
+  /// Translated (docs/plan.md L22): `body` is always the customer's side (what they wrote, or the translation they got),
+  /// `teamText` the team's (a customer's message translated into the team's language, or a reply as the team wrote it),
+  /// and `language` the language `body` is in (also on a customer's message in the team's language, or one that failed).
+  /// Null when it wasn't translated or isn't known.
+  teamText           String?
+  language           String?
+  /// Why a customer's message couldn't be translated (the checks failed, the provider didn't answer, no credits).
+  translationError   String?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1442,6 +1459,8 @@ model ConversationMessage {
   /// `prisma migrate dev` then offers to drop and build the index again. Delete those lines from a new migration.
   @@index([projectId])
   @@index([projectId(ops: raw("text_ops")), body(ops: raw("gin_trgm_ops"))], type: Gin, map: "conversation_message_project_body_trgm_idx")
+  /// The same for the team's side of translated messages, which search reads beside `body`.
+  @@index([projectId(ops: raw("text_ops")), teamText(ops: raw("gin_trgm_ops"))], type: Gin, map: "conversation_message_project_team_text_trgm_idx")
   @@map("conversation_message")
 }
 
@@ -3019,7 +3038,7 @@ model ImportedRecord {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, support, changelog, code_changes, duplicates, screenshots.
+  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots.
   feature      String
   /// chat, decision or agent (a browser agent's run; embeddings aren't recorded).
   kind         String
