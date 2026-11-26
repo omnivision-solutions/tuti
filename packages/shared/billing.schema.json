@@ -185,6 +185,20 @@
                     "type": "null"
                   }
                 ]
+              },
+              "languages": {
+                "default": null,
+                "description": "Languages a project's portal is in, its default language included. null: no limit.",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [

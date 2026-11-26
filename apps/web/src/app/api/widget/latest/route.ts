@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
     // The newest announcement for some groups (`groups` below), read alongside.
     prisma.changelogEntry.findFirst({
-      where: { project: { slug, portalAccess: "PUBLIC" }, announced: true, groups: { some: {} }, publishedAt: { not: null, gte: freshSince() } },
+      where: { project: { slug, portalAccess: "PUBLIC" }, announced: true, emailOnly: false, groups: { some: {} }, publishedAt: { not: null, gte: freshSince() } },
       orderBy: { publishedAt: "desc" },
       select: { publishedAt: true },
     }),

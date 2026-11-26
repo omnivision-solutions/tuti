@@ -256,8 +256,8 @@ export const groups = [
   },
   {
     name: "Portal",
-    description: "The public site for feedback, changelog and docs: who may read it, its address, redirects, branding and widget.",
-    prefixes: ["portal", "site", "domain", "redirects", "branding", "widget"],
+    description: "The public site for feedback, changelog and docs: who may read it, its address, redirects, branding, widget and languages.",
+    prefixes: ["portal", "site", "domain", "redirects", "branding", "widget", "languages"],
   },
   {
     name: "Project",
