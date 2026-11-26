@@ -183,10 +183,16 @@ test("in the widget, a German customer gets the team's reply in German, with wha
   await expect(thread).toContainText(inGerman);
   const original = thread.getByText(reply, { exact: true });
   await expect(original).toBeHidden();
+  // A short window, so opening it needs scrolling past the sticky reply box.
+  await kai.setViewportSize({ width: 390, height: 520 });
   await thread.getByText("Show original").click();
   await expect(original).toBeVisible();
-  // Scrolled into view as it opens, so the reply box doesn't hide it.
-  await expect(original).toBeInViewport();
+  // Scrolled into view as it opens, clear of the reply box below it.
+  await expect(original).toBeInViewport({ ratio: 1 });
+  const shown = (await original.boundingBox())!;
+  const replyBox = (await kai.getByRole("textbox", { name: "Message" }).boundingBox())!;
+  expect(shown.y + shown.height).toBeLessThanOrEqual(replyBox.y);
+  await kai.setViewportSize({ width: 1280, height: 800 });
   await expect(thread.getByText("Hide original")).toBeVisible();
   // Each read in its own language's voice: the German reply marked German, what the team wrote marked English.
   await expect(thread.getByText(inGerman, { exact: true })).toHaveAttribute("lang", "de");
