@@ -29,7 +29,7 @@ import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
 import { seesBoard } from "@/server/post-visibility";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
@@ -62,6 +62,8 @@ const BOARD_DESCRIPTION = "Vote for the ideas you want most, or share your own."
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const at = await portalLinks();
+  // Posts' titles and text: people's words, in the default language under another's address (teamLanguage).
+  const lang = await teamLanguage();
   const { project: projectSlug, board: boardSlug } = await props.params;
   const searchParams = await props.searchParams;
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
@@ -277,11 +279,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       {/* Its status above the title (not Open, every new idea's), in its colour. */}
                       {post.status !== "OPEN" && <StatusLabel status={post.status} className="mb-1.5" />}
                       <h2 className="font-sans text-base leading-snug font-[650] tracking-[-0.01em] break-words sm:text-[1.0625rem]">
-                        <Link href={at(postPath({ ...post, board }))} className="hover:underline">
+                        <Link lang={lang} href={at(postPath({ ...post, board }))} className="hover:underline">
                           {post.title}
                         </Link>
                       </h2>
-                      {post.body && <p className="mt-1 line-clamp-2 text-[0.9375rem] leading-relaxed text-muted-foreground">{post.body}</p>}
+                      {post.body && <p lang={lang} className="mt-1 line-clamp-2 text-[0.9375rem] leading-relaxed text-muted-foreground">{post.body}</p>}
                       {/* Who posted it and when, then how many comments. */}
                       <div className="mt-2.5 flex max-w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-[0.84375rem] text-muted-foreground">
                         <span className="flex max-w-full min-w-0 items-center gap-2 whitespace-nowrap">

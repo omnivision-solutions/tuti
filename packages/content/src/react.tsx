@@ -21,9 +21,12 @@ export function RichText({
   headingIds = false,
   link,
   eager = false,
+  lang,
 }: {
   doc: JSONContent;
   className?: string;
+  /** Its language, where the page around it is in another. */
+  lang?: string;
   /** Where to load uploaded images and files from (by storage key); those without one are left out. */
   mediaUrls?: MediaUrls | null;
   /** Articles: top-level headings get ids from their text (docHeadings), so they can be linked. */
@@ -43,7 +46,11 @@ export function RichText({
       renderNode(child, i, options, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
     ),
   );
-  return <div className={className}>{content}</div>;
+  return (
+    <div lang={lang} className={className}>
+      {content}
+    </div>
+  );
 }
 
 /**

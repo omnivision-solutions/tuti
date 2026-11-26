@@ -10,6 +10,9 @@ const MAX_LENGTH = 500;
 /** Paths the portal needs for itself: signing in and its links, the widget, its files and API. */
 const RESERVED = /^\/(api|_tuti|_next|sign-in|sign-up|forgot-password|reset-password|sso|continue|unsubscribe|widget|robots\.txt|sitemap\.xml|llms\.txt|llms-full\.txt)(\/|$)/;
 
+/** Whether a path (as rules match it) is one the portal needs for itself. */
+export const reservedPath = (path: string) => RESERVED.test(path);
+
 /**
  * A path as rules match it: lowercase, no trailing slash. A loop, not a regex: it runs on every
  * request's path, and /\/+$/ backtracks on a long run of slashes.
@@ -46,7 +49,7 @@ export function redirectFrom(input: string): { from: string } | { error: string 
   if (from === "/") {
     return { error: "Pick what your portal's home opens in Settings → Navigation, under Home page, instead" };
   }
-  if (RESERVED.test(from)) {
+  if (reservedPath(from)) {
     return { error: `${from} is one of the portal's own addresses` };
   }
   return { from };

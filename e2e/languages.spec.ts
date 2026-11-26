@@ -36,11 +36,12 @@ test("a reader chooses German in the portal's header and its text follows, on de
   await menu.getByRole("menuitemradio", { name: "Deutsch" }).click();
 
   await expect(reader.getByRole("link", { name: "Anmelden" })).toBeVisible();
-  // Its name in the page's language, and focus kept on it (it's never taken out of the tab order while saving).
+  // Its name in the page's language.
   const german = reader.getByRole("button", { name: "Sprache: Deutsch" });
   await expect(german).toHaveAttribute("lang", "de");
-  await expect(german).toBeFocused();
   await expect(reader.getByRole("link", { name: "Anmelden" }).locator("[lang=de]")).toHaveText("Anmelden");
+  // The same page at its German address (L3).
+  await expect(reader).toHaveURL(new RegExp(`^${portalUrl(slug)}/de(/|$)`));
   // The header's parts and the footer follow it too, each in its language.
   const parts = reader.getByRole("navigation", { name: "Portal" });
   await expect(parts).toHaveAttribute("lang", "de");
@@ -53,8 +54,9 @@ test("a reader chooses German in the portal's header and its text follows, on de
   await expect(theme.getByRole("radio", { name: "Dunkel" })).toBeAttached();
   await checkpoint(reader, "header-in-german", { fullPage: false });
   await checkpoint(reader, "footer-in-german");
-  // Kept: another page, and the next visit.
-  await reader.goto("/changelog");
+  // Kept: the portal's links stay in German.
+  await reader.getByRole("link", { name: "Changelog" }).first().click();
+  await expect(reader).toHaveURL(`${portalUrl(slug)}/de/changelog`);
   await expect(reader.getByRole("link", { name: "Anmelden" })).toBeVisible();
 
   // On phones it's in the menu.
@@ -70,13 +72,9 @@ test("a reader chooses German in the portal's header and its text follows, on de
   await expect(languages.getByRole("button", { name: "Deutsch" })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Dokumentation" })).toBeVisible();
   await checkpoint(reader, "phone-menu-in-german", { fullPage: false });
-  // The menu stays open, now in English.
-  const english = reader.getByRole("dialog").getByRole("button", { name: "English", exact: true });
-  await english.click();
-  await expect(reader.getByRole("button", { name: "Close the menu" })).toHaveAttribute("lang", "en");
-  await expect(english).toHaveAttribute("aria-pressed", "true");
-  await expect(english).toBeFocused();
-  await reader.getByRole("button", { name: "Close the menu" }).click();
+  // English: the same page at its English address.
+  await reader.getByRole("dialog").getByRole("button", { name: "English", exact: true }).click();
+  await expect(reader).toHaveURL(`${portalUrl(slug)}/changelog`);
   await expect(reader.getByRole("link", { name: "Sign in" })).toBeVisible();
 
   // Taken offline: back to the default.
@@ -101,6 +99,8 @@ test("on a private portal's sign-in page, a phone can still choose the language 
   // Nothing of the portal's in the menu: only the languages.
   await reader.getByRole("button", { name: "Menu" }).click();
   await reader.getByRole("dialog").getByRole("group", { name: "Language" }).getByRole("button", { name: "Deutsch" }).click();
+  await expect(reader).toHaveURL(`${portalUrl(slug)}/de/sign-in`);
+  await reader.getByRole("button", { name: "Menü" }).click();
   await expect(reader.getByRole("dialog").getByRole("group", { name: "Sprache" })).toBeVisible();
   await expect(reader.getByRole("dialog").getByRole("navigation", { name: "Portal" })).toHaveCount(0);
 });
@@ -130,7 +130,8 @@ test("a signed-in reader's account menu, the changelog's New and the phone menu'
   await expect(reader.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toContainText("Neu");
   // On a phone, the menu on Feedback: its description, and its boards named in German, each board's name in the project's language.
   await reader.setViewportSize({ width: 390, height: 844 });
-  await reader.goto("/feedback");
+  // The page's language is its address's (L3): Feedback in German is /de/feedback.
+  await reader.goto("/de/feedback");
   await reader.getByRole("banner").getByRole("button", { name: "Menü" }).click();
   const menu = reader.getByRole("dialog", { name: "Menü" });
   await expect(menu).toHaveAccessibleDescription("Acme: Wohin als Nächstes?");
@@ -186,11 +187,11 @@ test("the landmarks of the team's links are named in the reader's language, and 
   await expect(menuLinks.getByRole("link", { name: "Pricing" })).toBeVisible();
   await namedInFrench(menuLinks);
 
-  // Without JavaScript, the row the links get on phones instead of the menu (the same browser's language).
+  // Without JavaScript, the row the links get on phones instead of the menu (the page in French: its address, L3).
   const noScript = await browser.newContext({ javaScriptEnabled: false, baseURL: portalUrl(slug), viewport: { width: 390, height: 844 } });
   await noScript.addCookies(await reader.context().cookies());
   const plain = await noScript.newPage();
-  await plain.goto("/");
+  await plain.goto("/fr");
   const row = plain.getByRole("navigation", { name: "Liens" });
   await expect(row.getByRole("link", { name: "Pricing" })).toBeVisible();
   await expect(row).toHaveAttribute("lang", "fr");

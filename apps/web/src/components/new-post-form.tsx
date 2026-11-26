@@ -18,7 +18,7 @@ import { boardPath, postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
-import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { usePortalHere, usePortalHref } from "@/components/portal-base";
 import { Card } from "@/components/ui/card";
 
 const SUGGEST_DELAY_MS = 300;
@@ -87,7 +87,8 @@ export function NewPostForm({
   onSimilar?: (posts: SimilarPost[]) => void;
 }) {
   const at = usePortalHref();
-  const path = usePortalPath();
+  // In the page's language: signing in comes back to it.
+  const path = usePortalHere();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState(!collapsible || !!defaultTitle);

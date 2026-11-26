@@ -21,7 +21,7 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
 import { visibleEntry } from "@/lib/reader-groups";
-import { portalBase, portalLinks } from "@/server/portal-base";
+import { portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
@@ -108,6 +108,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       // Its publishing date alone: emails going out change updatedAt too.
       published: listed.publishedAt,
     }));
+  // The entry's and its comments' words: the team's and people's, in the default language under another's address
+  // (teamLanguage); not the portal's own text around them.
+  const lang = await teamLanguage();
   return (
     <div className="flex flex-col gap-6">
       {jsonLd}
@@ -118,7 +121,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         mediaUrls={await mediaUrls(entry.doc, entry.cover)}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
-        base={await portalBase()}
+        base={await portalLinkBase()}
+        lang={lang}
       />
       <section className="flex flex-col gap-3 border-t pt-8" aria-label="Comments">
         <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-sans text-lg font-semibold outline-none">
@@ -147,6 +151,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         )}
         <div className="pt-3">
           <CommentList
+            lang={lang}
             portal
             comments={comments}
             teamUserIds={new Set(team.map((m) => m.userId))}
