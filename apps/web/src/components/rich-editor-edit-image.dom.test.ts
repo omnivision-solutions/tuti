@@ -352,3 +352,20 @@ test("the page's tries outlive the editor: drawn again (as a save does), Edit wi
   await second.click("Edit with AI");
   expect(second.button("Try 1")).toBeTruthy();
 });
+
+test("a try still being made when the editor is drawn again lands in the new one", async () => {
+  let finish!: (value: unknown) => void;
+  generateImage.mockReset();
+  generateImage.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+  const first = await editor();
+  await first.pick();
+  await first.generate();
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  const second = await editor();
+  await second.pick();
+  await second.click("Edit with AI");
+  await act(async () => finish({ image: { id: MADE, url: `https://media.example/${MADE}.png`, width: 1000, height: 500 } }));
+  await vi.waitFor(() => expect(second.button("Try 1")).toBeTruthy());
+  expect(document.body.textContent).not.toContain("Generating, up to half a minute…");
+});

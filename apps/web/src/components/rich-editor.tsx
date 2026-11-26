@@ -111,6 +111,8 @@ type PageTries = { tries: Try[]; generating: boolean; error: string | null };
  * save that draws the editor again keeps them, and one list for all of a page's images (each was paid for).
  */
 const pageTries = new Map<string, PageTries>();
+/** The editors showing them: each drawn again when they change, so one made again while a try was being made gets it. */
+const pageListeners = new Set<() => void>();
 /** For tests: every page's tries forgotten. */
 export const forgetPageTries = () => pageTries.clear();
 
@@ -241,12 +243,19 @@ export function RichEditor({
   // "Edit with AI": the image picked (where it was, as it was). Its dialog starts afresh for each image, with the page's
   // tries (pageTries): one list for every image here, so a try is never lost to which image it was made for.
   const [, redraw] = useState(0);
+  useEffect(() => {
+    const listener = () => redraw((n) => n + 1);
+    pageListeners.add(listener);
+    return () => {
+      pageListeners.delete(listener);
+    };
+  }, []);
   const pageKey = typeof window === "undefined" ? "" : window.location.pathname;
   const keptTries = (): KeptTries => {
     const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: false, error: null };
     const set = (next: PageTries) => {
       pageTries.set(pageKey, next);
-      redraw((n) => n + 1);
+      pageListeners.forEach((listener) => listener());
     };
     return {
       ...now(),
