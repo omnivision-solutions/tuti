@@ -1476,8 +1476,6 @@ export const updateConversation = defineOperation({
           throw new OperationError(409, "unanswered", "They wrote last: reply, and it waits on them");
         }
       }
-      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
-      // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       const marked = input.spam !== undefined && input.spam !== held!.spam;
       if (marked || input.blockDomain) {
@@ -1492,6 +1490,8 @@ export const updateConversation = defineOperation({
           await blockDomainOf(tx, sent, admin);
         }
       }
+      // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
+      // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
       const waking = input.snoozedUntil === null && !!held?.snoozedUntil && !input.status && !(input.spam ?? held.spam) && held.status !== "CLOSED";
       const row = await tx.conversation.update({
         where: { id: conversation.id },
@@ -1522,7 +1522,7 @@ export const updateConversation = defineOperation({
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: messageSelect,
       });
-      // It's unmarked whatever happens here: the team's email is queued again by conversation-notices-resubmit.
+      // It's unmarked whatever happens here, and saying it again would tell nobody: a failure is logged, not thrown.
       if (first) {
         await announceConversation(projectId, updated, first).catch((error: unknown) => log.error("Announcing a conversation that isn't spam after all failed", { projectId, error }));
       }

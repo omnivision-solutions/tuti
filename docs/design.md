@@ -237,6 +237,12 @@ the list picks none to approve at once.
   are centred with the highlight tint. The composer is one card: Reply and Note are underline tabs across its top, its text
   field has no border or ring of its own (the card takes the focus ring while it's written in), and on Note the whole card
   takes the note's tint.
+  A conversation in Spam says why on a line of its own under its meta line, with Not spam beside it (the reason wraps; a long "…and unblock <address>" goes under it):
+  "Marked as spam: you blocked this address", one line per reason (`SPAM_REASONS`), "a teammate marked it" for a mark.
+  Not spam's toast says what stays in the way (a blocked address or domain and who can change it, the hourly limit);
+  where an owner's or admin's takes a blocked address off the list, the button says so first ("Not spam, and unblock
+  <address>"). For owners and admins More actions has "Mark as spam, also block <domain>…" under Mark as spam, where
+  the sender's domain can be blocked; it asks first.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,

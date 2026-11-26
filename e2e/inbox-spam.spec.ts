@@ -20,7 +20,11 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
   const address = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
   const rows = owner.getByRole("main").getByRole("listitem");
-  const open = (subject: string) => rows.filter({ hasText: subject }).getByRole("link").click();
+  /** Opens a conversation from the list, once it's the one beside it (its menu is the one before's till then). */
+  const open = async (subject: string) => {
+    await rows.filter({ hasText: subject }).getByRole("link").click();
+    await expect(owner.locator(".inbox-conversation").getByTitle(subject)).toBeVisible();
+  };
   const notice = owner.locator(".inbox-spam-notice");
   const more = owner.getByRole("button", { name: "More actions" });
 
@@ -64,12 +68,17 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await expect(notice).toContainText("Marked as spam: a teammate marked it");
   await open("Followers from Lee");
   await expect(notice).toContainText("Marked as spam: you blocked this address's domain");
-  await expect(notice.getByRole("button", { name: "Not spam" })).toBeVisible();
+  // The button is beside the reason, not under it.
+  const beside = async () => {
+    const [reason, button] = [(await notice.locator("p").boundingBox())!, (await notice.getByRole("button", { name: "Not spam" }).boundingBox())!];
+    return button.x >= reason.x + reason.width && button.y < reason.y + reason.height;
+  };
+  expect(await beside()).toBe(true);
   await checkpoint(owner, "why-its-in-spam");
-  // On a phone the line wraps over its button, and nothing is wider than the screen.
+  // On a phone too, the reason wrapping beside it, and nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
-  await expect(notice.getByRole("button", { name: "Not spam" })).toBeVisible();
+  expect(await beside()).toBe(true);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "why-its-in-spam-phone");
   await owner.setViewportSize(desktop);

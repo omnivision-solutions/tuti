@@ -318,8 +318,9 @@ export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }:
 export function SpamNotice({ projectSlug, number, why, unblocks }: Props & { why: string | null; unblocks: string | null }) {
   const { pending, mark } = useSpamMark(projectSlug, number);
   return (
-    <div className="inbox-spam-notice flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b bg-muted/50 px-5 py-2 text-sm">
-      <p className="flex min-w-0 items-start gap-1.5 wrap-anywhere [&>svg]:mt-0.75 [&>svg]:size-3.5 [&>svg]:flex-none">
+    // The reason takes the room and wraps; its button stays beside it, going under only where a long one (an address to unblock) leaves the reason no room.
+    <div className="inbox-spam-notice flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-muted/50 px-5 py-2 text-sm">
+      <p className="flex min-w-0 flex-1 basis-48 items-start gap-1.5 wrap-anywhere [&>svg]:mt-0.75 [&>svg]:size-3.5 [&>svg]:flex-none">
         <ShieldAlertIcon aria-hidden />
         <span>
           Marked as spam{why && `: ${why}`}
