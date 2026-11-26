@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { ACTIONS, actionsFor, storedWorkflow, TRIGGER_KEYS } from "./workflows";
+import { ACTIONS, actionsFor, storedWorkflow, TRIGGER_KEYS, workflowSummary } from "./workflows";
 
 test("every action says which triggers offer it, and each trigger offers one", () => {
   for (const trigger of TRIGGER_KEYS) {
@@ -21,4 +21,9 @@ test("a stored workflow is read whole, or not at all", () => {
   expect(storedWorkflow({ ...stored, actions: [{ kind: "mark_priority" }, { kind: "close" }] })).toBeNull();
   expect(storedWorkflow({ ...stored, actions: [] })).toBeNull();
   expect(storedWorkflow({ ...stored, actions: null })).toBeNull();
+});
+
+test("a workflow's one line: who it's for, by the group's name, then what it does", () => {
+  expect(workflowSummary({ conditions: [{ kind: "in_group", group: "enterprise" }], actions: [{ kind: "mark_priority" }] }, { enterprise: "Enterprise" })).toBe("In Enterprise: mark priority");
+  expect(workflowSummary({ conditions: [], actions: [{ kind: "mark_priority" }] }, {})).toBe("Everyone: mark priority");
 });

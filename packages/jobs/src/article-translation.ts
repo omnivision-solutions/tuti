@@ -4,7 +4,9 @@ import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES,
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
+import { freeLanguageSlug } from "./docs-slugs";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
+import { lockProject } from "./running-draft";
 
 /**
  * Translations (docs/plan.md, Languages): a published article (L6) or changelog entry (L16) into each of the project's
@@ -89,6 +91,8 @@ type Version = {
   retranslated: number;
   setting: { productAvailable: boolean; productVersion: number; instructions: string };
   source: SourceText & { projectId: string; publishedAt: Date | null; sample: boolean; defaultLanguage: string };
+  /** An article's version's own slug (L6 part two): null until it's named. An entry's versions have none. */
+  slug?: string | null;
 };
 
 /** A version's row as the queues read it. */
@@ -160,7 +164,7 @@ const ARTICLE: Kind = {
   about: ABOUT_ARTICLE,
   table: (client = prisma) => client.articleTranslation as unknown as Table,
   async read(articleId, language) {
-    const row = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId, language } }, select: { ...versionSelect, article: { select: articleSource } } });
+    const row = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId, language } }, select: { ...versionSelect, slug: true, article: { select: articleSource } } });
     return row && { ...row, setting: row.projectLanguage, source: { ...row.article, defaultLanguage: row.article.project.language } };
   },
   async lockSource(tx, articleId) {
@@ -295,6 +299,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
+    if (kind.name === "article" && !row.slug) {
+      // Translated, but its naming failed then: named now.
+      await nameVersion(published.projectId, row.id);
+    }
     return { skipped: "up to date" };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
@@ -380,6 +388,9 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     retryAt: null,
     retranslated: row.retranslate,
   });
+  if (written && kind.name === "article") {
+    await nameVersion(published.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${parentId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
+  }
   return written ? { translated: language } : { skipped: CHANGED };
 }
 
@@ -533,15 +544,17 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 
 /** The retry-article-translations job: versions (articles' and changelog entries') that couldn't be translated, whose wait is over, tried again. */
 export async function retryArticleTranslations(): Promise<JobResult> {
+  // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
+  const named = await nameUnnamed();
   // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.
   if (!aiEnabled()) {
-    return { skipped: NO_AI };
+    return { skipped: NO_AI, ...(named > 0 && { named }) };
   }
   let queued = 0;
   for (const kind of KINDS) {
     queued += await retryKind(kind);
   }
-  return { queued };
+  return { queued, ...(named > 0 && { named }) };
 }
 
 async function retryKind(kind: Kind): Promise<number> {
@@ -615,4 +628,55 @@ async function announceWhenTranslated(entryId: string) {
   if (due && !(await entryTranslationsPending(entryId))) {
     await enqueue("changelogEmailed", { entryId });
   }
+}
+
+/**
+ * A version's first translation names it: a slug in its language from its title (freeLanguageSlug); later ones keep the
+ * address (a rename is the team's: articles.languageSlug). Its own transaction, after the translation's: slugs are picked
+ * with the project locked, and that lock is never taken while holding the article's (whose other writers, search's
+ * sections, wait on the project's row by its foreign key). Left unnamed if this fails: the page's next job names it.
+ */
+async function nameVersion(projectId: string, versionId: string) {
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const version = await tx.articleTranslation.findUnique({
+      where: { id: versionId },
+      select: { slug: true, title: true, language: true, articleId: true, article: { select: { slug: true, deletedAt: true } } },
+    });
+    if (!version || version.slug || version.article.deletedAt) {
+      return;
+    }
+    const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { id: versionId, articleId: version.articleId, slug: null }, version.article.slug);
+    await tx.articleTranslation.update({ where: { id: versionId }, data: { slug } });
+  });
+}
+
+/** Unnamed versions named per run of the retry job. */
+/** Unnamed versions named per run of the retry job (a test can change it). */
+export const nameBatch = { size: 200 };
+
+/**
+ * Versions translated before versions had slugs of their own (L6 part one) have none: named a batch per run of the retry job
+ * (meanwhile, served at the article's default-language slug), those waiting longest first. One that fails goes to the back
+ * (its time moved on), so a few that always fail never take every run's batch. How many it named.
+ * ponytail: a scan for unnamed versions every run; a partial index on them is the upgrade if the table grows large.
+ */
+async function nameUnnamed(): Promise<number> {
+  const unnamed = await prisma.articleTranslation.findMany({
+    where: { slug: null, publishedAt: { not: null }, article: { deletedAt: null } },
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    take: nameBatch.size,
+    select: { id: true, projectId: true },
+  });
+  let named = 0;
+  for (const { id, projectId } of unnamed) {
+    try {
+      await nameVersion(projectId, id);
+      named++;
+    } catch (error) {
+      serverLog.error("Naming an article's version failed", { versionId: id, error });
+      await prisma.articleTranslation.updateMany({ where: { id }, data: { updatedAt: new Date() } }).catch(() => {});
+    }
+  }
+  return named;
 }
