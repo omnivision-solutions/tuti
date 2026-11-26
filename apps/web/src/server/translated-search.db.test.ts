@@ -158,14 +158,21 @@ test("a version whose search data couldn't be written is tried again by the retr
   model.embeddings.failNext(500);
   expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ failed: "its search data couldn't be written" });
   const waiting = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
-  expect(waiting).toMatchObject({ error: null, publishedAt: row.publishedAt });
-  expect(waiting.retryAt).not.toBeNull();
+  expect(waiting).toMatchObject({ error: null, publishedAt: row.publishedAt, tries: 1 });
+  const firstWait = waiting.retryAt!.getTime() - Date.now();
+  // Failing again, it waits longer (backing off as a translation does).
+  model.embeddings.failNext(500);
+  expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ failed: "its search data couldn't be written" });
+  const again = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
+  expect(again.tries).toBe(2);
+  expect(again.retryAt!.getTime() - Date.now()).toBeGreaterThan(firstWait * 1.5);
   // The retry job brings it back: embedded, nothing translated again, and its retry time cleared.
   await prisma.articleTranslation.update({ where: { id: row.id }, data: { retryAt: new Date(Date.now() - 1000) } });
   await handlers.retryArticleTranslations({}, log);
   await languageTranslationsDone();
   expect(await prisma.articleTranslationChunk.count({ where: { translationId: row.id } })).toBe(1);
-  expect((await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).retryAt).toBeNull();
+  // Embedded: its retry time cleared, and the count of failures started again.
+  expect(await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ retryAt: null, tries: 0 });
   expect(model.requests).toHaveLength(1);
 });
 

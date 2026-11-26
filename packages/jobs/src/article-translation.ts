@@ -151,7 +151,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
     // Its search data too: one whose embedding failed is embedded here when the retry job brings it back (none to do: a lookup).
-    return (await searchable(row.id, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
+    return (await searchable(row.id, row.tries, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
   if (!aiEnabled()) {
@@ -248,7 +248,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     return { skipped: CHANGED };
   }
   // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: it's embedded later.
-  await searchable(row.id, log);
+  await searchable(row.id, 0, log);
   return { translated: language };
 }
 
@@ -257,16 +257,20 @@ const SEARCH_WAITS = "its search data couldn't be written";
 
 /**
  * Embeds a written version's sections for search in its language (embedTranslation). Failing (the embeddings provider
- * didn't answer), its retry time is set: the retry job brings it back here, where, up to date, it's only embedded. The
- * version itself is shown as written meanwhile, its error left alone.
+ * didn't answer), its retry time is set, backing off as a translation's does (`tries`, the failures in a row so far):
+ * the retry job brings it back here, where, up to date, it's only embedded; embedded, the count starts again. The version
+ * itself is shown as written meanwhile, its error left alone.
  */
-async function searchable(translationId: string, log: JobLogger) {
+async function searchable(translationId: string, tries: number, log: JobLogger) {
   try {
     await embedTranslation(translationId, log);
+    if (tries > 0) {
+      await prisma.articleTranslation.updateMany({ where: { id: translationId, error: null }, data: { tries: 0 } });
+    }
     return true;
   } catch (error) {
     log.warn(`Embedding translation ${translationId} for search failed: ${String(error).slice(0, 300)}`);
-    await prisma.articleTranslation.updateMany({ where: { id: translationId }, data: { retryAt: new Date(Date.now() + retryDelay(1)) } });
+    await prisma.articleTranslation.updateMany({ where: { id: translationId }, data: { tries: tries + 1, retryAt: new Date(Date.now() + retryDelay(tries + 1)) } });
     return false;
   }
 }
