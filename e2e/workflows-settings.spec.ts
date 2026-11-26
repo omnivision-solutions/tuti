@@ -5,7 +5,7 @@ import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { query } from "./db";
 import { APP_URL } from "./env";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, holdActions, signUp } from "./helpers";
 
 test("an owner sees the path in Settings → Workflows, reorders a trigger's workflows by dragging and from the menu, turns one off and deletes one, on a phone too", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
@@ -77,12 +77,8 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await started.getByText("Second", { exact: true }).click();
   await expect(owner.getByRole("switch", { name: "Second" })).toBeChecked();
 
-  // The page's saves held back a moment, as on a slow connection, so the next step comes before the move has landed.
-  const page = `**/app/${slug}/settings/workflows`;
-  await owner.route(page, async (route) => {
-    if (route.request().method() === "POST") await new Promise((done) => setTimeout(done, 1500));
-    await route.fallback();
-  });
+  // The page's saves held until the switch below has been turned, so the move lands after the focus went on.
+  const release = await holdActions(owner);
   await menu("First").focus();
   await owner.keyboard.press("Enter");
   await owner.getByRole("menuitem", { name: "Move down" }).click();
@@ -93,12 +89,14 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(owner.getByRole("menuitem")).toHaveCount(0);
   await owner.getByRole("switch", { name: "Second" }).focus();
   await owner.keyboard.press("Space");
+  await expect(owner.getByRole("switch", { name: "Second" })).not.toBeChecked();
+  await expect(owner.getByRole("switch", { name: "Second" })).toBeFocused();
+  await release();
   await expect(owner.getByText("Moved First")).toBeVisible();
   await expect(started).not.toHaveAttribute("aria-busy", "true");
   await expect(owner.getByText("Second turned off")).toBeVisible();
   await expect(owner.getByRole("switch", { name: "Second" })).not.toBeChecked();
   await expect(owner.getByRole("switch", { name: "Second" })).toBeFocused();
-  await owner.unroute(page);
   await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Second")?.enabled).toBe(false);
