@@ -34,6 +34,12 @@ export async function chooseLanguage(projectSlug: string, code: string): Promise
   const session = await sessionIn(project.id);
   if (session) {
     await prisma.user.update({ where: { id: session.user.id }, data: { language } });
+    // Their changelog emails follow (docs/plan.md L16): the default language is null, as on a subscription made on its pages.
+    const { default: fallback } = await portalLanguages(project.id);
+    await prisma.changelogSubscriber.updateMany({
+      where: { projectId: project.id, email: session.user.email.toLowerCase() },
+      data: { language: language === fallback ? null : language },
+    });
   }
   return {};
 }

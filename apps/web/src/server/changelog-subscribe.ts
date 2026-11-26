@@ -3,12 +3,14 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { changelogReach, projectEmailWaits, reached } from "@tuti/jobs";
+import { isLanguage } from "@tuti/shared";
 import { headers } from "next/headers";
 import { z } from "zod";
 
 import { emailConfirmation } from "./changelog-subscription";
 import { mayRead } from "./portal-access";
 import { countEmailedLink } from "./email-link-limits";
+import { portalLanguage } from "./portal-base";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
 
@@ -49,10 +51,14 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   if (!sends) {
     return { sentTo: email };
   }
+  // The language of the page they subscribed on (docs/plan.md L16): a language's own address ("/de/changelog"), else the
+  // default language's (null). Their emails come in it where the entry is translated.
+  const { language: address, prefix } = await portalLanguage();
+  const language = prefix && address && isLanguage(address) ? address : null;
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
-    create: { projectId: project.id, email },
-    update: {},
+    create: { projectId: project.id, email, language },
+    update: { language },
     select: { id: true, email: true, confirmedAt: true },
   });
   // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's
