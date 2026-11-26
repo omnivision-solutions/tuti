@@ -152,7 +152,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // A page in the live languages too (docs/plan.md, Languages): each language's address listed, each with every language's
   // as alternates (and x-default, the default language's).
   const url = (loc: string, lastmod: Date | undefined, alternates: string) =>
-    `<url><loc>${escape(loc)}</loc>${alternates}${lastmod ? `<lastmod>${lastmod.toISOString()}</lastmod>` : ""}</url>`;
+    // lastmod before the alternates: the sitemap schema puts its own elements before other namespaces'.
+    `<url><loc>${escape(loc)}</loc>${lastmod ? `<lastmod>${lastmod.toISOString()}</lastmod>` : ""}${alternates}</url>`;
   const alternate = (hreflang: string, href: string) => `<xhtml:link rel="alternate" hreflang="${hreflang}" href="${escape(href)}"/>`;
   const sitemap = [
     '<?xml version="1.0" encoding="UTF-8"?>',

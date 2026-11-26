@@ -24,7 +24,7 @@ import { accountEmails } from "@/server/operations/email-preferences";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
-import { portalLinkBase, portalLinks } from "@/server/portal-base";
+import { portalLinkBase, portalLinks, untranslatedLang } from "@/server/portal-base";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -141,7 +141,7 @@ export async function changelogByEmail(
  */
 export async function changelogPage(slug: string, page: number, tag?: ChangelogTag) {
   const at = await portalLinks();
-  const base = await portalLinkBase();
+  const [base, lang] = await Promise.all([portalLinkBase(), untranslatedLang(slug)]);
   // One more than a page, to know whether there are older ones.
   const [session, reader] = await Promise.all([getSession(), slugReader(slug)]);
   const [found, announced, dates, project] = await Promise.all([
@@ -320,6 +320,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
                       entry={entry}
                       mediaUrls={media}
                       base={base}
+                      lang={lang}
                       dateMargin
                       excerpt
                       eager={i === 0}

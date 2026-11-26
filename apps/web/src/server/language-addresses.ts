@@ -44,3 +44,12 @@ export function forgetLanguages(slug: string) {
   forgets++;
   cache.delete(slug);
 }
+
+/**
+ * Whether a path is an API operation's page (`/docs/<reference>/<operation>`, or its `.md`) on `slug`'s portal: one of the
+ * portal's own pages, which the team's rules can't hide under a live language's prefix. Asked only when a rule would.
+ */
+export async function isOperationPage(slug: string, path: string): Promise<boolean> {
+  const reference = /^\/docs\/([^/]+)\/[^/]+$/.exec(path)?.[1];
+  return !!reference && !!(await prisma.apiReference.findFirst({ where: { project: { slug }, slug: decodeURIComponent(reference) }, select: { id: true } }));
+}

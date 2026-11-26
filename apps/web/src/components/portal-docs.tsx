@@ -58,7 +58,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, untranslatedLang } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { firstBoardPath } from "@/server/portal-home";
 
@@ -368,7 +368,7 @@ export async function DocsArticle({
   /** Its canonical path: a tab showing it in its place, the tab's. */
   path?: string;
 }) {
-  const at = await portalLinks();
+  const [at, lang] = await Promise.all([portalLinks(), untranslatedLang(project)]);
   const readable = "doc" in article ? article : null;
   // Its tab and collection have pages for this reader when they have something to read (an unlisted
   // article may be all there is): the way back is its tab's, or /docs.
@@ -405,7 +405,7 @@ export async function DocsArticle({
   return (
     <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
       {jsonLd}
-      <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
+      <article lang={lang} className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
               has), the actions at the row's end on wide screens, under the title on phones. */}

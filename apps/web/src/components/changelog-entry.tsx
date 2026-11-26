@@ -48,6 +48,7 @@ export function ChangelogEntryView({
   linkTarget,
   react,
   base = "",
+  lang,
   dateMargin = false,
   back,
   excerpt = false,
@@ -62,6 +63,8 @@ export function ChangelogEntryView({
   react?: { projectSlug: string; signedIn: boolean };
   /** What its links go under: the path the portal is under on the team's site (see lib/portal-base.ts), then the language's prefix (portalLinkBase). */
   base?: string;
+  /** Its text's language where the page is in another (untranslatedLang). */
+  lang?: string;
   /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
   dateMargin?: boolean;
   /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
@@ -93,7 +96,7 @@ export function ChangelogEntryView({
     </span>
   );
   return (
-    <article className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
+    <article lang={lang} className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
       {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. */}
       {dateMargin && (
         <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium whitespace-nowrap text-muted-foreground tabular-nums lg:block">

@@ -21,6 +21,8 @@ test("a reader opens the portal's German addresses while German is live; an offl
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr" }] }, "PATCH");
+  await api("/changelog", { title: "CSV export is here" });
+  await api("/changelog/1/publish", {});
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/de/roadmap");
@@ -38,6 +40,12 @@ test("a reader opens the portal's German addresses while German is live; an offl
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
   // The page it's on, without the prefix, is the current part.
   await expect(reader.getByRole("link", { name: "Changelog" }).first()).toHaveAttribute("aria-current", "page");
+  // Its entries' links too, and the entry's page; its text is still English, marked so under the German page.
+  await expect(reader.getByRole("link", { name: "CSV export is here" })).toHaveAttribute("href", "/de/changelog/1");
+  await reader.getByRole("link", { name: "CSV export is here" }).click();
+  await expect(reader).toHaveURL(`${portalUrl(slug)}/de/changelog/1`);
+  await expect(reader.getByRole("heading", { name: "CSV export is here", level: 1 }).locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  await expect(reader.getByRole("link", { name: "Changelog" }).first()).toHaveAttribute("href", "/de/changelog");
 
   // French is offline: its addresses are the default language's pages, in English.
   await reader.goto("/fr/changelog");

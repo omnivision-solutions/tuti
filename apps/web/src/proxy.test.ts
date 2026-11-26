@@ -12,7 +12,8 @@ vi.mock("@/server/portal-redirects", async () => {
   const { redirectKey } = await import("@/lib/portal-redirects");
   return { redirectFor: async (_slug: string, path: string) => portal.rules.get(redirectKey(path)) ?? null };
 });
-vi.mock("@/server/language-addresses", () => ({ portalLanguages: async () => portal.languages }));
+// /docs/api/<operation> is an API operation's page (with the database: language-addresses.db.test.ts).
+vi.mock("@/server/language-addresses", () => ({ portalLanguages: async () => portal.languages, isOperationPage: async (_slug: string, path: string) => path.startsWith("/docs/api/") }));
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-access", () => ({
   portalVisitor: async () => portal.visitor,
@@ -231,6 +232,11 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     portal.rules.set("/de/docs/billing", "/docs/payments");
     portal.rules.set("/de/llms.txt", "/docs");
     portal.rules.set("/de/articles/123-abrechnung", "/de/docs/billing");
+    portal.rules.set("/de/docs/api/create-a-post", "/docs");
+    portal.rules.set("/de/docs/billing/refunds", "/docs/billing");
+    // An API operation's page and its Markdown are the portal's own too; an old help center's path of the same shape isn't.
+    expect(await where("/de/docs/api/create-a-post")).toBe("/docs/api/create-a-post de /de");
+    expect(await where("/de/docs/billing/refunds")).toBe("308 https://acme.tuti.example/docs/billing");
     expect(await where("/de")).toBe("/ de /de");
     expect(await where("/de/docs/billing")).toBe("/docs/billing de /de");
     expect(await where("/de/llms.txt")).toBe("/llms.txt de /de");
@@ -268,6 +274,15 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     portal.rules.set("/kb", "/fr/kb");
     expect(await where("/kb")).toBe("/kb en -");
     expect(await where("/fr/kb")).toBe("308 https://acme.tuti.example/kb");
+    // Round in more steps, through French while it's offline: /kb2 → /fr/legacy → /legacy → /fr/kb2 → /kb2. Every address on
+    // the circle shows its page; one leading into it still goes on.
+    portal.rules.set("/kb2", "/fr/legacy");
+    portal.rules.set("/legacy", "/fr/kb2");
+    portal.rules.set("/old-kb", "/kb2");
+    expect(await where("/kb2")).toBe("/kb2 en -");
+    expect(await where("/legacy")).toBe("/legacy en -");
+    expect(await where("/fr/legacy")).toBe("307 https://acme.tuti.example/legacy");
+    expect(await where("/old-kb")).toBe("308 https://acme.tuti.example/kb2");
     // Once French is live, the rule to it goes on.
     portal.languages = { default: "en", live: ["de", "fr"], stored: ["de", "fr"] };
     expect(await where("/docs/payments")).toBe("308 https://acme.tuti.example/fr/docs/payments?from=old");
@@ -300,8 +315,11 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     expect(await where("/fr/docs/billing")).toBe("307 https://acme.tuti.example/docs/billing");
   });
 
-  test("the team's preview of an offline language they have serves its pages; not of one they don't have", async () => {
+  test("the team's preview of an offline language they have serves its pages, never kept by a shared cache; not of one they don't have", async () => {
     expect(await where("/fr/docs/billing", { cookie: "tuti_preview_reader=team" })).toBe("/docs/billing fr /fr");
+    // Not even a route's own public caching (llms.txt's): a cache keeping it would serve it to readers in place of the redirect.
+    expect((await visit("/fr/llms.txt", { cookie: "tuti_preview_reader=team" })).headers.get("cache-control")).toBe("private, no-store");
+    expect((await visit("/de/llms.txt")).headers.get("cache-control")).toBeNull();
     expect(await where("/es/docs/billing", { cookie: "tuti_preview_reader=team" })).toBe("307 https://acme.tuti.example/docs/billing");
   });
 

@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 
 import { languageFrom, withLanguage } from "@/lib/language-addresses";
+import { portalLanguages } from "@/server/language-addresses";
 import { BASE_HEADER, BASE_PATTERN, withBase } from "@/lib/portal-base";
 
 /** The path the portal is under on the team's site for this request ("" on its own addresses). */
@@ -32,4 +33,15 @@ export async function portalHref(path: string): Promise<string> {
 export async function portalLinks(): Promise<(path: string) => string> {
   const [base, { prefix }] = await Promise.all([portalBase(), portalLanguage()]);
   return (path) => withBase(base, withLanguage(prefix, path));
+}
+
+/**
+ * The `lang` of the team's and people's words (an article, a post and its comments, a changelog entry) on a page in another
+ * language than the portal's default, where they're still in the default's (docs/plan.md, Languages: "its content carries
+ * the default language's `lang`"); undefined in the default language, where `<html lang>` says it. Translated articles (L8)
+ * and entries (L17) take their own.
+ */
+export async function untranslatedLang(slug: string): Promise<string | undefined> {
+  const [{ prefix }, languages] = await Promise.all([portalLanguage(), portalLanguages(slug)]);
+  return prefix && languages ? languages.default : undefined;
 }

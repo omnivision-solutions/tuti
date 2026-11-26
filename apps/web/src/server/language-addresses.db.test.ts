@@ -14,6 +14,7 @@ import { request } from "@/test/next-headers";
 
 import { portalLanguages } from "./language-addresses";
 import { getLanguages, updateLanguages } from "./operations/languages";
+import { createRedirect } from "./operations/redirects";
 import { call } from "./operations/run";
 import { PREVIEW_READER_COOKIE } from "./portal-access";
 import { portalHref, portalLinkBase, portalLinks } from "./portal-base";
@@ -66,6 +67,26 @@ test("the team's preview of an offline language: a team member's preview token, 
   expect((await visit("/fr/docs/billing")).status).toBe(307);
 });
 
+test("the team's preview through a team member's app session (Tuti's own portal); never a portal's session, a reader's", async () => {
+  const { owner, visit } = await setUp();
+  expect((await visit("/fr/docs/billing", owner.cookie)).headers.get("x-middleware-request-x-tuti-language")).toBe("fr");
+  // The same person signed in on the portal: a reader there, sent to the default language.
+  const { project } = await prisma.teamMember.findFirstOrThrow({ where: { userId: owner.id }, select: { project: { select: { id: true } } } });
+  await prisma.session.updateMany({ where: { userId: owner.id }, data: { boundTo: project.id } });
+  expect((await visit("/fr/docs/billing", owner.cookie)).status).toBe(307);
+});
+
+test("an API operation's page under a live language's prefix is the portal's own: the team's rule for it is skipped", async () => {
+  const { context, project, visit } = await setUp();
+  const tab = await prisma.docsTab.create({ data: { projectId: project.id, slug: "reference", name: "Reference" } });
+  await prisma.apiReference.create({ data: { projectId: project.id, tabId: tab.id, slug: "api", name: "API", format: "OPENAPI", spec: "{}", doc: {}, state: {} } });
+  await call(createRedirect, context, { from: "/de/docs/api/create-a-post", to: "/docs" });
+  await call(createRedirect, context, { from: "/de/docs/billing/refunds", to: "/docs/billing" });
+  expect((await visit("/de/docs/api/create-a-post")).headers.get("x-middleware-rewrite")).toMatch(/\/docs\/api\/create-a-post$/);
+  // An old help center's address of the same shape still redirects.
+  expect((await visit("/de/docs/billing/refunds")).status).toBe(308);
+});
+
 test("hreflang: the portal's own pages in every live language, x-default the default's; an article in the default language alone until it's translated", async () => {
   const { project } = await setUp();
   const address = `http://${project.slug}.localhost:3100`;
@@ -114,7 +135,8 @@ test("the sitemap lists the portal's own pages in each live language with altern
   expect(xml).toMatch(new RegExp(`<url><loc>${address}/docs/billing</loc><lastmod>`));
   expect(xml).not.toContain("/de/docs/billing");
   expect(xml).not.toContain("/fr/");
-  expect(xml).toContain(`<url><loc>${address}/de/docs</loc>`);
+  // Its lastmod before the alternates, as the sitemap schema orders them.
+  expect(xml).toMatch(new RegExp(`<url><loc>${address}/de/docs</loc><lastmod>[^<]+</lastmod><xhtml:link rel="alternate" hreflang="en"`));
 
   // A docs tab showing an article in its place (here the home tab, /docs) is the article's page: the default language's alone.
   const billing = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "billing" } });

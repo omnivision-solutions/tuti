@@ -34,7 +34,7 @@ import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, untranslatedLang } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { portalAddress } from "@/server/custom-domains";
@@ -198,7 +198,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   );
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-16">
+    // The post and its comments: people's words, never translated (untranslatedLang).
+    <div lang={await untranslatedLang(projectSlug)} className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-16">
       <article className="flex min-w-0 flex-col gap-3.5 lg:col-start-1">
         <PortalPageHeader
           title={post.title}

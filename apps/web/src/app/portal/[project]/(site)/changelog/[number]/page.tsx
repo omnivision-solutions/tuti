@@ -21,7 +21,7 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
 import { visibleEntry } from "@/lib/reader-groups";
-import { portalLinkBase, portalLinks } from "@/server/portal-base";
+import { portalLinkBase, portalLinks, untranslatedLang } from "@/server/portal-base";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
@@ -109,7 +109,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       published: listed.publishedAt,
     }));
   return (
-    <div className="flex flex-col gap-6">
+    // The entry and its comments: the team's and people's words (untranslatedLang).
+    <div lang={await untranslatedLang(slug)} className="flex flex-col gap-6">
       {jsonLd}
       <ChangelogMenu slug={slug} current={entry.number} />
       <ChangelogEntryView

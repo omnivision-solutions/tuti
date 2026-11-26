@@ -12,7 +12,8 @@ import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session"
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
 import { redirectFor } from "@/server/portal-redirects";
 import { LANGUAGE, languagePrefix, ownAddress, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
-import { portalLanguages } from "@/server/language-addresses";
+import { isOperationPage, portalLanguages } from "@/server/language-addresses";
+import type { Language } from "@tuti/shared/languages";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
@@ -187,19 +188,43 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   // takes the rule of the path without the prefix, in the language (/de/docs/billing → /de/docs/payments). The exact rules
   // come first under any other prefix too (an imported /fr/articles/… while French is offline).
   if (reading) {
-    // Never back to this address: where a rule's target ends up, an address in a language that isn't live going on to the
-    // default language's (/docs/billing → /fr/docs/billing → /docs/billing while French is offline), and a rule the prefixed
-    // path took already in the language (/docs/billing → /de/docs/billing, asked at /de/docs/billing). Such a rule is skipped.
-    const here = redirectKey(address);
+    const isLive = (code: Language) => !!languages?.live.includes(code);
+    // The rule a path takes, as above.
+    const ruleFor = async (path: string) => {
+      const split = splitLanguage(path);
+      if (!split || !isLive(split.code)) {
+        return redirectFor(slug, path);
+      }
+      const own = await redirectFor(slug, path);
+      if (own && !ownAddress(split.path) && !(await isOperationPage(slug, split.path))) {
+        return own;
+      }
+      const rule = await redirectFor(slug, split.path);
+      return rule && prefixedTarget(rule, languagePrefix(split.code));
+    };
+    // Where a rule's target ends up (a path as rules match it), an address in a language that isn't live going on to the
+    // default language's; null for a whole address.
     const landsOn = (to: string) => {
       const key = destinationKey(to);
       const target = key ? splitLanguage(key) : null;
-      return target && !languages?.live.includes(target.code) ? redirectKey(target.path) : key;
+      return target && !isLive(target.code) ? redirectKey(target.path) : key;
     };
-    const goesOn = (to: string | null) => (to && landsOn(to) !== here ? to : null);
-    const own = live && ownAddress(inLanguage.path) ? null : goesOn(await redirectFor(slug, address));
-    const to =
-      own ?? (live ? goesOn(await redirectFor(slug, inLanguage.path).then((rule) => rule && prefixedTarget(rule, languagePrefix(inLanguage.code)))) : null);
+    // Never round in circles: a rule whose chain (each address's rule, and an offline language's address going on to the
+    // default's) comes back to this address is skipped, so every address on the circle shows its page. Rules can't be saved
+    // as a chain, but a prefix's rules and a language going offline make ones no save could check
+    // (/kb → /fr/legacy, /legacy → /fr/kb while French is offline; /docs/billing → /de/docs/billing, asked at /de/docs/billing).
+    const here = redirectKey(address);
+    let to = await ruleFor(address);
+    // ponytail: follows up to 20 addresses, as many as browsers do before giving up.
+    for (let next = to && landsOn(to), hops = 0; to && next && hops < 20; hops++) {
+      if (next === here) {
+        to = null;
+        break;
+      }
+      const rule = await ruleFor(next);
+      const split = splitLanguage(next);
+      next = rule ? landsOn(rule) : split && !isLive(split.code) ? redirectKey(split.path) : null;
+    }
     if (to) {
       const response = NextResponse.redirect(redirectLocation(to, origin, request.nextUrl.search), 308);
       // Permanent for search engines, but not kept by browsers: the team can change it.
@@ -267,8 +292,9 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";
   forwarded.set(CUSTOMIZE.header, customizing ? CUSTOMIZE.value : "");
   const response = NextResponse.rewrite(url, { request: { headers: forwarded } });
-  if (visitor === "allowed") {
-    // A private portal's feeds and files are for this reader only: no shared cache may keep them.
+  if (visitor === "allowed" || preview) {
+    // A private portal's feeds and files are for this reader only, and the team's preview of a language that isn't live for
+    // the team only (kept, it would be served to readers in place of the redirect): no shared cache may keep them.
     // (Set here, it wins over the routes' own public cache-control.)
     response.headers.set("cache-control", "private, no-store");
   }
