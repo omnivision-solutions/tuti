@@ -495,3 +495,34 @@ test("each image keeps its own last error, two failing at once", async () => {
   await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")].find((each) => each.getAttribute("aria-label") === "Edit with AI" || each.textContent?.trim() === "Edit with AI")!.click());
   expect(alert()).toBe("B's failure");
 });
+
+test("Edited · N of M counts the edited image's own tries; another image's try, picked, is just its try", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  let made = 0;
+  generateImage.mockImplementation(async () => ({ image: { id: `madeimage0000000000${++made}x`, url: `https://media.example/made${made}.png`, width: 1000, height: 500 } }));
+  const { ref, generate, button, click } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await vi.waitFor(() => expect(button("Try 1")).toBeTruthy());
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await generate();
+  await vi.waitFor(() => expect(button("Try 2")).toBeTruthy());
+  // B's own: the first of one, though the page's second.
+  expect(document.body.textContent).toContain("Edited · 1 of 1");
+  await click("Try 1");
+  expect(document.body.textContent).not.toContain("Edited ·");
+  expect([...document.querySelectorAll('[role="dialog"] figcaption')].map((each) => each.textContent)).toEqual(["Original", "Try 1"]);
+});
