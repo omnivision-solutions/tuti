@@ -1022,11 +1022,16 @@ describe("publishing with Email subscribers", () => {
   test("on a plan without private portals, a private portal's changelog goes only to its team", async () => {
     vi.stubEnv("BILLING_CONFIG", billingFile());
     const lee = newAddress();
+    const member = await signUp("Mo Member");
+    await prisma.user.update({ where: { id: member.id }, data: { emailVerified: true } });
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
     await confirmed(lee);
+    await confirmed(member.email);
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "pro" } });
     await prisma.portalReader.create({ data: { projectId: project.id, email: lee } });
     await publishEntry("Dark mode");
-    expect(entryEmailsTo(lee)).toEqual([]);
+    // Published from the private portal: the team member gets it, the reader (no readers on this plan) doesn't.
+    expect([lee, member.email].map((to) => entryEmailsTo(to).length)).toEqual([0, 1]);
   });
 });
 
@@ -1692,6 +1697,16 @@ describe("the changelog.unsubscribed webhook: once whenever the changelog stops 
     const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: ada.id }, projectId: project.id };
     await call(updateEmailPreferences, key, { changelog: false });
     expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada.email.toLowerCase(), userId: null, source: "api", allEmails: false }]);
+  });
+
+  test("a private portal's reader getting the changelog who unsubscribes is told to webhooks (it was being emailed to them)", async () => {
+    vi.stubEnv("BILLING_CONFIG", billingFile());
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } });
+    const ada = newAddress();
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada } });
+    await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: ada, confirmedAt: new Date() } });
+    await unsubscribe(await tokenOf(ada));
+    expect(await told()).toEqual([{ event: "changelog.unsubscribed", email: ada, userId: null, source: "email", allEmails: false }]);
   });
 
   test("nothing where it wasn't being emailed: a portal gone private (to someone who isn't one of its readers), or an address whose emails another account there turned off", async () => {
