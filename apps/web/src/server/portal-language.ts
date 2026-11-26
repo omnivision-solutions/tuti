@@ -17,7 +17,9 @@ export const portalLanguages = cache(async (projectId: string): Promise<PortalLa
   const limit = languageLimit(project.plan);
   return {
     default: isLanguage(project.language) ? project.language : DEFAULT_LANGUAGE,
+    // Counted among those offered only, as languages.get does.
     live: project.languages
+      .filter(({ code }) => isLanguage(code))
       .filter(({ live }, index) => live && (limit === null || index < limit - 1))
       .map(({ code }) => code)
       .filter(isLanguage),
