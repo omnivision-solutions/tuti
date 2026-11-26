@@ -84,10 +84,9 @@ test("a German conversation: the customer's message read in English, the reply p
   await owner.reload();
   await api("/support", { translate: true }, "PATCH");
   const late = `Is it working now (${slug})?`;
-  // Refused on send (asked twice), then previewed once the page knows (twice again).
-  for (let i = 0; i < 4; i++) {
-    await nextModelReply("Not a translation", late);
-  }
+  // Refused on send (asked twice); the page then shows that failure, without asking again.
+  await nextModelReply("Not a translation", late);
+  await nextModelReply("Not a translation", late);
   await owner.getByRole("textbox", { name: "Reply" }).fill(late);
   await expect(preview).toBeHidden();
   await owner.getByRole("button", { name: "Send", exact: true }).click();

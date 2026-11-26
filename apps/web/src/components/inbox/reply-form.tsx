@@ -136,8 +136,10 @@ export function ReplyForm({
   // Asked for again (the customer's language changed since): the preview is made afresh for the same text.
   const [previewAgain, setPreviewAgain] = useState(0);
   const toTranslate = translated && drafts.reply.trim();
+  // The text a send just failed to translate: not asked again by itself (its failure, with "Send in English", stays).
+  const sendFailedFor = useRef<string>(undefined);
   useEffect(() => {
-    if (!toTranslate) {
+    if (!toTranslate || sendFailedFor.current === toTranslate) {
       return;
     }
     // Written on since (or sent): that text's preview, if any, comes next.
@@ -254,6 +256,7 @@ export function ReplyForm({
       }
       if (result.translation === "failed") {
         // "Send in English" then sends it as they chose: closing it too, from Send and close.
+        sendFailedFor.current = text.trim();
         setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", close });
         toast.error("Not sent: it couldn't be translated");
       }
