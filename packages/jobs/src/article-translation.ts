@@ -300,8 +300,9 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
     if (kind.name === "article" && !row.slug) {
-      // Translated, but its naming failed then: named now.
-      await nameVersion(published.projectId, row.id);
+      // Translated, but its naming failed then: named now. Never failing the job (a lock timeout, a slug taken meanwhile):
+      // the retry job's nameUnnamed, or the next job, names it.
+      await nameVersion(published.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${parentId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
     }
     return { skipped: "up to date" };
   }
