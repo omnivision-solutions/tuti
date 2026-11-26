@@ -4,6 +4,7 @@ import type { Doc } from "@tuti/content";
 import type { MediaUrls } from "@tuti/content/media";
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { type EditorUploads, RichEditor } from "@/components/rich-editor";
@@ -63,6 +64,8 @@ export function ChangelogComment({
   onDelete?: () => Promise<FormState & { waiting?: boolean }>;
   children: React.ReactNode;
 }) {
+  const t = useTranslations("changelog");
+  const f = useTranslations("feedback");
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   // Saved or cancelled: back on Edit, where the keyboard was.
@@ -95,24 +98,24 @@ export function ChangelogComment({
       {(canEdit || canDelete) && (
         <div className="flex items-center gap-4">
           {canEdit && (
-            <button ref={editButton} type="button" className={ACTION} aria-label="Edit your comment" onClick={() => setEditing(true)}>
-              Edit
+            <button ref={editButton} type="button" className={ACTION} aria-label={t("editYours")} onClick={() => setEditing(true)}>
+              {t("edit")}
             </button>
           )}
           {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger
-                render={<button type="button" className={ACTION} aria-label={mine ? "Delete your comment" : `Delete ${author}'s comment`} aria-disabled={deleting || undefined} />}
+                render={<button type="button" className={ACTION} aria-label={mine ? t("deleteYours") : t("deleteTheirs", { name: author })} aria-disabled={deleting || undefined} />}
               >
-                Delete
+                {t("delete")}
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this comment?</AlertDialogTitle>
-                  <AlertDialogDescription>It&apos;s gone for good, for everyone.</AlertDialogDescription>
+                  <AlertDialogTitle>{t("deleteTitle")}</AlertDialogTitle>
+                  <AlertDialogDescription>{t("deleteDescription")}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel>{f("cancel")}</AlertDialogCancel>
                   <AlertDialogAction
                     variant="destructive"
                     // Once: a second press while it runs would find it gone.
@@ -130,13 +133,13 @@ export function ChangelogComment({
                             router.refresh();
                           }
                         } else {
-                          toast.success("Comment deleted");
+                          toast.success(t("deleted"));
                           document.getElementById(COMMENTS_HEADING)?.focus();
                         }
                       })
                     }
                   >
-                    {deleting ? "Deleting…" : "Delete comment"}
+                    {deleting ? t("deleting") : t("deleteComment")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -162,12 +165,14 @@ function EditForm({
   mediaUrls?: MediaUrls | null;
   onDone: () => void;
 }) {
+  const t = useTranslations("changelog");
+  const f = useTranslations("feedback");
   const errorId = useId();
   const [state, save, saving] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await send(prev, formData);
     if (!result.error) {
       onDone();
-      toast.success("Comment saved");
+      toast.success(t("saved"));
     }
     return result;
   }, {});
@@ -177,7 +182,7 @@ function EditForm({
         <RichEditor
           profile="comment"
           name="content"
-          label="Edit your comment"
+          label={t("editYours")}
           initial={doc}
           uploads={uploads}
           mediaUrls={mediaUrls}
@@ -189,10 +194,10 @@ function EditForm({
       </Field>
       <div className="flex justify-end gap-3">
         <Button type="button" variant="ghost" onClick={onDone}>
-          Cancel
+          {f("cancel")}
         </Button>
         <Button type="submit" variant="outline" disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? t("saving") : t("save")}
         </Button>
       </div>
     </form>

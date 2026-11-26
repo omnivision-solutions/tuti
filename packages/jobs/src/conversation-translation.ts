@@ -1,4 +1,4 @@
-import { translateText } from "@tuti/content";
+import { hasTextToTranslate, translateText } from "@tuti/content";
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
 import { aiEnabled, complete, type JobInput, log as serverLog } from "@tuti/shared";
 
@@ -86,6 +86,101 @@ export async function translateMessage(input: JobInput<"translateMessage">, log:
     await translationFailed(input.messageId, "Couldn't translate it");
     return { failed: "error" };
   }
+}
+
+/** What translationPending reads of a message. */
+const PENDING_SELECT = {
+  author: true,
+  note: true,
+  body: true,
+  teamText: true,
+  language: true,
+  translationError: true,
+  conversation: { select: { spam: true, language: true, project: { select: { language: true, teamLanguage: true, translateConversations: true } } } },
+} as const;
+
+/**
+ * How the team's email and push about a message wait for its translation: up to `ms`, looking every `every`, by
+ * `pause` (a timer). Tests replace `pause` to drive a wait without real time.
+ */
+export const noticeWait = { ms: 10_000, every: 1_000, pause: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)) };
+
+/**
+ * A customer's message as the team's email and push tell it (docs/plan.md L22): its translation into the team's language,
+ * where it gets one. Both are queued beside the translate-message job, so while it's on its way they wait for it, a
+ * little: a translation the job is still to settle (`translationPending`), up to `noticeWait.ms`. Then the text as it is.
+ * ponytail: polls the message while waiting, in the notice job's worker slot (at most ~10 s, ending as the translation
+ * lands; capped per job on the worker, apps/worker tasks.ts); the job telling the notices when it's done frees the slots,
+ * once a release can rely on the worker running it. A translation the job leaves unchanged (the model gave it back as it
+ * was) isn't foreseen: that wait runs its course.
+ */
+export async function noticeText(messageId: string, waitMs = noticeWait.ms): Promise<{ text: string; translated: boolean; translatedFrom: string | null }> {
+  // Counted in pauses, not read off the clock: a wait is as long as its looks.
+  for (let waited = 0; ; waited += noticeWait.every) {
+    const message = await prisma.conversationMessage.findUniqueOrThrow({
+      where: { id: messageId },
+      select: PENDING_SELECT,
+    });
+    // Translated: as the Inbox shows it, its language named where it's known.
+    if (message.teamText !== null) {
+      return { text: message.teamText, translated: true, translatedFrom: message.language };
+    }
+    if (!translationPending(message) || waited >= waitMs) {
+      return { text: message.body, translated: false, translatedFrom: null };
+    }
+    await noticeWait.pause(noticeWait.every);
+  }
+}
+
+/**
+ * How recent an earlier message must be for a later one's email to step aside for it: its email's wait (noticeWait.ms)
+ * and a margin for its queue. Older, it isn't counted on: a translation that never settles (the model gave the text back
+ * as it was) or history from before translation was on would hold the team's emails back for good.
+ */
+export const STEP_ASIDE_MS = 60_000;
+
+/**
+ * Whether one of a conversation's customer messages before `before`, sent since `since` (when an email about it could
+ * claim the conversation's turn) and within STEP_ASIDE_MS, is still to be translated (translationPending): its email is
+ * on its way.
+ */
+export async function translationsPendingBefore(conversationId: string, before: { id: string; createdAt: Date }, since: Date | null) {
+  // Written shortly before this message (not before now: a queue backed up past STEP_ASIDE_MS mustn't change the order).
+  const recent = new Date(before.createdAt.getTime() - STEP_ASIDE_MS);
+  const after = since && since > recent ? since : recent;
+  // Earlier: written before it, or in the same millisecond and added first (ids order within one).
+  const earlier = { OR: [{ createdAt: { lt: before.createdAt } }, { createdAt: before.createdAt, id: { lt: before.id } }] };
+  const messages = await prisma.conversationMessage.findMany({
+    where: { conversationId, author: "USER", note: false, teamText: null, translationError: null, language: null, createdAt: { gt: after }, ...earlier },
+    select: { ...PENDING_SELECT },
+  });
+  return messages.some(translationPending);
+}
+
+/**
+ * Whether the translate-message job is still to settle this message: it translates it, or says why it couldn't, or that
+ * it's in the team's language (its `language`). Not one it skips without a word (as translateOne does): too short to tell
+ * with no language known for the conversation, or in the team's; spam; translation off or no AI.
+ */
+export function translationPending(message: {
+  author: string;
+  note: boolean;
+  body: string;
+  teamText: string | null;
+  language: string | null;
+  translationError: string | null;
+  conversation: { spam: boolean; language: string | null; project: { language: string | null; teamLanguage: string | null; translateConversations: boolean } };
+}) {
+  const { conversation } = message;
+  // As translationSettings has it: unset, the project's default language.
+  const teamLanguage = conversation.project.teamLanguage ?? conversation.project.language ?? DEFAULT_TEAM_LANGUAGE;
+  if (message.author !== "USER" || message.note || conversation.spam || !conversation.project.translateConversations || !aiEnabled()) {
+    return false;
+  }
+  if (message.teamText !== null || message.translationError !== null || message.language !== null || !hasTextToTranslate(message.body)) {
+    return false;
+  }
+  return !isShort(message.body) || (!!conversation.language && !sameLanguage(conversation.language, teamLanguage));
 }
 
 /** Marks a message's translation as failed, where nothing else is stored for it yet (logged, never thrown). */

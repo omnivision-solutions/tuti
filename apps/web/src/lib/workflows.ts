@@ -70,3 +70,9 @@ export function storedWorkflow(workflow: { trigger: string; conditions: unknown;
   const offered = TRIGGER_KEYS.includes(workflow.trigger as WorkflowTrigger) ? actionsFor(workflow.trigger as WorkflowTrigger) : [];
   return conditions && actions?.every((action) => offered.includes(action.kind)) ? { conditions, actions } : null;
 }
+
+/** A workflow in one line, as Settings → Workflows lists it: who it's for, then what it does ("In Enterprise: mark priority"). `groupNames`: the groups' names by key. */
+export function workflowSummary(workflow: { conditions: WorkflowCondition[]; actions: WorkflowAction[] }, groupNames: Record<string, string>) {
+  const who = workflow.conditions.map((condition) => `In ${groupNames[condition.group] ?? condition.group}`).join(", ") || "Everyone";
+  return `${who}: ${workflow.actions.map((action) => ACTIONS[action.kind].label.toLowerCase()).join(", ")}`;
+}

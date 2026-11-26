@@ -15,30 +15,21 @@ import {
   recordEvent,
 } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import type { Language } from "@tuti/shared/languages";
+import { MESSAGES } from "@tuti/shared/messages";
+import { createTranslator } from "next-intl";
 
 import { hashSecret } from "@/lib/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
 import { withLockRetries } from "@/server/lock-retries";
 
-
 /**
  * Where a subscription stands, as the sender sees it (changelogReach): the one sentence every state of this page says,
- * so it never promises what isn't sent.
+ * so it never promises what isn't sent; in `language` (the portal page's: English on the subscription's own pages, for now).
  */
-export function reachSentence(reach: ChangelogReach, name: string, email: string): string {
-  switch (reach) {
-    // Only the entries the team publishes with Email subscribers: it's their choice each time.
-    case "gets":
-      return `The changelog entries ${name} emails to subscribers go to ${email}.`;
-    case "paused":
-      return `The changelog entries ${name} emails to subscribers go to ${email} once ${name}'s emails, paused for now, are resumed.`;
-    case "unconfirmed":
-      return `${name}'s changelog isn't emailed to ${email}.`;
-    case "private":
-      return `${name}'s portal is private and ${email} isn't one of its readers, so its changelog isn't emailed there.`;
-    case "opted-out":
-      return `You've turned off all of ${name}'s emails, so its changelog isn't emailed to ${email} either.`;
-  }
+export function reachSentence(reach: ChangelogReach, name: string, email: string, language: Language = "en"): string {
+  const t = createTranslator({ locale: language, messages: MESSAGES[language], namespace: "changelog.reach" });
+  return t(reach === "opted-out" ? "optedOut" : reach, { name, email });
 }
 
 /** How long a changelog confirmation link works (each request's own, used once). */

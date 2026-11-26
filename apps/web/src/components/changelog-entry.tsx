@@ -1,4 +1,7 @@
 import type { ChangelogTag } from "@tuti/db";
+import type { Language } from "@tuti/shared/languages";
+import { MESSAGES } from "@tuti/shared/messages";
+import { createTranslator } from "next-intl";
 import { RichText } from "@tuti/content/react";
 import { excerpt as excerptOf, type Doc, type MediaUrls } from "@tuti/content";
 import { ArrowRightIcon, LightbulbIcon } from "lucide-react";
@@ -10,15 +13,12 @@ import { ChangelogReactions } from "@/components/changelog-reactions";
 import { TagBadge } from "@/components/changelog-tag";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { SampleBadge } from "@/components/sample-badge";
-import { formatDate } from "@/lib/format";
+import { formatDate, shortDate } from "@/lib/format";
 import { withBase } from "@/lib/portal-base";
 import { postPath } from "@/lib/post-urls";
 import type { Reaction, ReactionCounts } from "@/lib/reactions";
 import { cn } from "@/lib/utils";
 
-/** "7 Nov 2026": the timeline's margin (every month three letters, as "Sep", not "Sept"). */
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 
 /** The list's excerpts, every entry's the same: at most these characters and lines (its clamp is three lines too). */
 const EXCERPT = { chars: 300, lines: 3 };
@@ -49,6 +49,7 @@ export function ChangelogEntryView({
   react,
   base = "",
   lang,
+  language = "en",
   dateMargin = false,
   back,
   excerpt = false,
@@ -65,6 +66,8 @@ export function ChangelogEntryView({
   base?: string;
   /** Its title's and text's language where the page is in another (teamLanguage). */
   lang?: string;
+  /** The portal page's language, for its own words and dates (the widget's are English, for now). */
+  language?: Language;
   /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
   dateMargin?: boolean;
   /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
@@ -75,6 +78,7 @@ export function ChangelogEntryView({
   eager?: boolean;
 }) {
   const Title = heading;
+  const t = createTranslator({ locale: language, messages: MESSAGES[language] });
   // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and bigger (still grey)
   // tags; the widget's panel (an h1 too) keeps the base.
   const onPage = dateMargin || !!react;
@@ -84,7 +88,7 @@ export function ChangelogEntryView({
   // reactions) sits above it. Its own z keeps it over the faded excerpt, whose mask paints it in a layer of its own.
   const above = excerpt ? "relative z-10 max-w-full self-start" : undefined;
   // In the list, short ("7 Nov 2026"), as in its margin.
-  const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
+  const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt, language) : formatDate(entry.publishedAt, language)}</time>;
   // Its tags (grey; Breaking red) and, on phones or its own page, its date: above the title, or under it on its page.
   const meta = (
     <span className={cn("flex flex-wrap items-center gap-2 text-sm text-muted-foreground", above)}>
@@ -97,10 +101,10 @@ export function ChangelogEntryView({
   );
   return (
     <article className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
-      {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. */}
+      {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. A long one (Portuguese's "26 de nov. de 2026") wraps in it. */}
       {dateMargin && (
-        <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium whitespace-nowrap text-muted-foreground tabular-nums lg:block">
-          <time dateTime={entry.publishedAt.toISOString()}>{shortDate(entry.publishedAt)}</time>
+        <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium text-muted-foreground tabular-nums lg:block">
+          <time dateTime={entry.publishedAt.toISOString()}>{shortDate(entry.publishedAt, language)}</time>
           <span aria-hidden className="absolute top-[2.875rem] left-0 size-[0.5625rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-background shadow-[0_0_0_1.5px_var(--color-muted-foreground),0_0_0_5px_var(--color-background)]" />
         </p>
       )}
@@ -159,9 +163,14 @@ export function ChangelogEntryView({
                   className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-secondary px-3 text-[0.8125rem] font-semibold text-secondary-foreground transition-colors hover:bg-secondary-hover [&>svg]:text-muted-foreground"
                 >
                   <LightbulbIcon aria-hidden className="size-3.5 shrink-0" />
+                  {/* The ideas' titles are people's words (lang); the rest the portal's. */}
                   <span className="min-w-0 truncate">
-                    {entry.posts.length > 1 ? post.title : "Built from an idea"} · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                    {entry.posts.length === 1 && <span className="sr-only">: {post.title}</span>}
+                    {entry.posts.length > 1 ? <span lang={lang}>{post.title}</span> : t("changelog.builtFromIdea")} · {t("feedback.votes", { count: post.voteCount })}
+                    {entry.posts.length === 1 && (
+                      <span className="sr-only">
+                        : <span lang={lang}>{post.title}</span>
+                      </span>
+                    )}
                   </span>
                   <ArrowRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </Link>
@@ -170,15 +179,23 @@ export function ChangelogEntryView({
           </ul>
         ) : entry.posts.length > 0 && (
           <p className={cn("text-sm text-muted-foreground", above)}>
-            Completes{" "}
-            {entry.posts.map((post, i) => (
-              <span key={post.number}>
-                {i > 0 && ", "}
-                <Link href={at(postPath(post))} target={linkTarget} className="text-foreground hover:underline">
-                  {post.title}
-                </Link>
-              </span>
-            ))}
+            {t.rich("changelog.completes", {
+              // The ideas, listed as the language lists ("A, B, C"), each a link in its own language.
+              posts: () => {
+                let n = 0;
+                return new Intl.ListFormat(language, { type: "unit", style: "short" }).formatToParts(entry.posts.map((post) => post.title)).map((part, i) => {
+                  if (part.type === "literal") {
+                    return part.value;
+                  }
+                  const post = entry.posts[n++]!;
+                  return (
+                    <Link key={i} href={at(postPath(post))} target={linkTarget} lang={lang} className="text-foreground hover:underline">
+                      {post.title}
+                    </Link>
+                  );
+                });
+              },
+            })}
           </p>
         )}
         {react && (

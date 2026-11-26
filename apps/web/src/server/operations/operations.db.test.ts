@@ -56,6 +56,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
   "changelog.editSection": () => ({ number: 1, append: true, markdown: "Added by the matrix." }),
   "changelog.composeCover": () => ({ number: 1 }),
+  "images.generate": () => ({ prompt: "A lighthouse", width: 320, height: 200 }),
   "changelog.missingChanges": () => ({}),
   "changelog.addPullRequests": () => ({ pullRequests: [{ repo: "acme/matrix", number: 5 }] }),
   "changelog.removePullRequest": () => ({ number: 2, url: "https://github.com/acme/matrix/pull/4" }),
@@ -633,10 +634,10 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   for (const [name, value] of Object.entries(ses.env)) {
     vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
   }
-  // Uploads, for the cover an entry's composed one is kept as, and screenshots' images; Browser Use, for screenshots.
+  // Uploads, for the cover an entry's composed one is kept as, AI images and screenshots' images; Browser Use, for screenshots.
   const screenshots = operation.name.startsWith("screenshot") || operation.name === "changelog.takeScreenshots";
   for (const [name, value] of Object.entries(s3.env)) {
-    vi.stubEnv(name, operation.name === "changelog.composeCover" || screenshots ? value : "");
+    vi.stubEnv(name, ["changelog.composeCover", "images.generate"].includes(operation.name) || screenshots ? value : "");
   }
   for (const [name, value] of Object.entries(browserUse.env)) {
     vi.stubEnv(name, screenshots ? value : "");

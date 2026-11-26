@@ -11,6 +11,7 @@ export const AI_FEATURE_NAMES: Record<string, string> = {
   duplicates: "Duplicate detection",
   screenshots: "Screenshots",
   spam: "Spam filter",
+  images: "AI images",
   emails: "Emails",
 };
 
