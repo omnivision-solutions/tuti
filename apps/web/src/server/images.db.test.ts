@@ -181,6 +181,13 @@ test("images asked for at once are counted before the model is asked: past the p
   });
   const hour = new Date("2026-06-01T12:00:00Z");
   await prisma.project.update({ where: { id: project.id }, data: { aiImagesHour: hour, aiImagesCount: AI_IMAGES_PER_HOUR - 2 } });
+  // Refused ones don't use up the hour's images: out of credits, or references that can't be read.
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
+  await expect(generate({ width: 128, height: 128 })).rejects.toMatchObject({ status: 402 });
+  vi.stubEnv("TUTI_CONFIG", "");
+  const unreadable = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 4, status: "READY", width: 32, height: 20 } });
+  await expect(generate({ width: 128, height: 128, references: [unreadable.id] })).rejects.toMatchObject({ status: 503, code: "copy_failed" });
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).aiImagesCount).toBe(AI_IMAGES_PER_HOUR - 2);
   const results = await Promise.allSettled(Array.from({ length: 5 }, () => generate({ width: 128, height: 128 })));
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
   expect(results.filter((result) => result.status === "rejected").map((result) => (result as PromiseRejectedResult).reason)).toEqual(
