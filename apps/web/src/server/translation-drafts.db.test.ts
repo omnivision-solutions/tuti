@@ -80,7 +80,7 @@ async function editBilling() {
   const version = await call(getTranslation, as(), de);
   const content = structuredClone(version.content) as Doc;
   content.content!.at(-1)!.content![0]!.text = "Unsere Abrechnung";
-  return call(saveTranslation, as(), { ...de, content });
+  return call(saveTranslation, as(), { ...de, content, version: version.version });
 }
 
 test("publishing after a retranslation takes the new translation in a section the team edited whose source changed", async () => {
@@ -184,7 +184,7 @@ async function publishOwnSetup(title?: string) {
   const version = await call(getTranslation, as(), de);
   const content = structuredClone(version.content) as Doc;
   content.content![2]!.content![0]!.text = "Unsere Einrichtung";
-  await call(saveTranslation, as(), { ...de, content, ...(title && { title }) });
+  await call(saveTranslation, as(), { ...de, content, version: version.version, ...(title && { title }) });
   return call(publishTranslation, as(), de);
 }
 
@@ -260,7 +260,7 @@ test("an edit saved while the job updates that section stays the team's", async 
     const now = await call(getTranslation, as(), de);
     const content = structuredClone(now.content) as Doc;
     content.content!.at(-1)!.content![0]!.text = "Neu von uns";
-    await call(saveTranslation, as(), { ...de, content });
+    await call(saveTranslation, as(), { ...de, content, version: now.version });
   });
   await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
   await languageTranslationsDone();
@@ -277,7 +277,7 @@ test("a draft keeps the team's published title when the job retranslates it", as
   const now = await call(getTranslation, as(), de);
   const content = structuredClone(now.content) as Doc;
   content.content![0]!.content![0]!.text = "Hallo";
-  await call(saveTranslation, as(), { ...de, content });
+  await call(saveTranslation, as(), { ...de, content, version: now.version });
   await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
   expect((await call(getTranslation, as(), de)).draft!.title).toBe("Bezahlung");
 });
@@ -307,4 +307,40 @@ test("a section behind because its English section went can be updated: it goes"
   const after = await call(getTranslation, as(), de);
   expect(text(after.content).split("\n").filter(Boolean)).toEqual(["Hallo", "Einrichtung", "Unsere Installation"]);
   expect(after.behind).toEqual([]);
+});
+
+test("a save made from an older read is refused: it would undo what changed since", async () => {
+  await translated();
+  const read = await call(getTranslation, as(), de);
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  await expect(call(saveTranslation, as(), { ...de, content: read.content, version: read.version })).rejects.toMatchObject({ status: 409, code: "changed" });
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("[de2] Pay by card or invoice");
+});
+
+test("publishing a version the team writes: sections behind take the new translation unless kept", async () => {
+  await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  // A draft that edits only the intro: Setup and Billing are behind English in it.
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![0]!.content![0]!.text = "Guten Tag";
+  const saved = await call(saveTranslation, as(), { ...de, content, version: read.version });
+  expect(saved.draft!.behind).toHaveLength(2);
+  const [setup] = saved.draft!.behind;
+  // Setup kept; Billing takes the new translation (translated after publishing).
+  model.reply(reply(V2, "de2"));
+  await call(publishTranslation, as(), { ...de, keep: [setup!] });
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content).split("\n").filter(Boolean)).toEqual(["Guten Tag", "Einrichtung", "Unsere Installation", "[de2] Billing", "[de2] Pay by card or invoice"]);
+  expect(after.behind.map(({ section }) => section)).toEqual([setup]);
+});
+
+test("the retry job leaves sections asked for on an article that isn't published any more", async () => {
+  const articleId = await manualVersion();
+  await prisma.articleTranslation.updateMany({ where: { articleId }, data: { updateSections: ["x"], retryAt: null } });
+  await prisma.article.update({ where: { id: articleId }, data: { publishedAt: null } });
+  await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ retryAt: null });
 });

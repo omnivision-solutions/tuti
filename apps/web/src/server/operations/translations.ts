@@ -50,6 +50,7 @@ const translationOutput = z
     title: z.string().describe("Its title, as published").meta({ examples: ["Abrechnung"] }),
     content: z.record(z.string(), z.unknown()).describe("Its text as published: the editor's JSON document").meta({ examples: [docExample] }),
     publishedAt: z.iso.datetime().nullable().describe("When it was first published (null: not translated yet)").meta({ examples: ["2026-11-26T09:00:00.000Z"] }),
+    version: z.string().describe("What it says now, for articles.saveTranslation's `version`: a save made from an older read is refused").meta({ examples: ["5f2c9a…"] }),
     behind: behindOutput,
     draft: z
       .object({
@@ -107,6 +108,9 @@ function behindNow(version: Version, parts: ReturnType<typeof sourceSections>, s
   return behindOf(sourceLanguage, parts, version.automatic ? lists : lists.map(ownedByTeam), otherReasons(version.behind, sourceLanguage));
 }
 
+/** What a version says now (title, text and draft): a save is made against it. */
+const versionToken = (version: Version) => contentHash(JSON.stringify([version.title, version.content, version.draft]));
+
 function output(version: Version, parts: ReturnType<typeof sourceSections>, sourceLanguage: string): z.output<typeof translationOutput> {
   const { published, draft, drafted } = versionParts(version, parts);
   const behind = behindNow(version, parts, sourceLanguage, [published]);
@@ -118,6 +122,7 @@ function output(version: Version, parts: ReturnType<typeof sourceSections>, sour
     title: version.title,
     content: displayDoc(version) as Record<string, unknown>,
     publishedAt: version.publishedAt?.toISOString() ?? null,
+    version: versionToken(version),
     behind: Object.entries(behind).map(([key, reason]) => ({ section: key, reason })),
     draft: draft && { title: draft.title, content: draft.content as Record<string, unknown>, behind: draftBehind },
   };
@@ -172,6 +177,12 @@ export const saveTranslation = defineOperation({
     slug: articleSlug,
     language,
     title: z.string().trim().min(1).max(MAX_ARTICLE_TITLE).optional().describe("Its title (left out: as it is)").meta({ examples: ["Abrechnung"] }),
+    version: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe("The `version` of the read this edit was made from: refused (409 `changed`) if it has changed since (retranslated, or saved by someone else)")
+      .meta({ examples: ["5f2c9a…"] }),
     content: z.unknown().describe("Its text: the editor's JSON document (the article profile)").meta({ examples: [docExample] }),
   }),
   output: translationOutput,
@@ -181,6 +192,10 @@ export const saveTranslation = defineOperation({
       throw new OperationError(400, "invalid_content", text.error);
     }
     return withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
+      // Compared with what it was made from, not with what's there now: an older copy would undo a newer translation.
+      if (versionToken(version) !== input.version) {
+        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+      }
       const { parts, sourceLanguage } = await sourceOf(tx, articleId);
       const { published, draft, drafted } = versionParts(version, parts);
       const edited = editedSections(drafted ?? published, text.doc, parts);
@@ -227,7 +242,9 @@ export const publishTranslation = defineOperation({
       // else translated again after this), or, kept, the team's, behind the source until it's updated.
       const update: string[] = [];
       const out = drafted.map((part): Section => {
-        const { key, own } = part.meta;
+        const { key } = part.meta;
+        // On a version the team writes, every section is theirs: each behind is theirs to update or keep.
+        const own = part.meta.own || !version.automatic;
         if (!own || key === null) return part;
         const stale = hashes.get(key) !== part.meta.hash;
         if (stale && !keep.has(key)) {

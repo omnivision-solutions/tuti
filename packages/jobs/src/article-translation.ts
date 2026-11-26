@@ -477,7 +477,7 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 export async function retryArticleTranslations(): Promise<JobResult> {
   // Sections asked for with no time to try again (a job the previous release's worker skipped during a deploy, as it doesn't
   // know them): due now, so this run queues them.
-  await prisma.articleTranslation.updateMany({ where: { retryAt: null, NOT: { updateSections: { equals: [] } } }, data: { retryAt: new Date() } });
+  await prisma.articleTranslation.updateMany({ where: { retryAt: null, NOT: { updateSections: { equals: [] } }, article: translatable }, data: { retryAt: new Date() } });
   // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
   const named = await nameUnnamed();
   // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.

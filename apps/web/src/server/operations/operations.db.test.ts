@@ -5,6 +5,7 @@ import { billingFile, type BrowserUseFake, configFile, type DnsFake, startBrowse
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { languageTranslationsDone } from "@tuti/jobs";
+import { contentHash } from "@tuti/shared";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -86,7 +87,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.publish": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
   "articles.languageSlug": () => ({ slug: "matrix-article", language: "de", newSlug: "matrix-seite" }),
   "articles.getTranslation": () => ({ slug: "matrix-article", language: "de" }),
-  "articles.saveTranslation": () => ({ slug: "matrix-article", language: "de", content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] } }),
+  "articles.saveTranslation": (f) => ({ slug: "matrix-article", language: "de", version: f.translationVersion, content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] } }),
   "articles.publishTranslation": () => ({ slug: "matrix-article", language: "de" }),
   // Its one section (the text before any heading), translated again in the background (see the write's case below).
   "articles.updateTranslation": () => ({ slug: "matrix-article", language: "de", sections: ["\u001f0"] }),
@@ -407,7 +408,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   // The published article's German version (German is the fixture's language), to give its own slug.
   const matrixArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "matrix-article" }, select: { id: true } });
-  await prisma.articleTranslation.create({
+  const translation = await prisma.articleTranslation.create({
     data: {
       articleId: matrixArticle.id,
       projectId: project.id,
@@ -532,6 +533,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   return {
     marker,
+    // What articles.saveTranslation's `version` is for the German version as it is (articles.getTranslation's).
+    translationVersion: contentHash(JSON.stringify([translation.title, translation.content, translation.draft])),
     screenshotRunId: screenshotRun.id,
     linkId: link.id,
     commentId: comment.id,
