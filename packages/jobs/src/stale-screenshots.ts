@@ -32,8 +32,11 @@ export const SCREENSHOT_QUESTION: Record<string, DecisionQuestion> = {
 type Block = NonNullable<Doc["content"]>[number];
 export type StaleScreenshot = { articleId: string; mediaId: string; show: string; description: string; probability: number };
 
-/** Screenshot records placed as images (top-level, where a run puts them) in the newest text of `articleIds`' published articles, in that order, up to the cap. */
-async function placedScreenshots(projectId: string, articleIds: string[]) {
+/**
+ * Screenshot records placed as images (top-level, where a run puts them) in the newest text of `articleIds`' published
+ * articles, in that order, up to the cap; only those taken before `mergedAt` (one taken since may already show the change).
+ */
+async function placedScreenshots(projectId: string, articleIds: string[], mergedAt: Date) {
   const articles = await prisma.article.findMany({
     where: { id: { in: articleIds }, projectId, publishedAt: { not: null }, deletedAt: null },
     select: { id: true, body: true, content: true, changes: { select: { body: true, content: true } } },
@@ -46,7 +49,7 @@ async function placedScreenshots(projectId: string, articleIds: string[]) {
     return [];
   }
   const shots = await prisma.screenshot.findMany({
-    where: { projectId, imageId: { in: images.map((image) => image.mediaId) } },
+    where: { projectId, imageId: { in: images.map((image) => image.mediaId) }, OR: [{ takenAt: null }, { takenAt: { lt: mergedAt } }] },
     select: { imageId: true, show: true, description: true, url: true },
   });
   return images.flatMap((image) => {
@@ -59,7 +62,7 @@ const imageId = (block: Block): string | null => (block.type === "image" && type
 
 /** The screenshots in `articleIds` the decision model finds the pull request likely made out of date (charged to `meter`). */
 export async function staleScreenshots(projectId: string, pr: PullRequestRead, summary: string, articleIds: string[], meter: Meter): Promise<StaleScreenshot[]> {
-  const placed = await placedScreenshots(projectId, [...new Set(articleIds)]);
+  const placed = await placedScreenshots(projectId, [...new Set(articleIds)], new Date(pr.mergedAt));
   const answers = await Promise.all(
     placed.map((shot) =>
       decide(

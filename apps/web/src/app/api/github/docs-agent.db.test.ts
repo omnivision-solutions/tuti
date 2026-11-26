@@ -535,6 +535,13 @@ describe("screenshots a change made out of date (SC4)", () => {
     expect(model.decisions.filter((request) => JSON.stringify(request).includes(ASKED))).toHaveLength(SCREENSHOT_DECISIONS);
   });
 
+  test("a screenshot taken after the merge isn't asked about: it may already show the change", async () => {
+    await shooting();
+    await prisma.screenshot.updateMany({ where: { projectId: project.id }, data: { takenAt: new Date(Date.now() + 60 * 60 * 1000) } });
+    await mergeVisual(65);
+    expect(model.decisions.filter((request) => JSON.stringify(request).includes(ASKED))).toEqual([]);
+  });
+
   test("without Screenshots on the server, nothing is asked (it couldn't be taken again)", async () => {
     await shooting();
     vi.stubEnv("BROWSER_USE_API_KEY", "");
