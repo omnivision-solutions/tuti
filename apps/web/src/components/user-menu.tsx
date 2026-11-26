@@ -20,20 +20,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
-/** Signs out of this portal (or the app) and goes to its home page. */
-function useSignOut() {
+/** Signs out of this portal (or the app) and goes to its home page; `failed` says it couldn't. */
+function useSignOut(failed: string) {
   const router = useRouter();
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
-  const t = useTranslations("header");
   return async () => {
     // Refused, or never sent (offline): still signed in, so they're told and stay where they are.
-    const failed = await authClient.signOut().then(
+    const refused = await authClient.signOut().then(
       ({ error }) => Boolean(error),
       () => true,
     );
-    if (failed) {
-      toast.error(t("signOutFailed"));
+    if (refused) {
+      toast.error(failed);
       return;
     }
     router.push(at("/"));
@@ -42,22 +41,21 @@ function useSignOut() {
 }
 
 /** Sign out on a page (the portal's Account, a quiet text button at the end of its Profile row), as the account menu's. */
+// Its text moves to the messages with the Account page's (L5).
 export function SignOutButton() {
-  const signOut = useSignOut();
+  const signOut = useSignOut("Couldn't sign you out. Try again.");
   const [pending, startTransition] = useTransition();
-  const t = useTranslations("header");
   return (
-    // In the reader's language, until <html lang> follows it (L3).
-    <Button variant="ghost" className="shrink-0" lang={useLocale()} disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
-      {t("signOut")}
+    <Button variant="ghost" className="shrink-0" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
+      Sign out
     </Button>
   );
 }
 
 export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
   const at = usePortalHref();
-  const signOut = useSignOut();
   const t = useTranslations("header");
+  const signOut = useSignOut(t("signOutFailed"));
   // In the reader's language, until <html lang> follows it (L3).
   const lang = useLocale();
   const initials = name
