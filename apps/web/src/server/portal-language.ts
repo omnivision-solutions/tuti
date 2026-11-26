@@ -51,14 +51,15 @@ export async function portalTranslator<N extends keyof Messages>(projectId: stri
 }
 
 /**
- * A reader's changelog language (docs/plan.md L16): their saved one where it's one of the portal's live languages but its
- * default; else null (the default's). Undefined when they have none saved.
+ * A reader's changelog language (docs/plan.md L16): their saved one where it's one of the portal's live languages; null
+ * where it's the default. Undefined when this portal has none of theirs: none saved, or one it doesn't serve (saved on
+ * another portal, taken offline, past the plan's limit), which isn't a choice made here.
  */
 export async function subscriberLanguage(projectId: string, userId: string): Promise<string | null | undefined> {
   const [languages, user] = await Promise.all([portalLanguages(projectId), prisma.user.findUnique({ where: { id: userId }, select: { language: true } })]);
   const language = user?.language;
-  if (!language) {
-    return undefined;
+  if (language && language === languages.default) {
+    return null;
   }
-  return language !== languages.default && (languages.live as string[]).includes(language) ? language : null;
+  return language && (languages.live as string[]).includes(language) ? language : undefined;
 }
