@@ -241,5 +241,8 @@
       "private": "{name}'s portal is private and {email} isn't one of its readers, so its changelog isn't emailed there.",
       "optedOut": "You've turned off all of {name}'s emails, so its changelog isn't emailed to {email} either."
     }
+  },
+  "docs": {
+    "notTranslated": "This page isn't in English yet: it's shown in the language it was written in."
   }
 }

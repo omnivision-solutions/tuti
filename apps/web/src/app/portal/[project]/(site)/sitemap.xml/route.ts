@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import type { Language } from "@tuti/shared/languages";
 
 import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
@@ -8,6 +9,7 @@ import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { shownOperations } from "@/server/api-reference-queries";
 import {
+  currentVersions,
   type DocsArticleLink,
   type DocsCollection,
   docsContents,
@@ -68,7 +70,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     prisma.article.findMany({
       where: { projectId: project.id, ...listedArticle, noindex: false, sample: false, ...(await readableArticle(project.id, SIGNED_OUT)) },
       orderBy: { slug: "asc" },
-      select: { slug: true, updatedAt: true },
+      select: { id: true, slug: true, updatedAt: true, title: true, description: true, keywords: true, body: true, content: true },
     }),
     docsContents(slug, { reader: SIGNED_OUT, locks: false }),
   ]);
@@ -117,8 +119,14 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   );
   const showsArticle = (tab: (typeof docs.tabs)[number] | undefined) => !!tab && articleTabs.has(tab.slug);
 
-  // `teamText`: an article's, post's or changelog entry's page, in the default language only until it has translations (see portalPageMetadata).
-  const pages: { path: string; lastmod?: Date; teamText?: boolean }[] = [
+  // An article's page in the live languages it's translated into, each at its own slug there (docs/plan.md, "A page not yet
+  // translated": the sitemap lists only those).
+  const [portal, languages] = await Promise.all([portalAddress(slug), pageLanguages(slug)]);
+  const live = languages?.live ?? [];
+  const translations = await currentVersions(articles, live);
+  // `teamText`: an article's, post's or changelog entry's page, in the default language only until it has translations (see
+  // portalPageMetadata); `inLanguages`: the paths an article's has in the languages it's translated into.
+  const pages: { path: string; lastmod?: Date; teamText?: boolean; inLanguages?: [string, string][] }[] = [
     { path: "", lastmod: latestPost },
     ...project.boards.map((board) => ({
       path: boardPath(board),
@@ -148,13 +156,16 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         path: `/docs/${collection.slug}`,
         lastmod: newest(datesIn(collection)),
       })),
-    ...articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt, teamText: true })),
+    ...articles.map((article) => ({
+      path: `/docs/${article.slug}`,
+      lastmod: article.updatedAt,
+      teamText: true,
+      inLanguages: (translations.get(article.id) ?? []).map((version): [string, string] => [version.language, `/docs/${version.slug ?? article.slug}`]),
+    })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
     ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt, teamText: true })),
   ].slice(0, MAX_URLS);
-  const [portal, languages] = await Promise.all([portalAddress(slug), pageLanguages(slug)]);
-  const live = languages?.live ?? [];
   const escape = (url: string) => url.replace(/&/g, "&amp;");
   // A page in the live languages too (docs/plan.md, Languages): each language's address listed, each with every language's
   // as alternates (and x-default, the default language's).
@@ -166,11 +177,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
     ...pages
-      .flatMap(({ path, lastmod, teamText }) => {
-        if (teamText || live.length === 0 || !languages) {
+      .flatMap(({ path, lastmod, teamText, inLanguages = [] }) => {
+        if ((teamText && inLanguages.length === 0) || live.length === 0 || !languages) {
           return [url(`${portal}${path}`, lastmod, "")];
         }
-        const addresses = [[languages.default, `${portal}${path}`], ...live.map((code) => [code, `${portal}${languagePrefix(code)}${path}`])];
+        const others = teamText ? inLanguages : live.map((code): [string, string] => [code, path]);
+        const addresses = [[languages.default, `${portal}${path}`], ...others.map(([code, at]) => [code, `${portal}${languagePrefix(code as Language)}${at}`])];
         const alternates = [...addresses.map(([code, href]) => alternate(code!, href!)), alternate("x-default", `${portal}${path}`)].join("");
         return addresses.map(([, href]) => url(href!, lastmod, alternates));
       })

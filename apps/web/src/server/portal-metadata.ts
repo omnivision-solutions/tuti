@@ -41,6 +41,11 @@ export async function portalPageMetadata(
     markdown?: boolean;
     /** The page's own link card (a changelog entry's featured image), in place of the one made for it. */
     image?: { url: string; width: number; height: number } | null;
+    /**
+     * Where it reads in each language it's in, by language (an article's: the default language's address, and each it's
+     * translated into, at its own slug there; see articleAddresses): its canonical and `hreflang` follow them.
+     */
+    addresses?: Record<string, string>;
   },
 ): Promise<Metadata> {
   const [address, site, home, languages, { language, prefix }] = await Promise.all([
@@ -50,17 +55,27 @@ export async function portalPageMetadata(
     pageLanguages(slug),
     portalLanguage(),
   ]);
-  const at = (prefix: string) => `${address}${prefix}${page.path === "/" ? "" : page.path}`;
+  const at = (prefix: string, path = page.path) => `${address}${prefix}${path === "/" ? "" : path}`;
   // The languages the page is in (docs/plan.md, Languages): the portal's own pages in each live one; an article's, post's or
   // changelog entry's (the team's or people's words) only in the default language until it has translations (articles from
   // L8, entries from L17; posts never), so its other addresses point search engines to the default's. Under a language that
   // isn't live (the team's preview) none: kept from search engines.
   const preview = !!prefix && !!language && !languages?.live.includes(language);
-  const inLanguages = page.markdown || page.article || !languages ? [] : languages.live;
-  const url = inLanguages.some((code) => languagePrefix(code) === prefix) ? at(prefix) : at("");
+  // An article with `addresses`: the live languages it's translated into, each at its own path there.
+  const pathIn = (code: string) => page.addresses?.[code] ?? page.path;
+  const inLanguages = !languages ? [] : page.addresses ? languages.live.filter((code) => code in page.addresses!) : page.markdown || page.article ? [] : languages.live;
+  const defaultPath = languages ? pathIn(languages.default) : page.path;
+  const current = inLanguages.find((code) => languagePrefix(code) === prefix);
+  const url = current ? at(prefix, pathIn(current)) : at("", defaultPath);
   const hreflang =
     inLanguages.length > 0 && languages && !preview
-      ? { languages: { [languages.default]: at(""), ...Object.fromEntries(inLanguages.map((code) => [code, at(languagePrefix(code))])), "x-default": at("") } }
+      ? {
+          languages: {
+            [languages.default]: at("", defaultPath),
+            ...Object.fromEntries(inLanguages.map((code) => [code, at(languagePrefix(code), pathIn(code))])),
+            "x-default": at("", defaultPath),
+          },
+        }
       : {};
   // The page the portal opens on is the portal in search results: its own description (Customize → SEO) there, if the team wrote one.
   const description = (page.path === home && site?.brand.seo.description) || page.description || undefined;
@@ -81,7 +96,8 @@ export async function portalPageMetadata(
           ? { url: page.image.url, width: page.image.width, height: page.image.height, alt: page.title }
           : site?.brand.seoImage && page.path === home
             ? { url: site.brand.seoImage.url, width: site.brand.seoImage.width, height: site.brand.seoImage.height }
-            : { url: `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
+            : // A translated page's card is made at its address there, in its language (its title translated).
+              { url: current && page.addresses ? `${address}${prefix}/og${pathIn(current)}` : `${address}/og${page.path === "/" ? "" : page.path}`, ...SHARE_IMAGE, alt: page.title },
       ],
       ...(page.article
         ? { type: "article", ...(publishedTime && { publishedTime: publishedTime.toISOString() }), ...(modifiedTime && { modifiedTime: modifiedTime.toISOString() }) }

@@ -241,5 +241,8 @@
       "private": "Portal {name} jest prywatny, a {email} nie należy do jego czytelników, więc nowości nie są tam wysyłane.",
       "optedOut": "Wyłączono wszystkie e-maile od {name}, więc nowości też nie są wysyłane na {email}."
     }
+  },
+  "docs": {
+    "notTranslated": "Ta strona nie jest jeszcze dostępna po polsku: wyświetlamy ją w języku oryginału."
   }
 }

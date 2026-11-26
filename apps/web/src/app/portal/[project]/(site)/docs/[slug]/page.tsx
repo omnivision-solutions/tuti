@@ -4,7 +4,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { DocsArticle, DocsCollectionPage, docsPageListing, DocsTabPage } from "@/components/portal-docs";
 import { ApiReferenceLanding, referenceListing } from "@/components/portal-api-operation";
 import { apiReferencePage } from "@/server/api-reference-queries";
-import { articleNamed, docsPage } from "@/server/docs-queries";
+import { articleAddresses, articleNamed, docsPage } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 
@@ -34,9 +34,15 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
     }
     return portalPageMetadata(project, { ...docsPageListing(page.landing), path });
   }
-  // An article's page is in the default language until its translations (L8): canonical there, by its default-language slug.
+  // An article's page: in each language it's translated into, at its slug there (its canonical there); else in the default
+  // language's (canonical there, by its default-language slug), with its line saying so (docs/plan.md, "A page not yet translated").
   const article = page.kind === "article" || page.kind === "locked" ? await articleNamed(project, slug) : null;
-  return portalPageMetadata(project, { ...docsPageListing(page), path: article ? `/docs/${article.slug}` : path, markdown: page.kind === "article" });
+  return portalPageMetadata(project, {
+    ...docsPageListing(page),
+    path: article ? `/docs/${article.slug}` : path,
+    markdown: page.kind === "article",
+    ...(article && { addresses: await articleAddresses(project, article.slug) }),
+  });
 }
 
 /** /docs/<slug>: an article, a tab, a collection or an API reference (one name each), or where one went since. */
@@ -62,6 +68,6 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
     case "article":
     case "locked":
       // By its default-language slug (its Markdown, the tree's current page), whichever language's address it's at.
-      return <DocsArticle project={project} slug={(await articleNamed(project, slug))?.slug ?? slug} article={page.article} />;
+      return <DocsArticle project={project} slug={(await articleNamed(project, slug))?.slug ?? slug} own={slug} article={page.article} />;
   }
 }
