@@ -524,6 +524,8 @@ test("the team's notices wait for a translation still to come, and give up after
 test("an email waits for its message's translation without claiming the conversation's turn; a quick message after it leaves the email to it", async () => {
   const { owner, conversation, messages } = await pending(GERMAN, "hallo?");
   const [question, hello] = messages;
+  // Written in the same millisecond, as a quick follow-up can be: still the question first.
+  await prisma.conversationMessage.update({ where: { id: hello!.id }, data: { createdAt: question!.createdAt } });
   const { notifiedAt: before } = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
   // The question's email pauses for its translation, and stays paused till it's let go.
   let release = () => {};

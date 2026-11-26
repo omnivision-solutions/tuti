@@ -144,11 +144,13 @@ export const STEP_ASIDE_MS = 60_000;
  * claim the conversation's turn) and within STEP_ASIDE_MS, is still to be translated (translationPending): its email is
  * on its way.
  */
-export async function translationsPendingBefore(conversationId: string, before: Date, since: Date | null, now = new Date()) {
+export async function translationsPendingBefore(conversationId: string, before: { id: string; createdAt: Date }, since: Date | null, now = new Date()) {
   const recent = new Date(now.getTime() - STEP_ASIDE_MS);
   const after = since && since > recent ? since : recent;
+  // Earlier: written before it, or in the same millisecond and added first (ids order within one).
+  const earlier = { OR: [{ createdAt: { lt: before.createdAt } }, { createdAt: before.createdAt, id: { lt: before.id } }] };
   const messages = await prisma.conversationMessage.findMany({
-    where: { conversationId, author: "USER", note: false, teamText: null, translationError: null, language: null, createdAt: { lt: before, gt: after } },
+    where: { conversationId, author: "USER", note: false, teamText: null, translationError: null, language: null, createdAt: { gt: after }, ...earlier },
     select: { ...PENDING_SELECT },
   });
   return messages.some(translationPending);

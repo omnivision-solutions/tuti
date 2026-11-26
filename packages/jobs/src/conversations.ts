@@ -122,7 +122,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   // NOTIFY_EVERY_MS was over) and is on its way (a recent one: STEP_ASIDE_MS): it tells them once its wait is over; this
   // one, a quick "hallo?" after it, doesn't take its place.
   const claimable = conversation.notifiedAt && new Date(conversation.notifiedAt.getTime() + NOTIFY_EVERY_MS);
-  if (await translationsPendingBefore(conversation.id, message.createdAt, claimable)) {
+  if (await translationsPendingBefore(conversation.id, { id: messageId, createdAt: message.createdAt }, claimable)) {
     return { skipped: "an earlier message's email tells them" };
   }
   const previous = conversation.notifiedAt;
