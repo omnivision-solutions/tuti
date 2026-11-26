@@ -555,7 +555,45 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   for (const kind of KINDS) {
     queued += await retryKind(kind);
   }
+  queued += await entriesLeftBehind();
   return { queued, ...(named > 0 && { named }) };
+}
+
+/** How far back the retry job looks for changelog entries whose translating was never queued. */
+const LEFT_BEHIND_MS = 2 * 24 * 60 * 60_000;
+
+/**
+ * Changelog entries whose languages kept up to date were never queued (queuing failed as they were published or changed:
+ * nothing set their safety net): a published entry changed lately with an automatic language's version missing, or not
+ * made from its text as it is, and nothing waiting to bring it there (no retry time, no error). Queued as a publish does.
+ * ponytail: reads the entries changed in the last two days on each run (few: one per publish or edit); a marker on the
+ * entry as it's queued is the upgrade if that grows.
+ */
+async function entriesLeftBehind(): Promise<number> {
+  const entries = await prisma.changelogEntry.findMany({
+    where: { ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput), updatedAt: { gt: new Date(Date.now() - LEFT_BEHIND_MS) }, project: { languages: { some: {} } } },
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    take: retryBatch.size,
+    select: {
+      id: true,
+      title: true,
+      body: true,
+      content: true,
+      translations: { select: { language: true, automatic: true, sourceHash: true, publishedAt: true, retryAt: true, error: true } },
+      project: { select: { languages: { select: { code: true, automatic: true } } } },
+    },
+  });
+  let queued = 0;
+  for (const entry of entries) {
+    const { hash } = translationSource(entry);
+    const missing = entry.project.languages.some(({ code, automatic }) => automatic && !entry.translations.some((t) => t.language === code));
+    const behind = entry.translations.some((t) => t.automatic && !t.retryAt && !t.error && (!t.publishedAt || t.sourceHash !== hash));
+    if (missing || behind) {
+      await queueTranslations(ENTRY, entry.id).catch((error: unknown) => serverLog.error("Queuing a changelog entry's translations failed", { entryId: entry.id, error }));
+      queued++;
+    }
+  }
+  return queued;
 }
 
 async function retryKind(kind: Kind): Promise<number> {
