@@ -63,6 +63,8 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("menuitem", { name: "Move up" })).toBeDisabled();
   await owner.keyboard.press("Escape");
+  // Closed before the next opens: a menu closing still has its items for a moment, so two would match "Move down".
+  await expect(owner.getByRole("menuitem")).toHaveCount(0);
   await menu("First").focus();
   await owner.keyboard.press("Enter");
   await owner.getByRole("menuitem", { name: "Move down" }).click();
