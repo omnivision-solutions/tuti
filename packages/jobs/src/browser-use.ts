@@ -69,6 +69,7 @@ export function browserUse(key = process.env.BROWSER_USE_API_KEY?.trim() ?? "") 
     /** A network policy: only `allow`'s domains (and their subdomains) open, with `defaultAction` block. */
     createNetworkPolicy: (body: { name: string; defaultAction: "block"; allow: { domains: string[] } }) => request<{ id: string }>("POST", "/network-policies", body),
     updateNetworkPolicy: (id: string, body: { defaultAction: "block"; allow: { domains: string[] } }) => request<{ id: string }>("PATCH", `/network-policies/${id}`, body),
+    deleteNetworkPolicy: (id: string) => request<void>("DELETE", `/network-policies/${id}`),
     runStatus: (id: string) => request<{ status: RunStatus }>("GET", `/runs/${id}/status`),
     run: (id: string) => request<RunSummary>("GET", `/runs/${id}`),
     files: (workspaceId: string, includeUrls = true) =>

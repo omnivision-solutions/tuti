@@ -23,6 +23,9 @@ export const SCREENSHOTS_UNAVAILABLE = "Screenshots aren't available on this ser
 const NOT_SET_UP = "Add your app's address in Settings → Screenshots first.";
 
 export const MAX_SHOTS = 10;
+export const MAX_OTHER_DOMAINS = 20;
+/** A domain name as Browser Use's network policies take one: letters, digits and hyphens in dot-separated labels, no IP. */
+const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 export const MAX_ABOUT = 2000;
 
 const SIGN_INS = ["none", "password", "link"] as const;
@@ -129,6 +132,10 @@ const settingsOutput = z
     about: z.string().describe("What the agent reads about your app on every run").meta({ examples: ["After signing in, pick the Acme workspace. Close the tour."] }),
     window: z.enum(WINDOW_NAMES).describe("The browser window: `desktop` (1440×900) or `phone` (390×844)").meta({ examples: ["desktop"] }),
     residentialProxy: z.boolean().describe("Whether runs go through a residential proxy: only for an app that blocks visits from cloud servers; runs cost more").meta({ examples: [false] }),
+    otherDomains: z
+      .array(z.string())
+      .describe("Other domains your app loads from (a third-party sign-in, a CDN, an API elsewhere): the browser opens only your app's own domain, its sign-in link's, and these")
+      .meta({ examples: [["acme.auth0.com"]] }),
     test: runOutput.nullable().describe("The latest Test (screenshotSettings.test), if any"),
   })
   .meta({ id: "ScreenshotSettings", description: "How screenshots sign in to your app" });
@@ -146,6 +153,7 @@ export async function settingsView(projectId: string): Promise<z.infer<typeof se
     about: settings?.about ?? "",
     window: (settings?.window.toLowerCase() ?? "desktop") as (typeof WINDOW_NAMES)[number],
     residentialProxy: settings?.residentialProxy ?? false,
+    otherDomains: settings?.otherDomains ?? [],
     test: await readRun(projectId, { test: true }),
   };
 }
@@ -195,6 +203,19 @@ export const updateScreenshotSettings = defineOperation({
       .boolean()
       .optional()
       .describe("Runs go through a residential proxy (in the US): only if your app blocks visits from cloud servers. Runs cost more (the proxy's traffic is billed)"),
+    otherDomains: z
+      .array(
+        z
+          .string()
+          .trim()
+          .toLowerCase()
+          .regex(DOMAIN, "Enter each domain on its own, like cdn.example.com: no https://, path or port"),
+      )
+      .max(MAX_OTHER_DOMAINS, `List up to ${MAX_OTHER_DOMAINS} other domains`)
+      .optional()
+      .describe(
+        `Other domains your app loads from, up to ${MAX_OTHER_DOMAINS} (a third-party sign-in like acme.auth0.com, a CDN, an API on another domain): the browser opens only your app's own domain, its sign-in link's, and these (with their subdomains). They replace the list`,
+      ),
   }),
   output: settingsOutput.describe("The screenshot settings, as saved"),
   example: { appUrl: "https://app.example.com", signIn: "password", username: "demo@example.com", password: "a demo account's password", about: "Close the welcome tour.", window: "desktop" },
@@ -240,6 +261,7 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
     about: input.about ?? saved?.about ?? "",
     window: (input.window?.toUpperCase() ?? saved?.window ?? "DESKTOP") as ScreenshotWindow,
     residentialProxy: input.residentialProxy ?? saved?.residentialProxy ?? false,
+    otherDomains: input.otherDomains ? [...new Set(input.otherDomains)] : (saved?.otherDomains ?? []),
   };
   await tx.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
 }

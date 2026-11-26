@@ -873,10 +873,14 @@ function EntryScreenshotsSection({
                     const shows = confirming ?? [];
                     startTransition(async () => {
                       const result = await takeChangelogScreenshots(projectSlug, number, shows);
+                      setConfirming(null);
                       if (result.error) {
-                        toast.error(result.error);
-                      } else {
-                        setConfirming(null);
+                        // Refused (a line changed since, say): the saved lines read again, so the next confirm lists
+                        // them; unless the form has changes not saved, which reading again would lose.
+                        toast.error(unsaved.current ? `${result.error} Reload the page to see the saved lines.` : result.error);
+                        if (!unsaved.current) {
+                          router.refresh();
+                        }
                       }
                     });
                   }}

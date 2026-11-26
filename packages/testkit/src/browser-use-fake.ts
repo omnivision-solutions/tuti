@@ -154,6 +154,9 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         return answer(201, { id: policyId, ...policy });
       }
       const policyPath = /^\/network-policies\/([^/]+)$/.exec(path);
+      if (policyPath && req.method === "DELETE") {
+        return fake.policies.delete(policyPath[1]!) ? res.writeHead(204).end() : answer(404, { detail: "No such policy" });
+      }
       if (policyPath && req.method === "PATCH") {
         const policy = fake.policies.get(policyPath[1]!);
         if (!policy) {

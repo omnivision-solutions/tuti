@@ -39,6 +39,8 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   // The residential proxy stays off unless the app blocks cloud servers.
   await expect(owner.getByRole("switch", { name: "Use a residential proxy" })).not.toBeChecked();
   await owner.getByLabel("About your app").fill("After signing in, pick the Acme workspace. Close the welcome tour.");
+  // The browser opens only the app's own domain unless told of others (a sign-in elsewhere, a CDN).
+  await owner.getByLabel("Other domains your app loads from").fill("acme.auth0.com\ncdn.example.net");
   await save.click();
   await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
@@ -55,6 +57,7 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(owner.getByText("Saved. Enter a new one to replace it.")).toBeVisible();
   expect(await owner.content()).not.toContain(password);
   await expect(owner.getByLabel("Username")).toHaveValue("e2e-demo@example.com");
+  await expect(owner.getByLabel("Other domains your app loads from")).toHaveValue("acme.auth0.com\ncdn.example.net");
 
   // The Test: the agent signs in and shows the screen it lands on.
   await testButton.click();
