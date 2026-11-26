@@ -837,8 +837,8 @@ export function WhoSeesIt({
 }
 
 /**
- * Whether publishing can still email the entry, as changelog.publish has it: never a private portal's (`subscribers`
- * null), a sample one or a quiet imported one, nor once it's published without email.
+ * Whether publishing can still email the entry, as changelog.publish has it: never a sample one or a quiet imported
+ * one, nor once it's published without email (`subscribers` null: no count, nothing emailed).
  */
 export const emailable = (entry: Pick<Entry, "sample" | "importedOn" | "published" | "emailedSubscribers"> | null, subscribers: number | null) =>
   subscribers !== null && !entry?.sample && !entry?.importedOn && !(entry?.published && !entry.emailedSubscribers);
