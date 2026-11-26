@@ -1,6 +1,7 @@
 "use client";
 
 import { PlusIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { NewPostForm } from "@/components/new-post-form";
@@ -43,7 +44,9 @@ export function NewIdea({
             in it, down to its Submit. */}
         <DialogContent keepMounted className="top-[8dvh] right-0 left-0 mx-auto max-h-[calc(92dvh-1rem)] translate-none grid-cols-[minmax(0,1fr)] gap-3 overflow-y-auto p-5 sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle className="text-lg">Share an idea</DialogTitle>
+            <DialogTitle className="text-lg">
+              {useTranslations("feedback")("shareIdea")}
+            </DialogTitle>
           </DialogHeader>
           <NewPostForm {...form} signedOut={!signedIn} collapsible={!signedIn} onPosted={() => setOpen(false)} />
         </DialogContent>

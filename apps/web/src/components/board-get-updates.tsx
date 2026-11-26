@@ -9,6 +9,7 @@ import { ResendVerificationButton } from "@/components/resend-verification-butto
 import { cn } from "@/lib/utils";
 import { emailReach } from "@/server/post-lists";
 import { portalLinks } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 import type { getSession } from "@/server/session";
 
 /**
@@ -30,12 +31,16 @@ export async function boardGetUpdates({
 }) {
   const at = await portalLinks();
   // Whether the shipped email would reach them, by the rule that sends it.
-  const [reach, byEmail] = await Promise.all([voter ? emailReach(project.id, voter) : undefined, changelogByEmail(project, session, true)]);
+  const [reach, byEmail, { t }] = await Promise.all([
+    voter ? emailReach(project.id, voter) : undefined,
+    changelogByEmail(project, session, true),
+    portalTranslator(project.id, "feedback"),
+  ]);
   return function getUpdates(round: boolean) {
     return (
     <Popover>
       <PopoverTrigger
-        aria-label={round ? "Get updates" : undefined}
+        aria-label={round ? t("getUpdates") : undefined}
         render={
           <Button
             variant="outline"
@@ -45,42 +50,48 @@ export async function boardGetUpdates({
         }
       >
         <BellIcon aria-hidden />
-        {!round && "Get updates"}
+        {!round && t("getUpdates")}
       </PopoverTrigger>
       <PopoverContent align="end" aria-labelledby="get-updates" className="flex w-80 flex-col gap-3 p-4 text-sm">
         <h2 id="get-updates" className="font-sans text-[0.9375rem] font-semibold">
-          Get updates
+          {t("getUpdates")}
         </h2>
         {/* Only what holds for them: the team, someone the project's sign-on gave no address, or not a reader of a private portal hears nothing. */}
         {!session ? (
-          <p className="text-muted-foreground">{"Vote for an idea to hear as it moves forward and when it ships."}</p>
+          <p className="text-muted-foreground">
+            {t("voteToHear")}
+          </p>
         ) : !voter ? (
           // Signed in through another project's single sign-on: as the vote buttons say.
           <p className="text-muted-foreground">
-            <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
+            {t.rich("signInToVoteLine", { link: (chunks) => <SignInLink className="text-foreground underline underline-offset-4">{chunks}</SignInLink> })}
           </p>
         ) : reach?.status === "emailed" ? (
-          <p className="text-muted-foreground">{"Vote for an idea to get an email as it moves forward and when it ships."}</p>
+          <p className="text-muted-foreground">
+            {t("voteToGetEmail")}
+          </p>
         ) : reach?.status === "unconfirmed" ? (
           <div className="flex flex-col items-start gap-1">
-            <p className="text-muted-foreground">Confirm your email to hear as ideas you vote on move forward and when they ship.</p>
+            <p className="text-muted-foreground">
+              {t("confirmToHear")}
+            </p>
             <ResendVerificationButton email={session.user.email} callbackURL={at(back)} />
           </div>
         ) : reach?.status === "optedOut" || reach?.status === "turnedOff" ? (
           // All of the project's emails, or those about ideas they vote on: either way, their Account turns them back on.
           <p className="text-muted-foreground">
             <Link href={at("/account")} className="text-foreground underline underline-offset-4">
-              You&apos;ve unsubscribed from these emails.
+              {t("unsubscribed")}
             </Link>
           </p>
         ) : null}
         {byEmail}
         <div className="flex items-center justify-between gap-2">
           <Link href={at("/changelog")} className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px]">
-            Read the changelog
+            {t("readChangelog")}
           </Link>
           <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm", className: "text-muted-foreground" })}>
-            <RssIcon aria-hidden /> RSS
+            <RssIcon aria-hidden /> {t("rss")}
           </a>
         </div>
       </PopoverContent>

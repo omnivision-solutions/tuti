@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, formatShortDate, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
+import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, formatDate, formatDay, formatMonth, formatShortDate, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
 
 test.each([
   ["2026-11-10T00:01:00Z", "2026-11-10T23:59:00Z", "Today · 10 November"],
@@ -140,4 +140,13 @@ test("a short date has its year only when it isn't this one's", () => {
   const now = new Date("2026-11-19T12:00:00Z");
   expect(formatShortDate(new Date("2026-12-18T15:00:00Z"), now)).toBe("18 Dec");
   expect(formatShortDate(new Date("2027-01-05T00:30:00Z"), now)).toBe("5 Jan 2027");
+});
+
+test("a portal page's days, months and times ago are in its language; English keeps day, month, year", () => {
+  const day = new Date("2026-11-19T12:00:00Z");
+  expect([formatDate(day), formatDay(day), formatMonth(day)]).toEqual(["19 November 2026", "19 Nov", "November 2026"]);
+  expect([formatDate(day, "de"), formatDay(day, "de"), formatMonth(day, "de")]).toEqual(["19. November 2026", "19. Nov.", "November 2026"]);
+  expect(formatDate(day, "ja")).toBe("2026年11月19日");
+  const now = new Date("2026-11-22T12:00:00Z");
+  expect([timeAgo(day, now), timeAgo(day, now, "de"), timeAgo(now, now, "de"), timeAgo(now, now)]).toEqual(["3 days ago", "vor 3 Tagen", "jetzt", "just now"]);
 });

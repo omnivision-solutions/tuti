@@ -4,7 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { CommentList } from "@/components/comments";
-import { stillToCome, SubscribeButton } from "@/components/subscribe-button";
+import { MESSAGES } from "@tuti/shared/messages";
+
+import { shipsNext, SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
 import { actAs, createProject, onPortal, signUp } from "@/test/helpers";
 
@@ -78,10 +80,10 @@ test("a portal post's history has its status changes and when, not who made them
     data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: ada.id, number: 1, title: "Dark mode", body: "", status: "PLANNED", voteCount: 6 },
   });
   await prisma.postEvent.create({ data: { postId: post.id, actorId: owner.id, from: "OPEN", to: "PLANNED", emailed: 3 } });
-  // Six voters, a day apart: Voter 1 first.
-  for (const n of [1, 2, 3, 4, 5, 6]) {
-    const voter = await signUp(`Voter ${n}`);
-    await prisma.vote.create({ data: { postId: post.id, userId: voter.id, projectId: project.id, createdAt: new Date(Date.UTC(2026, 9, n)) } });
+  // Six voters, a day apart: Ada first (their initials tell them apart).
+  for (const [n, name] of ["Ada", "Bo", "Cy", "Di", "Ed", "Flo"].entries()) {
+    const voter = await signUp(name);
+    await prisma.vote.create({ data: { postId: post.id, userId: voter.id, projectId: project.id, createdAt: new Date(Date.UTC(2026, 9, n + 1)) } });
   }
 
   actAs(null);
@@ -96,7 +98,9 @@ test("a portal post's history has its status changes and when, not who made them
   const label = renderToStaticMarkup(voters.label as ReactElement);
   expect(label).toContain('<span aria-hidden="true">+1 more</span>');
   expect(label).toContain('<span class="sr-only">6 people want this</span>');
-  expect(voters.voters.map((voter) => voter.name)).toEqual(["Voter 6", "Voter 5", "Voter 4", "Voter 3", "Voter 2"]);
+  // Faces only: their initials, no names or ids in the page's data (a vote isn't signed).
+  expect(voters.voters.map((voter) => voter.name)).toEqual(["F", "E", "D", "C", "B"]);
+  expect(JSON.stringify(voters.voters)).not.toMatch(/Flo|Ed|Di|Cy|Bo/);
 });
 
 test("a team member's comment is the team's, with its badge, unless they wrote it signed in on a portal (a reader's then)", async () => {
@@ -257,7 +261,7 @@ test("Subscribe's line promises only what's still to come for the post: its move
       await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: `dark-mode-${number}` }), searchParams: Promise.resolve({}) } as never),
       SubscribeButton,
     );
-    lines[status] = `Get an email ${stillToCome(props!.status)}.`;
+    lines[status] = shipsNext(props!.status) ? MESSAGES.en.feedback.emailWhenShips : MESSAGES.en.feedback.emailAsMoves;
   }
   expect(lines).toEqual({
     OPEN: "Get an email as it moves forward and when it ships.",
@@ -266,5 +270,5 @@ test("Subscribe's line promises only what's still to come for the post: its move
     UNDER_REVIEW: "Get an email as it moves forward and when it ships.",
   });
   // The line for someone who hears anyway follows it too.
-  expect(`You'll hear ${stillToCome("IN_PROGRESS")}.`).toBe("You'll hear when it ships.");
+  expect(shipsNext("IN_PROGRESS") ? MESSAGES.en.feedback.hearWhenShips : MESSAGES.en.feedback.hearAsMoves).toBe("You'll hear when it ships.");
 });

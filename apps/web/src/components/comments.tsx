@@ -1,6 +1,9 @@
 import { RichText } from "@tuti/content/react";
 import type { PostStatus } from "@tuti/db";
 import type { MediaUrls } from "@tuti/content/media";
+import type { Language } from "@tuti/shared/languages";
+import { MESSAGES } from "@tuti/shared/messages";
+import { createTranslator } from "next-intl";
 
 import { type CommentAbility, CommentActions, ReplyBox, ReplyThread } from "@/components/comment-actions";
 import { PortalAvatar } from "@/components/portal-avatar";
@@ -46,6 +49,7 @@ export function CommentList({
   mediaUrls,
   portal = false,
   sort = "oldest",
+  language = "en",
   ability,
   editable,
   lang,
@@ -61,10 +65,18 @@ export function CommentList({
   portal?: boolean;
   sort?: CommentSort;
   ability?: CommentAbility;
+  /** The portal page's language, for its words and times (the app's and the widget's are English). */
+  language?: Language;
 }) {
+  const t = createTranslator({ locale: language, messages: MESSAGES[language], namespace: "feedback" });
+  const pill = (status: PostStatus) => (portal ? <StatusPill status={status} /> : <PostStatusBadge status={status} />);
   const byTeam = (comment: CommentView) => teamUserIds.has(comment.author.id) && !comment.asReader;
   if (comments.length === 0 && events.length === 0) {
-    return <p className="text-sm text-muted-foreground">No comments yet.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("noComments")}
+      </p>
+    );
   }
   const items = threads<{ id: string; createdAt: Date; parentId?: string | null; comment?: CommentView; event?: StatusChangeView }>(
     [...comments.map((comment) => ({ id: comment.id, createdAt: comment.createdAt, parentId: comment.parentId, comment })), ...events.map((event) => ({ id: event.id, createdAt: event.createdAt, event }))],
@@ -101,10 +113,10 @@ export function CommentList({
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className={portal ? "font-semibold" : "font-medium"}>{comment.author.name}</span>
           {/* A note is always the team's: its own badge says enough. */}
-          {byTeam(comment) && !comment.internal && <Badge className={cn(portal && "rounded-full bg-card")}>Team</Badge>}
+          {byTeam(comment) && !comment.internal && <Badge className={cn(portal && "rounded-full bg-card")}>{t("team")}</Badge>}
           {comment.internal && <Badge variant="highlight">Internal note</Badge>}
           <time dateTime={comment.createdAt.toISOString()} className={cn("text-muted-foreground", portal ? "text-sm" : "text-xs")}>
-            {timeAgo(comment.createdAt)}
+            {timeAgo(comment.createdAt, undefined, language)}
           </time>
         </div>
         {editable ? editable(comment, text(comment)) : text(comment)}
@@ -127,12 +139,16 @@ export function CommentList({
             </span>
             <span>
               {/* A sentence: who moved it where (its status's pill), how many were emailed, when. */}
-              <span className={cn("text-foreground", portal && "font-semibold")}>{item.event.by ?? "Moved"}</span>
-              {item.event.by ? " moved it to " : " to "}
-              {portal ? <StatusPill status={item.event.to} /> : <PostStatusBadge status={item.event.to} />}
-              {!!item.event.emailed && ` · ${item.event.emailed} ${item.event.emailed === 1 ? "person" : "people"} emailed`}
+              {item.event.by
+                ? t.rich("movedBy", {
+                    name: item.event.by,
+                    who: (chunks) => <span className={cn("text-foreground", portal && "font-semibold")}>{chunks}</span>,
+                    status: () => pill(item.event!.to),
+                  })
+                : t.rich("moved", { status: () => pill(item.event!.to) })}
+              {!!item.event.emailed && ` · ${t("emailed", { count: item.event.emailed })}`}
               {" · "}
-              <time dateTime={item.event.createdAt.toISOString()}>{timeAgo(item.event.createdAt)}</time>
+              <time dateTime={item.event.createdAt.toISOString()}>{timeAgo(item.event.createdAt, undefined, language)}</time>
             </span>
           </li>
         ) : (
@@ -143,9 +159,11 @@ export function CommentList({
               {(replies.length > 0 || ability) && (
                 <div className={cn("flex flex-col gap-2 empty:hidden", portal ? "pl-6 sm:pl-12" : "pl-14")}>
                   {replies.length > 0 && (
-                    <ol aria-label={`Replies to ${item.comment!.author.name}`} className="flex flex-col gap-2">
+                    <ol aria-label={t("repliesTo", { name: item.comment!.author.name })} className="flex flex-col gap-2">
                       {replies.map((reply) => (
-                        <li key={reply.id}>{row(reply.comment!)}</li>
+                        <li key={reply.id}>
+                          {row(reply.comment!)}
+                        </li>
                       ))}
                     </ol>
                   )}

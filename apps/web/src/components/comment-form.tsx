@@ -1,6 +1,7 @@
 "use client";
 
 import { type Doc, isEmptyDoc, readableBy } from "@tuti/content";
+import { useTranslations } from "next-intl";
 import { useActionState, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -51,7 +52,7 @@ const drafts = {
  */
 export function CommentForm({
   postId,
-  placeholder = "Add a comment…",
+  placeholder,
   notes = false,
   voters = 0,
   signedIn,
@@ -78,6 +79,8 @@ export function CommentForm({
   uploads?: EditorUploads;
 }) {
   const portal = signedIn !== undefined;
+  // The portal's words in the page's language (the app's own, notes and emailing voters, stay English).
+  const t = useTranslations("feedback");
   const draftKey = `tuti:comment-draft:${postId}${replyTo ? `:${replyTo}` : ""}`;
   // The draft in storage couldn't be read here (onCreate below): it isn't saved over while this page is open.
   // A stored draft this page can't read: kept as it is until a new comment is written here (then that's the draft).
@@ -101,7 +104,7 @@ export function CommentForm({
         drafts.save(draftKey, null);
         // The box is above the thread: a new comment may land out of view, so say it's posted (a reply's is under its box).
         if (!replyTo) {
-          toast.success("Comment posted");
+          toast.success(t("commentPosted"));
         }
       }
       setSubmitted((n) => n + 1);
@@ -168,8 +171,8 @@ export function CommentForm({
           profile="comment"
           uploads={uploads}
           name="content"
-          label={replyTo ? "Reply" : "Comment"}
-          placeholder={placeholder}
+          label={replyTo ? t("reply") : t("comment")}
+          placeholder={placeholder ?? t("addComment")}
           invalid={!!state.error}
           describedBy={errorId}
           // Read with the box, before typing replaces the held draft.
@@ -178,8 +181,7 @@ export function CommentForm({
         {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
         {draftKept && (
           <p id={keptNoteId} className="text-sm text-muted-foreground">
-            Your draft can&apos;t be shown here yet, likely because of an update that&apos;s just gone out. Reload the page to get it
-            back; writing here starts a new comment instead.
+            {t("draftKept")}
           </p>
         )}
       </Field>
@@ -202,12 +204,12 @@ export function CommentForm({
           ))}
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel}>
-            Cancel
+            {t("cancel")}
           </Button>
         )}
         {/* On the portal a secondary: the post's one primary is Upvote. */}
         <Button type="submit" variant={portal ? "outline" : "default"} disabled={pending || waiting} focusableWhenDisabled>
-          {pending ? "Posting…" : replyTo ? "Reply" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
+          {pending ? t("posting") : replyTo ? t("reply") : internal ? "Add note" : emailVoters ? "Comment and email" : t("comment")}
         </Button>
       </div>
     </form>

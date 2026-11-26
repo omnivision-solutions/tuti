@@ -2,6 +2,7 @@
 
 import { CheckIcon, ChevronUpIcon } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -36,20 +37,22 @@ const portalLook = (shape: VoteShape, voted: boolean) =>
 
 /** The words and count inside a portal shape (`upvote` says what it does; the others are the chevron and count). */
 function Contents({ shape, count, voted }: { shape?: VoteShape; count: number; voted: boolean }) {
+  const t = useTranslations("feedback");
+  const number = count.toLocaleString(useLocale());
   if (shape === "upvote") {
     return (
       <>
         {voted ? <CheckIcon /> : <ChevronUpIcon />}
-        {voted ? "Upvoted" : "Upvote"}
+        {voted ? t("upvoted") : t("upvote")}
         <span aria-hidden className="h-5 w-px bg-current opacity-30" />
-        <span className="font-bold">{count}</span>
+        <span className="font-bold">{number}</span>
       </>
     );
   }
   return (
     <>
       <ChevronUpIcon />
-      <span className="font-semibold tabular-nums">{count}</span>
+      <span className="font-semibold tabular-nums">{number}</span>
     </>
   );
 }
@@ -79,7 +82,8 @@ export function VoteButton({
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ count, voted });
-  const votes = `${optimistic.count} ${optimistic.count === 1 ? "vote" : "votes"}`;
+  const t = useTranslations("feedback");
+  const votes = t("votes", { count: optimistic.count });
 
   if (signedOut) {
     return <PortalSignInToVote count={optimistic.count} votes={votes} shape={shape} />;
@@ -90,7 +94,7 @@ export function VoteButton({
         href={signInHref}
         target="_blank"
         rel="noreferrer"
-        aria-label={`Sign in to vote (${votes})`}
+        aria-label={t("signInToVoteLabel", { votes })}
         className={shape ? cn(buttonVariants({ variant: "secondary" }), SHAPES[shape], portalLook(shape, false)) : cn(buttonVariants({ variant: "outline" }), SHAPE)}
       >
         <Contents count={optimistic.count} voted={false} />
@@ -101,11 +105,11 @@ export function VoteButton({
     <Button
       variant={shape ? (shape === "upvote" && !optimistic.voted ? "default" : "secondary") : optimistic.voted ? "default" : "outline"}
       disabled={disabled || pending}
-      title={disabled ? "Sign in to vote" : undefined}
+      title={disabled ? t("signInToVote") : undefined}
       aria-pressed={optimistic.voted}
       // The count too: the label replaces the button's text for screen readers.
       // Its words first (the post's says "Upvoted" once voted, for voice control), then the count; aria-pressed says it's on.
-      aria-label={`${optimistic.voted ? (shape === "upvote" ? "Upvoted" : "Remove vote") : "Upvote"} (${votes})`}
+      aria-label={optimistic.voted ? (shape === "upvote" ? t("upvotedLabel", { votes }) : t("removeVoteLabel", { votes })) : t("upvoteLabel", { votes })}
       onClick={() =>
         startTransition(async () => {
           const next = !optimistic.voted;
@@ -124,11 +128,12 @@ export function VoteButton({
 }
 
 function PortalSignInToVote({ count, votes, shape }: { count: number; votes: string; shape?: VoteShape }) {
+  const t = useTranslations("feedback");
   return (
     <Link
       href={useSignInHref()}
       // The post's says "Upvote": its words first (voice control), then what it does.
-      aria-label={shape === "upvote" ? `Upvote (${votes}), sign in to vote` : `Sign in to vote (${votes})`}
+      aria-label={shape === "upvote" ? t("upvoteSignInLabel", { votes }) : t("signInToVoteLabel", { votes })}
       className={cn(buttonVariants({ variant: shape === "upvote" ? "default" : shape ? "secondary" : "outline" }), shape ? cn(SHAPES[shape], portalLook(shape, false)) : SHAPE)}
     >
       <Contents shape={shape} count={count} voted={false} />
@@ -138,6 +143,9 @@ function PortalSignInToVote({ count, votes, shape }: { count: number; votes: str
 
 /** A completed idea's votes, as text: it's shipped, so there's nothing left to vote for. */
 export function VoteCount({ count, shape }: { count: number; shape?: VoteShape }) {
+  const t = useTranslations("feedback");
+  const lang = useLocale();
+  const number = count.toLocaleString(lang);
   if (shape) {
     return (
       // As big as the vote button it stands for: a check for done, then the count.
@@ -149,10 +157,10 @@ export function VoteCount({ count, shape }: { count: number; shape?: VoteShape }
       >
         <CheckIcon aria-hidden className="size-4 text-status-completed" />
         <span aria-hidden className="font-bold text-foreground">
-          {count}
+          {number}
         </span>
         <span className="sr-only">
-          {count} {count === 1 ? "vote" : "votes"}
+          {t("votes", { count })}
         </span>
       </p>
     );

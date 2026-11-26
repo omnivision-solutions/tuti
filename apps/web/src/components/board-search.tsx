@@ -1,6 +1,7 @@
 "use client";
 
 import Form from "next/form";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
  */
 export function BoardSearch({ action, q, children, className }: { action: string; q: string; children?: ReactNode; className?: string }) {
   const router = useRouter();
+  const t = useTranslations("feedback");
   const [value, setValue] = useState(q);
   const [shown, setShown] = useState(q);
   // What this box last searched for (as the page reads it: trimmed, at most 255 characters).
@@ -100,8 +102,8 @@ export function BoardSearch({ action, q, children, className }: { action: string
             router.replace(new URL(`${action}?${params}`, window.location.href).href, { scroll: false });
           }, 350);
         }}
-        placeholder="Search ideas"
-        aria-label="Search ideas"
+        placeholder={t("searchIdeas")}
+        aria-label={t("searchIdeas")}
         // 16px on phones: iOS zooms into a smaller field as it's focused.
         className={cn("h-10 rounded-xl bg-background pl-10 text-base sm:h-11 md:text-[0.9375rem]", className)}
       />

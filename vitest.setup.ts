@@ -8,3 +8,4 @@ for (const name of Object.keys(process.env)) {
     delete process.env[name];
   }
 }
+
