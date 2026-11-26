@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
@@ -136,12 +137,26 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect.poll(stored).toEqual(["Second", "Third", "Later"]);
   // The move landed on the page too, so its refresh doesn't come after the delete below and take the row away.
   await expect(started).not.toHaveAttribute("aria-busy", "true");
-  // A switch the server refuses (the workflow was deleted meanwhile, through the API) goes back as it was.
+  // A switch the server refuses (the workflow was deleted meanwhile, through the API) goes back as it was, then the row
+  // goes once the page catches up. Every server action here refreshes the page when it answers, a refused one too (the
+  // proxy sets the last project's cookie on each request, which Next takes as a change): that refresh is held until the
+  // switch has been checked, so only the switch's own handling of the refusal can have put it back on.
+  let refreshed!: () => void;
+  const held = new Promise<void>((done) => (refreshed = done));
+  const holdRefresh = async (route: Route) => {
+    if (route.request().method() === "GET" && route.request().headers()["rsc"]) await held;
+    await route.fallback();
+  };
+  await owner.route("**/*", holdRefresh);
   const third = (await order("conversation_started")).find((workflow) => workflow.name === "Third")!;
   await api(`/workflows/${third.id}`, undefined, "DELETE");
   await owner.getByRole("switch", { name: "Third" }).click();
   await expect(owner.getByText("There's no workflow with that id")).toBeVisible();
   await expect(owner.getByRole("switch", { name: "Third" })).toBeChecked();
+  refreshed();
+  await owner.unroute("**/*", holdRefresh);
+  await expect(owner.getByRole("switch", { name: "Third" })).toHaveCount(0);
+  await expect(names()).toHaveText(["Second"]);
   // Nothing wider than the screen.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "workflows-phone");
