@@ -115,6 +115,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       error: true,
       tries: true,
       retranslate: true,
+      retranslated: true,
       projectLanguage: { select: { productAvailable: true, productVersion: true, instructions: true } },
       article: { select: sourceSelect },
     },
@@ -128,7 +129,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   }
   const source = translationSource(article);
   const sameSetting = row.productAvailable === setting.productAvailable;
-  const fresh = row.retranslate;
+  // A Retranslate not answered yet: nothing reused.
+  const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
     return { skipped: "up to date" };
   }
@@ -140,8 +142,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
 
   /**
    * Writes `data` only while the article's published source is still `source` (locked, so a publish can't slip in
-   * between) and the language's product setting is still `version` (in the update's own WHERE). False: it changed, and
-   * the job that change queued writes instead.
+   * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
+   * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
    */
   const settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput) =>
     prisma.$transaction(async (tx) => {
@@ -150,7 +152,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       if (!now?.publishedAt || translationSource(now).hash !== source.hash) {
         return false;
       }
-      const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, automatic: true, projectLanguage: { productVersion: version } }, data });
+      const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
       return count > 0;
     });
   const waits = async (why: string) => {
@@ -220,7 +222,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     error: null,
     tries: 0,
     retryAt: null,
-    retranslate: false,
+    retranslated: row.retranslate,
   });
   return written ? { translated: language } : { skipped: CHANGED };
 }
@@ -312,7 +314,7 @@ export async function queueLanguageTranslations(projectId: string, language: str
   await safetyNet({ id: { in: rows.map(({ id }) => id) } });
   if (fresh) {
     // On the row, so the retries of one that fails send everything too.
-    await prisma.articleTranslation.updateMany({ where: { id: { in: rows.map(({ id }) => id) } }, data: { retranslate: true } });
+    await prisma.articleTranslation.updateMany({ where: { id: { in: rows.map(({ id }) => id) } }, data: { retranslate: { increment: 1 } } });
   }
   queueAll(async () => {
     for (const { articleId } of rows) {
@@ -323,21 +325,18 @@ export async function queueLanguageTranslations(projectId: string, language: str
 }
 
 /**
- * "Our product is available in" changed (after languages.update counted it in `productVersion`): versions kept up to
- * date are retranslated (jobs already running write nothing), and in the others every section is marked behind.
+ * "Our product is available in" changed: in the versions the team writes every section is marked behind. Run in the
+ * transaction that saves the change (languages.update), so the change is saved only with them marked.
  */
-export async function productSettingChanged(projectId: string, language: string) {
-  const manual = await prisma.articleTranslation.findMany({
+export async function markProductSettingBehind(tx: Prisma.TransactionClient, projectId: string, language: string) {
+  const manual = await tx.articleTranslation.findMany({
     where: { projectId, language, automatic: false, article: { deletedAt: null } },
     select: { id: true, article: { select: { title: true, description: true, keywords: true, body: true, content: true } } },
   });
-  queueAll(async () => {
-    for (const { id, article } of manual) {
-      const behind = Object.fromEntries(keyed(translationSource(article).text).map(([key]) => [behindKey(key), PRODUCT_SETTING_CHANGED]));
-      await prisma.articleTranslation.update({ where: { id }, data: { behind } });
-    }
-  });
-  return queueLanguageTranslations(projectId, language);
+  for (const { id, article } of manual) {
+    const behind = Object.fromEntries(keyed(translationSource(article).text).map(([key]) => [behindKey(key), PRODUCT_SETTING_CHANGED]));
+    await tx.articleTranslation.update({ where: { id }, data: { behind } });
+  }
 }
 
 /** The retry-article-translations job: versions that couldn't be translated, whose wait is over, tried again. */

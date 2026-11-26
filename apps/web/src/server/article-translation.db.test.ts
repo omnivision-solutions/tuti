@@ -70,7 +70,7 @@ async function draft() {
 }
 
 /** As Retranslate marks a page: its next translation reuses nothing. */
-const markRetranslate = (articleId: string) => prisma.articleTranslation.updateMany({ where: { articleId }, data: { retranslate: true } });
+const markRetranslate = (articleId: string) => prisma.articleTranslation.updateMany({ where: { articleId }, data: { retranslate: { increment: 1 } } });
 
 const translation = (language = "de") => prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language } });
 
@@ -301,7 +301,7 @@ test("a Retranslate that fails is retried as one: its retry reuses nothing eithe
   model.fail(500);
   model.fail(500);
   await retranslate({ code: "de" });
-  expect(await translation()).toMatchObject({ error: "The translation provider didn't answer", retranslate: true });
+  expect(await translation()).toMatchObject({ error: "The translation provider didn't answer", retranslate: 1, retranslated: 0 });
 
   await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
   model.requests.length = 0;
@@ -309,7 +309,7 @@ test("a Retranslate that fails is retried as one: its retry reuses nothing eithe
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   // Everything sent again, nothing taken from the memory.
   expect(model.requests[0]!.user).toContain("Open Settings");
-  expect(await translation()).toMatchObject({ title: "[again] Getting started", error: null, retranslate: false });
+  expect(await translation()).toMatchObject({ title: "[again] Getting started", error: null, retranslate: 1, retranslated: 1 });
 });
 
 test("a language's reason to wait counts only the articles counted as waiting: never sample content", async () => {
@@ -317,4 +317,40 @@ test("a language's reason to wait counts only the articles counted as waiting: n
   const sample = await prisma.article.create({ data: { projectId: project.id, slug: "sample", title: "Sample", publishedAt: new Date(), sample: true } });
   await prisma.articleTranslation.create({ data: { articleId: sample.id, projectId: project.id, language: "de", error: "Out of credits" } });
   expect((await call(getLanguages, as(), {})).languages[0]!.articles).toEqual({ translated: 0, waiting: 0, why: null });
+});
+
+test("Retranslate asked for while an ordinary translation runs: the older job writes nothing, even after the Retranslate's job wrote", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  await draft();
+  model.reply(reply());
+  await publish();
+  const changed = "Open Settings and click New project.\n\nPick any plan.";
+  // Publishing again sends only the changed paragraph; while it waits for its answer, Retranslate is asked for and its
+  // job (everything sent again) writes first.
+  model.reply(reply("old", changed), async () => {
+    await call(retranslateLanguage, as(), { code: "de" });
+    for (let i = 0; i < 250 && (await translation()).retranslated === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  });
+  model.reply(reply("new", changed));
+  await call(updateArticle, as(), { slug: "getting-started", body: changed, publish: true });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(3);
+  expect(model.requests[2]!.user).toContain("Open Settings");
+  expect(await translation()).toMatchObject({ title: "[new] Getting started", retranslate: 1, retranslated: 1 });
+});
+
+test("the product setting changing marks manual versions behind before languages.update answers, in the change's own transaction", async () => {
+  await draft();
+  await publish();
+  const { id: articleId } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", automatic: false } });
+  await prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language: "fr", automatic: false, title: "Bien démarrer", publishedAt: new Date() } });
+  // Called as Settings does, waiting on nothing in the background.
+  await call(updateLanguages, as(), { languages: [{ code: "fr", productAvailable: true }] });
+  const fr = await translation("fr");
+  expect(Object.values(fr.behind as Record<string, string>)).toEqual([PRODUCT_SETTING_CHANGED]);
+  expect(await prisma.projectLanguage.findFirstOrThrow({ where: { projectId: project.id, code: "fr" } })).toMatchObject({ productAvailable: true, productVersion: 1 });
+  expect(model.requests).toHaveLength(0);
 });

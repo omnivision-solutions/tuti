@@ -2515,8 +2515,11 @@ model ArticleTranslation {
   /// Tries that failed in a row, for the backoff; `retryAt`: when it's tried again on its own.
   tries            Int       @default(0)
   retryAt          DateTime?
-  /// Retranslate asked for it: nothing remembered is reused until a translation is written (kept through retries).
-  retranslate      Boolean   @default(false)
+  /// Retranslate requests for it, counted; `retranslated`: the count the latest translation written answered. While they
+  /// differ nothing remembered is reused (through retries too), and a job writes only while the count is the one it read,
+  /// so one started before a request never takes the request's place.
+  retranslate      Int       @default(0)
+  retranslated     Int       @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

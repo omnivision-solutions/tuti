@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { lockProject, productSettingChanged, queueLanguageTranslations } from "@tuti/jobs";
+import { lockProject, markProductSettingBehind, queueLanguageTranslations } from "@tuti/jobs";
 import { isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
@@ -198,14 +198,18 @@ export async function changeLanguages(projectId: string, change: (current: Langu
       const data = { ...(newPages && { automatic: newPages === "automatic" }), ...rest, ...(flipped && { productVersion: { increment: 1 } }) };
       await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, createdAt: new Date(now + index), ...data, productVersion: 0 }, update: data });
       if (!saved) added.push(code);
-      if (flipped) switched.push(code);
+      if (flipped) {
+        // Versions kept up to date are retranslated once it's saved (below); jobs already running write nothing.
+        await markProductSettingBehind(tx, projectId, code);
+        switched.push(code);
+      }
     }
   });
   for (const code of added) {
     await queueLanguageTranslations(projectId, code);
   }
   for (const code of switched) {
-    await productSettingChanged(projectId, code);
+    await queueLanguageTranslations(projectId, code);
   }
   return projectLanguages(projectId);
 }

@@ -20,7 +20,8 @@ CREATE TABLE "article_translation" (
     "error" TEXT,
     "tries" INTEGER NOT NULL DEFAULT 0,
     "retryAt" TIMESTAMP(3),
-    "retranslate" BOOLEAN NOT NULL DEFAULT false,
+    "retranslate" INTEGER NOT NULL DEFAULT 0,
+    "retranslated" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
