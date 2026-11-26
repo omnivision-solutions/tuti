@@ -83,7 +83,7 @@ export function PortalMenu({
   language?: Language;
 }) {
   const t = useTranslations("header");
-  // Its own text's language (the page's is English until <html lang> follows the reader, L3).
+  // Its own text's language, the messages'.
   const lang = useLocale();
   const [open, setOpen] = useState(false);
   const path = usePortalPath();

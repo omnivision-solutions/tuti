@@ -305,7 +305,7 @@ model Project {
   /// their addresses; it changes only while the project has no other languages.
   language                       String       @default("en")
   /// "Send visitors to their language" (Settings → Languages): a first visit to the portal's home goes to the language
-  /// the browser asks for (Accept-Language), if it's live. Only saved until pages have an address per language (L3).
+  /// the browser asks for (Accept-Language), if it's live. A first visit only: no language chosen in that browser yet (proxy.ts).
   sendToLanguage                 Boolean      @default(false)
   seoImageId                     String?
   /// More of the look (Customize → Branding): light or dark mode for readers who haven't picked one

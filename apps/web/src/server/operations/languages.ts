@@ -3,6 +3,8 @@ import { lockProject, markProductSettingBehind, queueLanguageTranslations } from
 import { isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
+import { forgetLanguages } from "../language-addresses";
+
 import { defineOperation, OperationError } from "./define";
 
 /** Languages (docs/plan.md, Languages): the project's default language, and the others its portal is in. */
@@ -33,7 +35,7 @@ const languagesOutput = z
   .object({
     default: z.object({ code: code.describe("Its code").meta({ examples: ["en"] }), name: z.string().describe("Its name in English").meta({ examples: ["English"] }) }).describe("The language the team writes in"),
     languages: z.array(languageOutput).describe("The other languages, in the order they were added"),
-    sendVisitors: z.boolean().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (saved; not acted on until pages have an address per language)").meta({ examples: [false] }),
+    sendVisitors: z.boolean().describe("“Send visitors to their language”: a first visit to the portal's home (no language chosen in that browser yet) goes to the live language the browser asks for").meta({ examples: [false] }),
   })
   .describe("The portal's languages");
 
@@ -119,7 +121,7 @@ const updateInput = z
       .max(LANGUAGE_CODES.length - 1)
       .optional()
       .describe("The other languages, in full (the plan's limit counts the default too, so it's included in how many)"),
-    sendVisitors: z.boolean().optional().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (off by default; saved, not acted on until pages have an address per language)"),
+    sendVisitors: z.boolean().optional().describe("“Send visitors to their language”: a first visit to the portal's home (no language chosen in that browser yet) goes to the live language the browser asks for (off by default)"),
   })
   .refine((input) => input.default !== undefined || input.languages !== undefined || input.sendVisitors !== undefined, "Send default, languages or sendVisitors")
   .refine((input) => new Set(input.languages?.map(({ code }) => code)).size === (input.languages?.length ?? 0), "Each language once")
@@ -205,10 +207,10 @@ export async function changeLanguages(projectId: string, change: (current: Langu
       }
     }
   });
-  for (const code of added) {
-    await queueLanguageTranslations(projectId, code);
-  }
-  for (const code of switched) {
+  // The proxy's copy catches up within its few seconds (server/language-addresses.ts).
+  const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
+  forgetLanguages(slug);
+  for (const code of [...added, ...switched]) {
     await queueLanguageTranslations(projectId, code);
   }
   return projectLanguages(projectId);

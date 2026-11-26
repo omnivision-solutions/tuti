@@ -12,6 +12,7 @@ import { TutiMark } from "@tuti/ui/tuti-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { safeRedirectPath } from "@/lib/redirects";
+import { splitLanguage } from "@/lib/language-addresses";
 import { canReadPortal, invitedReader } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
@@ -106,7 +107,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           mark={<PortalMark name={portal?.name ?? project} />}
           // Where they were; not a page that would bring them back here (a private portal's, or Account).
           back={
-            isPrivate ? undefined : { name: portal?.name ?? project, href: /^\/account(?:[/?#]|$)/.test(nextPath) ? "/" : nextPath || "/" }
+            isPrivate ? undefined : { name: portal?.name ?? project, href: /^\/account(?:[/?#]|$)/.test(splitLanguage(nextPath)?.path ?? nextPath) ? "/" : nextPath || "/" }
           }
           teamHref={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
         />

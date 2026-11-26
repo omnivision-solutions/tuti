@@ -34,7 +34,7 @@ import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { portalAddress } from "@/server/custom-domains";
@@ -197,11 +197,14 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     />
   );
 
+  // The post's, its comments' and similar posts' words: people's, never translated, so in the default language under another's
+  // address (teamLanguage); not the portal's own text around them.
+  const lang = await teamLanguage();
   return (
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-16">
       <article className="flex min-w-0 flex-col gap-3.5 lg:col-start-1">
         <PortalPageHeader
-          title={post.title}
+          title={<span lang={lang}>{post.title}</span>}
           back={
             // A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own),
             // not to a board only the team may open.
@@ -236,6 +239,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         </div>
         {!isEmptyDoc(displayDoc(post)) && (
           <RichText
+            lang={lang}
             doc={displayDoc(post)}
             mediaUrls={await mediaUrls(displayDoc(post))}
             className="rich-text mt-2.5 text-base leading-[1.65] break-words sm:text-[1.0625rem]"
@@ -347,6 +351,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           )}
           <div className="pt-3">
             <CommentList
+              lang={lang}
               portal
               sort={sort}
               ability={{ can: voter ? "act" : session ? "none" : "signIn", postId: post.id, portal: true, uploads }}
@@ -369,7 +374,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                 <ItemRow
                   key={like.id}
                   title={
-                    <Link href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="hover:underline">
+                    <Link lang={lang} href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="hover:underline">
                       {like.title}
                     </Link>
                   }
