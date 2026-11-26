@@ -320,9 +320,9 @@ test("DMARC passed counts for who sent it only with one From holding one address
   // Stored as it counted, so a later reply's lookup of this address's earlier proven mail never finds these.
   expect(Object.fromEntries((await inbound(project.id)).map((e) => [e.subject, e.dmarc]))).toEqual({
     Mine: "pass",
-    List: "none",
-    Two: "none",
-    "Re: Mine": "none",
+    List: "unproven",
+    Two: "unproven",
+    "Re: Mine": "unproven",
   });
 });
 

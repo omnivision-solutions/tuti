@@ -437,6 +437,7 @@ model Project {
   widgetPresence           WidgetPresence[]
   mailSubdomain            MailSubdomain?
   inboundEmails            InboundEmail[]
+  spamSenders              SpamSender[]
   emailBlocks              EmailBlock[]
   emailDays                ProjectEmailDay[]
   emailMonths              ProjectEmailMonth[]
@@ -1188,6 +1189,11 @@ model Conversation {
   /// A signed-out visitor's widget token (SHA-256 of its id; lib/visitor-session.ts): who may read it in the widget.
   visitorHash   String?
   spam          Boolean            @default(false)
+  /// Why the spam filter filed it (the check's reason, server/spam.ts): written by the filter alone. Null on one a teammate
+  /// marked, on one from before the filter, and once "Not spam" has cleared it.
+  spamReason    String?
+  /// When a teammate last marked it Spam or Not spam (`spam` says which way).
+  spamMarkedAt  DateTime?
   /// Who has it. The AI's are out of the team's views, counts, emails and pushes, in "With AI"; a teammate's reply (not a
   /// note) or Take over makes it the team's, Hand back to the AI the AI's. Closing and reopening leave it.
   handledBy     ConversationOwner  @default(TEAM)
@@ -1224,6 +1230,7 @@ model Conversation {
   messages ConversationMessage[]
   reads    ConversationRead[]
   posts    ConversationPost[]
+  spamMark SpamSender?
 
   @@unique([projectId, number])
   @@index([projectId, spam, status, lastMessageAt(sort: Desc)])
@@ -1235,6 +1242,32 @@ model Conversation {
   /// The conversations a placeholder holds, for its handover.
   @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")
+}
+
+/// What the team decided about a sender (docs/plan.md, Inbox automation, "The spam filter": check 1, server/spam.ts): an
+/// entry on its blocked or allowed list, or the mark a teammate left by marking one of the sender's conversations Spam or
+/// Not spam.
+model SpamSender {
+  id             String   @id @default(cuid())
+  projectId      String
+  /// An address ("kim@acme.example"), or a domain ("acme.example": its subdomains too), lowercase.
+  sender         String
+  /// Blocked (what it sends goes to Spam), or allowed.
+  blocked        Boolean
+  /// The marked conversation that put it there, and that it's deleted with; null for an entry on the team's list.
+  conversationId String?  @unique
+  /// Whether an owner or admin decided it, as they were then: a later change of role changes nothing.
+  byAdmin        Boolean
+  /// When: the newest mark on an address wins.
+  decidedAt      DateTime @default(now())
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// One entry per address or domain on the lists.
+  @@unique([projectId, sender], where: raw("\"conversationId\" IS NULL"))
+  @@index([projectId, sender, decidedAt(sort: Desc)])
+  @@map("spam_sender")
 }
 
 /// A teammate's last opening of a conversation; customer messages after it are unread for that teammate.
@@ -1373,7 +1406,8 @@ model InboundEmail {
   /// The raw message, until it's read; null once it is, and for refused mail.
   raw            Bytes?
   size           Int
-  /// The receiver's results: "pass", "fail" or "none".
+  /// The receiver's results: "pass", "fail" or "none"; `dmarc` is "unproven" where the mail named more than one From, so a
+  /// pass could be another address's (server/inbound.ts).
   spf            String        @default("none")
   dkim           String        @default("none")
   dmarc          String        @default("none")
