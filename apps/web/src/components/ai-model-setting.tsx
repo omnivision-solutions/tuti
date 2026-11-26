@@ -17,7 +17,22 @@ import { saveAiModel } from "@/server/ai-models";
  * Custom lists a model for each role. Its props come from `aiModelSetting` on the server. A level the plan doesn't
  * include looks like any other and opens the upgrade prompt, saving nothing.
  */
-export function AiModelSetting({ projectSlug, group, saved, used, levels, summary, notice, roles, listed, creditsPerDollar }: AiModelSettingProps) {
+export function AiModelSetting({
+  projectSlug,
+  group,
+  saved,
+  used,
+  levels,
+  summary,
+  notice,
+  roles,
+  listed,
+  creditsPerDollar,
+  label = "AI model",
+}: AiModelSettingProps & {
+  /** The row's name, where a page has more than one ("Translation model"). */
+  label?: string;
+}) {
   const [, startTransition] = useTransition();
   const [shown, setShown] = useOptimistic(used);
   // A level being saved: the segments take no second choice until it's over. A role's model being saved doesn't hold
@@ -51,7 +66,7 @@ export function AiModelSetting({ projectSlug, group, saved, used, levels, summar
 
   return (
     <div>
-      <SettingRow label={<span id={`${id}-label`}>AI model</span>} description={<span id={`${id}-summary`}>{summary}</span>}>
+      <SettingRow label={<span id={`${id}-label`}>{label}</span>} description={<span id={`${id}-summary`}>{summary}</span>}>
         {/* ponytail: each segment is a tab stop; arrow keys between them (roving focus) if anyone asks. */}
         <div role="radiogroup" aria-labelledby={`${id}-label`} aria-describedby={notice ? `${id}-summary ${id}-notice` : `${id}-summary`} className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-muted-foreground @min-[34rem]/settings:flex @min-[34rem]/settings:w-fit">
           {levels.map(({ level, name, upgrade }) => (

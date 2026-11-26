@@ -52,8 +52,17 @@ test("an owner sets the Inbox's AI model and instructions for drafts, and a repl
   await expect(aiModel.getByRole("radio", { name: "Best", exact: true })).toBeChecked();
   expect((await query(`SELECT "aiLevels" AS levels FROM project WHERE slug = $1`, [slug]))[0].levels).toEqual({ support: "best" });
 
+  // Translation's model (Translate conversations), its own setting beside it.
+  const translationModel = owner.getByRole("radiogroup", { name: "Translation model" });
+  await expect(translationModel.getByRole("radio", { name: "Balanced", exact: true })).toBeChecked();
+  await expect(owner.getByText(/^Translation (?!model$).+$/)).toBeVisible();
+  await translationModel.getByRole("radio", { name: "Best", exact: true }).click();
+  await expect(translationModel.getByRole("radio", { name: "Best", exact: true })).toBeChecked();
+  await expect.poll(async () => (await query(`SELECT "aiLevels" AS levels FROM project WHERE slug = $1`, [slug]))[0].levels).toEqual({ support: "best", translation: "best" });
+  await checkpoint(owner, "translation-model");
+
   // The page says what it's for in one line beside its title.
-  const description = "AI drafts and summaries in the Inbox";
+  const description = "AI drafts, summaries and translation in the Inbox";
   await owner.setViewportSize({ width: 1440, height: 900 });
   await expect(owner.getByText(`· ${description}`, { exact: true })).toBeVisible();
   const paneBody = owner.locator('[data-slot="pane-body"]').last();
