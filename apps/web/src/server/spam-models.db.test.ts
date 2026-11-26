@@ -408,12 +408,20 @@ test("during a deploy, a hold the release from before left (its job clearing `pa
   expect(await state(cleared)).toEqual(released);
   expect(await told()).toEqual(toldOnce);
 
-  // Its Not spam, which knows nothing of the hold: unmarked and told by it; the job only lets go of the hold.
+  // Its Not spam, which knows nothing of the hold, unmarks it and tells nobody (no reason to release): the job releases it, once.
   const unmarked = await mail("e2e-b@example.com");
   await prisma.conversation.update({ where: { id: (await conversation(unmarked)).id }, data: { spam: false, spamMarkedAt: new Date() } });
   expect(await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000))).toEqual({ checked: 1 });
   expect(await state(unmarked)).toEqual(released);
-  expect([await told(), await later[1]!()]).toEqual([toldOnce, false]);
+  const twice = { webhooks: ["conversation.created", "conversation.created"], emails: 2 };
+  expect([await told(), await later[1]!()]).toEqual([twice, false]);
+
+  // Its Mark as spam has decided: the job only lets go of the hold, telling nobody.
+  const marked = await mail("e2e-c@example.com");
+  await prisma.conversation.update({ where: { id: (await conversation(marked)).id }, data: { spamMarkedAt: new Date() } });
+  expect(await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000))).toEqual({ checked: 1 });
+  expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: false, due: false });
+  expect(await told()).toEqual(twice);
 });
 
 test("a conversation the free checks decided keeps no Reply-To: nothing will read it", async () => {

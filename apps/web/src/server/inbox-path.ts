@@ -183,23 +183,27 @@ export async function settleHold(conversationId: string, judgement: SpamJudgemen
       // Kept for the models alone (a sign): read, it goes, as it may be another of the sender's addresses.
       await tx.inboundEmail.updateMany({ where: { conversationId, replyTo: { not: null } }, data: { replyTo: null } });
       const spam = !!judgement?.spam;
-      // A teammate decided it meanwhile, by a release from before that doesn't know of the hold (it leaves `spamHeldAt`):
-      // marked Not spam (no longer spam) or Mark as spam (marked). Nothing to settle, nor to tell again.
-      const decided = !held.spamHeldAt || !held.spam || !!held.spamMarkedAt;
+      // Marked during the hold by a release from before that doesn't know of it (it leaves `spamHeldAt`): Mark as spam
+      // has decided, nothing to settle; its Not spam unmarked it but told nobody (it had no reason), so it's released
+      // here, as it would have been, without the model's verdict.
+      const unmarked = !!held.spamHeldAt && !held.spam;
+      const decided = !held.spamHeldAt || (held.spam && !!held.spamMarkedAt);
       await tx.conversation.update({
         where: { id: conversationId },
         // Released: how old it is for a plan's history starts now, as a new conversation's does.
-        data: { pathDueAt: null, spamHeldAt: null, ...(!decided && (spam ? { spamReason: "model" } : { spam: false, activeAt: new Date() })) },
+        data: { pathDueAt: null, spamHeldAt: null, ...(!decided && !unmarked && (spam ? { spamReason: "model" } : { spam: false, activeAt: new Date() })) },
       });
       if (decided) {
         return { projectId: held.projectId, release: null };
       }
-      // The verdict in its Activity (W16): which model, never the model's own words, which a sender could steer.
-      const by = judgement && { by: "decision" as const, probability: judgement.probability };
-      await logEvents(tx, conversationId, [{ kind: "spam_filter", actor: "spam_filter", details: { spam, reason: spam ? "model" : null, check: judgement ? "model" : "model_unanswered", ...by } }]);
-      await notifyInbox(tx, { projectId: held.projectId, conversationId, number: held.number, userId: held.userId, visitorHash: held.visitorHash, email: held.email });
-      if (spam) {
-        return { projectId: held.projectId, release: null };
+      if (!unmarked) {
+        // The verdict in its Activity (W16): how sure the model was, never its own words, which a sender could steer.
+        const by = judgement && { by: "decision" as const, probability: judgement.probability };
+        await logEvents(tx, conversationId, [{ kind: "spam_filter", actor: "spam_filter", details: { spam, reason: spam ? "model" : null, check: judgement ? "model" : "model_unanswered", ...by } }]);
+        await notifyInbox(tx, { projectId: held.projectId, conversationId, number: held.number, userId: held.userId, visitorHash: held.visitorHash, email: held.email });
+        if (spam) {
+          return { projectId: held.projectId, release: null };
+        }
       }
       // ponytail: the first 100, as Not spam tells.
       const [first, ...during] = await tx.conversationMessage.findMany({
