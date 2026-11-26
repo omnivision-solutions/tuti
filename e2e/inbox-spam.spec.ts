@@ -136,8 +136,9 @@ test("Not spam on a conversation from a blocked address says it unblocks it, a l
     await owner.getByRole("button", { name: "More actions" }).click();
     const item = owner.getByRole("menuitem", { name: label });
     const [menu, box] = [(await owner.getByRole("menu").boundingBox())!, (await item.boundingBox())!];
-    expect(box.x).toBeGreaterThanOrEqual(menu.x);
-    expect(box.x + box.width).toBeLessThanOrEqual(menu.x + menu.width);
+    // Within a pixel: read while the menu opens (it scales in), the edges can be a fraction of one apart.
+    expect(box.x).toBeGreaterThanOrEqual(menu.x - 1);
+    expect(box.x + box.width).toBeLessThanOrEqual(menu.x + menu.width + 1);
     expect(await item.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await checkpoint(owner, `not-spam-unblock-${width}`, { fullPage: false });
     await owner.keyboard.press("Escape");

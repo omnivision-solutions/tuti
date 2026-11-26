@@ -9,7 +9,7 @@ import { APP_URL } from "./env";
 import { apiFor, createProject, holdActions, signUp } from "./helpers";
 
 test("an owner sees the path in Settings → Workflows, reorders a trigger's workflows by dragging and from the menu, turns one off and deletes one, on a phone too", async ({ browser }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -66,7 +66,9 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(names()).toHaveText(["Third", "First", "Second"]);
   await expect.poll(stored).toEqual(["Third", "First", "Later", "Second"]);
 
-  // From the keyboard: the row's menu moves it down, past the one not shown, and its menu has the focus again.
+  // From the keyboard: the row's menu moves it down, past the one not shown, and its menu has the focus again. Once the
+  // drag's save has landed: the menus are disabled while one saves.
+  await expect(started).not.toHaveAttribute("aria-busy", "true");
   const menu = (name: string) => owner.getByRole("button", { name: `Actions for ${name}` });
   await menu("Third").focus();
   await owner.keyboard.press("Enter");
@@ -74,9 +76,9 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.keyboard.press("Escape");
   // Closed before the next opens: a menu closing still has its items for a moment, so two would match "Move down".
   await expect(owner.getByRole("menuitem")).toHaveCount(0);
-  // A click on a row's name is a click on its title: it turns nothing off.
-  await started.getByText("Second", { exact: true }).click();
-  await expect(owner.getByRole("switch", { name: "Second" })).toBeChecked();
+  // A row's name opens its editor (its own journey, workflow-editor.spec.ts), and each group adds one there.
+  await expect(started.getByRole("link", { name: "Second" })).toHaveAttribute("href", /\/settings\/workflows\/[^/]+$/);
+  await expect(main.getByRole("link", { name: "Add workflow when a user replies" })).toHaveAttribute("href", `/app/${slug}/settings/workflows/new?trigger=user_replied`);
 
   // The page's saves held until the switch below has been turned, so the move lands after the focus went on.
   const release = await holdActions(owner);
@@ -101,6 +103,55 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Second")?.enabled).toBe(false);
+
+  // Turned off, then on again before the first save's page is in (each save refreshes the page once it answers, and
+  // the app sends a page's server actions one after another): the switch stays on from the second turn, the first
+  // save's page (off) never showing while the second saves.
+  const thirdSwitch = owner.getByRole("switch", { name: "Third" });
+  const heldSaves: (() => void)[] = [];
+  const heldPages: (() => void)[] = [];
+  let pagesHeld = true;
+  const holdEach = async (route: Route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"]) {
+      await new Promise<void>((go) => heldSaves.push(go));
+    } else if (pagesHeld && request.method() === "GET" && request.headers()["rsc"]) {
+      await new Promise<void>((go) => heldPages.push(go));
+    }
+    await route.fallback();
+  };
+  await owner.route("**/*", holdEach);
+  await thirdSwitch.click();
+  await expect(thirdSwitch).not.toBeChecked();
+  await expect.poll(() => heldSaves.length).toBe(1);
+  heldSaves[0]!();
+  await expect(owner.getByText("Third turned off")).toBeVisible();
+  await expect.poll(() => heldPages.length).toBeGreaterThan(0);
+  await thirdSwitch.click();
+  await expect(thirdSwitch).toBeChecked();
+  await expect.poll(() => heldSaves.length).toBe(2);
+  const id = await thirdSwitch.getAttribute("id");
+  await owner.evaluate((id) => {
+    const seen = window as unknown as { flashed: boolean; watching: boolean };
+    seen.flashed = false;
+    seen.watching = true;
+    const look = () => {
+      if ((document.getElementById(id!) as HTMLInputElement | null)?.checked === false) seen.flashed = true;
+      if (seen.watching) requestAnimationFrame(look);
+    };
+    look();
+  }, id);
+  // The first save's page comes in, Third off in it, while the second save is still held.
+  pagesHeld = false;
+  for (const go of heldPages) go();
+  await owner.waitForTimeout(1_500);
+  heldSaves[1]!();
+  await expect(owner.getByText("Third turned on")).toBeVisible();
+  await owner.unroute("**/*", holdEach);
+  await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Third")?.enabled).toBe(true);
+  await owner.waitForTimeout(1_500);
+  expect(await owner.evaluate(() => ((window as unknown as { watching: boolean }).watching = false, (window as unknown as { flashed: boolean }).flashed))).toBe(false);
+  await expect(thirdSwitch).toBeChecked();
 
   // Deleted, asking first.
   await menu("First").click();

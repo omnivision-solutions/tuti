@@ -15,6 +15,12 @@ export const TRIGGERS = {
   user_replied: "A user replies",
 } as const;
 export type WorkflowTrigger = keyof typeof TRIGGERS;
+
+/** When each trigger fires, as the editor says under its choice. */
+export const TRIGGER_HINTS: Record<WorkflowTrigger, string> = {
+  conversation_started: "On a user's first message, once per conversation, after the spam filter lets it through.",
+  user_replied: "On every later message from the user, one that reopens a closed conversation too.",
+};
 export const TRIGGER_KEYS = Object.keys(TRIGGERS) as [WorkflowTrigger, ...WorkflowTrigger[]];
 
 /** How many workflows a trigger's list holds: each of the project's messages runs it. */
@@ -49,8 +55,14 @@ export type WorkflowAction = z.output<typeof workflowAction>;
  * deciding one (it ends its trigger's list for that message). `did`: what the conversation's Activity says it did, after
  * the workflow's name. server/inbox-path.ts has what each does.
  */
-export const ACTIONS: Record<WorkflowAction["kind"], { label: string; triggers: readonly WorkflowTrigger[]; deciding: boolean; did: string }> = {
-  mark_priority: { label: "Mark priority", triggers: ["conversation_started", "user_replied"], deciding: false, did: "marked this priority" },
+export const ACTIONS: Record<WorkflowAction["kind"], { label: string; hint: string; triggers: readonly WorkflowTrigger[]; deciding: boolean; did: string }> = {
+  mark_priority: {
+    label: "Mark priority",
+    hint: "Marks the conversation priority. The next workflow still runs.",
+    triggers: ["conversation_started", "user_replied"],
+    deciding: false,
+    did: "marked this priority",
+  },
 };
 
 /** A workflow's actions, in the order they run: at least one. */
@@ -75,4 +87,15 @@ export function storedWorkflow(workflow: { trigger: string; conditions: unknown;
 export function workflowSummary(workflow: { conditions: WorkflowCondition[]; actions: WorkflowAction[] }, groupNames: Record<string, string>) {
   const who = workflow.conditions.map((condition) => `In ${groupNames[condition.group] ?? condition.group}`).join(", ") || "Everyone";
   return `${who}: ${workflow.actions.map((action) => ACTIONS[action.kind].label.toLowerCase()).join(", ")}`;
+}
+
+/**
+ * A workflow read back as a sentence, as its editor shows it: "When a conversation starts, if the person is in
+ * Enterprise: mark priority." `groupNames`: the groups' names by key.
+ */
+export function workflowSentence(workflow: { trigger: WorkflowTrigger; conditions: WorkflowCondition[]; actions: WorkflowAction[] }, groupNames: Record<string, string>) {
+  const when = `When ${TRIGGERS[workflow.trigger].charAt(0).toLowerCase()}${TRIGGERS[workflow.trigger].slice(1)}`;
+  const who = workflow.conditions.map((condition) => `if the person is in ${groupNames[condition.group] ?? condition.group}`).join(", ") || "for everyone";
+  const what = workflow.actions.map((action) => ACTIONS[action.kind].label.toLowerCase());
+  return `${when}, ${who}: ${what.length ? new Intl.ListFormat("en-GB").format(what) : "nothing yet"}.`;
 }
