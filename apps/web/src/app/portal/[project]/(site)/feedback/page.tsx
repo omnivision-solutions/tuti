@@ -19,7 +19,7 @@ import { ACTIVE_STATUSES, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/l
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
-import { portalLinks, untranslatedLang } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { boardPosts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { getSession } from "@/server/session";
@@ -44,8 +44,8 @@ const OVERVIEW_DESCRIPTION = "Vote for the ideas you want most, or share your ow
  */
 export default async function FeedbackOverview(props: PageProps<"/portal/[project]/feedback">) {
   const at = await portalLinks();
-  // Posts' titles: people's words, in the default language under another's address (untranslatedLang).
-  const lang = await untranslatedLang();
+  // Posts' titles: people's words, in the default language under another's address (teamLanguage).
+  const lang = await teamLanguage();
   const { project: slug } = await props.params;
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, slug: true, portalAccess: true } });
   if (!project) {

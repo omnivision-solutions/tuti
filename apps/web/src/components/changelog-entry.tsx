@@ -63,7 +63,7 @@ export function ChangelogEntryView({
   react?: { projectSlug: string; signedIn: boolean };
   /** What its links go under: the path the portal is under on the team's site (see lib/portal-base.ts), then the language's prefix (portalLinkBase). */
   base?: string;
-  /** Its title's and text's language where the page is in another (untranslatedLang). */
+  /** Its title's and text's language where the page is in another (teamLanguage). */
   lang?: string;
   /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
   dateMargin?: boolean;

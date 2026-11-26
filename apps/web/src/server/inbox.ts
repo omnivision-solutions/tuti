@@ -16,7 +16,9 @@ import {
   listArticlesToInsert,
   markConversationRead as markRead,
   replyToConversation,
+  retryTranslation as retryTranslationOperation,
   startReplyUpload,
+  translateReply,
   unlinkConversationPost,
   updateConversation,
 } from "./operations/conversations";
@@ -58,21 +60,80 @@ export async function replyInConversation(
   close = false,
   /** When the latest message on the page was written: the user writing after it keeps the conversation open. */
   seen?: string,
-): Promise<FormState & { notice?: string }> {
+  /**
+   * Where the conversation is translated: the preview the team saw (previewReplyTranslation), sent as it is; or
+   * "untranslated", the team choosing to send it as written ("Send in English"). Neither: translated as it's sent.
+   */
+  translation?: { text: string; language: string } | "untranslated",
+): Promise<FormState & { notice?: string; translation?: "outdated" | "failed"; language?: string }> {
   let keptOpen: boolean | undefined;
+  let translationProblem: "outdated" | "failed" | undefined;
+  // The customer's language a failed translation was into: its failure is shown for that language only.
+  let failedLanguage: string | undefined;
   const result = await asTeam(projectSlug, "Only the project's team can reply", async (context) => {
-    const sent = await call(replyToConversation, context, {
-      number: conversationNumber(conversation),
-      body: String(body),
-      note: note === true,
-      ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
-      ...(close === true && { close: true }),
-      ...(typeof seen === "string" && { seen }),
-    });
-    keptOpen = "keptOpen" in sent && sent.keptOpen === true;
+    try {
+      const sent = await call(replyToConversation, context, {
+        number: conversationNumber(conversation),
+        body: String(body),
+        note: note === true,
+        ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
+        ...(close === true && { close: true }),
+        ...(typeof seen === "string" && { seen }),
+        ...(translation === "untranslated"
+          ? { untranslated: true }
+          : translation && typeof translation === "object" && { translation: String(translation.text), language: String(translation.language) }),
+      });
+      keptOpen = "keptOpen" in sent && sent.keptOpen === true;
+    } catch (error) {
+      // The composer answers these: a new preview (the customer's language changed), or "Send in English".
+      if (error instanceof OperationError && (error.code === "translation_outdated" || error.code === "translation_failed")) {
+        translationProblem = error.code === "translation_outdated" ? "outdated" : "failed";
+        if (translationProblem === "failed") {
+          const found = await prisma.conversation.findUnique({
+            where: { projectId_number: { projectId: context.projectId, number: conversationNumber(conversation) } },
+            select: { language: true },
+          });
+          failedLanguage = found?.language ?? undefined;
+        }
+        // Why, without the API's advice (the composer has "Send in English").
+        throw new OperationError(error.status, error.code, error.message.replace(/ Send it untranslated.*$/, ""));
+      }
+      throw error;
+    }
   });
   // A reply that left it open (they wrote again since): said, so nobody moves on thinking it's done or waiting on them.
-  return keptOpen ? { ...result, notice: "Sent, and kept open: they wrote again since" } : result;
+  return { ...result, ...(keptOpen && { notice: "Sent, and kept open: they wrote again since" }), ...(translationProblem && { translation: translationProblem }), ...(failedLanguage && { language: failedLanguage }) };
+}
+
+/**
+ * A reply as the customer would get it, for the composer's preview (conversations.translateReply): null where it goes
+ * as written (translation off, or they write in the team's language).
+ */
+export async function previewReplyTranslation(
+  projectSlug: string,
+  conversation: number,
+  body: string,
+): Promise<{ error: string } | { preview: null } | { preview: { text: string; language: string } } | { failed: string }> {
+  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
+  if (!session || !membership) {
+    return { error: "Only the project's team can reply" };
+  }
+  try {
+    const result = await call(translateReply, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, { number: conversationNumber(conversation), body: String(body) });
+    return result.status === "translated" ? { preview: { text: result.text!, language: result.language! } } : result.status === "failed" ? { failed: result.error! } : { preview: null };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Try again: the customer's messages whose translation failed, translated again (conversations.retryTranslation). */
+export async function retryTranslation(projectSlug: string, conversation: number): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can translate messages", async (context) =>
+    call(retryTranslationOperation, context, { number: conversationNumber(conversation) }),
+  );
 }
 
 /** Starts uploading a file for a reply (conversations.upload): where the browser PUTs it, and its id for replyInConversation. */
@@ -126,10 +187,21 @@ export async function snoozeConversation(projectSlug: string, conversation: numb
   );
 }
 
-export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can mark spam", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), spam: spam === true }),
-  );
+/**
+ * Marks a conversation as spam (with `blockDomain`, its sender's domain too: owners and admins) or not: `notice` is what
+ * Not spam leaves in place or undid (conversations.update's), to say with it.
+ */
+export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean, blockDomain = false): Promise<FormState & { notice?: string }> {
+  let notice: string | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can mark spam", async (context) => {
+    const updated = await call(updateConversation, context, {
+      number: conversationNumber(conversation),
+      spam: spam === true,
+      ...(spam === true && blockDomain === true && { blockDomain: true }),
+    });
+    notice = updated.notice;
+  });
+  return notice ? { ...result, notice } : result;
 }
 
 /** The posts "Link post…" offers for what's typed: any of the project's (searchPosts). */
@@ -177,6 +249,13 @@ export async function linkPostToConversation(projectSlug: string, conversation: 
 export async function setSupportInbox(projectSlug: string, on: boolean): Promise<FormState> {
   return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
     call(updateSupportSettings, context, { inbox: on === true }),
+  );
+}
+
+/** Settings → Inbox and email: Translate conversations and the team's language (owners and admins; see support.update). */
+export async function setTranslation(projectSlug: string, change: { translate?: boolean; teamLanguage?: string }): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
+    call(updateSupportSettings, context, { translate: change.translate, teamLanguage: change.teamLanguage }),
   );
 }
 

@@ -130,7 +130,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
 
   return (
     <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
-      <PortalIntl language={language} messages={messages}>
+      <PortalIntl language={language} teamLanguage={languages?.default ?? DEFAULT_LANGUAGE} messages={messages}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {/* Under a path of the team's site, the stored theme is the site's too: a pick made there stays, switch or not. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} readerPicks={brand.themeSwitch || !!mount} />}

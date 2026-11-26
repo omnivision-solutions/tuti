@@ -51,7 +51,7 @@ export function CommentList({
   lang,
 }: {
   comments: CommentView[];
-  /** The comments' language, where the page around them is in another (untranslatedLang). */
+  /** The comments' language, where the page around them is in another (teamLanguage). */
   lang?: string;
   editable?: (comment: CommentView, text: React.ReactNode) => React.ReactNode;
   teamUserIds: Set<string>;

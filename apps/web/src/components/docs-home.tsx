@@ -3,7 +3,7 @@
 import { ChevronRightIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 
-import { usePortalLook } from "@/components/portal-look";
+import { usePortalLook, useTeamLanguage } from "@/components/portal-look";
 import { DOCS_HEADING } from "@/lib/portal-look";
 
 /** The docs' home's heading, centred over its search: the team's title and subtitle (Customize → Docs home), or the defaults. */
@@ -28,7 +28,9 @@ export function useShowsPopular(articles: unknown[]) {
 }
 
 /** The most-read of them as chips under the home's search (as the popular articles are shown). */
-export function PopularChips({ articles, lang }: { articles: { href: string; title: string }[]; lang?: string }) {
+export function PopularChips({ articles }: { articles: { href: string; title: string }[] }) {
+  // The titles: the team's words (useTeamLanguage).
+  const lang = useTeamLanguage();
   if (!useShowsPopular(articles)) {
     return null;
   }
@@ -51,7 +53,9 @@ export function PopularChips({ articles, lang }: { articles: { href: string; tit
 }
 
 /** A tab's most-read articles (popularArticles), when the team shows them (Customize → Docs home) and there are a few: rows on the paper, in two columns. */
-export function PopularArticles({ articles, lang }: { articles: { href: string; title: string }[]; lang?: string }) {
+export function PopularArticles({ articles }: { articles: { href: string; title: string }[] }) {
+  // The titles: the team's words (useTeamLanguage).
+  const lang = useTeamLanguage();
   if (!useShowsPopular(articles)) {
     return null;
   }

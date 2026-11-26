@@ -4,6 +4,27 @@
     "menu": "메뉴",
     "closeMenu": "메뉴 닫기",
     "language": "언어: {language}",
-    "languages": "언어"
+    "languages": "언어",
+    "portal": "포털",
+    "feedback": "피드백",
+    "roadmap": "로드맵",
+    "changelog": "업데이트",
+    "docs": "문서",
+    "new": "새 소식",
+    "boards": "보드",
+    "menuDescription": "{name}: 이동할 곳",
+    "links": "링크",
+    "account": "계정",
+    "accountSettings": "계정 설정",
+    "signOut": "로그아웃",
+    "signOutFailed": "로그아웃하지 못했습니다. 다시 시도해 주세요."
+  },
+  "footer": {
+    "label": "바닥글",
+    "poweredBy": "<logo></logo> 제공",
+    "theme": "테마",
+    "system": "시스템",
+    "light": "라이트",
+    "dark": "다크"
   }
 }

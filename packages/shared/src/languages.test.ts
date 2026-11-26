@@ -22,7 +22,7 @@ test("live languages: those set live, only the oldest within the plan's limit (t
 function flatten(messages: object, prefix = ""): Record<string, string[]> {
   return Object.fromEntries(
     Object.entries(messages).flatMap(([key, value]) =>
-      typeof value === "string" ? [[`${prefix}${key}`, [...value.matchAll(/\{(\w+)/g)].map((match) => match[1]!).sort()]] : Object.entries(flatten(value, `${prefix}${key}.`)),
+      typeof value === "string" ? [[`${prefix}${key}`, [...value.matchAll(/\{(\w+)|<(\w+)>/g)].map((match) => (match[1] ?? `<${match[2]}>`)).sort()]] : Object.entries(flatten(value, `${prefix}${key}.`)),
     ),
   );
 }

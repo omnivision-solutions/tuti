@@ -34,7 +34,7 @@ import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
-import { portalLinks, untranslatedLang } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { portalAddress } from "@/server/custom-domains";
@@ -198,8 +198,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   );
 
   // The post's, its comments' and similar posts' words: people's, never translated, so in the default language under another's
-  // address (untranslatedLang); not the portal's own text around them.
-  const lang = await untranslatedLang();
+  // address (teamLanguage); not the portal's own text around them.
+  const lang = await teamLanguage();
   return (
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-16">
       <article className="flex min-w-0 flex-col gap-3.5 lg:col-start-1">

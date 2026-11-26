@@ -4,6 +4,27 @@
     "menu": "Menú",
     "closeMenu": "Cerrar el menú",
     "language": "Idioma: {language}",
-    "languages": "Idioma"
+    "languages": "Idioma",
+    "portal": "Portal",
+    "feedback": "Sugerencias",
+    "roadmap": "Hoja de ruta",
+    "changelog": "Novedades",
+    "docs": "Documentación",
+    "new": "Nuevo",
+    "boards": "Tableros",
+    "menuDescription": "{name}: adónde ir desde aquí.",
+    "links": "Enlaces",
+    "account": "Cuenta",
+    "accountSettings": "Configuración de la cuenta",
+    "signOut": "Cerrar sesión",
+    "signOutFailed": "No se pudo cerrar la sesión. Inténtalo de nuevo."
+  },
+  "footer": {
+    "label": "Pie de página",
+    "poweredBy": "Con la tecnología de <logo></logo>",
+    "theme": "Tema",
+    "system": "Sistema",
+    "light": "Claro",
+    "dark": "Oscuro"
   }
 }

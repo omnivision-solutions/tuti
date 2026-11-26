@@ -214,7 +214,7 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     expect(await where("/docs/billing")).toBe("/docs/billing en -");
     const spoofed = await proxy(new NextRequest("http://acme.tuti.example/docs", { headers: { host: "acme.tuti.example", "x-tuti-language": "de", "x-tuti-language-prefix": "/de" } }));
     expect(spoofed.headers.get("x-middleware-request-x-tuti-language-prefix")).toBe("");
-    // The default language too, for what's still in it under another's address (untranslatedLang).
+    // The default language too, for what's still in it under another's address (teamLanguage).
     expect((await visit("/de/docs")).headers.get("x-middleware-request-x-tuti-language-default")).toBe("en");
     // Only a whole first segment, lowercase: /dex and /DE are paths of their own.
     expect(await where("/dex/docs")).toBe("/dex/docs en -");

@@ -58,7 +58,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
-import { portalLinks, untranslatedLang } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { firstBoardPath } from "@/server/portal-home";
 
@@ -67,8 +67,8 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
   const results = project ? await searchForReader(project.id, projectSlug, query, 10, { operations: true }) : [];
-  // Titles and snippets: the team's words, in the default language under another's address (untranslatedLang).
-  const lang = await untranslatedLang();
+  // Titles and snippets: the team's words, in the default language under another's address (teamLanguage).
+  const lang = await teamLanguage();
   if (results.length === 0) {
     return (
       <EmptyState
@@ -149,8 +149,8 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   // "Can't find it?": how to reach the team (Ask AI is in the search above it).
   const support = home ? await supportContact(project) : null;
   // The team's words (collections' names and descriptions, references' names, articles' titles): in the default language
-  // under another's address (untranslatedLang). Not the portal's own text around them.
-  const lang = await untranslatedLang();
+  // under another's address (teamLanguage). Not the portal's own text around them.
+  const lang = await teamLanguage();
   return (
     <div className="flex flex-col gap-8">
       {/* The home: its heading over a big box for searching and asking (the header's is the same box), and the most-read as chips. */}
@@ -162,7 +162,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           <DocsHomeHeader />
           {/* The header's box gives way to it here (the same box). */}
           <DocsSearchBox askAI={answersEnabled()} hero className="w-full max-w-[46rem]" />
-          <PopularChips articles={popular} lang={lang} />
+          <PopularChips articles={popular} />
         </div>
       ) : (
         <PortalPageHeader title={tab.name} />
@@ -215,7 +215,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           ))}
         </ul>
       )}
-      <PopularArticles articles={popular} lang={lang} />
+      <PopularArticles articles={popular} />
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-3">
           {collections.length > 0 && (
@@ -325,8 +325,8 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   // The level above: the collection it's in, else its tab or all of them.
   const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab);
   // The team's words (its and its parent's names, its description, its articles): in the default language under another's
-  // address (untranslatedLang).
-  const lang = await untranslatedLang();
+  // address (teamLanguage).
+  const lang = await teamLanguage();
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
       <div className="flex flex-col gap-8">
@@ -378,7 +378,7 @@ export async function DocsArticle({
   /** Its canonical path: a tab showing it in its place, the tab's. */
   path?: string;
 }) {
-  const [at, lang] = await Promise.all([portalLinks(), untranslatedLang()]);
+  const [at, lang] = await Promise.all([portalLinks(), teamLanguage()]);
   const readable = "doc" in article ? article : null;
   // Its tab and collection have pages for this reader when they have something to read (an unlisted
   // article may be all there is): the way back is its tab's, or /docs.
@@ -416,7 +416,7 @@ export async function DocsArticle({
     <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
       {jsonLd}
       {/* The team's words (its title, text and headings, its collection's name, the articles around it) carry the default
-          language's `lang` under another's address (untranslatedLang); the portal's own text around them doesn't. */}
+          language's `lang` under another's address (teamLanguage); the portal's own text around them doesn't. */}
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
@@ -576,8 +576,8 @@ export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active
  */
 async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: string | null; extra?: React.ReactNode }) {
   const at = await portalLinks();
-  // The team's names and titles: in the default language under another's address (untranslatedLang).
-  const lang = await untranslatedLang();
+  // The team's names and titles: in the default language under another's address (teamLanguage).
+  const lang = await teamLanguage();
   // One line each, a long name cut short (in full on hover).
   const link = (slug: string, title: string, name: React.ReactNode, className?: string) => (
     <Link

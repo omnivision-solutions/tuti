@@ -8,6 +8,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { useAddressIn, usePortalSlug } from "@/components/portal-base";
+import { TeamLanguageContext } from "@/components/portal-look";
 import { languagePrefix } from "@/lib/language-addresses";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -20,12 +21,15 @@ declare module "next-intl" {
   }
 }
 
-/** The portal's own text in the reader's language (next-intl, without its routing: proxy.ts routes), for its client components. */
-export function PortalIntl({ language, messages, children }: { language: Language; messages: Messages; children: React.ReactNode }) {
+/**
+ * The portal's own text in the reader's language (next-intl, without its routing: proxy.ts routes), for its client components,
+ * and `teamLanguage`, the project's default: what the team's own words are in (useTeamLanguage).
+ */
+export function PortalIntl({ language, teamLanguage, messages, children }: { language: Language; teamLanguage: Language; messages: Messages; children: React.ReactNode }) {
   return (
     // A time zone for what formats dates on the server and in the browser alike: none is shown in the reader's own yet.
     <NextIntlClientProvider locale={language} messages={messages} timeZone="UTC">
-      {children}
+      <TeamLanguageContext.Provider value={teamLanguage}>{children}</TeamLanguageContext.Provider>
     </NextIntlClientProvider>
   );
 }

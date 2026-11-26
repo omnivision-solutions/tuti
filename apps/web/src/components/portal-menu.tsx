@@ -9,7 +9,7 @@ import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { feedbackHref, PORTAL_PARTS } from "@/components/portal-nav";
 import { LanguageList } from "@/components/portal-language";
-import { PortalLogo, usePortalLook } from "@/components/portal-look";
+import { PortalLogo, usePortalLook, useTeamLanguage } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { boardPath } from "@/lib/post-urls";
@@ -91,18 +91,21 @@ export function PortalMenu({
   const { headerLinks } = usePortalLook();
   const page = useContext(PartContext)?.part ?? null;
   const notFound = usePortalNotFound();
+  // The team's own words (boards' names, links' labels) in theirs, inside landmarks named in the reader's.
+  const team = useTeamLanguage();
 
   // What the page gave it (the docs' tree, the changelog's entries), or the boards on Feedback.
   const part = page ? (
     page
   ) : within(path, "/feedback") && boards.length > 1 ? (
-    <nav aria-label="Boards" className="flex flex-col gap-0.5 text-sm">
-      <p className="px-2 py-1 font-heading font-semibold">Boards</p>
+    <nav lang={lang} aria-label={t("boards")} className="flex flex-col gap-0.5 text-sm">
+      <p className="px-2 py-1 font-heading font-semibold">{t("boards")}</p>
       {boards.map((board) => {
         const active = within(path, boardPath(board));
         return (
           <Link
             key={board.slug}
+            lang={team}
             href={at(boardPath(board))}
             aria-current={active ? "page" : undefined}
             className={cn("rounded-md px-2 py-1.5", active ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground")}
@@ -138,7 +141,7 @@ export function PortalMenu({
       >
         <div className="flex items-center justify-between gap-2 border-b px-6 py-2">
           <SheetTitle lang={lang} className="sr-only">{t("menu")}</SheetTitle>
-          <SheetDescription className="sr-only">{name}: where to go from here.</SheetDescription>
+          <SheetDescription lang={lang} className="sr-only">{t("menuDescription", { name })}</SheetDescription>
           <PortalLogo name={name} href={homeHref} />
           <SheetClose render={<Button variant="ghost" size="icon-sm" lang={lang} aria-label={t("closeMenu")} />}>
             <XIcon />
@@ -147,8 +150,8 @@ export function PortalMenu({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* On phones, where the header has no room for them: the parts first, big. */}
           {parts && (
-            <nav aria-label="Portal" className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
-              {PORTAL_PARTS.map(({ key, label, href }) => {
+            <nav lang={lang} aria-label={t("portal")} className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
+              {PORTAL_PARTS.map(({ key, href }) => {
                 if (key === "feedback" && boards.length === 0) {
                   return null;
                 }
@@ -163,10 +166,10 @@ export function PortalMenu({
                       active ? "bg-accent text-foreground" : "text-foreground hover:bg-muted",
                     )}
                   >
-                    {label}
+                    {t(key)}
                     {key === "changelog" && newChangelog && !active && (
                       <span className="ml-2 inline-block size-2 rounded-full bg-unread align-middle">
-                        <span className="sr-only">New</span>
+                        <span className="sr-only">{t("new")}</span>
                       </span>
                     )}
                   </Link>
@@ -178,9 +181,9 @@ export function PortalMenu({
           {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
           {languageList && <LanguageList languages={languages} current={language} />}
           {headerLinks.length > 0 && (
-            <nav aria-label="Links" className="flex flex-col gap-0.5 px-4 py-5">
+            <nav lang={lang} aria-label={t("links")} className="flex flex-col gap-0.5 px-4 py-5">
               {headerLinks.map((link, i) => (
-                <a key={i} href={link.url} className="rounded-md px-2 py-2 break-words text-muted-foreground hover:text-foreground">
+                <a key={i} href={link.url} lang={team} className="rounded-md px-2 py-2 break-words text-muted-foreground hover:text-foreground">
                   {link.label}
                 </a>
               ))}

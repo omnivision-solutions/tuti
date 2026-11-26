@@ -4,6 +4,27 @@
     "menu": "菜单",
     "closeMenu": "关闭菜单",
     "language": "语言：{language}",
-    "languages": "语言"
+    "languages": "语言",
+    "portal": "门户",
+    "feedback": "反馈",
+    "roadmap": "路线图",
+    "changelog": "更新日志",
+    "docs": "文档",
+    "new": "新",
+    "boards": "看板",
+    "menuDescription": "{name}：前往其他页面",
+    "links": "链接",
+    "account": "账户",
+    "accountSettings": "账户设置",
+    "signOut": "退出登录",
+    "signOutFailed": "无法退出登录，请重试。"
+  },
+  "footer": {
+    "label": "页脚",
+    "poweredBy": "由 <logo></logo> 提供支持",
+    "theme": "主题",
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
   }
 }

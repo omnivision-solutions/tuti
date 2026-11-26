@@ -18,7 +18,7 @@ export function LockedMark({ className }: { className?: string }) {
   );
 }
 
-/** `lang`: the titles' language where the page is in another (untranslatedLang). */
+/** `lang`: the titles' language where the page is in another (teamLanguage). */
 export function ArticleLinks({ articles, href, lang }: { articles: Articles; href: (slug: string) => string; lang?: string }) {
   return (
     <ul className="flex flex-col">
@@ -104,7 +104,7 @@ export function CollectionContents({
   collection: DocsCollection;
   href: (slug: string) => string;
   collectionHref: (slug: string) => string;
-  /** The team's words' language where the page is in another (untranslatedLang). */
+  /** The team's words' language where the page is in another (teamLanguage). */
   lang?: string;
 }) {
   return (

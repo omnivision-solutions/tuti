@@ -29,7 +29,7 @@ import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
 import { seesBoard } from "@/server/post-visibility";
-import { portalLinks, untranslatedLang } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
@@ -62,8 +62,8 @@ const BOARD_DESCRIPTION = "Vote for the ideas you want most, or share your own."
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const at = await portalLinks();
-  // Posts' titles and text: people's words, in the default language under another's address (untranslatedLang).
-  const lang = await untranslatedLang();
+  // Posts' titles and text: people's words, in the default language under another's address (teamLanguage).
+  const lang = await teamLanguage();
   const { project: projectSlug, board: boardSlug } = await props.params;
   const searchParams = await props.searchParams;
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
