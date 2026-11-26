@@ -579,14 +579,18 @@ async function entriesLeftBehind(): Promise<number> {
       title: true,
       body: true,
       content: true,
+      updatedAt: true,
       translations: { select: { language: true, automatic: true, sourceHash: true, publishedAt: true, retryAt: true, error: true } },
-      project: { select: { languages: { select: { code: true, automatic: true } } } },
+      project: { select: { languages: { select: { code: true, automatic: true, createdAt: true } } } },
     },
   });
   let queued = 0;
   for (const entry of entries) {
     const { hash } = translationSource(entry);
-    const missing = entry.project.languages.some(({ code, automatic }) => automatic && !entry.translations.some((t) => t.language === code));
+    // Only languages there as it was published or changed: entries don't join a language added later (it isn't confirmed for them).
+    const missing = entry.project.languages.some(
+      ({ code, automatic, createdAt }) => automatic && createdAt <= entry.updatedAt && !entry.translations.some((t) => t.language === code),
+    );
     const behind = entry.translations.some((t) => t.automatic && !t.retryAt && !t.error && (!t.publishedAt || t.sourceHash !== hash));
     if (missing || behind) {
       await queueTranslations(ENTRY, entry.id).catch((error: unknown) => serverLog.error("Queuing a changelog entry's translations failed", { entryId: entry.id, error }));

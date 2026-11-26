@@ -249,6 +249,18 @@ test("screenshots placed are kept even when queuing the entry's translations the
   expect(JSON.stringify((await translation()).content)).toContain("[de] The theme menu");
 });
 
+test("the retry job never translates a published entry into a language added after it (not confirmed for entries)", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  await languages({ languages: [{ code: "de" }, { code: "fr" }] });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  await languageTranslationsDone();
+  expect(await prisma.changelogTranslation.count({ where: { projectId: project.id, language: "fr" } })).toBe(0);
+});
+
 test("an announcement whose translation ends after the wait is sent by the email safety net (every 10 minutes, inline too)", async () => {
   await languages({ languages: [{ code: "de" }] });
   const { entry, email } = await draft();
