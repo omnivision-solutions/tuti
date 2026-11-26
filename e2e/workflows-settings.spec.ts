@@ -43,8 +43,8 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   // The path, in the order a message takes it today: the AI first (in the widget, before a conversation), then the rest.
   const path = ["AI answers first", "Spam filter", "When a conversation starts", "When a user replies", "Hand to the team"];
   const inOrder = async () => {
-    const at = path.map((step) => main.innerText().then((text) => text.indexOf(step)));
-    const found = await Promise.all(at);
+    const text = await main.innerText();
+    const found = path.map((step) => text.indexOf(step));
     return found.every((index, i) => index >= 0 && (i === 0 || index > found[i - 1]!));
   };
   await expect.poll(inOrder).toBe(true);
