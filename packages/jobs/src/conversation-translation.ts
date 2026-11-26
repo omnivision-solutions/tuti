@@ -99,21 +99,24 @@ const PENDING_SELECT = {
   conversation: { select: { spam: true, language: true, project: { select: { language: true, teamLanguage: true, translateConversations: true } } } },
 } as const;
 
-/** How long the team's email and push about a message wait for its translation, and how often they look. */
-const NOTICE_WAITS_MS = 10_000;
-const NOTICE_LOOKS_MS = 1_000;
+/**
+ * How the team's email and push about a message wait for its translation: up to `ms`, looking every `every`, by
+ * `pause` (a timer). Tests replace `pause` to drive a wait without real time.
+ */
+export const noticeWait = { ms: 10_000, every: 1_000, pause: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)) };
 
 /**
  * A customer's message as the team's email and push tell it (docs/plan.md L22): its translation into the team's language,
  * where it gets one. Both are queued beside the translate-message job, so while it's on its way they wait for it, a
- * little: a translation the job is still to settle (`translationPending`), up to NOTICE_WAITS_MS. Then the text as it is.
+ * little: a translation the job is still to settle (`translationPending`), up to `noticeWait.ms`. Then the text as it is.
  * ponytail: polls the message while waiting, in the notice job's worker slot (at most ~10 s, ending as the translation
- * lands); the job telling the notices when it's done frees the slots, once a release can rely on the worker running it.
- * A translation the job leaves unchanged (the model gave it back as it was) isn't foreseen: that wait runs its course.
+ * lands; capped per job on the worker, apps/worker tasks.ts); the job telling the notices when it's done frees the slots,
+ * once a release can rely on the worker running it. A translation the job leaves unchanged (the model gave it back as it
+ * was) isn't foreseen: that wait runs its course.
  */
-export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): Promise<{ text: string; translated: boolean; translatedFrom: string | null }> {
-  const until = Date.now() + waitMs;
-  for (;;) {
+export async function noticeText(messageId: string, waitMs = noticeWait.ms): Promise<{ text: string; translated: boolean; translatedFrom: string | null }> {
+  // Counted in pauses, not read off the clock: a wait is as long as its looks.
+  for (let waited = 0; ; waited += noticeWait.every) {
     const message = await prisma.conversationMessage.findUniqueOrThrow({
       where: { id: messageId },
       select: PENDING_SELECT,
@@ -122,10 +125,10 @@ export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): P
     if (message.teamText !== null) {
       return { text: message.teamText, translated: true, translatedFrom: message.language };
     }
-    if (!translationPending(message) || Date.now() >= until) {
+    if (!translationPending(message) || waited >= waitMs) {
       return { text: message.body, translated: false, translatedFrom: null };
     }
-    await new Promise((resolve) => setTimeout(resolve, NOTICE_LOOKS_MS));
+    await noticeWait.pause(noticeWait.every);
   }
 }
 

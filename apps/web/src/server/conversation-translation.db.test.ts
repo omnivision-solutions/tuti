@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
-import { handlers, noticeText, translateMessage, translationSettings } from "@tuti/jobs";
+import { handlers, noticeText, noticeWait, translateMessage, translationSettings } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startExpoPushFake, startModelFake } from "@tuti/testkit";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -35,7 +35,13 @@ beforeEach(() => {
   }
   vi.stubEnv("TUTI_CONFIG", "");
 });
+/** The notices' waits, instant here unless a test drives one (noticeWait): no real time. */
+const realPause = noticeWait.pause;
+beforeEach(() => {
+  noticeWait.pause = async () => {};
+});
 afterEach(() => {
+  noticeWait.pause = realPause;
   vi.unstubAllEnvs();
   model.requests.length = 0;
   model.done();
@@ -453,6 +459,14 @@ test("the team's email and push about a message wait for its translation, and sh
     const { owner, project, team } = await setup();
     const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
     await prisma.device.create({ data: { userId: owner.id, deviceId: "phone", token: "ExponentPushToken[phone]", platform: "ios", sessionId: session.id } });
+    // The notices, queued beside the translation (jobs inline), wait till it's done: their pause is its run.
+    const translate = handlers.translateMessage;
+    let translating: Promise<unknown> = Promise.resolve();
+    const spied = vi.spyOn(handlers, "translateMessage").mockImplementation((...args) => (translating = translate(...args)) as never);
+    noticeWait.pause = async () => {
+      await translating;
+    };
+    onTestFinished(() => spied.mockRestore());
     model.reply(translated(ENGLISH, "de"));
     await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: GERMAN });
     const owners = await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { email: true } });
@@ -511,25 +525,50 @@ test("an email waits for its message's translation without claiming the conversa
   const { owner, conversation, messages } = await pending(GERMAN, "hallo?");
   const [question, hello] = messages;
   const { notifiedAt: before } = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
-  const looks = vi.spyOn(prisma.conversationMessage, "findUniqueOrThrow");
+  // The question's email pauses for its translation, and stays paused till it's let go.
+  let release = () => {};
+  const waiting = new Promise<void>((paused) => {
+    noticeWait.pause = () => {
+      paused();
+      return new Promise<void>((resolve) => (release = resolve));
+    };
+  });
   const first = handlers.conversationMessage({ messageId: question!.id }, quiet);
-  try {
-    // In its wait (it has looked for the translation more than once), nothing is claimed: a run stopped now leaves the
-    // turn for conversation-notices-resubmit to find.
-    await vi.waitFor(() => expect(looks.mock.calls.length).toBeGreaterThan(1), { timeout: 5_000 });
-    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
-    // "hallo?" after it, with nothing to wait for, leaves the email to the question's.
-    expect(await handlers.conversationMessage({ messageId: hello!.id }, quiet)).toEqual({ skipped: "an earlier message's email tells them" });
-    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
-    await prisma.conversationMessage.update({ where: { id: question!.id }, data: { teamText: ENGLISH, language: "de" } });
-    expect(await first).toMatchObject({ emailed: 1 });
-  } finally {
-    looks.mockRestore();
-  }
+  await waiting;
+  // In its wait, nothing is claimed: a run stopped now leaves the turn for conversation-notices-resubmit to find.
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
+  // "hallo?" after it, with nothing to wait for, leaves the email to the question's.
+  expect(await handlers.conversationMessage({ messageId: hello!.id }, quiet)).toEqual({ skipped: "an earlier message's email tells them" });
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
+  // Translated meanwhile: the email goes, translated, and claims the turn then.
+  await prisma.conversationMessage.update({ where: { id: question!.id }, data: { teamText: ENGLISH, language: "de" } });
+  release();
+  expect(await first).toMatchObject({ emailed: 1 });
   expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt!.getTime()).toBeGreaterThan(before!.getTime());
   const email = await mailbox.latestTo(owner.email);
   expect(email.text).toContain(ENGLISH);
   expect(email.text).toContain("Translated from Deutsch");
+});
+
+test("a push to phones that show no message text goes at once: a title has nothing to wait for", async () => {
+  const expo = await startExpoPushFake();
+  try {
+    vi.stubEnv("EXPO_PUSH_URL", expo.env.EXPO_PUSH_URL);
+    vi.stubEnv("EXPO_ACCESS_TOKEN", "");
+    const { owner, messages } = await pending(GERMAN);
+    await prisma.user.update({ where: { id: owner.id }, data: { pushShowsText: false } });
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
+    await prisma.device.create({ data: { userId: owner.id, deviceId: "phone", token: "ExponentPushToken[phone]", platform: "ios", sessionId: session.id } });
+    // A wait would never end here.
+    const paused = vi.fn(() => new Promise<void>(() => {}));
+    noticeWait.pause = paused;
+    await handlers.conversationPush({ messageId: messages[0]!.id }, quiet);
+    expect(paused).not.toHaveBeenCalled();
+    expect(expo.sent).toHaveLength(1);
+    expect(expo.sent[0]).not.toHaveProperty("body");
+  } finally {
+    await expo.close();
+  }
 });
 
 test("a retry of the email for some addresses doesn't wait: its first run did", async () => {
