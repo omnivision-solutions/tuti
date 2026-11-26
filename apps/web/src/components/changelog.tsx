@@ -870,8 +870,11 @@ export function WhoSeesIt({
               { value: "some", label: "Some groups" },
             ]}
             value={someGroups ? "some" : "everyone"}
-            disabled={pending}
             onValueChange={(value) => {
+              // While a save runs, nothing changes (as with the chips), but the keyboard keeps its place.
+              if (pending) {
+                return;
+              }
               setSomeGroups(value === "some");
               // Everyone is no groups: the chips hide and aren't sent (unpicking always works, on any plan); back on
               // Some groups, they're as they were.

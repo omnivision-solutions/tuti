@@ -149,10 +149,9 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await owner.getByRole("checkbox", { name: "Breaking" }).check();
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(enterprise).toBeDisabled();
-  await expect(audience.getByRole("radio", { name: "Everyone" })).toBeDisabled();
   releaseSave();
   // Saved for everyone (set meanwhile by the API), it starts afresh on Everyone.
-  await expect(audience.getByRole("radio", { name: "Everyone" })).toBeEnabled();
+  await expect(audience.getByRole("radio", { name: "Everyone" })).toBeChecked();
   await owner.unroute("**/*");
 
   // A draft: picking its audience holds Publish until it's saved (Publish sends what's saved, to whoever that's for).

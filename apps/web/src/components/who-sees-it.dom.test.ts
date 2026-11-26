@@ -87,6 +87,14 @@ test("while a save runs the picks wait: one made then would be dropped as the pi
   expect(document.activeElement).toBe(beta);
   expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
   expect(onChange).not.toHaveBeenCalled();
+  // Audience too: Everyone isn't taken, and the keyboard stays on it.
+  const everyone = box.querySelector<HTMLInputElement>('input[value="everyone"]')!;
+  expect(everyone.disabled).toBe(false);
+  everyone.focus();
+  await act(async () => everyone.click());
+  expect(box.querySelector<HTMLInputElement>('input[value="some"]')!.checked).toBe(true);
+  expect(document.activeElement).toBe(everyone);
+  expect(onChange).not.toHaveBeenCalled();
 });
 
 /** Its switches, by their names (the labels they're named by). */
