@@ -46,7 +46,7 @@ const fields = {
     .meta({ examples: ["conversation_started"] }),
   conditions: workflowConditions
     .describe(
-      "Who it's for, checked when it runs: the conversation's person is in a reader group (`in_group`), or none for everyone. Someone who isn't one of your app's users (a signed-out visitor, an address that isn't a user's) is in no group",
+      "Who it's for, checked when it runs: the conversation's person is in a reader group (`in_group`), or none for everyone. Only a conversation with one of your app's users (`user` in conversations.create, their signed-in widget, or their email where DMARC passed) is in their groups; one with an address alone, or a signed-out visitor, is in none",
     )
     .meta({ examples: [[{ kind: "in_group", group: "enterprise" }]] }),
   actions: workflowActions
