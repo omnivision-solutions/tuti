@@ -502,27 +502,17 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
   if (ordered.length === 0) {
     return null;
   }
-  // Which are served at all (not hidden, AI only, or a draft) and which this reader may read, in two queries: only the
-  // first readable one is checked in full (articleAt). One served but not readable may still be shown with a lock, so
-  // those before it are checked too (rare: a restricted article sharing the slug).
-  const ids = ordered.map((candidate) => candidate.id);
-  const [served, readableIds] = await Promise.all([
-    prisma.article.findMany({ where: { id: { in: ids }, ...servedArticle }, select: { id: true } }),
-    readableArticle(projectId, await currentReader(projectId)).then((visible) =>
-      prisma.article.findMany({ where: { AND: [{ id: { in: ids }, ...servedArticle }, visible] }, select: { id: true } }),
-    ),
-  ]);
-  const [isServed, isReadable] = [new Set(served.map((row) => row.id)), new Set(readableIds.map((row) => row.id))];
-  // In order, the first readable one, or served and shown with a lock (articleAt says so); none hidden from them counts.
+  // Which are served at all (not hidden, AI only, or a draft), in one query: only those are checked in full (articleAt,
+  // cached for the page that reads it next), in order, the first this reader sees (or sees with a lock) deciding.
+  const served = new Set((await prisma.article.findMany({ where: { id: { in: ordered.map((candidate) => candidate.id) }, ...servedArticle }, select: { id: true } })).map((row) => row.id));
   let found: { id: string; slug: string } | undefined;
   for (const candidate of ordered) {
-    if (isReadable.has(candidate.id) || (isServed.has(candidate.id) && (await articleAt(projectSlug, candidate.slug)))) {
+    if (served.has(candidate.id) && (await articleAt(projectSlug, candidate.slug))) {
       found = candidate;
       break;
     }
   }
-  // Its page's own check, once (cached for the page that reads it next).
-  if (!found || !(await articleAt(projectSlug, found.slug))) {
+  if (!found) {
     return null;
   }
   const version = other && (await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: other } }, select: { slug: true } }));
