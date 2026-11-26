@@ -31,6 +31,7 @@ const RETRY_FIRST_MS = 15 * 60_000;
 const RETRY_MAX_MS = 24 * 60 * 60_000;
 const STALE = "the product's language setting changed";
 const CHANGED = "changed while translating";
+const NO_AI = "AI isn't set up";
 /**
  * A queued translation not ended by then is taken as lost, and queued again. On Hatchet longer than the task may wait in
  * the queue (its `scheduleTimeout`, 24 hours, behind the server-wide cap) plus run (`executionTimeout`, 10 minutes), so
@@ -91,8 +92,9 @@ export async function translateArticle(input: JobInput<"translateArticle">, log:
   const started: Started = {};
   try {
     const result = await translateOne(input, log, run, started);
-    if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED && started.retryAt) {
+    if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED && result.skipped !== NO_AI && started.retryAt) {
       // Nothing left to do for it: the safety net's try goes, unless a newer publish or Retranslate set another since it read it.
+      // Without AI it stays, so the retry job translates the page once AI is set up.
       await prisma.articleTranslation.updateMany({ where: { articleId: input.articleId, language: input.language, retryAt: started.retryAt }, data: { retryAt: null } });
     }
     return result;
@@ -151,7 +153,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
   if (!aiEnabled()) {
-    return { skipped: "AI isn't set up" };
+    return { skipped: NO_AI };
   }
   const version = setting.productVersion;
 

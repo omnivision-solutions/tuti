@@ -313,6 +313,13 @@ test("without AI on the server, pages wait and say why", async () => {
   vi.stubEnv("OPENAI_API_KEY", "");
   await languages({ languages: [{ code: "de" }] });
   expect((await call(getLanguages, as(), {})).languages[0]!.articles).toMatchObject({ translated: 0, waiting: 1, why: "AI isn't set up on this server" });
+  // Its safety net stays, so once AI is set up the retry job translates it.
+  expect((await translation()).retryAt).not.toBeNull();
+  vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  model.reply(reply());
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  expect(await translation()).toMatchObject({ title: "[de] Getting started", retryAt: null });
 });
 
 test("pages a language queues all get their safety net before the first is translated, so a restart partway strands none", async () => {
