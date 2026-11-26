@@ -237,7 +237,7 @@ export async function landEdit(
   actionId: string,
   writtenOn: Doc,
   doc: Doc,
-): Promise<"landed" | "conflict" | "gone"> {
+): Promise<"landed" | "conflict" | "gone" | "nothing"> {
   const article = await tx.article.findUnique({ where: { id: articleId }, select: { ...versionSelect, publishedAt: true, deletedAt: true, changes: { select: versionSelect } } });
   if (!article || article.deletedAt) {
     return "gone";
@@ -253,6 +253,10 @@ export async function landEdit(
   }
   // Written on an older text: never over a waiting edit a person changed since (E4). Written again, it sees it held.
   if (!sameDoc(now, writtenOn)) {
+    // Another edit landed the same change meanwhile (two pull requests finding one screenshot stale): nothing to add.
+    if (sameDoc(text, now)) {
+      return "nothing";
+    }
     const marks = waitingSections(now, await taggedEdits(articleId, IN_CHANGES, tx));
     const held = new Set(keyed(now).flatMap(([key], i) => (marks[i]!.held ? [key] : [])));
     if ([...changedSections(writtenOn, doc)].some((key) => held.has(key))) {
