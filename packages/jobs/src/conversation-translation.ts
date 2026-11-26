@@ -141,7 +141,8 @@ async function translateOne({ messageId }: JobInput<"translateMessage">, log: Jo
   } catch (error) {
     if (error instanceof OutOfCredits) {
       await settle({ translationError: "Out of credits" });
-      return { skipped: "out of credits" };
+      // A failure, so the reason stays for Try again (a skip would clear it).
+      return { failed: "out of credits" };
     }
     throw error;
   }

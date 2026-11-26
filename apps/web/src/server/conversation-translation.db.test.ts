@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { handlers, translateMessage } from "@tuti/jobs";
-import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
@@ -295,4 +295,15 @@ test("internal notes are never translated, and with Translate conversations off 
   await call(replyToConversation, off.team, { number: 1, body: "Thanks!" });
   expect(model.requests).toHaveLength(1);
   await expect(call(replyToConversation, off.team, { number: 1, body: "Thanks!", translation: "Danke!" })).rejects.toMatchObject({ status: 400 });
+});
+
+test("out of credits: the message keeps why, and the model isn't asked", async () => {
+  const { project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: "e2e-kai@example.com", body: GERMAN });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  const { id } = await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } });
+  vi.stubEnv("TUTI_CONFIG", creditsOn());
+  expect(await translateMessage({ messageId: id }, { info: () => {}, warn: () => {} })).toEqual({ failed: "out of credits" });
+  expect(model.requests).toHaveLength(0);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id } })).toMatchObject({ teamText: null, translationError: "Out of credits" });
 });
