@@ -183,3 +183,13 @@ test("refused for a member, without Screenshots set up, without lines, for a lin
   expect(run.screenshots.map((shot) => shot.show)).toEqual(["The billing page"]);
   expect(browserUse.runs.at(-1)!.body.task).not.toContain("evil.example.net");
 });
+
+test("a screenshot marker anywhere holds publishing back, not only a line of its own: in a step, inside a sentence", async () => {
+  const step = { type: "orderedList", attrs: { start: 1 }, content: [{ type: "listItem", content: [paragraph("Open Billing. [Screenshot: the billing page]")] }] };
+  const slug = await write(doc(step));
+  await expect(call(publishArticle, as(), { slug })).rejects.toMatchObject({ status: 409, code: "markers", message: expect.stringContaining("[Screenshot: the billing page]") });
+  await call(updateArticle, as(), { slug, content: doc(paragraph("Open Billing.")) });
+  await call(publishArticle, as(), { slug });
+  await call(updateArticle, as(), { slug, content: doc(paragraph("Open Billing, then [screenshot: the menu] pick a plan.")) });
+  await expect(call(publishChanges, as(), { slug })).rejects.toMatchObject({ status: 409, code: "markers", message: expect.stringContaining("[screenshot: the menu]") });
+});

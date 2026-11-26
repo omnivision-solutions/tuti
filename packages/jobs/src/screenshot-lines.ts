@@ -38,6 +38,50 @@ export function screenshotAsked(block: Block): string | null {
 /** The "[Screenshot: …]" lines a text asks for, in order (see screenshotAsked). */
 export const screenshotsAsked = (doc: Doc) => (doc.content ?? []).map(screenshotAsked).filter((show): show is string => show !== null);
 
+// Where a marker starts, however it was written ("[check: …]", "[ Screenshot : …]").
+const MARKERS = { any: /\[\s*(?:check|screenshot)\s*:/gi, screenshot: /\[\s*screenshot\s*:/gi };
+
+/** The markers in a line of text, each from its opening bracket to the one that closes it (brackets of its own inside counted), or to the line's end if none does: one left open is no less a note to self. */
+function markersOf(text: string, kind: keyof typeof MARKERS): string[] {
+  const found: string[] = [];
+  let covered = 0;
+  for (const start of text.matchAll(MARKERS[kind])) {
+    // Inside the one before it ("[Check: or [Check: this?]]"): that one names it.
+    if (start.index < covered) {
+      continue;
+    }
+    let depth = 0;
+    covered = text.length;
+    for (let i = start.index; i < text.length; i++) {
+      depth += text[i] === "[" ? 1 : text[i] === "]" ? -1 : 0;
+      if (depth === 0) {
+        covered = i + 1;
+        break;
+      }
+    }
+    found.push(text.slice(start.index, covered).trim());
+  }
+  return found;
+}
+
+/**
+ * The markers still in a text ("[Check: …]" and "[Screenshot: …]", or only the latter), as written, each one: on a line
+ * of its own as asked, or inside a sentence, a list item, a heading or a code block where it was put instead, which
+ * would go out to readers just the same. What publishing refuses (a changelog entry's, an article's), wider than the
+ * lines a run can fill (screenshotsAsked).
+ */
+export function markersIn(doc: Doc, kind: keyof typeof MARKERS = "any"): string[] {
+  const found: string[] = [];
+  (function read(node: Block | Doc) {
+    if (node.type === "paragraph" || node.type === "heading" || node.type === "codeBlock") {
+      found.push(...toPlainText(node).split("\n").flatMap((line) => markersOf(line, kind)));
+      return;
+    }
+    node.content?.forEach(read);
+  })(doc);
+  return found;
+}
+
 /**
  * Claims a finished run (once, and only once it's ended: a second delivery of its job finds it running and leaves it
  * to the first) and puts its screenshots in `doc`, each in place of a line that asked for exactly it (one for one, in

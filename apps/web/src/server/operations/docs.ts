@@ -24,8 +24,8 @@ import {
   docsSlugsTaken,
   freeDocsSlug,
   RESERVED_ARTICLE_SLUGS,
+  markersIn,
   recordRevision,
-  screenshotsAsked,
   versions,
   revisionsPast,
   settleWaitingEdits,
@@ -522,12 +522,13 @@ export async function keepText(tx: Prisma.TransactionClient, articleId: string, 
  * lock, as the text that goes live is.
  */
 function refuseScreenshotLines(text: { body: string; content: unknown }) {
-  const left = screenshotsAsked(displayDoc(text));
+  // Anywhere, not only a line of its own a run can fill: one in a step or a sentence would go out just the same.
+  const left = markersIn(displayDoc(text), "screenshot");
   if (left.length > 0) {
     throw new OperationError(
       409,
       "markers",
-      `Replace or remove ${left.length === 1 ? "the screenshot line" : `the ${left.length} screenshot lines`} in its text first: ${left.map((show) => `[Screenshot: ${show}]`).join(" ")}`,
+      `Replace or remove ${left.length === 1 ? "the screenshot line" : `the ${left.length} screenshot lines`} in its text first: ${left.join(" ")}`,
     );
   }
 }

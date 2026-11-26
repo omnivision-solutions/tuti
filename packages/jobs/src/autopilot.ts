@@ -4,7 +4,7 @@ import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { articleLimit, ARTICLES_FULL_WAIT, codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { docOf, hasTeammateEdit, scheduleArticle } from "./article-layers";
-import { screenshotsAsked } from "./screenshot-lines";
+import { markersIn } from "./screenshot-lines";
 import { CHECK_BEFORE, CHECK_LARGER, CHECK_NO_CREDITS, CHECK_NO_REPOSITORY, CHECK_UNCLEAR, CHECKS_OFF, checkFailed, type EditCheck } from "./edit-review";
 
 /**
@@ -197,7 +197,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
       return "Its article has a teammate's unpublished edit";
     }
     // A line asking for a screenshot (the docs agent's, where Screenshots is set up) can't go live: the team fills it.
-    if (screenshotsAsked(docOf(article.changes ?? article)).length > 0) {
+    if (markersIn(docOf(article.changes ?? article), "screenshot").length > 0) {
       return SCREENSHOT_WAITS;
     }
     // Past the plan's published articles (a downgrade), it can't go live: it waits rather than going on the schedule.
