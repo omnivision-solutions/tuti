@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { ToolsContext } from "@/components/article-tools";
 import { CollectionSelect } from "@/components/collection-select";
+import { CopyField } from "@/components/copy-button";
 import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -14,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, type ReadAccessDraft, WhoCanRead } from "@/components/who-can-read";
-import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
+import { embedNote, type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
 import type { Access, WithoutAccess } from "@/lib/read-access";
 import { saveArticleSettings } from "@/server/docs";
@@ -139,6 +140,8 @@ export function ArticleSettings({ saved, inline = false }: { saved?: Saved; inli
 type Saved = {
   projectSlug: string;
   article: {
+    /** Its ID (`a_…`), for embeds and the API. */
+    id: string;
     slug: string;
     published: boolean;
     /** Its collection as saved last (its unpublished changes', if it has some). */
@@ -312,6 +315,15 @@ function SavedSettings({
               description="Asks search engines not to list this article."
             />
           </FieldGroup>
+        </FieldSet>
+        <FieldSet>
+          <FieldLegend>Embed</FieldLegend>
+          <FieldDescription>
+            Open this article in the widget from your app. Its ID never changes, so links keep working if you rename it.
+            {embedNote(article.published, article.listing)}
+          </FieldDescription>
+          <CopyField label="Article ID" value={article.id} name="article ID" />
+          <CopyField label="Help button" value={`<button type="button" data-tuti-article="${article.id}">Help</button>`} name="help button" />
         </FieldSet>
         {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}
       </FieldGroup>

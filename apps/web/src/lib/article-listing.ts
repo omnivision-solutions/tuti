@@ -18,3 +18,9 @@ export const LISTING_DESCRIPTIONS: Record<Listing, string> = {
   hidden: "Stays published, but isn't shown anywhere, not even at its link.",
   ai_only: "AI answers use it and name it without a link. It has no page and isn't in any list or search.",
 };
+
+/** Under an article's embed snippet: when the widget can't open it (it opens only an article with a page), else nothing. */
+export function embedNote(published: boolean, listing: Listing): string {
+  if (listing === "hidden" || listing === "ai_only") return ` It doesn't open while the article is ${LISTING_LABELS[listing]}.`;
+  return published ? "" : " It opens once the article is published.";
+}
