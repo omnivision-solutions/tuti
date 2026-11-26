@@ -9,6 +9,8 @@ vi.mock("@/server/images", () => ({ generateImage }));
 vi.mock("@/server/media", () => ({
   uploadStatus: async (id: string) => ({ status: "READY", src: `https://media.example/${id}-full.png`, download: "x", urls: { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` }, width: 1000, height: 500 }),
 }));
+const toast = vi.fn();
+vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
 
 const { RichEditor } = await import("./rich-editor");
@@ -144,6 +146,53 @@ test("the dialog keeps its tries for the image while the text before it changes"
   await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   await act(async () => ref.current!.chain().insertContentAt(1, "Just ").run());
   await act(async () => ref.current!.commands.setNodeSelection(13));
+  await click("Edit with AI");
+  expect(button("Try 1")).toBeTruthy();
+  expect(document.body.textContent).toContain("Edited · 1 of 1");
+});
+
+test("out of credits, Edit with AI says why when pressed (a tap: no tooltip on touch screens), and its tooltip has its name and why", async () => {
+  toast.mockReset();
+  const { pick, button } = await editor({ imageEditing: { ...imageEditing, paused: true } });
+  await pick();
+  const off = button("Edit with AI")!;
+  await act(async () => off.click());
+  expect(toast).toHaveBeenCalledWith("This project is out of credits");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => {
+    off.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true, pointerType: "mouse" }));
+    off.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    off.focus();
+  });
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Edit with AI · This project is out of credits"), { timeout: 3000 });
+});
+
+test("each image keeps its tries while the editor is open: back from another image, they're there", async () => {
+  const OTHER = "otherimage0000000000c";
+  const two = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
+      { type: "image", attrs: { mediaId: OTHER, w: 1000, h: 500 } },
+    ],
+  };
+  const { ref, generate, button, click } = await editor({
+    initial: two,
+    uploads: { projectSlug: "acme", mediaUrls: { [`m/${ORIGINAL}/960.webp`]: "https://media.example/a.webp", [`m/${OTHER}/960.webp`]: "https://media.example/b.webp" } },
+  });
+  const close = async () => {
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  };
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(9));
+  await click("Edit with AI");
+  expect(button("Try 1")).toBeUndefined();
+  await close();
+  await act(async () => ref.current!.commands.setNodeSelection(8));
   await click("Edit with AI");
   expect(button("Try 1")).toBeTruthy();
   expect(document.body.textContent).toContain("Edited · 1 of 1");

@@ -75,7 +75,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
-import { type GeneratedImage, ImageGenerator, type ImageEditing } from "@/components/image-generator";
+import { type GeneratedImage, ImageGenerator, type ImageEditing, type Try } from "@/components/image-generator";
+import { toast } from "sonner";
 import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
 
@@ -230,6 +231,8 @@ export function RichEditor({
 
   // "Edit with AI": the image picked (where it was, as it was). Its dialog stays while the editor does, keeping its tries,
   // and starts afresh for another image.
+  // Each image's tries, by its media id, while the editor is open: editing another image and coming back finds them.
+  const [triesFor] = useState(() => new Map<string, Try[]>());
   const [edited, setEdited] = useState<{ pos: number; image: { id: string; url: string; width: number; height: number } } | null>(null);
   const [editingImage, setEditingImage] = useState(false);
   // One of the project's finished uploads, shown here (one its own or another project's, never signed for it, isn't).
@@ -588,6 +591,8 @@ export function RichEditor({
         {editor && uploads && imageEditing && edited && (
           <ImageGenerator
             key={edited.image.id}
+            tries={triesFor.get(edited.image.id)}
+            onTries={(tries) => triesFor.set(edited.image.id, tries)}
             projectSlug={uploads.projectSlug}
             open={editingImage}
             onOpenChange={setEditingImage}
@@ -1089,7 +1094,7 @@ function Tool({
   const reasonId = useId();
   return (
     <>
-    <IconTooltip label={reason ?? label}><Button
+    <IconTooltip label={reason ? `${label} · ${reason}` : label}><Button
       type="button"
       variant={active ? "secondary" : "ghost"}
       size="icon-sm"
@@ -1098,6 +1103,9 @@ function Tool({
       disabled={disabled}
       focusableWhenDisabled
       aria-describedby={reason ? reasonId : undefined}
+      // Off, a press (a tap: tooltips don't open on touch screens) says why. Seen before the button's own handler,
+      // which ignores presses while it's off.
+      onClickCapture={disabled && reason ? () => toast(reason) : undefined}
       // Keep focus (and the selection) in the text while clicking; keyboard users still reach it with Tab.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}

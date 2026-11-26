@@ -33,7 +33,7 @@ export type PickedImage = { id: string; url: string };
 /** An image made in the dialog, as used: its full size (a signed link, fresh when used), and every stored size (for an editor that inserts it). */
 export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
 /** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
-type Try = PickedImage & { width: number; height: number };
+export type Try = PickedImage & { width: number; height: number };
 /** What an editor needs for "Edit with AI" on its images: AI credits are on, the project is out of them, its logo. */
 export type ImageEditing = { credits: boolean; paused: boolean; logo: PickedImage | null };
 export type ImageSize = { label: string; width: number; height: number };
@@ -80,6 +80,8 @@ export function ImageGenerator({
   onUse,
   alsoUse,
   editing,
+  tries: initialTries = [],
+  onTries,
   finalFocus,
 }: {
   projectSlug: string;
@@ -105,6 +107,10 @@ export function ImageGenerator({
   alsoUse?: { label: string; onUse: (image: GeneratedImage) => void };
   /** The image being edited ("Edit with AI"): the first reference, kept there, and shown beside each try. */
   editing?: Try;
+  /** Tries made before (kept by the owner, as `onTries` gives them), the last one picked. */
+  tries?: Try[];
+  /** Each new try, with those before it: for the owner to keep while the dialog isn't there. */
+  onTries?: (tries: Try[]) => void;
   finalFocus?: Parameters<typeof DialogContent>[0]["finalFocus"];
 }) {
   const id = useId();
@@ -123,12 +129,12 @@ export function ImageGenerator({
   const sizes = [defaultSize, ...PRESETS];
   const [sizeLabel, setSizeLabel] = useState(defaultSize.label);
   const [custom, setCustom] = useState({ width: String(defaultSize.width), height: String(defaultSize.height) });
-  const [tries, setTries] = useState<Try[]>([]);
+  const [tries, setTries] = useState<Try[]>(initialTries);
   // What the live region says once a try is in (while one runs, Generating…; errors are an alert of their own).
   const [said, setSaid] = useState("");
   const [using, startUsing] = useTransition();
   const [useError, setUseError] = useState<string | null>(null);
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(Math.max(0, initialTries.length - 1));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -180,7 +186,9 @@ export function ImageGenerator({
       }
       const { id: madeId, url, width, height } = result.image;
       // One runs at a time (Generate waits), so the list is still the one it started with.
-      setTries([...tries, { id: madeId, url, width, height }]);
+      const made = [...tries, { id: madeId, url, width, height }];
+      setTries(made);
+      onTries?.(made);
       setSelected(tries.length);
       setSaid(`Try ${tries.length + 1} is ready`);
     });
