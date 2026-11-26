@@ -1,5 +1,5 @@
 import { type ConversationOrigin, type ConversationStatus, type MessageAuthor, type MessageChannel, Prisma, prisma } from "@tuti/db";
-import { enqueue, historySince, inSomePlansHistory, replyTranslation, visibleConversations } from "@tuti/jobs";
+import { enqueue, historySince, inSomePlansHistory, replyTranslation, translationFailed, visibleConversations } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -917,9 +917,10 @@ async function tellTeam(projectId: string, messageId: string) {
   await Promise.all([
     // Translated into the team's language in the background (docs/plan.md L22): the message is already in.
     translateConversations &&
-      enqueue("translateMessage", { messageId }).catch((error: unknown) => {
-        // Shown as written: the team reads the original.
+      enqueue("translateMessage", { messageId }).catch(async (error: unknown) => {
+        // Shown as written, and marked so the team can try again (L22b): never left looking untranslatable.
         log.error("Enqueueing a message's translation failed", { error, messageId });
+        await translationFailed(messageId, "Couldn't queue its translation");
       }),
     enqueue("conversationMessage", { messageId }).catch((error: unknown) => {
       // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.

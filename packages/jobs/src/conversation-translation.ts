@@ -1,6 +1,6 @@
 import { translateText } from "@tuti/content";
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
-import { aiEnabled, complete, type JobInput } from "@tuti/shared";
+import { aiEnabled, complete, type JobInput, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
@@ -59,7 +59,28 @@ export async function translationSettings(projectId: string) {
  * short to tell, the conversation's last known one (else it isn't translated). The conversation keeps the customer's
  * language. A failure is kept on the message (`translationError`), never thrown past the last try: the message is in.
  */
-export async function translateMessage({ messageId }: JobInput<"translateMessage">, log: JobLogger, { lastTry }: JobRun = { lastTry: true }): Promise<JobResult> {
+export async function translateMessage(input: JobInput<"translateMessage">, log: JobLogger, run: JobRun = { lastTry: true }): Promise<JobResult> {
+  try {
+    return await translateOne(input, log, run);
+  } catch (error) {
+    if (!run.lastTry) {
+      throw error;
+    }
+    // Out of tries, whatever went wrong: the message says so, so the team can try again (L22b), never left looking untranslatable.
+    log.warn(`Translating message ${input.messageId} failed: ${String(error).slice(0, 300)}`);
+    await translationFailed(input.messageId, "Couldn't translate it");
+    return { failed: "error" };
+  }
+}
+
+/** Marks a message's translation as failed, where nothing else is stored for it yet (logged, never thrown). */
+export async function translationFailed(messageId: string, why: string) {
+  await prisma.conversationMessage
+    .updateMany({ where: { id: messageId, teamText: null, translationError: null }, data: { translationError: why } })
+    .catch((error: unknown) => serverLog.error("Saving a message's translation failure failed", { messageId, error }));
+}
+
+async function translateOne({ messageId }: JobInput<"translateMessage">, log: JobLogger, { lastTry }: JobRun): Promise<JobResult> {
   const message = await prisma.conversationMessage.findUnique({
     where: { id: messageId },
     select: {
@@ -171,8 +192,9 @@ export async function replyTranslation(
   if (!translated || !language) {
     return null;
   }
+  // No AI on the server: replies go as written, as customers' messages stay (nothing a Try again would change).
   if (!aiEnabled()) {
-    return { error: "AI isn't set up on this server.", language };
+    return null;
   }
   let ask;
   try {

@@ -13,6 +13,13 @@ import { call } from "./operations/run";
 import { getSupportSettings, updateSupportSettings } from "./operations/support";
 import { summarizeConversation } from "./operations/support-ai";
 
+/** Queuing a job fails for the keys in `failing` (Hatchet unreachable); everything else is queued as it is. */
+const jobs = vi.hoisted(() => ({ failing: new Set<string>() }));
+vi.mock("@tuti/jobs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tuti/jobs")>();
+  return { ...actual, enqueue: ((key, input) => (jobs.failing.has(key) ? Promise.reject(new Error("Hatchet unreachable")) : actual.enqueue(key, input))) as typeof actual.enqueue };
+});
+
 /** Inbox in the team's language (docs/plan.md L22): customers' messages into the team's, replies into the customer's. */
 
 let model: ModelFake;
@@ -43,7 +50,8 @@ async function setup({ translate = true } = {}) {
   const project = await createProject(owner);
   const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
   if (translate) {
-    await call(updateSupportSettings, team, { translate: true });
+    // In the database: support.update refuses it until the Inbox shows translated conversations (part two).
+    await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
   }
   return { project, team };
 }
@@ -64,10 +72,12 @@ async function customerWrites(projectId: string, conversationId: string, body: s
   return prisma.conversationMessage.findUniqueOrThrow({ where: { id: message.id } });
 }
 
-test("the team language defaults to English and Translate conversations to off; both are saved", async () => {
+test("the team language defaults to English and Translate conversations to off; the language is saved, translating refused until the Inbox shows it", async () => {
   const { team } = await setup({ translate: false });
   expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "en", translate: false });
-  expect(await call(updateSupportSettings, team, { teamLanguage: "pt-br", translate: true })).toMatchObject({ teamLanguage: "pt-BR", translate: true });
+  expect(await call(updateSupportSettings, team, { teamLanguage: "pt-br", translate: false })).toMatchObject({ teamLanguage: "pt-BR", translate: false });
+  await expect(call(updateSupportSettings, team, { translate: true })).rejects.toMatchObject({ status: 409, code: "not_available_yet" });
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ translate: false });
   await expect(call(updateSupportSettings, team, { teamLanguage: "not a language" })).rejects.toThrow();
 });
 
@@ -196,14 +206,35 @@ test("a preview is sent only while it's in the customer's language: changed sinc
   expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(0);
 });
 
-test("without AI on the server, conversations can't be set to translate, and a project that was is left alone", async () => {
-  const { project, team } = await setup({ translate: false });
+test("without AI on the server, a project that translates is left alone: messages and replies go as written", async () => {
+  const { project, team } = await setup();
   vi.stubEnv("OPENAI_API_KEY", "");
-  await expect(call(updateSupportSettings, team, { translate: true })).rejects.toMatchObject({ status: 503, code: "ai_unavailable" });
-  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
   await call(createConversation, team, { email: "e2e-kai@example.com", body: GERMAN });
-  expect(model.requests).toHaveLength(0);
   expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ teamText: null, translationError: null });
+  // Even where the customer's language is known: the reply isn't refused.
+  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { language: "de" } });
+  expect(await call(replyToConversation, team, { number: 1, body: "Thanks!" })).toMatchObject({ body: "Thanks!", teamText: null, language: null });
+  expect(model.requests).toHaveLength(0);
+});
+
+test("nothing to translate (only a link): a message and a reply go as written, and the model isn't asked", async () => {
+  const { project, team, conversation } = await german();
+  const url = "https://acme.test/export";
+  expect(await customerWrites(project.id, conversation.id, url)).toMatchObject({ body: url, teamText: null, translationError: null });
+  expect(await call(replyToConversation, team, { number: 1, body: url })).toMatchObject({ body: url, teamText: null, language: null });
+  expect(model.requests).toHaveLength(1);
+});
+
+test("a translation that can't be queued is marked as failed, not left looking untranslatable", async () => {
+  const { project, team } = await setup();
+  jobs.failing.add("translateMessage");
+  try {
+    await call(createConversation, team, { email: "e2e-kai@example.com", body: GERMAN });
+  } finally {
+    jobs.failing.clear();
+  }
+  expect(model.requests).toHaveLength(0);
+  expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ teamText: null, translationError: "Couldn't queue its translation" });
 });
 
 test("a failed translation: the message shows as written with why; a reply is never sent untranslated unless the team says so", async () => {
