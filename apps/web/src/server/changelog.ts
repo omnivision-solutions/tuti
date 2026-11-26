@@ -29,6 +29,7 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
+import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -63,6 +64,9 @@ export async function saveChangelogEntry(
     posts: formData.has("postsEditable") ? formData.getAll("posts").map(Number) : undefined,
     // The cover's upload id, empty once removed (no field: uploads aren't set up, so it stays as it is).
     cover: formData.has("cover") ? String(formData.get("cover")) || null : undefined,
+    // The saved version the form's text was shown from: a save is refused, not putting their lines back, if screenshots
+    // went in since (changelog.takeScreenshots).
+    screenshotsSince: String(formData.get("screenshotsSeenAt") ?? "") || undefined,
   };
   let created: number | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -205,6 +209,12 @@ export async function addChangelogPullRequests(
 /** Takes a merged pull request out of a draft, with its line (see changelog.removePullRequest). */
 export async function removeChangelogPullRequest(projectSlug: string, number: number, url: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(removePullRequestOperation, context, { number: Number(number), url: String(url) }));
+}
+
+/** The entry editor's "Take screenshots" (changelog.takeScreenshots): the "[Screenshot: …]" lines it listed and the admin confirmed, filled in the background. */
+export async function takeChangelogScreenshots(projectSlug: string, number: number, shows: string[]): Promise<FormState> {
+  const shots = (Array.isArray(shows) ? shows : []).map((show) => ({ show: String(show) }));
+  return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { number: Number(number), shots }));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */

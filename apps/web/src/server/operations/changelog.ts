@@ -63,6 +63,7 @@ import { onTeam } from "../session";
 import { actorReader } from "../portal-access";
 import { groupLinks } from "./docs";
 import { requirePlan } from "./plan";
+import { SCREENSHOTS_PLACED } from "./screenshots";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
@@ -695,6 +696,13 @@ const updateInput = z.object({
       .optional()
       .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt`, or the `expectedUpdatedAt` changelog.rewrite returns")
       .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
+    screenshotsSince: z.iso
+      .datetime()
+      .optional()
+      .describe(
+        "The entry's `updatedAt` the text you send was based on: refused (409 `screenshots`) if changelog.takeScreenshots put screenshots in its text since, which this text would put the lines back over",
+      )
+      .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
   });
 
 export const updateChangelogEntry = defineOperation({
@@ -764,6 +772,20 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
             await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { publishedAt: true, posts: { select: { post: { select: { number: true } } } } } }),
             input.posts!,
           );
+        }
+        if (input.screenshotsSince && text) {
+          // Under the entry's lock, as placing screenshots takes it: one that committed since the text was read is seen.
+          // By the entry's own versions, never one machine's clock against another's: changed since the text's version,
+          // and a placement replaced that version or a later one.
+          const since = new Date(input.screenshotsSince);
+          const [now] = await tx.$queryRaw<{ updatedAt: Date }[]>`SELECT "updatedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+          if (
+            now &&
+            now.updatedAt.getTime() !== since.getTime() &&
+            (await tx.screenshotRun.count({ where: { changelogEntryId: entry.id, placedOver: { gte: since } } })) > 0
+          ) {
+            throw new OperationError(409, "screenshots", SCREENSHOTS_PLACED);
+          }
         }
         if (expectedUpdatedAt) {
           // Locked until this commits, so a save in between can't slip past the check.

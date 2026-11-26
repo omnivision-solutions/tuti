@@ -104,7 +104,7 @@ export default async function globalSetup() {
   const frill = await startFrillFake();
   // Nolt's API, for imports: made-up users and feedback, its key FAKE_NOLT_KEY.
   const nolt = await startNoltFake();
-  // Browser Use's cloud browser, for Screenshots; journeys script its next run through /_fake/next-run.
+  // Browser Use's cloud browser, for Screenshots; journeys steer its runs by what they ask for (FAKE_UNREACHABLE, FAKE_SLOW, FAKE_CANT_SIGN_IN), never by scripting the next run, which a journey beside them could take.
   const browserUse = await startBrowserUseFake();
   process.env.E2E_BROWSER_USE_URL = browserUse.url;
   const postgres = await startMigratedPostgres("tuti_e2e");
