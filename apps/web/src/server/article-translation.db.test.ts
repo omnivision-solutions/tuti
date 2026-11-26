@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { handlers, languageTranslationsDone, PRODUCT_SETTING_CHANGED, retryDelay, translateArticle, translationSource } from "@tuti/jobs";
+import { handlers, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, queueArticleTranslations, retryDelay, translateArticle, translationSource } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -275,37 +275,36 @@ test("a translation that can't be queued, or whose job is lost, waits and is que
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
 });
 
-test("a job lost from the queue is queued again only after the longest the queue may hold it; an up-to-date job leaves a newer safety net", async () => {
+test("a job lost from the queue is queued again after the longest it may wait; an up-to-date job leaves a newer queuing's safety net", async () => {
+  // Inline nothing waits in a queue: an hour. On Hatchet longer than its 24 hours' scheduleTimeout plus 10 minutes' run.
+  expect(lostAfterMs()).toBe(60 * 60_000);
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  expect(lostAfterMs()).toBeGreaterThanOrEqual((24 * 60 + 10) * 60_000);
+  vi.stubEnv("JOBS_DRIVER", "inline");
+
   await draft();
   await publish();
   model.reply(reply());
   await languages({ languages: [{ code: "de" }] });
-  // Queued again by the retry job: its safety net outlasts the task's 24 hours in the queue plus its 10 minutes' run.
-  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
-  const before = Date.now();
-  const requeue = vi.spyOn(handlers, "translateArticle").mockResolvedValue({ skipped: "queued" } as never);
-  try {
-    expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
-  } finally {
-    requeue.mockRestore();
-  }
-  expect((await translation()).retryAt!.getTime()).toBeGreaterThanOrEqual(before + (24 * 60 + 10) * 60_000);
-
-  // An up-to-date job finds a safety net set by a newer publish after it read its own: that one stays.
-  const { id } = await translation();
-  const newer = new Date(Date.now() + 5 * 60_000);
+  const { articleId } = await translation();
+  // Job A reads its page (up to date, with its safety net), then the page is queued again before A clears its net:
+  // that queuing moves the net, so A leaves it for the newer job (which Hatchet might lose).
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() + 60_000) } });
   const read = prisma.articleTranslation.findUnique.bind(prisma.articleTranslation);
+  const lost = vi.spyOn(handlers, "translateArticle").mockResolvedValue({ skipped: "lost" } as never);
   const findUnique = vi.spyOn(prisma.articleTranslation, "findUnique").mockImplementationOnce((async (args: never) => {
     const row = await read(args);
-    await prisma.articleTranslation.update({ where: { id }, data: { retryAt: newer } });
+    await queueArticleTranslations(articleId);
+    await languageTranslationsDone();
     return row;
   }) as never);
   try {
-    expect(await translateArticle({ articleId: (await translation()).articleId, language: "de" }, log)).toEqual({ skipped: "up to date" });
+    expect(await translateArticle({ articleId, language: "de" }, log)).toEqual({ skipped: "up to date" });
   } finally {
     findUnique.mockRestore();
+    lost.mockRestore();
   }
-  expect((await translation()).retryAt).toEqual(newer);
+  expect((await translation()).retryAt!.getTime()).toBeGreaterThan(Date.now() + 30 * 60_000);
 });
 
 test("without AI on the server, pages wait and say why", async () => {

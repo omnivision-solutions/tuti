@@ -32,11 +32,11 @@ const RETRY_MAX_MS = 24 * 60 * 60_000;
 const STALE = "the product's language setting changed";
 const CHANGED = "changed while translating";
 /**
- * A queued translation not ended by then is taken as lost, and queued again: longer than the task may wait in the queue
- * (its `scheduleTimeout`, 24 hours, behind the server-wide cap) plus run (`executionTimeout`, 10 minutes), so one still
- * queued is never queued twice.
+ * A queued translation not ended by then is taken as lost, and queued again. On Hatchet longer than the task may wait in
+ * the queue (its `scheduleTimeout`, 24 hours, behind the server-wide cap) plus run (`executionTimeout`, 10 minutes), so
+ * one still queued is never queued twice; inline nothing waits in a queue, so an hour brings back what a restart cut off.
  */
-const LOST_AFTER_MS = 25 * 60 * 60_000;
+export const lostAfterMs = () => (process.env.JOBS_DRIVER === "inline" ? 60 : 25 * 60) * 60_000;
 export const retryDelay = (tries: number) => Math.min(RETRY_FIRST_MS * 2 ** Math.max(0, tries - 1), RETRY_MAX_MS);
 
 const ABOUT = "an article from a software product's help center: its title, meta description and search keywords (the first paragraphs), then its text";
@@ -261,8 +261,10 @@ async function queue(articleId: string, language: string) {
  * through, inline; Hatchet dropping it), is queued again by the retry job once it's past, as the job's every end sets or
  * clears it.
  */
+// Moved on each queuing (not set only when empty), so a job that finds its page up to date can tell a newer queuing's net
+// from the one it read; a page waiting on a failure keeps its backoff.
 const safetyNet = (where: Prisma.ArticleTranslationWhereInput) =>
-  prisma.articleTranslation.updateMany({ where: { ...where, retryAt: null }, data: { retryAt: new Date(Date.now() + LOST_AFTER_MS) } });
+  prisma.articleTranslation.updateMany({ where: { ...where, error: null }, data: { retryAt: new Date(Date.now() + lostAfterMs()) } });
 
 /** Queuing (inline, translating) still going after the request or publish answered. */
 const inBackground = new Set<Promise<void>>();
@@ -367,7 +369,7 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   // the claim is the safety net's next time, so pages a restart keeps this run from reaching come back too.
   const due = await prisma.articleTranslation.updateManyAndReturn({
     where: { retryAt: { lte: new Date() }, automatic: true },
-    data: { retryAt: new Date(Date.now() + LOST_AFTER_MS) },
+    data: { retryAt: new Date(Date.now() + lostAfterMs()) },
     select: { articleId: true, language: true },
   });
   // Each job's end sets the next try's time, or clears it.
