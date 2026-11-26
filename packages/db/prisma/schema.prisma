@@ -2552,6 +2552,8 @@ model Article {
   landingOf         DocsTab[]             @relation("DocsTabLanding")
   codeChangeActions CodeChangeAction[]
   verifications     ArticleVerification[]
+  /// Screenshot runs that fill its "[Screenshot: …]" lines (articles.takeScreenshots).
+  screenshotRuns    ScreenshotRun[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@unique([projectId, publicId])
@@ -3562,6 +3564,8 @@ model ScreenshotRun {
   /// The changelog entry whose "[Screenshot: …]" lines it fills once it's done (changelog.takeScreenshots), and when
   /// they were filled (the job, or the editor's read for a run an older worker finished).
   changelogEntryId String?
+  /// Or the help center article whose lines it fills (articles.takeScreenshots), in its text last saved.
+  articleId   String?
   placedAt    DateTime?
   /// Set when it put screenshots in: the entry's `updatedAt` it replaced. A save of text shown at that version or later
   /// is refused (changelog.update's `screenshotsSince`), without comparing one machine's clock with another's.
@@ -3591,10 +3595,12 @@ model ScreenshotRun {
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   startedBy   User?        @relation(fields: [startedById], references: [id], onDelete: SetNull)
   changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
+  article     Article?     @relation(fields: [articleId], references: [id], onDelete: SetNull)
   screenshots Screenshot[]
 
   @@index([projectId, test, createdAt])
   @@index([changelogEntryId, createdAt])
+  @@index([articleId, createdAt])
   @@map("screenshot_run")
 }
 

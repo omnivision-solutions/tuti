@@ -1,6 +1,7 @@
+import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeChangelogScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -301,8 +302,8 @@ const startedBy = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
  * Starts a run, or finds the one running: one at a time per project (and one Test), as each holds a worker slot for
  * minutes and spends up to the cost cap. A Test returns the one running; screenshots.take refuses (409).
  */
-async function start(projectId: string, actor: Actor, shots: { show: string }[], test: boolean, changelogEntryId?: string) {
-  const started = await startScreenshots(projectId, shots, { startedById: startedBy(actor), test, changelogEntryId }).catch(() => {
+async function start(projectId: string, actor: Actor, shots: { show: string }[], test: boolean, target?: LinesOf) {
+  const started = await startScreenshots(projectId, shots, { startedById: startedBy(actor), test, ...target }).catch(() => {
     throw new OperationError(503, "unavailable", "Couldn't start the screenshots. Try again in a moment.");
   });
   if (!started.started && !test) {
@@ -385,6 +386,49 @@ export const getScreenshots = defineOperation({
   },
 });
 
+/** What `shots` is in the operations that fill a text's lines: what the admin read and confirmed. */
+const linesInput = (where: string) =>
+  z
+    .array(
+      z.object({
+        show: z
+          .string()
+          .trim()
+          .min(1, "Say what each screenshot shows")
+          .max(MAX_SHOW, `Keep each screenshot line under ${MAX_SHOW} characters`)
+          // What the admin confirmed must be all the agent reads.
+          .refine((show) => !hasHiddenCharacters(show), { error: (issue) => `“[Screenshot: ${String(issue.input).slice(0, 80)}]” ${HIDDEN_CHARACTERS}` })
+          .describe(`A line's text, between "[Screenshot:" and "]", as it is in the ${where}`),
+      }),
+    )
+    .min(1, "Pick a line to take")
+    .max(MAX_SHOTS, `Take up to ${MAX_SHOTS} screenshots at a time`)
+    .describe(`The lines to take, as you read them in the ${where}: only these are sent to the agent, and each must still be one of its "[Screenshot: …]" lines (a 409 otherwise)`);
+
+/** Where a run's screenshots go once it's done: a changelog entry's lines, or an article's. */
+type LinesOf = { changelogEntryId: string } | { articleId: string };
+
+/**
+ * Starts a run for a text's "[Screenshot: …]" lines: only lines the caller confirmed, each one of the text's own, one
+ * for one, so what the agent is asked is what was read, never a line added since (by a member, or a draft written from
+ * outside text).
+ */
+async function takeLines(projectId: string, actor: Actor, doc: Doc, shots: { show: string }[], target: LinesOf, what: "entry" | "article") {
+  await refuseRun(projectId);
+  const left = screenshotsAsked(doc);
+  if (left.length === 0) {
+    throw new OperationError(409, "no_markers", `This ${what} has no “[Screenshot: …]” lines to fill.`);
+  }
+  for (const { show } of shots) {
+    const at = left.indexOf(show);
+    if (at === -1) {
+      throw new OperationError(409, "changed", `“[Screenshot: ${show.slice(0, 80)}${show.length > 80 ? "…" : ""}]” isn't in the ${what}'s saved text any more. Look at its lines again.`);
+    }
+    left.splice(at, 1);
+  }
+  return start(projectId, actor, shots, false, target);
+}
+
 export const takeChangelogScreenshots = defineOperation({
   name: "changelog.takeScreenshots",
   title: "Fill screenshot lines",
@@ -397,22 +441,7 @@ export const takeChangelogScreenshots = defineOperation({
   errors: [402, 404, 409, 503],
   input: z.object({
     number: z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] }),
-    shots: z
-      .array(
-        z.object({
-          show: z
-            .string()
-            .trim()
-            .min(1, "Say what each screenshot shows")
-            .max(MAX_SHOW, `Keep each screenshot line under ${MAX_SHOW} characters`)
-            // What the admin confirmed must be all the agent reads.
-            .refine((show) => !hasHiddenCharacters(show), { error: (issue) => `“[Screenshot: ${String(issue.input).slice(0, 80)}]” ${HIDDEN_CHARACTERS}` })
-            .describe("A line's text, between \"[Screenshot:\" and \"]\", as it is in the entry"),
-        }),
-      )
-      .min(1, "Pick a line to take")
-      .max(MAX_SHOTS, `Take up to ${MAX_SHOTS} screenshots at a time`)
-      .describe(`The lines to take, as you read them in the entry: only these are sent to the agent, and each must still be one of its "[Screenshot: …]" lines (a 409 otherwise)`),
+    shots: linesInput("entry"),
   }),
   output: runOutput.describe("The run, running"),
   example: { shots: [{ show: "The billing page with the invoices list" }] },
@@ -421,42 +450,59 @@ export const takeChangelogScreenshots = defineOperation({
     if (!entry) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
-    await refuseRun(projectId);
-    // Only lines the caller confirmed, each one of the entry's own, one for one: what the agent is asked is what was
-    // read, never a line added since (by a member, or a draft written from outside text).
-    const left = screenshotsAsked(displayDoc(entry));
-    if (left.length === 0) {
-      throw new OperationError(409, "no_markers", "This entry has no “[Screenshot: …]” lines to fill.");
-    }
-    for (const { show } of shots) {
-      const at = left.indexOf(show);
-      if (at === -1) {
-        throw new OperationError(409, "changed", `“[Screenshot: ${show.slice(0, 80)}${show.length > 80 ? "…" : ""}]” isn't in the entry's saved text any more. Look at its lines again.`);
-      }
-      left.splice(at, 1);
-    }
-    return start(projectId, actor, shots, false, entry.id);
+    return takeLines(projectId, actor, displayDoc(entry), shots, { changelogEntryId: entry.id }, "entry");
   },
 });
 
+/** An article's text as last saved: a published one's unpublished changes if it has some, else its own. */
+const savedText = (article: { body: string; content: unknown; changes: { body: string; content: unknown } | null }) => displayDoc(article.changes ?? article);
+
+export const takeArticleScreenshots = defineOperation({
+  name: "articles.takeScreenshots",
+  title: "Fill article screenshot lines",
+  summary: `Take screenshots for a docs article's "[Screenshot: …]" lines you confirm (\`shots\`, up to ${MAX_SHOTS}), in the background (screenshots.get reads the run). Each one taken replaces its line as a new version; one not taken stays, and the article can't be published while it does. Costs credits where used`,
+  method: "POST",
+  path: "/articles/{slug}/screenshots",
+  scope: "write",
+  // As screenshots.take: what's asked for goes into the agent's task beside the sign-in.
+  access: "admin",
+  errors: [402, 404, 409, 503],
+  input: z.object({
+    slug: z.string().trim().min(1).max(200).describe("The article's slug").meta({ examples: ["invite-your-team"] }),
+    shots: linesInput("article"),
+  }),
+  output: runOutput.describe("The run, running"),
+  example: { shots: [{ show: "Settings → Team with the Invite dialog open" }] },
+  run: async ({ actor, projectId }, { slug, shots }) => {
+    const article = await prisma.article.findFirst({
+      where: { projectId, slug, deletedAt: null },
+      select: { id: true, body: true, content: true, changes: { select: { body: true, content: true } } },
+    });
+    if (!article) {
+      throw new OperationError(404, "not_found", `There's no article “${slug}”`);
+    }
+    return takeLines(projectId, actor, savedText(article), shots, { articleId: article.id }, "article");
+  },
+});
 
 /** Shots whose cost the estimate averages: the project's latest. */
 const ESTIMATE_SHOTS = 20;
 
 /**
- * What the changelog editor shows of an entry's screenshots: how many of its lines ask for one, whether they can be
- * taken (null: not on this server, or not set up), the entry's latest run while it runs, the lines it didn't take that
- * are still there with why, and what taking them would cost in credits, from recent screenshots (with credits on; null when none has been priced yet).
+ * What an editor shows of a text's screenshots (a changelog entry's, an article's): how many of its lines ask for one,
+ * whether they can be taken (null: not on this server, or not set up), the text's latest run while it runs, the lines
+ * it didn't take that are still there with why, and what taking them would cost in credits, from recent screenshots
+ * (with credits on; null when none has been priced yet). `doc` is its text as saved; `savedAt` which version that is.
  */
-export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string; updatedAt: Date }) {
-  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
-  // Going until its screenshots are placed, as entryScreenshotsRunning says: one ended a moment before its job places
+export async function lineScreenshots(projectId: string, target: LinesOf, doc: Doc, savedAt: string) {
+  const latest = await prisma.screenshotRun.findFirst({ where: target, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
+  // Going until its screenshots are placed, as screenshotsRunning says: one ended a moment before its job places
   // them still has the editor asking.
   const going = latest !== null && (latest.state === "RUNNING" || !latest.placedAt);
   if (latest?.state === "RUNNING") {
     await settleStaleScreenshotRuns(projectId);
   }
-  const asked = screenshotsAsked(displayDoc(entry));
+  const asked = screenshotsAsked(doc);
   const setUp = Boolean(await prisma.screenshotSettings.count({ where: { projectId } }));
   const run =
     latest &&
@@ -476,8 +522,8 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
     ? await prisma.screenshot.findMany({ where: { projectId, cost: { not: null }, run: { test: false } }, orderBy: { createdAt: "desc" }, take: ESTIMATE_SHOTS, select: { cost: true } })
     : [];
   return {
-    // When the entry shown was saved: a run that ends without changing it changed nothing in the form.
-    savedAt: entry.updatedAt.toISOString(),
+    // Which saved version the text shown is: a run that ends without changing it changed nothing in the form.
+    savedAt,
     asked: asked.length,
     // The lines, for Take screenshots to list before it sends them (the first MAX_SHOTS).
     lines: asked.slice(0, MAX_SHOTS),
@@ -492,39 +538,60 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
   };
 }
 
-export type EntryScreenshots = Awaited<ReturnType<typeof entryScreenshots>>;
+export type LineScreenshots = Awaited<ReturnType<typeof lineScreenshots>>;
+
+/** A changelog entry's (lineScreenshots): `savedAt` when it was saved, which its save sends back (`screenshotsSince`). */
+export const entryScreenshots = (projectId: string, entry: { id: string; content: unknown; body: string; updatedAt: Date }) =>
+  lineScreenshots(projectId, { changelogEntryId: entry.id }, displayDoc(entry), entry.updatedAt.toISOString());
+
+/** An article's (lineScreenshots), as last saved: `savedAt` its newest version's id (the editor's own checks use it). */
+export const articleScreenshots = (projectId: string, article: { id: string; body: string; content: unknown; changes: { body: string; content: unknown } | null }, revision: string | null) =>
+  lineScreenshots(projectId, { articleId: article.id }, savedText(article), revision ?? "");
 
 export const SCREENSHOTS_PLACED =
   "Screenshots went into the saved text since you opened this entry. Reload the page to see them: saving now would put the lines back in place of them.";
 
 /**
- * Places the entry's latest run's screenshots if it ended without (its job an older worker's, during a deploy, or one
- * that died): the editor does it before reading the entry. Whether it placed any.
+ * Places the text's latest run's screenshots if it ended without (its job an older worker's, during a deploy, or one
+ * that died): the editor does it before reading the text. Whether it placed any.
  */
-export async function placeLeftoverScreenshots(entryId: string): Promise<boolean> {
-  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entryId }, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
-  return Boolean(latest && latest.state !== "RUNNING" && !latest.placedAt && (await placeChangelogScreenshots(latest.id)) > 0);
+export async function placeLeftoverScreenshots(target: LinesOf | Prisma.ScreenshotRunWhereInput): Promise<boolean> {
+  const latest = await prisma.screenshotRun.findFirst({ where: target, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
+  return Boolean(latest && latest.state !== "RUNNING" && !latest.placedAt && (await placeScreenshots(latest.id)) > 0);
 }
 
 /**
- * Whether the entry's latest screenshot run is still going (a stopped one settled first), and when the entry was last
+ * Whether a text's latest screenshot run is still going (a stopped one settled first), and which version of it is
  * saved: the editor asks while one runs. Going until its screenshots are placed, not only until it ends: its job places
  * them a moment after, and the editor reads `savedAt` to know whether they changed the saved text. One that ended
  * without (an older worker's, a job that died) is placed here, as on opening the editor.
  */
-export async function entryScreenshotsRunning(projectId: string, number: number) {
+async function screenshotsRunning(projectId: string, target: LinesOf | null, saved: () => Promise<string | null>) {
   await settleStaleScreenshotRuns(projectId);
-  const read = () =>
-    prisma.changelogEntry.findUnique({
-      where: { projectId_number: { projectId, number } },
-      select: { id: true, updatedAt: true, screenshotRuns: { orderBy: { createdAt: "desc" }, take: 1, select: { state: true, placedAt: true } } },
-    });
-  let entry = await read();
-  const run = entry?.screenshotRuns[0];
-  if (entry && run && run.state !== "RUNNING" && !run.placedAt) {
-    await placeLeftoverScreenshots(entry.id);
-    entry = await read();
+  if (!target) {
+    return { running: false, savedAt: null };
   }
-  const latest = entry?.screenshotRuns[0];
-  return { running: latest?.state === "RUNNING" || (latest !== undefined && !latest.placedAt), savedAt: entry?.updatedAt.toISOString() ?? null };
+  const latest = () => prisma.screenshotRun.findFirst({ where: target, orderBy: { createdAt: "desc" }, select: { state: true, placedAt: true } });
+  let run = await latest();
+  if (run && run.state !== "RUNNING" && !run.placedAt) {
+    await placeLeftoverScreenshots(target);
+    run = await latest();
+  }
+  return { running: run?.state === "RUNNING" || (run !== null && !run.placedAt), savedAt: await saved() };
+}
+
+/** A changelog entry's (screenshotsRunning): `savedAt` when it was last saved. */
+export async function entryScreenshotsRunning(projectId: string, number: number) {
+  const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true } });
+  return screenshotsRunning(projectId, entry && { changelogEntryId: entry.id }, async () =>
+    entry ? ((await prisma.changelogEntry.findUnique({ where: { id: entry.id }, select: { updatedAt: true } }))?.updatedAt.toISOString() ?? null) : null,
+  );
+}
+
+/** An article's (screenshotsRunning): `savedAt` its newest version's id. */
+export async function articleScreenshotsRunning(projectId: string, slug: string) {
+  const article = await prisma.article.findFirst({ where: { projectId, slug, deletedAt: null }, select: { id: true } });
+  return screenshotsRunning(projectId, article && { articleId: article.id }, async () =>
+    article ? ((await prisma.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? null) : null,
+  );
 }

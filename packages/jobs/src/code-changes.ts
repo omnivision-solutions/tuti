@@ -14,6 +14,7 @@ import {
   planNeeded,
   providerDidNotAnswer,
   roleModel,
+  screenshotsEnabled,
   toVectorLiteral,
   tunedSettings,
   withCodeChangesSettings,
@@ -566,10 +567,12 @@ async function analyse(
     const ask = askingWithTools(tools, use, signal);
     // Each article edit checked before it's proposed (E5).
     const review: Review = { projectId: change.projectId, context: tools, signal };
+    // With Screenshots set up, the writers may mark where a picture belongs (SC3): the team fills it in the editor.
+    const screenshots = screenshotsEnabled() && (await prisma.screenshotSettings.count({ where: { projectId: change.projectId } })) > 0;
     const [{ why, line }, written] = await Promise.all([
       // Why, the posts' reasons and the changelog line: only for what users see (the gate).
       seen ? writeProposals(pr, summary, proposals, posts, use) : { why: "", line: "" },
-      Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, ask, review))),
+      Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, ask, review, screenshots))),
     ]);
     let kept = proposals.filter((_, i) => written[i]);
     if (!seen && kept.length === 0) {
@@ -594,7 +597,7 @@ async function analyse(
         }
         // Written again from the newest text, so neither edit is lost (one the model can't write usably isn't proposed).
         const again = kept.filter((proposal) => proposal.kind === "ARTICLE_EDIT" && error.articleIds.includes(proposal.articleId!));
-        const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, ask, review)));
+        const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, ask, review, screenshots)));
         kept = kept.filter((proposal) => !again.includes(proposal) || rewritten[again.indexOf(proposal)]);
       }
     }
@@ -692,17 +695,17 @@ const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).orig
  * Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds
  * pass. An article edit is checked and may be written once more (checkedEdit).
  */
-async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, ask: Ask, review: Review): Promise<boolean> {
+async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, ask: Ask, review: Review, screenshots: boolean): Promise<boolean> {
   const { brief } = proposal;
   const edit =
     proposal.kind === "ARTICLE_EDIT" && brief && "facts" in brief
       ? (failed?: Parameters<typeof writeArticleEdit>[7]) =>
-          writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief.found, brief.facts, failed)
+          writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief.found, brief.facts, failed, screenshots)
       : null;
   const written = edit
     ? await checkedEdit(edit, pr, review)
     : proposal.kind === "NEW_ARTICLE" && brief && "title" in brief
-        ? await writeNewArticle(pr, summary, { title: brief.title, reason: brief.reason }, ask)
+        ? await writeNewArticle(pr, summary, { title: brief.title, reason: brief.reason }, ask, screenshots)
         : undefined;
   if (written === undefined) {
     return true;

@@ -82,7 +82,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     notFound();
   }
   // Screenshots a run took that its job didn't put in the text (an older worker's, during a deploy): put in, then read again.
-  if (await placeLeftoverScreenshots(entry.id)) {
+  if (await placeLeftoverScreenshots({ changelogEntryId: entry.id })) {
     entry = (await readEntry())!;
   }
   const listed = entry.posts.map(({ post }) => post.number);

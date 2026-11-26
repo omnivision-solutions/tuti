@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { screenshotsAsked } from "./changelog-screenshots";
+import { screenshotsAsked } from "./screenshot-lines";
 
 const paragraph = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
 const doc = (...texts: string[]) => ({ type: "doc", content: texts.map(paragraph) }) as Doc;
