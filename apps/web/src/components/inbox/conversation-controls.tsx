@@ -382,7 +382,7 @@ export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: bo
   const [pending, startTransition] = useTransition();
   const box = useRef<HTMLDivElement>(null);
   // Taken over here (not by a teammate elsewhere, which the live refresh shows): its button goes, so the focus moves to the
-  // reply. Set as it starts: the page that shows it taken over may be the live refresh's, before this action's own.
+  // reply. Set as it starts: whichever render first shows it taken over moves the focus.
   const took = useRef(false);
   const saysId = useId();
   useEffect(() => {
