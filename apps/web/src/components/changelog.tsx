@@ -738,7 +738,7 @@ const screenshotsDone = { next: false };
 function EntryScreenshotsSection({
   projectSlug,
   number,
-  screenshots: { asked, available, running, ran, failed, estimate, credits: spendsCredits },
+  screenshots: { savedAt, asked, available, running, ran, failed, estimate, credits: spendsCredits },
   canTake,
   dirty,
 }: {
@@ -755,9 +755,11 @@ function EntryScreenshotsSection({
   // them), it says so instead.
   const [doneUnsaved, setDoneUnsaved] = useState(false);
   const unsaved = useRef(dirty);
+  const shownSavedAt = useRef(savedAt);
   useEffect(() => {
     unsaved.current = dirty;
-  }, [dirty]);
+    shownSavedAt.current = savedAt;
+  }, [dirty, savedAt]);
   const headingRef = useRef<HTMLHeadingElement>(null);
   // The run just ended here, the page read again (the form, with this section, started afresh with its screenshots, or
   // not when none went in): focus to the section, where what's left is said.
@@ -777,7 +779,9 @@ function EntryScreenshotsSection({
         return;
       }
       clearInterval(timer);
-      if (unsaved.current) {
+      // The saved text changed (its screenshots went in) while the form has changes: reading it again would lose them.
+      // Unchanged (none went in), reading it again keeps the form as it is.
+      if (unsaved.current && result.savedAt !== shownSavedAt.current) {
         setDoneUnsaved(true);
         return;
       }
@@ -840,23 +844,30 @@ function EntryScreenshotsSection({
               )}
             </div>
           )}
-          <p role="status" className={cn("text-muted-foreground", running === null && "sr-only")}>
-            {doneUnsaved ? (
-              <>
-                {"The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots."}{" "}
-                <button type="button" onClick={() => router.refresh()} className="underline underline-offset-4 hover:text-foreground">
-                  Reload
-                </button>
-              </>
-            ) : (
-              running !== null && (
-                <>
-                  <LoaderCircleIcon aria-hidden className="mr-1.5 inline size-4 animate-spin align-[-0.2em]" />
-                  {`Taking ${running} ${running === 1 ? "screenshot" : "screenshots"}. This takes a few minutes; you can leave this page.`}
-                </>
-              )
-            )}
+          <p role="status" className={cn("text-muted-foreground", running === null && !doneUnsaved && "sr-only")}>
+            {doneUnsaved
+              ? "The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots."
+              : running !== null && (
+                  <>
+                    <LoaderCircleIcon aria-hidden className="mr-1.5 inline size-4 animate-spin align-[-0.2em]" />
+                    {`Taking ${running} ${running === 1 ? "screenshot" : "screenshots"}. This takes a few minutes; you can leave this page.`}
+                  </>
+                )}
           </p>
+          {doneUnsaved && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => {
+                setDoneUnsaved(false);
+                router.refresh();
+              }}
+            >
+              Reload
+            </Button>
+          )}
           {failed.length > 0 && (
             <div className="flex flex-col gap-1">
               <p>Not taken:</p>

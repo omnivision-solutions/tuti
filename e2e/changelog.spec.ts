@@ -1473,7 +1473,7 @@ test("a draft's screenshot lines are filled with screenshots of the team's app; 
 });
 
 test("screenshots taken while the editor is open come in once they're done, never over text not saved yet", async ({ browser }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -1484,12 +1484,17 @@ test("screenshots taken while the editor is open come in once they're done, neve
   const slow = "[Screenshot: a screen that takes a while, the dashboard]";
   await api("/changelog", { title: "Dashboard", markdown: `The dashboard is new.\n\n${slow}` });
   await api("/changelog", { title: "Dashboard, again", markdown: `It's faster.\n\n${slow}` });
+  // One the fake never reaches either (FAKE_UNREACHABLE): nothing goes in.
+  await api("/changelog", { title: "Reports", markdown: "Reports are new.\n\n[Screenshot: a screen that takes a while, a screen that isn't there]" });
   const release = async () => expect((await fetch(`${process.env.E2E_BROWSER_USE_URL}/_fake/release`, { method: "POST" })).ok).toBe(true);
+  // The project's runs so far: one started over the API is waited for before the editor opens.
+  const runs = async () => Number((await query(`SELECT count(*) FROM screenshot_run WHERE "projectId" = (SELECT id FROM project WHERE slug = $1)`, [slug]))[0].count);
   const text = team.getByRole("textbox", { name: "What changed" });
   const section = team.getByRole("region", { name: "Screenshots" });
 
   // Started from the API (its job runs inline here, so the request ends with the run), the editor shows it running.
   const first = api("/changelog/1/screenshots", {});
+  await expect.poll(runs).toBe(1);
   await team.goto(`/app/${slug}/changelog/1`);
   await expect(section.getByRole("status")).toHaveText("Taking 1 screenshot. This takes a few minutes; you can leave this page.");
   await expect(section.getByRole("button", { name: "Taking screenshots…" })).toBeDisabled();
@@ -1500,7 +1505,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await release();
   await first;
   await expect(section.getByRole("status")).toHaveText(
-    "The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots. Reload",
+    "The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots.",
   );
   await expect(text).toContainText("Typed while it ran.");
   await expect(text.getByRole("img")).toHaveCount(0);
@@ -1510,6 +1515,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
 
   // Nothing typed: the screenshot comes in by itself, said, and focus goes to the section.
   const second = api("/changelog/2/screenshots", {});
+  await expect.poll(runs).toBe(2);
   await team.goto(`/app/${slug}/changelog/2`);
   await expect(section.getByRole("status")).toHaveText(/^Taking 1 screenshot\./);
   await release();
@@ -1518,6 +1524,20 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await expect(team.getByText("Screenshots done", { exact: true })).toBeVisible();
   await expect(section.getByRole("heading", { name: "Screenshots" })).toBeFocused();
   await expect(section).toContainText("No lines left to fill with a screenshot.");
+
+  // Typed meanwhile, but nothing went in: the form stays as it is, with no notice, and says why.
+  const third = api("/changelog/3/screenshots", {});
+  await expect.poll(runs).toBe(3);
+  await team.goto(`/app/${slug}/changelog/3`);
+  await expect(section.getByRole("status")).toHaveText(/^Taking 1 screenshot\./);
+  await text.getByText("Reports are new.").click();
+  await team.keyboard.press("End");
+  await team.keyboard.type(" Still here.");
+  await release();
+  await third;
+  await expect(section.getByRole("listitem")).toHaveText("“a screen that takes a while, a screen that isn't there”: There's no such screen in the app.");
+  await expect(section.getByRole("status")).toHaveText("");
+  await expect(text).toContainText("Still here.");
 });
 
 test("an entry with no cover gets one composed: picked from its designs as it's published, or made in the editor with a headline, unsaved text kept", async ({ browser }, testInfo) => {

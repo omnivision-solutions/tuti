@@ -380,7 +380,7 @@ const ESTIMATE_SHOTS = 20;
  * taken (null: not on this server, or not set up), the entry's latest run while it runs, the lines it didn't take that
  * are still there with why, and what taking them would cost in credits, from recent screenshots (with credits on; null when none has been priced yet).
  */
-export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string }) {
+export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string; updatedAt: Date }) {
   const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { id: true, state: true } });
   if (latest?.state === "RUNNING") {
     await settleStaleScreenshotRuns(projectId);
@@ -405,6 +405,8 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
     ? await prisma.screenshot.findMany({ where: { projectId, cost: { not: null }, run: { test: false } }, orderBy: { createdAt: "desc" }, take: ESTIMATE_SHOTS, select: { cost: true } })
     : [];
   return {
+    // When the entry shown was saved: a run that ends without changing it changed nothing in the form.
+    savedAt: entry.updatedAt.toISOString(),
     asked: asked.length,
     available: screenshotsAvailable() && setUp ? true : screenshotsAvailable() ? ("not_set_up" as const) : false,
     running: run?.state === "RUNNING" ? run.screenshots.length : null,
@@ -428,9 +430,15 @@ export async function placeLeftoverScreenshots(entryId: string): Promise<boolean
   return Boolean(latest && latest.state !== "RUNNING" && !latest.placedAt && (await placeChangelogScreenshots(latest.id)) > 0);
 }
 
-/** Whether the entry's latest screenshot run is still running (a stopped one settled first): the editor asks while one runs. */
+/**
+ * Whether the entry's latest screenshot run is still running (a stopped one settled first), and when the entry was last
+ * saved: the editor asks while one runs, and once it's done knows whether its screenshots changed the saved text.
+ */
 export async function entryScreenshotsRunning(projectId: string, number: number) {
   await settleStaleScreenshotRuns(projectId);
-  const run = await prisma.screenshotRun.findFirst({ where: { projectId, changelogEntry: { number } }, orderBy: { createdAt: "desc" }, select: { state: true } });
-  return run?.state === "RUNNING";
+  const entry = await prisma.changelogEntry.findUnique({
+    where: { projectId_number: { projectId, number } },
+    select: { updatedAt: true, screenshotRuns: { orderBy: { createdAt: "desc" }, take: 1, select: { state: true } } },
+  });
+  return { running: entry?.screenshotRuns[0]?.state === "RUNNING", savedAt: entry?.updatedAt.toISOString() ?? null };
 }

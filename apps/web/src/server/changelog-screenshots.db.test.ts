@@ -35,7 +35,7 @@ const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectI
 const setUp = () => call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com", signIn: "none" });
 const TEXT = ["Billing got a new look.", "[Screenshot: The billing page]", "Reports are here.", "[Screenshot: The reports page]", "See the [Screenshot: inline one] too."].join("\n\n");
 const draft = (body = TEXT) => call(createChangelogEntry, as(), { title: "November", body });
-const saved = (number: number) => prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number }, select: { id: true, body: true, content: true } });
+const saved = (number: number) => prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number }, select: { id: true, body: true, content: true, updatedAt: true } });
 
 test("each line's screenshot replaces it, its description as alt text; one not taken stays with why, and publishing still waits for it", async () => {
   vi.stubEnv("TUTI_CONFIG", creditsOn());
@@ -143,10 +143,13 @@ test("a run still running isn't placed (a second delivery of its job leaves it t
   await vi.waitFor(() => expect(browserUse.runs).toHaveLength(before + 1), { timeout: 30_000, interval: 100 });
   const running = await prisma.screenshotRun.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
   expect(await placeChangelogScreenshots(running.id)).toBe(0);
-  expect(await entryScreenshotsRunning(project.id, number)).toBe(true);
+  expect(await entryScreenshotsRunning(project.id, number)).toMatchObject({ running: true });
   expect(await entryScreenshots(project.id, await saved(number))).toMatchObject({ running: 1 });
   browserUse.release();
   await taking;
-  expect(await entryScreenshotsRunning(project.id, number)).toBe(false);
+  // Done, and the entry saved again with its screenshot: the editor knows its form is out of date.
+  const done = await entryScreenshotsRunning(project.id, number);
+  expect(done).toMatchObject({ running: false });
+  expect(done.savedAt).toBe((await saved(number)).updatedAt.toISOString());
   expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["image"]);
 });

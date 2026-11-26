@@ -219,7 +219,7 @@ export async function changelogScreenshotsRunning(projectSlug: string, number: n
   if (!session || !membership) {
     return { error: DENIED };
   }
-  return { running: await entryScreenshotsRunning(membership.project.id, Number(number)) };
+  return await entryScreenshotsRunning(membership.project.id, Number(number));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */
