@@ -18,6 +18,8 @@ import { listSpamSender, removeSpamSender, setSpamPhrase, type SpamTry, trySpam 
 
 const SENDER = "kim@acme.example or acme.example";
 const aboutSender = (entry: string) => (entry.includes("@") ? null : "and its subdomains");
+/** An entry as the lists compare them: any case, and "@acme.example" for the domain. */
+const same = (entry: string) => entry.trim().toLowerCase().replace(/^@/, "");
 
 /**
  * Settings → Spam (docs/plan.md, Inbox automation, W2): the spam filter's blocked and allowed lists, the team's phrases,
@@ -29,7 +31,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
       <EntryList
         id="spam-blocked"
         title="Blocked"
-        description="What they send goes to Spam, in the widget too."
+        description="Their email goes to Spam, and what they write signed in to the widget."
         label="Address or domain to block"
         placeholder={SENDER}
         empty="Nobody is blocked"
@@ -41,7 +43,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase }: { projectSlug
       <EntryList
         id="spam-allowed"
         title="Allowed"
-        description={`Their messages skip your phrases. An address, not a domain, also skips the limit of ${NEW_BY_EMAIL_PER_HOUR} new conversations by email an hour.`}
+        description={`Their email, and what they write signed in, skips your phrases. An address, not a domain, also skips the limit of ${NEW_BY_EMAIL_PER_HOUR} new conversations by email an hour.`}
         label="Address or domain to allow"
         placeholder={SENDER}
         empty="Nobody is allowed by name"
@@ -98,7 +100,12 @@ function EntryList({
 }) {
   const form = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
-    const result = await add(String(formData.get("entry") ?? ""));
+    const typed = String(formData.get("entry") ?? "");
+    // Said here: the server takes one that's there already as done, and "Added" would be wrong.
+    if (entries.some((entry) => same(entry) === same(typed))) {
+      return { error: `${typed.trim()} is already on the list` };
+    }
+    const result = await add(typed);
     if (!result.error) {
       toast.success(`Added to ${title}`);
       form.current?.reset();

@@ -45,13 +45,20 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await expect(card("Blocked").getByLabel("Address or domain to block")).toHaveValue("");
 
   // The allowed list says what an address on it is spared.
-  await expect(card("Allowed")).toContainText("Their messages skip your phrases. An address, not a domain, also skips the limit of 20 new conversations by email an hour.");
+  await expect(card("Blocked")).toContainText("Their email goes to Spam, and what they write signed in to the widget.");
+  await expect(card("Allowed")).toContainText(
+    "Their email, and what they write signed in, skips your phrases. An address, not a domain, also skips the limit of 20 new conversations by email an hour.",
+  );
   await add("Allowed", "Address or domain to allow", "e2e-forms@relay.example");
   await expect(card("Allowed").getByRole("listitem")).toHaveText(["e2e-forms@relay.example"]);
 
   await expect(card("Phrases")).toContainText("A new conversation with one in its subject or first message goes to Spam. Whole words, any case.");
   await add("Phrases", "Phrase to add", "Facebook Admin");
   await expect(card("Phrases").getByRole("listitem")).toHaveText(["Facebook Admin"]);
+  // One that's there already, however it's cased, says so.
+  await add("Phrases", "Phrase to add", "facebook admin");
+  await expect(card("Phrases")).toContainText("facebook admin is already on the list");
+  await card("Phrases").getByLabel("Phrase to add").fill("");
 
   // Try a message: what the filter would do with it, and why. What was typed stays, to change and try again.
   const attempt = card("Try a message");
