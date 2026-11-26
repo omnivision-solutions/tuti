@@ -140,7 +140,8 @@ export function ReplyForm({
   const shownPreview = previewToShow(preview, toTranslate || undefined, translated?.language);
   // Asked for once they stop typing, but not while this text's failure shows (with "Send in English"), nor while it sends
   // (a timer started before Send would pay for a second translation, or overwrite the send's outcome).
-  const askForPreview = wantsPreview(shownPreview, toTranslate || undefined, pending);
+  // Only on the Reply tab: switching to Note cancels a timer already started.
+  const askForPreview = wantsPreview(shownPreview, toTranslate || undefined, pending, kind === "reply");
   useEffect(() => {
     if (!askForPreview || !toTranslate) {
       return;
@@ -257,7 +258,7 @@ export function ReplyForm({
       }
       if (result.translation === "failed") {
         // "Send in English" then sends it as they chose: closing it too, from Send and close.
-        setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", language: translated?.language, close });
+        setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", language: result.language ?? translated?.language, close });
         toast.error("Not sent: it couldn't be translated");
       }
       if (!result.error) {

@@ -361,7 +361,7 @@ test("the app: Try again translates a failed message again; the composer preview
   model.fail(500);
   model.fail(500);
   const refused = await inbox.replyInConversation(project.slug, 1, "Anything else?");
-  expect(refused).toEqual({ error: "The translation provider didn't answer. Try again in a moment.", translation: "failed" });
+  expect(refused).toEqual({ error: "The translation provider didn't answer. Try again in a moment.", translation: "failed", language: "de" });
   expect(await inbox.replyInConversation(project.slug, 1, "Anything else?", false, [], false, undefined, "untranslated")).toEqual({});
   expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(2);
 });
