@@ -61,7 +61,7 @@ const settingsOutput = z
       .meta({ examples: [["forms@acme.example"]] }),
     phrases: z
       .array(z.string())
-      .describe("The team's phrases: a new conversation whose subject or first message has one, as whole words in any case, goes to Spam")
+      .describe("The team's phrases: a new conversation whose subject or first message has one, as whole words in any case, goes to Spam, unless its sender is allowed, trusted (one of the project's users, a teammate, someone the team has replied to) or was marked Not spam before")
       .meta({ examples: [["facebook admin"]] }),
   })
   .meta({ id: "SpamSettings", description: "What the team told the spam filter: who's blocked, who's allowed, and its phrases" });
@@ -110,7 +110,7 @@ export const updateSpamSettings = defineOperation({
       .max(MAX_SPAM_PHRASES, `Add up to ${MAX_SPAM_PHRASES} phrases`)
       .optional()
       .describe(
-        `Phrases to add, each up to ${MAX_SPAM_PHRASE} characters; the list holds ${MAX_SPAM_PHRASES}. A new conversation whose subject or first message has one (as whole words, in any case) goes to Spam, unless its sender is allowed or trusted. One that matches the same text as a phrase already there ("Facebook admin", "facebook-admin") isn't added again`,
+        `Phrases to add, each up to ${MAX_SPAM_PHRASE} characters; the list holds ${MAX_SPAM_PHRASES}. A new conversation whose subject or first message has one (as whole words, in any case) goes to Spam, unless its sender is allowed, trusted (one of the project's users, a teammate, someone the team has replied to) or was marked Not spam before. One that matches the same text as a phrase already there ("Facebook admin", "facebook-admin") isn't added again`,
       ),
     removePhrases: z
       .array(z.string().trim().max(MAX_SPAM_PHRASE))
