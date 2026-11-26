@@ -591,8 +591,12 @@ const matrix: Matrix = {
     setDefaultLanguage: { allowed: "ADMIN", call: (slug) => languages.setDefaultLanguage(slug, "en") },
     addLanguage: {
       allowed: "ADMIN",
-      // French is Automatic for new pages: the published article is translated, in the background (done before the next case).
-      before: () => model.otherwise(JSON.stringify({ segments: { "1": "Article de la matrice" } }), "Matrix article"),
+      // French is Automatic for new pages: the published article and changelog entry are translated, in the background
+      // (done before the next case).
+      before: () => {
+        model.otherwise(JSON.stringify({ segments: { "1": "Article de la matrice" } }), "Matrix article");
+        model.otherwise(JSON.stringify({ segments: { "1": "Entrée de la matrice" } }), "Matrix entry");
+      },
       call: async (slug) => {
         const result = await languages.addLanguage(slug, "fr");
         await languageTranslationsDone();

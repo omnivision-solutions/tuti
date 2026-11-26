@@ -110,7 +110,8 @@ test("a signed-in reader's account menu, the changelog's New and the phone menu'
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  // Manual for new pages: the changelog entry published below would otherwise be translated (asking the model).
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
   // A second board, so the phone menu lists the boards.
   await query(
     `INSERT INTO board (id, "projectId", slug, name, "updatedAt") SELECT $2, id, 'bugs', 'Bugs', now() FROM project WHERE slug = $1`,
