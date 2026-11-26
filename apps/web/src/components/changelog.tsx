@@ -893,6 +893,8 @@ function EntryScreenshotsSection({
                         // them; unless the form has changes not saved, which reading again would lose.
                         toast.error(unsaved.current ? `${result.error} Reload the page to see the saved lines.` : result.error);
                         if (!unsaved.current) {
+                          // The form may start afresh with the lines changed: focus to the section once it's back.
+                          screenshotsDone.next = true;
                           router.refresh();
                         }
                       }
@@ -921,8 +923,9 @@ function EntryScreenshotsSection({
               size="sm"
               className="self-start"
               onClick={() => {
-                // Focus to the heading first: this button goes.
+                // Focus to the heading first: this button goes; and again once the form starts afresh with the screenshots.
                 headingRef.current?.focus();
+                screenshotsDone.next = true;
                 setDoneUnsaved(false);
                 router.refresh();
               }}

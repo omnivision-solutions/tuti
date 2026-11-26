@@ -1551,6 +1551,8 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await checkpoint(team, "team-changelog-screenshots-done-unsaved");
   await section.getByRole("button", { name: "Reload" }).click();
   await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible();
+  // The form started afresh with the screenshot: focus is on the section, not lost.
+  await expect(section.getByRole("heading", { name: "Screenshots" })).toBeFocused();
 
   // Nothing typed: the screenshot comes in by itself, said, and focus goes to the section.
   const second = api("/changelog/2/screenshots", { shots: [{ show: "a screen that takes a while, the dashboard" }] });
