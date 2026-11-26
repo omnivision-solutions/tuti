@@ -253,7 +253,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     // A new project's daily cap and the month's limit, taken once they're ours to email (and a pause since the run began):
     // past it, they're let go and wait.
     const now = new Date();
-    if (!(await claimProjectEmail(projectId, now))) {
+    const claimed = await claimProjectEmail(projectId, now);
+    if (!claimed) {
       await table.deleteMany({ where: { postId, userId: id, ...key, claimedAt } });
       held = true;
       break;
@@ -277,7 +278,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     );
     if (error) {
       failed++;
-      await releaseProjectEmail(projectId, now);
+      await releaseProjectEmail(projectId, claimed);
       log.warn(`couldn't email that post ${postId} shipped: ${error.message}`);
       continue;
     }

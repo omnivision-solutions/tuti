@@ -129,7 +129,8 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   const claimedIds = claimed.map((comment) => comment.id);
   // A new project's daily cap, the month's limit (and a pause since the run began): let go, and due when it resets.
   const now = new Date();
-  if (!(await claimProjectEmail(projectId, now))) {
+  const taken = await claimProjectEmail(projectId, now);
+  if (!taken) {
     await prisma.replyEmail.deleteMany({ where: { commentId: { in: claimedIds }, userId: author.id, claimedAt } });
     await prisma.comment.updateMany({ where: { id: { in: ids }, authorEmailDueAt: { not: null } }, data: { authorEmailDueAt: await dueAgain(projectId) } });
     return { emailed: 0, waiting: "the project's daily cap, its monthly limit, or a pause" };
@@ -163,7 +164,7 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   if (error) {
     // Still due, the claims released: Hatchet's retry (or the cron, once late) takes them over. What the monthly limit
     // held is due from now instead, so it's retried within the look-back like any other failure, not every run for good.
-    await releaseProjectEmail(projectId, now);
+    await releaseProjectEmail(projectId, taken);
     await prisma.comment.updateMany({ where: { id: { in: ids }, authorEmailDueAt: { in: heldDueDates() } }, data: { authorEmailDueAt: new Date() } });
     throw new Error(`couldn't email post ${postId}'s new comments to its author: ${error.message}`);
   }

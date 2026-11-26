@@ -1,9 +1,10 @@
 import { Prisma, prisma } from "@tuti/db";
 import { emailConfigured, emailLimitEmail, sendEmail } from "@tuti/email";
-import { config, effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, type PlanKey, plansEnabled, trialEmailAllowance, trialTerms, upgradeFor } from "@tuti/shared";
+import { config, creditsEnabled, creditsPerEmail, emailsSpendCredits, lowCreditsAt, effectivePlan, emailsPerMonth, listedPlans, log, monthlyEmailLimit, planDisplay, type PlanKey, plansEnabled, trialEmailAllowance, trialTerms, upgradeFor } from "@tuti/shared";
 
-import { grantCredits } from "./credits";
+import { balanceIn, chargeCredits, emailIfCreditsLow, giveBackCredits, grantCredits, toCredits } from "./credits";
 import { grantLicenseCredits } from "./plan-licenses";
+import { lockProject } from "./running-draft";
 
 /** In its first week on a server selling plans, a project sends this many emails a day at most. */
 export const NEW_PROJECT_EMAILS_PER_DAY = 200;
@@ -41,6 +42,72 @@ const licenseOf = (project: Sender) => (project.planLicense && !project.planLice
 /** Grants of `licenseId`'s email credits that still count at `now`. */
 const licenseGrants = (licenseId: string, now: Date) => Prisma.sql`
   "planLicenseId" = ${licenseId} AND "kind" = 'EMAIL' AND ("expiresAt" IS NULL OR "expiresAt" > ${now})`;
+
+/**
+ * Emails past the included ones (the month's limit, or a license month's email credits) spend the project's shared
+ * credits (the AI's, bought with top-ups) at credits.perEmail, on a plan that can buy them:
+ * with credits on (from the config file, which the worker reads too: not the Stripe keys, which only the web app has),
+ * on a plan of its own (bought, or a license's: SENDER reads the plan as stored), never the
+ * default (free) plan, whose email waits at its limit, nor a free trial of another (its credits are given, not bought). Never on credit: one the
+ * balance can't pay waits, as at the limit. The included ones stay apart, so AI use never takes them.
+ */
+const spendsCredits = (project: Sender) => emailsSpendCredits(project.plan);
+
+/**
+ * Pays for one email past the included ones with the project's credits (spendsCredits), counted apart (paidEmails): the
+ * credits it was charged, or null when it can't pay.
+ */
+async function payForEmail(projectId: string, project: Sender, now: Date): Promise<number | null> {
+  if (!spendsCredits(project)) {
+    return null;
+  }
+  const credits = toCredits(creditsPerEmail());
+  // The balance after the charge, or null when it can't pay.
+  const after = await prisma.$transaction(async (tx) => {
+    // Under the project's lock (chargeCredits'), so two emails at once can't both spend the last credits.
+    await lockProject(tx, projectId);
+    const balance = await balanceIn(tx, projectId);
+    if (balance.lt(credits)) {
+      return null;
+    }
+    await chargeCredits(tx, projectId, credits);
+    await tx.$executeRaw`
+      INSERT INTO "project_email_month" ("projectId", "month", "paidEmails", "paidCredits")
+      VALUES (${projectId}, ${monthOf(now)}, 1, ${credits})
+      ON CONFLICT ("projectId", "month") DO UPDATE SET "paidEmails" = "project_email_month"."paidEmails" + 1,
+        "paidCredits" = "project_email_month"."paidCredits" + EXCLUDED."paidCredits"`;
+    // It covered any debt too (the balance is net of it): what's left is the balance less the charge.
+    return balance.minus(credits).toNumber();
+  });
+  if (after === null) {
+    return null;
+  }
+  // Only once it's out or under credits.low: a batch's every email above it skips emailIfCreditsLow's reads (which
+  // still emails once, by its own claim).
+  if (after <= 0 || after < lowCreditsAt()) {
+    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that credits are low failed", { projectId, error }));
+  }
+  return credits.toNumber();
+}
+
+/**
+ * Of `projectIds`, those whose next email past the included ones would be paid (payForEmail), read without paying: on a
+ * plan of their own, with the credits for one. One query for the lot (a server's capped projects can be many).
+ */
+async function canPayForEmails(projectIds: string[], now: Date): Promise<Set<string>> {
+  if (!creditsEnabled() || projectIds.length === 0) {
+    return new Set();
+  }
+  // The plan as stored (a raw read: no trial's plan), and the balance as balanceIn reads it.
+  const rows = await prisma.$queryRaw<{ id: string; plan: string | null; balance: number }[]>`
+    SELECT p."id", p."planKey" AS "plan",
+      (COALESCE((SELECT SUM(g."remaining") FROM "credit_grant" g
+        WHERE g."projectId" = p."id" AND g."kind" = 'AI' AND g."remaining" > 0 AND (g."expiresAt" IS NULL OR g."expiresAt" > ${now})), 0)
+        - p."aiCreditDebt")::float8 AS "balance"
+    FROM "project" p WHERE p."id" = ANY(${projectIds})`;
+  const perEmail = toCredits(creditsPerEmail()).toNumber();
+  return new Set(rows.filter((row) => emailsSpendCredits(row.plan) && row.balance >= perEmail).map(({ id }) => id));
+}
 
 /** Takes one of the license's email credits, from one grant (its soonest-expiring with one left): false when none is left. */
 async function takeEmailCredit(licenseId: string, now: Date): Promise<boolean> {
@@ -100,11 +167,12 @@ async function grantLicenseEmails(projectId: string, licenseId: string, now: Dat
  * selling plans: its month's emails (above), and in its first week NEW_PROJECT_EMAILS_PER_DAY a day, so a new project's
  * spam reaches only so many before its bounces and complaints show. Each taken in one statement, so sends at once can't
  * pass it together. Every email is counted in its calendar month (Billing shows it). The first email the month's limit
- * holds tells the project's owners and admins.
+ * holds tells the project's owners and admins. What it took (`included`, or `paid` with credits: payForEmail), for
+ * releaseProjectEmail; null when it waits.
  */
-export async function claimProjectEmail(projectId: string, now = new Date()): Promise<boolean> {
+export async function claimProjectEmail(projectId: string, now = new Date()): Promise<EmailClaim | null> {
   if (!plansEnabled()) {
-    return true;
+    return { month: monthOf(now), paid: null };
   }
   const { createdAt, emailPausedAt, ...sender } = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
@@ -112,11 +180,13 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
   });
   // Paused since the run began (it checks each email, so one paused mid-run stops there).
   if (capping() && emailPausedAt) {
-    return false;
+    return null;
   }
   const limit = monthlyEmailLimit(sender, now);
   const license = limit === null ? null : licenseOf(sender);
   const month = monthOf(now);
+  // Paid with the project's credits (payForEmail, counted there), past the included ones.
+  let paid: number | null = null;
   if (license) {
     if (!(await takeEmailCredit(license.id, now))) {
       // None left: the license's month's credits come now if they're due (given once, whichever claim at once gets there
@@ -126,27 +196,34 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
       }
       await grantLicenseEmails(projectId, license.id, now);
       if (!(await takeEmailCredit(license.id, now))) {
-        await tellEmailLimit(projectId, now);
-        return false;
+        paid = await payForEmail(projectId, sender, now);
+        if (paid === null) {
+          await tellEmailLimit(projectId, now);
+          return null;
+        }
       }
     }
   }
   // Counted on every plan (Billing shows it); limited here where there's a limit and no license (whose credits limit it).
   const countLimit = license ? null : limit;
-  const counted = await prisma.$queryRaw<{ emails: number }[]>`
+  const counted = paid !== null ? [{ emails: 0 }] : await prisma.$queryRaw<{ emails: number }[]>`
     INSERT INTO "project_email_month" ("projectId", "month", "emails")
     SELECT ${projectId}, ${month}, 1 WHERE ${countLimit}::int IS NULL OR ${countLimit}::int > 0
     ON CONFLICT ("projectId", "month") DO UPDATE SET "emails" = "project_email_month"."emails" + 1
     WHERE ${countLimit}::int IS NULL OR "project_email_month"."emails" < ${countLimit}::int
     RETURNING "emails"`;
   if (counted.length === 0) {
-    // None left: this email waits, and the team hears (once a month). Never on the claim that takes the last one, which
-    // the daily cap or its send may still give back.
-    await tellEmailLimit(projectId, now);
-    return false;
+    paid = await payForEmail(projectId, sender, now);
   }
+  if (counted.length === 0 && paid === null) {
+    // None left, nor credits to pay for it: this email waits, and the team hears (once a month). Never on the claim that
+    // takes the last one, which the daily cap or its send may still give back.
+    await tellEmailLimit(projectId, now);
+    return null;
+  }
+  const taken: EmailClaim = { month, paid };
   if (!capping() || now.getTime() - createdAt.getTime() >= NEW_FOR_MS) {
-    return true;
+    return taken;
   }
   const claimed = await prisma.$queryRaw<unknown[]>`
     INSERT INTO "project_email_day" ("projectId", "day", "claimed") VALUES (${projectId}, ${today(now)}, 1)
@@ -155,23 +232,53 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
     RETURNING 1`;
   if (claimed.length === 0) {
     // Not sent after all: back to the month's count, and the license's credit back.
-    await releaseProjectEmail(projectId, now);
-    return false;
+    await releaseProjectEmail(projectId, taken);
+    return null;
   }
-  return true;
+  return taken;
 }
 
 /**
- * Gives back an email claimProjectEmail took this month when it wasn't sent after all (nobody to send it to, sent by
+ * What claimProjectEmail took for an email: the calendar month (UTC) it was counted in, its first day, and one of the
+ * included ones (`paid` null) or one paid with the project's credits (`paid`: what it was charged). Given back against
+ * that month, whenever the send fails.
+ */
+export type EmailClaim = { month: Date; paid: number | null };
+
+/** Gives back what a paid email was charged (releaseProjectEmail) to the month it was charged in, whatever the rate is now. */
+async function refundPaidEmail(projectId: string, paid: number, month: Date) {
+  const credits = toCredits(paid);
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const row = await tx.projectEmailMonth.findUnique({ where: { projectId_month: { projectId, month } }, select: { paidEmails: true, paidCredits: true } });
+    if (!row || row.paidEmails === 0 || row.paidCredits.lt(credits)) {
+      return;
+    }
+    await tx.projectEmailMonth.update({
+      where: { projectId_month: { projectId, month } },
+      data: { paidEmails: { decrement: 1 }, paidCredits: { decrement: credits } },
+    });
+    await giveBackCredits(tx, projectId, credits);
+  });
+}
+
+/**
+ * Gives back an email claimProjectEmail took (`claim`: counted in its month, even once the next has begun) when it wasn't sent after all (nobody to send it to, sent by
  * another run, or the send failed): the month's count is what was sent, and on a license, its email credit comes back
  * (to a grant of the license's that took one, so never one a refund emptied). The first week's daily cap keeps it (it
- * errs low).
+ * errs low). A paid one (`claim`, from claimProjectEmail) gives its credits back instead (giveBackCredits).
  */
-export async function releaseProjectEmail(projectId: string, now = new Date()) {
+export async function releaseProjectEmail(projectId: string, claim: EmailClaim) {
   if (!plansEnabled()) {
     return;
   }
-  await prisma.projectEmailMonth.updateMany({ where: { projectId, month: monthOf(now), emails: { gt: 0 } }, data: { emails: { decrement: 1 } } });
+  if (claim.paid !== null) {
+    await refundPaidEmail(projectId, claim.paid, claim.month);
+    return;
+  }
+  await prisma.projectEmailMonth.updateMany({ where: { projectId, month: claim.month, emails: { gt: 0 } }, data: { emails: { decrement: 1 } } });
+  // A license's credit goes back to a grant that still counts now (one that's ended since gives nothing).
+  const now = new Date();
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER });
   const license = monthlyEmailLimit(project, now) === null ? null : licenseOf(project);
   if (license?.creditsThrough) {
@@ -203,30 +310,51 @@ export async function releaseProjectEmail(projectId: string, now = new Date()) {
  * they're needed; otherwise the limit less what the month sent; null without a limit), and on a license when its month
  * ends (`until`). Null without plans.
  */
-export async function emailsThisMonth(projectId: string, now = new Date()): Promise<{ emails: number; limit: number | null; left: number | null; until: Date | null } | null> {
+export async function emailsThisMonth(projectId: string, now = new Date()): Promise<EmailsThisMonth | null> {
+  const month = await includedEmails(projectId, now);
+  if (!month) {
+    return null;
+  }
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER });
+  const perEmail = spendsCredits(project) ? creditsPerEmail() : null;
+  return { ...month, perEmail, held: month.left === 0 && !(await canPayForEmails([projectId], now)).has(projectId) };
+}
+
+/**
+ * emailsThisMonth, and what one past the included ones costs (`perEmail`, in credits: null where they wait instead), and
+ * whether email waits now (`held`: none left, nor credits to pay for one).
+ */
+export type EmailsThisMonth = { emails: number; limit: number | null; left: number | null; until: Date | null; perEmail: number | null; held: boolean };
+
+async function includedEmails(projectId: string, now: Date): Promise<{ emails: number; limit: number | null; left: number | null; until: Date | null } | null> {
   if (!plansEnabled()) {
     return null;
   }
   const [project, row] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: SENDER }),
-    prisma.projectEmailMonth.findUnique({ where: { projectId_month: { projectId, month: monthOf(now) } }, select: { emails: true } }),
+    prisma.projectEmailMonth.findUnique({ where: { projectId_month: { projectId, month: monthOf(now) } }, select: { emails: true, paidEmails: true } }),
   ]);
-  const emails = row?.emails ?? 0;
+  // Every email sent: the included ones (what the limit counts) and those paid with credits.
+  const included = row?.emails ?? 0;
+  const emails = included + (row?.paidEmails ?? 0);
   const limit = monthlyEmailLimit(project, now);
   const license = limit === null ? null : licenseOf(project);
   if (limit === null) {
     return { emails, limit, left: null, until: null };
   }
   if (!license) {
-    return { emails, limit, left: Math.max(0, limit - emails), until: null };
+    return { emails, limit, left: Math.max(0, limit - included), until: null };
   }
   const { left, due } = await licenseEmails(license.id, license.creditsThrough, limit, now);
   return { emails, limit, left: left + due, until: license.creditsThrough };
 }
 
-/** Whether a project's email to its users waits for more: it has a limit, and nothing left this month (its license's month). */
+/**
+ * Whether a project's email to its users waits for more: it has a limit, nothing left this month (its license's month),
+ * and no credits to pay for more.
+ */
 export async function monthlyLimitReached(projectId: string, now = new Date()): Promise<boolean> {
-  return (await emailsThisMonth(projectId, now))?.left === 0;
+  return (await emailsThisMonth(projectId, now))?.held === true;
 }
 
 /**
@@ -290,7 +418,10 @@ export async function monthCappedProjects(now = new Date()): Promise<string[]> {
     // A month not started yet starts when its emails are first needed; none ever come on a plan sending none.
     return limit !== null && (limit === 0 || (started && given >= limit));
   });
-  return [...capped, ...held.map(({ projectId }) => projectId)];
+  // Less those whose credits pay for more (payForEmail).
+  const full = [...capped, ...held.map(({ projectId }) => projectId)];
+  const paying = await canPayForEmails(full, now);
+  return full.filter((projectId) => !paying.has(projectId));
 }
 
 /** The projects whose email waits: new ones whose daily cap is used up today, and any whose month's limit is. */
@@ -357,7 +488,12 @@ async function tellEmailLimitOnce(projectId: string, now: Date) {
     resets: (license?.creditsThrough ?? nextMonth(now)).toLocaleDateString("en", { month: "long", day: "numeric", timeZone: "UTC" }),
     // From its own plan (a trial's is the default), with its own limit (a trial's allowance, while it runs): the first plan
     // to buy with more room, which can be the trial's own plan. None on a license, which can't buy one.
-    upgrade: license ? "" : upgradeFor(project.plan, (plan) => (plan === project.plan ? monthlyEmailLimit(project, now) : emailsPerMonth(plan)), " for more."),
+    // On a plan that pays for more with credits (spendsCredits), what's missing is credits: buying them sends it now.
+    upgrade: spendsCredits(project)
+      ? `Past them, each email spends ${creditsPerEmail().toLocaleString("en")} credits, and this project doesn't have enough: buy credits on Billing to send it now.`
+      : license
+        ? ""
+        : upgradeFor(project.plan, (plan) => (plan === project.plan ? monthlyEmailLimit(project, now) : emailsPerMonth(plan)), " for more."),
     url: `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`,
   });
   const sent = await Promise.allSettled(project.team.map(({ user }) => sendEmail({ to: user.email, ...email })));

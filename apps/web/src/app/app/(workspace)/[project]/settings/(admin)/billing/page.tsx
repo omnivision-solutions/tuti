@@ -219,6 +219,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               of={emails.limit}
               used={`${emails.emails.toLocaleString("en")} sent${until ? ` since ${formatShortDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))}` : ""}`}
             />
+            {/* Past the included ones, a paid plan's credits pay for each (claimProjectEmail); the default plan's wait. */}
+            {emails.limit !== null && emails.perEmail !== null && (
+              <p className="text-sm text-muted-foreground">{`Then ${credits(emails.perEmail)} credits each.`}</p>
+            )}
           </SettingBlock>
           {monthly.length > 0 && (
             <SettingBlock>

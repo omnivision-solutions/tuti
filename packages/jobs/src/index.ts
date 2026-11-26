@@ -54,7 +54,7 @@ export { audienceReach, postAudience, projectUnsubscribeToken, provenAddress, ty
 export { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
-export { cappedProjects, claimProjectEmail, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
+export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
 export { DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, sameLanguage, translateMessage, translationFailed, translationSettings } from "./conversation-translation";

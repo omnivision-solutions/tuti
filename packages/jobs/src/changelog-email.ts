@@ -374,7 +374,8 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     }
     // A new project's daily cap, the month's limit (and a pause since the run began): past it, they're let go and wait.
     const now = new Date();
-    if (!(await claimProjectEmail(projectId, now))) {
+    const claimed = await claimProjectEmail(projectId, now);
+    if (!claimed) {
       await prisma.changelogEmail.deleteMany({ where: { entryId, subscriberId: id, claimedAt } });
       held = true;
       break;
@@ -399,7 +400,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     );
     if (error) {
       failed++;
-      await releaseProjectEmail(projectId, now);
+      await releaseProjectEmail(projectId, claimed);
       log.warn(`couldn't email changelog entry ${entryId} to a subscriber: ${error.message}`);
       continue;
     }

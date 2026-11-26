@@ -53,7 +53,7 @@ const plan = z
         emailsPerMonth: count
           .nullable()
           .default(null)
-          .describe("Emails a project sends its users each calendar month (UTC): support replies, \"it shipped\" and changelog emails; past it they wait for the next month. null: no limit."),
+          .describe("Emails a project sends its users each calendar month (UTC): support replies, \"it shipped\" and changelog emails; past it a paid plan's project spends its credits on them (credits.perEmail) and they wait without enough, as a default plan's do, for the next month. null: no limit."),
         languages: z
           .number()
           .int()
