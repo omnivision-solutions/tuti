@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { freeLanguageSlug, languageTranslationsDone, lockProject, translationSource } from "@tuti/jobs";
+import { freeLanguageSlug, languageTranslationsDone, lockProject, translateArticle, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -85,6 +85,12 @@ test("a version's first translation names its slug from the translated title; re
   await call(retranslateLanguage, as(), { code: "de" });
   await languageTranslationsDone();
   expect(await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ title: "Zahlungen", slug: "abrechnung" });
+
+  // Translated but not named (its naming failed): the page's next job names it, asking the model nothing.
+  const { articleId } = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id } });
+  await prisma.articleTranslation.updateMany({ where: { articleId }, data: { slug: null } });
+  expect(await translateArticle({ articleId, language: "de" }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "up to date" });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ slug: "zahlungen" });
 });
 
 test("unique in the project and language, and free of every tab's, collection's and API reference's slug, current or old", async () => {

@@ -133,6 +133,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       error: true,
       retryAt: true,
       tries: true,
+      slug: true,
       retranslate: true,
       retranslated: true,
       projectLanguage: { select: { productAvailable: true, productVersion: true, instructions: true } },
@@ -152,6 +153,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
   if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
+    if (!row.slug) {
+      // Translated, but its naming failed then: named now.
+      await nameVersion(article.projectId, row.id);
+    }
     return { skipped: "up to date" };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
@@ -163,28 +168,16 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   /**
    * Writes `data` only while the article's published source is still `source` (locked, so a publish can't slip in
    * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
-   * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead. With `title`
-   * (a translation), a version with no slug yet gets one from it, the project locked first as slugs are picked.
+   * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
    */
-  const settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput, title?: string) =>
+  const settle: Settle = (data) =>
     prisma.$transaction(async (tx) => {
-      if (title !== undefined) {
-        await lockProject(tx, article.projectId);
-      }
       await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${articleId} FOR UPDATE`;
       const now = await tx.article.findUnique({ where: { id: articleId }, select: sourceSelect });
       if (!now?.publishedAt || translationSource(now).hash !== source.hash) {
         return false;
       }
       const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
-      if (count > 0 && title !== undefined) {
-        // Its first translation names it; later ones keep the address (a rename is the team's: languageSlug).
-        const named = await tx.articleTranslation.findUniqueOrThrow({ where: { id: row.id }, select: { slug: true } });
-        if (!named.slug) {
-          const slug = await freeLanguageSlug(tx, article.projectId, language, title, { id: row.id, articleId, slug: null }, now.slug);
-          await tx.articleTranslation.update({ where: { id: row.id }, data: { slug } });
-        }
-      }
       return count > 0;
     });
   started.settle = settle;
@@ -256,7 +249,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     tries: 0,
     retryAt: null,
     retranslated: row.retranslate,
-  }, text(0));
+  });
+  if (written) {
+    await nameVersion(article.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${articleId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
+  }
   return written ? { translated: language } : { skipped: CHANGED };
 }
 
@@ -438,4 +434,25 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   // Each job's end sets the next try's time, or clears it.
   await queueEach(due);
   return { queued: due.length };
+}
+
+/**
+ * A version's first translation names it: a slug in its language from its title (freeLanguageSlug); later ones keep the
+ * address (a rename is the team's: articles.languageSlug). Its own transaction, after the translation's: slugs are picked
+ * with the project locked, and that lock is never taken while holding the article's (whose other writers, search's
+ * sections, wait on the project's row by its foreign key). Left unnamed if this fails: the page's next job names it.
+ */
+async function nameVersion(projectId: string, versionId: string) {
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const version = await tx.articleTranslation.findUnique({
+      where: { id: versionId },
+      select: { slug: true, title: true, language: true, articleId: true, article: { select: { slug: true, deletedAt: true } } },
+    });
+    if (!version || version.slug || version.article.deletedAt) {
+      return;
+    }
+    const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { id: versionId, articleId: version.articleId, slug: null }, version.article.slug);
+    await tx.articleTranslation.update({ where: { id: versionId }, data: { slug } });
+  });
 }
