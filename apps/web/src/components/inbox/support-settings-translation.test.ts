@@ -43,3 +43,15 @@ test("while the switch saves it keeps focus and takes no second change; a refuse
   expect(toggle.checked).toBe(false);
   expect(refused.mock.calls).toEqual([["AI isn't set up on this server"]]);
 });
+
+test("while a change saves, the team language stays focusable but read-only", async () => {
+  let answer!: (result: { error?: string }) => void;
+  setTranslation.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+  const { root, toggle } = await render();
+  const trigger = root.querySelector<HTMLElement>("#team-language")!;
+  expect(trigger.hasAttribute("data-readonly")).toBe(false);
+  await act(async () => toggle.click());
+  expect([trigger.hasAttribute("data-readonly"), trigger.hasAttribute("disabled"), trigger.hasAttribute("data-disabled")]).toEqual([true, false, false]);
+  await act(async () => answer({}));
+  expect(trigger.hasAttribute("data-readonly")).toBe(false);
+});
