@@ -74,7 +74,8 @@ export const generateImageOperation = defineOperation({
       throw new OperationError(404, "not_found", "One of the images to work from isn't in this project");
     }
     // Before paying for an image that couldn't be kept (storeImage checks again: only a race between them pays for nothing).
-    if (!(await roomForImage(projectId, uploaderOf(actor)))) {
+    // The PNG kept is at most its pixels' bytes uncompressed.
+    if (!(await roomForImage(projectId, uploaderOf(actor), width * height * 3 + 1024))) {
       throw noRoom();
     }
     const meter = await imagesMeter(projectId).catch((error: unknown) => {

@@ -198,10 +198,11 @@ async function hasRoom(db: Pick<typeof prisma, "media">, projectId: string, uplo
 }
 
 /**
- * Whether storeImage would have room for one more image by `uploaderId` now (an hourly upload left, and any quota left):
- * for work that costs before it has an image to keep. Not a reservation: storeImage checks again.
+ * Whether storeImage would have room now for an image of up to `bytes` by `uploaderId` (an hourly upload left, and quota
+ * for what it would count): for work that costs before it has an image to keep. Not a reservation: storeImage checks again.
  */
-export const roomForImage = (projectId: string, uploaderId: string) => hasRoom(prisma, projectId, uploaderId, 1);
+export const roomForImage = (projectId: string, uploaderId: string, bytes: number) =>
+  hasRoom(prisma, projectId, uploaderId, Math.min(bytes, PROCESSED_IMAGE_MAX_BYTES));
 
 /** A fetched file kept in the project's media: its row reserved under the quota, then stored (an image processed). */
 async function keep(
