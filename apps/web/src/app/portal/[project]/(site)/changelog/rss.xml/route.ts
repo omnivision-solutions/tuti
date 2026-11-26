@@ -4,6 +4,8 @@ import { prisma } from "@tuti/db";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { portalAddress } from "@/server/custom-domains";
 import { publishedEntries } from "@/server/changelog-queries";
+import { portalLanguage } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 
 /** Characters XML 1.0 forbids (most control characters): one would make the whole feed invalid. */
 const FORBIDDEN = /[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
@@ -16,11 +18,14 @@ const xml = (text: string) =>
 /** The portal's changelog as an RSS 2.0 feed: the latest published entries. */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/changelog/rss.xml">) {
   const { project: slug } = await params;
-  const project = await prisma.project.findUnique({ where: { slug }, select: { name: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, name: true } });
   if (!project) {
     return new Response("Not found", { status: 404 });
   }
-  const portal = await portalAddress(slug);
+  // In the address's language (/de/changelog/rss.xml): its title, description and the entries' tags, and its links to that
+  // language's pages (the entries are the team's words).
+  const [address, { prefix }, { t }] = await Promise.all([portalAddress(slug), portalLanguage(), portalTranslator(project.id, "changelog")]);
+  const portal = `${address}${prefix}`;
   // Not sample content (Home's "Add sample content"): feed readers keep what they're sent. For everyone only: no feed
   // reader signs in, and it's kept in shared caches.
   const entries = await publishedEntries(slug, SIGNED_OUT, { withSample: false });
@@ -32,7 +37,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       `<link>${xml(url)}</link>`,
       `<guid isPermaLink="true">${xml(url)}</guid>`,
       `<pubDate>${entry.publishedAt.toUTCString()}</pubDate>`,
-      ...entry.tags.map((tag) => `<category>${xml(tag.charAt(0) + tag.slice(1).toLowerCase())}</category>`),
+      ...entry.tags.map((tag) => `<category>${xml(t(`tag.${tag}`))}</category>`),
       `<description>${xml(toPlainText(entry.doc))}</description>`,
       "</item>",
     ].join("");
@@ -41,10 +46,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
     "<channel>",
-    `<title>${xml(`${project.name} changelog`)}</title>`,
+    `<title>${xml(t("rssTitle", { name: project.name }))}</title>`,
     `<link>${xml(`${portal}/changelog`)}</link>`,
     `<atom:link href="${xml(`${portal}/changelog/rss.xml`)}" rel="self" type="application/rss+xml"/>`,
-    `<description>${xml(`What's new, improved and fixed in ${project.name}.`)}</description>`,
+    `<description>${xml(t("description", { name: project.name }))}</description>`,
     ...items,
     "</channel>",
     "</rss>",
