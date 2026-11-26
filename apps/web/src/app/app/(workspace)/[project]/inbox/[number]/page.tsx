@@ -56,6 +56,7 @@ import { assignableTeam, conversationPerson } from "@/server/operations/conversa
 import { postsLikeConversation } from "@/server/post-lists";
 import { spamChoices } from "@/server/spam";
 import { pageTitle } from "@/lib/page-title";
+import { retriedByTryAgain } from "@/lib/translation-retries";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
 /** A team message's email, as its page says it (bounces and complaints from Amazon SES's events). */
@@ -384,7 +385,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 more={conversation._count.messages > shown}
               />
               {/* Try again re-queues each of these: each says "Translating…". */}
-              <TranslationRetries failed={conversation.messages.filter((m) => m.author === "USER" && !m.note && m.teamText === null && m.translationError).map((m) => m.id)}>
+              <TranslationRetries failed={retriedByTryAgain(conversation.messages)}>
               <ol className="inbox-messages flex flex-col gap-1 pb-2" aria-label="Messages">
                 {conversation.messages.map((message, index) => {
                   const fromTeam = message.author !== "USER";
