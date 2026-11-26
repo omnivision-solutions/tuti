@@ -478,6 +478,18 @@ test("turning the changelog on from Account keeps an unconfirmed subscription's 
   expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
 });
 
+test("turning the changelog on from Account takes the default when that's the language the reader saved", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the German page before, not confirmed; the reader then picked English, the default.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase(), language: "de" } });
+  await prisma.user.update({ where: { id: reader.id }, data: { language: "en" } });
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: null });
+});
+
 test("on an SSO portal, the switch moves the subscription at the sign-on's address, not the account's", async () => {
   await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
   const reader = await signUp("Sam SSO");

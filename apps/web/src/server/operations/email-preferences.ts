@@ -125,10 +125,10 @@ export const updateEmailPreferences = defineOperation({
       const at = { projectId: context.projectId, email: changelog.email };
       // In the reader's language (docs/plan.md L16): their saved one where it's one of the portal's others (the default's is null).
       const language = await subscriberLanguage(context.projectId, userId);
-      await prisma.changelogSubscriber.createMany({ data: { ...at, language }, skipDuplicates: true });
-      // One not confirmed yet (asked before, an address not proven then) takes their language as it's confirmed here, where
-      // they have one: without, the one it was asked for in stays.
-      await prisma.changelogSubscriber.updateMany({ where: { ...at, confirmedAt: null }, data: { confirmedAt: new Date(), unsubscribedAt: null, ...(language ? { language } : {}) } });
+      await prisma.changelogSubscriber.createMany({ data: { ...at, language: language ?? null }, skipDuplicates: true });
+      // One not confirmed yet (asked before, an address not proven then) takes their saved language as it's confirmed here,
+      // the default's too; with none saved, the one it was asked for in stays (undefined leaves it).
+      await prisma.changelogSubscriber.updateMany({ where: { ...at, confirmedAt: null }, data: { confirmedAt: new Date(), unsubscribedAt: null, language } });
     } else if (input.changelog === false && changelog?.subscriber) {
       // The unsubscribe link's own way.
       const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: context.projectId }, select: { slug: true } });

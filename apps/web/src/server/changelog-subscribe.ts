@@ -57,7 +57,7 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
   // default language's, a signed-in reader's saved one, else the default's (null). Their emails come in it where the entry is translated.
   const { language: address, prefix } = await portalLanguage();
   const session = prefix ? null : await sessionIn(project.id);
-  const language = prefix && address && isLanguage(address) ? address : session ? await subscriberLanguage(project.id, session.user.id) : null;
+  const language = prefix && address && isLanguage(address) ? address : session ? ((await subscriberLanguage(project.id, session.user.id)) ?? null) : null;
   const subscriber = await prisma.changelogSubscriber.upsert({
     where: { projectId_email: { projectId: project.id, email } },
     create: { projectId: project.id, email, language },
