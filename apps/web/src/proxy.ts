@@ -269,9 +269,10 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
       return framedByApp(new NextResponse(null, { status: 403, headers: { "cache-control": "private, no-store" } }));
     }
     const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}${prefix}/sign-in`, origin);
-    if (pathname !== "/") {
-      // In the page's language: signing in comes back to it (withLanguage leaves it as it is).
-      signIn.searchParams.set("next", withLanguage(prefix, pathname) + request.nextUrl.search);
+    // In the page's language: signing in comes back to it, a language's home too (every way of signing in goes to / without one).
+    const back = withLanguage(prefix, pathname);
+    if (back !== "/") {
+      signIn.searchParams.set("next", back + request.nextUrl.search);
     }
     const response = NextResponse.redirect(signIn);
     response.headers.set("cache-control", "private, no-store");

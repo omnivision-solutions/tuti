@@ -15,14 +15,14 @@ export function useSignInHref() {
   const at = usePortalHref();
   const prefix = usePortalLanguagePrefix();
   const search = useSearchParams().toString();
-  const here = search ? `${path}?${search}` : path;
+  // In the page's language: every way of signing in comes back to it, a language's home too (without `next` it's /).
+  const here = withLanguage(prefix, search ? `${path}?${search}` : path);
   const href = /^\/sign-(in|up)\b/.test(path)
     ? `/sign-in${search ? `?${search}` : ""}`
     : // Nothing to come back to from a password reset (and its link's token stays out of the URL).
       here === "/" || /^\/(forgot|reset)-password\b/.test(path)
       ? "/sign-in"
-      : // In the page's language: every way of signing in comes back to it.
-        `/sign-in?${new URLSearchParams({ next: withLanguage(prefix, here) })}`;
+      : `/sign-in?${new URLSearchParams({ next: here })}`;
   return at(href);
 }
 

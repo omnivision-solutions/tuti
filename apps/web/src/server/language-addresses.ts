@@ -12,8 +12,13 @@ export type PortalLanguages = { default: Language; live: Language[]; stored: Lan
 
 const CACHE_MS = 10_000;
 const MAX_CACHED = 5_000;
-const languagesCache = new Map<string, { languages: PortalLanguages | null; until: number }>();
-let forgets = 0;
+/**
+ * On globalThis, not the module: Next.js bundles the proxy apart from the routes that change languages, each with its own
+ * copy of this module, so a change forgets the proxy's copy too on the server that made it (others catch up within CACHE_MS).
+ */
+const shared = ((globalThis as { tutiPortalLanguages?: { cache: Map<string, { languages: PortalLanguages | null; until: number }>; forgets: number } })
+  .tutiPortalLanguages ??= { cache: new Map(), forgets: 0 });
+const languagesCache = shared.cache;
 
 /** `slug`'s portal's languages as saved, read once per request: for pages (proxy.ts keeps them a few seconds: portalLanguages). */
 export const pageLanguages = cache(async (slug: string): Promise<PortalLanguages | null> => {
@@ -38,9 +43,9 @@ export async function portalLanguages(slug: string): Promise<PortalLanguages | n
   if (cached && cached.until > Date.now()) {
     return cached.languages;
   }
-  const started = forgets;
+  const started = shared.forgets;
   const languages = await pageLanguages(slug);
-  if (forgets === started) {
+  if (shared.forgets === started) {
     if (languagesCache.size >= MAX_CACHED) {
       languagesCache.clear();
     }
@@ -49,9 +54,9 @@ export async function portalLanguages(slug: string): Promise<PortalLanguages | n
   return languages;
 }
 
-/** After a portal's languages change (this module's copy only: the proxy's catches up within CACHE_MS). */
+/** After a portal's languages change: on this server, the proxy's copy too (see `shared`). */
 export function forgetLanguages(slug: string) {
-  forgets++;
+  shared.forgets++;
   languagesCache.delete(slug);
 }
 

@@ -222,7 +222,9 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
   test("a private portal sends a visitor to sign in in the page's language, to come back to the page in it", async () => {
     portal.visitor = "refused";
     expect(await where("/de/feedback/ideas?sort=new")).toBe(`307 https://acme.tuti.example/de/sign-in?next=${encodeURIComponent("/de/feedback/ideas?sort=new")}`);
-    expect(await where("/de")).toBe("307 https://acme.tuti.example/de/sign-in");
+    // A language's home too: without `next`, signing in by SSO, "Continue as" or an emailed link ends on / (the default's).
+    expect(await where("/de")).toBe(`307 https://acme.tuti.example/de/sign-in?next=${encodeURIComponent("/de")}`);
+    expect(await where("/")).toBe("307 https://acme.tuti.example/sign-in");
     expect(await where("/feedback")).toBe(`307 https://acme.tuti.example/sign-in?next=${encodeURIComponent("/feedback")}`);
     expect(await where("/de/sign-in")).toBe("/sign-in de /de");
   });

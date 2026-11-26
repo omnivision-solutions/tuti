@@ -23,8 +23,6 @@ test("a reader chooses German in the portal's header and its text follows, on de
 
   // German live, French offline: only the live ones are offered.
   await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr" }] }, "PATCH");
-  // The proxy, which serves /de/…, learns of it within its few seconds (server/language-addresses.ts).
-  await expect.poll(async () => (await reader.request.get("/de/roadmap", { maxRedirects: 0 })).status(), { timeout: 15_000 }).toBe(200);
   await reader.reload();
   const switcher = reader.getByRole("button", { name: "Language: English" });
   await switcher.click();
