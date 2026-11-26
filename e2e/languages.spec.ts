@@ -323,3 +323,173 @@ test("Docs in German: the docs tabs' lock and the sidebar's links, named in Germ
   await expect(menuLinks.getByRole("link", { name: "Status page" })).toBeVisible();
   await expect(menuLinks).toHaveCSS("font-size", "16px");
 });
+
+test("the Roadmap in German: its columns, their meanings, ETAs, votes and the changelog's links, on desktop and on phones", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
+  await api("/posts", { board: "feature-requests", title: "Dark mode" }); // 1
+  await api("/posts", { board: "feature-requests", title: "CSV export" }); // 2
+  await api("/posts/1", { status: "planned", eta: "2099-06" }, "PATCH");
+  // CSV export shipped in a published entry.
+  await api("/changelog", { title: "CSV export is here", posts: [2] });
+  await api("/changelog/1/publish", {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/roadmap");
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  // Its description for search engines and links' previews too.
+  await expect(reader.locator('meta[name="description"]')).toHaveAttribute("content", "Was geplant ist, woran wir arbeiten und was fertig ist.");
+  await expect(reader.getByText(/^Was geplant ist, woran wir arbeiten und was fertig ist\. Melde dich an, um abzustimmen\.$/)).toBeVisible();
+  const planned = reader.getByRole("region", { name: "Geplant" });
+  await expect(planned).toContainText("Diese werden wir umsetzen.");
+  await expect(planned).toContainText("Erwartet im Juni 2099");
+  // Signed out, the card's vote is a way to sign in; the idea's title is the team's words.
+  await expect(planned.getByRole("link", { name: "Zum Abstimmen anmelden (1 Stimme)" })).toBeVisible();
+  await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("lang", "en");
+  await expect(reader.getByRole("region", { name: "In Arbeit" })).toContainText("Hier ist noch nichts.");
+  await expect(reader.getByRole("region", { name: "Erledigt" }).getByRole("link", { name: "Im Changelog: CSV export is here" })).toBeVisible();
+  await checkpoint(reader, "roadmap-in-german", { fullPage: false });
+
+  // On a phone, a column at a time.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await expect(reader.getByRole("navigation", { name: "Spalten" }).getByRole("link")).toHaveText(["Geplant 1", "In Arbeit 0", "Erledigt 1"]);
+  await checkpoint(reader, "roadmap-in-german-phone", { fullPage: false });
+
+  // Its title follows the page's language (in French, where the word isn't "Roadmap").
+  await reader.goto("/fr/roadmap");
+  await expect(reader).toHaveTitle(/^Feuille de route · /);
+});
+
+test("the changelog in German: its list, tags, months, pages, an entry's page, the email box, a subscriber, the menu and the RSS feed", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
+  await api("/posts", { board: "feature-requests", title: "Dark mode" }); // 1
+  await api("/posts", { board: "feature-requests", title: "CSV export" }); // 2
+  // 21 entries: the month index (from 9) and a second page (past 20). The two with ideas are the newest.
+  for (let n = 1; n <= 19; n++) {
+    await api("/changelog", { title: `Update ${n}`, body: "Small fixes." });
+    await api(`/changelog/${n}/publish`, {});
+  }
+  await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu.", tags: ["new"], posts: [1] });
+  await api("/changelog/20/publish", {});
+  await api("/changelog", { title: "Faster exports", body: "Exports finish in seconds.", tags: ["improved"], posts: [1, 2] });
+  await api("/changelog/21/publish", {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/changelog");
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  await expect(reader.getByText("Was neu, besser und behoben ist bei Acme.")).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Tags" }).getByRole("link")).toHaveText(["Alle 21", "Neu 1", "Verbessert 1"]);
+  await expect(reader.getByRole("link", { name: "RSS-Feed" })).toBeVisible();
+  // Feed readers discover the feed in the page's language.
+  const discovered = reader.locator('link[rel="alternate"][type="application/rss+xml"]');
+  await expect(discovered).toHaveAttribute("href", `${portalUrl(slug)}/de/changelog/rss.xml`);
+  // The entries: their tags and dates in German, their ideas' titles in the project's language.
+  const darkMode = reader.getByRole("article", { name: "Dark mode is here" });
+  await expect(darkMode.getByText("Neu", { exact: true })).toBeVisible();
+  await expect(darkMode.locator("time").first()).toHaveText(/^\d+\. \S+ \d{4}$/);
+  await expect(darkMode.getByRole("link", { name: /^Aus einer Idee entstanden · 1 Stimme\s*:\s*Dark mode$/ })).toBeVisible();
+  await expect(darkMode.locator(".sr-only [lang=en]")).toHaveText("Dark mode");
+  const exports = reader.getByRole("article", { name: "Faster exports" });
+  await expect(exports.getByRole("link", { name: "CSV export · 1 Stimme" }).locator("[lang=en]")).toHaveText("CSV export");
+  await checkpoint(reader, "changelog-in-german", { fullPage: false });
+  // The email box, in Subscribe's popover.
+  await reader.getByRole("button", { name: "Abonnieren" }).click();
+  const box = reader.getByRole("region", { name: "Updates per E-Mail erhalten" });
+  await box.getByRole("textbox", { name: "E-Mail" }).fill(`e2e-${randomUUID()}@example.com`);
+  await box.getByRole("button", { name: "Abonnieren" }).click();
+  await expect(box.getByRole("status")).toContainText("Sieh in dein Postfach: Wir haben einen Bestätigungslink an");
+  await reader.keyboard.press("Escape");
+
+  // An entry's page: the way back, its reactions and comments.
+  await darkMode.getByRole("link", { name: "Dark mode is here" }).click();
+  await expect(reader).toHaveURL(/\/de\/changelog\/20$/);
+  await expect(reader.getByRole("link", { name: "Changelog" }).first()).toBeVisible();
+  await expect(reader.getByRole("button", { name: /^Mit .+ reagieren$/ }).first()).toHaveAttribute("title", "Zum Reagieren anmelden");
+  const comments = reader.getByRole("region", { name: "Kommentare" });
+  await expect(comments.getByRole("heading", { name: "0 Kommentare" })).toBeVisible();
+  await expect(comments.getByText("Melde dich an, um zu kommentieren.")).toBeVisible();
+  await checkpoint(reader, "changelog-entry-in-german", { fullPage: false });
+
+  // On a phone, the header's menu lists the entries, their titles in the project's language.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.getByRole("banner").getByRole("button", { name: "Menü" }).click();
+  const entries = reader.getByRole("dialog").getByRole("navigation", { name: "Changelog-Einträge" });
+  await expect(entries.getByText("Dark mode is here")).toHaveAttribute("lang", "en");
+  await checkpoint(reader, "changelog-menu-in-german-phone", { fullPage: false });
+
+  // The RSS feed under the German address: its title, description and the entries' tags in German, its links to the German pages.
+  const feed = await (await reader.request.get("/de/changelog/rss.xml")).text();
+  expect(feed).toContain("<title>Changelog von Acme</title>");
+  expect(feed).toContain("<description>Was neu, besser und behoben ist bei Acme.</description>");
+  expect(feed).toContain("<category>Neu</category>");
+  expect(feed).toMatch(/<atom:link href="[^"]*\/de\/changelog\/rss\.xml" rel="self"/);
+  expect(feed).toMatch(/<link>[^<]*\/de\/changelog\/21<\/link>/);
+
+  // The month index and the pages, in French (a month's name differs from English there): "novembre 2026, 21 entrées".
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/fr/changelog");
+  const months = reader.getByRole("navigation", { name: "Mois" });
+  await expect(months.getByRole("heading", { name: "Aller au mois" })).toBeVisible();
+  // Its newest month (the entries span two if a month ends while they're made).
+  await expect(months.getByRole("link").first()).toHaveAccessibleName(/^[a-zéû]+ \d{4}, \d+ entrées?$/);
+  await reader.getByRole("link", { name: "Entrées plus anciennes" }).click();
+  await expect(reader).toHaveURL(/\/fr\/changelog\/page\/2$/);
+  // On a phone, the pages' links fit (they wrap rather than run off the screen).
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await expect(reader.getByRole("link", { name: "Entrées plus récentes" })).toBeVisible();
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  // A signed-in subscriber: where they stand instead of the form, and their own comment deleted, in German.
+  const member = await signUp(browser, portalUrl(slug), "Mia Member");
+  await api("/changelog-subscribers", { emails: [member.email] });
+  await member.setViewportSize({ width: 1280, height: 800 });
+  await member.goto("/de/changelog");
+  const standing = member.getByRole("complementary", { name: "Changelog folgen" });
+  await expect(standing).toContainText(`Die Changelog-Einträge, die Acme an Abonnenten mailt, gehen an ${member.email}.`);
+  await expect(standing.getByRole("link", { name: "Verwalten" })).toBeVisible();
+  await member.goto("/de/changelog/20");
+  const thread = member.getByRole("region", { name: "Kommentare" });
+  await thread.getByRole("textbox", { name: "Kommentieren" }).fill("Endlich!");
+  await thread.getByRole("button", { name: "Kommentieren" }).click();
+  await expect(thread.getByRole("heading", { name: "1 Kommentar" })).toBeVisible();
+  await thread.getByRole("button", { name: "Deinen Kommentar löschen" }).click();
+  const confirm = member.getByRole("alertdialog", { name: "Diesen Kommentar löschen?" });
+  await expect(confirm).toContainText("Er ist dann für alle endgültig weg.");
+  await confirm.getByRole("button", { name: "Kommentar löschen" }).click();
+  await expect(member.locator("[data-sonner-toast]", { hasText: "Kommentar gelöscht" })).toBeVisible();
+  await expect(thread.getByRole("heading", { name: "0 Kommentare" })).toBeVisible();
+});
+
+test("on a phone, a changelog page with both its page links fits, in French's long words", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "fr", live: true, newPages: "manual" }] }, "PATCH");
+  // 41 entries: page 2 of 3 has both Newer and Older.
+  // One at a time: each publish takes the project's lock.
+  for (let n = 1; n <= 41; n++) {
+    await api("/changelog", { title: `Update ${n}`, body: "Small fixes." });
+    await api(`/changelog/${n}/publish`, {});
+  }
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/fr/changelog/page/2");
+  await expect(reader.getByRole("link", { name: "Entrées plus récentes" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Entrées plus anciennes" })).toBeVisible();
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

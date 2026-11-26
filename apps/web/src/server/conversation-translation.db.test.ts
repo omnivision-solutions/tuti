@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
-import { handlers, translateMessage, translationSettings } from "@tuti/jobs";
-import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { handlers, noticeText, noticeWait, translateMessage, translationSettings } from "@tuti/jobs";
+import { creditsOn, type ModelFake, startExpoPushFake, startModelFake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -45,7 +45,13 @@ beforeEach(() => {
   }
   vi.stubEnv("TUTI_CONFIG", "");
 });
+/** The notices' waits, instant here unless a test drives one (noticeWait): no real time. */
+const realPause = noticeWait.pause;
+beforeEach(() => {
+  noticeWait.pause = async () => {};
+});
 afterEach(() => {
+  noticeWait.pause = realPause;
   vi.unstubAllEnvs();
   model.requests.length = 0;
   model.done();
@@ -499,4 +505,177 @@ test("Try again tells open Inbox pages even when a later message couldn't be que
   // The first is on its way; the second has its reason back, so its Try again shows.
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: first!.id } })).toMatchObject({ translationError: null });
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: second!.id } })).toMatchObject({ translationError: "Out of credits" });
+});
+
+test("the team's email and push about a message wait for its translation, and show it with the language named; Try again tells nobody again", async () => {
+  const expo = await startExpoPushFake();
+  try {
+    vi.stubEnv("EXPO_PUSH_URL", expo.env.EXPO_PUSH_URL);
+    vi.stubEnv("EXPO_ACCESS_TOKEN", "");
+    const { owner, project, team } = await setup();
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
+    await prisma.device.create({ data: { userId: owner.id, deviceId: "phone", token: "ExponentPushToken[phone]", platform: "ios", sessionId: session.id } });
+    // The notices, queued beside the translation (jobs inline), wait till it's done: their pause is its run.
+    const translate = handlers.translateMessage;
+    let translating: Promise<unknown> = Promise.resolve();
+    const spied = vi.spyOn(handlers, "translateMessage").mockImplementation((...args) => (translating = translate(...args)) as never);
+    noticeWait.pause = async () => {
+      await translating;
+    };
+    onTestFinished(() => spied.mockRestore());
+    model.reply(translated(ENGLISH, "de"));
+    await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: GERMAN });
+    const owners = await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { email: true } });
+    const email = await mailbox.latestTo(owners.email);
+    expect(email.subject).toMatch(/^New conversation: /);
+    expect(email.text).toContain(ENGLISH);
+    expect(email.text).toContain("Translated from Deutsch");
+    expect(expo.sent.map((message) => message.body)).toEqual([`Translated from Deutsch: ${ENGLISH}`]);
+
+    // A message whose translation fails is told about as written, once its tries are over.
+    model.fail(500);
+    model.fail(500);
+    const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+    const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
+    expect(failed.translationError).not.toBeNull();
+    expect(expo.sent.at(-1)!.body).toBe("Ich kann mich seit gestern nicht mehr anmelden.");
+    const told = expo.sent.length;
+    // Try again translates it, and nobody is told about it a second time.
+    actAs(owner);
+    model.reply(translated("I haven't been able to sign in since yesterday."));
+    await inbox.retryTranslation(project.slug, 1);
+    expect(expo.sent).toHaveLength(told);
+  } finally {
+    await expo.close();
+  }
+});
+
+/** A conversation whose customer's messages are added as the database has them, no job run: translation pending. */
+async function pending(...bodies: string[]) {
+  const { owner, project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: "Hello" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  // Told about its first message long ago, so the next can be emailed.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: new Date(Date.now() - 24 * 60 * 60_000) } });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  const messages = [];
+  for (const body of bodies) {
+    messages.push(await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "EMAIL", body } }));
+  }
+  return { owner, project, conversation, messages };
+}
+
+const quiet = { info: () => {}, warn: () => {} };
+
+test("the team's notices wait for a translation still to come, and give up after a while: the text as it is", async () => {
+  const { messages } = await pending(GERMAN);
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: GERMAN, translated: false, translatedFrom: null });
+  await prisma.conversationMessage.update({ where: { id: messages[0]!.id }, data: { teamText: ENGLISH, language: "de" } });
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translated: true, translatedFrom: "de" });
+  // A translation saved without a language (the model named none it could be read as): still the translation.
+  await prisma.conversationMessage.update({ where: { id: messages[0]!.id }, data: { language: null } });
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translated: true, translatedFrom: null });
+});
+
+test("an email waits for its message's translation without claiming the conversation's turn; a quick message after it leaves the email to it", async () => {
+  const { owner, conversation, messages } = await pending(GERMAN, "hallo?");
+  const [question, hello] = messages;
+  // Written in the same millisecond, as a quick follow-up can be (still the question first), and two minutes ago: the
+  // capped queue backed up, so both jobs run long after the messages came.
+  const written = new Date(Date.now() - 2 * 60_000);
+  await prisma.conversationMessage.updateMany({ where: { id: { in: [question!.id, hello!.id] } }, data: { createdAt: written } });
+  const { notifiedAt: before } = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+  // The question's email pauses for its translation, and stays paused till it's let go.
+  let release = () => {};
+  const waiting = new Promise<void>((paused) => {
+    noticeWait.pause = () => {
+      paused();
+      return new Promise<void>((resolve) => (release = resolve));
+    };
+  });
+  const first = handlers.conversationMessage({ messageId: question!.id }, quiet);
+  await waiting;
+  // In its wait, nothing is claimed: a run stopped now leaves the turn for conversation-notices-resubmit to find.
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
+  // "hallo?" after it, with nothing to wait for, leaves the email to the question's.
+  expect(await handlers.conversationMessage({ messageId: hello!.id }, quiet)).toEqual({ skipped: "an earlier message's email tells them" });
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt).toEqual(before);
+  // Translated meanwhile: the email goes, translated, and claims the turn then.
+  await prisma.conversationMessage.update({ where: { id: question!.id }, data: { teamText: ENGLISH, language: "de" } });
+  release();
+  expect(await first).toMatchObject({ emailed: 1 });
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt!.getTime()).toBeGreaterThan(before!.getTime());
+  const email = await mailbox.latestTo(owner.email);
+  expect(email.text).toContain(ENGLISH);
+  expect(email.text).toContain("Translated from Deutsch");
+});
+
+test("an email for a conversation told recently ends at once, without waiting for the translation", async () => {
+  const { conversation, messages } = await pending(GERMAN);
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: new Date() } });
+  let paused = false;
+  noticeWait.pause = () => {
+    paused = true;
+    return new Promise<void>(() => {});
+  };
+  expect(await handlers.conversationMessage({ messageId: messages[0]!.id }, quiet)).toEqual({ skipped: "told recently" });
+  expect(paused).toBe(false);
+});
+
+test("a push to phones that show no message text goes at once: a title has nothing to wait for", async () => {
+  const expo = await startExpoPushFake();
+  try {
+    vi.stubEnv("EXPO_PUSH_URL", expo.env.EXPO_PUSH_URL);
+    vi.stubEnv("EXPO_ACCESS_TOKEN", "");
+    const { owner, messages } = await pending(GERMAN);
+    await prisma.user.update({ where: { id: owner.id }, data: { pushShowsText: false } });
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: owner.id } });
+    await prisma.device.create({ data: { userId: owner.id, deviceId: "phone", token: "ExponentPushToken[phone]", platform: "ios", sessionId: session.id } });
+    // A wait would never end here.
+    const paused = vi.fn(() => new Promise<void>(() => {}));
+    noticeWait.pause = paused;
+    await handlers.conversationPush({ messageId: messages[0]!.id }, quiet);
+    expect(paused).not.toHaveBeenCalled();
+    expect(expo.sent).toHaveLength(1);
+    expect(expo.sent[0]).not.toHaveProperty("body");
+  } finally {
+    await expo.close();
+  }
+});
+
+test("a retry of the email for some addresses doesn't wait: its first run did", async () => {
+  const { owner, messages } = await pending(GERMAN);
+  expect(await handlers.conversationMessage({ messageId: messages[0]!.id, only: [owner.email] }, quiet)).toEqual({ emailed: 1 });
+  expect((await mailbox.latestTo(owner.email)).text).toContain(GERMAN);
+});
+
+/** A conversation told about `notifiedAgo` ms ago, with translation on and customer messages `agoMs` old, as the database has them (no job run). */
+async function history(notifiedAgo: number, ...messages: { body: string; agoMs: number }[]) {
+  const { owner, project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: "Hello" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  const now = Date.now();
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: new Date(now - notifiedAgo - 60_000) } });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: new Date(now - notifiedAgo) } });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  const rows = [];
+  for (const { body, agoMs } of messages) {
+    rows.push(await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "EMAIL", body, createdAt: new Date(now - agoMs) } }));
+  }
+  return { owner, conversation, messages: rows };
+}
+
+test("an earlier message whose email was held back (sent inside the last email's wait) doesn't hold back the next one's after it", async () => {
+  // Told 10 minutes and 20 seconds ago: a German message 40 seconds ago came inside the wait (its email was "told
+  // recently"), and its translation came back unchanged, so nothing on it ever settles. The next message, after the wait, is emailed.
+  const { owner, messages } = await history(10 * 60_000 + 20_000, { body: GERMAN, agoMs: 40_000 }, { body: "Is anyone there? I still can't export my reports.", agoMs: 0 });
+  expect(await handlers.conversationMessage({ messageId: messages[1]!.id }, quiet)).toMatchObject({ emailed: 1 });
+  expect((await mailbox.latestTo(owner.email)).text).toContain("I still can't export my reports.");
+});
+
+test("translation turned on with untranslated history: its old messages don't hold back the team's next email", async () => {
+  // Messages from before translation was on, long after the last email (its emails held back), never get translated.
+  const { owner, messages } = await history(3 * 24 * 60 * 60_000, { body: GERMAN, agoMs: 2 * 24 * 60 * 60_000 }, { body: "Hallo, ist da jemand? Ich warte noch.", agoMs: 0 });
+  expect(await handlers.conversationMessage({ messageId: messages[1]!.id }, quiet)).toMatchObject({ emailed: 1 });
+  expect((await mailbox.latestTo(owner.email)).text).toContain("Hallo, ist da jemand?");
 });

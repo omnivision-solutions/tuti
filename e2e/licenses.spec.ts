@@ -363,7 +363,7 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("0 of 4,000 left", { exact: true })).toBeVisible();
   // Out of credits, the banner says what stops: on a plan whose emails past its allowance spend credits, those too.
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of credits" })).toContainText(
-    "AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and emails past the plan's monthly allowance are paused until it has more.",
+    "AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify, AI images and emails past the plan's monthly allowance are paused until it has more.",
   );
   // Billing and the inbox write the day alike, short as en-GB has it ("5 Sept").
   const until = /^Resets (\d{1,2} [A-Z][a-z]+)( \d{4})?$/;

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { MESSAGES } from "@tuti/shared/messages";
 import { mediaStorage } from "@tuti/shared/storage";
 import { MessageCircleIcon } from "lucide-react";
 import type { Metadata } from "next";
@@ -22,6 +23,7 @@ import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
 import { visibleEntry } from "@/lib/reader-groups";
 import { portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
@@ -111,22 +113,25 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   // The entry's and its comments' words: the team's and people's, in the default language under another's address
   // (teamLanguage); not the portal's own text around them.
   const lang = await teamLanguage();
+  // The portal's own words in the page's language.
+  const [{ t, language }, { t: f }] = await Promise.all([portalTranslator(project.id, "changelog"), portalTranslator(project.id, "feedback")]);
   return (
     <div className="flex flex-col gap-6">
       {jsonLd}
       <ChangelogMenu slug={slug} current={entry.number} />
       <ChangelogEntryView
         entry={entry}
-        back={<BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>}
+        back={<BackLink href={(await portalLinks())("/changelog")}>{MESSAGES[language].header.changelog}</BackLink>}
         mediaUrls={await mediaUrls(entry.doc, entry.cover)}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
         base={await portalLinkBase()}
         lang={lang}
+        language={language}
       />
-      <section className="flex flex-col gap-3 border-t pt-8" aria-label="Comments">
+      <section className="flex flex-col gap-3 border-t pt-8" aria-label={f("commentsLabel")}>
         <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-sans text-lg font-semibold outline-none">
-          {comments.length} {comments.length === 1 ? "comment" : "comments"}
+          {f("comments", { count: comments.length })}
         </h2>
         {/* The box before the thread; signed out, a bar to sign in instead. */}
         {commenter && session ? (
@@ -142,9 +147,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
               <span aria-hidden className="hidden size-10 shrink-0 place-items-center rounded-lg bg-card text-muted-foreground sm:grid">
                 <MessageCircleIcon className="size-[1.125rem]" />
               </span>
-              <p className="min-w-0 flex-1 text-[0.9375rem] text-muted-foreground">Sign in to comment.</p>
+              <p className="min-w-0 flex-1 text-[0.9375rem] text-muted-foreground">{t("signInToComment")}</p>
               <SignInLink className={buttonVariants({ variant: "outline", size: "lg", className: "font-semibold portal:bg-card portal:hover:bg-card/70" })}>
-                Sign in
+                {MESSAGES[language].header.signIn}
               </SignInLink>
             </div>
           )
@@ -152,6 +157,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         <div className="pt-3">
           <CommentList
             lang={lang}
+            language={language}
             portal
             comments={comments}
             teamUserIds={new Set(team.map((m) => m.userId))}

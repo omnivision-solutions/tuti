@@ -6,6 +6,7 @@
   },
   "ai": {
     "features": { "answers": "anthropic/claude-sonnet-5.5" },
+    "imageModel": "google/gemini-nano-banana-2.1",
     "maxPrice": 15,
     "levels": {
       "affordable": {

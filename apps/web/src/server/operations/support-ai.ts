@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { aiFor, OutOfCredits } from "@tuti/jobs";
+import { aiFor, OutOfCredits, translationSettings } from "@tuti/jobs";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -32,14 +32,20 @@ const AI_TIMEOUT_MS = 30_000;
 const SUMMARY_MESSAGES = 60;
 const SUMMARY_MESSAGE_LENGTH = 1500;
 
-/** What they've asked that the team hasn't answered: their messages after the team's last reply (else their last one). */
-async function openQuestion(conversationId: string) {
-  const messages = await prisma.conversationMessage.findMany({
+/**
+ * What they've asked that the team hasn't answered: their messages after the team's last reply (else their last one).
+ * `translated`: the project translates conversations (docs/plan.md L22), so it's their messages' translations into the
+ * team's language, where they have one: the draft is written in it (the prompt answers in the question's language), and
+ * goes out translated like a reply the team typed.
+ */
+async function openQuestion(conversationId: string, translated: boolean) {
+  const rows = await prisma.conversationMessage.findMany({
     where: { conversationId, note: false },
     orderBy: { createdAt: "desc" },
     take: 20,
-    select: { author: true, body: true },
+    select: { author: true, body: true, teamText: true },
   });
+  const messages = rows.map((m) => ({ author: m.author, body: translated && m.author === "USER" ? (m.teamText ?? m.body) : m.body }));
   const since = messages.findIndex((m) => m.author !== "USER");
   const theirs = (since === -1 ? messages : messages.slice(0, since)).filter((m) => m.author === "USER");
   const asked = (theirs.length > 0 ? theirs : messages.filter((m) => m.author === "USER").slice(0, 1)).reverse();
@@ -78,7 +84,7 @@ export const suggestReply = defineOperation({
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
     }
     const conversation = await findConversation(projectId, number);
-    const question = await openQuestion(conversation.id);
+    const question = await openQuestion(conversation.id, (await translationSettings(projectId)).translate);
     // Only what they may read: a reply mustn't point them at docs they can't open.
     const reader = conversation.userId ? await readerOf(projectId, conversation.userId) : SIGNED_OUT;
     const sections = question ? await answerSections(projectId, question, DRAFT_SECTIONS, reader, EMBED_TIMEOUT_MS) : [];

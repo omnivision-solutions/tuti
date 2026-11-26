@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 
+import { imageKey, imageWidths } from "@tuti/content/media";
 import { type TeamRole, prisma } from "@tuti/db";
 import { importsSettled, languageTranslationsDone, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
+import sharp from "sharp";
 import { billingFile, type BrowserUseFake, configFile, startBrowserUseFake, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
@@ -37,6 +39,7 @@ import * as docsReaders from "./docs-readers";
 import * as emailPause from "./email-pause";
 import * as emailPreferences from "./email-preferences";
 import * as groups from "./groups";
+import * as images from "./images";
 import * as imports from "./imports";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
@@ -95,6 +98,7 @@ const modules = {
   "email-pause": emailPause,
   "email-preferences": emailPreferences,
   groups,
+  images,
   imports,
   inbox,
   invitations,
@@ -859,6 +863,14 @@ const matrix: Matrix = {
     // Browser Use (the fake) signs in and takes the screen it lands on, inline; the fixture's project is set up for it.
     testScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => screenshots.testScreenshots(slug)) },
   },
+  images: {
+    // The model fake makes it; uploads keep it.
+    generateImage: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => images.generateImage(slug, { prompt: "A lighthouse", width: 320, height: 200, references: [f.imageId] }),
+    },
+  },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },
     deleteWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.deleteWebhook(slug, f.webhookId) },
@@ -1040,6 +1052,11 @@ async function createFixture(own: "domain" | "site" = "domain") {
     data: { projectId, uploaderId: users.outsider.id, size: 4, createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
   });
   s3.objects.set(`uploads/${upload.id}`, { body: Buffer.from("fake"), contentType: "image/png" });
+  // A finished image (a reference for generateImage), its one stored size in place.
+  const image = await prisma.media.create({ data: { projectId, uploaderId: users.OWNER.id, size: 4, status: "READY", width: 32, height: 20 } });
+  for (const width of imageWidths(32)) {
+    s3.objects.set(imageKey(image.id, width), { body: await sharp({ create: { width, height: 20, channels: 3, background: "#3a7" } }).webp().toBuffer(), contentType: "image/webp" });
+  }
   const apiKey = await prisma.apiKey.create({
     data: { projectId, name: "Key", scope: "READ", keyHash: crypto.randomUUID(), prefix: "tuti_x", createdById: users.OWNER.id },
   });
@@ -1208,6 +1225,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     webhookId: webhook.id,
     apiKeyId: apiKey.id,
     mediaId: upload.id,
+    imageId: image.id,
     emailInvitationId: emailInvitation.id,
     boardId: board.id,
     emptyBoardId: emptyBoard.id,

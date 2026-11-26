@@ -1,5 +1,6 @@
 import type { ChangelogTag } from "@tuti/db";
 
+import { T } from "@/components/portal-text";
 import { Badge } from "@/components/ui/badge";
 
 export const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
@@ -21,7 +22,8 @@ export const PICKED_CHIP: Record<"secondary" | "destructive", string> = {
 export function TagBadge({ tag, className }: { tag: ChangelogTag; className?: string }) {
   return (
     <Badge variant={TAG_VARIANTS[tag]} className={className}>
-      {TAG_LABELS[tag]}
+      {/* In the page's language on the portal; English in the app (the root layout's messages). */}
+      <T id={`changelog.tag.${tag}`} />
     </Badge>
   );
 }

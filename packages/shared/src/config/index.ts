@@ -41,6 +41,7 @@ export const configSchema = z.object({
 });
 
 export type Config = z.output<typeof configSchema>;
+export { DEFAULT_IMAGE_MODEL } from "./ai";
 
 /** Env vars a section replaced, with their keys: one still set is a server not yet moved over. */
 export const CONFIG_REPLACED: Record<string, string> = {

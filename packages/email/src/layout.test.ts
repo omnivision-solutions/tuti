@@ -324,3 +324,15 @@ test("the card itself wraps long words, so text in any email's body (an Autopilo
   const html = await render(inviteEmail({ inviterName: "Ada", projectName: "Acme", roleLabel: "Member", url: "https://tuti.example/i" }).body);
   expect(html).toMatch(/border-radius:16px[^"]*overflow-wrap:anywhere/);
 });
+
+test("the team's email about a translated message quotes the translation and names the language it came in", async () => {
+  const props = { projectName: "Acme", from: "Kai", isNew: true, subject: "Rechnungen", body: "Where are my invoices?", url: "https://tuti.example/c", assigned: true };
+  const translated = await render(conversationEmail({ ...props, translatedFrom: "Deutsch" }).body, { plainText: true });
+  expect(translated).toContain("Where are my invoices?");
+  expect(translated).toContain("Translated from Deutsch");
+  expect(await render(conversationEmail(props).body, { plainText: true })).not.toContain("Translated");
+  // Its language not known: said translated, unnamed.
+  const unnamed = await render(conversationEmail({ ...props, translatedFrom: "" }).body, { plainText: true });
+  expect(unnamed).toContain("Translated");
+  expect(unnamed).not.toContain("Translated from");
+});

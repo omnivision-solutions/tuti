@@ -737,7 +737,8 @@ Use these instead of hand-rolling layout:
     opens a menu, like `PostStatusMenu`), in a preview pane or in bulk; no
     form controls (selects, checkboxes for settings) in rows, on phones too.
     Settings → Team & roles is the exception: a role is a dropdown on its row, for whoever may change it (a badge
-    for everyone else), saved as it's picked.
+    for everyone else), saved as it's picked. So is Settings → Workflows: a workflow's on/off switch is on its row,
+    saved as it's turned, as each one is a setting of its own.
   - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
     width: `?post=<number>` in the address (shareable, Back works), the list
     left as it was, the open row highlighted out to its list's edges

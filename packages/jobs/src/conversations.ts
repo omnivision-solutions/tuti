@@ -1,3 +1,6 @@
+import { nativeLanguageName } from "@tuti/shared/languages";
+
+import { noticeText, translationsPendingBefore } from "./conversation-translation";
 import { randomUUID } from "node:crypto";
 
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
@@ -91,20 +94,40 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   const earlier = await prisma.conversationMessage.count({
     where: { conversationId: conversation.id, author: "USER", createdAt: { lt: message.createdAt } },
   });
-  const email = conversationEmail({
+  const url = `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`;
+  // Its translation, where it gets one (docs/plan.md L22). Never throws: the text as it is, where it can't be read.
+  const emailOf = (told: { text: string; translated: boolean; translatedFrom: string | null }) => conversationEmail({
     projectName: conversation.project.name,
     from: whoWrote(message, conversation),
     // The user's first message is the conversation's start.
     isNew: earlier === 0,
     subject: conversation.subject,
-    body: message.body,
-    url: `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`,
+    // Translated: what the team reads in the Inbox, with the language it came in named.
+    body: told.text,
+    ...(told.translated && { translatedFrom: told.translatedFrom ? nativeLanguageName(told.translatedFrom) : "" }),
+    url,
     assigned: !!conversation.assigneeId,
   });
+  const textOf = (waitMs?: number) => noticeText(messageId, waitMs).catch(() => ({ text: message.body, translated: false, translatedFrom: null }));
   if (only) {
-    // A retry for the addresses the first run couldn't reach: each failure fails the job, for another try.
+    // A retry for the addresses the first run couldn't reach (not waited for: its first run did): each failure fails the job, for another try.
+    const email = emailOf(await textOf(0));
     await Promise.all(recipients.map((member) => sendEmail({ to: member.user.email, ...email })));
     return { emailed: recipients.length };
+  }
+  // Told recently: nothing to wait for (most messages in a chat), so no slot is held for a translation it won't send.
+  if (conversation.notifiedAt && conversation.notifiedAt.getTime() > Date.now() - NOTIFY_EVERY_MS) {
+    return { skipped: "told recently" };
+  }
+  // Its translation waited for first, nothing claimed meanwhile: a run stopped while it waits leaves the conversation's turn
+  // as it was, for conversation-notices-resubmit to find.
+  const email = emailOf(await textOf());
+  // An earlier message of theirs still being translated, whose email can claim the turn (sent once the last email's
+  // NOTIFY_EVERY_MS was over) and is on its way (a recent one: STEP_ASIDE_MS): it tells them once its wait is over; this
+  // one, a quick "hallo?" after it, doesn't take its place.
+  const claimable = conversation.notifiedAt && new Date(conversation.notifiedAt.getTime() + NOTIFY_EVERY_MS);
+  if (await translationsPendingBefore(conversation.id, { id: messageId, createdAt: message.createdAt }, claimable)) {
+    return { skipped: "an earlier message's email tells them" };
   }
   const previous = conversation.notifiedAt;
   const claimedAt = new Date();

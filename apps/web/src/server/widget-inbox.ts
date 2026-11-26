@@ -1,7 +1,7 @@
 "use server";
 
 import { type Prisma, prisma } from "@tuti/db";
-import { replyRecipient } from "@tuti/jobs";
+import { replyRecipient, translationSettings } from "@tuti/jobs";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -137,11 +137,19 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     awaitingReply: boolean;
     emailedTo: string | null;
     replyMs: number | null;
+    /** The language the team writes in: a translated reply's original is in it. */
+    teamLanguage: string;
     messages: {
       id: string;
       fromTeam: boolean;
       name: string | null;
       body: string;
+      /**
+       * The team's reply as they wrote it, where it was translated into the customer's language (docs/plan.md L22):
+       * `body` is the translation, `language` its language. Null otherwise (their own messages' translations are the team's).
+       */
+      original: string | null;
+      language: string | null;
       attachments: { id: string; filename: string; contentType: string; size: number; image: boolean; url: string | null }[];
       /** Imported from another tool, attachments that weren't brought across (shown, so no message is an empty bubble). */
       dropped: number;
@@ -160,7 +168,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       data: { seenAt: new Date() },
     });
   }
-  const [messages, to, replyMs] = await Promise.all([
+  const [messages, to, replyMs, { teamLanguage }] = await Promise.all([
     prisma.conversationMessage.findMany({
       // The team's notes are theirs alone.
       where: { conversationId: conversation.id, note: false },
@@ -169,6 +177,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         id: true,
         author: true,
         body: true,
+        teamText: true,
+        language: true,
         createdAt: true,
         authorUser: { select: { name: true } },
         attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
@@ -179,6 +189,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
     replyRecipient(conversation.id).then((recipient) => ("to" in recipient ? recipient.to : null)),
     usualReplyMs(who.projectId),
+    translationSettings(who.projectId),
   ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
   const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
@@ -187,11 +198,14 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     awaitingReply: conversation.status !== "CLOSED" && !conversation.spam,
     emailedTo: to,
     replyMs,
+    teamLanguage,
     messages: messages.map((m) => ({
       id: m.id,
       fromTeam: m.author !== "USER",
       name: m.author === "USER" ? null : (m.authorUser?.name ?? null),
       body: m.body,
+      original: m.author !== "USER" ? m.teamText : null,
+      language: m.author !== "USER" && m.teamText !== null ? m.language : null,
       attachments: m.attachments.map((a) => links.get(a.id)!),
       // A received email's files dropped for want of storage are the team's to know (its server), not the user's.
       dropped: m.importId ? m.attachmentsDropped : 0,
