@@ -118,9 +118,11 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   // Its translation waited for first, nothing claimed meanwhile: a run stopped while it waits leaves the conversation's turn
   // as it was, for conversation-notices-resubmit to find.
   const email = emailOf(await textOf());
-  // An earlier message of theirs, since the team was last told, still being translated: its email is on its way and tells
-  // them (it claims its turn once its wait is over); this one, a quick "hallo?" after it, doesn't take its place.
-  if (await translationsPendingBefore(conversation.id, message.createdAt, conversation.notifiedAt)) {
+  // An earlier message of theirs still being translated, whose email can claim the turn (sent once the last email's
+  // NOTIFY_EVERY_MS was over) and is on its way (a recent one: STEP_ASIDE_MS): it tells them once its wait is over; this
+  // one, a quick "hallo?" after it, doesn't take its place.
+  const claimable = conversation.notifiedAt && new Date(conversation.notifiedAt.getTime() + NOTIFY_EVERY_MS);
+  if (await translationsPendingBefore(conversation.id, message.createdAt, claimable)) {
     return { skipped: "an earlier message's email tells them" };
   }
   const previous = conversation.notifiedAt;

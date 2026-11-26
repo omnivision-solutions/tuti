@@ -132,10 +132,23 @@ export async function noticeText(messageId: string, waitMs = noticeWait.ms): Pro
   }
 }
 
-/** Whether any of a conversation's customer messages from `since` up to `before` is still to be translated (translationPending). */
-export async function translationsPendingBefore(conversationId: string, before: Date, since: Date | null) {
+/**
+ * How recent an earlier message must be for a later one's email to step aside for it: its email's wait (noticeWait.ms)
+ * and a margin for its queue. Older, it isn't counted on: a translation that never settles (the model gave the text back
+ * as it was) or history from before translation was on would hold the team's emails back for good.
+ */
+export const STEP_ASIDE_MS = 60_000;
+
+/**
+ * Whether one of a conversation's customer messages before `before`, sent since `since` (when an email about it could
+ * claim the conversation's turn) and within STEP_ASIDE_MS, is still to be translated (translationPending): its email is
+ * on its way.
+ */
+export async function translationsPendingBefore(conversationId: string, before: Date, since: Date | null, now = new Date()) {
+  const recent = new Date(now.getTime() - STEP_ASIDE_MS);
+  const after = since && since > recent ? since : recent;
   const messages = await prisma.conversationMessage.findMany({
-    where: { conversationId, author: "USER", note: false, teamText: null, translationError: null, language: null, createdAt: { lt: before, ...(since && { gt: since }) } },
+    where: { conversationId, author: "USER", note: false, teamText: null, translationError: null, language: null, createdAt: { lt: before, gt: after } },
     select: { ...PENDING_SELECT },
   });
   return messages.some(translationPending);

@@ -576,3 +576,34 @@ test("a retry of the email for some addresses doesn't wait: its first run did", 
   expect(await handlers.conversationMessage({ messageId: messages[0]!.id, only: [owner.email] }, quiet)).toEqual({ emailed: 1 });
   expect((await mailbox.latestTo(owner.email)).text).toContain(GERMAN);
 });
+
+/** A conversation told about `notifiedAgo` ms ago, with translation on and customer messages `agoMs` old, as the database has them (no job run). */
+async function history(notifiedAgo: number, ...messages: { body: string; agoMs: number }[]) {
+  const { owner, project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: "Hello" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  const now = Date.now();
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: new Date(now - notifiedAgo - 60_000) } });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: new Date(now - notifiedAgo) } });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  const rows = [];
+  for (const { body, agoMs } of messages) {
+    rows.push(await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "EMAIL", body, createdAt: new Date(now - agoMs) } }));
+  }
+  return { owner, conversation, messages: rows };
+}
+
+test("an earlier message whose email was held back (sent inside the last email's wait) doesn't hold back the next one's after it", async () => {
+  // Told 10 minutes and 20 seconds ago: a German message 40 seconds ago came inside the wait (its email was "told
+  // recently"), and its translation came back unchanged, so nothing on it ever settles. The next message, after the wait, is emailed.
+  const { owner, messages } = await history(10 * 60_000 + 20_000, { body: GERMAN, agoMs: 40_000 }, { body: "Is anyone there? I still can't export my reports.", agoMs: 0 });
+  expect(await handlers.conversationMessage({ messageId: messages[1]!.id }, quiet)).toMatchObject({ emailed: 1 });
+  expect((await mailbox.latestTo(owner.email)).text).toContain("I still can't export my reports.");
+});
+
+test("translation turned on with untranslated history: its old messages don't hold back the team's next email", async () => {
+  // Messages from before translation was on, long after the last email (its emails held back), never get translated.
+  const { owner, messages } = await history(3 * 24 * 60 * 60_000, { body: GERMAN, agoMs: 2 * 24 * 60 * 60_000 }, { body: "Hallo, ist da jemand? Ich warte noch.", agoMs: 0 });
+  expect(await handlers.conversationMessage({ messageId: messages[1]!.id }, quiet)).toMatchObject({ emailed: 1 });
+  expect((await mailbox.latestTo(owner.email)).text).toContain("Hallo, ist da jemand?");
+});
