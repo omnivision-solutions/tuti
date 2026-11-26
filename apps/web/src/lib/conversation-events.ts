@@ -71,7 +71,7 @@ const STATUS_TEXT = { open: "reopened it", waiting: "set it waiting on the user"
 export function tellEvent(
   row: { kind: string; actor: string; actorId: string | null; actorName: string | null; details: unknown },
   names: Map<string, string>,
-  person = "The user",
+  person = "Unknown",
 ): ToldEvent | null {
   const schema = (EVENTS as Record<string, z.ZodType>)[row.kind];
   const parsed = schema?.safeParse(row.details);

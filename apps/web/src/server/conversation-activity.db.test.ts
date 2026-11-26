@@ -10,6 +10,7 @@ import { getConversationActivity } from "./operations/conversation-activity";
 import { createConversation, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { createWorkflow, deleteWorkflow } from "./operations/workflows";
+import { deleteUser } from "./operations/users";
 import { upsertProjectUser } from "./project-users";
 import { spamVerdict } from "./spam";
 
@@ -185,6 +186,10 @@ test("what a message changes on the way: a reply closing it, the person's messag
   // The person's rows are under People; the wake job's under Workflows, with the built-in steps.
   expect(await activity(number, "people")).toHaveLength(5);
   expect(await activity(number, "workflows")).toEqual(["Its snooze ended"]);
+  // Nothing of theirs is in a row: erased by users.delete, their rows say so, as the conversation does.
+  expect(JSON.stringify(await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number } } }))).not.toContain("Sam");
+  await call(deleteUser, admin, { user: "user-1" });
+  expect((await activity(number)).filter((row) => row.startsWith("Deleted user "))).toEqual(["Deleted user ended its snooze · by writing", "Deleted user reopened it · by writing"]);
 });
 
 test("newest first, a page at a time, the team's only; deleted with its conversation", async () => {

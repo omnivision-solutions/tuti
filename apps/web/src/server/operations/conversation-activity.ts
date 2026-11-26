@@ -79,7 +79,7 @@ export async function conversationActivity(conversationId: string, { filter = "a
   return {
     // A kind this release can't read (a later release's) is left out.
     events: page.flatMap((row) => {
-      const told = tellEvent(row, names, name ?? email ?? "The user");
+      const told = tellEvent(row, names, name ?? email ?? "Unknown");
       return told
         ? [{ id: row.id, kind: row.kind, actor: row.actor as (typeof ACTORS)[number], who: told.who, text: told.text, detail: told.detail, workflows: told.lines, createdAt: row.createdAt.toISOString() }]
         : [];
