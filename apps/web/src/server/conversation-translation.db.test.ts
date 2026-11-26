@@ -225,6 +225,24 @@ test("nothing to translate (only a link): a message and a reply go as written, a
   expect(model.requests).toHaveLength(1);
 });
 
+test("on its last try, any error marks the message as failed; earlier, it's thrown for the retry", async () => {
+  const { project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: "e2e-kai@example.com", body: GERMAN });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  const { id } = await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } });
+  const log = { info: () => {}, warn: () => {} };
+  // Saving the translation fails (the database went away), not the provider.
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("The database went away"));
+  model.reply(translated(ENGLISH, "de"));
+  await expect(translateMessage({ messageId: id }, log, { lastTry: false })).rejects.toThrow("The database went away");
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id } })).toMatchObject({ teamText: null, translationError: null });
+
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("The database went away"));
+  model.reply(translated(ENGLISH, "de"));
+  expect(await translateMessage({ messageId: id }, log, { lastTry: true })).toEqual({ failed: "error" });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id } })).toMatchObject({ teamText: null, translationError: "Couldn't translate it" });
+});
+
 test("a translation that can't be queued is marked as failed, not left looking untranslatable", async () => {
   const { project, team } = await setup();
   jobs.failing.add("translateMessage");
@@ -234,7 +252,13 @@ test("a translation that can't be queued is marked as failed, not left looking u
     jobs.failing.clear();
   }
   expect(model.requests).toHaveLength(0);
-  expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ teamText: null, translationError: "Couldn't queue its translation" });
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id } });
+  expect(message).toMatchObject({ teamText: null, translationError: "Couldn't queue its translation" });
+
+  // Tried again, it turns out to be in the team's language: the mark goes.
+  model.reply(translated(GERMAN, "en"));
+  await translateMessage({ messageId: message.id }, { info: () => {}, warn: () => {} });
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: message.id } })).toMatchObject({ teamText: null, translationError: null });
 });
 
 test("a failed translation: the message shows as written with why; a reply is never sent untranslated unless the team says so", async () => {

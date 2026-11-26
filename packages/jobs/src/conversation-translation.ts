@@ -61,7 +61,12 @@ export async function translationSettings(projectId: string) {
  */
 export async function translateMessage(input: JobInput<"translateMessage">, log: JobLogger, run: JobRun = { lastTry: true }): Promise<JobResult> {
   try {
-    return await translateOne(input, log, run);
+    const result = await translateOne(input, log, run);
+    if ("skipped" in result) {
+      // Nothing to translate after all (the team's language, too short, spam, no AI): a mark from a queue that failed goes.
+      await prisma.conversationMessage.updateMany({ where: { id: input.messageId, teamText: null, translationError: { not: null } }, data: { translationError: null } });
+    }
+    return result;
   } catch (error) {
     if (!run.lastTry) {
       throw error;
