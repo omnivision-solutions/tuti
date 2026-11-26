@@ -422,7 +422,8 @@ const NOTICE_RESUBMIT_FOR_MS = 24 * 60 * 60 * 1000;
  * have: the conversation was last told about more than NOTIFY_EVERY_MS before it (a message inside
  * that wait is meant to tell nobody), it isn't spam or sample content, and someone on the team would get the email.
  * Never one the AI has: its messages tell nobody. Once it's the team's its messages are found like any other's, but for
- * those the team has replied after: a teammate's reply took it over and answered them, so they're no news.
+ * those the team has answered: only what its user still waits on (`waitingSince`, their oldest unanswered message) is
+ * news. A reply that took it over answered them all; one that didn't see the user's latest leaves that one waiting, and found.
  */
 export async function resubmitConversationNotices(_: JobInput<"resubmitConversationNotices">, log: JobLogger): Promise<JobResult> {
   if (!emailConfigured() || !process.env.APP_URL) {
@@ -437,10 +438,7 @@ export async function resubmitConversationNotices(_: JobInput<"resubmitConversat
       AND NOT c."spam"
       AND NOT c."sample"
       AND c."handledBy" = 'TEAM'
-      AND NOT EXISTS (
-        SELECT 1 FROM "conversation_message" r
-        WHERE r."conversationId" = m."conversationId" AND r."author" = 'TEAM' AND NOT r."note" AND r."createdAt" > m."createdAt"
-      )
+      AND c."waitingSince" IS NOT NULL AND c."waitingSince" <= m."createdAt"
       AND m."createdAt" < ${new Date(now - NOTICE_LATE_MS)}
       AND m."createdAt" > ${new Date(now - NOTICE_RESUBMIT_FOR_MS)}
       AND (c."notifiedAt" IS NULL OR c."notifiedAt" < m."createdAt" - make_interval(secs => ${NOTIFY_EVERY_MS / 1000}))
