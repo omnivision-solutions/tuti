@@ -185,6 +185,8 @@ test("in the widget, a German customer gets the team's reply in German, with wha
   await expect(original).toBeHidden();
   await thread.getByText("Show original").click();
   await expect(original).toBeVisible();
+  // Scrolled into view as it opens, so the reply box doesn't hide it.
+  await expect(original).toBeInViewport();
   await expect(thread.getByText("Hide original")).toBeVisible();
   // Each read in its own language's voice: the German reply marked German, what the team wrote marked English.
   await expect(thread.getByText(inGerman, { exact: true })).toHaveAttribute("lang", "de");
