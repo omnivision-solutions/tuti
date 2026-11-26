@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { autopilotSettingsSelect, enqueue, grantCredits, SCREENSHOT_DECISIONS, SCREENSHOT_RULE, SCREENSHOT_WAITS, waitsBecause } from "@tuti/jobs";
+import { autopilotSettingsSelect, enqueue, grantCredits, SCREENSHOT_DECISIONS, SCREENSHOT_RULE, SCREENSHOT_WAITS, SCREENSHOTS_RETAKEN, waitsBecause } from "@tuti/jobs";
 import { roleDefaultModel } from "@tuti/shared";
 import { billingFile, creditsOn, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -503,6 +503,12 @@ describe("screenshots a change made out of date (SC4)", () => {
     const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
     await expect(call(applyCodeChangeAction, team(), { id: edit!.id, revision: review.revision!, reviewedAs: "published" })).rejects.toMatchObject({ status: 409, code: "markers" });
     expect(await published()).toEqual(content);
+
+    // Taken again (the editor's run puts an image in the line's place): it still waits, for someone to look at it.
+    await prisma.articleChanges.update({ where: { articleId: article.id }, data: { content } });
+    const row = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit!.id }, select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true } });
+    const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect });
+    expect(await waitsBecause(row, settings)).toBe(SCREENSHOTS_RETAKEN);
   });
 
   test("dismissed: the image stays, in the article and its changes", async () => {
@@ -557,6 +563,28 @@ describe("screenshots a change made out of date (SC4)", () => {
       type: "doc",
       content: [paragraph("The app has a light theme and a dark one."), paragraph(`[Screenshot: ${SHOW}]`), paragraph("Pick it in Settings.")],
     });
+    // Waiting for its screenshot; and an edit the check turned down says so, not only that it waits for a screenshot.
+    const row = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit!.id }, select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true } });
+    const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect });
+    expect(await waitsBecause(row, settings)).toBe(SCREENSHOT_WAITS);
+    const turnedDown = { ...row, payload: { ...(row.payload as object), check: { pass: false, reason: "It says something the code doesn't" } } };
+    expect(await waitsBecause(turnedDown, settings)).toBe("It says something the code doesn't");
+  });
+
+  test("a docs edit that drops the image isn't proposed: the screenshot gets its own edit", async () => {
+    await shooting();
+    pullRequest(66);
+    model.decide(USERS);
+    model.decide(STALE, ASKED);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.8, reason: "It says the app only has a light theme." }]), undefined, '"merge-66"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": "The app has a light theme and a dark one.\n\nPick it in Settings." } }), undefined, '"problem"');
+    expect(await merge(66)).toBe(200);
+    // The writer dropping an image makes its edit unusable; the screenshot's line is put back on the article as it is.
+    const [edit, ...more] = await edits(66);
+    expect(more).toEqual([]);
+    expect(edit!.reason).not.toContain("It says there's only");
+    expect(await changes()).toEqual({ type: "doc", content: [paragraph("The app has a light theme."), paragraph(`[Screenshot: ${SHOW}]`), paragraph("Pick it in Settings.")] });
   });
 });
 

@@ -642,11 +642,12 @@ async function analyse(
 async function withStale(kept: Proposal[], stale: StaleScreenshot[]): Promise<Proposal[]> {
   const out = [...kept];
   for (const articleId of new Set(stale.map((shot) => shot.articleId))) {
-    const shots = stale.filter((shot) => shot.articleId === articleId);
-    const payload = { screenshots: shots.map(({ mediaId, show }) => ({ mediaId, show })) };
     const at = out.findIndex((proposal) => proposal.kind === "ARTICLE_EDIT" && proposal.articleId === articleId && proposal.edit);
     const edit = at === -1 ? null : out[at]!;
-    const doc = edit && withLines(edit.edit!.doc, shots);
+    // Into the docs agent's edit: only the images it kept (one it took out has no line to put back).
+    const shots = stale.filter((shot) => shot.articleId === articleId && (!edit || withLines(edit.edit!.doc, [shot])));
+    const payload = { screenshots: shots.map(({ mediaId, show }) => ({ mediaId, show })) };
+    const doc = edit && shots.length > 0 && withLines(edit.edit!.doc, shots);
     if (edit && doc) {
       const before = (edit.payload ?? {}) as Record<string, unknown>;
       out[at] = {
