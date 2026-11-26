@@ -127,7 +127,7 @@ type Kind = {
   /** A version's fields from its translated document's blocks (`meta` paragraphs first). */
   fields(blocks: NonNullable<Doc["content"]>, meta: number, source: SourceText): Record<string, unknown>;
   /** The source's project, versions and the project's languages (null: not translatable). */
-  languagesOf(parentId: string): Promise<{ projectId: string; translations: { language: string; automatic: boolean }[]; languages: { code: string; automatic: boolean }[] } | null>;
+  languagesOf(parentId: string): Promise<{ projectId: string; translations: { language: string; automatic: boolean }[]; languages: { code: string; automatic: boolean; createdAt: Date }[] } | null>;
   /** A project's translatable sources with no version in a language. */
   without(projectId: string, language: string): Promise<{ id: string }[]>;
   /** The versions the team writes in a language, with their source. */
@@ -181,7 +181,7 @@ const ARTICLE: Kind = {
   async languagesOf(articleId) {
     const article = await prisma.article.findFirst({
       where: { id: articleId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) },
-      select: { projectId: true, translations: { select: { language: true, automatic: true } }, project: { select: { languages: { select: { code: true, automatic: true } } } } },
+      select: { projectId: true, translations: { select: { language: true, automatic: true } }, project: { select: { languages: { select: { code: true, automatic: true, createdAt: true } } } } },
     });
     return article && { projectId: article.projectId, translations: article.translations, languages: article.project.languages };
   },
@@ -220,7 +220,7 @@ const ENTRY: Kind = {
   async languagesOf(entryId) {
     const entry = await prisma.changelogEntry.findFirst({
       where: { id: entryId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) },
-      select: { projectId: true, translations: { select: { language: true, automatic: true } }, project: { select: { languages: { select: { code: true, automatic: true } } } } },
+      select: { projectId: true, translations: { select: { language: true, automatic: true } }, project: { select: { languages: { select: { code: true, automatic: true, createdAt: true } } } } },
     });
     return entry && { projectId: entry.projectId, translations: entry.translations, languages: entry.project.languages };
   },
@@ -513,13 +513,18 @@ export async function languageTranslationsDone() {
   }
 }
 
-/** A source was published or its published text changed: translates it into each language keeping it up to date, starting a version in each language that's Automatic for new pages. */
-async function queueTranslations(kind: Kind, parentId: string) {
+/**
+ * A source was published or its published text changed: translates it into each language keeping it up to date, starting
+ * a version in each language that's Automatic for new pages (`addedBy`: only those added by then).
+ */
+async function queueTranslations(kind: Kind, parentId: string, addedBy?: Date) {
   const source = await kind.languagesOf(parentId);
   if (!source) {
     return;
   }
-  const missing = source.languages.filter(({ code, automatic }) => automatic && !source.translations.some((t) => t.language === code));
+  const missing = source.languages.filter(
+    ({ code, automatic, createdAt }) => automatic && (!addedBy || createdAt <= addedBy) && !source.translations.some((t) => t.language === code),
+  );
   const languages = [...source.translations.filter((t) => t.automatic).map((t) => t.language), ...missing.map(({ code }) => code)];
   // The new versions and every version's safety net in one transaction: none is left without its net, which the retry
   // job finds it by.
@@ -533,8 +538,21 @@ async function queueTranslations(kind: Kind, parentId: string) {
 /** An article was published or its published text changed (the article-changed job): queueTranslations. */
 export const queueArticleTranslations = (articleId: string) => queueTranslations(ARTICLE, articleId);
 
-/** A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). */
-export const queueChangelogTranslations = (entryId: string) => queueTranslations(ENTRY, entryId);
+/**
+ * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). Failing, the entry
+ * is marked (translationsQueueFailedAt), for the retry job to queue it again; the error still goes to the caller.
+ */
+export async function queueChangelogTranslations(entryId: string) {
+  try {
+    await queueTranslations(ENTRY, entryId);
+  } catch (error) {
+    // Its own time, not the entry's change (updatedAt, which @updatedAt would move).
+    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = now() WHERE id = ${entryId}`.catch((marking: unknown) =>
+      serverLog.error("Marking a changelog entry's failed translation queuing failed", { entryId, error: marking }),
+    );
+    throw error;
+  }
+}
 
 /**
  * Queues a language's versions kept up to date (adding the language, Retranslate, the product setting changing), those
@@ -604,56 +622,26 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   return { queued, ...(named > 0 && { named }) };
 }
 
-/** How far back the retry job looks for changelog entries whose translating was never queued. */
-const LEFT_BEHIND_MS = 2 * 24 * 60 * 60_000;
-
 /**
- * Changelog entries whose languages kept up to date were never queued (queuing failed as they were published or changed:
- * nothing set their safety net): a published entry changed lately with an automatic language's version missing (a language
- * there as it changed: entries don't join one added later, which isn't confirmed for them), or not made from its text as
- * it is, and nothing waiting to bring it there (no retry time, no error). Queued as a publish does. Read in pages of those
- * the database can tell may be behind (a version older than the entry's change); the text's hash, checked here, clears an
- * edit that didn't change it, and reading goes on past those, so they never hide one behind them.
+ * Changelog entries whose translations' queuing failed (queueChangelogTranslations marked them): queued again, for the
+ * languages there when it failed (one added since isn't confirmed for entries yet), the mark cleared unless it failed
+ * again meanwhile. How many it queued.
  */
 async function entriesLeftBehind(): Promise<number> {
-  const since = new Date(Date.now() - LEFT_BEHIND_MS);
+  const entries = await prisma.changelogEntry.findMany({
+    where: { translationsQueueFailedAt: { not: null } },
+    orderBy: [{ translationsQueueFailedAt: "asc" }, { id: "asc" }],
+    take: retryBatch.size,
+    select: { id: true, translationsQueueFailedAt: true },
+  });
   let queued = 0;
-  for (let after = { updatedAt: since, id: "" }; queued < retryBatch.size; ) {
-    const page = await prisma.$queryRaw<{ id: string; updatedAt: Date; missing: boolean }[]>`
-      SELECT id, "updatedAt", missing FROM (
-        SELECT e.id, e."updatedAt", EXISTS (
-          SELECT 1 FROM project_language l
-          WHERE l."projectId" = e."projectId" AND l.automatic AND l."createdAt" <= e."updatedAt"
-            AND NOT EXISTS (SELECT 1 FROM changelog_translation t WHERE t."entryId" = e.id AND t.language = l.code)
-        ) AS missing
-        FROM changelog_entry e
-        WHERE e."publishedAt" IS NOT NULL AND NOT e.sample AND e."updatedAt" > ${since}::timestamp(3)
-          AND (e."updatedAt", e.id) > (${after.updatedAt}::timestamp(3), ${after.id})
-      ) e
-      WHERE missing
-          OR EXISTS (
-            SELECT 1 FROM changelog_translation t
-            WHERE t."entryId" = e.id AND t.automatic AND t."retryAt" IS NULL AND t.error IS NULL
-              AND (t."publishedAt" IS NULL OR t."updatedAt" < e."updatedAt")
-          )
-      ORDER BY e."updatedAt", e.id
-      LIMIT ${retryBatch.size}`;
-    if (page.length === 0) {
-      break;
-    }
-    after = page.at(-1)!;
-    const entries = await prisma.changelogEntry.findMany({
-      where: { id: { in: page.map(({ id }) => id) } },
-      select: { id: true, title: true, body: true, content: true, translations: { select: { automatic: true, sourceHash: true, publishedAt: true, retryAt: true, error: true } } },
-    });
-    for (const entry of entries) {
-      const { hash } = translationSource(entry);
-      const missing = page.find(({ id }) => id === entry.id)?.missing;
-      const behind = entry.translations.some((t) => t.automatic && !t.retryAt && !t.error && (!t.publishedAt || t.sourceHash !== hash));
-      if (missing || behind) {
-        await queueTranslations(ENTRY, entry.id).catch((error: unknown) => serverLog.error("Queuing a changelog entry's translations failed", { entryId: entry.id, error }));
-        queued++;
-      }
+  for (const { id, translationsQueueFailedAt: failedAt } of entries) {
+    try {
+      await queueTranslations(ENTRY, id, failedAt!);
+      await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${id} AND "translationsQueueFailedAt" = ${failedAt}::timestamp(3)`;
+      queued++;
+    } catch (error) {
+      serverLog.error("Queuing a changelog entry's translations failed", { entryId: id, error });
     }
   }
   return queued;

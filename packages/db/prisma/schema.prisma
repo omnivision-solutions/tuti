@@ -1885,40 +1885,43 @@ enum ChangelogTag {
 
 /// A changelog entry: a draft the team writes, then publishes on the portal's /changelog.
 model ChangelogEntry {
-  id                    String         @id @default(cuid())
-  projectId             String
+  id                        String         @id @default(cuid())
+  projectId                 String
   /// Per-project number, like posts.
-  number                Int
-  title                 String
+  number                    Int
+  title                     String
   /// Plain text of the entry (derived from `content`).
-  body                  String         @default("")
+  body                      String         @default("")
   /// Rich content (@tuti/content "changelog" profile).
-  content               Json?
-  tags                  ChangelogTag[]
+  content                   Json?
+  tags                      ChangelogTag[]
   /// Null while it's a draft.
-  publishedAt           DateTime?
+  publishedAt               DateTime?
   /// Published with an announcement (the widget shows it as new), or quietly.
-  announced             Boolean        @default(false)
+  announced                 Boolean        @default(false)
   /// Imported as a draft though it was published in the other tool: its date there. Publishing it first uses this date,
   /// quietly (not announced or emailed: it's old news), and clears it.
-  importedPublishedAt   DateTime?
+  importedPublishedAt       DateTime?
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
-  collecting            Boolean        @default(false)
+  collecting                Boolean        @default(false)
   /// When a GitHub release closed it as the running draft (its notes still to write); cleared once it's published.
-  releasedAt            DateTime?
+  releasedAt                DateTime?
   /// An uploaded image shown above it on the portal (release-media keeps it while it's used here).
-  coverId               String?
+  coverId                   String?
   /// When it was first published with "Email subscribers": those confirmed by then get it, once. Never cleared.
-  subscribersEmailedAt  DateTime?
+  subscribersEmailedAt      DateTime?
   /// Its subscriber emails are still to send (cleared once they're all sent; a cron sends them again for two days).
-  subscribersEmailDueAt DateTime?
-  createdById           String?
+  subscribersEmailDueAt     DateTime?
+  /// Queuing its translations failed then (docs/plan.md L16): the retry job queues them again, for the languages there at
+  /// that time, and clears it.
+  translationsQueueFailedAt DateTime?
+  createdById               String?
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
   /// Never emailed to subscribers.
-  sample                Boolean        @default(false)
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
+  sample                    Boolean        @default(false)
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 
   project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   cover            Media?                      @relation(fields: [coverId], references: [id], onDelete: SetNull)
@@ -1941,6 +1944,7 @@ model ChangelogEntry {
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])
+  @@index([translationsQueueFailedAt])
   @@map("changelog_entry")
 }
 
