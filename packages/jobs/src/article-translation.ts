@@ -276,7 +276,9 @@ async function searchable(translationId: string, tries: number, log: JobLogger) 
     return true;
   } catch (error) {
     log.warn(`Embedding translation ${translationId} for search failed: ${String(error).slice(0, 300)}`);
-    await prisma.articleTranslation.updateMany({ where: { id: translationId }, data: { tries: tries + 1, retryAt: new Date(Date.now() + retryDelay(tries + 1)) } });
+    // The earlier of its time and this one: a newer queuing's safety net (set meanwhile) isn't pushed back by a late failure.
+    const next = new Date(Date.now() + retryDelay(tries + 1));
+    await prisma.$executeRaw`UPDATE article_translation SET tries = ${tries + 1}, "retryAt" = LEAST(COALESCE("retryAt", ${next}), ${next}), "updatedAt" = now() WHERE id = ${translationId}`;
     return false;
   }
 }

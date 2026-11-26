@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { embedPublishedArticles, embedTranslation, handlers, languageTranslationsDone, translateArticle, translationSource } from "@tuti/jobs";
+import { embedPublishedArticles, embedTranslation, handlers, languageTranslationsDone, lostAfterMs, translateArticle, translationSource } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
 import { SEARCH_CONFIGS } from "@tuti/shared/languages";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
@@ -160,7 +160,9 @@ test("a version whose search data couldn't be written is tried again by the retr
   const waiting = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
   expect(waiting).toMatchObject({ error: null, publishedAt: row.publishedAt, tries: 1 });
   const firstWait = waiting.retryAt!.getTime() - Date.now();
-  // Failing again, it waits longer (backing off as a translation does).
+  // Failing again when the retry job brings it back (its claim moves the time to the safety net's, as it does), it waits
+  // longer (backing off as a translation does).
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { retryAt: new Date(Date.now() + lostAfterMs()) } });
   model.embeddings.failNext(500);
   expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ failed: "its search data couldn't be written" });
   const again = await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } });
@@ -297,4 +299,23 @@ test("while a new version's sections are being embedded, search by meaning finds
   release();
   expect(await translating).toEqual({ translated: "de" });
   expect(await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { text: true } })).toEqual([{ text: "[neu] Open Settings and click New project." }]);
+});
+
+test("a late embedding failure keeps an earlier retry time set meanwhile (a newer queuing's safety net)", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await languageTranslationsDone();
+  const body = "Open Settings and click New project.";
+  await call(createArticle, as(), { title: "Getting started", body });
+  const { segments } = segmentsOf(translationSource({ title: "Getting started", description: "", keywords: [], body, content: null }).doc);
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }));
+  await call(publishArticle, as(), { slug: "getting-started" });
+  await languageTranslationsDone();
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  await prisma.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
+  // Due again in a minute (a newer queuing's net), earlier than a failure's backoff.
+  const soon = new Date(Date.now() + 60_000);
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { retryAt: soon } });
+  model.embeddings.failNext(500);
+  expect(await translateArticle({ articleId: row.articleId, language: "de" }, log)).toEqual({ failed: "its search data couldn't be written" });
+  expect(await prisma.articleTranslation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ retryAt: soon, tries: 1 });
 });
