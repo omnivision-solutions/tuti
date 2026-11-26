@@ -66,7 +66,8 @@ export function LanguageSettings({
 }) {
   const byCode = (code: string) => offered.find((language) => language.code === code)!;
   const addable = offered.filter(({ code }) => code !== defaultLanguage && !languages.some((language) => language.code === code));
-  // One removed: its ⋯ menu, which had focus, is gone. Focus goes to Add language, only where it was lost.
+  // One removed: its ⋯ menu, which had focus, is gone. Focus goes to Add language, only where it was lost (the remove
+  // dialog sends it there itself when it closes first: `finalFocus`).
   const count = useRef(languages.length);
   useEffect(() => {
     if (languages.length < count.current && document.activeElement === document.body) {
@@ -118,7 +119,9 @@ function DefaultLanguage({ projectSlug, value, offered, locked }: { projectSlug:
       <Select
         items={items}
         value={value}
-        disabled={pending || locked}
+        // Read-only while it saves, not disabled: the trigger keeps keyboard focus.
+        disabled={locked}
+        readOnly={pending}
         onValueChange={(code) =>
           startTransition(async () => {
             const result = await setDefaultLanguage(projectSlug, String(code));
@@ -241,6 +244,8 @@ function LanguageRow({ projectSlug, language, native, upgrade }: { projectSlug: 
   const [pending, startTransition] = useTransition();
   const [upgrading, setUpgrading] = useState(false);
   const planId = useId();
+  // Removed: its ⋯ menu goes with the row, so the dialog gives focus to Add language.
+  const removed = useRef(false);
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const save = (changes: LanguageChanges, done: string) =>
@@ -308,7 +313,7 @@ function LanguageRow({ projectSlug, language, native, upgrade }: { projectSlug: 
       )}
       <InstructionsDialog projectSlug={projectSlug} language={language} native={native} open={editing} onOpenChange={setEditing} />
       <AlertDialog open={removing} onOpenChange={(next) => (next || !pending) && setRemoving(next)}>
-        <AlertDialogContent closeDisabled={pending}>
+        <AlertDialogContent closeDisabled={pending} finalFocus={() => (removed.current ? document.getElementById(ADD) : true)}>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {native}?</AlertDialogTitle>
             <AlertDialogDescription>Your portal will no longer be offered in {native}, and its instructions are deleted.</AlertDialogDescription>
@@ -326,6 +331,7 @@ function LanguageRow({ projectSlug, language, native, upgrade }: { projectSlug: 
                     toast.error(result.error);
                     return;
                   }
+                  removed.current = true;
                   setRemoving(false);
                   toast.success(`Removed ${native}`);
                 })

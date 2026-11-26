@@ -4,23 +4,16 @@ import type { Language } from "@tuti/shared";
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations/define";
-import { getLanguages, updateLanguages } from "./operations/languages";
+import { changeLanguages, updateLanguages } from "./operations/languages";
 import { asAdmin, call } from "./operations/run";
 
 /** Settings → Languages (see the languages.* operations). */
 
 const DENIED = "Only project owners and admins can change the languages";
 
-type Context = Parameters<Parameters<typeof asAdmin>[2]>[0];
-
-/**
- * Saves the other languages as `change` makes them from the saved ones (each as `{ code }`: fields left out keep their
- * value). ponytail: read then write, so a language a teammate adds in between can be lost; one call to an operation that
- * adds or changes a single language closes that, if it ever matters.
- */
-async function saveLanguages(context: Context, change: (codes: Language[]) => { code: Language }[]) {
-  const { languages } = await call(getLanguages, context, {});
-  await call(updateLanguages, context, { languages: change(languages.map(({ code }) => code)) });
+/** Saves the other languages as `change` makes them from the saved ones, read and saved under the project's lock (`changeLanguages`). */
+function saveLanguages(context: { projectId: string }, change: (codes: Language[]) => { code: Language }[]) {
+  return changeLanguages(context.projectId, (codes) => ({ languages: change(codes) }));
 }
 
 /** The language the team writes in (only while it's the only one). */

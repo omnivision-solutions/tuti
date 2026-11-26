@@ -95,6 +95,8 @@ test("an owner adds German in Settings → Languages, writes its instructions, m
   await expect(owner.getByText("Removed Deutsch")).toBeVisible();
   await expect(remove).toBeHidden();
   await expect(languages).toBeHidden();
+  // The row's ⋯ menu went with it: focus is on Add language, not lost.
+  await expect(pane.getByRole("button", { name: "Add language" })).toBeFocused();
   await expect(defaultLanguage).toBeEnabled();
 });
 

@@ -32,6 +32,15 @@ test("Settings → Languages: adding, changing one and removing one leave the ot
   expect(await addLanguage(slug, "fr")).toEqual({ error: "Each language once" });
 });
 
+test("two languages added at once are both kept: each add reads and saves the list under the project's lock", async () => {
+  const { slug, languages } = await setUp();
+  expect(await Promise.all([addLanguage(slug, "de"), addLanguage(slug, "fr"), addLanguage(slug, "es")])).toEqual([{}, {}, {}]);
+  expect((await languages()).map(({ code }) => code).sort()).toEqual(["de", "es", "fr"]);
+  // A change and a removal at once: neither undoes the other.
+  expect(await Promise.all([updateLanguage(slug, "de", { instructions: "Use du." }), removeLanguage(slug, "fr")])).toEqual([{}, {}]);
+  expect((await languages()).map(({ code, instructions }) => [code, instructions]).sort()).toEqual([["de", "Use du."], ["es", ""]]);
+});
+
 test("the default language changes only while it's the only one; past the plan's limit, adding says why", async () => {
   const { slug, languages } = await setUp();
   expect(await setDefaultLanguage(slug, "de")).toEqual({});
