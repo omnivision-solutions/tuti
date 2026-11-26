@@ -286,6 +286,8 @@ export async function runSpamChecks(conversationId: string): Promise<boolean> {
         return false;
       }
       await tx.conversation.update({ where: { id: conversationId }, data: { pathDueAt: null } });
+      // Kept for the models alone (a sign): read, it goes, as it may be another of the sender's addresses.
+      await tx.inboundEmail.updateMany({ where: { conversationId, replyTo: { not: null } }, data: { replyTo: null } });
       if (judgement?.spam && !conversation.spam && !conversation.spamMarkedAt) {
         // After the conversation's latest message, so it reads in order (as addMessage times them).
         const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;

@@ -296,6 +296,8 @@ test("the models read the sender, subject, start of the message, its signals, th
     guidance: "Agencies pitching SEO are spam",
     examples: { spam: [["Rank #1 on Google", 500]], notSpam: ["Export broken"] },
   });
+  // The Reply-To, which may be another of the sender's addresses, is kept only till the models have read it.
+  expect(await prisma.inboundEmail.count({ where: { conversationId: (await conversation(number)).id, replyTo: { not: null } } })).toBe(0);
 });
 
 test("a teammate's mark before or while the models answer has decided: nothing is asked, or their answer is dropped", async () => {
@@ -338,6 +340,7 @@ test("a check left behind (a deploy, a crash) is picked up once by the job when 
 
 test("the job's endpoint runs only with the server's token", async () => {
   await setup();
+  await nothingElseDue();
   const request = (token: string | null) => new Request("http://tuti.localhost:3100/api/inbox/due", { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {} });
   expect((await due(request(null))).status).toBe(401);
   expect((await due(request("not-the-token"))).status).toBe(401);

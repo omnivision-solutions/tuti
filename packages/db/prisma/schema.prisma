@@ -1457,7 +1457,8 @@ model InboundEmail {
   status         InboundStatus @default(RECEIVED)
   /// Why it was ignored, failed or refused.
   reason         String        @default("")
-  /// Its Reply-To address, lowercase, where it names one other than its From: a sign the spam filter's models read.
+  /// Its Reply-To address, lowercase, where it names one other than its From: a sign the spam filter's models read, kept
+  /// only till they have (server/spam-models.ts), and cleared by users.delete.
   replyTo        String?
   conversationId String?
   createdAt      DateTime      @default(now())

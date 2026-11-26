@@ -419,7 +419,8 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
   // From their address, and one their app has since changed.
   for (const sender of [email, "e2e-ada-before@example.com"]) {
     await prisma.inboundEmail.create({
-      data: { projectId: project.id, recipient: "e2e-support@example.com", sender, dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
+      // With a Reply-To kept for the spam filter's models: maybe another of their addresses.
+      data: { projectId: project.id, recipient: "e2e-support@example.com", sender, replyTo: "e2e-ada-home@example.com", dedupeKey: randomUUID(), size: 1, status: "ADDED", conversationId: conversation2.id },
     });
   }
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email } });
@@ -476,6 +477,7 @@ test("delete forgets a user: their details, votes, follows, sessions and changel
     prisma.account.count({ where: { userId: ada } }),
     prisma.importedRecord.count({ where: { projectId: project.id, localId: ada } }),
     prisma.inboundEmail.count({ where: { conversationId: conversation2.id, sender: { not: "" } } }),
+    prisma.inboundEmail.count({ where: { conversationId: conversation2.id, replyTo: { not: null } } }),
   ]) {
     expect(await count).toBe(0);
   }

@@ -467,7 +467,8 @@ export const deleteUser = defineOperation({
           await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
           // Whichever address it came from (one users.sync has changed since too). A later email from it then finds none of
         // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
-          await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "" } });
+          // Its Reply-To too, which may be another of their addresses.
+          await tx.inboundEmail.updateMany({ where: { conversationId: { in: conversations } }, data: { sender: "", replyTo: null } });
           // What marking their conversations taught the spam filter about their address goes too, and every mark on the
           // address erased. An entry an owner or admin put on a list stays: the team's own rule, not this person's record.
           await tx.spamSender.deleteMany({
@@ -481,7 +482,8 @@ export const deleteUser = defineOperation({
             await tx.$executeRaw`UPDATE conversation_message m
               SET "fromAddress" = CASE WHEN m."conversationId" = ANY(${conversations}::text[]) THEN NULL ELSE 'Deleted user' END
               FROM conversation c WHERE c.id = m."conversationId" AND c."projectId" = ${projectId} AND lower(m."fromAddress") = ${email}`;
-            await tx.inboundEmail.updateMany({ where: { projectId, sender: email }, data: { sender: "" } });
+            await tx.inboundEmail.updateMany({ where: { projectId, sender: email }, data: { sender: "", replyTo: null } });
+            await tx.inboundEmail.updateMany({ where: { projectId, replyTo: email }, data: { replyTo: null } });
             await tx.changelogSubscriber.deleteMany({ where: { projectId, email } });
           }
           await tx.postSubscription.deleteMany({ where: { userId } });
