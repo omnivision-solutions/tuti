@@ -106,6 +106,11 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     ...collection.collections.flatMap(datesIn),
   ];
   const latestPost = project.posts[0]?.updatedAt;
+  // A tab showing an article in its place is that article's page: in the default language alone, as the article's own.
+  const showsArticle = (tab: (typeof docs.tabs)[number] | undefined) => {
+    const landing = tab && tabLandingSlug(tab);
+    return !!landing && landings.has(landing);
+  };
   // `teamText`: an article's, post's or changelog entry's page, in the default language only until it has translations (see portalPageMetadata).
   const pages: { path: string; lastmod?: Date; teamText?: boolean }[] = [
     { path: "", lastmod: latestPost },
@@ -116,12 +121,17 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     { path: "/roadmap", lastmod: latestPost },
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
     ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt, teamText: true })),
-    { path: "/docs", lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]) },
+    {
+      path: "/docs",
+      lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]),
+      teamText: showsArticle(docs.tabs.find((tab) => tab.slug === docs.home)),
+    },
     ...docs.tabs
       .filter((tab) => tab.slug !== docs.home)
       .map((tab) => ({
         path: docsTabPath(docs, tab.slug),
         lastmod: newest([tabDates.get(tab.slug), landingDate(tab), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected), ...referencesDates(tab.references)]),
+        teamText: showsArticle(tab),
       })),
     ...docs.references.map((reference) => ({ path: `/docs/${reference.slug}`, lastmod: referenceDates.get(reference.slug) })),
     ...operations,
