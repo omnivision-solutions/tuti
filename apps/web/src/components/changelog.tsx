@@ -75,6 +75,7 @@ import {
   rewriteChangelogEntry,
   saveChangelogEntry,
   saveChangelogStyle,
+  changelogScreenshotsRunning,
   takeChangelogScreenshots,
   unpublishChangelogEntry,
 } from "@/server/changelog";
@@ -724,13 +725,15 @@ export function ChangelogForm({
   );
 }
 
-/** How often the editor reads a running screenshot run again. */
+/** How often the editor asks whether a screenshot run is done. */
 const SCREENSHOTS_REFRESH_MS = 5_000;
+/** Set as the form starts afresh with a run's screenshots: the new section takes focus. */
+const screenshotsDone = { next: false };
 
 /**
  * Screenshots for the entry's "[Screenshot: …]" lines (changelog.takeScreenshots): Take screenshots, the run's progress
- * (read again while it runs; its screenshots go into the saved text, and the form starts afresh with them), and the
- * lines it didn't take, with why. Without Screenshots set up, owners and admins get a link to set it up.
+ * (asked about while it runs; its screenshots go into the saved text, and the form starts afresh with them unless it has
+ * changes not saved, which it says instead), and the lines it didn't take, with why. Without Screenshots set up, owners and admins get a link to set it up.
  */
 function EntryScreenshotsSection({
   projectSlug,
@@ -748,21 +751,50 @@ function EntryScreenshotsSection({
 }) {
   const router = useRouter();
   const [starting, startTransition] = useTransition();
+  // Done while the form had changes not saved: the form isn't started afresh with the screenshots (that would lose
+  // them), it says so instead.
+  const [doneUnsaved, setDoneUnsaved] = useState(false);
+  const unsaved = useRef(dirty);
+  useEffect(() => {
+    unsaved.current = dirty;
+  }, [dirty]);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // The run just ended here, the page read again (the form, with this section, started afresh with its screenshots, or
+  // not when none went in): focus to the section, where what's left is said.
+  useEffect(() => {
+    if (running === null && screenshotsDone.next) {
+      screenshotsDone.next = false;
+      headingRef.current?.focus();
+    }
+  }, [running]);
   useEffect(() => {
     if (running === null) {
       return;
     }
-    const timer = setInterval(() => router.refresh(), SCREENSHOTS_REFRESH_MS);
+    const timer = setInterval(async () => {
+      const result = await changelogScreenshotsRunning(projectSlug, number);
+      if (!("running" in result) || result.running) {
+        return;
+      }
+      clearInterval(timer);
+      if (unsaved.current) {
+        setDoneUnsaved(true);
+        return;
+      }
+      toast.success("Screenshots done");
+      screenshotsDone.next = true;
+      router.refresh();
+    }, SCREENSHOTS_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [running, router]);
+  }, [running, router, projectSlug, number]);
   if (!available || (asked === 0 && running === null) || (available === "not_set_up" && !canTake)) {
     return null;
   }
-  const busy = running !== null || starting;
+  const busy = (running !== null && !doneUnsaved) || starting;
   const lines = `${asked} ${asked === 1 ? "line asks" : "lines ask"} for a screenshot.`;
   return (
     <section aria-labelledby="entry-screenshots" className="flex flex-col gap-2">
-      <h2 id="entry-screenshots" className="group-label">
+      <h2 id="entry-screenshots" ref={headingRef} tabIndex={-1} className="group-label outline-none">
         Screenshots
       </h2>
       {available === "not_set_up" ? (
@@ -809,11 +841,20 @@ function EntryScreenshotsSection({
             </div>
           )}
           <p role="status" className={cn("text-muted-foreground", running === null && "sr-only")}>
-            {running !== null && (
+            {doneUnsaved ? (
               <>
-                <LoaderCircleIcon aria-hidden className="mr-1.5 inline size-4 animate-spin align-[-0.2em]" />
-                {`Taking ${running} ${running === 1 ? "screenshot" : "screenshots"}. This takes a few minutes; you can leave this page. Save any changes before it's done: the text reloads with the screenshots in it.`}
+                {"The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots."}{" "}
+                <button type="button" onClick={() => router.refresh()} className="underline underline-offset-4 hover:text-foreground">
+                  Reload
+                </button>
               </>
+            ) : (
+              running !== null && (
+                <>
+                  <LoaderCircleIcon aria-hidden className="mr-1.5 inline size-4 animate-spin align-[-0.2em]" />
+                  {`Taking ${running} ${running === 1 ? "screenshot" : "screenshots"}. This takes a few minutes; you can leave this page.`}
+                </>
+              )
             )}
           </p>
           {failed.length > 0 && (

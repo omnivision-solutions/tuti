@@ -30,13 +30,14 @@ export const screenshotsAsked = (doc: Doc) => (doc.content ?? []).map(screenshot
 /**
  * Puts a finished run's screenshots in its changelog entry, each in place of a line that asked for exactly it (one for
  * one, in order): read and saved under the entry's lock, as publishing reads it, so a line the team changed or took out
- * meanwhile is left as they saved it, and a save waiting on the lock keeps what it writes. Returns how many were placed.
+ * meanwhile is left as they saved it, and a save waiting on the lock keeps what it writes. Once per run (`placedAt`): the
+ * job does it, and the editor's read does it for a run finished without (by an older worker, during a deploy). Returns
+ * how many were placed.
  */
 export async function placeChangelogScreenshots(runId: string): Promise<number> {
   const run = await prisma.screenshotRun.findUniqueOrThrow({
     where: { id: runId },
     select: {
-      projectId: true,
       changelogEntryId: true,
       screenshots: { orderBy: { position: "asc" }, select: { show: true, description: true, image: { select: { id: true, status: true, width: true, height: true } } } },
     },
@@ -45,12 +46,15 @@ export async function placeChangelogScreenshots(runId: string): Promise<number> 
   const taken = run.screenshots.flatMap(({ show, description, image }) =>
     image?.status === "READY" && image.width && image.height ? [{ show, description, id: image.id, w: image.width, h: image.height }] : [],
   );
-  if (!entryId || taken.length === 0) {
+  if (!entryId) {
     return 0;
   }
   return prisma.$transaction(async (tx) => {
     const [entry] = await tx.$queryRaw<{ content: unknown; body: string }[]>`SELECT content, body FROM changelog_entry WHERE id = ${entryId} FOR UPDATE`;
-    if (!entry) {
+    // Once, and only once it's ended (a second delivery of its job finds it running and leaves it to the first): claimed
+    // under the entry's lock, so a line the team puts back later as it was isn't filled again.
+    const { count } = await tx.screenshotRun.updateMany({ where: { id: runId, placedAt: null, state: { not: "RUNNING" } }, data: { placedAt: new Date() } });
+    if (!entry || count === 0 || taken.length === 0) {
       return 0;
     }
     const doc = (entry.content as Doc | null) ?? fromPlainText(entry.body);
@@ -61,16 +65,16 @@ export async function placeChangelogScreenshots(runId: string): Promise<number> 
       if (at === -1) {
         return block;
       }
-      const { description, id, w, h } = taken.splice(at, 1)[0]!;
+      const { show, description, id, w, h } = taken.splice(at, 1)[0]!;
       placed.push(id);
-      return { type: "image", attrs: { mediaId: id, width: "100", align: "center", alt: description.slice(0, MAX_ALT_LENGTH), w, h } };
+      // What it shows, or, where the agent didn't say, what it was asked to show: never an image with no alt text.
+      return { type: "image", attrs: { mediaId: id, width: "100", align: "center", alt: (description || show).slice(0, MAX_ALT_LENGTH), w, h } };
     });
     if (placed.length === 0) {
       return 0;
     }
+    // Its images are kept as the screenshots' are (storeImage attaches them).
     const text: Doc = { ...doc, content };
-    // In use now: the cleanup of unused uploads keeps them.
-    await tx.media.updateMany({ where: { id: { in: placed }, projectId: run.projectId }, data: { attachedAt: new Date() } });
     await tx.changelogEntry.update({ where: { id: entryId }, data: { content: text, body: toPlainText(text) } });
     return placed.length;
   });

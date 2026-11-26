@@ -3438,8 +3438,10 @@ model ScreenshotRun {
   /// Who started it (an API key's creator for API runs); its images are their uploads.
   startedById String?
   test        Boolean            @default(false)
-  /// The changelog entry whose "[Screenshot: …]" lines it fills once it's done (changelog.takeScreenshots).
+  /// The changelog entry whose "[Screenshot: …]" lines it fills once it's done (changelog.takeScreenshots), and when
+  /// they were filled (the job, or the editor's read for a run an older worker finished).
   changelogEntryId String?
+  placedAt    DateTime?
   state       ScreenshotRunState @default(RUNNING)
   /// Why it failed as a whole (sign-in, the service).
   error       String             @default("")

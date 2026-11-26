@@ -1,6 +1,6 @@
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, placeChangelogScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -381,19 +381,18 @@ const ESTIMATE_SHOTS = 20;
  * are still there with why, and what taking them would cost in credits, from recent screenshots (with credits on; null when none has been priced yet).
  */
 export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string }) {
-  const asked = screenshotsAsked(displayDoc(entry));
-  const [setUp, latest] = await Promise.all([
-    prisma.screenshotSettings.count({ where: { projectId } }).then(Boolean),
-    prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { state: true } }),
-  ]);
+  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { id: true, state: true } });
   if (latest?.state === "RUNNING") {
     await settleStaleScreenshotRuns(projectId);
   }
-  const run = latest && (await prisma.screenshotRun.findFirst({
-    where: { changelogEntryId: entry.id },
-    orderBy: { createdAt: "desc" },
-    select: { state: true, screenshots: { orderBy: { position: "asc" }, select: { show: true, failed: true, imageId: true } } },
-  }));
+  const asked = screenshotsAsked(displayDoc(entry));
+  const setUp = Boolean(await prisma.screenshotSettings.count({ where: { projectId } }));
+  const run =
+    latest &&
+    (await prisma.screenshotRun.findUniqueOrThrow({
+      where: { id: latest.id },
+      select: { state: true, screenshots: { orderBy: { position: "asc" }, select: { show: true, failed: true, imageId: true } } },
+    }));
   const left = [...asked];
   const failed =
     run && run.state !== "RUNNING"
@@ -417,3 +416,19 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
 }
 
 export type EntryScreenshots = Awaited<ReturnType<typeof entryScreenshots>>;
+
+/**
+ * Places the entry's latest run's screenshots if it ended without (its job an older worker's, during a deploy, or one
+ * that died): the editor does it before reading the entry. Whether it placed any.
+ */
+export async function placeLeftoverScreenshots(entryId: string): Promise<boolean> {
+  const latest = await prisma.screenshotRun.findFirst({ where: { changelogEntryId: entryId }, orderBy: { createdAt: "desc" }, select: { id: true, state: true, placedAt: true } });
+  return Boolean(latest && latest.state !== "RUNNING" && !latest.placedAt && (await placeChangelogScreenshots(latest.id)) > 0);
+}
+
+/** Whether the entry's latest screenshot run is still running (a stopped one settled first): the editor asks while one runs. */
+export async function entryScreenshotsRunning(projectId: string, number: number) {
+  await settleStaleScreenshotRuns(projectId);
+  const run = await prisma.screenshotRun.findFirst({ where: { projectId, changelogEntry: { number } }, orderBy: { createdAt: "desc" }, select: { state: true } });
+  return run?.state === "RUNNING";
+}

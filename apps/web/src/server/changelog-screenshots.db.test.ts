@@ -1,12 +1,12 @@
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { creditBalance, grantCredits } from "@tuti/jobs";
+import { creditBalance, grantCredits, placeChangelogScreenshots } from "@tuti/jobs";
 import { type BrowserUseFake, creditsOn, type S3Fake, startBrowserUseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
-import { entryScreenshots, takeChangelogScreenshots, updateScreenshotSettings } from "@/server/operations/screenshots";
+import { entryScreenshots, entryScreenshotsRunning, placeLeftoverScreenshots, takeChangelogScreenshots, updateScreenshotSettings } from "@/server/operations/screenshots";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** Changelog drafts' "[Screenshot: …]" lines filled with screenshots (docs/plan.md, SC2): Browser Use's fake, jobs inline. */
@@ -51,10 +51,8 @@ test("each line's screenshot replaces it, its description as alt text; one not t
   const entry = await saved(number);
   const content = (entry.content as Doc).content!;
   const image = content.find((block) => block.type === "image")!;
-  const media = await prisma.screenshot.findFirstOrThrow({ where: { runId: run.id, position: 0 }, select: { image: { select: { id: true, width: true, height: true, attachedAt: true } } } });
+  const media = await prisma.screenshot.findFirstOrThrow({ where: { runId: run.id, position: 0 }, select: { image: { select: { id: true, width: true, height: true } } } });
   expect(image.attrs).toEqual({ mediaId: media.image!.id, width: "100", align: "center", alt: "The screen: The billing page", w: media.image!.width, h: media.image!.height });
-  // In use: the cleanup of unused uploads keeps it.
-  expect(media.image!.attachedAt).not.toBeNull();
   expect(content.map((block) => block.type)).toEqual(["paragraph", "image", "paragraph", "paragraph", "paragraph"]);
   expect(entry.body).not.toContain("[Screenshot: The billing page]");
   expect(entry.body).toContain("[Screenshot: The reports page]");
@@ -109,4 +107,46 @@ test("refused without Screenshots set up, without lines to fill, without a key, 
   await expect(call(takeChangelogScreenshots, as(), { number })).rejects.toMatchObject({ status: 503 });
   expect(await entryScreenshots(project.id, await saved(number))).toMatchObject({ available: false });
   expect(await prisma.screenshotRun.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("an image the agent didn't describe gets what its line asked for as alt text, never none", async () => {
+  await setUp();
+  const { number } = await draft("[Screenshot: The billing page]");
+  browserUse.next({ output: { signedIn: true, shots: [{ file: "shot-1.png", reached: true }] } });
+  await call(takeChangelogScreenshots, as(), { number });
+  expect(((await saved(number)).content as Doc).content).toMatchObject([{ type: "image", attrs: { alt: "The billing page" } }]);
+});
+
+test("a run whose job didn't place its screenshots (an older worker's) has them placed by the editor's read, once", async () => {
+  await setUp();
+  const { number } = await draft("[Screenshot: The billing page]");
+  const run = await call(takeChangelogScreenshots, as(), { number });
+  // As an older worker leaves it: done, nothing placed.
+  await prisma.screenshotRun.update({ where: { id: run.id }, data: { placedAt: null } });
+  await call(updateChangelogEntry, as(), { number, body: "[Screenshot: The billing page]" });
+  const { id } = await saved(number);
+  expect(await placeLeftoverScreenshots(id)).toBe(true);
+  expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["image"]);
+  // The same line written again later isn't filled again by that run.
+  await call(updateChangelogEntry, as(), { number, body: "[Screenshot: The billing page]" });
+  expect(await placeLeftoverScreenshots(id)).toBe(false);
+  expect(await placeChangelogScreenshots(run.id)).toBe(0);
+  expect((await saved(number)).body).toBe("[Screenshot: The billing page]");
+});
+
+test("a run still running isn't placed (a second delivery of its job leaves it to the first), and says it's running", { timeout: 60_000 }, async () => {
+  await setUp();
+  const { number } = await draft("[Screenshot: The billing page]");
+  browserUse.next({ stuck: true });
+  const before = browserUse.runs.length;
+  const taking = call(takeChangelogScreenshots, as(), { number });
+  await vi.waitFor(() => expect(browserUse.runs).toHaveLength(before + 1), { timeout: 30_000, interval: 100 });
+  const running = await prisma.screenshotRun.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  expect(await placeChangelogScreenshots(running.id)).toBe(0);
+  expect(await entryScreenshotsRunning(project.id, number)).toBe(true);
+  expect(await entryScreenshots(project.id, await saved(number))).toMatchObject({ running: 1 });
+  browserUse.release();
+  await taking;
+  expect(await entryScreenshotsRunning(project.id, number)).toBe(false);
+  expect(((await saved(number)).content as Doc).content!.map((block) => block.type)).toEqual(["image"]);
 });

@@ -254,6 +254,7 @@ const matrix: Matrix = {
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     composeChangelogCover: { allowed: "MEMBER", call: (slug) => changelog.composeChangelogCover(slug, 1, "title") },
     // Owners and admins, as screenshots.take: what's asked for goes into the agent's task beside the sign-in. Inline, by Browser Use's fake.
+    changelogScreenshotsRunning: { allowed: "MEMBER", call: (slug) => changelog.changelogScreenshotsRunning(slug, 3) },
     takeChangelogScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => changelog.takeChangelogScreenshots(slug, 3)) },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
     deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },

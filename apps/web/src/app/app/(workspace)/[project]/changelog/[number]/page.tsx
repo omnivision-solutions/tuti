@@ -24,7 +24,7 @@ import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
-import { entryScreenshots } from "@/server/operations/screenshots";
+import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
 import { portalAddress } from "@/server/custom-domains";
@@ -53,31 +53,37 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   if (!membership || !Number.isInteger(number) || number < 1) {
     notFound();
   }
-  const entry = await prisma.changelogEntry.findUnique({
-    where: { projectId_number: { projectId: membership.project.id, number } },
-    select: {
-      id: true,
-      number: true,
-      title: true,
-      body: true,
-      content: true,
-      tags: true,
-      groups: groupClaims,
-      emailOnly: true,
-      updatedAt: true,
-      publishedAt: true,
-      announced: true,
-      subscribersEmailedAt: true,
-      collecting: true,
-      sample: true,
-      importedPublishedAt: true,
-      cover: { select: { id: true, status: true, width: true, height: true } },
-      posts: { select: { post: { select: { number: true } } } },
-      pullRequests: { select: { repo: true, number: true, title: true, url: true }, orderBy: [{ createdAt: "asc" }, { url: "asc" }] },
-    },
-  });
+  const readEntry = () =>
+    prisma.changelogEntry.findUnique({
+      where: { projectId_number: { projectId: membership.project.id, number } },
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        body: true,
+        content: true,
+        tags: true,
+        groups: groupClaims,
+        emailOnly: true,
+        updatedAt: true,
+        publishedAt: true,
+        announced: true,
+        subscribersEmailedAt: true,
+        collecting: true,
+        sample: true,
+        importedPublishedAt: true,
+        cover: { select: { id: true, status: true, width: true, height: true } },
+        posts: { select: { post: { select: { number: true } } } },
+        pullRequests: { select: { repo: true, number: true, title: true, url: true }, orderBy: [{ createdAt: "asc" }, { url: "asc" }] },
+      },
+    });
+  let entry = await readEntry();
   if (!entry) {
     notFound();
+  }
+  // Screenshots a run took that its job didn't put in the text (an older worker's, during a deploy): put in, then read again.
+  if (await placeLeftoverScreenshots(entry.id)) {
+    entry = (await readEntry())!;
   }
   const listed = entry.posts.map(({ post }) => post.number);
   const posts = await entryPosts(membership.project.id, listed);

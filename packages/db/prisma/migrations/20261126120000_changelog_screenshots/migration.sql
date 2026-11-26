@@ -1,5 +1,6 @@
 -- AlterTable
-ALTER TABLE "screenshot_run" ADD COLUMN "changelogEntryId" TEXT;
+ALTER TABLE "screenshot_run" ADD COLUMN     "changelogEntryId" TEXT,
+ADD COLUMN     "placedAt" TIMESTAMP(3);
 
 -- CreateIndex
 CREATE INDEX "screenshot_run_changelogEntryId_createdAt_idx" ON "screenshot_run"("changelogEntryId", "createdAt");
