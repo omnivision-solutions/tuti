@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "./reply-preview";
 
 test("a failed text isn't asked again while its failure shows; edited away and back, it is", () => {
-  const failed: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer" };
+  const failed: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer", language: "de" };
   expect(previewToShow(failed, "Thanks!", "de")).toBe(failed);
   expect(wantsPreview(previewToShow(failed, "Thanks!", "de"), "Thanks!")).toBe(false);
   // Edited: the failure is another text's, so this one's preview is asked for.
@@ -40,9 +40,6 @@ test("a failure in a language that's no longer the customer's isn't shown, so th
   expect(previewToShow(failed, "Thanks!", "de")).toBe(failed);
   expect(previewToShow(failed, "Thanks!", "fr")).toBeUndefined();
   expect(wantsPreview(previewToShow(failed, "Thanks!", "fr"), "Thanks!")).toBe(true);
-  // A send refused before the page knew the language: shown, whatever it turns out to be.
-  const unknown: ReplyPreview = { for: "Thanks!", failed: "No" };
-  expect(previewToShow(unknown, "Thanks!", "fr")).toBe(unknown);
 });
 
 test("a preview shown for the text isn't asked for again when a send of something else ends (a note, a refused send)", () => {
@@ -55,4 +52,16 @@ test("a preview shown for the text isn't asked for again when a send of somethin
     expect(wantsPreview(previewToShow(shown, "Thanks!", "de"), "Thanks!", true)).toBe(false);
     expect(wantsPreview(previewToShow(shown, "Thanks!", "de"), "Thanks!", false)).toBe(false);
   }
+});
+
+test("a failure of no known language is shown until the customer's language is known, then asked for again", () => {
+  const unknown: ReplyPreview = { for: "Thanks!", failed: "No" };
+  expect(previewToShow(unknown, "Thanks!", undefined)).toBe(unknown);
+  expect(previewToShow(unknown, "Thanks!", "de")).toBeUndefined();
+  expect(wantsPreview(previewToShow(unknown, "Thanks!", "de"), "Thanks!")).toBe(true);
+});
+
+test("previews are asked for only on the Reply tab: on Note, the reply's draft isn't previewed unseen", () => {
+  expect(wantsPreview(undefined, "Thanks!", false, false)).toBe(false);
+  expect(wantsPreview(undefined, "Thanks!", false, true)).toBe(true);
 });

@@ -65,9 +65,11 @@ export async function replyInConversation(
    * "untranslated", the team choosing to send it as written ("Send in English"). Neither: translated as it's sent.
    */
   translation?: { text: string; language: string } | "untranslated",
-): Promise<FormState & { notice?: string; translation?: "outdated" | "failed" }> {
+): Promise<FormState & { notice?: string; translation?: "outdated" | "failed"; language?: string }> {
   let keptOpen: boolean | undefined;
   let translationProblem: "outdated" | "failed" | undefined;
+  // The customer's language a failed translation was into: its failure is shown for that language only.
+  let failedLanguage: string | undefined;
   const result = await asTeam(projectSlug, "Only the project's team can reply", async (context) => {
     try {
       const sent = await call(replyToConversation, context, {
@@ -86,6 +88,13 @@ export async function replyInConversation(
       // The composer answers these: a new preview (the customer's language changed), or "Send in English".
       if (error instanceof OperationError && (error.code === "translation_outdated" || error.code === "translation_failed")) {
         translationProblem = error.code === "translation_outdated" ? "outdated" : "failed";
+        if (translationProblem === "failed") {
+          const found = await prisma.conversation.findUnique({
+            where: { projectId_number: { projectId: context.projectId, number: conversationNumber(conversation) } },
+            select: { language: true },
+          });
+          failedLanguage = found?.language ?? undefined;
+        }
         // Why, without the API's advice (the composer has "Send in English").
         throw new OperationError(error.status, error.code, error.message.replace(/ Send it untranslated.*$/, ""));
       }
@@ -93,7 +102,7 @@ export async function replyInConversation(
     }
   });
   // A reply that left it open (they wrote again since): said, so nobody moves on thinking it's done or waiting on them.
-  return { ...result, ...(keptOpen && { notice: "Sent, and kept open: they wrote again since" }), ...(translationProblem && { translation: translationProblem }) };
+  return { ...result, ...(keptOpen && { notice: "Sent, and kept open: they wrote again since" }), ...(translationProblem && { translation: translationProblem }), ...(failedLanguage && { language: failedLanguage }) };
 }
 
 /**
