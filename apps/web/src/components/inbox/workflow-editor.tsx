@@ -14,12 +14,13 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { ACTIONS, actionsFor, MAX_WORKFLOW_NAME, TRIGGER_HINTS, TRIGGER_KEYS, TRIGGERS, type WorkflowAction, type WorkflowTrigger, workflowSentence } from "@/lib/workflows";
+import { Textarea } from "@/components/ui/textarea";
+import { ACTIONS, actionsFor, MAX_WORKFLOW_NAME, MAX_WORKFLOW_REPLY, TRIGGER_HINTS, TRIGGER_KEYS, TRIGGERS, type WorkflowAction, type WorkflowTrigger, workflowSentence } from "@/lib/workflows";
 import { deleteWorkflow, saveWorkflow } from "@/server/workflows";
 
-/** What the editor changes. `group`: the reader group's key it's for, null for everyone. */
-type Draft = { name: string; trigger: WorkflowTrigger; group: string | null; actions: WorkflowAction["kind"][]; enabled: boolean };
-const FIELDS = ["name", "trigger", "group", "actions", "enabled"] as const;
+/** What the editor changes. `group`: the reader group's key it's for, null for everyone; `reply`: Reply with set text's text. */
+type Draft = { name: string; trigger: WorkflowTrigger; group: string | null; actions: WorkflowAction["kind"][]; reply: string; enabled: boolean };
+const FIELDS = ["name", "trigger", "group", "actions", "reply", "enabled"] as const;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 const ROW_SELECT = "w-full @min-[34rem]/settings:w-64";
@@ -64,6 +65,8 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
   const groupGone = draft.group !== null && !(draft.group in groups);
   const nameError = tried && !draft.name.trim() ? "Give it a name" : null;
   const actionsError = tried && actions.length === 0 ? "Add an action: a workflow needs one" : null;
+  const replyMissing = actions.includes("reply_text") && !draft.reply.trim();
+  const replyError = tried && replyMissing ? "Write the reply" : null;
   const groupError = groupGone ? "This group was deleted: pick another, or Everyone" : null;
   const groupItems = [
     { value: null, label: "Everyone" },
@@ -84,11 +87,11 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
   const save = () => {
     setTried(true);
     setError(null);
-    if (!draft.name.trim() || actions.length === 0 || groupGone) {
+    if (!draft.name.trim() || actions.length === 0 || groupGone || replyMissing) {
       return;
     }
     const clicked = draft;
-    const sent = { ...draft, name: draft.name.trim(), actions };
+    const sent = { ...draft, name: draft.name.trim(), actions, reply: draft.reply.trim() };
     startSaving(async () => {
       // Only what changed here (all of it for a new one): what's left out stays as stored, a teammate's change too.
       const changed = (field: (typeof FIELDS)[number]) => id === null || !same(sent[field], saved[field]);
@@ -96,7 +99,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
         ...(changed("name") && { name: sent.name }),
         ...(changed("trigger") && { trigger: sent.trigger }),
         ...(changed("group") && { conditions: sent.group === null ? [] : [{ kind: "in_group" as const, group: sent.group }] }),
-        ...(changed("actions") && { actions: sent.actions.map((kind) => ({ kind })) }),
+        ...((changed("actions") || changed("reply")) && { actions: sent.actions.map((kind) => (kind === "reply_text" ? { kind, text: sent.reply } : { kind })) }),
         ...(changed("enabled") && { enabled: sent.enabled }),
       });
       if (result.error) {
@@ -233,6 +236,21 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
                     <XIcon />
                   </Button>
                 </SettingRow>
+                {kind === "reply_text" && (
+                  <div className="flex flex-col gap-1.5 px-4 pb-3.5 @min-[34rem]/settings:px-5">
+                    <Textarea
+                      aria-label="Reply"
+                      rows={3}
+                      value={draft.reply}
+                      readOnly={locked}
+                      maxLength={MAX_WORKFLOW_REPLY}
+                      onChange={(event) => set({ reply: event.currentTarget.value })}
+                      aria-invalid={replyError ? true : undefined}
+                      aria-describedby={replyError ? "workflow-reply-error" : undefined}
+                    />
+                    {replyError && <FieldError id="workflow-reply-error">{replyError}</FieldError>}
+                  </div>
+                )}
               </li>
             ))}
           </ol>

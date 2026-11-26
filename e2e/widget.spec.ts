@@ -3201,6 +3201,93 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 });
 
+test("a workflow keeps Enterprise users with the AI: one asks a person in the widget, gets its set reply, and it's in With AI; someone else's reaches the team", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.setViewportSize({ width: 1280, height: 900 });
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("switch", { name: "Single sign-on" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your secret key now" }).locator("code").innerText());
+  const question = `How do I add a colleague to Acme ${slug}?`;
+  const body = "Owners and admins send invites from the Team page.";
+  await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  const article = await api("/articles", { title: "Inviting your team", body });
+  await api(`/articles/${article.slug}/publish`, {});
+  await api("/support", { inbox: true }, "PATCH");
+  // The page signs in Sam (app-user-7), on the Enterprise plan.
+  await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
+  await api("/users", { users: [{ id: "app-user-7", properties: { plan: "enterprise" } }] });
+
+  // The owner makes the workflow in its editor: the trigger's group has Add workflow, with its two actions.
+  await owner.goto(`/app/${slug}/settings/workflows`);
+  const main = owner.getByRole("main");
+  await expect(main.getByText("No workflows. Conversations go to your team.")).toBeVisible();
+  await owner.getByRole("link", { name: "Add workflow when a conversation is about to go to a person" }).click();
+  await expect(owner.getByRole("combobox", { name: "When" })).toContainText("A conversation is about to go to a person");
+  await expect(main).toContainText("Each time a conversation would go to your team, with the reason.");
+  await owner.getByRole("textbox", { name: "Name" }).fill("Enterprise stays with the AI");
+  await owner.getByRole("combobox", { name: "If" }).click();
+  await owner.getByRole("option", { name: "People in Enterprise" }).click();
+  await owner.getByRole("button", { name: "Add an action" }).click();
+  await expect(owner.getByRole("menuitem")).toHaveText(["Reply with set text", "Don't hand over"]);
+  await owner.getByRole("menuitem", { name: "Reply with set text" }).click();
+  // The reply's text is asked for.
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(main.getByText("Write the reply")).toBeVisible();
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Thanks! Our Enterprise team answers within the hour.");
+  await owner.getByRole("button", { name: "Add an action" }).click();
+  await owner.getByRole("menuitem", { name: "Don't hand over" }).click();
+  await expect(main.getByLabel("Reads as")).toHaveText("When a conversation is about to go to a person, if the person is in Enterprise: reply with set text and don't hand over.");
+  await checkpoint(owner, "handover-workflow");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Added Enterprise stays with the AI")).toBeVisible();
+  await owner.waitForURL(`**/app/${slug}/settings/workflows`);
+  await expect(main.getByRole("list", { name: "When a conversation is about to go to a person" }).getByRole("listitem")).toContainText(
+    "Enterprise stays with the AIIn Enterprise: reply with set text, don't hand over",
+  );
+
+  // Sam asks the docs' AI in the widget, then a person.
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help center" }).click();
+  const search = widget.getByRole("searchbox", { name: "Search the docs" });
+  await search.fill(question);
+  await search.press("Enter");
+  await nextModelReply(JSON.stringify({ answer: body, sources: ["s1"] }), question);
+  await widget.getByRole("button", { name: `Ask AI: ${question}` }).click();
+  const ai = widget.getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
+  await expect(ai.getByText(body)).toBeVisible();
+  await ai.getByRole("button", { name: "Not helpful" }).click();
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  const form = ai.getByRole("form", { name: "Ask a person" });
+  await nextModelReply("They want to invite a colleague.", question);
+  await form.getByRole("button", { name: "Send to the team" }).click();
+  await ai.getByRole("link", { name: "Open Messages" }).click();
+  // The set reply is in the conversation, as the AI's.
+  await widget.getByRole("button", { name: question }).click();
+  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Thanks! Our Enterprise team answers within the hour.");
+  await checkpoint(visitor, "handover-set-reply");
+
+  // The conversation stays with the AI: in With AI, not in the team's Needs reply.
+  await owner.goto(`/app/${slug}/inbox`);
+  const list = owner.getByRole("main").getByRole("listitem");
+  await expect(list.filter({ hasText: question })).toHaveCount(0);
+  await owner.getByRole("navigation", { name: "Inbox", exact: true }).getByRole("link", { name: "With AI 1" }).click();
+  await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^With AI\s*1$/);
+  await expect(list.filter({ hasText: question })).toBeVisible();
+  await checkpoint(owner, "handover-with-ai");
+
+  // Someone not in the group: the team's.
+  const other = await api("/conversations", { email: `e2e-other-${slug}@example.com`, subject: "Pricing question", body: "Do you have a discount?" });
+  expect(((await api(`/conversations/${other.number}`, undefined, "GET")) as unknown as { handledBy: string }).handledBy).toBe("team");
+});
+
 test("the widget's Home: help first with suggested articles, a message to the team with when it usually replies, and news of a signed-in visitor's ideas", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);

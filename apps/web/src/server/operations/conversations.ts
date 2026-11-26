@@ -728,7 +728,7 @@ export const getConversation = defineOperation({
               .nullable()
               .describe("Someone else on the email thread (a Cc'd colleague, say) wrote it: the address they wrote from, or `Deleted user` once they're erased. Null for the conversation's own person, and for messages that didn't come by email")
               .meta({ examples: [null] }),
-            seenAt: at("When the user saw it in the widget; null when they haven't, and for what isn't the team's reply").nullable(),
+            seenAt: at("When the user saw it in the widget; null when they haven't, and for what isn't a reply to them").nullable(),
             emailStatus: z
               .enum(["sent", "delivered", "bounced", "complained", "failed"])
               .nullable()
@@ -1095,6 +1095,8 @@ export async function startConversation(
         channel: start.channel,
         body: next.body,
         note: next.note ?? false,
+        // Seen as it was written (the AI's answer "Ask a person" copies in, which they read where they asked): never emailed.
+        seenAt: next.note ? null : now,
         createdAt: new Date(now.getTime() + i + 1),
       })),
     });

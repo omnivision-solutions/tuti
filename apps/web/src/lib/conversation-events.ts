@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { spamPassedWhy, spamWhy } from "./spam-reasons";
-import { ACTIONS, TRIGGERS, type WorkflowAction } from "./workflows";
+import { ACTIONS, HANDOVER_REASONS, TRIGGERS, type WorkflowAction } from "./workflows";
 
 /**
  * A conversation's Activity (docs/plan.md, Inbox automation, W16): what happened to it, one row per event
@@ -24,6 +24,8 @@ export const EVENTS = {
   /** A trigger's list ran: every workflow it checked, what each did or why it didn't match. */
   workflows_ran: z.object({
     trigger: z.string(),
+    /** "About to go to a person": why (HANDOVER_REASONS). */
+    reason: z.string().optional(),
     workflows: z.array(
       z.object({
         name: z.string(),
@@ -58,6 +60,8 @@ export const EVENTS = {
   spam: z.object({ spam: z.boolean() }),
   /** Take over (`team`; `byReply` when a teammate's reply did it) or Hand back to the AI (`ai`). */
   handled_by: z.object({ handledBy: z.enum(["ai", "team"]), byReply: z.boolean().optional() }),
+  /** Handed to the team (the path's built-in step), and why (HANDOVER_REASONS). */
+  handed_over: z.object({ reason: z.string() }),
 };
 export type EventKind = keyof typeof EVENTS;
 export type EventDetails<Kind extends EventKind> = z.input<(typeof EVENTS)[Kind]>;
@@ -107,11 +111,12 @@ export function tellEvent(
   const by = row.actor === "user" ? "by writing" : "by replying";
   switch (row.kind as EventKind) {
     case "workflows_ran": {
-      const { trigger, workflows } = details as z.output<typeof EVENTS.workflows_ran>;
+      const { trigger, reason, workflows } = details as z.output<typeof EVENTS.workflows_ran>;
+      const why = reason && ((HANDOVER_REASONS as Record<string, string>)[reason] ?? reason);
       return {
         who: (TRIGGERS as Record<string, string>)[trigger] ?? trigger,
         text: "ran",
-        detail: `${workflows.length} ${workflows.length === 1 ? "workflow" : "workflows"} checked`,
+        detail: `${workflows.length} ${workflows.length === 1 ? "workflow" : "workflows"} checked${why ? ` · ${why}` : ""}`,
         lines: workflows.map((workflow) => ({
           name: workflow.name,
           what: !workflow.matched
@@ -168,6 +173,10 @@ export function tellEvent(
     case "handled_by": {
       const { handledBy, byReply } = details as z.output<typeof EVENTS.handled_by>;
       return handledBy === "team" ? told("took it over from the AI", byReply ? by : "Take over") : told("handed it back to the AI");
+    }
+    case "handed_over": {
+      const { reason } = details as z.output<typeof EVENTS.handed_over>;
+      return { who: null, text: "Handed to the team", detail: (HANDOVER_REASONS as Record<string, string>)[reason] ?? reason, lines: [] };
     }
   }
 }
