@@ -103,8 +103,8 @@ test("unique in the project and language, and free of every tab's, collection's 
   await version(articleId, "fr", null);
   await version(other, "fr", null);
   expect(await pick(other, "fr", "Abrechnung 3", "invoices")).toBe("abrechnung-3");
-  // A default-language article slug is another address (/docs/…, not /de/docs/…): free in German.
-  expect(await pick(articleId, "fr", "Invoices", "billing")).toBe("invoices");
+  // Another article's default-language slug is its address in French while it has no French version: taken.
+  expect(await pick(articleId, "fr", "Invoices", "billing")).toBe("invoices-2");
   // A title with no Latin letters starts from the default-language slug.
   await version(articleId, "ja", null);
   expect(await pick(articleId, "ja", "請求", "billing")).toBe("billing");
@@ -117,9 +117,9 @@ test("the other way round: a tab's, collection's or API reference's slug is free
   expect((await call(createCollection, as(), { name: "Abrechnung" })).slug).toBe("abrechnung-2");
   expect((await call(createCollection, as(), { name: "Facturation" })).slug).toBe("facturation-2");
   await expect(prisma.$transaction((tx) => customDocsSlug(tx, project.id, "abrechnung", undefined, "reference"))).rejects.toMatchObject({ status: 409 });
-  // An article's own default-language slug may be one: the prefix tells them apart.
-  await call(createArticle, as(), { title: "Abrechnung" });
-  expect(await prisma.article.count({ where: { projectId: project.id, slug: "abrechnung" } })).toBe(1);
+  // An article's default-language slug is its address in a language it has no version in: free of the others' current ones.
+  // (The collection above took abrechnung-2.)
+  expect((await call(createArticle, as(), { title: "Abrechnung" })).slug).toBe("abrechnung-3");
 });
 
 test("the team's slug: the old one stays an old slug in the language; refused when it's taken there or reserved", async () => {
@@ -137,8 +137,13 @@ test("the team's slug: the old one stays an old slug in the language; refused wh
 
   await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "rechnungen" })).rejects.toMatchObject({ status: 409 });
   await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "konten" })).rejects.toMatchObject({ status: 409 });
+  // Another article's default-language slug: its German address while it has no German version.
+  await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "fr", newSlug: "invoices" })).rejects.toMatchObject({ status: 404 });
+  await version(articleId, "fr", null);
+  await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "fr", newSlug: "invoices" })).rejects.toMatchObject({ status: 409 });
+  // Its own default-language slug is fine.
+  expect(await call(setArticleLanguageSlug, as(), { slug: "billing", language: "fr", newSlug: "billing" })).toEqual({ language: "fr", slug: "billing" });
   await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "new" })).rejects.toMatchObject({ status: 400 });
-  await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "fr", newSlug: "facturation" })).rejects.toMatchObject({ status: 404 });
   // Its old slug back: taken from the old slugs.
   await call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "abrechnung" });
   expect(await prisma.articleOldSlug.findMany({ where: { projectId: project.id }, select: { slug: true } })).toEqual([{ slug: "zahlungen" }]);
@@ -278,18 +283,21 @@ test("the switcher goes to the same article at its own slug in the chosen langua
   await call(publishArticle, as(), { slug: "invoices" });
   const other = (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "invoices" } })).id;
   await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] });
-  // Billing's French slug is Invoices' default-language one, and German and French share "konto" for two articles.
-  await version(articleId, "fr", "invoices");
+  // German and French share "konto", for two articles.
+  await version(articleId, "fr", "facturation");
   await version(articleId, "de", "konto");
   await version(other, "fr", "konto");
 
   const switched = async (from: string, path: string, to: string) => (await chooseLanguage(project.slug, to, { from, path })).path;
-  expect(await switched("en", "/docs/invoices", "fr")).toBe("/docs/konto");
-  expect(await switched("fr", "/docs/invoices", "en")).toBe("/docs/billing");
-  expect(await switched("de", "/docs/konto", "fr")).toBe("/docs/invoices");
+  expect(await switched("en", "/docs/billing", "fr")).toBe("/docs/facturation");
+  expect(await switched("fr", "/docs/facturation", "en")).toBe("/docs/billing");
+  expect(await switched("de", "/docs/konto", "fr")).toBe("/docs/facturation");
   // No version in German yet: its default-language slug, which the German address finds too.
   expect(await switched("fr", "/docs/konto", "de")).toBe("/docs/invoices");
   expect(await switched("en", "/roadmap", "de")).toBe("/roadmap");
+  // A private portal's articles are named to nobody who may not read it (here, someone signed out).
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  expect(await switched("en", "/docs/billing", "fr")).toBe("/docs/billing");
 });
 
 test("a locked article shows its lock at its language slug too, and an AI tool asking there for Markdown gets it", async () => {

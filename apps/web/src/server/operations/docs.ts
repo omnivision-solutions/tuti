@@ -439,7 +439,7 @@ export async function customDocsSlug(
   if (kind === "article" && RESERVED_ARTICLE_SLUGS.includes(slug)) {
     throw new OperationError(400, "invalid_input", `“${slug}” is reserved; pick another`);
   }
-  const [taken] = await docsSlugsTaken(tx, projectId, slug, page, { languages: kind !== "article" });
+  const [taken] = await docsSlugsTaken(tx, projectId, slug, page, { languages: kind === "article" ? "current" : "all" });
   if (taken) {
     throw new OperationError(409, "conflict", `That address is taken by ${taken.kind} “${taken.name}”`);
   }
@@ -2401,7 +2401,7 @@ export const setArticleLanguageSlug = defineOperation({
         throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[input.language].name}`);
       }
       if (version.slug !== input.newSlug) {
-        const refused = await languageSlugRefused(tx, projectId, input.language, input.newSlug, version);
+        const refused = await languageSlugRefused(tx, projectId, input.language, input.newSlug, { ...version, articleId: article.id });
         if (refused) {
           throw new OperationError(refused.includes("reserved") ? 400 : 409, refused.includes("reserved") ? "invalid_input" : "conflict", refused);
         }

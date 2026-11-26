@@ -10,7 +10,7 @@ import { levelSelect, visibleArticle } from "@/lib/reader-groups";
 import { displayDoc } from "./content";
 import { portalAddress } from "./custom-domains";
 import { mediaUrls } from "./media-urls";
-import { currentReader } from "./portal-access";
+import { currentReader, readableProject } from "./portal-access";
 import { portalLanguage } from "./portal-base";
 
 /** Reads for the docs pages: the team's editor and the portal. */
@@ -503,7 +503,8 @@ export const articleNamed = cache(async (projectSlug: string, slug: string): Pro
  */
 export async function pathIn(projectSlug: string, path: string, from: string, to: string, defaultLanguage: string): Promise<string> {
   const match = /^\/docs\/([^/]+)$/.exec(path);
-  if (!match || from === to) {
+  // Only for someone who may read the portal: a private one's articles are named to nobody else.
+  if (!match || from === to || !(await readableProject(projectSlug))) {
     return path;
   }
   const slug = decodeURIComponent(match[1]!);
