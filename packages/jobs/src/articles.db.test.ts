@@ -27,7 +27,7 @@ test("the backfill embeds every published article, carrying on past one that fai
 
     openai.failNext();
     // No translations here (their own test is translated-search.db.test.ts).
-    expect(await embedPublishedArticles({ info: () => {}, warn: () => {} })).toEqual({ articles: 2, embedded: 1, failed: [failing.id], translations: 0, translationsEmbedded: 0, translationsFailed: [] });
+    expect(await embedPublishedArticles({ info: () => {}, warn: () => {} }, { projectId: project.id })).toEqual({ articles: 2, embedded: 1, failed: [failing.id], translations: 0, translationsEmbedded: 0, translationsFailed: [] });
     const chunks = (articleId: string) => prisma.articleChunk.count({ where: { articleId } });
     expect([await chunks(failing.id), await chunks(next.id), await chunks(draft.id)]).toEqual([0, 1, 0]);
   } finally {

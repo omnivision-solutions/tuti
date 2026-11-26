@@ -117,11 +117,15 @@ export async function embedTranslation(translationId: string, log: JobLogger): P
   try {
     vectors = next ? await embed(next.chunks.map((c) => c.embedText)) : [];
   } catch (error) {
-    // An older version's sections go at once: search by meaning never answers with text the version no longer has (its
-    // words still find it, and its sections come with the retry).
-    if (next) {
-      await prisma.articleTranslationChunk.deleteMany({ where: { translationId, contentHash: { not: next.hash } } });
-    }
+    // Sections of a version it no longer has go at once: search by meaning never answers with text the version no longer
+    // has (its words still find it, and its sections come with the retry). Under the same locks as the write, against the
+    // version as it is then: a newer one written meanwhile keeps its sections.
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${translation.articleId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${translationId} FOR UPDATE`;
+      const current = translationChunksOf(await tx.articleTranslation.findUnique({ where: { id: translationId }, select: translationSelect }));
+      await tx.articleTranslationChunk.deleteMany({ where: { translationId, ...(current && { contentHash: { not: current.hash } }) } });
+    });
     throw error;
   }
   const written = await prisma.$transaction(async (tx) => {

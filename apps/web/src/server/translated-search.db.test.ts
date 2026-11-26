@@ -246,3 +246,21 @@ test("a Japanese search counts every term the reader typed, however many", async
   // The ninth missing: not found (no term is left out).
   expect(await search("ja", [...words.slice(0, 8), "削除"].join(" "))).toEqual([]);
 });
+
+test("a failed embedding's cleanup keeps the sections of a newer version written meanwhile", async () => {
+  await article("invoices", { de: { title: "Abrechnung", body: "Erste Fassung." } });
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  await embedTranslation(row.id, log);
+  // A second version, whose embedding fails, held till a third is written and embedded.
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { body: "Zweite Fassung." } });
+  model.embeddings.failNext(500);
+  const release = model.embeddings.holdNext();
+  const before = model.embeddings.received;
+  const failing = embedTranslation(row.id, log);
+  await vi.waitFor(() => expect(model.embeddings.received).toBeGreaterThan(before));
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { body: "Dritte Fassung." } });
+  expect(await embedTranslation(row.id, log)).toEqual({ skipped: false, embedded: 1 });
+  release();
+  await expect(failing).rejects.toThrow();
+  expect(await prisma.articleTranslationChunk.findMany({ where: { translationId: row.id }, select: { text: true } })).toEqual([{ text: "Dritte Fassung." }]);
+});
