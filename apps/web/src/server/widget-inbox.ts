@@ -14,6 +14,7 @@ import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, latestMessages, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
+import { arrivalOf, spamVerdict } from "./spam";
 import { usualReplyMs } from "./widget-home";
 import { newWidgetVisitor, unseenReplies, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
@@ -275,6 +276,8 @@ export async function widgetStartConversation(
       channel: "WIDGET",
       // Checked again under the project's lock: starts at once can't all pass the check above.
       perDay: { where: who.where, max: NEW_CONVERSATIONS_PER_DAY },
+      // The spam filter: someone the team blocked is blocked here too. A visitor's typed address proves nothing to it.
+      filter: async (tx) => spamVerdict(tx, await arrivalOf(tx, who.projectId, who.userId)),
       ...(files.uploads.length > 0 && { alongside: (tx, _conversationId, messageId) => claimUploads(tx, files.uploads, messageId) }),
     });
   } catch (error) {
@@ -284,7 +287,10 @@ export async function widgetStartConversation(
     throw error;
   }
   const { conversation, message } = started;
-  await announceConversation(who.projectId, conversation, message);
+  // Filed as spam: theirs to see as any other (it never says so), and nobody is told.
+  if (!conversation.spam) {
+    await announceConversation(who.projectId, conversation, message);
+  }
   return { number: conversation.number, ...(visitor && { visitor }) };
 }
 

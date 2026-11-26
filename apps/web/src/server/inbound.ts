@@ -18,6 +18,7 @@ import {
 } from "./operations/conversations";
 import { storeAttachments } from "./attachments";
 import { emailText, PARSER_OPTIONS } from "./email-text";
+import { spamVerdict } from "./spam";
 
 /**
  * Receiving email in the support inbox (docs/plan.md, Support inbox, "Receiving email"): each project
@@ -398,7 +399,8 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     }
 
     // Anything else starts a conversation: with the project's user who has this address when DMARC
-    // passed, else with the address alone; mail that failed DMARC goes to Spam.
+    // passed, else with the address alone; what the spam filter files (mail that failed DMARC, a sender
+    // the team blocked) goes to Spam, and nobody is told.
     const userId = dmarcPassed ? await userWithAddress(projectId, sender) : null;
     const started = await startConversation(projectId, {
       userId,
@@ -408,7 +410,8 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       body,
       origin: "EMAIL",
       channel: "EMAIL",
-      spam: auth.dmarc === "fail",
+      // The team's decisions and trust go by the address only where DMARC didn't fail: a forged From proves nobody.
+      filter: (tx) => spamVerdict(tx, { projectId, address: (auth.dmarc !== "fail" && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc } }),
       received: { ...received, fromAddress: null },
       alongside: async (tx, conversationId, messageId) => {
         if (!userId) {
@@ -419,7 +422,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       },
     });
     written = true;
-    if (auth.dmarc !== "fail") {
+    if (!started.conversation.spam) {
       await announceConversation(projectId, started.conversation, started.message);
     }
     return "added";

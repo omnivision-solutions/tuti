@@ -126,10 +126,21 @@ export async function snoozeConversation(projectSlug: string, conversation: numb
   );
 }
 
-export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can mark spam", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), spam: spam === true }),
-  );
+/**
+ * Marks a conversation as spam (with `blockDomain`, its sender's domain too: owners and admins) or not: `notice` is what
+ * Not spam leaves in place or undid (conversations.update's), to say with it.
+ */
+export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean, blockDomain = false): Promise<FormState & { notice?: string }> {
+  let notice: string | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can mark spam", async (context) => {
+    const updated = await call(updateConversation, context, {
+      number: conversationNumber(conversation),
+      spam: spam === true,
+      ...(spam === true && blockDomain === true && { blockDomain: true }),
+    });
+    notice = updated.notice;
+  });
+  return notice ? { ...result, notice } : result;
 }
 
 /** The posts "Link post…" offers for what's typed: any of the project's (searchPosts). */
