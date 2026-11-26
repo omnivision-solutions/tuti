@@ -128,6 +128,10 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (!codeChangesEnabled() || !project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
     return "Autopilot is off";
   }
+  // Screenshots it may have made out of date, their lines put back (SC4): a person takes them again before it's published.
+  if (action.kind === "ARTICLE_EDIT" && (action.payload as { screenshots?: unknown } | null)?.screenshots) {
+    return SCREENSHOT_WAITS;
+  }
   // The check before an edit is proposed (E5), where it ran: one it didn't pass waits for a person, saying why. Before
   // the project's own switches, so the review shows what the check found.
   const check = action.kind === "ARTICLE_EDIT" ? (action.payload as { check?: Partial<Record<keyof EditCheck, unknown>> } | null)?.check : undefined;

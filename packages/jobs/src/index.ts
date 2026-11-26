@@ -63,6 +63,7 @@ export { behindKey, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANG
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
+export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords, SCREENSHOT_RULE } from "./code-change-docs";
