@@ -1198,10 +1198,12 @@ export async function addMessage(
       }
     } else {
       if (message.author === "USER") {
-        // What their message changed on the way, in its Activity with it: closed, it opens again; snoozed, it wakes.
+        // Someone else on the email thread (a Cc'd colleague): said so, not credited to the conversation's person.
+        const other = !!message.fromAddress;
+        // What their message changed on the way, in its Activity with it: waiting or closed, it opens again; snoozed, it wakes.
         await logEvents(tx, conversationId, [
-          ...(before.status === "CLOSED" ? [{ kind: "status" as const, actor: "user" as const, details: { status: "open" as const, byMessage: true } }] : []),
-          ...(before.snoozed ? [{ kind: "snooze" as const, actor: "user" as const, details: { until: null } }] : []),
+          ...(before.status !== "OPEN" ? [{ kind: "status" as const, actor: "user" as const, details: { status: "open" as const, byMessage: true, ...(other && { other }) } }] : []),
+          ...(before.snoozed ? [{ kind: "snooze" as const, actor: "user" as const, details: { until: null, ...(other && { other }) } }] : []),
         ]);
       }
       // In SQL, so two messages at once keep the older waitingSince.

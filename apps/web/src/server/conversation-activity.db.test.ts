@@ -7,10 +7,11 @@ import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
 import { assignConversation, loadConversationActivity, markConversationSpam, setConversationStatus } from "./inbox";
 import { runWorkflows } from "./inbox-path";
 import { getConversationActivity } from "./operations/conversation-activity";
-import { createConversation, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
+import { addMessage, createConversation, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { createWorkflow, deleteWorkflow } from "./operations/workflows";
 import { deleteUser } from "./operations/users";
+import { removeMember } from "./team";
 import { upsertProjectUser } from "./project-users";
 import { spamVerdict } from "./spam";
 
@@ -159,32 +160,44 @@ test("a teammate's reply takes it over and sets it waiting in its Activity, with
   expect(await activity(number)).toHaveLength(5);
 });
 
-test("what a message changes on the way: a reply closing it, the person's message reopening it or ending its snooze, and a snooze ending by itself", async () => {
+test("what a message changes on the way: a reply setting it waiting or closing it, the person's message reopening it or ending its snooze, a Cc'd colleague's said as theirs, and a snooze ending by itself", async () => {
   const { projectId, admin, viaKey, activity } = await setup();
   await upsertProjectUser(projectId, "user-1", { name: "Sam Smith", email: "e2e-sam-smith@example.com", properties: { company: "Acme" } });
   const { number } = await call(createConversation, admin, { user: { id: "user-1" }, body: "Hello" });
   const write = () => call(replyToConversation, viaKey, { number, body: "And another thing", author: { id: "user-1" } });
 
+  const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });
+
+  // Waiting on them, then open again as they write.
+  await call(replyToConversation, admin, { number, body: "Looking into it" });
+  await write();
   await call(replyToConversation, admin, { number, body: "Fixed", close: true });
-  await write();
+  // Someone else on the email thread opens it again: said so, without who.
+  await addMessage(conversation.id, projectId, { author: "USER", authorId: null, channel: "EMAIL", body: "Me too", fromAddress: "e2e-bob@example.com" });
   await call(updateConversation, admin, { number, snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
   await write();
   await call(updateConversation, admin, { number, snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
+  // A row timed ahead of the wake job's clock (another server's, running ahead): the snooze's end still comes after it.
+  await prisma.conversationEvent.create({ data: { conversationId: conversation.id, kind: "priority", actor: "teammate", actorId: admin.actor.userId, details: { priority: true }, createdAt: new Date(Date.now() + 60_000) } });
   // Its time passes: the wake job ends it.
-  await prisma.conversation.update({ where: { projectId_number: { projectId, number } }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
   expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toMatchObject({ woken: 1 });
 
   const rows = await activity(number);
   expect(rows.map((row) => row.replace(/ · until .*/, " · until …"))).toEqual([
     "Its snooze ended",
+    "Olive Owner marked it priority",
     "Olive Owner snoozed it · until …",
     "Sam Smith ended its snooze · by writing",
     "Olive Owner snoozed it · until …",
-    "Sam Smith reopened it · by writing",
+    "Someone else on the email thread reopened it · by writing",
     "Olive Owner closed it · by replying",
+    "Sam Smith reopened it · by writing",
+    "Olive Owner set it waiting on the user · by replying",
   ]);
+  expect(await prisma.conversationEvent.count({ where: { conversationId: conversation.id, details: { string_contains: "e2e-bob" } } })).toBe(0);
   // The person's rows are under People; the wake job's under Workflows, with the built-in steps.
-  expect(await activity(number, "people")).toHaveLength(5);
+  expect(await activity(number, "people")).toHaveLength(8);
   expect(await activity(number, "workflows")).toEqual(["Its snooze ended"]);
   // Nothing of theirs is in a row: erased by users.delete, their rows say so, as the conversation does.
   const stored = async () => JSON.stringify(await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number } } }));
@@ -220,4 +233,24 @@ test("newest first, a page at a time, the team's only; deleted with its conversa
 
   await prisma.conversation.delete({ where: { id: conversation.id } });
   expect(await prisma.conversationEvent.count({ where: { conversationId: conversation.id } })).toBe(0);
+});
+
+test("a teammate taken off the team: each conversation they had unassigned in its Activity, by whoever removed them, with why", async () => {
+  const { owner, project, projectId, admin, activity } = await setup();
+  const member = await signUp("Mo Member");
+  const membership = await prisma.teamMember.create({ data: { projectId, userId: member.id, role: "MEMBER" } });
+  const numbers = [];
+  for (const body of ["One", "Two"]) {
+    const { number } = await call(createConversation, admin, { email: "e2e-sam@example.com", body });
+    await call(updateConversation, admin, { number, assignee: member.email });
+    numbers.push(number);
+  }
+  const other = (await call(createConversation, admin, { email: "e2e-sam@example.com", body: "Three" })).number;
+
+  actAs(owner);
+  expect(await removeMember(project.slug, membership.id)).toEqual({});
+  for (const number of numbers) {
+    expect(await activity(number)).toEqual(["Olive Owner unassigned it · Mo Member left the team", "Olive Owner assigned it to Mo Member"]);
+  }
+  expect(await activity(other)).toEqual([]);
 });

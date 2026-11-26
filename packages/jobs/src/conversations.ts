@@ -486,10 +486,10 @@ export async function wakeConversations(_input: JobInput<"wakeConversations">, l
     // Each one's snooze ended, in its Activity (docs/plan.md, Inbox automation, W16), by Tuti: written with the wake.
     if (rows.length > 0) {
       await tx.$executeRaw`INSERT INTO "conversation_event" ("id", "conversationId", "kind", "actor", "details", "createdAt")
-        SELECT gen_random_uuid()::text, id, 'snooze', 'tuti', '{"until":null}'::jsonb,
+        SELECT gen_random_uuid()::text, w.id, 'snooze', 'tuti', '{"until":null}'::jsonb,
           -- After its latest row, as the app's own writes time them.
-          GREATEST(${now}::timestamp, (SELECT MAX(e."createdAt") + interval '1 millisecond' FROM "conversation_event" e WHERE e."conversationId" = id))
-        FROM unnest(${rows.map((row) => row.id)}::text[]) AS id`;
+          GREATEST(${now}::timestamp, (SELECT MAX(e."createdAt") + interval '1 millisecond' FROM "conversation_event" e WHERE e."conversationId" = w.id))
+        FROM unnest(${rows.map((row) => row.id)}::text[]) AS w(id)`;
     }
     for (const row of rows) {
       // As server/live.ts's notifyInbox: who it's with, never what it says.

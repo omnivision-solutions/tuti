@@ -37,12 +37,18 @@ export const EVENTS = {
   }),
   /** The spam filter's verdict where the conversation started. */
   spam_filter: z.object({ spam: z.boolean(), reason: z.string().nullable(), check: z.string().nullable(), phrase: z.string().optional() }),
-  /** `byMessage`: the change came with a message (a teammate's reply, the person writing), not by itself. */
-  status: z.object({ status: z.enum(["open", "waiting", "closed"]), byMessage: z.boolean().optional() }),
+  /**
+   * `byMessage`: the change came with a message (a teammate's reply, the person writing), not by itself. `other`: the
+   * message was someone else's on the email thread (a Cc'd colleague), not the conversation's person; who isn't kept.
+   */
+  status: z.object({ status: z.enum(["open", "waiting", "closed"]), byMessage: z.boolean().optional(), other: z.boolean().optional() }),
   /** Snoozed till then, or its snooze ended (`until` null): by a teammate, the person writing, or its time passing (Tuti). */
-  snooze: z.object({ until: z.string().nullable() }),
-  /** The teammate it was assigned to (a reference: their name is read when shown), or null for unassigned. */
-  assignee: z.object({ assigneeId: z.string().nullable() }),
+  snooze: z.object({ until: z.string().nullable(), other: z.boolean().optional() }),
+  /**
+   * The teammate it was assigned to (a reference: their name is read when shown), or null for unassigned. `left`: the
+   * teammate who left the team, which unassigned it; `imported`: they held it in an import and joined, which assigned it.
+   */
+  assignee: z.object({ assigneeId: z.string().nullable(), left: z.string().optional(), imported: z.boolean().optional() }),
   priority: z.object({ priority: z.boolean() }),
   spam: z.object({ spam: z.boolean() }),
   /** Take over (`team`; `byReply` when a teammate's reply did it) or Hand back to the AI (`ai`). */
@@ -85,8 +91,12 @@ export function tellEvent(
       : row.actor === "api_key"
         ? `The API key “${row.actorName ?? "unnamed"}”`
         : row.actor === "user"
-          ? person
-          : null;
+          ? (row.details as { other?: boolean } | null)?.other
+            ? "Someone else on the email thread"
+            : person
+          : row.actor === "tuti"
+            ? "Tuti"
+            : null;
   const told = (text: string, detail: string | null = null): ToldEvent => ({ who, text, detail, lines: [] });
   // How a message's change came: the person writing, or a teammate's reply.
   const by = row.actor === "user" ? "by writing" : "by replying";
@@ -130,11 +140,12 @@ export function tellEvent(
       return row.actor === "tuti" ? { who: null, text: "Its snooze ended", detail: null, lines: [] } : told("ended its snooze", row.actor === "user" ? by : null);
     }
     case "assignee": {
-      const { assigneeId } = details as z.output<typeof EVENTS.assignee>;
+      const { assigneeId, left, imported } = details as z.output<typeof EVENTS.assignee>;
       if (!assigneeId) {
-        return told("unassigned it");
+        return told("unassigned it", left ? `${names.get(left) ?? "A former teammate"} left the team` : null);
       }
-      return told(row.actor === "teammate" && assigneeId === row.actorId ? "assigned it to themselves" : `assigned it to ${names.get(assigneeId) ?? "a former teammate"}`);
+      const to = row.actor === "teammate" && assigneeId === row.actorId ? "assigned it to themselves" : `assigned it to ${names.get(assigneeId) ?? "a former teammate"}`;
+      return told(to, imported ? "they held it in the import, and joined" : null);
     }
     case "priority":
       return told((details as z.output<typeof EVENTS.priority>).priority ? "marked it priority" : "took its priority off");
@@ -149,6 +160,6 @@ export function tellEvent(
 
 /** The teammates an event names (who did it, who it was assigned to), whose names are read when it's shown. */
 export function eventPeople(row: { kind: string; actorId: string | null; details: unknown }): string[] {
-  const assignee = row.kind === "assignee" ? EVENTS.assignee.safeParse(row.details).data?.assigneeId : null;
-  return [row.actorId, assignee].filter((id): id is string => !!id);
+  const assignee = row.kind === "assignee" ? EVENTS.assignee.safeParse(row.details).data : null;
+  return [row.actorId, assignee?.assigneeId, assignee?.left].filter((id): id is string => !!id);
 }
