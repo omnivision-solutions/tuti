@@ -4,7 +4,7 @@ import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { openBrowserAsync } from "expo-web-browser";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ComponentRef, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   AccessibilityInfo,
   ActionSheetIOS,
@@ -69,7 +69,8 @@ import {
   writer,
   writtenAt,
 } from "@/lib/conversation";
-import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges } from "@/lib/details";
+import { PriorityMark } from "@/components/inbox-row";
+import { getTriage, holdTriage, screenKey, showTriage, standing, subscribeTriage, type Triage, triageChanges, updateConversation } from "@/lib/details";
 import { lookAt } from "@/lib/notifications";
 import { cached, cacheGeneration, conversationKey, isOffline, keep as keepCached, offlineNote, useMinutes } from "@/lib/offline";
 import { forgetChosen, useWide } from "@/lib/layout";
@@ -77,6 +78,8 @@ import { useApi, useSession } from "@/lib/session";
 import { type Colors, useColors } from "@/lib/theme";
 
 type Kind = "reply" | "note";
+/** Said when Edit can't, as the AI has the conversation: its composer comes with Take over. */
+const TAKE_OVER_FIRST = "Take over first, then Edit.";
 type Row = { message: Message; index: number } | { unsent: Unsent };
 
 const IOS = Platform.OS === "ios";
@@ -282,6 +285,42 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
     }
   }, [notice]);
 
+  // The AI has it: "The AI has this conversation. Take over" in place of the composer, so taking over comes before typing (a
+  // teammate's reply would take it over too, and the AI could answer mid-draft). Closed too: it's still the AI's.
+  const withAi = !!conversation && triage?.handledBy === "ai";
+  const [taking, setTaking] = useState(false);
+  // Taken over here: a screen reader's focus, on the button that's gone, goes to the reply field that took its place,
+  // whichever answer brings it back (the change's, or a fetch the stream asked for that beat it).
+  const replyField = useRef<ComponentRef<typeof TextInput>>(null);
+  const tookOver = useRef(false);
+  useEffect(() => {
+    if (!withAi && tookOver.current) {
+      tookOver.current = false;
+      if (replyField.current) {
+        AccessibilityInfo.sendAccessibilityEvent(replyField.current, "focus");
+      }
+    }
+  }, [withAi]);
+  const takeOver = async () => {
+    if (taking) {
+      return;
+    }
+    setTaking(true);
+    setNotice(null);
+    tookOver.current = true;
+    try {
+      showTriage(draftKey, await updateConversation(api, number, { handledBy: "team" }));
+      AccessibilityInfo.announceForAccessibility("Taken over");
+      // What's kept of it for reading offline says so too.
+      refresh();
+    } catch (e) {
+      tookOver.current = false;
+      setNotice(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTaking(false);
+    }
+  };
+
   const deliver = async (unsent: Unsent) => {
     const sent = await sendUnsent(api, draftKey, number, unsent, load);
     if (!sent) {
@@ -329,8 +368,9 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
   const discard = (unsent: Unsent) => setDraft((now) => ({ ...now, unsent: now.unsent.filter((one) => one.id !== unsent.id) }));
   // Back into the composer, with its files, to change what the server refused (too many files, one gone).
   const edit = (unsent: Unsent) => {
-    if (!canEdit(draft, unsent, uploading.length)) {
-      setNotice(EDIT_FIRST);
+    // No composer to put it in while the AI has it.
+    if (withAi || !canEdit(draft, unsent, uploading.length)) {
+      setNotice(withAi ? TAKE_OVER_FIRST : EDIT_FIRST);
       return;
     }
     setDraft((now) => editUnsent(now, unsent));
@@ -433,7 +473,10 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
               <Text style={[styles.subjectText, { color: colors.text }]} accessibilityRole="header">
                 {conversation.subject}
               </Text>
-              <Text style={[styles.meta, { color: colors.muted }]}>#{conversation.number}</Text>
+              <View style={styles.numbered}>
+                <Text style={[styles.meta, { color: colors.muted }]}>#{conversation.number}</Text>
+                {triage?.priority && <PriorityMark colors={colors} />}
+              </View>
             </View>
           }
           ListHeaderComponent={
@@ -466,6 +509,20 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
       )}
 
       <View style={{ paddingBottom: composerInset(insets.bottom, keyboard) + 8 }}>
+      {withAi ? (
+        <View style={[IOS ? styles.composerIos : styles.composerAndroid, styles.takeOver, IOS ? { borderColor: colors.border, backgroundColor: colors.card } : { backgroundColor: colors.secondary }]}>
+          <Text style={[styles.body, styles.answering, { color: colors.muted }]}>The AI has this conversation.</Text>
+          <Pressable
+            // Not `disabled`, which would drop focus while it's asked: a press is ignored then.
+            onPress={() => void takeOver()}
+            accessibilityRole="button"
+            accessibilityState={{ busy: taking }}
+            style={({ pressed }) => [styles.takeOverButton, { backgroundColor: colors.primary, opacity: pressed || taking ? 0.6 : 1 }]}
+          >
+            <Text style={[styles.takeOverText, { color: colors.onPrimary }]}>Take over</Text>
+          </Pressable>
+        </View>
+      ) : (
       <View style={[IOS ? styles.composerIos : styles.composerAndroid, IOS ? { borderColor: colors.border, backgroundColor: kind === "note" ? colors.note : colors.card } : { backgroundColor: kind === "note" ? colors.note : colors.secondary }]}>
         <View style={[styles.tabs, { borderBottomColor: colors.border }]} accessibilityRole="tablist">
           {(["reply", "note"] as const).map((tab) => (
@@ -509,6 +566,7 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
           </View>
         )}
         <TextInput
+          ref={replyField}
           value={text}
           onChangeText={(text) => setDraft((now) => typed(now, kind, text))}
           placeholder={kind === "note" ? "Write a note only your team sees…" : "Write a reply…"}
@@ -557,6 +615,7 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
           </Pressable>
         </View>
       </View>
+      )}
       {notice && (
         <Text style={[styles.meta, styles.notice, { color: colors.muted }]} accessibilityLiveRegion="polite">
           {notice}
@@ -808,6 +867,7 @@ const styles = StyleSheet.create({
   messages: { paddingHorizontal: 12, paddingVertical: 8 },
   subject: { paddingVertical: 12, gap: 2 },
   subjectText: { fontSize: 17, fontWeight: "600" },
+  numbered: { flexDirection: "row", alignItems: "center", gap: 8 },
   stale: { paddingVertical: 6, textAlign: "center" },
   message: { marginBottom: 10 },
   run: { marginBottom: 3 },
@@ -849,4 +909,8 @@ const styles = StyleSheet.create({
   draftText: { fontSize: 13.5, fontWeight: "500" },
   send: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   notice: { paddingHorizontal: 20, paddingTop: 6 },
+  takeOver: { flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 14, paddingRight: 8, paddingVertical: 8 },
+  answering: { flex: 1 },
+  takeOverButton: { height: 36, paddingHorizontal: 16, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  takeOverText: { fontSize: 15, fontWeight: "600" },
 });
