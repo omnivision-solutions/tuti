@@ -392,6 +392,9 @@ test("the changelog in German: its list, tags, months, pages, an entry's page, t
   await expect(reader.getByText("Was neu, besser und behoben ist bei Acme.")).toBeVisible();
   await expect(reader.getByRole("navigation", { name: "Tags" }).getByRole("link")).toHaveText(["Alle 21", "Neu 1", "Verbessert 1"]);
   await expect(reader.getByRole("link", { name: "RSS-Feed" })).toBeVisible();
+  // Feed readers discover the feed in the page's language.
+  const discovered = reader.locator('link[rel="alternate"][type="application/rss+xml"]');
+  await expect(discovered).toHaveAttribute("href", `${portalUrl(slug)}/de/changelog/rss.xml`);
   // The entries: their tags and dates in German, their ideas' titles in the project's language.
   const darkMode = reader.getByRole("article", { name: "Dark mode is here" });
   await expect(darkMode.getByText("Neu", { exact: true })).toBeVisible();
