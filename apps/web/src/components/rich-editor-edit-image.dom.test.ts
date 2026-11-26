@@ -547,22 +547,29 @@ test("with two copies of the image, the one picked is followed as the text chang
   expect(ref.current!.state.doc.child(2).attrs.mediaId).toBe(ORIGINAL);
 });
 
-test("the picked copy deleted meanwhile, Replace replaces no other copy: it says so, and the dialog stays", async () => {
-  const copies = {
-    type: "doc",
-    content: [
-      { type: "paragraph", content: [{ type: "text", text: "Before" }] },
-      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
-      { type: "image", attrs: { mediaId: ORIGINAL, w: 1000, h: 500 } },
-    ],
-  };
-  const { ref, generate, click } = await editor({ initial: copies });
+test("the edited image deleted meanwhile, Replace places nothing: it says so, and the dialog stays", async () => {
+  const { ref, generate, click, images } = await editor();
   await act(async () => ref.current!.commands.setNodeSelection(8));
   await generate();
-  // The first copy deleted: the second slides into its place.
   await act(async () => ref.current!.commands.deleteRange({ from: 8, to: 9 }));
   await click("Replace image");
   expect(toast.error).toHaveBeenCalledWith("The image isn't in the text any more: pick an image to use this one.");
-  expect(ref.current!.state.doc.child(1).attrs.mediaId).toBe(ORIGINAL);
+  expect(images()).toEqual([]);
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+test("the edited image followed through its own changes and a move: alt text changed, then cut and pasted elsewhere, Replace still swaps it", async () => {
+  const { ref, generate, click } = await editor();
+  await ref.current!.commands.focus();
+  await act(async () => ref.current!.commands.setNodeSelection(8));
+  await generate();
+  // Its alt text changed in place.
+  await act(async () => ref.current!.chain().setNodeSelection(8).updateAttributes("image", { alt: "A cat" }).run());
+  // Moved: deleted where it was and put back before the text (as a cut and paste does).
+  const image = ref.current!.state.doc.nodeAt(8)!.toJSON();
+  await act(async () => ref.current!.chain().deleteRange({ from: 8, to: 9 }).insertContentAt(0, image).run());
+  await click("Replace image");
+  const placed = ref.current!.state.doc.child(0);
+  expect(placed.attrs.mediaId).toBe(MADE);
+  expect(placed.attrs.alt).toBe("A cat");
 });
