@@ -192,7 +192,7 @@ export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
  * The entry's featured image (its `cover`), at the text column's width as readers see it: without one, a band to add
  * one (picked or dropped on it); with one, Replace and Remove over it (shown on hover and focus, always on touch screens).
  */
-function FeaturedImage({
+export function FeaturedImage({
   projectSlug,
   entry,
   covers,

@@ -7,7 +7,7 @@ const generateImage = vi.fn();
 const uploadImage = vi.fn();
 vi.mock("@/server/images", () => ({ generateImage }));
 vi.mock("@/server/media", () => ({
-  uploadStatus: async (id: string) => ({ status: "READY", src: `https://media.example/${id}-full.png`, urls: {}, width: 1200, height: 630 }),
+  uploadStatus: async (id: string) => ({ status: "READY", src: `https://media.example/${id}-full.png`, download: `https://media.example/${id}-download.webp`, urls: {}, width: 1200, height: 630 }),
 }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage }));
 
@@ -145,4 +145,41 @@ test("Uses AI credits is said only where credits are on", async () => {
   document.body.replaceChildren();
   await dialog({ credits: true });
   expect(document.body.textContent).toContain("Uses AI credits");
+});
+
+test("the + menu adds the logo and this entry's images; Media library is there, off", async () => {
+  const { click, references } = await dialog({ references: [image(1)], fromHere: { label: "From this entry", images: [image(2), image(3)] }, logo: image(9) });
+  const item = (name: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((each) => (each.getAttribute("aria-label") ?? each.textContent?.trim()) === name);
+  await click("Add a reference");
+  expect(item("Media librarySoon")!.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => item("Your logo")!.click());
+  expect(references()).toEqual(["https://media.example/ref1.png", "https://media.example/ref9.png"]);
+  await click("Add a reference");
+  await act(async () => item("From this entry")!.click());
+  await vi.waitFor(() => expect(item("Image 2")).toBeTruthy());
+  await act(async () => item("Image 2")!.click());
+  expect(references()).toEqual(["https://media.example/ref1.png", "https://media.example/ref9.png", "https://media.example/ref3.png"]);
+});
+
+test("removing a reference moves focus to the next one's ×, or to + after the last", async () => {
+  const { button, click } = await dialog({ references: [image(1), image(2)] });
+  await click("Remove reference 1");
+  expect(document.activeElement).toBe(button("Remove reference 1"));
+  await click("Remove reference 1");
+  expect(document.activeElement).toBe(button("Add a reference"));
+});
+
+test("after a failed try, the error replaces the image and its actions: nothing acts on a try that isn't shown", async () => {
+  generateImage.mockResolvedValueOnce({ image: { id: "made1", url: "https://media.example/made1.png", width: 1200, height: 630 } }).mockResolvedValueOnce({ error: "The AI couldn't make the image. Try again in a moment." });
+  const { button, click, type } = await dialog();
+  await type("A parrot");
+  await click("Generate");
+  expect(button("Use as cover")).toBeTruthy();
+  expect(document.querySelector<HTMLAnchorElement>("a[download]")!.href).toBe("https://media.example/made1-download.webp");
+  await click("Generate");
+  expect(document.querySelector('[role="alert"]')).toBeTruthy();
+  expect(button("Use as cover")).toBeUndefined();
+  expect(button("Refine this one")).toBeUndefined();
+  await click("Try 1");
+  expect(button("Use as cover")).toBeTruthy();
 });

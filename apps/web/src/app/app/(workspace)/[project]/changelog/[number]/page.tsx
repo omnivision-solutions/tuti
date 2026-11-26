@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { createHash } from "node:crypto";
 
-import { type Doc, mediaIdsIn } from "@tuti/content";
+import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
@@ -21,7 +21,7 @@ import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
 import { COMMENTS_HEADING } from "@/lib/comment-threads";
 import { formatDate } from "@/lib/format";
-import { entryPosts, entryTold } from "@/server/changelog-queries";
+import { entryPosts, entryTold, generatorSources } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
@@ -324,17 +324,3 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   );
 }
 
-/** The images Generate offers to work from: the entry's text's (in its order) and the project's brand logo. */
-async function generatorSources(projectId: string, content: Doc) {
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { brandLogoId: true } });
-  const ids = mediaIdsIn(content);
-  const found = await prisma.media.findMany({
-    where: { id: { in: [...ids, ...(project.brandLogoId ? [project.brandLogoId] : [])] }, projectId, status: "READY", filename: null, width: { not: null } },
-    select: { id: true, status: true, width: true, height: true },
-  });
-  const image = (id: string | null) => {
-    const shown = lastingImage(found.find((media) => media.id === id) ?? null);
-    return shown && { id: shown.id, url: shown.url };
-  };
-  return { bodyImages: ids.map(image).filter((each) => each !== null), logo: image(project.brandLogoId) };
-}

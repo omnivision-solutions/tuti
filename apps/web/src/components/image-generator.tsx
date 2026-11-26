@@ -5,6 +5,7 @@ import { MAX_IMAGE_SIZE, UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
 import { cn } from "cn";
 import { DownloadIcon, ImageIcon, LoaderCircleIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useId, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -30,7 +31,7 @@ import { uploadStatus } from "@/server/media";
 /** A finished upload: its id and a link to show it. */
 export type PickedImage = { id: string; url: string };
 /** An image made in the dialog: its full size, and every stored size (for an editor that inserts it). */
-export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
+export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls; download?: string };
 export type ImageSize = { label: string; width: number; height: number };
 
 const PRESETS: ImageSize[] = [
@@ -98,6 +99,7 @@ export function ImageGenerator({
   const id = useId();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState(initialReferences);
   const [uploading, setUploading] = useState(false);
@@ -151,7 +153,7 @@ export function ImageGenerator({
       const status = await uploadStatus(result.image.id).catch(() => null);
       const made: GeneratedImage =
         status && "src" in status
-          ? { id: result.image.id, url: status.src, width: status.width, height: status.height, urls: status.urls }
+          ? { id: result.image.id, url: status.src, width: status.width, height: status.height, urls: status.urls, download: status.download }
           : { ...result.image, urls: {} };
       // One runs at a time (Generate waits), so the list is still the one it started with.
       setTries([...tries, made]);
@@ -203,7 +205,13 @@ export function ImageGenerator({
                       type="button"
                       aria-label={`Remove reference ${index + 1}`}
                       className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground hover:text-foreground"
-                      onClick={() => setReferences((list) => list.filter((each) => each.id !== image.id))}
+                      onClick={(event) => {
+                        // Focus goes to the next one's ×, or to the + tile after the last (the button goes with its image).
+                        const item = event.currentTarget.closest("li")!;
+                        const next = item.nextElementSibling?.querySelector("button") ?? addRef.current;
+                        flushSync(() => setReferences((list) => list.filter((each) => each.id !== image.id)));
+                        next?.focus();
+                      }}
                     >
                       <XIcon className="size-3" />
                     </button>
@@ -220,6 +228,7 @@ export function ImageGenerator({
                       render={
                         <button
                           type="button"
+                          ref={addRef}
                           aria-label="Add a reference"
                           disabled={full || uploading}
                           className="flex size-16 items-center justify-center rounded-lg border border-dashed text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
@@ -372,7 +381,8 @@ export function ImageGenerator({
                     ))}
                   </div>
                 </div>
-                {shown && (
+                {/* Only with its image shown: not over an error or the next one being made. */}
+                {shown && !pending && !error && (
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button
                       type="button"
@@ -385,7 +395,7 @@ export function ImageGenerator({
                     >
                       Refine this one
                     </Button>
-                    <a href={shown.url} download target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    <a href={shown.download ?? shown.url} download target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
                       <DownloadIcon />
                       Download
                     </a>
