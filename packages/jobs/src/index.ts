@@ -76,7 +76,7 @@ import { autopilotDue } from "./autopilot";
 import { inboxDue } from "./inbox-due";
 export { queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
-export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, COMMENT_UNSURE, composeComment, dueAt, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, VERIFY_WAITS, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, SCREENSHOT_WAITS, SCREENSHOTS_RETAKEN, tooLong, waitsBecause } from "./autopilot";
+export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, COMMENT_UNSURE, composeComment, dueAt, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, VERIFY_WAITS, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, SCREENSHOT_WAITS, SCREENSHOTS_RETAKE, tooLong, waitsBecause } from "./autopilot";
 export { claimDocsSlug, claimLanguageSlug, docsSlugsTaken, freeDocsSlug, freeLanguageSlug, languageSlugRefused, RESERVED_ARTICLE_SLUGS, restoreLanguageSlugs } from "./docs-slugs";
 export { ARTICLE_REVISIONS_KEPT, docOf, recordRevision, versions, editName, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, revisionsPast, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
 

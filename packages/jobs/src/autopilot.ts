@@ -109,8 +109,8 @@ type Candidate = {
 /** Why an article edit waits while its article has a "[Screenshot: …]" line: publishing refuses it (articles.takeScreenshots fills it). */
 export const SCREENSHOT_WAITS = "Its article asks for a screenshot";
 
-/** Why an edit that put screenshots' lines back (SC4) still waits once they're taken again: someone looks at the new ones. */
-export const SCREENSHOTS_RETAKEN = "Its screenshots were taken again";
+/** Why an edit that puts screenshots' lines back (SC4) waits, before and after they're taken again: someone looks at the new ones. */
+export const SCREENSHOTS_RETAKE = "It asks for screenshots to be taken again";
 
 /**
  * Why an update must wait for someone, whatever the hold (null: it may go out by itself): Autopilot is
@@ -137,11 +137,10 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (check && check.pass !== true) {
     return typeof check.reason === "string" && check.reason ? check.reason : CHECK_UNCLEAR;
   }
-  // Screenshots it may have made out of date, their lines put back (SC4): a person takes them again, then looks at them
+  // Screenshots it may have made out of date, their lines put back (SC4): a person takes them again and looks at them
   // before it's published. After the check's own reason, which a reviewer must still see.
-  if (action.kind === "ARTICLE_EDIT" && action.articleId && (action.payload as { screenshots?: unknown } | null)?.screenshots) {
-    const article = await db.article.findUnique({ where: { id: action.articleId }, select: { body: true, content: true, changes: { select: { body: true, content: true } } } });
-    return article && markersIn(docOf(article.changes ?? article), "screenshot").length === 0 ? SCREENSHOTS_RETAKEN : SCREENSHOT_WAITS;
+  if (action.kind === "ARTICLE_EDIT" && (action.payload as { screenshots?: unknown } | null)?.screenshots) {
+    return SCREENSHOTS_RETAKE;
   }
   // An edit goes out by itself only once the check passed it and it's small (E6, below): one saved before the check
   // (unchecked, or checked before its size was measured) asks first.

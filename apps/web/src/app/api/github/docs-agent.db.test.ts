@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { autopilotSettingsSelect, enqueue, grantCredits, SCREENSHOT_DECISIONS, SCREENSHOT_RULE, SCREENSHOT_WAITS, SCREENSHOTS_RETAKEN, waitsBecause } from "@tuti/jobs";
+import { autopilotSettingsSelect, enqueue, grantCredits, SCREENSHOT_DECISIONS, SCREENSHOT_RULE, SCREENSHOT_WAITS, SCREENSHOTS_RETAKE, waitsBecause } from "@tuti/jobs";
 import { roleDefaultModel } from "@tuti/shared";
 import { billingFile, creditsOn, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -487,7 +487,7 @@ describe("screenshots a change made out of date (SC4)", () => {
     expect(JSON.stringify(asked)).toContain(SHOW);
     expect(JSON.stringify(asked)).toContain("https://app.example.com/settings");
     const [edit] = await edits(60);
-    expect(edit).toMatchObject({ status: "PENDING", waitReason: SCREENSHOT_WAITS, reason: expect.stringContaining('"The Theme menu, open" out of date') as unknown });
+    expect(edit).toMatchObject({ status: "PENDING", waitReason: SCREENSHOTS_RETAKE, reason: expect.stringContaining('"The Theme menu, open" out of date') as unknown });
     expect(edit!.payload).toMatchObject({ screenshots: [{ mediaId: images[0], show: SHOW }] });
     // In a new version of the article's unpublished changes: the line, as the editor's Take screenshots fills it.
     const line = paragraph(`[Screenshot: ${SHOW}]`);
@@ -504,11 +504,11 @@ describe("screenshots a change made out of date (SC4)", () => {
     await expect(call(applyCodeChangeAction, team(), { id: edit!.id, revision: review.revision!, reviewedAs: "published" })).rejects.toMatchObject({ status: 409, code: "markers" });
     expect(await published()).toEqual(content);
 
-    // Taken again (the editor's run puts an image in the line's place): it still waits, for someone to look at it.
+    // Taken again (the editor's run puts an image in the line's place): it still waits, for someone to look at it, saying the same.
     await prisma.articleChanges.update({ where: { articleId: article.id }, data: { content } });
     const row = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit!.id }, select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true } });
     const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect });
-    expect(await waitsBecause(row, settings)).toBe(SCREENSHOTS_RETAKEN);
+    expect(await waitsBecause(row, settings)).toBe(SCREENSHOTS_RETAKE);
   });
 
   test("dismissed: the image stays, in the article and its changes", async () => {
@@ -566,7 +566,7 @@ describe("screenshots a change made out of date (SC4)", () => {
     // Waiting for its screenshot; and an edit the check turned down says so, not only that it waits for a screenshot.
     const row = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit!.id }, select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true } });
     const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: autopilotSettingsSelect });
-    expect(await waitsBecause(row, settings)).toBe(SCREENSHOT_WAITS);
+    expect(await waitsBecause(row, settings)).toBe(SCREENSHOTS_RETAKE);
     const turnedDown = { ...row, payload: { ...(row.payload as object), check: { pass: false, reason: "It says something the code doesn't" } } };
     expect(await waitsBecause(turnedDown, settings)).toBe("It says something the code doesn't");
   });
