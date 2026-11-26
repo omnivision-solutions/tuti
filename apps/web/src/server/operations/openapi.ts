@@ -261,8 +261,8 @@ export const groups = [
   },
   {
     name: "Project",
-    description: "The project itself: its name, team, imports from other tools, reports and AI models.",
-    prefixes: ["project", "team", "imports", "reports", "aiModels"],
+    description: "The project itself: its name, team, imports from other tools, reports, AI models, and screenshots of your app taken by an agent.",
+    prefixes: ["project", "team", "imports", "reports", "aiModels", "screenshotSettings", "screenshots"],
   },
   {
     name: "Billing",

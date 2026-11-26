@@ -28,6 +28,15 @@ const IMPORT_QUEUE = "1h" as const;
  */
 const API_REFERENCE_INDEX_TIMEOUT = "10m" as const;
 
+/**
+ * How long a screenshot run may take: two tries of the agent, 15 minutes each at most (@tuti/jobs screenshots.ts), and
+ * keeping its images. A few at once on the whole server: each holds a worker slot that long, and the rest wait their
+ * turn up to an hour (SCREENSHOT_QUEUE_MS: a run still queued after it is settled as failed).
+ */
+const SCREENSHOT_RUN_TIMEOUT = "40m" as const;
+const SCREENSHOT_RUNS = 3;
+const SCREENSHOT_QUEUE = "1h" as const;
+
 /** A job's Hatchet task options, but its input and function. */
 export function taskOptions(key: JobKey, job: Job = jobs[key]) {
   // Queued behind the run with the same key, not cancelling it (Hatchet's default).
@@ -60,6 +69,11 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
     ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
+    ...(key === "screenshotRun" && {
+      executionTimeout: SCREENSHOT_RUN_TIMEOUT,
+      scheduleTimeout: SCREENSHOT_QUEUE,
+      concurrency: [{ expression: "'screenshot-run'", maxRuns: SCREENSHOT_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+    }),
   };
 }
 

@@ -51,6 +51,10 @@ test("an import's run may take twenty minutes (ten of pages, and a worst-case la
   expect(taskOptions("apiReferenceChanged")).toMatchObject({ name: "api-reference-changed", executionTimeout: "10m" });
 });
 
+test("a screenshot run may take forty minutes (two tries of the agent and keeping its images), three at once on the whole server, the rest waiting up to an hour", () => {
+  expect(taskOptions("screenshotRun")).toMatchObject({ name: "screenshot-run", retries: 0, executionTimeout: "40m", scheduleTimeout: "1h", concurrency: [{ expression: "'screenshot-run'", maxRuns: 3 }] });
+});
+
 test("syncing API references from their URLs may take ten minutes", () => {
   expect(taskOptions("syncApiReferences")).toMatchObject({ name: "sync-api-references", executionTimeout: "10m", on: { cron: "41 * * * *" } });
 });

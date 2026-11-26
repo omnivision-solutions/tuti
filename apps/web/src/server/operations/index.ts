@@ -94,6 +94,7 @@ import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
 import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
+import { getScreenshots, getScreenshotSettings, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
 
@@ -264,6 +265,12 @@ const all = [
   listRedirects,
   createRedirect,
   deleteRedirect,
+  // Before screenshots.get: /screenshots/settings isn't a run's id.
+  getScreenshotSettings,
+  updateScreenshotSettings,
+  testScreenshotSettings,
+  takeScreenshots,
+  getScreenshots,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */
