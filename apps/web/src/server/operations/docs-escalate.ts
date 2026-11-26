@@ -8,13 +8,14 @@ import { supportAddress as inboxAddress, supportDomain } from "../inbound";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 
 import { countEmailedLink } from "../email-link-limits";
+import { inboxPath } from "../inbox-path";
 import { sessionIn } from "../session";
 import { arrivalOf, spamVerdict } from "../spam";
 import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
 import { emailAddress, limitHeaders } from "./assistant";
 import { defineOperation, OperationError } from "./define";
 import { earlierTurns } from "./docs-ask";
-import { announceConversation, startConversation } from "./conversations";
+import { startConversation } from "./conversations";
 import { projectPortal } from "./read";
 
 /**
@@ -282,11 +283,10 @@ async function toConversation(
   }
   // Started: the question stays claimed whatever happens next, or a retry would start a second conversation.
   const { conversation, message } = started;
-  if (!conversation.spam) {
-    await announceConversation(projectId, conversation, message).catch((error: unknown) =>
-      log.error("Announcing an escalated question's conversation failed", { projectId, error }),
-    );
-  }
+  // The rest of the path (nothing, for one the spam filter filed): its workflows, then the team is told.
+  await inboxPath(projectId, { started: conversation, message }).catch((error: unknown) =>
+    log.error("Announcing an escalated question's conversation failed", { projectId, error }),
+  );
   return { id: question.id, escalated: true, conversation: conversation.number, ...(fresh && { visitor: fresh.token }) };
 }
 

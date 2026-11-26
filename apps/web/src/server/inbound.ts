@@ -8,16 +8,10 @@ import { simpleParser } from "mailparser";
 
 import { noiseReason } from "@/lib/email-noise";
 
-import {
-  addMessage,
-  announceConversation,
-  announceUserMessage,
-  conversationPerson,
-  MAX_MESSAGE_LENGTH,
-  startConversation,
-} from "./operations/conversations";
+import { addMessage, conversationPerson, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { storeAttachments } from "./attachments";
 import { emailText, PARSER_OPTIONS } from "./email-text";
+import { inboxPath } from "./inbox-path";
 import { senderCounts, spamVerdict } from "./spam";
 
 /**
@@ -394,7 +388,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
           },
         );
         written = true;
-        await announceUserMessage(projectId, conversation.number, message);
+        await inboxPath(projectId, { conversation, message });
         return "added";
       }
     }
@@ -423,9 +417,8 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       },
     });
     written = true;
-    if (!started.conversation.spam) {
-      await announceConversation(projectId, started.conversation, started.message);
-    }
+    // What the spam filter filed stops here; the rest runs its workflows, and the team is told.
+    await inboxPath(projectId, { started: started.conversation, message: started.message });
     return "added";
   }
 }

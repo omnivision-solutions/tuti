@@ -60,6 +60,7 @@ import * as team from "./team";
 import * as webhooks from "./webhooks";
 import * as widget from "./widget";
 import * as widgetInbox from "./widget-inbox";
+import * as workflows from "./workflows";
 import { createApiReference } from "./operations/api-references";
 import { call } from "./operations/run";
 
@@ -116,6 +117,7 @@ const modules = {
   webhooks,
   widget,
   "widget-inbox": widgetInbox,
+  workflows,
 };
 
 const MATRIX_SPEC = JSON.stringify({ openapi: "3.1.0", info: { title: "Matrix", version: "1" }, paths: { "/posts": { get: { summary: "List posts", responses: { 200: { description: "OK" } } } } } });
@@ -840,6 +842,15 @@ const matrix: Matrix = {
     deleteWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.deleteWebhook(slug, f.webhookId) },
     sendTestWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.sendTestWebhook(slug, f.webhookId) },
   },
+  // The inbox's workflows are settings: owners and admins only, like Settings → Inbox.
+  workflows: {
+    saveWorkflow: {
+      allowed: "ADMIN",
+      call: (slug) => workflows.saveWorkflow(slug, null, { name: "Priority", trigger: "conversation_started", actions: [{ kind: "mark_priority" }] }),
+    },
+    moveWorkflow: { allowed: "ADMIN", takesIds: true, call: (slug, f) => workflows.moveWorkflow(slug, f.workflowId, 0) },
+    deleteWorkflow: { allowed: "ADMIN", takesIds: true, call: (slug, f) => workflows.deleteWorkflow(slug, f.workflowId) },
+  },
 };
 
 const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
@@ -1031,6 +1042,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
+  // A workflow, to move and delete.
+  const workflow = await prisma.workflow.create({ data: { projectId, name: "Matrix workflow", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
   // Screenshots set up, for their Test.
   await prisma.screenshotSettings.create({ data: { projectId, appUrl: "https://app.example.com" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
@@ -1164,6 +1177,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     githubRepoId,
     specRepoId: 95_000 + githubRepoId,
     redirectId: redirect.id,
+    workflowId: workflow.id,
     linkId: link.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,
