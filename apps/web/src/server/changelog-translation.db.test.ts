@@ -521,3 +521,23 @@ test("an Autopilot line approved into a published entry brings its translations 
   await languageTranslationsDone();
   expect((await translation()).body).toContain(`[de] ${line}`);
 });
+
+test("an email in a subscriber's language marks its translated title and text with that language", async () => {
+  await languages({ languages: [{ code: "de", live: true }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const german = `e2e-de-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await languageTranslationsDone();
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => m.to.includes(german))).toHaveLength(1));
+  const sent = mailbox.emails.find((m) => m.to.includes(german))!.html;
+  // Its visible body (the inbox's preview line before it is hidden: display:none, never read out).
+  const body = sent.slice(sent.indexOf("<!--body-->"));
+  // The title and the text are inside what carries lang="de"; the email's own words before it aren't.
+  const at = body.indexOf('lang="de"');
+  expect(at).toBeGreaterThan(-1);
+  expect(body.slice(at)).toContain("[de] Dark mode");
+  expect(body.slice(at)).toContain("[de] Switch themes from your profile menu.");
+  expect(body.slice(0, at)).not.toContain("[de]");
+});
