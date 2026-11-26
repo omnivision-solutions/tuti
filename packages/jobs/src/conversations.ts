@@ -415,8 +415,8 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       attachments,
       headers: {
         [LOOP_HEADER]: subdomain,
-        // An automated reply among them: auto-responders on the other side don't answer it (RFC 3834).
-        ...(messages.some((m) => m.author === "AI") && { "Auto-Submitted": "auto-replied" }),
+        // Automated replies alone (a teammate's in the same email isn't automatic): auto-responders don't answer it (RFC 3834).
+        ...(messages.every((m) => m.author === "AI") && { "Auto-Submitted": "auto-replied" }),
         ...tenant,
         ...(references.length > 0 && { "In-Reply-To": references.at(-1)!, References: references.join(" ") }),
       },

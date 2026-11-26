@@ -3282,6 +3282,10 @@ test("a workflow keeps Enterprise users with the AI: one asks a person in the wi
   await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^With AI\s*1$/);
   await expect(list.filter({ hasText: question })).toBeVisible();
   await checkpoint(owner, "handover-with-ai");
+  // The set reply is the AI's, and Sam has seen it, so it isn't emailed.
+  await list.filter({ hasText: question }).getByRole("link").first().click();
+  const setReply = owner.getByRole("list", { name: "Messages" }).getByRole("listitem").filter({ hasText: "Thanks! Our Enterprise team answers within the hour." });
+  await expect(setReply).toContainText("Seen");
 
   // Someone not in the group: the team's.
   const other = await api("/conversations", { email: `e2e-other-${slug}@example.com`, subject: "Pricing question", body: "Do you have a discount?" });

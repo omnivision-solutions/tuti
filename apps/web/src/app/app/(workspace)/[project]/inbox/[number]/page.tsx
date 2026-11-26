@@ -169,6 +169,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             seenAt: true,
             importId: true,
             import: { select: { source: true } },
+            requestId: true,
             emailStatus: true,
             emailError: true,
             createdAt: true,
@@ -314,10 +315,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const importedFrom = (message: Message) => (message.import ? IMPORT_SOURCES[message.import.source.toLowerCase() as ImportSourceKey].name : null);
   // A team reply's email, under it. Imported history was never emailed: no email status for it (docs/plan.md, Switching
   // from Featurebase), but the tool it came from.
+  // A workflow's set reply (the AI's, with a requestId) is emailed only where the address is proven (packages/jobs).
+  const automated = (message: Message) => message.author === "AI" && !!message.requestId;
   const emailed = (message: Message) =>
-    message.author !== "TEAM" || message.note
+    !(message.author === "TEAM" || automated(message)) || message.note
       ? undefined
-      : message.seenAt
+      : automated(message) && !message.seenAt && !message.emailStatus && !conversation.userId && !conversation.emailVerified
+        ? "Not emailed: their address isn't verified"
+        : message.seenAt
         ? "Seen"
         : message.import
           ? `Imported from ${importedFrom(message)}`

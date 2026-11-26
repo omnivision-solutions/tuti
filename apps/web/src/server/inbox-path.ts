@@ -274,7 +274,7 @@ export async function handOver(projectId: string, conversationId: string, messag
       }
       await logEvents(tx, conversationId, [
         ...(checked.length > 0 ? [{ kind: "workflows_ran" as const, actor: "workflow" as const, details: { trigger: "about_to_hand_over", reason: why, workflows: checked } }] : []),
-        ...(held.keep ? [] : [{ kind: "handed_over" as const, actor: "tuti" as const, details: { reason: why } }]),
+        ...(held.keep ? [] : [{ kind: "handed_over" as const, actor: "workflow" as const, details: { reason: why } }]),
       ]);
       // Open pages hear of what they show changing: a workflow's run, a reply, a new owner. A conversation that was the
       // team's and stays so (every new one with no workflows) changed nothing a list shows.
