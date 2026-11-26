@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AccessibilityInfo, BackHandler } from "react-native";
 
-import Details from "@/app/conversation/[number]/details";
+import Details, { ActivitySection } from "@/app/conversation/[number]/details";
 import { behaviourFor, lookAt } from "@/lib/notifications";
 import { startCache } from "@/lib/offline";
+import { useColors } from "@/lib/theme";
 import { ApiError } from "@/lib/api";
 import { type Activity, type Assignee, getTriage, holdTriage, type Person, screenKey, showTriage, type Triage, triageChanges } from "@/lib/details";
 
@@ -811,6 +812,23 @@ describe("the details sheet's Activity", () => {
     expect(await screen.findByText("The spam filter")).toBeTruthy();
     expect(screen.queryByText("A conversation starts")).toBeNull();
     under();
+  });
+
+  it("reads it again when the status comes back changed after none, and not when it comes back the same", async () => {
+    serveActivity(() => Promise.resolve({ events: [RUN], next: null }));
+    function Section({ triage }: { triage: Triage | null }) {
+      return <ActivitySection number={12} triage={triage} colors={useColors()} />;
+    }
+    await render(<Section triage={OPEN} />);
+    await screen.findByText("A conversation starts");
+    expect(activityAsked()).toHaveLength(1);
+
+    await screen.rerender(<Section triage={null} />);
+    await screen.rerender(<Section triage={{ ...OPEN }} />);
+    expect(activityAsked()).toHaveLength(1);
+    await screen.rerender(<Section triage={null} />);
+    await screen.rerender(<Section triage={{ ...OPEN, status: "closed" }} />);
+    expect(activityAsked()).toHaveLength(2);
   });
 
   it("isn't shown by a server from before it", async () => {

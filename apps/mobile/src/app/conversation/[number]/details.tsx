@@ -380,7 +380,7 @@ const dotOf = (actor: ActivityEvent["actor"], colors: Colors) =>
  * shown as kept, saying so. Read again, as far back as shown, whenever the conversation's status changes (a change made
  * here, or the screen under it fetching it anew). A server from before W16 has none: the section isn't shown.
  */
-function ActivitySection({ number, triage, colors }: { number: number; triage: ReturnType<typeof getTriage>; colors: Colors }) {
+export function ActivitySection({ number, triage, colors }: { number: number; triage: ReturnType<typeof getTriage>; colors: Colors }) {
   const api = useApi();
   const { session } = useSession();
   const [filter, setFilter] = useState<ActivityFilter>("all");
@@ -466,12 +466,23 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
   // far back as it's shown, in the tab last chosen (one still loading too, so its tap isn't lost). Its first status
   // after none (the sheet's own fetch, opened by a link) is no change: the opening's load already has it.
   const changed = triage && JSON.stringify([triage.status, triage.assignee?.email ?? null, triage.spam, triage.snoozedUntil, triage.handledBy ?? null, triage.priority ?? null]);
-  const lastChanged = useRef<string | null | undefined>(undefined);
+  // The last status seen (none yet: null), and whether the opening's load has run.
+  const lastChanged = useRef<string | null>(null);
+  const opened = useRef(false);
   useEffect(() => {
-    const was = lastChanged.current;
-    lastChanged.current = changed;
-    if (was === null) {
-      return;
+    if (opened.current) {
+      // No status now, or the one last seen (back after none): nothing changed. The first one seen: the opening's load has it.
+      if (changed === null || changed === lastChanged.current) {
+        return;
+      }
+      const first = lastChanged.current === null;
+      lastChanged.current = changed;
+      if (first) {
+        return;
+      }
+    } else {
+      opened.current = true;
+      lastChanged.current = changed;
     }
     const to = wanted.current;
     const far = to === filter ? shown.current + (paging.current ? 20 : 0) : 0;
