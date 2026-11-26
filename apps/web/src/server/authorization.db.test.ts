@@ -503,6 +503,10 @@ const matrix: Matrix = {
   inbox: {
     markConversationRead: { allowed: "MEMBER", call: (slug) => inbox.markConversationRead(slug, 1, new Date().toISOString()) },
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
+    // Translation is off in the fixture: no preview, and the model isn't asked.
+    previewReplyTranslation: { allowed: "MEMBER", call: (slug) => inbox.previewReplyTranslation(slug, 1, "Thanks!") },
+    // No message's translation failed in the fixture: nothing is queued.
+    retryTranslation: { allowed: "MEMBER", call: (slug) => inbox.retryTranslation(slug, 1) },
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
     draftReplyWithAi: {
       allowed: "MEMBER",
