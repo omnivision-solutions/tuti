@@ -99,6 +99,23 @@ export async function previewReader(projectId: string, token: string | null | un
   return member ? userId : null;
 }
 
+/**
+ * For proxy.ts: whether this request is the team's, who may open the addresses of a language that isn't live (docs/plan.md,
+ * Languages): Customize's preview (its cookie), or a team member signed in to the app on Tuti's own portal (a portal's session
+ * is a reader's, onTeam).
+ */
+export async function teamPreview(slug: string, headers: Headers, preview?: string): Promise<boolean> {
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+  if (!project) {
+    return false;
+  }
+  if (await previewReader(project.id, preview)) {
+    return true;
+  }
+  const session = await sessionFrom(headers);
+  return !!session && (await onTeam(project.id, session.user.id, session));
+}
+
 /** For proxy.ts: whether a preview token in a portal's address (`slug`'s) is one to keep as its cookie. */
 export async function previewTokenFor(slug: string, token: string): Promise<boolean> {
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });

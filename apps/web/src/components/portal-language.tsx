@@ -3,13 +3,13 @@
 import { type Language, LANGUAGES } from "@tuti/shared/languages";
 import type { Messages } from "@tuti/shared/messages";
 import { CheckIcon, ChevronDownIcon, GlobeIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { NextIntlClientProvider, useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
-import { usePortalSlug } from "@/components/portal-base";
+import { useAddressIn, usePortalSlug } from "@/components/portal-base";
 import { TeamLanguageContext } from "@/components/portal-look";
+import { languagePrefix } from "@/lib/language-addresses";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { chooseLanguage } from "@/server/reader-language";
@@ -34,19 +34,23 @@ export function PortalIntl({ language, teamLanguage, messages, children }: { lan
   );
 }
 
-/** Reads the portal in `code`: kept by chooseLanguage, then the page again in it. Until pages have an address per language (L3), the same address. */
-function useChooseLanguage() {
+/**
+ * Reads the portal in `code`: kept by chooseLanguage (this browser's and a signed-in reader's language, for emails and
+ * "Send visitors to their language"), then the same page at that language's address. `languages`: the default one first.
+ */
+function useChooseLanguage(languages: Language[]) {
   const slug = usePortalSlug();
-  const router = useRouter();
+  const addressIn = useAddressIn();
   const [pending, startTransition] = useTransition();
-  const choose = (code: string) =>
+  const choose = (code: Language) =>
     startTransition(async () => {
       const { error } = await chooseLanguage(slug, code);
       if (error) {
         toast.error(error);
         return;
       }
-      router.refresh();
+      // A full load: both addresses are one route to Next.js's router, which would keep the layout (the header's language) as it was.
+      window.location.assign(addressIn(code === languages[0] ? "" : languagePrefix(code)));
     });
   return { choose, pending };
 }
@@ -58,11 +62,11 @@ function useChooseLanguage() {
  */
 export function LanguageSwitcher({ languages, current }: { languages: Language[]; current: Language }) {
   const t = useTranslations("header");
-  const { choose, pending } = useChooseLanguage();
+  const { choose, pending } = useChooseLanguage(languages);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        // In the page's language (its name is the messages'), until <html lang> follows the reader (L3). Focusable while it saves, so focus stays on it.
+        // In the page's language (its name is the messages'). Focusable while it saves, so focus stays on it.
         render={<Button variant="ghost" size="sm" className="max-sm:hidden" lang={current} disabled={pending} focusableWhenDisabled aria-label={t("language", { language: LANGUAGES[current].native })} />}
       >
         <GlobeIcon aria-hidden="true" />
@@ -70,7 +74,7 @@ export function LanguageSwitcher({ languages, current }: { languages: Language[]
         <ChevronDownIcon aria-hidden="true" className="opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-40">
-        <DropdownMenuRadioGroup value={current} onValueChange={(code: string) => code !== current && choose(code)}>
+        <DropdownMenuRadioGroup value={current} onValueChange={(code: Language) => code !== current && choose(code)}>
           {languages.map((code) => (
             <DropdownMenuRadioItem key={code} value={code} lang={code} closeOnClick>
               {LANGUAGES[code].native}
@@ -85,7 +89,7 @@ export function LanguageSwitcher({ languages, current }: { languages: Language[]
 /** The languages in the header's menu on phones, where the header has no room for its switcher. */
 export function LanguageList({ languages, current }: { languages: Language[]; current: Language }) {
   const t = useTranslations("header");
-  const { choose, pending } = useChooseLanguage();
+  const { choose, pending } = useChooseLanguage(languages);
   return (
     <div role="group" lang={current} aria-label={t("languages")} className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
       <p aria-hidden="true" className="flex items-center gap-2 px-2 py-1 font-heading font-semibold">
