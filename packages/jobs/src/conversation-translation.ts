@@ -80,15 +80,16 @@ export async function translateMessage(input: JobInput<"translateMessage">, log:
 }
 
 /** How long the team's email and push about a message wait for its translation, and how often they look. */
-const NOTICE_WAITS_MS = 25_000;
+const NOTICE_WAITS_MS = 10_000;
 const NOTICE_LOOKS_MS = 1_000;
 
 /**
  * A customer's message as the team's email and push tell it (docs/plan.md L22): its translation into the team's language,
  * where it gets one. Both are queued beside the translate-message job, so while it's on its way they wait for it, a
  * little: a translation the job is still to settle (`translationPending`), up to NOTICE_WAITS_MS. Then the text as it is.
- * ponytail: polls the message while waiting (at most ~25 lookups); the job telling the notices when it's done is the
- * upgrade, once a release can rely on the worker that runs it.
+ * ponytail: polls the message while waiting, in the notice job's worker slot (at most ~10 s, ending as the translation
+ * lands); the job telling the notices when it's done frees the slots, once a release can rely on the worker running it.
+ * A translation the job leaves unchanged (the model gave it back as it was) isn't foreseen: that wait runs its course.
  */
 export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): Promise<{ text: string; translatedFrom: string | null }> {
   const until = Date.now() + waitMs;
@@ -102,7 +103,7 @@ export async function noticeText(messageId: string, waitMs = NOTICE_WAITS_MS): P
         teamText: true,
         language: true,
         translationError: true,
-        conversation: { select: { spam: true, language: true, project: { select: { teamLanguage: true, translateConversations: true } } } },
+        conversation: { select: { spam: true, language: true, project: { select: { language: true, teamLanguage: true, translateConversations: true } } } },
       },
     });
     if (message.teamText !== null && message.language) {
@@ -127,10 +128,11 @@ export function translationPending(message: {
   teamText: string | null;
   language: string | null;
   translationError: string | null;
-  conversation: { spam: boolean; language: string | null; project: { teamLanguage: string | null; translateConversations: boolean } };
+  conversation: { spam: boolean; language: string | null; project: { language: string | null; teamLanguage: string | null; translateConversations: boolean } };
 }) {
   const { conversation } = message;
-  const teamLanguage = conversation.project.teamLanguage ?? DEFAULT_TEAM_LANGUAGE;
+  // As translationSettings has it: unset, the project's default language.
+  const teamLanguage = conversation.project.teamLanguage ?? conversation.project.language ?? DEFAULT_TEAM_LANGUAGE;
   if (message.author !== "USER" || message.note || conversation.spam || !conversation.project.translateConversations || !aiEnabled()) {
     return false;
   }

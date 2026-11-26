@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers, translateMessage, translationSettings } from "@tuti/jobs";
+import { handlers, noticeText, translateMessage, translationSettings } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startExpoPushFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -457,4 +457,48 @@ test("the team's email and push about a message wait for its translation, and sh
   } finally {
     await expo.close();
   }
+});
+
+/** A conversation whose customer's messages are added as the database has them, no job run: translation pending. */
+async function pending(...bodies: string[]) {
+  const { owner, project, team } = await setup({ translate: false });
+  await call(createConversation, team, { email: `e2e-kai-${project.slug}@example.com`, body: "Hello" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  // Told about its first message long ago, so the next can be emailed.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: new Date(Date.now() - 24 * 60 * 60_000) } });
+  await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
+  const messages = [];
+  for (const body of bodies) {
+    messages.push(await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "EMAIL", body } }));
+  }
+  return { owner, project, conversation, messages };
+}
+
+const quiet = { info: () => {}, warn: () => {} };
+
+test("the team's notices wait for a translation still to come, and give up after a while: the text as it is", async () => {
+  const { messages } = await pending(GERMAN);
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: GERMAN, translatedFrom: null });
+  await prisma.conversationMessage.update({ where: { id: messages[0]!.id }, data: { teamText: ENGLISH, language: "de" } });
+  expect(await noticeText(messages[0]!.id, 50)).toEqual({ text: ENGLISH, translatedFrom: "de" });
+});
+
+test("the email waits for its message's translation after claiming its turn: a quick message after it doesn't take its place", async () => {
+  const { owner, conversation, messages } = await pending(GERMAN, "hallo?");
+  const [question, hello] = messages;
+  const first = handlers.conversationMessage({ messageId: question!.id }, quiet);
+  // Its turn claimed (the conversation's notifiedAt now), it waits for the translation.
+  await vi.waitFor(async () => expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).notifiedAt!.getTime()).toBeGreaterThan(Date.now() - 60_000));
+  expect(await handlers.conversationMessage({ messageId: hello!.id }, quiet)).toEqual({ skipped: "told recently" });
+  await prisma.conversationMessage.update({ where: { id: question!.id }, data: { teamText: ENGLISH, language: "de" } });
+  expect(await first).toMatchObject({ emailed: 1 });
+  const email = await mailbox.latestTo(owner.email);
+  expect(email.text).toContain(ENGLISH);
+  expect(email.text).toContain("Translated from Deutsch");
+});
+
+test("a retry of the email for some addresses doesn't wait: its first run did", async () => {
+  const { owner, messages } = await pending(GERMAN);
+  expect(await handlers.conversationMessage({ messageId: messages[0]!.id, only: [owner.email] }, quiet)).toEqual({ emailed: 1 });
+  expect((await mailbox.latestTo(owner.email)).text).toContain(GERMAN);
 });

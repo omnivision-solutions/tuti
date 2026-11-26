@@ -11,7 +11,7 @@ const message = {
   teamText: null,
   language: null,
   translationError: null,
-  conversation: { spam: false, language: null, project: { teamLanguage: null, translateConversations: true } },
+  conversation: { spam: false, language: null, project: { language: null, teamLanguage: null, translateConversations: true } },
 };
 
 test("the team's notices wait only for a translation the job is still to settle, never for one it skips without a word", () => {
@@ -28,8 +28,10 @@ test("the team's notices wait only for a translation the job is still to settle,
   expect(translationPending({ ...message, body: "Danke!", conversation: { ...message.conversation, language: "de" } })).toBe(true);
   expect(translationPending({ ...message, body: "Thanks!", conversation: { ...message.conversation, language: "en-GB" } })).toBe(false);
   expect(translationPending({ ...message, conversation: { ...message.conversation, spam: true } })).toBe(false);
+  // The team's language unset: the project's default language, as the translate job takes it ("Danke!" in German to a German team).
+  expect(translationPending({ ...message, body: "Danke!", conversation: { ...message.conversation, language: "de", project: { language: "de", teamLanguage: null, translateConversations: true } } })).toBe(false);
   // Nothing to translate (only a link): left as it is, without a word.
   expect(translationPending({ ...message, body: "https://example.com/reports/export-button-screenshot" })).toBe(false);
   expect(translationPending({ ...message, author: "TEAM" })).toBe(false);
-  expect(translationPending({ ...message, conversation: { ...message.conversation, project: { teamLanguage: null, translateConversations: false } } })).toBe(false);
+  expect(translationPending({ ...message, conversation: { ...message.conversation, project: { language: null, teamLanguage: null, translateConversations: false } } })).toBe(false);
 });

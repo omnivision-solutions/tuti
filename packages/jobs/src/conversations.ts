@@ -91,12 +91,12 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     return { skipped: "nobody to tell" };
   }
   // Worked out before the claim, so nothing between claiming and sending can fail and leave the claim unsent.
-  // Its translation, where it gets one (docs/plan.md L22): waited for a little, unless this is a retry for some addresses.
-  const told = await noticeText(messageId, only ? 0 : undefined);
   const earlier = await prisma.conversationMessage.count({
     where: { conversationId: conversation.id, author: "USER", createdAt: { lt: message.createdAt } },
   });
-  const email = conversationEmail({
+  const url = `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`;
+  // Its translation, where it gets one (docs/plan.md L22). Never throws: the text as it is, where it can't be read.
+  const emailOf = (told: { text: string; translatedFrom: string | null }) => conversationEmail({
     projectName: conversation.project.name,
     from: whoWrote(message, conversation),
     // The user's first message is the conversation's start.
@@ -105,11 +105,13 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     // Translated: what the team reads in the Inbox, with the language it came in named.
     body: told.text,
     ...(told.translatedFrom && { translatedFrom: nativeLanguageName(told.translatedFrom) }),
-    url: `${new URL(process.env.APP_URL).origin}/app/${conversation.project.slug}/inbox/${conversation.number}`,
+    url,
     assigned: !!conversation.assigneeId,
   });
+  const textOf = (waitMs?: number) => noticeText(messageId, waitMs).catch(() => ({ text: message.body, translatedFrom: null }));
   if (only) {
-    // A retry for the addresses the first run couldn't reach: each failure fails the job, for another try.
+    // A retry for the addresses the first run couldn't reach (not waited for: its first run did): each failure fails the job, for another try.
+    const email = emailOf(await textOf(0));
     await Promise.all(recipients.map((member) => sendEmail({ to: member.user.email, ...email })));
     return { emailed: recipients.length };
   }
@@ -122,6 +124,9 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   if (count === 0) {
     return { skipped: "told recently" };
   }
+  // Claimed first, then the translation waited for: a later message with nothing to wait for (a quick "hello?") doesn't
+  // take the email in its place.
+  const email = emailOf(await textOf());
   // Each address on its own: one that's refused doesn't keep the others from hearing.
   const results = await Promise.allSettled(team.map((member) => sendEmail({ to: member.user.email, ...email })));
   const failed = results.filter((result) => result.status === "rejected");
