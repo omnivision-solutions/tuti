@@ -275,6 +275,39 @@ test("a translation that can't be queued, or whose job is lost, waits and is que
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
 });
 
+test("a job lost from the queue is queued again only after the longest the queue may hold it; an up-to-date job leaves a newer safety net", async () => {
+  await draft();
+  await publish();
+  model.reply(reply());
+  await languages({ languages: [{ code: "de" }] });
+  // Queued again by the retry job: its safety net outlasts the task's 24 hours in the queue plus its 10 minutes' run.
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  const before = Date.now();
+  const requeue = vi.spyOn(handlers, "translateArticle").mockResolvedValue({ skipped: "queued" } as never);
+  try {
+    expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  } finally {
+    requeue.mockRestore();
+  }
+  expect((await translation()).retryAt!.getTime()).toBeGreaterThanOrEqual(before + (24 * 60 + 10) * 60_000);
+
+  // An up-to-date job finds a safety net set by a newer publish after it read its own: that one stays.
+  const { id } = await translation();
+  const newer = new Date(Date.now() + 5 * 60_000);
+  const read = prisma.articleTranslation.findUnique.bind(prisma.articleTranslation);
+  const findUnique = vi.spyOn(prisma.articleTranslation, "findUnique").mockImplementationOnce((async (args: never) => {
+    const row = await read(args);
+    await prisma.articleTranslation.update({ where: { id }, data: { retryAt: newer } });
+    return row;
+  }) as never);
+  try {
+    expect(await translateArticle({ articleId: (await translation()).articleId, language: "de" }, log)).toEqual({ skipped: "up to date" });
+  } finally {
+    findUnique.mockRestore();
+  }
+  expect((await translation()).retryAt).toEqual(newer);
+});
+
 test("pages a language queues all get their safety net before the first is translated, so a restart partway strands none", async () => {
   await draft();
   await publish();

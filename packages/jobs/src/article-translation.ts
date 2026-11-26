@@ -31,8 +31,12 @@ const RETRY_FIRST_MS = 15 * 60_000;
 const RETRY_MAX_MS = 24 * 60 * 60_000;
 const STALE = "the product's language setting changed";
 const CHANGED = "changed while translating";
-/** A queued translation not ended by then is taken as lost, and queued again. */
-const LOST_AFTER_MS = 60 * 60_000;
+/**
+ * A queued translation not ended by then is taken as lost, and queued again: longer than the task may wait in the queue
+ * (its `scheduleTimeout`, 24 hours, behind the server-wide cap) plus run (`executionTimeout`, 10 minutes), so one still
+ * queued is never queued twice.
+ */
+const LOST_AFTER_MS = 25 * 60 * 60_000;
 export const retryDelay = (tries: number) => Math.min(RETRY_FIRST_MS * 2 ** Math.max(0, tries - 1), RETRY_MAX_MS);
 
 const ABOUT = "an article from a software product's help center: its title, meta description and search keywords (the first paragraphs), then its text";
@@ -84,12 +88,12 @@ const languageName = (code: string) => (isLanguage(code) ? LANGUAGES[code].name 
  */
 export async function translateArticle(input: JobInput<"translateArticle">, log: JobLogger, run: JobRun = { lastTry: true }): Promise<JobResult> {
   // Its guarded write, once it has read the row: a failure is recorded only on the generation this job started from.
-  const started: { settle?: Settle } = {};
+  const started: Started = {};
   try {
     const result = await translateOne(input, log, run, started);
-    if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED) {
-      // Nothing left to do for it: the safety net's try goes (a page that changed while translating is the newer job's to settle).
-      await prisma.articleTranslation.updateMany({ where: { articleId: input.articleId, language: input.language }, data: { retryAt: null } });
+    if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED && started.retryAt) {
+      // Nothing left to do for it: the safety net's try goes, unless a newer publish or Retranslate set another since it read it.
+      await prisma.articleTranslation.updateMany({ where: { articleId: input.articleId, language: input.language, retryAt: started.retryAt }, data: { retryAt: null } });
     }
     return result;
   } catch (error) {
@@ -108,8 +112,10 @@ export async function translateArticle(input: JobInput<"translateArticle">, log:
 }
 
 type Settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput) => Promise<boolean>;
+/** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
+type Started = { settle?: Settle; retryAt?: Date | null };
 
-async function translateOne({ articleId, language }: JobInput<"translateArticle">, log: JobLogger, { lastTry }: JobRun, started: { settle?: Settle }): Promise<JobResult> {
+async function translateOne({ articleId, language }: JobInput<"translateArticle">, log: JobLogger, { lastTry }: JobRun, started: Started): Promise<JobResult> {
   const row = await prisma.articleTranslation.findUnique({
     where: { articleId_language: { articleId, language } },
     select: {
@@ -120,6 +126,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       productAvailable: true,
       memory: true,
       error: true,
+      retryAt: true,
       tries: true,
       retranslate: true,
       retranslated: true,
@@ -127,6 +134,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       article: { select: sourceSelect },
     },
   });
+  started.retryAt = row?.retryAt;
   if (!row?.automatic) {
     return { skipped: "not kept up to date" };
   }
