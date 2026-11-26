@@ -85,13 +85,17 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
   const [saving, startSaving] = useTransition();
   const [dragging, setDragging] = useState<string | null>(null);
   // What to focus once the page has the change: a moved row's menu (the menu closed and the row moved), or after a
-  // delete its neighbour's (or the empty group's line), as the deleted row's is gone.
+  // delete its neighbour's (or the empty group's line), as the deleted row's is gone. Only where the focus was lost
+  // (it's on the page itself): someone who went on to another control while it saved keeps their place.
   const refocus = useRef<string | null>(null);
   const menuId = (id: string) => `workflow-menu-${id}`;
   const emptyId = `workflows-${trigger}-empty`;
   useEffect(() => {
     if (!saving && refocus.current) {
-      document.getElementById(refocus.current)?.focus();
+      const active = document.activeElement;
+      if (!active || active === document.body) {
+        document.getElementById(refocus.current)?.focus();
+      }
       refocus.current = null;
     }
   }, [saving, seen]);

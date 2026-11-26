@@ -73,24 +73,34 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.keyboard.press("Escape");
   // Closed before the next opens: a menu closing still has its items for a moment, so two would match "Move down".
   await expect(owner.getByRole("menuitem")).toHaveCount(0);
+  // A click on a row's name is a click on its title: it turns nothing off.
+  await started.getByText("Second", { exact: true }).click();
+  await expect(owner.getByRole("switch", { name: "Second" })).toBeChecked();
+
+  // The page's saves held back a moment, as on a slow connection, so the next step comes before the move has landed.
+  const page = `**/app/${slug}/settings/workflows`;
+  await owner.route(page, async (route) => {
+    if (route.request().method() === "POST") await new Promise((done) => setTimeout(done, 1500));
+    await route.fallback();
+  });
   await menu("First").focus();
   await owner.keyboard.press("Enter");
   await owner.getByRole("menuitem", { name: "Move down" }).click();
   await expect(names()).toHaveText(["Third", "Second", "First"]);
   await expect(menu("First")).toBeFocused();
-  await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
-  await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
 
-  // A click on a row's name is a click on its title: it turns nothing off.
-  await started.getByText("Second", { exact: true }).click();
-  await expect(owner.getByRole("switch", { name: "Second" })).toBeChecked();
-
-  // Turned off from the keyboard: it saves at once, and keeps the focus.
+  // Turned off from the keyboard while the move saves: it saves at once, and keeps the focus once the move has landed.
+  await expect(owner.getByRole("menuitem")).toHaveCount(0);
   await owner.getByRole("switch", { name: "Second" }).focus();
   await owner.keyboard.press("Space");
+  await expect(owner.getByText("Moved First")).toBeVisible();
+  await expect(started).not.toHaveAttribute("aria-busy", "true");
   await expect(owner.getByText("Second turned off")).toBeVisible();
   await expect(owner.getByRole("switch", { name: "Second" })).not.toBeChecked();
   await expect(owner.getByRole("switch", { name: "Second" })).toBeFocused();
+  await owner.unroute(page);
+  await expect.poll(stored).toEqual(["Third", "Later", "Second", "First"]);
+  await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["Third", "Second", "First"]);
   await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Second")?.enabled).toBe(false);
 
   // Deleted, asking first.
@@ -123,6 +133,8 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.getByRole("menuitem", { name: "Move up" }).click();
   await expect(names()).toHaveText(["Second", "Third"]);
   await expect.poll(stored).toEqual(["Second", "Third", "Later"]);
+  // The move landed on the page too, so its refresh doesn't come after the delete below and take the row away.
+  await expect(started).not.toHaveAttribute("aria-busy", "true");
   // A switch the server refuses (the workflow was deleted meanwhile, through the API) goes back as it was.
   const third = (await order("conversation_started")).find((workflow) => workflow.name === "Third")!;
   await api(`/workflows/${third.id}`, undefined, "DELETE");
