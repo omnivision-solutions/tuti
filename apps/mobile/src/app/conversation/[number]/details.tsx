@@ -388,6 +388,8 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
   const asked = useRef(0);
   // The tab last asked for (shown, or still loading).
   const wanted = useRef<ActivityFilter>("all");
+  // Show earlier is loading: a reload meanwhile reads its page too.
+  const paging = useRef(false);
   // When what's shown last came from the server: offline, it stays, said to be offline since then.
   const loadedAt = useRef<number | null>(null);
   const shown = useRef(0);
@@ -401,6 +403,7 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
       if (!before) {
         wanted.current = to;
       }
+      paging.current = !!before;
       const since = cacheGeneration();
       const key = activityKey(session!, number);
       setLoading(true);
@@ -409,6 +412,7 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
           if (ask !== asked.current) {
             return;
           }
+          paging.current = false;
           setLoading(false);
           setFilter(to);
           setPages((loaded) => (before ? [...(loaded ?? []), page] : [page]));
@@ -427,6 +431,7 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
           if (ask !== asked.current) {
             return;
           }
+          paging.current = false;
           setLoading(false);
           if (e instanceof ApiError && e.status === 404) {
             setUnknown(true);
@@ -452,7 +457,8 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
   // still loading too, so its tap isn't lost).
   useEffect(() => {
     const to = wanted.current;
-    load(to, undefined, to === filter && shown.current > 20 ? Math.min(shown.current, 100) : undefined);
+    const far = to === filter ? shown.current + (paging.current ? 20 : 0) : 0;
+    load(to, undefined, far > 20 ? Math.min(far, 100) : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the conversation changed
   }, [triage, number]);
 
@@ -491,7 +497,8 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
           return (
             <Pressable
               key={option.key}
-              onPress={() => !loading && !chosen && load(option.key)}
+              // Any time, a load running or not: the newest asked for wins.
+              onPress={() => option.key !== wanted.current && load(option.key)}
               accessibilityRole="tab"
               accessibilityState={{ selected: chosen, busy: loading }}
               hitSlop={4}

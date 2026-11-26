@@ -713,6 +713,26 @@ describe("the details sheet's Activity", () => {
     expect(screen.queryByText("Olive Owner")).toBeNull();
   });
 
+  it("takes a tab chosen while it's loading, and reads Show earlier's page too in a reload meanwhile", async () => {
+    let answer: (value: unknown) => void = () => {};
+    serveActivity(({ filter, before }) =>
+      filter === "all" && !before ? new Promise((resolve) => (answer = resolve)) : before ? new Promise(() => {}) : Promise.resolve({ events: [RUN], next: null }),
+    );
+    await render(<Details />);
+    await act(async () => answer({ events: [RUN, CLOSED], next: "e2" }));
+    await screen.findByText("Olive Owner");
+
+    // Show earlier still out when the conversation changes: the reload reads that page too.
+    await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
+    await act(async () => showTriage(KEY, { ...OPEN, status: "waiting" }));
+    expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&limit=22");
+
+    // That reload still out: Workflows is taken.
+    await fireEvent.press(screen.getByRole("tab", { name: "Workflows" }));
+    expect(await screen.findByRole("tab", { name: "Workflows", selected: true })).toBeTruthy();
+    expect(screen.queryByText("Olive Owner")).toBeNull();
+  });
+
   it("isn't shown by a server from before it", async () => {
     serveActivity(() => Promise.reject(new ApiError(404, "not_found", "Not found")));
     await render(<Details />);
