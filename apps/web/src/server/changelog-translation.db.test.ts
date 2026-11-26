@@ -1,8 +1,8 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeChangelogScreenshots, PRODUCT_SETTING_CHANGED, translationSource } from "@tuti/jobs";
-import { type ModelFake, startModelFake } from "@tuti/testkit";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { type ModelFake, startModelFake, startS3Fake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
@@ -342,4 +342,39 @@ test("a reader whose address isn't proven theirs moves nobody's subscription wit
   actAs(reader);
   expect(await chooseLanguage(project.slug, "de")).toEqual({});
   expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email } })).language).toBeNull();
+});
+
+test("a version the team wrote has its own images in its email", async () => {
+  // Media storage, which images in emails are served from.
+  const s3 = await startS3Fake();
+  onTestFinished(() => s3.close());
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  // Their German has a screenshot of its own, which the source doesn't.
+  const image = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1000, status: "READY", width: 1200, height: 800 } });
+  const content = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Unser Text." }] }, { type: "image", attrs: { mediaId: image.id, alt: "Das Menü", w: 1200, h: 800 } }] };
+  await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: "de", automatic: false, title: "Dunkler Modus", body: "Unser Text.", content, publishedAt: new Date() } });
+  const german = `e2e-de-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => m.to.includes(german))).toHaveLength(1));
+  const html = mailbox.emails.find((m) => m.to.includes(german))!.html;
+  expect(html).toContain('alt="Das Menü"');
+  expect(html).toContain(image.id);
+});
+
+test("a reader whose unconfirmed subscription predates their language takes it as they turn the changelog on from Account", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the default language's page before, not confirmed.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase() } });
+  await onPortal(reader, project);
+  actAs(reader);
+  await prisma.user.update({ where: { id: reader.id }, data: { language: "de" } });
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
 });

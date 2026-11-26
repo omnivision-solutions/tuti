@@ -34,7 +34,7 @@ export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt,
         </>
       }
     >
-      {coverUrl && <Img src={coverUrl} alt={entryTitle} width={CONTENT_WIDTH} style={{ borderRadius: 12, margin: "20px 0 0", maxWidth: "100%", height: "auto" }} />}
+      {coverUrl && <Img src={coverUrl} alt={entryTitle} lang={lang} width={CONTENT_WIDTH} style={{ borderRadius: 12, margin: "20px 0 0", maxWidth: "100%", height: "auto" }} />}
       <Eyebrow accent={accent}>{`New · ${formatDate(publishedAt)}`}</Eyebrow>
       {/* The team's words in their own language (the email's own words are the portal's, L5). */}
       <div lang={lang}>
