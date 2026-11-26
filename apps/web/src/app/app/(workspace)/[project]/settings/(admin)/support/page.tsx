@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { pausedNotice } from "@tuti/email";
+import { aiEnabled, creditsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CopyValue } from "@/components/dns-setup";
 import { EmailDomainSettings } from "@/components/inbox/email-domain";
-import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
+import { GetSupportAddressButton, SupportInboxSwitch, TranslationSettings } from "@/components/inbox/support-settings";
 import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
@@ -17,7 +18,7 @@ import { supportSettings } from "@/server/operations/support";
 
 export const metadata: Metadata = { title: "Inbox and email · Settings" };
 
-/** Settings → Inbox and email: the support inbox (docs/plan.md, Support inbox), and its email address where the server receives email. */
+/** Settings → Inbox and email: the support inbox (docs/plan.md, Support inbox), translating its conversations (L22), and its email address where the server receives email. */
 export default async function SupportSettingsPage(props: PageProps<"/app/[project]/settings/support">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
@@ -41,6 +42,7 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
     <SettingsPane title="Inbox and email">
       <SettingsCard title="Inbox">
         <SupportInboxSwitch projectSlug={project.slug} on={settings.inbox} />
+        <TranslationSettings projectSlug={project.slug} translate={settings.translate} teamLanguage={settings.teamLanguage} ai={aiEnabled()} credits={creditsEnabled()} />
       </SettingsCard>
       {settings.email && (
         <SettingsCard title="Email">

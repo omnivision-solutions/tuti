@@ -1,5 +1,6 @@
 "use client";
 
+import { isLanguage, LANGUAGE_CODES, LANGUAGES } from "@tuti/shared/languages";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -7,9 +8,11 @@ import { useCustomizeForm } from "@/components/customize-shell";
 import { Button } from "@/components/ui/button";
 import { SettingRow } from "@/components/settings-card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { getSupportAddress, saveDraftInstructions, setSupportInbox } from "@/server/inbox";
+import { nativeLanguageName } from "@/lib/language-name";
+import { getSupportAddress, saveDraftInstructions, setSupportInbox, setTranslation } from "@/server/inbox";
 
 /** Turns the support inbox on or off. */
 export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; on: boolean }) {
@@ -43,6 +46,100 @@ export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; o
         }}
       />
     </SettingRow>
+  );
+}
+
+/**
+ * Translate conversations and the team's language (docs/plan.md L22), each saved as it changes. Without AI on the server
+ * the switch can't be turned on (only off), and says why; what it costs only where credits are on.
+ */
+export function TranslationSettings({
+  projectSlug,
+  translate,
+  teamLanguage,
+  ai,
+  credits,
+}: {
+  projectSlug: string;
+  translate: boolean;
+  teamLanguage: string;
+  ai: boolean;
+  credits: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [on, setOn] = useState(translate);
+  const [language, setLanguage] = useState(teamLanguage);
+  // A language set through the API that isn't offered here is still shown as it is.
+  const languages = (LANGUAGE_CODES as readonly string[]).includes(language) ? LANGUAGE_CODES : [...LANGUAGE_CODES, language];
+  // The portal's own names for its languages (as Settings → Languages shows them); Intl's only for one set through the API.
+  const items = languages.map((code) => ({ value: code, label: isLanguage(code) ? LANGUAGES[code].native : nativeLanguageName(code) }));
+  const save = (change: { translate?: boolean; teamLanguage?: string }, undo: () => void, done: string) =>
+    startTransition(async () => {
+      const result = await setTranslation(projectSlug, change);
+      if (result.error) {
+        undo();
+        toast.error(result.error);
+      } else {
+        toast.success(done);
+      }
+    });
+  return (
+    <>
+      <SettingRow
+        label="Translate conversations"
+        description={
+          ai
+            ? `Customers' messages are shown in your team's language, and your replies go out in theirs.${credits ? " Uses AI credits." : ""}`
+            : "Needs AI, which isn't set up on this server."
+        }
+        htmlFor="translate-conversations"
+        inline
+      >
+        <Switch
+          id="translate-conversations"
+          aria-describedby="translate-conversations-description"
+          checked={on}
+          // Not disabled while saving, which would drop keyboard focus: it takes no second change until then.
+          disabled={!ai && !on}
+          aria-disabled={pending || undefined}
+          onChange={(event) => {
+            if (pending) {
+              return;
+            }
+            const next = event.currentTarget.checked;
+            setOn(next);
+            save({ translate: next }, () => setOn(!next), next ? "Translation on" : "Translation off");
+          }}
+        />
+      </SettingRow>
+      <SettingRow label={<span id="team-language-label">Team language</span>} description="What your team reads and writes conversations in." htmlFor="team-language" inline>
+        <Select
+          items={items}
+          value={language}
+          // Read-only while saving rather than disabled, so focus stays on it.
+          readOnly={pending}
+          onValueChange={(next) => {
+            if (typeof next !== "string" || next === language) {
+              return;
+            }
+            const previous = language;
+            setLanguage(next);
+            save({ teamLanguage: next }, () => setLanguage(previous), "Team language saved");
+          }}
+        >
+          <SelectTrigger id="team-language" className="w-32 @min-[20rem]/settings:w-40" aria-labelledby="team-language-label" aria-describedby="team-language-description">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+    </>
   );
 }
 

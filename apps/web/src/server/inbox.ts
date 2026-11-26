@@ -252,6 +252,13 @@ export async function setSupportInbox(projectSlug: string, on: boolean): Promise
   );
 }
 
+/** Settings → Inbox and email: Translate conversations and the team's language (owners and admins; see support.update). */
+export async function setTranslation(projectSlug: string, change: { translate?: boolean; teamLanguage?: string }): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
+    call(updateSupportSettings, context, { translate: change.translate, teamLanguage: change.teamLanguage }),
+  );
+}
+
 /** Settings → AI → Inbox: the team's instructions for replies drafted by AI (owners and admins; see support.update). */
 export async function saveDraftInstructions(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   return asAdmin(projectSlug, "Only project owners and admins can change support settings", (context) =>

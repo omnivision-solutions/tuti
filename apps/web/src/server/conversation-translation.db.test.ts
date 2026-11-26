@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers, translateMessage } from "@tuti/jobs";
+import { handlers, translateMessage, translationSettings } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -78,6 +78,27 @@ test("the team language defaults to English and Translate conversations to off; 
   expect(await call(updateSupportSettings, team, { teamLanguage: "pt-br", translate: true })).toMatchObject({ teamLanguage: "pt-BR", translate: true });
   expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "pt-BR", translate: true });
   await expect(call(updateSupportSettings, team, { teamLanguage: "not a language" })).rejects.toThrow();
+});
+
+test("unset, the team language is the project's default language", async () => {
+  const { project, team } = await setup({ translate: false });
+  await prisma.project.update({ where: { id: project.id }, data: { language: "de" } });
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "de" });
+  expect(await translationSettings(project.id)).toMatchObject({ teamLanguage: "de" });
+});
+
+test("Settings → Inbox: the switch and the team language are saved; without AI on the server the switch can't turn on", async () => {
+  const { owner, project, team } = await setup({ translate: false });
+  actAs(owner);
+  expect(await inbox.setTranslation(project.slug, { translate: true })).toEqual({});
+  expect(await inbox.setTranslation(project.slug, { teamLanguage: "de" })).toEqual({});
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ teamLanguage: "de", translate: true });
+
+  vi.stubEnv("OPENAI_API_KEY", "");
+  // Off still turns off; on says why it can't.
+  expect(await inbox.setTranslation(project.slug, { translate: false })).toEqual({});
+  expect(await inbox.setTranslation(project.slug, { translate: true })).toEqual({ error: "AI isn't set up on this server, so conversations can't be translated" });
+  expect(await call(getSupportSettings, team, {})).toMatchObject({ translate: false });
 });
 
 test("incoming, de → en: translated in the request that detects its language, the original kept, charged as Translation", async () => {
