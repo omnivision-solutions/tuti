@@ -537,7 +537,7 @@ describe("screenshots a change made out of date (SC4)", () => {
 
   test("a screenshot taken after the merge isn't asked about: it may already show the change", async () => {
     await shooting();
-    await prisma.screenshot.updateMany({ where: { projectId: project.id }, data: { takenAt: new Date("2027-01-01T00:00:00Z") } });
+    await prisma.screenshot.updateMany({ where: { projectId: project.id }, data: { takenAt: new Date("2026-10-21T00:00:00Z") } }); // after the fixtures' fixed merge times
     await mergeVisual(65);
     expect(model.decisions.filter((request) => JSON.stringify(request).includes(ASKED))).toEqual([]);
   });
