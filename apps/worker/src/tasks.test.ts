@@ -83,7 +83,11 @@ test("an article's translation may take ten minutes and wait a day for its turn,
     retries: 3,
     executionTimeout: "10m",
     scheduleTimeout: "24h",
-    concurrency: { expression: "input.articleId + ':' + input.language", maxRuns: 1 },
+    concurrency: [
+      { expression: "input.articleId + ':' + input.language", maxRuns: 1 },
+      // …and a few on the whole server.
+      { expression: "'translate-article'", maxRuns: 4 },
+    ],
   });
   const run = (retryCount: number) => taskFn("translateArticle", 3, () => false)({ articleId: "a", language: "de" }, { retryCount: () => retryCount, cancelled: false });
   expect(await run(2)).toEqual({ lastTry: false });

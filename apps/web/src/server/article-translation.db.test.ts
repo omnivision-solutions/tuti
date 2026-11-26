@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { createArticle, publishArticle, updateArticle } from "./operations/docs";
+import { createArticle, deleteArticle, publishArticle, updateArticle } from "./operations/docs";
 import { getLanguages, retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -230,8 +230,9 @@ test("on its last try, any other error marks the page as waiting, to be tried ag
   await publish();
   const { articleId } = await translation();
   await markRetranslate(articleId);
-  // Its write fails (the database, say): thrown for Hatchet's retry before the last try, kept on the page on it.
-  const spy = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database blip"));
+  // Its write fails (the database, say): thrown for Hatchet's retry before the last try, kept on the page on it (the
+  // failure's own write, through the same guards, goes in).
+  const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database blip")).mockRejectedValueOnce(new Error("database blip"));
   try {
     model.reply(reply("again"));
     model.reply(reply("again"));
@@ -327,10 +328,12 @@ test("Retranslate asked for while an ordinary translation runs: the older job wr
   const changed = "Open Settings and click New project.\n\nPick any plan.";
   // Publishing again sends only the changed paragraph; while it waits for its answer, Retranslate is asked for and its
   // job (everything sent again) writes first.
+  let written = false;
   model.reply(reply("old", changed), async () => {
     await call(retranslateLanguage, as(), { code: "de" });
-    for (let i = 0; i < 250 && (await translation()).retranslated === 0; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    for (let i = 0; i < 250 && !written; i++) {
+      written = (await translation()).retranslated === 1;
+      if (!written) await new Promise((resolve) => setTimeout(resolve, 20));
     }
   });
   model.reply(reply("new", changed));
@@ -338,6 +341,8 @@ test("Retranslate asked for while an ordinary translation runs: the older job wr
   await languageTranslationsDone();
   expect(model.requests).toHaveLength(3);
   expect(model.requests[2]!.user).toContain("Open Settings");
+  // The Retranslate's job wrote before the older one's answer came: else this test proves nothing.
+  expect(written).toBe(true);
   expect(await translation()).toMatchObject({ title: "[new] Getting started", retranslate: 1, retranslated: 1 });
 });
 
@@ -353,4 +358,59 @@ test("the product setting changing marks manual versions behind before languages
   expect(Object.values(fr.behind as Record<string, string>)).toEqual([PRODUCT_SETTING_CHANGED]);
   expect(await prisma.projectLanguage.findFirstOrThrow({ where: { projectId: project.id, code: "fr" } })).toMatchObject({ productAvailable: true, productVersion: 1 });
   expect(model.requests).toHaveLength(0);
+});
+
+test("an older job's unexpected error never marks a newer translation as failed", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  await draft();
+  model.reply(reply());
+  await publish();
+  const changed = "Open Settings and click New project.\n\nPick any plan.";
+  let spy: ReturnType<typeof vi.spyOn> | undefined;
+  let written = false;
+  // Retranslate's job waits for its answer while the article is published again and that job writes the newer
+  // translation; then the older job's write fails unexpectedly.
+  model.reply(reply("old"), async () => {
+    await call(updateArticle, as(), { slug: "getting-started", body: changed, publish: true });
+    for (let i = 0; i < 250 && !written; i++) {
+      written = (await translation()).title.startsWith("[new]");
+      if (!written) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database blip"));
+  });
+  model.reply(reply("new", changed));
+  try {
+    await retranslate({ code: "de" });
+  } finally {
+    spy?.mockRestore();
+  }
+  // The newer translation was written before the older job's answer came: else this test proves nothing.
+  expect(written).toBe(true);
+  expect(model.requests).toHaveLength(3);
+  const kept = await translation();
+  expect(kept).toMatchObject({ title: "[new] Getting started", error: null, tries: 0 });
+  expect(kept.body).toContain("[new] Pick any plan.");
+});
+
+test("deleted articles are never translated: neither adding a language nor Retranslate queues them", async () => {
+  await draft();
+  await publish();
+  await call(deleteArticle, as(), { slug: "getting-started" });
+  await languages({ languages: [{ code: "de" }] });
+  expect(await retranslate({ code: "de" })).toEqual({ queued: 0 });
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(0);
+  expect(model.requests).toHaveLength(0);
+});
+
+test("the product setting changing marks many manual versions behind in a few statements, inside the change's transaction", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", automatic: false } });
+  const ids = Array.from({ length: 1200 }, (_, i) => `a${i}`);
+  await prisma.article.createMany({ data: ids.map((id, i) => ({ id: `${project.id}-${id}`, projectId: project.id, slug: `page-${i}`, title: `Page ${i}`, body: `Text ${i}`, publishedAt: new Date() })) });
+  await prisma.articleTranslation.createMany({
+    data: ids.map((id) => ({ articleId: `${project.id}-${id}`, projectId: project.id, language: "fr", automatic: false, title: "Page", publishedAt: new Date() })),
+  });
+  await call(updateLanguages, as(), { languages: [{ code: "fr", productAvailable: true }] });
+  const behind = await prisma.articleTranslation.findMany({ where: { projectId: project.id, language: "fr" }, select: { behind: true } });
+  expect(behind).toHaveLength(1200);
+  expect(behind.every((row) => Object.values(row.behind as Record<string, string>).every((why) => why === PRODUCT_SETTING_CHANGED) && Object.keys(row.behind as object).length === 1)).toBe(true);
 });

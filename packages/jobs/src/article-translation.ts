@@ -1,5 +1,5 @@
 import { type Doc, fromPlainText, keyed, toPlainText, translateDoc } from "@tuti/content";
-import { type Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
@@ -83,8 +83,10 @@ const languageName = (code: string) => (isLanguage(code) ? LANGUAGES[code].name 
  * (checked in the update itself): else it writes nothing and ends, as the change's own job covers the page.
  */
 export async function translateArticle(input: JobInput<"translateArticle">, log: JobLogger, run: JobRun = { lastTry: true }): Promise<JobResult> {
+  // Its guarded write, once it has read the row: a failure is recorded only on the generation this job started from.
+  const started: { settle?: Settle } = {};
   try {
-    const result = await translateOne(input, log, run);
+    const result = await translateOne(input, log, run, started);
     if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED) {
       // Nothing left to do for it: the safety net's try goes (a page that changed while translating is the newer job's to settle).
       await prisma.articleTranslation.updateMany({ where: { articleId: input.articleId, language: input.language }, data: { retryAt: null } });
@@ -95,14 +97,19 @@ export async function translateArticle(input: JobInput<"translateArticle">, log:
       throw error;
     }
     log.warn(`Translating article ${input.articleId} into ${input.language} failed: ${String(error).slice(0, 300)}`);
-    await prisma.articleTranslation
-      .updateMany({ where: { articleId: input.articleId, language: input.language }, data: { error: TRANSLATION_WAITS.error, tries: { increment: 1 }, retryAt: new Date(Date.now() + RETRY_MAX_MS) } })
+    // Through the same guards as a translation's write (the source, the setting's version, Retranslate's count), so an older
+    // job never marks a newer translation as failed. Failing before it read the row, it writes nothing: the page's safety
+    // net brings it back.
+    await started
+      .settle?.({ error: TRANSLATION_WAITS.error, tries: { increment: 1 }, retryAt: new Date(Date.now() + RETRY_MAX_MS) })
       .catch((error: unknown) => serverLog.error("Saving an article translation's failure failed", { ...input, error }));
     return { failed: "error" };
   }
 }
 
-async function translateOne({ articleId, language }: JobInput<"translateArticle">, log: JobLogger, { lastTry }: JobRun): Promise<JobResult> {
+type Settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput) => Promise<boolean>;
+
+async function translateOne({ articleId, language }: JobInput<"translateArticle">, log: JobLogger, { lastTry }: JobRun, started: { settle?: Settle }): Promise<JobResult> {
   const row = await prisma.articleTranslation.findUnique({
     where: { articleId_language: { articleId, language } },
     select: {
@@ -145,7 +152,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
    * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
    * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
    */
-  const settle = (data: Prisma.ArticleTranslationUpdateManyMutationInput) =>
+  const settle: Settle = (data) =>
     prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${articleId} FOR UPDATE`;
       const now = await tx.article.findUnique({ where: { id: articleId }, select: sourceSelect });
@@ -155,6 +162,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
       return count > 0;
     });
+  started.settle = settle;
   const waits = async (why: string) => {
     const tries = row.tries + 1;
     await settle({ error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) });
@@ -266,8 +274,11 @@ export async function languageTranslationsDone() {
   }
 }
 
-/** Published articles that are translated: sample content never is (as it's never embedded). */
-const translatable = { publishedAt: { not: null }, sample: false } as const;
+/**
+ * Published articles that are translated: sample content never is (as it's never embedded), nor a deleted one (which the
+ * article_deleted_unpublished check already keeps unpublished; said here too).
+ */
+const translatable = { publishedAt: { not: null }, deletedAt: null, sample: false } as const;
 
 /**
  * An article was published or its published text changed (the article-changed job): translates it into each language
@@ -333,9 +344,12 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
     where: { projectId, language, automatic: false, article: { deletedAt: null } },
     select: { id: true, article: { select: { title: true, description: true, keywords: true, body: true, content: true } } },
   });
-  for (const { id, article } of manual) {
-    const behind = Object.fromEntries(keyed(translationSource(article).text).map(([key]) => [behindKey(key), PRODUCT_SETTING_CHANGED]));
-    await tx.articleTranslation.update({ where: { id }, data: { behind } });
+  // A few statements however many there are, so a large help center stays well inside the transaction's time.
+  const marked = manual.map(({ id, article }) => Prisma.sql`(${id}, ${JSON.stringify(Object.fromEntries(keyed(translationSource(article).text).map(([key]) => [behindKey(key), PRODUCT_SETTING_CHANGED])))})`);
+  for (let i = 0; i < marked.length; i += 500) {
+    await tx.$executeRaw`
+      UPDATE article_translation t SET behind = v.behind::jsonb, "updatedAt" = now()
+      FROM (VALUES ${Prisma.join(marked.slice(i, i + 500))}) AS v(id, behind) WHERE t.id = v.id`;
   }
 }
 

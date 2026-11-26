@@ -5,6 +5,9 @@ import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tut
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
 type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: number; maxSeconds: number }; concurrencyKey?: string };
 
+/** Article translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. */
+const TRANSLATE_RUNS = 4;
+
 /** How long a queued code change may wait for its turn before Hatchet gives up on it (its default is 5 minutes). */
 const CODE_CHANGE_QUEUE = "24h" as const;
 
@@ -68,7 +71,12 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     }),
     // A long article is several requests of up to a minute each, and one more round for segments that failed their
     // checks (Hatchet's default is 60 seconds); a whole language queued at once waits its turn rather than being dropped.
-    ...(key === "translateArticle" && { executionTimeout: "10m" as const, scheduleTimeout: "24h" as const }),
+    // A few at once on the whole server, so one project's language (hundreds of pages) never takes every worker slot.
+    ...(key === "translateArticle" && {
+      executionTimeout: "10m" as const,
+      scheduleTimeout: "24h" as const,
+      concurrency: [...(own ? [own] : []), { expression: "'translate-article'", maxRuns: TRANSLATE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+    }),
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
     ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
