@@ -367,6 +367,10 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 
 /** The retry-article-translations job: versions that couldn't be translated, whose wait is over, tried again. */
 export async function retryArticleTranslations(): Promise<JobResult> {
+  // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.
+  if (!aiEnabled()) {
+    return { skipped: NO_AI };
+  }
   // Claimed in one update, so a run that overlaps a slow one (inline, each runs as it's queued) takes none of its pages;
   // the claim is the safety net's next time, so pages a restart keeps this run from reaching come back too.
   const due = await prisma.articleTranslation.updateManyAndReturn({
