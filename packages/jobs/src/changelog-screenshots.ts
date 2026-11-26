@@ -1,5 +1,6 @@
 import { type Doc, fromPlainText, MAX_ALT_LENGTH, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { log as serverLog } from "@tuti/shared";
 
 import { queueChangelogTranslations } from "./article-translation";
 
@@ -51,7 +52,8 @@ export async function placeChangelogScreenshots(runId: string): Promise<number> 
   const placed = await placeInEntry(runId, entryId);
   if (placed > 0) {
     // A published entry's text changed: its languages kept up to date follow (docs/plan.md L16); a draft's wait for its publish.
-    await queueChangelogTranslations(entryId);
+    // Never failing the placement, which has committed: the versions' safety nets, or the next edit, bring them up to date.
+    await queueChangelogTranslations(entryId).catch((error: unknown) => serverLog.error("Couldn't queue a changelog entry's translations", { entryId, error }));
   }
   return placed;
 }

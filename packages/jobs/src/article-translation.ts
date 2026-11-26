@@ -622,7 +622,8 @@ export async function entryTranslationsPending(entryId: string): Promise<boolean
 async function announceWhenTranslated(entryId: string) {
   const now = Date.now();
   const due = await prisma.changelogEntry.findFirst({
-    where: { id: entryId, subscribersEmailDueAt: { lte: new Date(now), gt: new Date(now - ANNOUNCEMENT_WAITS_MS) }, publishedAt: { not: null } },
+    // Never sample content (Home's, for the team to try things with), which is never announced.
+    where: { id: entryId, subscribersEmailDueAt: { lte: new Date(now), gt: new Date(now - ANNOUNCEMENT_WAITS_MS) }, publishedAt: { not: null }, sample: false },
     select: { id: true },
   });
   if (due && !(await entryTranslationsPending(entryId))) {

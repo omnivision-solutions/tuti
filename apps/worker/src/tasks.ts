@@ -5,8 +5,12 @@ import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tut
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
 type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: number; maxSeconds: number }; concurrencyKey?: string };
 
-/** Article translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. */
-const TRANSLATE_RUNS = 4;
+/**
+ * Translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. Split
+ * between articles and changelog entries (few: one per publish), as a task's concurrency group is its own (Hatchet's
+ * SDK: entries are workflow-scoped unless tenant-scoped, which not every Hatchet server has): together never more than 4.
+ */
+const TRANSLATE_RUNS = { translateArticle: 3, translateChangelogEntry: 1 } as const;
 
 /**
  * The team's email and push about a customer's message, each at once on the whole server: one may wait in its slot for
@@ -84,11 +88,11 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     // A long article is several requests of up to a minute each, and one more round for segments that failed their
     // checks (Hatchet's default is 60 seconds); a whole language queued at once waits its turn rather than being dropped.
     // A few at once on the whole server, so one project's language (hundreds of pages) never takes every worker slot.
-    // A changelog entry's the same, in the same server-wide group: they share the translation provider and the slots.
+    // A changelog entry's the same, its share of the server's translations its own group (TRANSLATE_RUNS).
     ...((key === "translateArticle" || key === "translateChangelogEntry") && {
       executionTimeout: "10m" as const,
       scheduleTimeout: "24h" as const,
-      concurrency: [...(own ? [own] : []), { expression: "'translate-article'", maxRuns: TRANSLATE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+      concurrency: [...(own ? [own] : []), { expression: `'${job.name}'`, maxRuns: TRANSLATE_RUNS[key], limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
     }),
     ...((key === "conversationMessage" || key === "conversationPush") && {
       scheduleTimeout: NOTICE_QUEUE[key],
