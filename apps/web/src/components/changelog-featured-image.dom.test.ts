@@ -33,8 +33,16 @@ test("Generate is offered only where the server makes images; out of credits it 
   document.body.replaceChildren();
   const paused = (await band({ generator: { ...generator, paused: true } }))!;
   expect(paused.getAttribute("aria-disabled")).toBe("true");
-  // Its reason is its description, for keyboard, touch and screen reader users too (not a hover-only title).
-  expect(document.getElementById(paused.getAttribute("aria-describedby")!)?.textContent).toBe("This project is out of credits");
+  // Its reason is its description, and the empty band's line instead of the hint: seen by everyone, touch screens too.
+  const reason = document.getElementById(paused.getAttribute("aria-describedby")!)!;
+  expect(reason.textContent).toBe("This project is out of credits");
+  expect(reason.className).not.toContain("sr-only");
+  expect(document.body.textContent).not.toContain("or drop one here");
+  // Over a cover, the tooltip shows it; it's still the button's description.
+  document.body.replaceChildren();
+  const withCover = { ...entry, cover: { id: "cover1", url: "https://media.example/cover1.png" } } as typeof entry;
+  const overCover = (await band({ entry: withCover, generator: { ...generator, paused: true } }))!;
+  expect(document.getElementById(overCover.getAttribute("aria-describedby")!)?.textContent).toBe("This project is out of credits");
 });
 
 test("From this entry lists the form's cover first, then the text's images, the cover once", async () => {

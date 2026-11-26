@@ -36,6 +36,7 @@ import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { PullRequestChip } from "@/components/pull-request-chip";
 import { ScreenshotLines } from "@/components/screenshot-lines";
+import { IconTooltip } from "@/components/icon-tooltip";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import {
@@ -254,28 +255,25 @@ export function FeaturedImage({
   // Generate: its dialog keeps its tries while the editor is open. A generated image used, focus goes to Replace.
   const [generating, setGenerating] = useState(false);
   const used = useRef(false);
-  const generate = entry && generator && (
-    <>
+  // Out of credits, why it's off: its description (read with it), its tooltip (hover and focus), and in the empty band,
+  // the band's line (seen on touch screens too).
+  const paused = !!generator?.paused;
+  const PAUSED = "This project is out of credits";
+  const generateButton = entry && generator && (
     <Button
       type="button"
       variant="secondary"
       size="sm"
       disabled={uploading || generator.paused}
       focusableWhenDisabled
-      // Why it's off, read with it (not only on hover): the reason is in its description.
       aria-describedby={generator.paused ? `${id}-paused` : undefined}
       onClick={() => setGenerating(true)}
     >
       <SparklesIcon />
       Generate
     </Button>
-    {generator.paused && (
-      <span id={`${id}-paused`} className="sr-only">
-        This project is out of credits
-      </span>
-    )}
-    </>
   );
+  const generate = generateButton && (paused ? <IconTooltip label={PAUSED}>{generateButton}</IconTooltip> : generateButton);
   // An upload from Add replaces it with the image: focus, dropped with it, moves to Replace (as Remove's goes to Add).
   // (Only then, and only if focus went with Add: a file dropped with the mouse, or someone who moved on while it
   // uploaded, to the text or by a click anywhere else, keeps theirs.)
@@ -331,6 +329,11 @@ export function FeaturedImage({
             </Button>
             {make}
             {generate}
+            {paused && generate && (
+              <span id={`${id}-paused`} className="sr-only">
+                {PAUSED}
+              </span>
+            )}
             <Button
               type="button"
               variant="secondary"
@@ -365,7 +368,20 @@ export function FeaturedImage({
           </Button>
           {make}
           {generate}
-          {status || <span className="text-xs text-muted-foreground">or drop one here · 1200×630 works best</span>}
+          {status ||
+            (paused && generate ? (
+              // Instead of the hint: the band's one line says why Generate is off, on touch screens too.
+              <span id={`${id}-paused`} className="text-xs text-muted-foreground">
+                {PAUSED}
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">or drop one here · 1200×630 works best</span>
+            ))}
+          {status && paused && generate && (
+            <span id={`${id}-paused`} className="sr-only">
+              {PAUSED}
+            </span>
+          )}
         </div>
       )}
       {inputs}
