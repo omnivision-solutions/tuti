@@ -203,3 +203,40 @@ test("screenshots placed in a published entry's text bring its translations up t
   expect(de.body).not.toContain("Screenshot");
   expect(model.requests).toHaveLength(2);
 });
+
+test("a sample entry's translation ending never announces it", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  // Home's sample content, published and (somehow) due: a translation ending queues nothing for it.
+  await prisma.changelogEntry.update({ where: { id: entryId }, data: { sample: true, publishedAt: new Date(), subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
+  await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: "de" } });
+  const emailed = vi.spyOn(handlers, "changelogEmailed");
+  try {
+    await handlers.translateChangelogEntry({ entryId, language: "de" }, log);
+    expect(emailed).not.toHaveBeenCalled();
+  } finally {
+    emailed.mockRestore();
+  }
+});
+
+test("screenshots placed are kept even when queuing the entry's translations then fails", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  const marked = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "[Screenshot: The theme menu]" }] }] };
+  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { content: marked, body: "[Screenshot: The theme menu]" } });
+  const image = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1000, status: "READY", width: 1200, height: 800 } });
+  const run = await prisma.screenshotRun.create({ data: { projectId: project.id, changelogEntryId: entry.id, state: "DONE" } });
+  await prisma.screenshot.create({ data: { projectId: project.id, runId: run.id, position: 0, show: "The theme menu", imageId: image.id } });
+  // Reading the entry to queue its translations fails once (the database, briefly).
+  const reading = vi.spyOn(prisma.changelogEntry, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+  try {
+    expect(await placeChangelogScreenshots(run.id)).toBe(1);
+  } finally {
+    reading.mockRestore();
+  }
+  expect(((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
+});
