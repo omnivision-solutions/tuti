@@ -23,6 +23,7 @@ export default async function LanguagesPage(props: PageProps<"/app/[project]/set
   ]);
   const limit = languageLimit(project.plan);
   const full = limit !== null && 1 + saved.languages.length >= limit;
+  const billingHref = roomierPlan(project.plan, languageLimit) ? `/app/${slug}/settings/billing` : null;
   return (
     <SettingsPane title="Languages" description="Your portal, help center and changelog in more than one language">
       <LanguageSettings
@@ -31,7 +32,10 @@ export default async function LanguagesPage(props: PageProps<"/app/[project]/set
         languages={saved.languages}
         offered={LANGUAGE_CODES.map((code) => ({ code, ...LANGUAGES[code] }))}
         pages={pages}
-        upgrade={full ? { title: languagesFull(project.plan, limit), billingHref: roomierPlan(project.plan, languageLimit) ? `/app/${slug}/settings/billing` : null, note: null } : null}
+        upgrade={full ? { title: languagesFull(project.plan, limit), billingHref, note: null } : null}
+        // Past the limit (after a downgrade) only the oldest within it can be live: Go live on the rest offers the upgrade.
+        pastLimit={limit === null ? [] : saved.languages.slice(Math.max(limit - 1, 0)).map(({ code }) => code)}
+        goLiveUpgrade={limit === null ? null : { title: languagesFull(project.plan, limit, "make more live"), billingHref, note: null }}
       />
     </SettingsPane>
   );

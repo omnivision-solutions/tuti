@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import pg from "pg";
+
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
@@ -96,8 +98,19 @@ test("an owner adds German in Settings → Languages, writes its instructions, m
   await expect(defaultLanguage).toBeEnabled();
 });
 
+/** A query on the journeys' database. */
+async function query(sql: string, values: unknown[]) {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    return (await client.query(sql, values)).rows;
+  } finally {
+    await client.end();
+  }
+}
+
 // On Tuti's cloud, which sells plans: Free has the default language alone.
-test("on a plan with no room for another language, Add language offers the upgrade", async ({ browser }) => {
+test("on a plan with no room for another language, Add language and Go live offer the upgrade", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
@@ -109,4 +122,17 @@ test("on a plan with no room for another language, Add language offers the upgra
   await expect(prompt.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await prompt.getByRole("button", { name: "Not now" }).click();
   await expect(prompt).toBeHidden();
+
+  // German kept from a bigger plan (after a downgrade): Go live offers the upgrade too, and it stays offline.
+  await query(`INSERT INTO project_language ("projectId", code) SELECT id, 'de' FROM project WHERE slug = $1`, [slug]);
+  await owner.reload();
+  const german = owner.getByRole("list", { name: "Other languages" }).getByRole("listitem").filter({ hasText: "Deutsch" });
+  await german.getByRole("button", { name: "Actions for German" }).click();
+  const goLive = owner.getByRole("menuitem", { name: "Go live" });
+  await expect(goLive).toHaveAccessibleDescription(/^Projects on the Free plan have 1 language, the default included\. Upgrade to .* to make more live\.$/);
+  await goLive.click();
+  const goLivePrompt = owner.getByRole("dialog", { name: /to make more live\.$/ });
+  await goLivePrompt.getByRole("button", { name: "Not now" }).click();
+  await expect(goLivePrompt).toBeHidden();
+  await expect(german).toContainText("Offline");
 });

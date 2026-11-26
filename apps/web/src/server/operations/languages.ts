@@ -56,11 +56,11 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
   };
 }
 
-/** Said when a project on `plan` has as many languages as its plan's `limit` allows (also Settings' upgrade prompt). */
-export const languagesFull = (plan: PlanKey, limit: number) =>
+/** Said when a project on `plan` has as many languages as its plan's `limit` allows (also Settings' upgrade prompts: `then`, "make more live"). */
+export const languagesFull = (plan: PlanKey, limit: number, then = "add more") =>
   [
     `Projects on the ${planDisplay(plan).name} plan have ${limit === 1 ? "1 language" : `up to ${limit} languages`}, the default included.`,
-    upgradeFor(plan, languageLimit, " in Settings → Billing to add more."),
+    upgradeFor(plan, languageLimit, ` in Settings → Billing to ${then}.`),
   ]
     .filter(Boolean)
     .join(" ");

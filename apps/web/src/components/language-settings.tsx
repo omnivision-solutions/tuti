@@ -49,6 +49,8 @@ export function LanguageSettings({
   offered,
   pages,
   upgrade,
+  pastLimit,
+  goLiveUpgrade,
 }: {
   projectSlug: string;
   defaultLanguage: string;
@@ -58,6 +60,9 @@ export function LanguageSettings({
   pages: number;
   /** The plan has no room for another language: Add language opens this. */
   upgrade: UpgradePrompt | null;
+  /** Languages past the plan's limit (after a downgrade): Go live opens `goLiveUpgrade`. */
+  pastLimit: string[];
+  goLiveUpgrade: UpgradePrompt | null;
 }) {
   const byCode = (code: string) => offered.find((language) => language.code === code)!;
   const addable = offered.filter(({ code }) => code !== defaultLanguage && !languages.some((language) => language.code === code));
@@ -76,6 +81,7 @@ export function LanguageSettings({
       </SettingsCard>
       <SettingsCard
         title="Other languages"
+        count={languages.length}
         action={addable.length > 0 && <AddLanguage projectSlug={projectSlug} defaultName={byCode(defaultLanguage).native} addable={addable} pages={pages} upgrade={upgrade} />}
       >
         {languages.length === 0 ? (
@@ -85,7 +91,13 @@ export function LanguageSettings({
         ) : (
           <ul aria-label="Other languages" className="flex flex-col divide-y">
             {languages.map((language) => (
-              <LanguageRow key={language.code} projectSlug={projectSlug} language={language} native={byCode(language.code).native} />
+              <LanguageRow
+                key={language.code}
+                projectSlug={projectSlug}
+                language={language}
+                native={byCode(language.code).native}
+                upgrade={pastLimit.includes(language.code) ? goLiveUpgrade : null}
+              />
             ))}
           </ul>
         )}
@@ -225,8 +237,10 @@ function AddLanguage({ projectSlug, defaultName, addable, pages, upgrade }: { pr
 }
 
 /** A language: its code, names and mode, Live or Offline, and its ⋯ menu. */
-function LanguageRow({ projectSlug, language, native }: { projectSlug: string; language: Language; native: string }) {
+function LanguageRow({ projectSlug, language, native, upgrade }: { projectSlug: string; language: Language; native: string; upgrade: UpgradePrompt | null }) {
   const [pending, startTransition] = useTransition();
+  const [upgrading, setUpgrading] = useState(false);
+  const planId = useId();
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const save = (changes: LanguageChanges, done: string) =>
@@ -260,7 +274,10 @@ function LanguageRow({ projectSlug, language, native }: { projectSlug: string; l
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-44">
-          <DropdownMenuItem onClick={() => save({ live: !language.live }, language.live ? `${native} is offline` : `${native} is live`)}>
+          <DropdownMenuItem
+            aria-describedby={upgrade && !language.live ? planId : undefined}
+            onClick={() => (upgrade && !language.live ? setUpgrading(true) : save({ live: !language.live }, language.live ? `${native} is offline` : `${native} is live`))}
+          >
             {language.live ? "Take offline" : "Go live"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -281,6 +298,14 @@ function LanguageRow({ projectSlug, language, native }: { projectSlug: string; l
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {upgrade && (
+        <>
+          <span id={planId} hidden>
+            {upgrade.title}
+          </span>
+          <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />
+        </>
+      )}
       <InstructionsDialog projectSlug={projectSlug} language={language} native={native} open={editing} onOpenChange={setEditing} />
       <AlertDialog open={removing} onOpenChange={(next) => (next || !pending) && setRemoving(next)}>
         <AlertDialogContent closeDisabled={pending}>
