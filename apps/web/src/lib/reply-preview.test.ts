@@ -34,3 +34,25 @@ test("a late preview failure in place of a failed Send and close keeps the close
   expect(previewAfter(sent, { for: "Thanks!", text: "Danke!", language: "de" })).toEqual({ for: "Thanks!", text: "Danke!", language: "de" });
   expect(previewAfter(undefined, late)).toBe(late);
 });
+
+test("a failure in a language that's no longer the customer's isn't shown, so the new language's preview is asked for", () => {
+  const failed: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer", language: "de" };
+  expect(previewToShow(failed, "Thanks!", "de")).toBe(failed);
+  expect(previewToShow(failed, "Thanks!", "fr")).toBeUndefined();
+  expect(wantsPreview(previewToShow(failed, "Thanks!", "fr"), "Thanks!")).toBe(true);
+  // A send refused before the page knew the language: shown, whatever it turns out to be.
+  const unknown: ReplyPreview = { for: "Thanks!", failed: "No" };
+  expect(previewToShow(unknown, "Thanks!", "fr")).toBe(unknown);
+});
+
+test("a preview shown for the text isn't asked for again when a send of something else ends (a note, a refused send)", () => {
+  for (const shown of [
+    { for: "Thanks!", text: "Danke!", language: "de" },
+    { for: "Thanks!", asWritten: true },
+    { for: "Thanks!", failed: "No", language: "de" },
+  ] satisfies ReplyPreview[]) {
+    // Sending, then not: the pending flag toggling doesn't ask again.
+    expect(wantsPreview(previewToShow(shown, "Thanks!", "de"), "Thanks!", true)).toBe(false);
+    expect(wantsPreview(previewToShow(shown, "Thanks!", "de"), "Thanks!", false)).toBe(false);
+  }
+});

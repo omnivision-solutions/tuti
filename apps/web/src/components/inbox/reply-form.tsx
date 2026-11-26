@@ -156,9 +156,9 @@ export function ReplyForm({
       // Cancelled (stale) once a send starts; a failure that still replaces a failed send's keeps its Send and close.
       setPreview((shown) => previewAfter(shown,
         "error" in result
-          ? { for: toTranslate, failed: result.error }
+          ? { for: toTranslate, failed: result.error, language: translated.language }
           : "failed" in result
-            ? { for: toTranslate, failed: result.failed }
+            ? { for: toTranslate, failed: result.failed, language: translated.language }
             : result.preview
               ? { for: toTranslate, ...result.preview }
               : // Nothing in it to translate (a link, a number): it goes as written.
@@ -257,7 +257,7 @@ export function ReplyForm({
       }
       if (result.translation === "failed") {
         // "Send in English" then sends it as they chose: closing it too, from Send and close.
-        setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", close });
+        setPreview({ for: text.trim(), failed: result.error ?? "The translation failed", language: translated?.language, close });
         toast.error("Not sent: it couldn't be translated");
       }
       if (!result.error) {
