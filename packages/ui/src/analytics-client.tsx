@@ -107,6 +107,8 @@ export const APP_ROUTES = [
   "[project]/settings/usage",
   "[project]/settings/widget",
   "[project]/settings/workflows",
+  "[project]/settings/workflows/[id]",
+  "[project]/settings/workflows/new",
   "[project]/settings/writing-style",
   "[project]/setup",
   "[project]/team",

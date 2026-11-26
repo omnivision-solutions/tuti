@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { ACTIONS, actionsFor, storedWorkflow, TRIGGER_KEYS, workflowSummary } from "./workflows";
+import { ACTIONS, actionsFor, storedWorkflow, TRIGGER_KEYS, workflowSentence, workflowSummary } from "./workflows";
 
 test("every action says which triggers offer it, and each trigger offers one", () => {
   for (const trigger of TRIGGER_KEYS) {
@@ -26,4 +26,11 @@ test("a stored workflow is read whole, or not at all", () => {
 test("a workflow's one line: who it's for, by the group's name, then what it does", () => {
   expect(workflowSummary({ conditions: [{ kind: "in_group", group: "enterprise" }], actions: [{ kind: "mark_priority" }] }, { enterprise: "Enterprise" })).toBe("In Enterprise: mark priority");
   expect(workflowSummary({ conditions: [], actions: [{ kind: "mark_priority" }] }, {})).toBe("Everyone: mark priority");
+});
+
+test("a workflow reads back as a sentence", () => {
+  expect(workflowSentence({ trigger: "conversation_started", conditions: [{ kind: "in_group", group: "enterprise" }], actions: [{ kind: "mark_priority" }] }, { enterprise: "Enterprise" })).toBe(
+    "When a conversation starts, if the person is in Enterprise: mark priority.",
+  );
+  expect(workflowSentence({ trigger: "user_replied", conditions: [], actions: [] }, {})).toBe("When a user replies, for everyone: nothing yet.");
 });

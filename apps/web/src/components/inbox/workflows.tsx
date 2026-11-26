@@ -24,7 +24,8 @@ const GROUPS: Record<WorkflowTrigger, { title: string; empty: string }> = {
 
 /**
  * Settings → Workflows (docs/plan.md, Inbox automation, W9): the path a user's message takes, top to bottom, the
- * built-in steps fixed and each trigger's workflows between them. The editor (and so Add workflow) is W10's. `aiFirst`:
+ * built-in steps fixed and each trigger's workflows between them, each group's Add workflow and each row's name opening the
+ * editor (W10). `aiFirst`:
  * the widget's "Answer with AI first" as set (its own settings are W14's), null where the server has no AI answers.
  */
 export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { projectSlug: string; workflows: WorkflowRow[]; groupNames: Record<string, string>; aiFirst: boolean | null }) {
@@ -124,7 +125,15 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
   const rowOf = (event: DragEvent) => (event.target as Element).closest<HTMLElement>("[data-workflow-id]")?.dataset.workflowId;
 
   return (
-    <SettingsCard title={title} count={workflows.length}>
+    <SettingsCard
+      title={title}
+      count={workflows.length}
+      action={
+        <Link href={`/app/${projectSlug}/settings/workflows/new?trigger=${trigger}`} aria-label={`Add workflow ${title.charAt(0).toLowerCase()}${title.slice(1)}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Add workflow
+        </Link>
+      }
+    >
       {order.length === 0 ? (
         <p id={emptyId} tabIndex={-1} className="px-4 py-3.5 text-sm text-muted-foreground outline-none @min-[34rem]/settings:px-5">
           {empty}
@@ -210,13 +219,13 @@ function Row({
   onDelete: (sent: boolean) => void;
 }) {
   // The switch as turned, until the page has it: never disabled or drawn again meanwhile, so it keeps the focus.
+  // Kept while any turn saves (the transition covers each save and the page it brings): turned twice quickly, the
+  // first save's page mustn't show its state between. Then the page's, whatever it says (a teammate's turn too).
   const [turned, setTurned] = useState<boolean | null>(null);
-  const [saved, setSaved] = useState(workflow.enabled);
-  if (saved !== workflow.enabled) {
-    setSaved(workflow.enabled);
+  const [switching, startSwitching] = useTransition();
+  if (turned !== null && !switching) {
     setTurned(null);
   }
-  const [, startSwitching] = useTransition();
   const [confirming, setConfirming] = useState(false);
   const [deleting, startDeleting] = useTransition();
   const switchId = `workflow-on-${workflow.id}`;
@@ -230,10 +239,10 @@ function Row({
       {/* Only a hint that the row drags: the menu's Move up and Move down do it from a keyboard, and on phones. */}
       <GripVerticalIcon aria-hidden className="hidden size-4 shrink-0 text-muted-foreground @min-[34rem]/settings:block" />
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* The row's title, not the switch's label: a click on it mustn't turn a live workflow off. */}
-        <span id={`${switchId}-name`} className="font-medium break-words">
+        {/* The row's title, opening its editor; not the switch's label: a click on it mustn't turn a live workflow off. */}
+        <Link id={`${switchId}-name`} href={`/app/${projectSlug}/settings/workflows/${workflow.id}`} className="self-start font-medium break-words hover:underline">
           {workflow.name}
-        </span>
+        </Link>
         <span id={`${switchId}-description`} className="text-sm break-words text-muted-foreground">
           {summary}
         </span>
