@@ -117,3 +117,11 @@ test("Insert as new adds the image right after the original, which stays", async
   expect(ref.current!.state.doc.child(2).attrs).toMatchObject({ mediaId: MADE, width: "50", align: "left", alt: "" });
   expect(ref.current!.state.doc.child(3).textContent).toBe("After");
 });
+
+test("an image too thin or too small for AI starts at its shape scaled into range (64 to 2,400 pixels a side)", async () => {
+  const { generatable } = await import("./rich-editor");
+  expect(generatable({ width: 1000, height: 500 })).toEqual({ width: 1000, height: 500 });
+  expect(generatable({ width: 1200, height: 40 })).toEqual({ width: 1920, height: 64 });
+  expect(generatable({ width: 32, height: 32 })).toEqual({ width: 64, height: 64 });
+  expect(generatable({ width: 2400, height: 10 })).toEqual({ width: 2400, height: 64 });
+});

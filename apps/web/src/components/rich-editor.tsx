@@ -18,6 +18,7 @@ import {
   extensions,
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
+  MAX_IMAGE_SIZE,
   isCodeFilename,
   isEmptyDoc,
   isSafeLink,
@@ -75,6 +76,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
 import { type GeneratedImage, ImageGenerator, type ImageEditing } from "@/components/image-generator";
+import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
 
 /** What the file picker offers for attachments and videos (the server checks each file too). */
@@ -585,14 +587,14 @@ export function RichEditor({
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
         {editor && uploads && imageEditing && edited && (
           <ImageGenerator
-            key={`${edited.pos}/${edited.image.id}`}
+            key={edited.image.id}
             projectSlug={uploads.projectSlug}
             open={editingImage}
             onOpenChange={setEditingImage}
             title="Edit image"
             subtitle={imageEditing.title?.trim() ? `In “${imageEditing.title.trim()}”` : undefined}
             editing={edited.image}
-            defaultSize={{ label: "Same as original", width: edited.image.width, height: edited.image.height }}
+            defaultSize={{ label: "Same as original", ...generatable(edited.image) }}
             logo={imageEditing.logo}
             credits={imageEditing.credits}
             useLabel="Replace image"
@@ -636,6 +638,14 @@ const ALIGN_ICONS: Record<(typeof IMAGE_ALIGNMENTS)[number], LucideIcon> = {
   center: AlignCenterIcon,
   right: AlignRightIcon,
 };
+
+/** An image's size as one AI can make: its own, or (a side under 64 or over 2,400 pixels) scaled into range, its shape kept as far as it can be. */
+export function generatable({ width, height }: { width: number; height: number }) {
+  const up = Math.max(1, MIN_GENERATED_SIDE / Math.min(width, height));
+  const down = Math.min(1, MAX_IMAGE_SIZE / (Math.max(width, height) * up));
+  const side = (n: number) => Math.min(MAX_IMAGE_SIZE, Math.max(MIN_GENERATED_SIDE, Math.round(n * up * down)));
+  return { width: side(width), height: side(height) };
+}
 
 /** Whether a block is or holds a collapsible block. */
 function holdsDetails(node: ProseMirrorNode): boolean {

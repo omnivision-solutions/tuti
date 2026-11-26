@@ -62,7 +62,7 @@ test("the team edits an image in an article's text with AI, replaces it and publ
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/docs/exporting-reports`);
 
-  const { edited } = await editImageInText(team, text, "Text selection", "Exporting reports", checkpoint);
+  const { original, edited } = await editImageInText(team, text, "Text selection", "Exporting reports", checkpoint);
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByRole("button", { name: "Saved" })).toBeVisible();
   await team.getByRole("button", { name: "Publish" }).click();
@@ -71,8 +71,9 @@ test("the team edits an image in an article's text with AI, replaces it and publ
 
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs/exporting-reports");
-  const shown = visitor.getByRole("article", { name: "Exporting reports" }).locator("figure.rich-image img");
-  await expect(shown).toHaveAttribute("src", new RegExp(`/m/${edited}/`));
+  const shown = visitor.getByRole("article", { name: "Exporting reports" }).locator(`figure.rich-image img[src*="/m/${edited}/"]`);
+  await expect(shown).toHaveCount(1);
+  await expect(visitor.locator(`img[src*="/m/${original}/"]`)).toHaveCount(0);
   await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
 });
 
@@ -87,10 +88,10 @@ test("the team edits an image in a changelog entry's text with AI, replaces it a
 
   await team.goto(`/app/${slug}/changelog/1`);
   const text = team.getByRole("textbox", { name: "What changed" });
-  const { edited } = await editImageInText(team, text, "Formatting", "Faster exports", checkpoint);
+  const { original, edited } = await editImageInText(team, text, "Formatting", "Faster exports", checkpoint);
   // Undo brings the original back, and redo the edit: an editor change like any other.
   await team.keyboard.press("ControlOrMeta+z");
-  await expect(text.locator("figure.rich-image")).not.toHaveAttribute("data-media-id", edited);
+  await expect(text.locator("figure.rich-image")).toHaveAttribute("data-media-id", original);
   await team.keyboard.press("ControlOrMeta+Shift+z");
   await expect(text.locator("figure.rich-image")).toHaveAttribute("data-media-id", edited);
 
@@ -102,7 +103,9 @@ test("the team edits an image in a changelog entry's text with AI, replaces it a
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.goto("/changelog/1");
-  const shown = reader.locator("figure.rich-image img");
-  await expect(shown).toHaveAttribute("src", new RegExp(`/m/${edited}/`));
+  // The text's image, the new one (beside the cover publishing made).
+  const shown = reader.locator(`figure.rich-image img[src*="/m/${edited}/"]`);
+  await expect(shown).toHaveCount(1);
+  await expect(reader.locator(`img[src*="/m/${original}/"]`)).toHaveCount(0);
   await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
 });
