@@ -1,0 +1,278 @@
+"use client";
+
+import { GripVerticalIcon, MoreHorizontalIcon } from "lucide-react";
+import Link from "next/link";
+import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { SettingsCard } from "@/components/settings-card";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
+import { TRIGGER_KEYS, type WorkflowAction, type WorkflowCondition, type WorkflowTrigger, workflowSummary } from "@/lib/workflows";
+import { deleteWorkflow, moveWorkflow, saveWorkflow } from "@/server/workflows";
+
+export type WorkflowRow = { id: string; name: string; trigger: WorkflowTrigger; enabled: boolean; conditions: WorkflowCondition[]; actions: WorkflowAction[] };
+
+/** Each trigger's group, as the path reads it. */
+const GROUPS: Record<WorkflowTrigger, { title: string; empty: string }> = {
+  conversation_started: { title: "When a conversation starts", empty: "No workflows. New conversations go on to the next step." },
+  user_replied: { title: "When a user replies", empty: "No workflows. Replies go on to the next step." },
+};
+
+/**
+ * Settings → Workflows (docs/plan.md, Inbox automation, W9): the path a user's message takes, top to bottom, the
+ * built-in steps fixed and each trigger's workflows between them. The editor (and so Add workflow) is W10's.
+ */
+export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { projectSlug: string; workflows: WorkflowRow[]; groupNames: Record<string, string>; aiFirst: boolean }) {
+  const settings = (page: string) => `/app/${projectSlug}/settings/${page}`;
+  return (
+    <ol className="flex flex-col gap-6">
+      <BuiltIn name="Spam filter" description="Stops spam before anything else runs">
+        <Link href={settings("spam")} aria-label="Spam filter settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Settings
+        </Link>
+      </BuiltIn>
+      {TRIGGER_KEYS.map((trigger) => (
+        <li key={trigger}>
+          <Group projectSlug={projectSlug} trigger={trigger} workflows={workflows.filter((workflow) => workflow.trigger === trigger)} groupNames={groupNames} />
+        </li>
+      ))}
+      <BuiltIn name="AI answers first" description={aiFirst ? "On in the widget: answers from your help center first" : "Off: messages go straight to your team"}>
+        <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Widget
+        </Link>
+      </BuiltIn>
+      <BuiltIn name="Hand to the team" description="Moves the conversation to your inbox and notifies you" />
+    </ol>
+  );
+}
+
+/** A step of the path that's always there: it can't be moved or deleted. */
+function BuiltIn({ name, description, children }: { name: string; description: string; children?: ReactNode }) {
+  return (
+    <li className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed bg-muted/50 px-4 py-3.5 sm:px-5">
+      <div className="flex min-w-0 flex-1 basis-48 flex-col">
+        <span className="font-medium">{name}</span>
+        <span className="text-sm text-muted-foreground">{description}</span>
+      </div>
+      <Badge variant="secondary">Built in</Badge>
+      {children}
+    </li>
+  );
+}
+
+/**
+ * A trigger's workflows, top to bottom: dragged within the group (from a mouse; on phones the handle isn't there) or
+ * moved from a row's menu (Move up, Move down), the order shown at once and kept until the page has it.
+ */
+function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: string; trigger: WorkflowTrigger; workflows: WorkflowRow[]; groupNames: Record<string, string> }) {
+  const { title, empty } = GROUPS[trigger];
+  const ids = workflows.map((workflow) => workflow.id);
+  // The order moved to, until the page comes back with it (or a teammate's change).
+  const [moved, setMoved] = useState<string[] | null>(null);
+  const [seen, setSeen] = useState(ids.join());
+  if (seen !== ids.join()) {
+    setSeen(ids.join());
+    setMoved(null);
+  }
+  const order = moved?.every((id) => ids.includes(id)) && moved.length === ids.length ? moved : ids;
+  const byId = new Map(workflows.map((workflow) => [workflow.id, workflow]));
+  const [saving, startSaving] = useTransition();
+  const [dragging, setDragging] = useState<string | null>(null);
+  // The menu's handle to focus again once a move from it has saved: the menu closes and the row moves.
+  const refocus = useRef<string | null>(null);
+  const menuId = (id: string) => `workflow-menu-${id}`;
+  useEffect(() => {
+    if (!saving && refocus.current) {
+      document.getElementById(refocus.current)?.focus();
+      refocus.current = null;
+    }
+  }, [saving]);
+
+  const move = (id: string, to: number, byMenu = false) => {
+    const next = order.filter((other) => other !== id);
+    next.splice(to, 0, id);
+    setMoved(next);
+    refocus.current = byMenu ? menuId(id) : null;
+    startSaving(async () => {
+      const result = await moveWorkflow(projectSlug, id, to);
+      if (result.error) {
+        toast.error(result.error);
+        setMoved(null);
+      } else {
+        toast.success(`Moved ${byId.get(id)?.name ?? "the workflow"}`);
+      }
+    });
+  };
+  const rowOf = (event: DragEvent) => (event.target as Element).closest<HTMLElement>("[data-workflow-id]")?.dataset.workflowId;
+
+  return (
+    <SettingsCard title={title} count={workflows.length}>
+      {order.length === 0 ? (
+        <p className="px-4 py-3.5 text-sm text-muted-foreground @min-[34rem]/settings:px-5">{empty}</p>
+      ) : (
+        <ol
+          aria-label={title}
+          aria-busy={saving}
+          className="flex flex-col divide-y"
+          onDragStart={(event) => {
+            const id = rowOf(event);
+            if (saving || !id) {
+              event.preventDefault();
+              return;
+            }
+            setDragging(id);
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", id);
+          }}
+          onDragOver={(event) => {
+            if (dragging && rowOf(event)) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+            }
+          }}
+          onDragEnd={() => setDragging(null)}
+          onDrop={(event) => {
+            event.preventDefault();
+            const over = rowOf(event);
+            setDragging(null);
+            if (dragging && over && over !== dragging) move(dragging, order.indexOf(over));
+          }}
+        >
+          {order.flatMap((id, at) => {
+            const workflow = byId.get(id);
+            return workflow
+              ? [
+                  <Row
+                    key={id}
+                    projectSlug={projectSlug}
+                    workflow={workflow}
+                    summary={workflowSummary(workflow, groupNames)}
+                    menuId={menuId(id)}
+                    dragging={dragging === id}
+                    saving={saving}
+                    up={at > 0 ? () => move(id, at - 1, true) : undefined}
+                    down={at < order.length - 1 ? () => move(id, at + 1, true) : undefined}
+                  />,
+                ]
+              : [];
+          })}
+        </ol>
+      )}
+    </SettingsCard>
+  );
+}
+
+/** A workflow: its name and summary, its switch (saving as it's changed), and Move up, Move down and Delete under its ⋯. */
+function Row({
+  projectSlug,
+  workflow,
+  summary,
+  menuId,
+  dragging,
+  saving,
+  up,
+  down,
+}: {
+  projectSlug: string;
+  workflow: WorkflowRow;
+  summary: string;
+  menuId: string;
+  dragging: boolean;
+  saving: boolean;
+  up?: () => void;
+  down?: () => void;
+}) {
+  const [switching, startSwitching] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, startDeleting] = useTransition();
+  const switchId = `workflow-on-${workflow.id}`;
+  return (
+    <li
+      draggable={!saving}
+      data-workflow-id={workflow.id}
+      data-dragging={dragging || undefined}
+      className="flex items-center gap-3 px-4 py-3 data-[dragging]:opacity-50 @min-[34rem]/settings:cursor-grab @min-[34rem]/settings:px-5"
+    >
+      {/* Only a hint that the row drags: the menu's Move up and Move down do it from a keyboard, and on phones. */}
+      <GripVerticalIcon aria-hidden className="hidden size-4 shrink-0 text-muted-foreground @min-[34rem]/settings:block" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <label htmlFor={switchId} className="font-medium break-words">
+          {workflow.name}
+        </label>
+        <span id={`${switchId}-description`} className="text-sm break-words text-muted-foreground">
+          {summary}
+        </span>
+      </div>
+      <Switch
+        id={switchId}
+        aria-describedby={`${switchId}-description`}
+        defaultChecked={workflow.enabled}
+        // Keyed by what's saved, so the page's value (a teammate's change) shows once it comes.
+        key={String(workflow.enabled)}
+        disabled={switching}
+        onChange={(event) => {
+          const input = event.currentTarget;
+          const on = input.checked;
+          startSwitching(async () => {
+            const result = await saveWorkflow(projectSlug, workflow.id, { enabled: on });
+            if (result.error) {
+              toast.error(result.error);
+              input.checked = !on;
+            } else {
+              toast.success(`${workflow.name} turned ${on ? "on" : "off"}`);
+            }
+          });
+        }}
+      />
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <DropdownMenu>
+          <DropdownMenuTrigger id={menuId} disabled={saving} render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${workflow.name}`} />}>
+            <MoreHorizontalIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto min-w-36">
+            <DropdownMenuItem onClick={up} disabled={!up}>
+              Move up
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={down} disabled={!down}>
+              Move down
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => setConfirming(true)}>
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="wrap-anywhere">Delete {workflow.name}?</AlertDialogTitle>
+            <AlertDialogDescription>It stops running for new messages. The notes it left in conversations stay.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() =>
+                startDeleting(async () => {
+                  const result = await deleteWorkflow(projectSlug, workflow.id);
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    setConfirming(false);
+                    toast.success(`Deleted ${workflow.name}`);
+                  }
+                })
+              }
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </li>
+  );
+}
