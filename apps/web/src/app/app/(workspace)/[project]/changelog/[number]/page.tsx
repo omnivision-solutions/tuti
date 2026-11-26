@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { createHash } from "node:crypto";
 
-import type { Doc } from "@tuti/content";
+import { type Doc, mediaIdsIn } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
 import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
-import { aiEnabled, planIncludes } from "@tuti/shared";
+import { aiEnabled, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cn } from "cn";
 import { ExternalLinkIcon } from "lucide-react";
@@ -137,6 +137,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const coverOf = mediaStorage() ? await coverContent(membership.project.id, entry) : null;
   const covers = coverOf && { designs: coverDesigns(coverOf), automatic: automaticDesign(coverOf), version: entry.updatedAt.getTime() };
   const commentMedia = await mediaUrls(...comments.map(displayDoc));
+  // Generate (AI images) on its cover: the text's images and the project's logo to work from.
+  const imageGenerator = imagesEnabled() && mediaStorage() ? await generatorSources(membership.project.id, displayDoc(entry) as Doc) : null;
   // Its pull requests' section: with GitHub connected, or listing the ones it has. A draft's "Add changes…" adds to the
   // running draft, this one or the one named (started as Next release if there's none).
   const [github, runningDraft] = await Promise.all([
@@ -275,6 +277,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               covers={covers}
               canEditWithAi={aiEnabled() && !unwritten}
               aiPaused={paused}
+              imageGenerator={imageGenerator && { ...imageGenerator, credits: creditsEnabled(), paused }}
               pullRequests={pullRequests}
               screenshots={await entryScreenshots(membership.project.id, entry)}
               canTakeScreenshots={isAdminRole(membership.role)}
@@ -319,4 +322,19 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       </PaneLayout>
     </ChangelogSaving>
   );
+}
+
+/** The images Generate offers to work from: the entry's text's (in its order) and the project's brand logo. */
+async function generatorSources(projectId: string, content: Doc) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { brandLogoId: true } });
+  const ids = mediaIdsIn(content);
+  const found = await prisma.media.findMany({
+    where: { id: { in: [...ids, ...(project.brandLogoId ? [project.brandLogoId] : [])] }, projectId, status: "READY", filename: null, width: { not: null } },
+    select: { id: true, status: true, width: true, height: true },
+  });
+  const image = (id: string | null) => {
+    const shown = lastingImage(found.find((media) => media.id === id) ?? null);
+    return shown && { id: shown.id, url: shown.url };
+  };
+  return { bodyImages: ids.map(image).filter((each) => each !== null), logo: image(project.brandLogoId) };
 }
