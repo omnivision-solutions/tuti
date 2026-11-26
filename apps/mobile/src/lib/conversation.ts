@@ -1,6 +1,7 @@
 import { Directory, File, Paths } from "expo-file-system";
 
 import { type Api, ApiError } from "./api";
+import type { Owned } from "./inbox";
 
 /**
  * One conversation: what `conversations.get` answers, replying, uploading, Draft with AI, the drafts kept on the phone,
@@ -40,7 +41,7 @@ export type Conversation = {
   unread: boolean;
   onlineUntil: string | null;
   messages: Message[];
-};
+} & Owned;
 
 /** What's shown as an image rather than a file: the types the web shows inline. */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
