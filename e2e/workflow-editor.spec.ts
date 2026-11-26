@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
+import { query } from "./db";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
@@ -116,6 +117,27 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await expect(owner.getByText("Saved Trial first")).toBeVisible();
   expect(await writes("user-free")).toBe(true);
 
+  // A workflow whose group is gone (deleted through the release before, which didn't refuse it): its editor says so, and
+  // Save waits for another choice.
+  await query(
+    `INSERT INTO workflow (id, "projectId", name, trigger, position, conditions, actions, "updatedAt") SELECT $2, id, 'Old group', 'user_replied', 0, '[{"kind":"in_group","group":"gone"}]', '[{"kind":"mark_priority"}]', NOW() FROM project WHERE slug = $1`,
+    [slug, `e2e-${randomUUID()}`],
+  );
+  await owner.goto(`/app/${slug}/settings/workflows`);
+  await main.getByRole("list", { name: "When a user replies" }).getByRole("link", { name: "Old group" }).click();
+  await expect(owner.getByRole("combobox", { name: "If" })).toContainText("People in “gone” (deleted)");
+  await expect(main.getByText("This group was deleted: pick another, or Everyone")).toBeVisible();
+  await owner.getByRole("textbox", { name: "Name" }).fill("Old group, renamed");
+  await save.click();
+  await expect(main.getByText("This group was deleted: pick another, or Everyone")).toBeVisible();
+  await expect(owner.getByText("Saved Old group, renamed")).toHaveCount(0);
+  await owner.getByRole("combobox", { name: "If" }).click();
+  await owner.getByRole("option", { name: "Everyone" }).click();
+  await expect(main.getByText("This group was deleted: pick another, or Everyone")).toHaveCount(0);
+  await save.click();
+  await expect(owner.getByText("Saved Old group, renamed")).toBeVisible();
+  await owner.goto(editor);
+
   // Deleted, asking first: back to the list, without it.
   await main.getByRole("button", { name: "Delete" }).click();
   const dialog = owner.getByRole("alertdialog", { name: "Delete Trial first?" });
@@ -123,4 +145,7 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await expect(owner.getByText("Deleted Trial first")).toBeVisible();
   await owner.waitForURL(`**/app/${slug}/settings/workflows`);
   await expect(main.getByText("No workflows. New conversations go on to the next step.")).toBeVisible();
+  // Its address now leads to the list.
+  await owner.goto(editor);
+  await owner.waitForURL(`**/app/${slug}/settings/workflows`);
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Route } from "@playwright/test";
+import type { Request, Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
@@ -142,14 +142,27 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
     look();
   }, id);
   // The first save's page comes in, Third off in it, while the second save is still held.
+  const pages = heldPages.length;
+  let pagesIn = 0;
+  const pageIn = (request: Request) => {
+    if (request.method() === "GET" && request.headers()["rsc"]) pagesIn++;
+  };
+  // Done or dropped (a link's prefetch can be dropped).
+  owner.on("requestfinished", pageIn);
+  owner.on("requestfailed", pageIn);
   pagesHeld = false;
   for (const go of heldPages) go();
-  await owner.waitForTimeout(1_500);
+  await expect.poll(() => pagesIn).toBeGreaterThanOrEqual(pages);
+  owner.off("requestfinished", pageIn);
+  owner.off("requestfailed", pageIn);
+  /** Two frames: what came in is drawn. */
+  const drawn = () => owner.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await drawn();
   heldSaves[1]!();
   await expect(owner.getByText("Third turned on")).toBeVisible();
   await owner.unroute("**/*", holdEach);
   await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Third")?.enabled).toBe(true);
-  await owner.waitForTimeout(1_500);
+  await drawn();
   expect(await owner.evaluate(() => ((window as unknown as { watching: boolean }).watching = false, (window as unknown as { flashed: boolean }).flashed))).toBe(false);
   await expect(thirdSwitch).toBeChecked();
 

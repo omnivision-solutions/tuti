@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { WorkflowEditor } from "@/components/inbox/workflow-editor";
 import { SettingsPane } from "@/components/settings-card";
@@ -9,7 +9,10 @@ import { getAdminProject } from "@/server/membership";
 
 export const metadata: Metadata = { title: "Workflow · Workflows · Settings" };
 
-/** Settings → Workflows → a workflow: its editor. One this release can't read (a later release's) isn't here, as for its API. */
+/**
+ * Settings → Workflows → a workflow: its editor. One that's gone (deleted here, its page refreshing as the delete
+ * answers, or by a teammate) or that this release can't read (a later release's, as for its API) sends you to the list.
+ */
 export default async function WorkflowPage(props: PageProps<"/app/[project]/settings/workflows/[id]">) {
   const { project: slug, id } = await props.params;
   const project = await getAdminProject(slug);
@@ -22,7 +25,7 @@ export default async function WorkflowPage(props: PageProps<"/app/[project]/sett
   ]);
   const stored = row && storedWorkflow(row);
   if (!row || !stored) {
-    notFound();
+    redirect(`/app/${project.slug}/settings/workflows`);
   }
   return (
     <SettingsPane title={row.name} back={{ href: `/app/${project.slug}/settings/workflows`, label: "Workflows" }}>
