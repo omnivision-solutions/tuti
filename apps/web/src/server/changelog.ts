@@ -29,6 +29,7 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
+import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -205,6 +206,11 @@ export async function addChangelogPullRequests(
 /** Takes a merged pull request out of a draft, with its line (see changelog.removePullRequest). */
 export async function removeChangelogPullRequest(projectSlug: string, number: number, url: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(removePullRequestOperation, context, { number: Number(number), url: String(url) }));
+}
+
+/** The entry editor's "Take screenshots" (changelog.takeScreenshots): its "[Screenshot: …]" lines filled in the background. */
+export async function takeChangelogScreenshots(projectSlug: string, number: number): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { number: Number(number) }));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */

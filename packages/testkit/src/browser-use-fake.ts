@@ -6,6 +6,13 @@ import { crc32, deflateSync } from "node:zlib";
 export const FAKE_BROWSER_USE_KEY = "bu_fake_key";
 
 /**
+ * A screenshot asked for with this in its description isn't reached, by any run, saying FAKE_UNREACHED: for a journey,
+ * where runs scripted with `next` could go to another journey's run.
+ */
+export const FAKE_UNREACHABLE = "a screen that isn't there";
+export const FAKE_UNREACHED = "There's no such screen in the app.";
+
+/**
  * How the fake's next run goes (JSON, so journeys in other processes can script it through /_fake/next-run). By
  * default the agent signs in and reaches every screenshot the task names (`shot-N.png: …` lines), saving a PNG each.
  */
@@ -153,8 +160,8 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         fake.browsers.set(sessionId, { id: id("d"), status: "active" });
         // The agent's work: each screenshot the task names saved, but those it couldn't reach (or any, signed out).
         if ((script.status ?? "completed") === "completed" && !script.signInFailed) {
-          for (const [, file] of String(body.task).matchAll(/^(shot-\d+\.png): /gm)) {
-            if (!script.unreached?.[file!]) {
+          for (const [, file, show] of String(body.task).matchAll(/^(shot-\d+\.png): (.*)$/gm)) {
+            if (!script.unreached?.[file!] && !show!.includes(FAKE_UNREACHABLE)) {
               files.get(workspaceId)?.set(`outputs/${file}`, fakePng());
             }
           }
@@ -178,8 +185,8 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
               : {
                   signedIn: true,
                   shots: files.map(([, file, show]) =>
-                    run.script.unreached?.[file!]
-                      ? { file, reached: false, reason: run.script.unreached[file!] }
+                    run.script.unreached?.[file!] || show!.includes(FAKE_UNREACHABLE)
+                      ? { file, reached: false, reason: run.script.unreached?.[file!] ?? FAKE_UNREACHED }
                       : { file, reached: true, description: `The screen: ${show}`, url: "https://app.example.com/dashboard" },
                   ),
                 };

@@ -249,6 +249,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshotSettings.test": () => ({}),
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
+  "changelog.takeScreenshots": () => ({ number: 3 }),
 };
 
 let owner: TestUser;
@@ -318,12 +319,14 @@ async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.post.deleteMany({ where: { projectId: project.id } });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
   // Who's asking on `seats`, so companies.list has a total to return.
-  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2, askingProperty: "seats" } });
-  // A published entry #1, so reads find it (and unpublish has something to do), and a draft #2 to draft with AI.
+  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 3, askingProperty: "seats" } });
+  // A published entry #1, so reads find it (and unpublish has something to do), a draft #2 to draft with AI, and a
+  // draft #3 with a line asking for a screenshot.
   await prisma.changelogEntry.createMany({
     data: [
       { projectId: project.id, number: 1, title: "Matrix entry", publishedAt: new Date() },
       { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
+      { projectId: project.id, number: 3, title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
   // A merged pull request in the draft, to take out.
@@ -627,7 +630,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
     vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
   }
   // Uploads, for the cover an entry's composed one is kept as, and screenshots' images; Browser Use, for screenshots.
-  const screenshots = operation.name.startsWith("screenshot");
+  const screenshots = operation.name.startsWith("screenshot") || operation.name === "changelog.takeScreenshots";
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, operation.name === "changelog.composeCover" || screenshots ? value : "");
   }

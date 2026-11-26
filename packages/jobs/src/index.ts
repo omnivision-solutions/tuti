@@ -59,6 +59,7 @@ export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, w
 export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
 export { DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, sameLanguage, translateMessage, translationFailed, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
+export { placeChangelogScreenshots, screenshotsAsked } from "./changelog-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords } from "./code-change-docs";

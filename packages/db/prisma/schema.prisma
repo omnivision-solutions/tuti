@@ -1887,6 +1887,8 @@ model ChangelogEntry {
   subscriberEmails ChangelogEmail[]
   /// The reader groups it's for: listed and shown only to readers in one of them (and the team). None: everyone.
   groups           ChangelogEntryGroup[]
+  /// Screenshot runs that fill its "[Screenshot: …]" lines (changelog.takeScreenshots).
+  screenshotRuns   ScreenshotRun[]
   /// Email-only: emailed to subscribers, listed nowhere (the portal, the widget, feeds, the API to readers), its page
   /// the team's only.
   emailOnly        Boolean                     @default(false)
@@ -3436,6 +3438,8 @@ model ScreenshotRun {
   /// Who started it (an API key's creator for API runs); its images are their uploads.
   startedById String?
   test        Boolean            @default(false)
+  /// The changelog entry whose "[Screenshot: …]" lines it fills once it's done (changelog.takeScreenshots).
+  changelogEntryId String?
   state       ScreenshotRunState @default(RUNNING)
   /// Why it failed as a whole (sign-in, the service).
   error       String             @default("")
@@ -3460,9 +3464,11 @@ model ScreenshotRun {
 
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   startedBy   User?        @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
   screenshots Screenshot[]
 
   @@index([projectId, test, createdAt])
+  @@index([changelogEntryId, createdAt])
   @@map("screenshot_run")
 }
 

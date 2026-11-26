@@ -4,6 +4,7 @@ import { openValue } from "@tuti/shared/signed";
 import { mediaLimit } from "@tuti/shared/storage";
 
 import { screenshotsMeter } from "./ai-usage";
+import { placeChangelogScreenshots } from "./changelog-screenshots";
 import { type BrowserUse, browserUse, BrowserUseError, type RunSummary, type SessionCost, TERMINAL } from "./browser-use";
 import { aiPaused } from "./credits";
 import { storeImage } from "./import-media";
@@ -150,7 +151,11 @@ function costFields(costs: SessionCost[]) {
  * checked and created under the project's lock so two starts at once make one. The caller checks the project's settings
  * and credits first; the run checks them again.
  */
-export async function startScreenshots(projectId: string, shots: { show: string }[], { startedById, test = false }: { startedById: string; test?: boolean }) {
+export async function startScreenshots(
+  projectId: string,
+  shots: { show: string }[],
+  { startedById, test = false, changelogEntryId }: { startedById: string; test?: boolean; changelogEntryId?: string },
+) {
   await settleStaleScreenshotRuns(projectId);
   const select = { id: true, screenshots: { orderBy: { position: "asc" }, select: { id: true } } } satisfies Prisma.ScreenshotRunSelect;
   const { run, started } = await prisma.$transaction(async (tx) => {
@@ -159,7 +164,7 @@ export async function startScreenshots(projectId: string, shots: { show: string 
     return running
       ? { run: running, started: false }
       : {
-          run: await tx.screenshotRun.create({ data: { projectId, startedById, test, screenshots: { create: shots.map((shot, position) => ({ projectId, position, show: shot.show })) } }, select }),
+          run: await tx.screenshotRun.create({ data: { projectId, startedById, test, changelogEntryId, screenshots: { create: shots.map((shot, position) => ({ projectId, position, show: shot.show })) } }, select }),
           started: true,
         };
   });
@@ -178,8 +183,10 @@ export async function startScreenshots(projectId: string, shots: { show: string 
 /** The job: runs the agent for a recorded run (startScreenshots). */
 export async function screenshotRun({ runId }: JobInput<"screenshotRun">, jobLog: JobLogger): Promise<JobResult> {
   const results = await takeScreenshots(runId);
-  jobLog.info(`screenshot run ${runId}: ${results.filter((shot) => "imageId" in shot).length} of ${results.length} taken`);
-  return { taken: results.filter((shot) => "imageId" in shot).length, shots: results.length };
+  // A changelog entry's (changelog.takeScreenshots): each taken in place of its line.
+  const placed = await placeChangelogScreenshots(runId);
+  jobLog.info(`screenshot run ${runId}: ${results.filter((shot) => "imageId" in shot).length} of ${results.length} taken, ${placed} placed`);
+  return { taken: results.filter((shot) => "imageId" in shot).length, shots: results.length, placed };
 }
 
 /**

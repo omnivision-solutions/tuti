@@ -5,8 +5,9 @@ import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
-import { CheckIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
+import { CheckIcon, ImageIcon, LinkIcon, LoaderCircleIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
@@ -74,9 +75,11 @@ import {
   rewriteChangelogEntry,
   saveChangelogEntry,
   saveChangelogStyle,
+  takeChangelogScreenshots,
   unpublishChangelogEntry,
 } from "@/server/changelog";
 import type { CoverDesign } from "@/server/cover-card";
+import type { EntryScreenshots } from "@/server/operations/screenshots";
 import type { FormState } from "@/server/form-state";
 import type { RewriteMode } from "@/server/release-notes";
 
@@ -527,9 +530,15 @@ export function ChangelogForm({
   pullRequests = null,
   groups = [],
   groupsUpgrade = null,
+  screenshots = null,
+  canTakeScreenshots = false,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** Its "[Screenshot: …]" lines and their runs (a saved entry's). */
+  screenshots?: EntryScreenshots | null;
+  /** An owner or admin: they take screenshots (changelog.takeScreenshots). */
+  canTakeScreenshots?: boolean;
   /** The project's reader groups, for "Who sees it" (not shown without any). */
   groups?: { key: string; name: string }[];
   /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking works: changelog.update needs the plan only for groups added). */
@@ -661,6 +670,9 @@ export function ChangelogForm({
             <p>{standing}</p>
           </section>
         )}
+        {entry && screenshots && (
+          <EntryScreenshotsSection projectSlug={projectSlug} number={entry.number} screenshots={screenshots} canTake={canTakeScreenshots} dirty={dirty} />
+        )}
         <fieldset className="flex flex-col gap-2">
           <legend className="group-label mb-2">Tags</legend>
           {/* Chips: each its checkbox, unseen, laid over it. */}
@@ -709,6 +721,114 @@ export function ChangelogForm({
         {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
       </aside>
     </form>
+  );
+}
+
+/** How often the editor reads a running screenshot run again. */
+const SCREENSHOTS_REFRESH_MS = 5_000;
+
+/**
+ * Screenshots for the entry's "[Screenshot: …]" lines (changelog.takeScreenshots): Take screenshots, the run's progress
+ * (read again while it runs; its screenshots go into the saved text, and the form starts afresh with them), and the
+ * lines it didn't take, with why. Without Screenshots set up, owners and admins get a link to set it up.
+ */
+function EntryScreenshotsSection({
+  projectSlug,
+  number,
+  screenshots: { asked, available, running, failed, estimate, credits: spendsCredits },
+  canTake,
+  dirty,
+}: {
+  projectSlug: string;
+  number: number;
+  screenshots: EntryScreenshots;
+  canTake: boolean;
+  /** The form has changes that aren't saved: the screenshots go into the saved text. */
+  dirty: boolean;
+}) {
+  const router = useRouter();
+  const [starting, startTransition] = useTransition();
+  useEffect(() => {
+    if (running === null) {
+      return;
+    }
+    const timer = setInterval(() => router.refresh(), SCREENSHOTS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [running, router]);
+  if (!available || (asked === 0 && running === null) || (available === "not_set_up" && !canTake)) {
+    return null;
+  }
+  const busy = running !== null || starting;
+  const lines = `${asked} ${asked === 1 ? "line asks" : "lines ask"} for a screenshot.`;
+  return (
+    <section aria-labelledby="entry-screenshots" className="flex flex-col gap-2">
+      <h2 id="entry-screenshots" className="group-label">
+        Screenshots
+      </h2>
+      {available === "not_set_up" ? (
+        <p className="text-muted-foreground">
+          {lines} Tuti can take them:{" "}
+          <Link href={`/app/${projectSlug}/settings/screenshots`} className="underline underline-offset-4 hover:text-foreground">
+            set up your app in Settings → Screenshots
+          </Link>
+          .
+        </p>
+      ) : (
+        <>
+          {asked > 0 && <p className="text-muted-foreground">{lines}</p>}
+          {canTake && asked > 0 && (
+            <div className="flex flex-col gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={busy}
+                focusableWhenDisabled
+                onClick={() => {
+                  if (dirty) {
+                    toast.error("Save your changes first: screenshots go into the saved text.");
+                    return;
+                  }
+                  startTransition(async () => {
+                    const result = await takeChangelogScreenshots(projectSlug, number);
+                    if (result.error) {
+                      toast.error(result.error);
+                    }
+                  });
+                }}
+              >
+                <ImageIcon />
+                {busy ? "Taking screenshots…" : "Take screenshots"}
+              </Button>
+              {spendsCredits && (
+                <p className="text-xs text-muted-foreground">
+                  {estimate === null ? "Screenshots spend credits." : `About ${credits(estimate)} credits, from recent screenshots.`}
+                </p>
+              )}
+            </div>
+          )}
+          <p role="status" className={cn("text-muted-foreground", running === null && "sr-only")}>
+            {running !== null && (
+              <>
+                <LoaderCircleIcon aria-hidden className="mr-1.5 inline size-4 animate-spin align-[-0.2em]" />
+                {`Taking ${running} ${running === 1 ? "screenshot" : "screenshots"}. This takes a few minutes; you can leave this page. Save any changes before it's done: the text reloads with the screenshots in it.`}
+              </>
+            )}
+          </p>
+          {failed.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <p>Not taken:</p>
+              <ul className="flex flex-col gap-1 wrap-anywhere text-muted-foreground">
+                {failed.map((shot, index) => (
+                  <li key={index}>{`“${shot.show}”: ${shot.reason}`}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

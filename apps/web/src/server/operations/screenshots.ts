@@ -1,11 +1,12 @@
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, SCREENSHOT_SECRET, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
-import { screenshotsEnabled } from "@tuti/shared";
+import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
+import { displayDoc } from "../content";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 
@@ -262,8 +263,8 @@ const startedBy = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
  * Starts a run, or finds the one running: one at a time per project (and one Test), as each holds a worker slot for
  * minutes and spends up to the cost cap. A Test returns the one running; screenshots.take refuses (409).
  */
-async function start(projectId: string, actor: Actor, shots: { show: string }[], test: boolean) {
-  const started = await startScreenshots(projectId, shots, { startedById: startedBy(actor), test }).catch(() => {
+async function start(projectId: string, actor: Actor, shots: { show: string }[], test: boolean, changelogEntryId?: string) {
+  const started = await startScreenshots(projectId, shots, { startedById: startedBy(actor), test, changelogEntryId }).catch(() => {
     throw new OperationError(503, "unavailable", "Couldn't start the screenshots. Try again in a moment.");
   });
   if (!started.started && !test) {
@@ -344,3 +345,75 @@ export const getScreenshots = defineOperation({
     return run;
   },
 });
+
+export const takeChangelogScreenshots = defineOperation({
+  name: "changelog.takeScreenshots",
+  title: "Fill an entry's screenshot lines",
+  summary: `Take screenshots for the entry's "[Screenshot: …]" lines (up to ${MAX_SHOTS}), in the background (screenshots.get reads the run). Each one taken replaces its line if the line is still as it was; one not taken stays, holding publishing back. Costs credits where used`,
+  method: "POST",
+  path: "/changelog/{number}/screenshots",
+  scope: "write",
+  // As screenshots.take: what's asked for goes into the agent's task beside the sign-in.
+  access: "admin",
+  errors: [402, 404, 409, 503],
+  input: z.object({ number: z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] }) }),
+  output: runOutput.describe("The run, running"),
+  run: async ({ actor, projectId }, { number }) => {
+    const entry = await prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, content: true, body: true } });
+    if (!entry) {
+      throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
+    }
+    await refuseRun(projectId);
+    const asked = screenshotsAsked(displayDoc(entry));
+    if (asked.length === 0) {
+      throw new OperationError(409, "no_markers", "This entry has no “[Screenshot: …]” lines to fill.");
+    }
+    return start(projectId, actor, asked.slice(0, MAX_SHOTS).map((show) => ({ show })), false, entry.id);
+  },
+});
+
+/** Shots whose cost the estimate averages: the project's latest. */
+const ESTIMATE_SHOTS = 20;
+
+/**
+ * What the changelog editor shows of an entry's screenshots: how many of its lines ask for one, whether they can be
+ * taken (null: not on this server, or not set up), the entry's latest run while it runs, the lines it didn't take that
+ * are still there with why, and what taking them would cost in credits, from recent screenshots (with credits on; null when none has been priced yet).
+ */
+export async function entryScreenshots(projectId: string, entry: { id: string; content: unknown; body: string }) {
+  const asked = screenshotsAsked(displayDoc(entry));
+  const [setUp, latest] = await Promise.all([
+    prisma.screenshotSettings.count({ where: { projectId } }).then(Boolean),
+    prisma.screenshotRun.findFirst({ where: { changelogEntryId: entry.id }, orderBy: { createdAt: "desc" }, select: { state: true } }),
+  ]);
+  if (latest?.state === "RUNNING") {
+    await settleStaleScreenshotRuns(projectId);
+  }
+  const run = latest && (await prisma.screenshotRun.findFirst({
+    where: { changelogEntryId: entry.id },
+    orderBy: { createdAt: "desc" },
+    select: { state: true, screenshots: { orderBy: { position: "asc" }, select: { show: true, failed: true, imageId: true } } },
+  }));
+  const left = [...asked];
+  const failed =
+    run && run.state !== "RUNNING"
+      ? run.screenshots.flatMap(({ show, failed, imageId }) => {
+          const at = imageId ? -1 : left.indexOf(show);
+          return at === -1 ? [] : (left.splice(at, 1), [{ show, reason: failed || "Not taken." }]);
+        })
+      : [];
+  const priced = creditsEnabled()
+    ? await prisma.screenshot.findMany({ where: { projectId, cost: { not: null }, run: { test: false } }, orderBy: { createdAt: "desc" }, take: ESTIMATE_SHOTS, select: { cost: true } })
+    : [];
+  return {
+    asked: asked.length,
+    available: screenshotsAvailable() && setUp ? true : screenshotsAvailable() ? ("not_set_up" as const) : false,
+    running: run?.state === "RUNNING" ? run.screenshots.length : null,
+    failed,
+    // ponytail: the average shot's cost; a run's own sign-in, shared by its shots, makes a lone one cost more.
+    estimate: priced.length ? (priced.reduce((sum, shot) => sum + shot.cost!.toNumber(), 0) / priced.length) * creditsPerUsageDollar() * Math.min(asked.length, MAX_SHOTS) : null,
+    credits: creditsEnabled(),
+  };
+}
+
+export type EntryScreenshots = Awaited<ReturnType<typeof entryScreenshots>>;

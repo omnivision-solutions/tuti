@@ -24,6 +24,7 @@ import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { entryScreenshots } from "@/server/operations/screenshots";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
 import { portalAddress } from "@/server/custom-domains";
@@ -269,6 +270,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               canEditWithAi={aiEnabled() && !unwritten}
               aiPaused={paused}
               pullRequests={pullRequests}
+              screenshots={await entryScreenshots(membership.project.id, entry)}
+              canTakeScreenshots={isAdminRole(membership.role)}
             />
             {/* Always there, so focus has its heading to go to once the last is deleted. */}
             <section className="flex max-w-3xl flex-col gap-4 border-t pt-6" aria-label="Comments">

@@ -1431,6 +1431,47 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
 });
 
+test("a draft's screenshot lines are filled with screenshots of the team's app; one not taken stays with why, and Publish still waits for it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // As an AI draft leaves it; the second asks for a screen Browser Use's fake never reaches (FAKE_UNREACHABLE).
+  await api("/changelog", {
+    title: "Billing, redone",
+    markdown: "Billing got a new look.\n\n[Screenshot: the billing page]\n\nReports moved too.\n\n[Screenshot: a screen that isn't there, the reports page]",
+  });
+  const section = team.getByRole("region", { name: "Screenshots" });
+
+  // Without Screenshots set up: where to set it up.
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(section).toContainText("2 lines ask for a screenshot. Tuti can take them: set up your app in Settings → Screenshots.");
+  await expect(section.getByRole("link", { name: "set up your app in Settings → Screenshots" })).toHaveAttribute("href", `/app/${slug}/settings/screenshots`);
+
+  // Set up: Take screenshots, and each one taken is in the text in place of its line.
+  await api("/screenshots/settings", { appUrl: "https://app.example.com", signIn: "none" }, "PATCH");
+  await team.reload();
+  await section.getByRole("button", { name: "Take screenshots" }).click();
+  await expect(team.getByRole("textbox", { name: "What changed" }).getByRole("img", { name: "The screen: the billing page" })).toBeVisible();
+  await expect(section).toContainText("1 line asks for a screenshot.");
+  await expect(section.getByRole("listitem")).toHaveText("“a screen that isn't there, the reports page”: There's no such screen in the app.");
+  await expect(team.getByRole("textbox", { name: "What changed" })).toContainText("[Screenshot: a screen that isn't there, the reports page]");
+  await expect(team.getByRole("textbox", { name: "What changed" })).not.toContainText("[Screenshot: the billing page]");
+  await checkpoint(team, "team-changelog-screenshots");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await section.scrollIntoViewIfNeeded();
+  expect(await team.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await checkpoint(team, "team-changelog-screenshots-phone", { fullPage: false });
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // The line not taken still holds publishing back.
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  const dialog = team.getByRole("alertdialog");
+  await expect(dialog.getByRole("heading")).toHaveText("Replace a line before publishing");
+  await expect(dialog.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+});
+
 test("an entry with no cover gets one composed: picked from its designs as it's published, or made in the editor with a headline, unsaved text kept", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
