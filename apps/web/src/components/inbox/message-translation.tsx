@@ -1,7 +1,7 @@
 "use client";
 
 import { LanguagesIcon } from "lucide-react";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { MessageText } from "@/components/inbox/message-text";
@@ -11,6 +11,8 @@ import { retryTranslation } from "@/server/inbox";
 /** The line under a translated message: muted, and on the team's green bubble in its text colour (the bubble's own rule). */
 const LINE = "inbox-translation mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none";
 const TOGGLE = "cursor-pointer font-medium underline underline-offset-2";
+/** How long "Translating…" shows after Try again, at most. */
+const RETRY_SHOWN_MS = 60_000;
 
 /**
  * Which line a message has under it: its translation's, its failure's, "Translating…" once Try again has queued it
@@ -59,6 +61,15 @@ export function MessageTranslation({
   const [retrying, startRetry] = useTransition();
   // Queued again: "Translating…" until the result is in.
   const [retried, setRetried] = useState(false);
+  // ponytail: a minute, not the job's own word; a retry the job skips (nothing to translate after all) leaves no trace to
+  // wait on. A translation or failure later still shows through the live refresh.
+  useEffect(() => {
+    if (!retried) {
+      return;
+    }
+    const timer = setTimeout(() => setRetried(false), RETRY_SHOWN_MS);
+    return () => clearTimeout(timer);
+  }, [retried]);
   // Where the keyboard's focus goes once Try again's line is gone.
   const textRef = useRef<HTMLParagraphElement>(null);
   const bodyShown = teamText === null || other;
