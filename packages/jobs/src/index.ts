@@ -82,7 +82,7 @@ export { ARTICLE_REVISIONS_KEPT, docOf, recordRevision, versions, editName, hasT
 export { applyPlanLicense, grantLicenseCredits, grantPlanLicenseCredits, lockPlanLicense, releasePlanLicense } from "./plan-licenses";
 export { apiReferenceChanged, dropHidden, indexApiReferences, indexReference } from "./api-references";
 export { backfillEmbeddings } from "./backfill";
-export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
+export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles, embedTranslation } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS, SEARCHES_KEPT_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";

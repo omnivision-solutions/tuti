@@ -21,6 +21,7 @@ if (posts) {
 }
 if (articles) {
   console.log(`${articles.articles} published articles: embedded ${articles.embedded} for search (the rest unchanged), ${articles.failed.length} failed`);
+  console.log(`${articles.translations} published translations: embedded ${articles.translationsEmbedded} (the rest unchanged), ${articles.translationsFailed.length} failed`);
 }
 if (references) {
   console.log(`${references.references} API references: indexed, ${references.failed.length} failed`);
@@ -29,9 +30,11 @@ await prisma.$disconnect();
 for (const { phase, message } of errors) {
   console.error(`The ${phase} phase failed: ${message}`);
 }
-const failed = (articles?.failed.length ?? 0) + (references?.failed.length ?? 0);
+const failed = (articles?.failed.length ?? 0) + (articles?.translationsFailed.length ?? 0) + (references?.failed.length ?? 0);
 if (failed > 0) {
-  console.error(`${articles?.failed.length ?? 0} article(s) and ${references?.failed.length ?? 0} API reference(s) weren't embedded or indexed; run this again`);
+  console.error(
+    `${articles?.failed.length ?? 0} article(s), ${articles?.translationsFailed.length ?? 0} translation(s) and ${references?.failed.length ?? 0} API reference(s) weren't embedded or indexed; run this again`,
+  );
 }
 if (errors.length > 0 || failed > 0) {
   process.exitCode = 1;
