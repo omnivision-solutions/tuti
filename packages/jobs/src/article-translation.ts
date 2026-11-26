@@ -262,20 +262,28 @@ async function queue(articleId: string, language: string) {
  * Pages this process will still queue (inline the jobs run one by one here, so a long batch passes its pages' hour): the
  * retry job leaves them to the batch, so none is translated, and paid for, twice. A restart empties it.
  */
-const onTheirWay = new Set<string>();
+// How many batches hold each page: one finishing leaves it marked while another still holds it.
+const onTheirWay = new Map<string, number>();
 const pageKey = (articleId: string, language: string) => `${articleId}:${language}`;
+/** At most this many pages per retry run (the oldest due first); the next run takes the rest. */
+const RETRY_BATCH = 500;
 
 /** Queues pages one after another, each counted as on its way until its turn has been queued. */
 async function queueEach(pages: { articleId: string; language: string }[]) {
-  const keys = pages.map(({ articleId, language }) => pageKey(articleId, language));
-  keys.forEach((key) => onTheirWay.add(key));
+  const held = pages.map(({ articleId, language }) => pageKey(articleId, language));
+  const release = (key: string) => {
+    const count = (onTheirWay.get(key) ?? 1) - 1;
+    if (count > 0) onTheirWay.set(key, count);
+    else onTheirWay.delete(key);
+  };
+  held.forEach((key) => onTheirWay.set(key, (onTheirWay.get(key) ?? 0) + 1));
   try {
-    for (const [index, { articleId, language }] of pages.entries()) {
+    for (const { articleId, language } of pages) {
       await queue(articleId, language);
-      onTheirWay.delete(keys[index]!);
+      release(held.shift()!);
     }
   } finally {
-    keys.forEach((key) => onTheirWay.delete(key));
+    held.forEach(release);
   }
 }
 
@@ -388,7 +396,9 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
   // this run from reaching come back too.
   const now = new Date();
-  const ready = (await prisma.articleTranslation.findMany({ where: { retryAt: { lte: now }, automatic: true }, select: { id: true, articleId: true, language: true } })).filter(
+  const ready = (
+    await prisma.articleTranslation.findMany({ where: { retryAt: { lte: now }, automatic: true }, orderBy: { retryAt: "asc" }, take: RETRY_BATCH, select: { id: true, articleId: true, language: true } })
+  ).filter(
     ({ articleId, language }) => !onTheirWay.has(pageKey(articleId, language)),
   );
   const due = await prisma.articleTranslation.updateManyAndReturn({
