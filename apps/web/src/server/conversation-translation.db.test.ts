@@ -469,6 +469,12 @@ test("Try again tells open Inbox pages even when a later message couldn't be que
   await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
   actAs(owner);
   await listening();
+  // Earlier notices (creating the conversation) heard first, so only the retry's count: NOTIFYs arrive in order.
+  const before: number[] = [];
+  const stopBefore = subscribeInbox((change) => change.projectId === project.id && change.conversationId === "before", () => before.push(1));
+  await notifyInboxNow({ projectId: project.id, conversationId: "before", userId: null, visitorHash: null });
+  await vi.waitFor(() => expect(before).toHaveLength(1));
+  stopBefore();
   const heard: number[] = [];
   const last: number[] = [];
   const stops = [
