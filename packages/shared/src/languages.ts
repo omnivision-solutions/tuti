@@ -25,3 +25,15 @@ export const LANGUAGE_CODES = Object.keys(LANGUAGES) as [Language, ...Language[]
 export const DEFAULT_LANGUAGE: Language = "en";
 
 export const isLanguage = (code: string): code is Language => Object.hasOwn(LANGUAGES, code);
+
+/**
+ * The languages readers get, of a project's others (`languages`, in the order added) on a plan allowing `limit` (the default
+ * included; null, no limit): those set live, but past the limit (after a downgrade) only the oldest within it. Codes no
+ * longer offered don't count.
+ */
+export function liveLanguages(languages: { code: string; live: boolean }[], limit: number | null): Language[] {
+  return languages
+    .filter(({ code }) => isLanguage(code))
+    .filter(({ live }, index) => live && (limit === null || index < limit - 1))
+    .map(({ code }) => code as Language);
+}

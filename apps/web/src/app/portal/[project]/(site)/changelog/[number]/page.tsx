@@ -21,7 +21,7 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
 import { visibleEntry } from "@/lib/reader-groups";
-import { portalBase, portalLinks } from "@/server/portal-base";
+import { portalLinkBase, portalLinks } from "@/server/portal-base";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
@@ -118,7 +118,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         mediaUrls={await mediaUrls(entry.doc, entry.cover)}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
-        base={await portalBase()}
+        base={await portalLinkBase()}
       />
       <section className="flex flex-col gap-3 border-t pt-8" aria-label="Comments">
         <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-sans text-lg font-semibold outline-none">

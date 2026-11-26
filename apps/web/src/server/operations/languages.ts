@@ -3,6 +3,8 @@ import { lockProject } from "@tuti/jobs";
 import { isLanguage, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
+import { forgetLanguages } from "../language-addresses";
+
 import { defineOperation, OperationError } from "./define";
 
 /** Languages (docs/plan.md, Languages): the project's default language, and the others its portal is in. */
@@ -153,6 +155,8 @@ export const updateLanguages = defineOperation({
         await tx.projectLanguage.upsert({ where: { projectId_code: { projectId, code } }, create: { projectId, code, createdAt: new Date(now + index), ...data }, update: data });
       }
     });
+    const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
+    forgetLanguages(slug);
     return projectLanguages(projectId);
   },
 });

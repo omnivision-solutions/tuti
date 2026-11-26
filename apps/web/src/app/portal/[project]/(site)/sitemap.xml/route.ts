@@ -2,6 +2,8 @@ import { prisma } from "@tuti/db";
 
 import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
+import { languagePrefix } from "@/lib/language-addresses";
+import { portalLanguages } from "@/server/language-addresses";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { shownOperations } from "@/server/api-reference-queries";
@@ -104,7 +106,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     ...collection.collections.flatMap(datesIn),
   ];
   const latestPost = project.posts[0]?.updatedAt;
-  const pages: { path: string; lastmod?: Date }[] = [
+  // `teamText`: an article's, post's or changelog entry's page, in the default language only until it has translations (see portalPageMetadata).
+  const pages: { path: string; lastmod?: Date; teamText?: boolean }[] = [
     { path: "", lastmod: latestPost },
     ...project.boards.map((board) => ({
       path: boardPath(board),
@@ -112,7 +115,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     })),
     { path: "/roadmap", lastmod: latestPost },
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
-    ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt })),
+    ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt, teamText: true })),
     { path: "/docs", lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]) },
     ...docs.tabs
       .filter((tab) => tab.slug !== docs.home)
@@ -128,19 +131,30 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         path: `/docs/${collection.slug}`,
         lastmod: newest(datesIn(collection)),
       })),
-    ...articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt })),
+    ...articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt, teamText: true })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
-    ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt })),
+    ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt, teamText: true })),
   ].slice(0, MAX_URLS);
-  const portal = await portalAddress(slug);
+  const [portal, languages] = await Promise.all([portalAddress(slug), portalLanguages(slug)]);
+  const live = languages?.live ?? [];
+  const escape = (url: string) => url.replace(/&/g, "&amp;");
+  // A page in the live languages too (docs/plan.md, Languages): each language's address listed, each with every language's
+  // as alternates (and x-default, the default language's).
+  const url = (loc: string, lastmod: Date | undefined, alternates: string) =>
+    `<url><loc>${escape(loc)}</loc>${alternates}${lastmod ? `<lastmod>${lastmod.toISOString()}</lastmod>` : ""}</url>`;
+  const alternate = (hreflang: string, href: string) => `<xhtml:link rel="alternate" hreflang="${hreflang}" href="${escape(href)}"/>`;
   const sitemap = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    ...pages.map(
-      ({ path, lastmod }) =>
-        `<url><loc>${`${portal}${path}`.replace(/&/g, "&amp;")}</loc>${lastmod ? `<lastmod>${lastmod.toISOString()}</lastmod>` : ""}</url>`,
-    ),
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
+    ...pages.flatMap(({ path, lastmod, teamText }) => {
+      if (teamText || live.length === 0 || !languages) {
+        return [url(`${portal}${path}`, lastmod, "")];
+      }
+      const addresses = [[languages.default, `${portal}${path}`], ...live.map((code) => [code, `${portal}${languagePrefix(code)}${path}`])];
+      const alternates = [...addresses.map(([code, href]) => alternate(code!, href!)), alternate("x-default", `${portal}${path}`)].join("");
+      return addresses.map(([, href]) => url(href!, lastmod, alternates));
+    }),
     "</urlset>",
   ].join("\n");
   return new Response(sitemap, {

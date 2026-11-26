@@ -9,8 +9,10 @@ import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains
 import { isArticleSlug } from "@/server/docs-queries";
 import { redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
-import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor } from "@/server/portal-access";
+import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
 import { redirectFor } from "@/server/portal-redirects";
+import { LANGUAGE, languagePrefix, ownAddress, prefixedTarget, splitLanguage } from "@/lib/language-addresses";
+import { portalLanguages } from "@/server/language-addresses";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
@@ -174,10 +176,19 @@ function fromSite(request: NextRequest, mount: { origin: string; path: string })
  * A portal page or file, for `slug`'s portal at `origin`: its readers only, if it's private.
  * `pathname` is the portal's own path; `mount`, where it is on the team's site, when the request came through it.
  */
-async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, mount?: { origin: string; path: string }) {
-  // The team's redirects (Settings → Domain → Redirects) first: an old address goes on, whoever's asking.
-  if (request.method === "GET" || request.method === "HEAD") {
-    const to = await redirectFor(slug, pathname);
+async function servePortal(request: NextRequest, slug: string, origin: string, address = request.nextUrl.pathname, mount?: { origin: string; path: string }) {
+  const reading = request.method === "GET" || request.method === "HEAD";
+  // A language's prefix (docs/plan.md, Languages; lib/language-addresses.ts): /de/docs/billing is /docs/billing in German.
+  const languages = await portalLanguages(slug);
+  const inLanguage = splitLanguage(address);
+  const live = !!inLanguage && !!languages?.live.includes(inLanguage.code);
+  // The team's redirects (Settings → Domain → Redirects) first: an old address goes on, whoever's asking. Under a live
+  // language's prefix a rule can't hide the portal's own addresses (/de/docs/<slug>), and a path with no rule of its own
+  // takes the rule of the path without the prefix, in the language (/de/docs/billing → /de/docs/payments). The exact rules
+  // come first under any other prefix too (an imported /fr/articles/… while French is offline).
+  if (reading) {
+    const own = live && ownAddress(inLanguage.path) ? null : await redirectFor(slug, address);
+    const to = own ?? (live ? await redirectFor(slug, inLanguage.path).then((rule) => rule && prefixedTarget(rule, languagePrefix(inLanguage.code))) : null);
     if (to) {
       const response = NextResponse.redirect(redirectLocation(to, origin, request.nextUrl.search), 308);
       // Permanent for search engines, but not kept by browsers: the team can change it.
@@ -185,6 +196,19 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
       return framedByApp(response);
     }
   }
+  // A language that isn't live (offline, removed, never added, or the default's own code): the same page in the default
+  // language, a temporary redirect (it may come back), never a 404. Except for the team's preview of one they have
+  // (marked "Not live yet" and kept from search engines by the pages). Forms posted there are the default language's.
+  const preview =
+    !!inLanguage && !live && !!languages?.stored.includes(inLanguage.code) && (await teamPreview(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value));
+  if (inLanguage && !live && !preview && reading) {
+    const response = NextResponse.redirect(redirectLocation(inLanguage.path, origin, request.nextUrl.search), 307);
+    response.headers.set("cache-control", "no-store");
+    return framedByApp(response);
+  }
+  const language = inLanguage && (live || preview) ? inLanguage.code : null;
+  const prefix = language ? languagePrefix(language) : "";
+  const pathname = inLanguage ? inLanguage.path : address;
   const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value);
   if (visitor === "refused") {
     // A script's request (a client navigation: the page's router asking for the next page's payload) gets no redirect:
@@ -194,7 +218,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     if (request.headers.get("sec-fetch-dest") === "empty") {
       return framedByApp(new NextResponse(null, { status: 403, headers: { "cache-control": "private, no-store" } }));
     }
-    const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}/sign-in`, origin);
+    const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}${prefix}/sign-in`, origin);
     if (pathname !== "/") {
       signIn.searchParams.set("next", pathname + request.nextUrl.search);
     }
@@ -224,6 +248,8 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     forwarded.set(BASE_HEADER, "");
   }
   // "Preview as a reader": always set here, so only the page's own query can ask for it (see currentReader).
+  forwarded.set(LANGUAGE.header, language ?? languages?.default ?? "");
+  forwarded.set(LANGUAGE.prefix, prefix);
   forwarded.set(PREVIEW.header, request.nextUrl.searchParams.get(PREVIEW.param) === PREVIEW.value ? PREVIEW.value : "");
   // Customize's preview: its param (on the links it follows) or a framed page; always set here too.
   const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";

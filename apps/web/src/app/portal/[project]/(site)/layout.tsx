@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { log } from "@tuti/shared";
+import { LANGUAGES, log } from "@tuti/shared";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
@@ -23,7 +23,8 @@ import { hidesLauncher } from "@/lib/widget-launcher";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { currentReader, mayRead } from "@/server/portal-access";
-import { portalBase } from "@/server/portal-base";
+import { portalBase, portalLanguage } from "@/server/portal-base";
+import { portalLanguages } from "@/server/language-addresses";
 import { TeamHtml } from "@/components/team-html";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalSite, SHARE_IMAGE } from "@/server/portal-metadata";
@@ -53,6 +54,8 @@ export async function generateMetadata({ params }: LayoutProps<"/portal/[project
       ...(image && { images: [{ url: image.url, width: image.width, height: image.height }] }),
     },
     twitter: { card: "summary_large_image" },
+    // The team's preview of a language that isn't live: kept from search engines (proxy.ts lets only the team in).
+    ...((await notLiveYet(slug)) && { robots: { index: false, follow: false } }),
   };
   if (site?.brand.favicon) {
     return { ...seo, icons: { icon: [{ url: site.brand.favicon.url, type: "image/webp" }] } };
@@ -94,7 +97,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id, await currentReader(project.id)));
 
-  const base = await portalBase();
+  const [base, { prefix }, preview] = await Promise.all([portalBase(), portalLanguage(), notLiveYet(slug)]);
   // The team's own origin, where their HTML may run: their domain, or the site the portal is under (not
   // Tuti's own portal on the app's domain). Only an expectation: TeamHtml checks the page is there.
   const target = await requestTarget(requestHeaders.get("host"));
@@ -115,7 +118,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const widgetHere = project.widgetOnPortal || assistant || teamAddsWidget;
 
   return (
-    <PortalBaseProvider base={base} slug={slug}>
+    <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {/* Under a path of the team's site, the stored theme is the site's too: a pick made there stays, switch or not. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} readerPicks={brand.themeSwitch || !!mount} />}
@@ -135,7 +138,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
-            <PortalLogo name={project.name} href={withBase(base, "/")} />
+            <PortalLogo name={project.name} href={withBase(base, prefix || "/")} />
           </div>
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
           {/* On Docs; on phones and tablets a line of its own, the whole width. */}
@@ -153,7 +156,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
               </SignInLink>
             )}
             {/* For everyone: on a private portal's sign-in page it has the team's links (no parts). */}
-            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} parts={canRead} newChangelog={newChangelog} />
+            <PortalMenu name={project.name} homeHref={withBase(base, prefix || "/")} boards={canRead ? project.boards : []} parts={canRead} newChangelog={newChangelog} />
           </div>
         </div>
         </header>
@@ -164,6 +167,11 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <noscript>
           <PortalLinksRow />
         </noscript>
+        {preview && (
+          <p role="status" className="border-b bg-muted px-4 py-2 text-center text-sm text-muted-foreground">
+            <strong className="font-medium text-foreground">Not live yet.</strong> Only your team sees the portal in {LANGUAGES[preview].name} until it goes live.
+          </p>
+        )}
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new, and Ask
@@ -188,6 +196,12 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       {brand.customHtml && ownOrigin && <TeamHtml html={brand.customHtml} origin={ownOrigin} />}
     </PortalBaseProvider>
   );
+}
+
+/** The language of the team's preview of one that isn't live (proxy.ts lets only the team open its addresses), else null. */
+async function notLiveYet(slug: string) {
+  const [{ language, prefix }, languages] = await Promise.all([portalLanguage(), portalLanguages(slug)]);
+  return prefix && language && !languages?.live.includes(language) ? language : null;
 }
 
 /**

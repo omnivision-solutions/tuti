@@ -1,12 +1,25 @@
 import { configFile } from "@tuti/testkit";
 import { NextRequest } from "next/server";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { proxy } from "./proxy";
+import type { PortalLanguages } from "./server/language-addresses";
 
+// The team's redirects and the portal's languages, as a test sets them (with the database: portal-redirects.db.test.ts,
+// language-addresses.db.test.ts); the team's preview is a request with the preview cookie set to "team".
+const portal = vi.hoisted(() => ({ rules: new Map<string, string>(), languages: null as PortalLanguages | null }));
+vi.mock("@/server/portal-redirects", async () => {
+  const { redirectKey } = await import("@/lib/portal-redirects");
+  return { redirectFor: async (_slug: string, path: string) => portal.rules.get(redirectKey(path)) ?? null };
+});
+vi.mock("@/server/language-addresses", () => ({ portalLanguages: async () => portal.languages }));
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
-vi.mock("@/server/portal-redirects", () => ({ redirectFor: async () => null }));
-vi.mock("@/server/portal-access", () => ({ portalVisitor: async () => "public", previewTokenFor: async () => false, PREVIEW_READER_COOKIE: "tuti_preview_reader" }));
+vi.mock("@/server/portal-access", () => ({
+  portalVisitor: async () => "public",
+  previewTokenFor: async () => false,
+  teamPreview: async (_slug: string, _headers: Headers, preview?: string) => preview === "team",
+  PREVIEW_READER_COOKIE: "tuti_preview_reader",
+}));
 // /docs/billing is an article's page; any other /docs/<slug>, a tab's or collection's (see findable.db.test.ts).
 vi.mock("@/server/docs-queries", () => ({ isArticleSlug: async (_project: string, slug: string) => slug === "billing" }));
 // Nobody's signed in either (loading sessions loads the auth config, which needs a server's settings).
@@ -22,7 +35,11 @@ beforeEach(() => {
   vi.stubEnv("APP_URL", "https://tuti.example");
   vi.stubEnv("PORTAL_URL_TEMPLATE", "https://{project}.tuti.example");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  portal.rules.clear();
+  portal.languages = null;
+});
 
 const request = (host: string, path: string) =>
   new NextRequest(`http://${host}${path}`, { headers: { host } });
@@ -166,4 +183,101 @@ test("Next.js's files are served under /_tuti on every host (a team's site forwa
   for (const host of ["tuti.example", "acme.tuti.example", "localhost:3000"]) {
     expect((await proxy(request(host, "/_tuti/_next/static/chunks/app.js"))).headers.get("x-middleware-rewrite")).toBe(`http://${host}/_next/static/chunks/app.js`);
   }
+});
+
+describe("language addresses (docs/plan.md, Languages: L3)", () => {
+  beforeEach(() => {
+    // German live, French offline (stored), Spanish never added.
+    portal.languages = { default: "en", live: ["de"], stored: ["de", "fr"] };
+  });
+  const visit = (path: string, init: { method?: string; cookie?: string } = {}) =>
+    proxy(new NextRequest(`http://acme.tuti.example${path}`, { method: init.method, headers: { host: "acme.tuti.example", ...(init.cookie && { cookie: init.cookie }) } }));
+  /** Where a visit goes: "<page it renders> <language> <prefix>", or "<status> <location>". */
+  const where = async (path: string, init: { method?: string; cookie?: string } = {}) => {
+    const response = await visit(path, init);
+    const rewrite = response.headers.get("x-middleware-rewrite");
+    return rewrite
+      ? `${rewrite.replace("http://acme.tuti.example/portal/acme", "") || "/"} ${response.headers.get("x-middleware-request-x-tuti-language")} ${response.headers.get("x-middleware-request-x-tuti-language-prefix") || "-"}`
+      : `${response.status} ${response.headers.get("location")}`;
+  };
+
+  test("a live language's prefix comes off the path and the pages get the language (as a site's path), its home, Markdown and llms.txt too", async () => {
+    expect(await where("/de/docs/billing")).toBe("/docs/billing de /de");
+    expect(await where("/de")).toBe("/ de /de");
+    expect(await where("/de/")).toBe("/ de /de");
+    expect(await where("/de/docs/billing.md")).toBe("/docs/billing/md de /de");
+    expect(await where("/de/llms.txt")).toBe("/llms.txt de /de");
+    expect(await where("/de/feedback/ideas", { method: "POST" })).toBe("/feedback/ideas de /de");
+    // The default language's addresses: its code, no prefix. A request can't say its own.
+    expect(await where("/docs/billing")).toBe("/docs/billing en -");
+    const spoofed = await proxy(new NextRequest("http://acme.tuti.example/docs", { headers: { host: "acme.tuti.example", "x-tuti-language": "de", "x-tuti-language-prefix": "/de" } }));
+    expect(spoofed.headers.get("x-middleware-request-x-tuti-language-prefix")).toBe("");
+    // Only a whole first segment, lowercase: /dex and /DE are paths of their own.
+    expect(await where("/dex/docs")).toBe("/dex/docs en -");
+    expect(await where("/DE/docs")).toBe("/DE/docs en -");
+  });
+
+  test("the team's redirects under a live language's prefix are skipped only where the path without it is the portal's own", async () => {
+    portal.rules.set("/de", "/feedback");
+    portal.rules.set("/de/docs/billing", "/docs/payments");
+    portal.rules.set("/de/llms.txt", "/docs");
+    portal.rules.set("/de/articles/123-abrechnung", "/de/docs/billing");
+    expect(await where("/de")).toBe("/ de /de");
+    expect(await where("/de/docs/billing")).toBe("/docs/billing de /de");
+    expect(await where("/de/llms.txt")).toBe("/llms.txt de /de");
+    // An imported old address still redirects, as it is.
+    expect(await where("/de/articles/123-abrechnung")).toBe("308 https://acme.tuti.example/de/docs/billing");
+  });
+
+  test("a prefixed path with no rule of its own takes the rule of the path without the prefix, a portal path getting the prefix back", async () => {
+    portal.rules.set("/docs/billing", "/docs/payments?from=old");
+    portal.rules.set("/kb", "/");
+    portal.rules.set("/pricing", "https://acme.example/pricing");
+    portal.rules.set("/hc/fr", "/fr/docs");
+    portal.rules.set("/de/kb", "/docs/kb");
+    expect(await where("/de/docs/billing")).toBe("308 https://acme.tuti.example/de/docs/payments?from=old");
+    expect(await where("/de/kb")).toBe("308 https://acme.tuti.example/docs/kb");
+    expect(await where("/de/hc/fr")).toBe("308 https://acme.tuti.example/fr/docs");
+    // A whole address, or one already in a language, as it is.
+    expect(await where("/de/pricing")).toBe("308 https://acme.example/pricing");
+    expect(await where("/kb")).toBe("308 https://acme.tuti.example/");
+  });
+
+  test("an offline, removed or never added language's prefix goes to the same page in the default language, for now (307), never a 404", async () => {
+    for (const [path, to] of [
+      ["/fr/docs/billing?q=1", "/docs/billing?q=1"],
+      ["/fr", "/"],
+      ["/es/changelog/12", "/changelog/12"],
+      ["/en/roadmap", "/roadmap"],
+      ["/pt-br/feedback", "/feedback"],
+    ]) {
+      const response = await visit(path!);
+      expect([response.status, response.headers.get("location"), response.headers.get("cache-control")], path).toEqual([307, `https://acme.tuti.example${to}`, "no-store"]);
+    }
+    // Forms posted there are the default language's.
+    expect(await where("/fr/feedback/ideas", { method: "POST" })).toBe("/feedback/ideas en -");
+    // A language that goes offline sends its live addresses away too.
+    portal.languages = { default: "en", live: [], stored: ["de", "fr"] };
+    expect(await where("/de/docs/billing")).toBe("307 https://acme.tuti.example/docs/billing");
+  });
+
+  test("the team's exact rules come before an offline language's prefix; a rule's target in an offline language goes on to the default's", async () => {
+    portal.rules.set("/fr/articles/42-facturation", "/fr/docs/billing");
+    portal.rules.set("/fr/docs/billing", "/docs/payments");
+    expect(await where("/fr/articles/42-facturation")).toBe("308 https://acme.tuti.example/fr/docs/billing");
+    expect(await where("/fr/docs/billing")).toBe("308 https://acme.tuti.example/docs/payments");
+    portal.rules.clear();
+    expect(await where("/fr/docs/billing")).toBe("307 https://acme.tuti.example/docs/billing");
+  });
+
+  test("the team's preview of an offline language they have serves its pages; not of one they don't have", async () => {
+    expect(await where("/fr/docs/billing", { cookie: "tuti_preview_reader=team" })).toBe("/docs/billing fr /fr");
+    expect(await where("/es/docs/billing", { cookie: "tuti_preview_reader=team" })).toBe("307 https://acme.tuti.example/docs/billing");
+  });
+
+  test("a portal with no other languages: its prefixes, its default.s own too, go to the default language.s page", async () => {
+    portal.languages = { default: "de", live: [], stored: [] };
+    expect(await where("/docs")).toBe("/docs de -");
+    expect(await where("/de/docs")).toBe("307 https://acme.tuti.example/docs");
+  });
 });
