@@ -7,7 +7,7 @@ import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { isArticleSlug } from "@/server/docs-queries";
-import { redirectLocation } from "@/lib/portal-redirects";
+import { destinationKey, redirectKey, redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
 import { redirectFor } from "@/server/portal-redirects";
@@ -187,8 +187,19 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   // takes the rule of the path without the prefix, in the language (/de/docs/billing → /de/docs/payments). The exact rules
   // come first under any other prefix too (an imported /fr/articles/… while French is offline).
   if (reading) {
-    const own = live && ownAddress(inLanguage.path) ? null : await redirectFor(slug, address);
-    const to = own ?? (live ? await redirectFor(slug, inLanguage.path).then((rule) => rule && prefixedTarget(rule, languagePrefix(inLanguage.code))) : null);
+    // Never back to this address: where a rule's target ends up, an address in a language that isn't live going on to the
+    // default language's (/docs/billing → /fr/docs/billing → /docs/billing while French is offline), and a rule the prefixed
+    // path took already in the language (/docs/billing → /de/docs/billing, asked at /de/docs/billing). Such a rule is skipped.
+    const here = redirectKey(address);
+    const landsOn = (to: string) => {
+      const key = destinationKey(to);
+      const target = key ? splitLanguage(key) : null;
+      return target && !languages?.live.includes(target.code) ? redirectKey(target.path) : key;
+    };
+    const goesOn = (to: string | null) => (to && landsOn(to) !== here ? to : null);
+    const own = live && ownAddress(inLanguage.path) ? null : goesOn(await redirectFor(slug, address));
+    const to =
+      own ?? (live ? goesOn(await redirectFor(slug, inLanguage.path).then((rule) => rule && prefixedTarget(rule, languagePrefix(inLanguage.code)))) : null);
     if (to) {
       const response = NextResponse.redirect(redirectLocation(to, origin, request.nextUrl.search), 308);
       // Permanent for search engines, but not kept by browsers: the team can change it.

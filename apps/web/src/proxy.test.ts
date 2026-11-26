@@ -252,6 +252,27 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     expect(await where("/kb")).toBe("308 https://acme.tuti.example/");
   });
 
+  test("a rule never sends an address back to itself, through a live language's prefix or an offline one's", async () => {
+    // The rule /de/docs/billing takes from /docs/billing is already in German: it's the page itself, served.
+    portal.rules.set("/docs/billing", "/de/docs/billing");
+    expect(await where("/de/docs/billing")).toBe("/docs/billing de /de");
+    expect(await where("/DOCS/billing/")).toBe("308 https://acme.tuti.example/de/docs/billing");
+    // To French while it's offline, which would go back to /docs/payments: the page itself.
+    portal.rules.set("/docs/payments", "/fr/docs/payments?from=old");
+    expect(await where("/docs/payments")).toBe("/docs/payments en -");
+    expect(await where("/fr/docs/payments")).toBe("307 https://acme.tuti.example/docs/payments");
+    // Taken under German too: /de/docs/payments → /fr/docs/payments → /docs/payments, no loop there.
+    expect(await where("/de/docs/payments")).toBe("308 https://acme.tuti.example/fr/docs/payments?from=old");
+    // An exact rule under an offline prefix to its own page in the default language, which /docs/kb sends back: the page itself.
+    portal.rules.set("/fr/kb", "/kb");
+    portal.rules.set("/kb", "/fr/kb");
+    expect(await where("/kb")).toBe("/kb en -");
+    expect(await where("/fr/kb")).toBe("308 https://acme.tuti.example/kb");
+    // Once French is live, the rule to it goes on.
+    portal.languages = { default: "en", live: ["de", "fr"], stored: ["de", "fr"] };
+    expect(await where("/docs/payments")).toBe("308 https://acme.tuti.example/fr/docs/payments?from=old");
+  });
+
   test("an offline, removed or never added language's prefix goes to the same page in the default language, for now (307), never a 404", async () => {
     for (const [path, to] of [
       ["/fr/docs/billing?q=1", "/docs/billing?q=1"],
