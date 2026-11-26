@@ -177,7 +177,7 @@ export async function settleHold(conversationId: string, judgement: SpamJudgemen
         SELECT "projectId", "pathDueAt", "spamHeldAt", "spam", "spamMarkedAt", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
       // Still held, or its checks still due (one from before the hold: W3's). A release from before, running beside this
       // one during a deploy, may clear `pathDueAt` alone: the hold itself is what's settled.
-      if (!held?.pathDueAt && !held?.spamHeldAt) {
+      if (!held || (!held.pathDueAt && (!held.spamHeldAt || (held.spam && held.spamMarkedAt)))) {
         return null;
       }
       // Kept for the models alone (a sign): read, it goes, as it may be another of the sender's addresses.
@@ -187,11 +187,13 @@ export async function settleHold(conversationId: string, judgement: SpamJudgemen
       // has decided, nothing to settle; its Not spam unmarked it but told nobody (it had no reason), so it's released
       // here, as it would have been, without the model's verdict.
       const unmarked = !!held.spamHeldAt && !held.spam;
-      const decided = !held.spamHeldAt || (held.spam && !!held.spamMarkedAt);
+      // Marked as spam by a teammate (this release or the one before): its `spamHeldAt` stays, for a later Not spam to tell of it.
+      const markedSpam = held.spam && !!held.spamMarkedAt;
+      const decided = !held.spamHeldAt || markedSpam;
       await tx.conversation.update({
         where: { id: conversationId },
         // Released: how old it is for a plan's history starts now, as a new conversation's does.
-        data: { pathDueAt: null, spamHeldAt: null, ...(!decided && !unmarked && (spam ? { spamReason: "model" } : { spam: false, activeAt: new Date() })) },
+        data: { pathDueAt: null, ...(!markedSpam && { spamHeldAt: null }), ...(!decided && !unmarked && (spam ? { spamReason: "model" } : { spam: false, activeAt: new Date() })) },
       });
       if (decided) {
         return { projectId: held.projectId, release: null };

@@ -354,6 +354,9 @@ export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
 /** The team member writing or looking: the signed-in one, or for an API key, the one who created it. */
 const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
 
+/** Held while the spam filter's AI check runs (W4): `spamHeldAt` with no teammate's mark yet (Mark as spam keeps it, see conversations.update). */
+const stillHeld = { spamHeldAt: { not: null }, spamMarkedAt: null } satisfies Prisma.ConversationWhereInput;
+
 /** The Inbox's views, in its order (what needs an answer first, then the rest), each by its name there. */
 export const INBOX_VIEWS = {
   open: "Needs reply",
@@ -387,7 +390,7 @@ export function viewWhere(view: InboxView, projectId: string, userId: string, si
     snoozed: { spam: false, handledBy: "TEAM", status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
     closed: { spam: false, status: "CLOSED" },
     // Not one the spam filter is still holding (W4): it's in no view till it's judged.
-    spam: { spam: true, spamHeldAt: null },
+    spam: { spam: true, NOT: stillHeld },
   };
   return { AND: [filters[view], visibleConversations(since)], projectId };
 }
@@ -654,7 +657,7 @@ export const listConversations = defineOperation({
     const where: Prisma.ConversationWhereInput = {
       projectId,
       // Spam lists what's filed, not what the spam filter is still holding (in no list till it's judged).
-      ...(!input.view && { spam: input.spam, ...(input.spam && { spamHeldAt: null }) }),
+      ...(!input.view && { spam: input.spam, ...(input.spam && { NOT: stillHeld }) }),
       ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
       ...(input.assignee !== undefined && { assigneeId }),
       ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
@@ -1623,7 +1626,7 @@ export const updateConversation = defineOperation({
       }
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       // One the spam filter is holding (W4) is undecided: either mark decides it, and the models' verdict is dropped.
-      const marked = input.spam !== undefined && (input.spam !== held!.spam || !!held!.spamHeldAt);
+      const marked = input.spam !== undefined && (input.spam !== held!.spam || (!!held!.spamHeldAt && !held!.spamMarkedAt));
       let markedAt = new Date();
       if (marked || input.blockDomain) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
@@ -1674,8 +1677,9 @@ export const updateConversation = defineOperation({
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(marked && { spamMarkedAt: markedAt, spamReason: null }),
-          // Held: decided now, so the models' checks have nothing left to do (W4).
-          ...(marked && held!.spamHeldAt && { spamHeldAt: null, pathDueAt: null }),
+          // Held: decided now, so the models' checks have nothing left to do (W4). Mark as spam keeps `spamHeldAt`, as
+          // nobody was ever told of it: a later Not spam then tells of it as a new conversation.
+          ...(marked && held!.spamHeldAt && { pathDueAt: null, ...(!input.spam && { spamHeldAt: null }) }),
           // Take over, or Hand back to the AI: nothing else about it moves (its status, its assignee, how old it is).
           ...(input.handledBy && { handledBy: input.handledBy.toUpperCase() as ConversationOwner }),
           ...(input.priority !== undefined && { priority: input.priority }),

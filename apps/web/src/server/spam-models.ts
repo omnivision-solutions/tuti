@@ -140,6 +140,7 @@ async function inputOf(conversationId: string) {
       name: true,
       pathDueAt: true,
       spamHeldAt: true,
+      spamMarkedAt: true,
       user: { select: { email: true, name: true } },
       project: { select: { spamGuidance: true } },
       messages: firstMessage,
@@ -149,7 +150,7 @@ async function inputOf(conversationId: string) {
     return null;
   }
   const { projectId } = conversation;
-  if (!conversation.spamHeldAt) {
+  if (!conversation.spamHeldAt || conversation.spamMarkedAt) {
     // A teammate has decided: nothing to ask.
     return { projectId, input: null };
   }
@@ -263,7 +264,8 @@ export function spamChecksAfter(conversationId: string) {
 export async function runDueInbox(now = new Date()): Promise<{ checked: number }> {
   // Held for 2 minutes is due too, whatever `pathDueAt` says: a release from before may have cleared it alone.
   const due = await prisma.conversation.findMany({
-    where: { OR: [{ pathDueAt: { lte: now } }, { spamHeldAt: { lte: new Date(now.getTime() - SPAM_HOLD_MS) } }] },
+    // Not one a teammate marked as spam during the hold: it keeps `spamHeldAt` for a later Not spam, and stays in Spam.
+    where: { OR: [{ pathDueAt: { lte: now } }, { spamHeldAt: { lte: new Date(now.getTime() - SPAM_HOLD_MS) }, OR: [{ spam: false }, { spamMarkedAt: null }] }] },
     orderBy: { createdAt: "asc" },
     take: 100,
     select: { id: true },

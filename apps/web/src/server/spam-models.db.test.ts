@@ -318,20 +318,31 @@ test("a teammate's mark during the hold wins over the verdict: Mark as spam keep
   const marked = await mail("e2e-a@example.com", { headers: { "Reply-To": "e2e-a-home@example.com" } });
   model.decide({ spam: 0.01 }, undefined, () => call(updateConversation, admin, { number: marked, spam: true }));
   expect(await check(marked)).toBe(false);
-  expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: false, due: false });
+  // Decided, in Spam; its hold kept, as nobody was told of it.
+  expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: true, due: false });
+  expect((await call(listConversations, admin, { view: "spam" } as never)).conversations.map((c) => c.number)).toEqual([marked]);
   expect([await told(), await activity(marked)]).toEqual([nobodyTold, []]);
   // The mark ended the hold: the Reply-To kept for the model goes with it.
   expect(await prisma.inboundEmail.count({ where: { conversationId: (await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: marked } } })).id, replyTo: { not: null } } })).toBe(0);
+
+  // Not spam on it later (over the API, say): told now, as the new conversation it is, once.
+  await call(updateConversation, admin, { number: marked, spam: false });
+  expect(await state(marked)).toEqual(released);
+  expect(await told()).toEqual(toldOnce);
+  await call(updateConversation, admin, { number: marked, spam: true });
+  await call(updateConversation, admin, { number: marked, spam: false });
+  expect(await told()).toEqual(toldOnce);
 
   // Not spam while the model answers "spam": released with its notices, and the answer is dropped.
   const unmarked = await mail("e2e-b@example.com");
   model.decide({ spam: 0.99 }, undefined, () => call(updateConversation, admin, { number: unmarked, spam: false }));
   expect(await check(unmarked)).toBe(false);
   expect(await state(unmarked)).toEqual(released);
-  expect(await told()).toEqual(toldOnce);
+  const twice = { webhooks: ["conversation.created", "conversation.created"], emails: 2 };
+  expect(await told()).toEqual(twice);
   // Earlier tests' held conversations are released too: this one is told nothing more.
   await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000));
-  expect(await told()).toEqual(toldOnce);
+  expect(await told()).toEqual(twice);
 });
 
 test("a user's reply during the hold is told with the first message on release, never before it, and fires no workflow of its own", { timeout: 30_000 }, async () => {
@@ -420,8 +431,9 @@ test("during a deploy, a hold the release from before left (its job clearing `pa
   const marked = await mail("e2e-c@example.com");
   await prisma.conversation.update({ where: { id: (await conversation(marked)).id }, data: { spamMarkedAt: new Date() } });
   expect(await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000))).toEqual({ checked: 1 });
-  expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: false, due: false });
+  expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: true, due: false });
   expect(await told()).toEqual(twice);
+  expect(await runDueInbox(new Date(Date.now() + 2 * SPAM_HOLD_MS))).toEqual({ checked: 0 });
 });
 
 test("a conversation the free checks decided keeps no Reply-To: nothing will read it", async () => {

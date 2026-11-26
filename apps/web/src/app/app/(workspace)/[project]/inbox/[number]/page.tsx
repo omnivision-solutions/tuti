@@ -401,7 +401,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               number={conversation.number}
               // Why the filter filed it; else a teammate marked it (one from before the two were told apart says neither).
               // Still held for the AI check (W4): in no view yet, but a link can reach it.
-              why={conversation.spamHeldAt ? "the spam filter is still checking it" : (spamWhy(conversation.spamReason, conversation.spamPhrase) ?? (conversation.spamMarkedAt ? "a teammate marked it" : null))}
+              why={conversation.spamHeldAt && !conversation.spamMarkedAt ? "the spam filter is still checking it" : (spamWhy(conversation.spamReason, conversation.spamPhrase) ?? (conversation.spamMarkedAt ? "a teammate marked it" : null))}
               unblocks={marking.unblocks}
             />
           )}
