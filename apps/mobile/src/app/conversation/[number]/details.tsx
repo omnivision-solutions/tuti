@@ -20,6 +20,7 @@ import {
   snoozeChoices,
   snoozeTime,
   STATUS_WORDS,
+  statusWords,
   subscribeTriage,
   triageChanges,
   updateConversation,
@@ -33,7 +34,7 @@ const IOS = Platform.OS === "ios";
 type Pane = "details" | "assign" | "snooze";
 
 // The sheet over a conversation (its header opens it): who it's with, as the web's panel shows them, and assigning,
-// snoozing, closing and spam. iOS's sheet, Android's bottom sheet (`_layout.tsx` sets its sizes).
+// snoozing, closing, priority and spam. iOS's sheet, Android's bottom sheet (`_layout.tsx` sets its sizes).
 export default function Details() {
   const { number: param } = useLocalSearchParams<{ number: string }>();
   const number = Number(param);
@@ -244,7 +245,7 @@ export default function Details() {
           // Once who has it is known: the list marks them.
           onPress={triage && assignees && assignees.length > 0 ? () => setPane("assign") : undefined}
         />
-        <Row label="Status" value={triage ? STATUS_WORDS[triage.status] : ""} dot={triage && (triage.status === "open" ? colors.onNote : colors.muted)} colors={colors} />
+        <Row label="Status" value={triage ? statusWords(triage) : ""} dot={triage && (statusWords(triage) === STATUS_WORDS.open ? colors.onNote : colors.muted)} colors={colors} />
         <Row
           ref={snoozeRow}
           label="Snooze"
@@ -260,6 +261,15 @@ export default function Details() {
             action
             colors={colors}
             onPress={() => void (triage.status === "closed" ? change({ status: "open" }, "Reopened") : change({ status: "closed" }, "Closed"))}
+          />
+        )}
+        {triage && (
+          <Row
+            label={triage.priority ? "Not priority" : "Mark priority"}
+            busy={busy}
+            action
+            colors={colors}
+            onPress={() => void change({ priority: !triage.priority }, triage.priority ? "No longer priority" : "Marked priority")}
           />
         )}
         {triage && (

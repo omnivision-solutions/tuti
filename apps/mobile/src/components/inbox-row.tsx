@@ -3,7 +3,7 @@ import { memo, useRef } from "react";
 import { type HostInstance, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
-import { ageOf, initialsOf, lineOf, personOf, type Row, searchAgeOf, spokenAgeOf, STATUS } from "@/lib/inbox";
+import { ageOf, initialsOf, lineOf, personOf, type Row, searchAgeOf, searchStatusOf, spokenAgeOf } from "@/lib/inbox";
 import { type Colors } from "@/lib/theme";
 
 // A person's face colour (the theme's `faces`): the same one each time.
@@ -28,7 +28,8 @@ type Props = {
 
 /**
  * One conversation in the Inbox: who, their company and how long ago; the subject; the latest message (or the match);
- * unread in bold with a dot. Swiped left, Snooze and Close (each when given); a screen reader has them as its actions.
+ * unread in bold with a dot; "Priority" on one marked so. Swiped left, Snooze and Close (each when given); a screen reader
+ * has them as its actions.
  */
 export const InboxRow = memo(function InboxRow({ row, colors, q, now, onPress, onSnooze, onClose, selected = false, onNode }: Props) {
   const swipe = useRef<SwipeableMethods>(null);
@@ -93,8 +94,9 @@ function RowBody({ row, colors, q, now, onPress, actions, selected, onNode }: Om
       accessibilityState={{ selected }}
       accessibilityActions={actions.map(({ name, label }) => ({ name, label }))}
       onAccessibilityAction={(event) => actions.find((action) => action.name === event.nativeEvent.actionName)?.run(row)}
-      // Read as the web's row: who, what and which, who has it, and (in words) how long ago; in a search, its status too.
-      accessibilityLabel={`${row.unread ? "Unread, " : ""}${person}${row.company ? `, ${row.company}` : ""}: ${row.subject} (#${row.number})${row.assignee ? `, assigned to ${row.assignee.name}` : ""}${q ? `, ${STATUS[row.status]}` : ""}, latest message ${spokenAgeOf(row.lastMessageAt, now)}`}
+      // Read as the web's row: who, what and which, priority, who has it, and (in words) how long ago; in a search, its
+      // status too (or that the AI has it).
+      accessibilityLabel={`${row.unread ? "Unread, " : ""}${person}${row.company ? `, ${row.company}` : ""}: ${row.subject} (#${row.number})${row.priority ? ", priority" : ""}${row.assignee ? `, assigned to ${row.assignee.name}` : ""}${q ? `, ${searchStatusOf(row)}` : ""}, latest message ${spokenAgeOf(row.lastMessageAt, now)}`}
       accessibilityHint={line ?? undefined}
       android_ripple={{ color: colors.border }}
       // Opaque, over the actions behind it.
@@ -121,6 +123,7 @@ function RowBody({ row, colors, q, now, onPress, actions, selected, onNode }: Om
           {row.subject}
         </Text>
         <View style={styles.bottom}>
+          {row.priority && <PriorityMark colors={colors} />}
           <Text style={[styles.line, { color: colors.muted }]} numberOfLines={1}>
             {line ? <Marked text={line} q={q} colors={colors} /> : " "}
           </Text>
@@ -133,6 +136,11 @@ function RowBody({ row, colors, q, now, onPress, actions, selected, onNode }: Om
       </View>
     </Pressable>
   );
+}
+
+/** Marked priority (by hand, or by a workflow): the web's outlined "Priority", on a row and on the conversation. */
+export function PriorityMark({ colors }: { colors: Colors }) {
+  return <Text style={[styles.priority, { color: colors.text, borderColor: colors.input }]}>Priority</Text>;
 }
 
 /** The search's words marked in the line that matched, as the web's search results. */
@@ -166,6 +174,7 @@ const styles = StyleSheet.create({
   subject: { fontSize: 15 },
   bottom: { flexDirection: "row", alignItems: "center", gap: 8 },
   line: { fontSize: 14, flex: 1 },
+  priority: { fontSize: 11, fontWeight: "600", lineHeight: 15, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, overflow: "hidden" },
   assignee: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   assigneeInitial: { fontSize: 10, fontWeight: "600" },
   actions: { flexDirection: "row" },

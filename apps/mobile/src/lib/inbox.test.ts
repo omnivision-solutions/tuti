@@ -74,6 +74,10 @@ describe("a row's text", () => {
     expect(ageOf(new Date(NOW - 3 * 3_600_000).toISOString(), NOW)).toBe("3h");
     expect(ageOf(new Date(NOW - 50 * 3_600_000).toISOString(), NOW)).toBe("2d");
     expect(searchAgeOf(row(1, 4, { status: "closed" }), NOW)).toBe("Closed · 4m");
+    // A search finds the AI's among the team's: said, till it's closed.
+    expect(searchAgeOf(row(1, 4, { handledBy: "ai" }), NOW)).toBe("With AI · 4m");
+    expect(searchAgeOf(row(1, 4, { handledBy: "ai", status: "closed" }), NOW)).toBe("Closed · 4m");
+    expect(searchAgeOf(row(1, 4, { handledBy: "team" }), NOW)).toBe("Open · 4m");
     expect(spokenAgeOf(new Date(NOW - 20_000).toISOString(), NOW)).toBe("1 minute ago");
     expect(spokenAgeOf(new Date(NOW - 3 * 3_600_000).toISOString(), NOW)).toBe("3 hours ago");
   });

@@ -1,10 +1,12 @@
 import type { Api } from "./api";
 import type { Conversation } from "./conversation";
+import { withAi } from "./inbox";
 
 /**
  * A conversation's details sheet: who it's with (`conversations.person`), who it can be assigned to
- * (`conversations.assignees`), and assigning, snoozing, closing and spam (`conversations.update`); the server's
- * operations are in apps/web/src/server/operations (conversation-person.ts, conversations.ts).
+ * (`conversations.assignees`), and assigning, snoozing, closing, priority, spam and taking it over from the AI
+ * (`conversations.update`); the server's operations are in apps/web/src/server/operations (conversation-person.ts,
+ * conversations.ts).
  */
 
 export type PostStatus = "open" | "under_review" | "planned" | "in_progress" | "completed" | "closed";
@@ -31,7 +33,7 @@ export type Person = {
 export type Assignee = { name: string; email: string; image: string | null; you: boolean };
 
 /** What the sheet changes, and the header shows. */
-export type Triage = Pick<Conversation, "status" | "assignee" | "spam" | "snoozedUntil">;
+export type Triage = Pick<Conversation, "status" | "assignee" | "spam" | "snoozedUntil" | "handledBy" | "priority">;
 
 export const getPerson = (api: Api, number: number) => api<Person>(`/conversations/${number}/person`);
 
@@ -39,7 +41,8 @@ export const getPerson = (api: Api, number: number) => api<Person>(`/conversatio
 export const getAssignees = (api: Api) =>
   api<{ assignees: Assignee[] }>("/inbox/assignees").then(({ assignees }) => [...assignees.filter((a) => a.you), ...assignees.filter((a) => !a.you)]);
 
-export type Change = { status: "open" | "closed" } | { assignee: string | null } | { spam: boolean } | { snoozedUntil: string | null };
+/** `handledBy`: Take over, from the AI. Handing back to it isn't offered: nothing answers for the AI yet. */
+export type Change = { status: "open" | "closed" } | { assignee: string | null } | { spam: boolean } | { snoozedUntil: string | null } | { handledBy: "team" } | { priority: boolean };
 
 export const updateConversation = (api: Api, number: number, change: Change) => api<Triage>(`/conversations/${number}`, { method: "PATCH", body: change });
 
@@ -89,7 +92,7 @@ export const triageChanges = (key: string) => changes.get(key) ?? 0;
  * after the fetch started, so it doesn't put back what the change replaced. Nothing is kept for a key nobody holds: an
  * answer after its screen and sheet closed.
  */
-export function showTriage(key: string, { status, assignee, spam, snoozedUntil }: Triage, since?: number) {
+export function showTriage(key: string, { status, assignee, spam, snoozedUntil, handledBy, priority }: Triage, since?: number) {
   if (!holders.has(key)) {
     return;
   }
@@ -98,7 +101,7 @@ export function showTriage(key: string, { status, assignee, spam, snoozedUntil }
   } else if (since !== triageChanges(key)) {
     return;
   }
-  shown.set(key, { status, assignee, spam, snoozedUntil });
+  shown.set(key, { status, assignee, spam, snoozedUntil, handledBy, priority });
   notify();
 }
 export const getTriage = (key: string) => shown.get(key) ?? null;
@@ -113,9 +116,12 @@ export const isSnoozed = (triage: Triage, now = Date.now()) => !!triage.snoozedU
 /** A conversation's status as the web's details say it. */
 export const STATUS_WORDS = { open: "Needs reply", waiting: "Waiting on user", closed: "Closed" } as const;
 
-/** The header's short word for where it stands: spam and a snooze before its status. */
+/** The header's short word for where it stands: spam, then the AI having it (snoozed or not, as its view), and a snooze, before its status. */
 export const standing = (triage: Triage, now = Date.now()) =>
-  triage.spam ? "Spam" : isSnoozed(triage, now) ? "Snoozed" : ({ open: "Open", waiting: "Waiting", closed: "Closed" } as const)[triage.status];
+  triage.spam ? "Spam" : withAi(triage) ? "With AI" : isSnoozed(triage, now) ? "Snoozed" : ({ open: "Open", waiting: "Waiting", closed: "Closed" } as const)[triage.status];
+
+/** The details' Status: the web's words, and never "Needs reply" on one the AI has. */
+export const statusWords = (triage: Triage) => (withAi(triage) ? "With AI" : STATUS_WORDS[triage.status]);
 
 /** When a snooze ends, in the teammate's own time, as the web says it: "Tue 3 Nov, 09:00" (and its year when not this one's). */
 // Date and time apart: Hermes joins them with " at ".
