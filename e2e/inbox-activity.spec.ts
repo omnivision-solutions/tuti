@@ -42,7 +42,8 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
   await owner.getByRole("button", { name: "Unassigned, assign conversation" }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(rows.nth(0)).toContainText("Olive Owner assigned it to themselves");
-  await owner.getByRole("button", { name: "Needs reply, change status" }).click();
+  // The AI has it (the key handed it back): open, not waiting on the team.
+  await owner.getByRole("button", { name: "Open, change status" }).click();
   await owner.getByRole("menuitem", { name: "Closed" }).click();
   await expect(rows.nth(0)).toContainText("Olive Owner closed it");
   await expect(rows).toHaveCount(4);
@@ -81,10 +82,12 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
 
   // More than a page: the earliest come with Show earlier, the row after the last one shown takes focus, and the button
   // goes with the last of them.
+  // Made away from the page: open, each change would refresh it live, twenty times over.
+  await owner.goto("about:blank");
   for (let i = 0; i < 20; i++) {
     await api("/conversations/1", { priority: i % 2 === 0 }, "PATCH");
   }
-  await owner.reload();
+  await owner.goto(`/app/${slug}/inbox/1`);
   await expect(rows).toHaveCount(20);
   await expect(rows.filter({ hasText: "A conversation starts ran" })).toHaveCount(0);
   await activity.getByRole("button", { name: "Show earlier" }).click();
