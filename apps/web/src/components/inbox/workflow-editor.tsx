@@ -64,6 +64,7 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
     if (!draft.name.trim() || actions.length === 0 || groupGone) {
       return;
     }
+    const clicked = draft;
     const sent = { ...draft, name: draft.name.trim(), actions };
     startSaving(async () => {
       const result = await saveWorkflow(projectSlug, id, {
@@ -78,7 +79,8 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
         return;
       }
       setSaved(sent);
-      setDraft(sent);
+      // What's saved, unless it was changed while it saved: that's still a change to save.
+      setDraft((current) => (current === clicked ? sent : current));
       setTried(false);
       if (id === null) {
         toast.success(`Added ${sent.name}`);

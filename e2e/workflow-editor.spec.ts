@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import type { Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { query } from "./db";
 import { APP_URL } from "./env";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, holdActions, signUp } from "./helpers";
 
 test("an owner makes a priority workflow in its editor, a user in its group writes and is marked priority, then edits it, turns it off and deletes it, on a phone too", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
@@ -96,12 +97,22 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await owner.getByRole("switch", { name: "On" }).click();
   await owner.getByRole("combobox", { name: "If" }).click();
   await owner.getByRole("option", { name: "People in Enterprise" }).click();
-  // The live stream would refresh the page (and the editor's groups) when it opens: held off for this.
-  await owner.route("**/api/live?*", () => {});
+  // The page's refreshes (the live stream's, on the conversations written above) are held meanwhile: one bringing the
+  // groups without Enterprise would have the editor refuse it before the server could.
+  let refreshed!: () => void;
+  const held = new Promise<void>((done) => (refreshed = done));
+  const holdRefresh = async (route: Route) => {
+    if (route.request().method() === "GET" && route.request().headers()["rsc"]) await held;
+    await route.fallback();
+  };
+  await owner.route("**/*", holdRefresh);
   await api("/groups/enterprise", undefined, "DELETE");
   await save.click();
   await expect(main.getByText("There's no group “enterprise”: add it in Settings → Groups first")).toBeVisible();
-  await owner.unroute("**/api/live?*");
+  refreshed();
+  await owner.unroute("**/*", holdRefresh);
+  // Once the page has the groups, the editor says so itself.
+  await expect(main.getByText("This group was deleted: pick another, or Everyone")).toBeVisible();
 
   // On a phone: the editor fits, as saved (a reload drops the change refused above).
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -111,10 +122,17 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "editor-phone");
 
-  // Turned on again from the phone: Trial's user writes and is marked.
+  // Turned on again from the phone, with the name changed while that saves: the change stays, still to save.
   await owner.getByRole("switch", { name: "On" }).click();
+  const release = await holdActions(owner);
   await save.click();
+  await owner.getByRole("textbox", { name: "Name" }).fill("Trial first (all)");
+  await release();
   await expect(owner.getByText("Saved Trial first")).toBeVisible();
+  await expect(owner.getByRole("textbox", { name: "Name" })).toHaveValue("Trial first (all)");
+  await expect(save).toBeEnabled();
+  await owner.getByRole("textbox", { name: "Name" }).fill("Trial first");
+  await expect(save).toBeDisabled();
   expect(await writes("user-free")).toBe(true);
 
   // A workflow whose group is gone (deleted through the release before, which didn't refuse it): its editor says so, and
