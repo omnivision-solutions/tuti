@@ -625,18 +625,22 @@ describe("the details sheet's Activity", () => {
     await first.unmount();
 
     online = false;
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     await act(() => jest.advanceTimersByTimeAsync(5 * 60_000));
     await render(<Details />);
     expect(await screen.findByText("A conversation starts")).toBeTruthy();
     expect(screen.getByText("Olive Owner")).toBeTruthy();
     expect(screen.getByText("Offline · updated 5 minutes ago")).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith("Offline · updated 5 minutes ago");
   });
 
   it("with nothing kept, says it couldn't load, and Try again loads it", async () => {
     let online = false;
     serveActivity(() => (online ? Promise.resolve({ events: [RUN], next: null }) : Promise.reject(new ApiError(0, "unreachable", NETWORK))));
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     await render(<Details />);
     expect(await screen.findByText(NETWORK)).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(NETWORK);
 
     online = true;
     await fireEvent.press(screen.getByRole("button", { name: "Try again" }));
@@ -676,6 +680,9 @@ describe("the details sheet's Activity", () => {
     online = true;
     await fireEvent.press(screen.getByRole("button", { name: "Show earlier" }));
     expect(activityAsked().at(-1)).toBe("/conversations/12/activity?filter=all&before=r6");
+    // The newest rows are still as kept: still said to be.
+    expect(await screen.findByText(/ it 1$/)).toBeTruthy();
+    expect(screen.getByText(/^Offline · updated/)).toBeTruthy();
   });
 
   it("keeps the rows shown when a reload finds no connection, saying it's offline since they loaded", async () => {

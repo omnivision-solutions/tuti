@@ -414,8 +414,11 @@ function ActivitySection({ number, triage, colors }: { number: number; triage: R
           setPages((loaded) => (before ? [...(loaded ?? []), page] : [page]));
           focusOn.current = before ? (page.events[0]?.id ?? null) : null;
           setFailed(null);
-          setSavedAt(null);
-          loadedAt.current = Date.now();
+          // An earlier page says nothing of the newest rows: shown as kept, they're still said to be.
+          if (!before) {
+            setSavedAt(null);
+            loadedAt.current = Date.now();
+          }
           if (to === "all" && !before) {
             keep(key, { ...page, events: page.events.slice(0, 20), next: page.events.length > 20 ? page.events[19].id : page.next }, since, session!.owner);
           }
