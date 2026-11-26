@@ -1481,6 +1481,19 @@ test("a draft's screenshot lines are filled with screenshots of the team's app; 
   await checkpoint(team, "team-changelog-screenshots-phone", { fullPage: false });
   await team.setViewportSize({ width: 1280, height: 720 });
 
+  // Ten long lines on a phone: the list scrolls within the confirm, its Take button stays on the screen.
+  const long = Array.from({ length: 10 }, (_, i) => `[Screenshot: screen ${i + 1}, ${"with every panel open and each of its settings shown ".repeat(8)}]`).join("\n\n");
+  await api("/changelog", { title: "Many screens", markdown: long });
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/changelog/2`);
+  await section.getByRole("button", { name: "Take screenshots…" }).click();
+  await expect(confirm.getByRole("listitem")).toHaveCount(10);
+  await expect(confirm.getByRole("button", { name: "Take 10 screenshots" })).toBeInViewport();
+  await checkpoint(team, "team-changelog-screenshots-confirm-phone", { fullPage: false });
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await team.setViewportSize({ width: 1280, height: 720 });
+  await team.goto(`/app/${slug}/changelog/1`);
+
   // The line not taken still holds publishing back.
   await team.getByRole("button", { name: "Publish", exact: true }).click();
   const dialog = team.getByRole("alertdialog");
@@ -1554,6 +1567,8 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await expect(section.getByRole("listitem")).toHaveText("“a screen that takes a while, a screen that isn't there”: There's no such screen in the app.");
   await expect(section.getByRole("status")).toHaveText("");
   await expect(text).toContainText("Still here.");
+  // And typing goes on: the section doesn't take focus from the editor.
+  await expect(text).toBeFocused();
 });
 
 test("an entry with no cover gets one composed: picked from its designs as it's published, or made in the editor with a headline, unsaved text kept", async ({ browser }, testInfo) => {

@@ -2,7 +2,6 @@ import { type Prisma, prisma, type ScreenshotWindow } from "@tuti/db";
 import { config, type JobInput, log, screenshotsEnabled } from "@tuti/shared";
 import { openValue } from "@tuti/shared/signed";
 import { mediaLimit } from "@tuti/shared/storage";
-import { getDomain } from "tldts";
 
 import { screenshotsMeter } from "./ai-usage";
 import { placeChangelogScreenshots } from "./changelog-screenshots";
@@ -314,31 +313,25 @@ async function attempt(client: BrowserUse, input: Attempt): Promise<({ answer: A
 }
 
 /**
- * The network policy its browser runs under: only the app's domains (policyDomains) open,
- * everything else blocked, so what a screenshot's description says can't take the signed-in browser, or the link,
- * anywhere else. One per project, made once and updated when the hosts change (kept on its settings).
- * ponytail: Browser Use keeps at most 100 policies per account, so 100 projects with Screenshots; pooling policies by
- * their domains, or one per run deleted after it, if more do.
+ * The hosts a run's browser may open, and the password may be typed on: the app's own host, its sign-in link's, and the
+ * other domains the team listed, each with its subdomains (as Browser Use counts them). Exact hosts, never their
+ * registrable domain: on a multi-tenant app (acme.saas.com) that would reach other tenants' hosts, which an injected
+ * line could send the sign-in link to. Another host the app needs (its API, a login page) is listed by the team.
  */
-/**
- * The domains a run's browser may open: the app's and the sign-in link's own domains (registrable, so `api.` and `www.`
- * beside `app.` work, by the public suffix list, its private part included, so `foo.vercel.app` stays itself), and the
- * other domains the team listed. Browser Use counts each one's subdomains in.
- */
-export function policyDomains(settings: Pick<Settings, "appUrl" | "signIn" | "signInLink" | "otherDomains">): string[] {
-  const link = signInLink(settings);
-  const hosts = [new URL(settings.appUrl).hostname, ...(link && URL.canParse(link) ? [new URL(link).hostname] : [])];
-  return [...new Set([...hosts.map((host) => getDomain(host, { allowPrivateDomains: true }) ?? host), ...settings.otherDomains])].sort();
-}
-
-/** The hosts the password may be typed on: the app's and the sign-in link's own hosts, and the other domains listed. */
-export function passwordDomains(settings: Pick<Settings, "appUrl" | "signIn" | "signInLink" | "otherDomains">): string[] {
+export function allowedHosts(settings: Pick<Settings, "appUrl" | "signIn" | "signInLink" | "otherDomains">): string[] {
   const link = signInLink(settings);
   return [...new Set([new URL(settings.appUrl).hostname, ...(link && URL.canParse(link) ? [new URL(link).hostname] : []), ...settings.otherDomains])].sort();
 }
 
+/**
+ * The network policy its browser runs under: only allowedHosts open, everything else blocked, so what a screenshot's
+ * description says can't take the signed-in browser, or the link, anywhere else. One per project, made once and updated
+ * when the hosts change (kept on its settings).
+ * ponytail: Browser Use keeps at most 100 policies per account, so 100 projects with Screenshots; pooling policies by
+ * their domains, or one per run deleted after it, if more do.
+ */
 async function networkPolicy(client: BrowserUse, projectId: string, settings: Settings, tries = 2): Promise<string> {
-  const domains = policyDomains(settings);
+  const domains = allowedHosts(settings);
   const policy = { defaultAction: "block" as const, allow: { domains } };
   // The saved one, read now (a database read, no request): a try or run before this one may have made or replaced it.
   const saved = await prisma.screenshotSettings.findUnique({ where: { projectId }, select: { networkPolicyId: true, networkPolicyDomains: true } });
@@ -378,7 +371,7 @@ async function networkPolicy(client: BrowserUse, projectId: string, settings: Se
 
 /** Whether Browser Use no longer has the policy: its update (to what it should allow anyway) answers 404. */
 async function policyGone(client: BrowserUse, id: string, settings: Settings): Promise<boolean> {
-  return client.updateNetworkPolicy(id, { defaultAction: "block", allow: { domains: policyDomains(settings) } }).then(
+  return client.updateNetworkPolicy(id, { defaultAction: "block", allow: { domains: allowedHosts(settings) } }).then(
     () => false,
     (error: unknown) => gone(error),
   );
@@ -406,9 +399,8 @@ async function agentRun(
     workspaceId: workspace.id,
     maxCostUsd,
     outputSchema: OUTPUT_SCHEMA,
-    // Typed only on hosts named: the app's own, and those the team listed (a sign-in page elsewhere). Not the wider
-    // domains the browser may open: on a multi-tenant app (acme.saas.com), saas.com covers other tenants' hosts.
-    ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: passwordDomains(settings) }] }),
+    // Typed only on the hosts the browser may open (allowedHosts): the app's own, and those the team listed.
+    ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: allowedHosts(settings) }] }),
     // Always said: Browser Use's residential proxy is on by default and billed per GB at residential rates, so it's off
     // unless the project turned it on (an app that blocks cloud servers).
     browserSettings: { screenWidth: WINDOWS[settings.window].width, screenHeight: WINDOWS[settings.window].height, proxyCountryCode: settings.residentialProxy ? ("us" as const) : null, networkPolicyId },

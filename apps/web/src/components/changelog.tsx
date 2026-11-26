@@ -764,12 +764,17 @@ function EntryScreenshotsSection({
     shownSavedAt.current = savedAt;
   }, [dirty, savedAt]);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   // The run just ended here, the page read again (the form, with this section, started afresh with its screenshots, or
-  // not when none went in): focus to the section, where what's left is said.
+  // not when none went in): focus to the section, where what's left is said; only if it was lost (on a button that
+  // went) or in the section, never taken from where someone is typing.
   useEffect(() => {
     if (running === null && screenshotsDone.next) {
       screenshotsDone.next = false;
-      headingRef.current?.focus();
+      const active = document.activeElement;
+      if (!active || active === document.body || sectionRef.current?.contains(active)) {
+        headingRef.current?.focus();
+      }
     }
   }, [running]);
   useEffect(() => {
@@ -806,7 +811,7 @@ function EntryScreenshotsSection({
   const busy = (running !== null && !doneUnsaved) || starting;
   const lines = `${asked} ${asked === 1 ? "line asks" : "lines ask"} for a screenshot.`;
   return (
-    <section aria-labelledby="entry-screenshots" className="flex flex-col gap-2">
+    <section ref={sectionRef} aria-labelledby="entry-screenshots" className="flex flex-col gap-2">
       <h2 id="entry-screenshots" ref={headingRef} tabIndex={-1} className="group-label outline-none">
         Screenshots
       </h2>
@@ -855,7 +860,12 @@ function EntryScreenshotsSection({
                 <AlertDialogTitle>{`Take ${confirming?.length === 1 ? "this screenshot" : `these ${confirming?.length ?? 0} screenshots`}?`}</AlertDialogTitle>
                 <AlertDialogDescription render={<div />} className="flex flex-col gap-3 wrap-anywhere">
                   <p>The agent signs in to your app and does what each line asks, as written. Check that each one only says what to show.</p>
-                  <ol className="flex list-decimal flex-col gap-1 pl-5 text-foreground">
+                  {/* Scrolled within (ten long lines would push Take off a phone's screen): its buttons stay in view. */}
+                  <ol
+                    tabIndex={0}
+                    aria-label="Lines to take"
+                    className="flex max-h-[min(40dvh,20rem)] list-decimal flex-col gap-1 overflow-y-auto rounded-md pl-5 text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
                     {confirming?.map((line, index) => (
                       <li key={index}>{line}</li>
                     ))}

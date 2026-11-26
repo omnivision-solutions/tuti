@@ -135,7 +135,7 @@ const settingsOutput = z
     residentialProxy: z.boolean().describe("Whether runs go through a residential proxy: only for an app that blocks visits from cloud servers; runs cost more").meta({ examples: [false] }),
     otherDomains: z
       .array(z.string())
-      .describe("Other domains your app loads from (a third-party sign-in, a CDN, an API elsewhere): the browser opens only your app's own domain, its sign-in link's, and these")
+      .describe("Other hosts your app needs (its API, a sign-in page, a CDN): the browser opens only your app's own host, its sign-in link's, and these (with their subdomains), and the password can be entered on any of them")
       .meta({ examples: [["acme.auth0.com"]] }),
     test: runOutput.nullable().describe("The latest Test (screenshotSettings.test), if any"),
   })
@@ -219,7 +219,7 @@ export const updateScreenshotSettings = defineOperation({
       .max(MAX_OTHER_DOMAINS, `List up to ${MAX_OTHER_DOMAINS} other domains`)
       .optional()
       .describe(
-        `Other domains your app loads from, up to ${MAX_OTHER_DOMAINS} (a third-party sign-in like acme.auth0.com, a CDN, an API on another domain): the browser opens only your app's own domain, its sign-in link's, and these (with their subdomains). They replace the list`,
+        `Other hosts your app needs, up to ${MAX_OTHER_DOMAINS} (its API like api.example.com, a sign-in page like acme.auth0.com, a CDN): the browser opens only your app's own host, its sign-in link's, and these (with their subdomains), and the password can be entered on any of them. They replace the list`,
       ),
   }),
   output: settingsOutput.describe("The screenshot settings, as saved"),
