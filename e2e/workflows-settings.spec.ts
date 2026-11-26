@@ -31,6 +31,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   const main = owner.getByRole("main");
   await expect(main.getByRole("heading", { level: 2, name: /^When/ })).toHaveText(["When a conversation starts 3", "When a user replies 1"]);
   await expect(main.getByText("Built in")).toHaveCount(3);
+  await expect(main).toContainText("“Answer with AI first” is on in the widget");
   await expect(main.getByRole("link", { name: "Spam filter settings" })).toHaveAttribute("href", `/app/${slug}/settings/spam`);
   const started = main.getByRole("list", { name: "When a conversation starts" });
   const replied = main.getByRole("list", { name: "When a user replies" });
@@ -57,9 +58,12 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(menu("Third")).toBeFocused();
   await expect.poll(async () => (await order("conversation_started")).map((workflow) => workflow.name)).toEqual(["First", "Third", "Second"]);
 
-  // Turned off: it saves at once.
-  await owner.getByRole("switch", { name: "Second" }).uncheck();
+  // Turned off from the keyboard: it saves at once, and keeps the focus.
+  await owner.getByRole("switch", { name: "Second" }).focus();
+  await owner.keyboard.press("Space");
   await expect(owner.getByText("Second turned off")).toBeVisible();
+  await expect(owner.getByRole("switch", { name: "Second" })).not.toBeChecked();
+  await expect(owner.getByRole("switch", { name: "Second" })).toBeFocused();
   await expect.poll(async () => (await order("conversation_started")).find((workflow) => workflow.name === "Second")?.enabled).toBe(false);
 
   // Deleted, asking first.
@@ -71,6 +75,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await expect(owner.getByText("Deleted First")).toBeVisible();
   await expect(dialog).toHaveCount(0);
   await expect(names()).toHaveText(["Third", "Second"]);
+  await expect(menu("Third")).toBeFocused();
   await expect(main.getByRole("heading", { level: 2, name: /^When/ }).first()).toHaveText("When a conversation starts 2");
 
   // On a phone: no handle to drag, the menu moves it; the switch stays as saved.

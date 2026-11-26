@@ -28,7 +28,7 @@ export default async function WorkflowsPage(props: PageProps<"/app/[project]/set
         projectSlug={project.slug}
         workflows={workflows}
         groupNames={Object.fromEntries(groups.map((group) => [group.key, group.name]))}
-        aiFirst={answersEnabled() && widgetAiFirst}
+        aiFirst={answersEnabled() ? widgetAiFirst : null}
       />
     </SettingsPane>
   );

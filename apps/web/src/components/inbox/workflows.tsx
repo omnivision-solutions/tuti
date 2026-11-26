@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { TRIGGER_KEYS, type WorkflowAction, type WorkflowCondition, type WorkflowTrigger, workflowSummary } from "@/lib/workflows";
 import { deleteWorkflow, moveWorkflow, saveWorkflow } from "@/server/workflows";
 
-export type WorkflowRow = { id: string; name: string; trigger: WorkflowTrigger; enabled: boolean; conditions: WorkflowCondition[]; actions: WorkflowAction[] };
+export type WorkflowRow = { id: string; name: string; trigger: WorkflowTrigger; position: number; enabled: boolean; conditions: WorkflowCondition[]; actions: WorkflowAction[] };
 
 /** Each trigger's group, as the path reads it. */
 const GROUPS: Record<WorkflowTrigger, { title: string; empty: string }> = {
@@ -24,9 +24,10 @@ const GROUPS: Record<WorkflowTrigger, { title: string; empty: string }> = {
 
 /**
  * Settings → Workflows (docs/plan.md, Inbox automation, W9): the path a user's message takes, top to bottom, the
- * built-in steps fixed and each trigger's workflows between them. The editor (and so Add workflow) is W10's.
+ * built-in steps fixed and each trigger's workflows between them. The editor (and so Add workflow) is W10's. `aiFirst`:
+ * the widget's "Answer with AI first" as set (its own settings are W14's), null where the server has no AI answers.
  */
-export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { projectSlug: string; workflows: WorkflowRow[]; groupNames: Record<string, string>; aiFirst: boolean }) {
+export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { projectSlug: string; workflows: WorkflowRow[]; groupNames: Record<string, string>; aiFirst: boolean | null }) {
   const settings = (page: string) => `/app/${projectSlug}/settings/${page}`;
   return (
     <ol className="flex flex-col gap-6">
@@ -40,7 +41,7 @@ export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { pro
           <Group projectSlug={projectSlug} trigger={trigger} workflows={workflows.filter((workflow) => workflow.trigger === trigger)} groupNames={groupNames} />
         </li>
       ))}
-      <BuiltIn name="AI answers first" description={aiFirst ? "On in the widget: answers from your help center first" : "Off: messages go straight to your team"}>
+      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : `“Answer with AI first” is ${aiFirst ? "on" : "off"} in the widget`}>
         <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Widget
         </Link>
@@ -78,27 +79,32 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
     setSeen(ids.join());
     setMoved(null);
   }
-  const order = moved?.every((id) => ids.includes(id)) && moved.length === ids.length ? moved : ids;
+  const order = moved ?? ids;
   const byId = new Map(workflows.map((workflow) => [workflow.id, workflow]));
   const [saving, startSaving] = useTransition();
   const [dragging, setDragging] = useState<string | null>(null);
-  // The menu's handle to focus again once a move from it has saved: the menu closes and the row moves.
+  // What to focus once the page has the change: a moved row's menu (the menu closed and the row moved), or after a
+  // delete its neighbour's (or the empty group's line), as the deleted row's is gone.
   const refocus = useRef<string | null>(null);
   const menuId = (id: string) => `workflow-menu-${id}`;
+  const emptyId = `workflows-${trigger}-empty`;
   useEffect(() => {
     if (!saving && refocus.current) {
       document.getElementById(refocus.current)?.focus();
       refocus.current = null;
     }
-  }, [saving]);
+  }, [saving, seen]);
 
   const move = (id: string, to: number, byMenu = false) => {
     const next = order.filter((other) => other !== id);
     next.splice(to, 0, id);
     setMoved(next);
     refocus.current = byMenu ? menuId(id) : null;
+    // Its place in the whole list, which may hold a workflow the page doesn't show (one a later release made, while
+    // a deploy overlaps the two): the place of the row it's moved onto.
+    const position = byId.get(order[to])!.position;
     startSaving(async () => {
-      const result = await moveWorkflow(projectSlug, id, to);
+      const result = await moveWorkflow(projectSlug, id, position);
       if (result.error) {
         toast.error(result.error);
         setMoved(null);
@@ -112,7 +118,9 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
   return (
     <SettingsCard title={title} count={workflows.length}>
       {order.length === 0 ? (
-        <p className="px-4 py-3.5 text-sm text-muted-foreground @min-[34rem]/settings:px-5">{empty}</p>
+        <p id={emptyId} tabIndex={-1} className="px-4 py-3.5 text-sm text-muted-foreground outline-none @min-[34rem]/settings:px-5">
+          {empty}
+        </p>
       ) : (
         <ol
           aria-label={title}
@@ -156,6 +164,10 @@ function Group({ projectSlug, trigger, workflows, groupNames }: { projectSlug: s
                     saving={saving}
                     up={at > 0 ? () => move(id, at - 1, true) : undefined}
                     down={at < order.length - 1 ? () => move(id, at + 1, true) : undefined}
+                    onDelete={(sent) => {
+                      const neighbour = order[at + 1] ?? order[at - 1];
+                      refocus.current = !sent ? null : neighbour ? menuId(neighbour) : emptyId;
+                    }}
                   />,
                 ]
               : [];
@@ -176,6 +188,7 @@ function Row({
   saving,
   up,
   down,
+  onDelete,
 }: {
   projectSlug: string;
   workflow: WorkflowRow;
@@ -185,8 +198,17 @@ function Row({
   saving: boolean;
   up?: () => void;
   down?: () => void;
+  /** Called as its delete is sent (`true`; where the focus goes once it's gone) and if it's refused (`false`). */
+  onDelete: (sent: boolean) => void;
 }) {
-  const [switching, startSwitching] = useTransition();
+  // The switch as turned, until the page has it: never disabled or drawn again meanwhile, so it keeps the focus.
+  const [turned, setTurned] = useState<boolean | null>(null);
+  const [saved, setSaved] = useState(workflow.enabled);
+  if (saved !== workflow.enabled) {
+    setSaved(workflow.enabled);
+    setTurned(null);
+  }
+  const [, startSwitching] = useTransition();
   const [confirming, setConfirming] = useState(false);
   const [deleting, startDeleting] = useTransition();
   const switchId = `workflow-on-${workflow.id}`;
@@ -210,18 +232,15 @@ function Row({
       <Switch
         id={switchId}
         aria-describedby={`${switchId}-description`}
-        defaultChecked={workflow.enabled}
-        // Keyed by what's saved, so the page's value (a teammate's change) shows once it comes.
-        key={String(workflow.enabled)}
-        disabled={switching}
+        checked={turned ?? workflow.enabled}
         onChange={(event) => {
-          const input = event.currentTarget;
-          const on = input.checked;
+          const on = event.currentTarget.checked;
+          setTurned(on);
           startSwitching(async () => {
             const result = await saveWorkflow(projectSlug, workflow.id, { enabled: on });
             if (result.error) {
               toast.error(result.error);
-              input.checked = !on;
+              setTurned(null);
             } else {
               toast.success(`${workflow.name} turned ${on ? "on" : "off"}`);
             }
@@ -258,9 +277,11 @@ function Row({
               disabled={deleting}
               onClick={() =>
                 startDeleting(async () => {
+                  onDelete(true);
                   const result = await deleteWorkflow(projectSlug, workflow.id);
                   if (result.error) {
                     toast.error(result.error);
+                    onDelete(false);
                   } else {
                     setConfirming(false);
                     toast.success(`Deleted ${workflow.name}`);
