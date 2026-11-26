@@ -147,18 +147,28 @@ test("Some groups with none ticked isn't saved (as everyone) or published: the f
     const saving = useContext(ChangelogSavingContext);
     return h("output", null, `${saving?.groupsChanged} ${saving?.noGroupPicked}`);
   };
-  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups, picked: [], upgrade, onChange: () => {} }))));
+  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups, picked: [], upgrade: null, onChange: () => {} }))));
   expect(box.querySelector("output")?.textContent).toBe("false false");
   expect(box.checkValidity()).toBe(true);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
   expect(box.querySelector("output")?.textContent).toBe("true true");
   expect(box.checkValidity()).toBe(false);
   expect(box.querySelector<HTMLInputElement>('input[name="groups"]')!.validationMessage).toBe("Pick a group, or choose Everyone.");
-  // On a plan without groups the pick is refused: still none.
-  await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
-  expect(box.checkValidity()).toBe(false);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="everyone"]')!.click());
   expect(box.querySelector("output")?.textContent).toBe("false false");
+  expect(box.checkValidity()).toBe(true);
+});
+
+test("on a plan without reader groups, choosing Some groups opens the upgrade prompt and stays on Everyone, the form still valid; its description names the plan", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(WhoSeesIt, { groups, picked: [], upgrade, onChange: () => {} }))));
+  const audience = box.querySelector('[role="radiogroup"]')!;
+  expect(document.getElementById(audience.getAttribute("aria-describedby")!)?.textContent).toBe("Reader groups need the Business plan");
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Reader groups need the Business plan");
+  expect(box.querySelector<HTMLInputElement>('input[value="everyone"]')!.checked).toBe(true);
+  expect(box.querySelector<HTMLInputElement>('input[value="beta"]')!.closest("div")!.hidden).toBe(true);
   expect(box.checkValidity()).toBe(true);
 });
 

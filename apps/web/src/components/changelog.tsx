@@ -865,6 +865,7 @@ export function WhoSeesIt({
           <Segmented
             name="audience"
             aria-label="Audience"
+            aria-describedby={upgrade ? needsId : undefined}
             options={[
               { value: "everyone", label: "Everyone" },
               { value: "some", label: "Some groups" },
@@ -873,6 +874,12 @@ export function WhoSeesIt({
             onValueChange={(value) => {
               // While a save runs, nothing changes (as with the chips), but the keyboard keeps its place.
               if (pending) {
+                return;
+              }
+              // Picking groups needs the plan (a project can keep its groups after a downgrade): the prompt opens and it
+              // stays on Everyone. One saved for some keeps them, to unpick.
+              if (value === "some" && upgrade && picked.length === 0) {
+                setUpgrading(true);
                 return;
               }
               setSomeGroups(value === "some");
