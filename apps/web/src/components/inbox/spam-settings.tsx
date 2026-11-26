@@ -43,7 +43,7 @@ export function SpamSettings({
       <EntryList
         id="spam-blocked"
         title="Blocked"
-        description="Their messages go to Spam."
+        description="New conversations from them go to Spam."
         label="Address or domain to block"
         placeholder={SENDER}
         empty="Nobody is blocked"
@@ -53,6 +53,22 @@ export function SpamSettings({
         add={(entry) => listSpamSender(projectSlug, true, entry)}
         remove={(entry) => removeSpamSender(projectSlug, entry)}
       />
+      {/* Not offered for new entries; any already there stay listed, as they still let senders through, so they can be removed. */}
+      {settings.allowed.length > 0 && (
+        <EntryList
+          id="spam-allowed"
+          title="Allowed"
+          description="Their messages skip your phrases."
+          label="Address or domain to allow"
+          placeholder={SENDER}
+          empty="Nobody is allowed by name"
+          entries={settings.allowed}
+          about={aboutSender}
+          as={asSender}
+          add={(entry) => listSpamSender(projectSlug, false, entry)}
+          remove={(entry) => removeSpamSender(projectSlug, entry)}
+        />
+      )}
       <EntryList
         id="spam-phrases"
         title="Phrases"
@@ -218,7 +234,7 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   return (
     <SettingsCard
       title="Guidance for the AI"
-      description="What is and isn't spam for your team."
+      description="What is and isn't spam for your team. For now the AI only notes what it would file."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">

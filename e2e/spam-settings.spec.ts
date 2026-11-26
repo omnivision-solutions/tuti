@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { createProject, expectMoreView, moreView, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, moreView, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 
 // Wide enough for the Inbox's four panes: its views, the list, the conversation and its details.
@@ -12,7 +12,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a message, and the next emails are filed by them; a domain taken off the list arrives again", async ({ browser }, testInfo) => {
   // Four emails and as many page loads.
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -45,7 +45,7 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
   await expect(card("Blocked").getByLabel("Address or domain to block")).toHaveValue("");
 
   // One short line per list; the allowed list isn't shown for now.
-  await expect(card("Blocked")).toContainText("Their messages go to Spam.");
+  await expect(card("Blocked")).toContainText("New conversations from them go to Spam.");
   await expect(owner.getByRole("heading", { name: /^Allowed/, level: 2 })).toHaveCount(0);
   await expect(card("Phrases")).toContainText("New conversations with one go to Spam, unless you trust the sender.");
   await add("Phrases", "Phrase to add", "Facebook Admin");
@@ -57,7 +57,7 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
 
   // The guidance for the AI's checks: saved with the page's Save changes, and there again on the next visit.
   const guidance = card("Guidance for the AI");
-  await expect(guidance).toContainText("What is and isn't spam for your team.");
+  await expect(guidance).toContainText("What is and isn't spam for your team. For now the AI only notes what it would file.");
   await guidance.getByLabel("Guidance for the AI").fill("Agencies offering SEO work are spam");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Guidance saved")).toBeVisible();
@@ -66,6 +66,7 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
 
   // Try a message: what the filter would do with it, and why. What was typed stays, to change and try again.
   const attempt = card("Try a message");
+  await expect(attempt).toContainText("Nothing is sent or saved.");
   await attempt.getByLabel("From").fill("e2e-kim@strangers.example");
   await attempt.getByLabel("Subject").fill("A notice");
   await attempt.getByLabel("Message").fill("This is the facebook admin: your page will be disabled.");
@@ -111,4 +112,14 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
   await owner.goto(`/app/${slug}/inbox`);
   await expectMoreView(owner, "Needs reply 2");
   await expectMoreView(owner, "Spam 2");
+
+  // An address allowed before (or over the API) is still listed while it lets its sender through, so it can be removed.
+  const api = await apiFor(owner, slug);
+  await api("/spam", { allow: ["e2e-forms@relay.example"] }, "PATCH");
+  await owner.goto(`/app/${slug}/settings/spam`);
+  await expect(card("Allowed").getByRole("listitem")).toHaveText(["e2e-forms@relay.example"]);
+  await card("Allowed").getByRole("button", { name: "Actions for e2e-forms@relay.example" }).click();
+  await owner.getByRole("menuitem", { name: "Remove" }).click();
+  await expect(owner.getByText("e2e-forms@relay.example removed")).toBeVisible();
+  await expect(owner.getByRole("heading", { name: /^Allowed/, level: 2 })).toHaveCount(0);
 });
