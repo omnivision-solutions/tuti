@@ -331,7 +331,7 @@ test("the Roadmap in German: its columns, their meanings, ETAs, votes and the ch
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
   await api("/posts", { board: "feature-requests", title: "Dark mode" }); // 1
   await api("/posts", { board: "feature-requests", title: "CSV export" }); // 2
   await api("/posts/1", { status: "planned", eta: "2099-06" }, "PATCH");
@@ -373,7 +373,7 @@ test("the changelog in German: its list, tags, months, pages, an entry's page, t
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
   await api("/posts", { board: "feature-requests", title: "Dark mode" }); // 1
   await api("/posts", { board: "feature-requests", title: "CSV export" }); // 2
   // 21 entries: the month index (from 9) and a second page (past 20). The two with ideas are the newest.
