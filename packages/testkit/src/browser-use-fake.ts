@@ -11,6 +11,8 @@ export const FAKE_BROWSER_USE_KEY = "bu_fake_key";
  */
 export const FAKE_UNREACHABLE = "a screen that isn't there";
 export const FAKE_UNREACHED = "There's no such screen in the app.";
+/** A run asked for a screenshot with this in its description keeps running until `release()` (or POST /_fake/release). */
+export const FAKE_SLOW = "a screen that takes a while";
 
 /**
  * How the fake's next run goes (JSON, so journeys in other processes can script it through /_fake/next-run). By
@@ -126,6 +128,10 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         const body = downloads.get(download[1]!);
         return body ? res.writeHead(200, { "content-type": "image/png" }).end(body) : answer(404, { detail: "Gone" });
       }
+      if (path === "/_fake/release" && req.method === "POST") {
+        fake.release();
+        return answer(200, {});
+      }
       if (path === "/_fake/next-run" && req.method === "POST") {
         fake.next(JSON.parse(raw) as FakeBrowserUseRun);
         return answer(200, {});
@@ -148,6 +154,7 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
           return answer(422, { detail: "The fake refuses a run without browserSettings.proxyCountryCode (Browser Use's residential proxy is on by default)" });
         }
         const script = { ...(scripts.shift() ?? {}) };
+        script.stuck ||= String(body.task).includes(FAKE_SLOW);
         if (script.createStatus) {
           return answer(script.createStatus, { detail: "The fake was told to refuse this run" });
         }

@@ -408,6 +408,8 @@ export async function entryScreenshots(projectId: string, entry: { id: string; c
     asked: asked.length,
     available: screenshotsAvailable() && setUp ? true : screenshotsAvailable() ? ("not_set_up" as const) : false,
     running: run?.state === "RUNNING" ? run.screenshots.length : null,
+    // A run for it ended: the section stays (focus goes to it after one), saying when every line is filled.
+    ran: Boolean(run && run.state !== "RUNNING"),
     failed,
     // ponytail: the average shot's cost; a run's own sign-in, shared by its shots, makes a lone one cost more.
     estimate: priced.length ? (priced.reduce((sum, shot) => sum + shot.cost!.toNumber(), 0) / priced.length) * creditsPerUsageDollar() * Math.min(asked.length, MAX_SHOTS) : null,

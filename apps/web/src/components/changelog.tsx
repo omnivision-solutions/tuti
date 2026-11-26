@@ -738,7 +738,7 @@ const screenshotsDone = { next: false };
 function EntryScreenshotsSection({
   projectSlug,
   number,
-  screenshots: { asked, available, running, failed, estimate, credits: spendsCredits },
+  screenshots: { asked, available, running, ran, failed, estimate, credits: spendsCredits },
   canTake,
   dirty,
 }: {
@@ -787,7 +787,7 @@ function EntryScreenshotsSection({
     }, SCREENSHOTS_REFRESH_MS);
     return () => clearInterval(timer);
   }, [running, router, projectSlug, number]);
-  if (!available || (asked === 0 && running === null) || (available === "not_set_up" && !canTake)) {
+  if (!available || (asked === 0 && running === null && !ran) || (available === "not_set_up" && !canTake)) {
     return null;
   }
   const busy = (running !== null && !doneUnsaved) || starting;
@@ -807,7 +807,7 @@ function EntryScreenshotsSection({
         </p>
       ) : (
         <>
-          {asked > 0 && <p className="text-muted-foreground">{lines}</p>}
+          {asked > 0 ? <p className="text-muted-foreground">{lines}</p> : running === null && <p className="text-muted-foreground">No lines left to fill with a screenshot.</p>}
           {canTake && asked > 0 && (
             <div className="flex flex-col gap-1">
               <Button

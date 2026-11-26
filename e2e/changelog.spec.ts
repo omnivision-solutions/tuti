@@ -1472,6 +1472,54 @@ test("a draft's screenshot lines are filled with screenshots of the team's app; 
   await expect(dialog.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
 });
 
+test("screenshots taken while the editor is open come in once they're done, never over text not saved yet", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/screenshots/settings", { appUrl: "https://app.example.com", signIn: "none" }, "PATCH");
+  // Browser Use's fake holds a run asking for this (FAKE_SLOW) until it's released.
+  const slow = "[Screenshot: a screen that takes a while, the dashboard]";
+  await api("/changelog", { title: "Dashboard", markdown: `The dashboard is new.\n\n${slow}` });
+  await api("/changelog", { title: "Dashboard, again", markdown: `It's faster.\n\n${slow}` });
+  const release = async () => expect((await fetch(`${process.env.E2E_BROWSER_USE_URL}/_fake/release`, { method: "POST" })).ok).toBe(true);
+  const text = team.getByRole("textbox", { name: "What changed" });
+  const section = team.getByRole("region", { name: "Screenshots" });
+
+  // Started from the API (its job runs inline here, so the request ends with the run), the editor shows it running.
+  const first = api("/changelog/1/screenshots", {});
+  await team.goto(`/app/${slug}/changelog/1`);
+  await expect(section.getByRole("status")).toHaveText("Taking 1 screenshot. This takes a few minutes; you can leave this page.");
+  await expect(section.getByRole("button", { name: "Taking screenshots…" })).toBeDisabled();
+  // Typed meanwhile and not saved: once it's done, the text stays and the section says what to do.
+  await text.getByText("The dashboard is new.").click();
+  await team.keyboard.press("End");
+  await team.keyboard.type(" Typed while it ran.");
+  await release();
+  await first;
+  await expect(section.getByRole("status")).toHaveText(
+    "The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots. Reload",
+  );
+  await expect(text).toContainText("Typed while it ran.");
+  await expect(text.getByRole("img")).toHaveCount(0);
+  await checkpoint(team, "team-changelog-screenshots-done-unsaved");
+  await section.getByRole("button", { name: "Reload" }).click();
+  await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible();
+
+  // Nothing typed: the screenshot comes in by itself, said, and focus goes to the section.
+  const second = api("/changelog/2/screenshots", {});
+  await team.goto(`/app/${slug}/changelog/2`);
+  await expect(section.getByRole("status")).toHaveText(/^Taking 1 screenshot\./);
+  await release();
+  await second;
+  await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible();
+  await expect(team.getByText("Screenshots done", { exact: true })).toBeVisible();
+  await expect(section.getByRole("heading", { name: "Screenshots" })).toBeFocused();
+  await expect(section).toContainText("No lines left to fill with a screenshot.");
+});
+
 test("an entry with no cover gets one composed: picked from its designs as it's published, or made in the editor with a headline, unsaved text kept", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
