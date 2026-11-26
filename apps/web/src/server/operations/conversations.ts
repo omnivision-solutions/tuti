@@ -89,7 +89,7 @@ const conversationFields = {
     .enum(SPAM_REASON_KEYS)
     .nullable()
     .describe(
-      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC), flood (too many new conversations by email from this address in an hour) or phrase (its subject or first message has one of the team's phrases). Null when it isn't spam, and when a teammate marked it",
+      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC), flood (too many new conversations by email from this address in an hour), rule (another of the team's block rules matched) or phrase (one of the team's phrases, before the block rules). Null when it isn't spam, and when a teammate marked it",
     )
     .meta({ examples: [null] }),
   handledBy: z

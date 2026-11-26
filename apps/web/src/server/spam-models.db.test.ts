@@ -59,7 +59,8 @@ async function setup() {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const projectId = project.id;
-  await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true } });
+  // The AI spam check is on: the team has described its spam.
+  await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true, spamGuidance: "Cold sales pitches are spam" } });
   await prisma.webhook.create({ data: { projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id } });
   const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId };
   const to = supportAddress(await mailSubdomain(projectId), DOMAIN);
@@ -127,6 +128,19 @@ test("at least 0.9 from the decision model would have filed it: its Activity say
   // Run again (the job, a retry): nothing is asked, nothing written twice.
   expect(await check(number)).toBe(false);
   expect(await filed(number)).toHaveLength(1);
+});
+
+test("without the team's guidance (the AI spam check off) the models aren't asked and nothing is recorded, nor for one due when it was cleared", async () => {
+  const { projectId, admin, mail, check, filed, state } = await setup();
+  const due = await mail();
+  expect(await state(due)).toEqual({ ...inInbox, due: true });
+  await call(updateSpamSettings, admin, { guidance: "" });
+  const off = await mail();
+  expect(await state(off)).toEqual({ ...inInbox, due: false });
+  // The one due when it was cleared: run, it asks nothing and records nothing, and is done.
+  expect(await check(due)).toBe(true);
+  expect([await state(due), await filed(due), await filed(off), model.decisions]).toEqual([{ ...inInbox, due: false }, [], [], []]);
+  expect(await prisma.aiUsage.count({ where: { projectId, feature: "spam" } })).toBe(0);
 });
 
 test("the request that started it leaves one run of its checks to `after`, which records it", async () => {
@@ -254,10 +268,10 @@ test("a server without a decision model asks the chat model alone; one without a
 
 test("only a conversation no free check decided is due: not one filed, nor one a decision or trust let through", async () => {
   const { projectId, admin, mail, state } = await setup();
-  // A phrase files it (check 5).
-  await call(updateSpamSettings, admin, { addPhrases: ["facebook admin"], allow: ["e2e-friend@example.com"] });
+  // A rule on what it says files it (check 5).
+  await call(updateSpamSettings, admin, { addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }], allow: ["e2e-friend@example.com"] });
   const filed = await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" });
-  expect(await state(filed)).toMatchObject({ spam: true, spamReason: "phrase", due: false });
+  expect(await state(filed)).toMatchObject({ spam: true, spamReason: "rule", due: false });
   // The allowed list lets it through (check 1).
   const allowed = await mail("e2e-friend@example.com");
   expect(await state(allowed)).toEqual({ ...inInbox, due: false });

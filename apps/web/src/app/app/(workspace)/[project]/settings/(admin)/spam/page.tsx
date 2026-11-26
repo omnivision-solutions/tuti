@@ -4,12 +4,12 @@ import { notFound } from "next/navigation";
 import { SpamSettings } from "@/components/inbox/spam-settings";
 import { SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
-import { MAX_SPAM_PHRASE, spamSettings } from "@/server/operations/spam";
+import { MAX_SPAM_RULE_VALUE, spamSettings } from "@/server/operations/spam";
 import { MAX_SPAM_GUIDANCE } from "@/server/spam-models";
 
 export const metadata: Metadata = { title: "Spam · Settings" };
 
-/** Settings → Spam: the spam filter's lists, phrases and guidance, and a box to try a message against it (docs/plan.md, Inbox automation, W2). */
+/** Settings → Spam: the spam filter's block rules, allowed list and AI check, and a box to try a message against it (docs/plan.md, Inbox automation, W2 and W2b). */
 export default async function SpamSettingsPage(props: PageProps<"/app/[project]/settings/spam">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
@@ -18,7 +18,7 @@ export default async function SpamSettingsPage(props: PageProps<"/app/[project]/
   }
   return (
     <SettingsPane title="Spam" description="Who and what the Inbox files as spam">
-      <SpamSettings projectSlug={project.slug} settings={await spamSettings(project.id)} maxPhrase={MAX_SPAM_PHRASE} maxGuidance={MAX_SPAM_GUIDANCE} />
+      <SpamSettings projectSlug={project.slug} settings={await spamSettings(project.id)} maxValue={MAX_SPAM_RULE_VALUE} maxGuidance={MAX_SPAM_GUIDANCE} />
     </SettingsPane>
   );
 }

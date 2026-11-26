@@ -197,8 +197,8 @@ async function inputOf(conversationId: string) {
     return null;
   }
   const { projectId } = conversation;
-  if (conversation.spam || conversation.spamMarkedAt) {
-    // A teammate has decided (or it's in Spam): nothing to ask.
+  if (conversation.spam || conversation.spamMarkedAt || !conversation.project.spamGuidance.trim()) {
+    // A teammate has decided (or it's in Spam), or the team has cleared its guidance ("AI spam check" off): nothing to ask.
     return { projectId, input: null };
   }
   const since = await historySince(projectId);

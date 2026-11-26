@@ -412,7 +412,18 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       origin: "EMAIL",
       channel: "EMAIL",
       // The team's decisions and trust go by the address only where its mail could be its own: a forged From proves nobody.
-      filter: (tx, first) => spamVerdict(tx, { projectId, address: (senderCounts(auth.dmarc) && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc }, ...first }),
+      filter: (tx, first) =>
+        spamVerdict(tx, {
+          projectId,
+          address: (senderCounts(auth.dmarc) && sender) || null,
+          userId,
+          proven: dmarcPassed,
+          email: { sender, dmarc: auth.dmarc },
+          // As written, an address in it too: only the rules read it.
+          name: mail.from?.value[0]?.name || null,
+          sentTo: addressesIn(mail.headerLines, ["to", "cc"]),
+          ...first,
+        }),
       received: { ...received, fromAddress: null },
       alongside: async (tx, conversationId, messageId) => {
         if (!userId) {

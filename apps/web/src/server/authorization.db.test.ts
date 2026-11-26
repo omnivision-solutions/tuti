@@ -721,9 +721,10 @@ const matrix: Matrix = {
     },
   },
   "spam-settings": {
-    listSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.listSpamSender(slug, true, "spam.example") },
-    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "spam.example") },
-    setSpamPhrase: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamPhrase(slug, "facebook admin", true) },
+    addSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.addSpamRule(slug, { field: "subject_or_body", matcher: "contains", value: "facebook admin" }) },
+    removeSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamRule(slug, "cm1norule") },
+    allowSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.allowSpamSender(slug, "forms.example") },
+    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "forms.example") },
     setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
     trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   },

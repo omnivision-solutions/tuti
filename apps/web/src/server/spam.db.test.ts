@@ -64,13 +64,27 @@ async function setup({ hook = false } = {}) {
       (await prisma.conversation.findMany({ where: { projectId }, orderBy: { number: "asc" }, select: { spam: true, spamReason: true } })).map((c) =>
         c.spam ? (c.spamReason ?? "marked") : "inbox",
       ),
-    /** What's kept about senders: each address or domain, blocked or allowed, on a list or as a conversation's mark, and whose. */
-    senders: async () =>
-      (await prisma.spamSender.findMany({ where: { projectId }, orderBy: [{ decidedAt: "asc" }, { id: "asc" }] })).map(
-        (row) => `${row.sender} ${row.blocked ? "blocked" : "allowed"} by ${row.byAdmin ? "an admin" : "a member"}${row.conversationId ? "'s mark" : ", listed"}`,
-      ),
-    /** An entry on the team's blocked or allowed list (Settings' lists, which fill it later). */
-    list: (sender: string, blocked: boolean) => prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }),
+    /**
+     * What's kept about senders: each address or domain, blocked (a "Sender address is" or "Sender domain is" rule) or
+     * allowed, on a list or as a conversation's mark, and whose.
+     */
+    senders: async () => {
+      const [rows, rules] = await Promise.all([
+        prisma.spamSender.findMany({ where: { projectId }, orderBy: [{ decidedAt: "asc" }, { id: "asc" }] }),
+        prisma.spamRule.findMany({ where: { projectId, matcher: "is" } }),
+      ]);
+      return [
+        ...rows.map((row) => ({ at: row.decidedAt, said: `${row.sender} ${row.blocked ? "blocked" : "allowed"} by ${row.byAdmin ? "an admin" : "a member"}${row.conversationId ? "'s mark" : ", listed"}` })),
+        ...rules.map((rule) => ({ at: rule.createdAt, said: `${rule.value} blocked by an admin, listed` })),
+      ]
+        .sort((a, b) => a.at.getTime() - b.at.getTime())
+        .map(({ said }) => said);
+    },
+    /** An address or domain blocked (its "is" rule) or on the allowed list. */
+    list: (sender: string, blocked: boolean) =>
+      blocked
+        ? prisma.spamRule.create({ data: { projectId, field: sender.includes("@") ? "sender_address" : "sender_domain", matcher: "is", value: sender } })
+        : prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }),
     /** How many new conversations the project's webhooks were told of. */
     told: () => prisma.webhookDelivery.count({ where: { webhook: { projectId }, event: "conversation.created" } }),
   };
@@ -126,8 +140,8 @@ test("the checks answer in order: a decision before trust, trust before the rest
   expect(await byEmail(owner.email, "pass")).toMatchObject({ spam: false, check: "trusted" });
   // Blocking a known user works: the team's decision is asked first.
   await list("e2e-sam@example.com", true);
-  expect(await byEmail("e2e-sam@example.com", "pass", sam)).toEqual({ spam: true, reason: "blocked_address", check: "decisions" });
-  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, sam))).toEqual({ spam: true, reason: "blocked_address", check: "decisions" });
+  expect(await byEmail("e2e-sam@example.com", "pass", sam)).toEqual({ spam: true, reason: "blocked_address", check: "decisions", phrase: "Sender address is e2e-sam@example.com" });
+  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, sam))).toEqual({ spam: true, reason: "blocked_address", check: "decisions", phrase: "Sender address is e2e-sam@example.com" });
   // Allowed: decided there too.
   await list("e2e-friend@example.com", false);
   expect(await byEmail("e2e-friend@example.com", "none")).toEqual({ spam: false, reason: null, check: "decisions" });

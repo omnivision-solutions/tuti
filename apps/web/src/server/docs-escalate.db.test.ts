@@ -384,7 +384,7 @@ describe("from the widget", () => {
 
   test("someone the team blocked is filed as spam here too: theirs to read, and nobody is told; an address typed signed out isn't gone by", async () => {
     const userId = await upsertProjectUser(project.id, "user-8", { name: "Sam", email: "e2e-sam-8@example.com" });
-    await prisma.spamSender.create({ data: { projectId: project.id, sender: "e2e-sam-8@example.com", blocked: true, byAdmin: true } });
+    await prisma.spamRule.create({ data: { projectId: project.id, field: "sender_address", matcher: "is", value: "e2e-sam-8@example.com" } });
     await prisma.webhook.create({
       data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id },
     });
@@ -399,17 +399,17 @@ describe("from the widget", () => {
     expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(1);
   });
 
-  test("a question with one of the team's phrases is filed as spam, unless one of the project's own users asks it", async () => {
-    await prisma.project.update({ where: { id: project.id }, data: { spamPhrases: ["Crypto"] } });
+  test("a question a rule of the team's matches is filed as spam, unless one of the project's own users asks it", async () => {
+    await prisma.spamRule.create({ data: { projectId: project.id, field: "subject_or_body", matcher: "contains", value: "Crypto" } });
     model.reply("They want to pay in crypto.");
     const typed = await asked(asReader(), { source: "WIDGET" });
     expect(await escalateDocs(project.slug, typed.id, "e2e-sam-9@example.com", "", "widget", {})).toMatchObject({ conversation: 1 });
-    // Trusted, so spared the phrases.
+    // Trusted, so spared the rules on what it says.
     const userId = await upsertProjectUser(project.id, "user-9", { name: "Sam", email: "e2e-sam-9@example.com" });
     model.reply("They want to pay in crypto.");
     const signedIn = await asked(asReader(), { source: "WIDGET" });
     expect(await escalateDocs(project.slug, signedIn.id, "e2e-sam-9@example.com", "", "widget", { token: widgetToken(project.id, userId) })).toEqual({ conversation: 2 });
-    expect((await conversations()).map((c) => [c.spam, c.spamReason, c.spamPhrase])).toEqual([[true, "phrase", "Crypto"], [false, null, null]]);
+    expect((await conversations()).map((c) => [c.spam, c.spamReason, c.spamPhrase])).toEqual([[true, "rule", "Subject or body contains Crypto"], [false, null, null]]);
   });
 
   test("once the conversation is started, the question stays passed on even if announcing it fails", async () => {

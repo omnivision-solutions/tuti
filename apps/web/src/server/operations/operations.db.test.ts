@@ -179,7 +179,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "support.checkEmailDomain": () => ({}),
   "support.removeEmailDomain": () => ({}),
   "spam.get": () => ({}),
-  "spam.update": () => ({ block: ["spam.example"], allow: ["e2e-matrix-forms@example.com"], addPhrases: ["facebook admin"] }),
+  "spam.update": () => ({ addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }], block: ["spam.example"], allow: ["e2e-matrix-forms@example.com"] }),
   "spam.try": () => ({ sender: "e2e-matrix-kim@example.com", subject: "Facebook Admin", text: "Your page will be disabled." }),
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
@@ -617,6 +617,7 @@ const snapshot = () =>
     prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } }, posts: true }, orderBy: { number: "asc" } }),
     prisma.emailDomain.findUnique({ where: { projectId: project.id } }),
     prisma.spamSender.findMany({ where: { projectId: project.id }, orderBy: { sender: "asc" } }),
+    prisma.spamRule.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } }),
     prisma.verifyAll.findMany({ where: { projectId: project.id } }),
     prisma.dataImport.findMany({ where: { projectId: project.id } }),
     // The keys' creator's phones and notification settings.

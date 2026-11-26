@@ -1,85 +1,64 @@
 "use client";
 
 import { MoreHorizontalIcon } from "lucide-react";
-import { type ReactNode, useActionState, useEffect, useRef, useTransition } from "react";
+import { type ReactNode, useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
-import { matchText } from "@/lib/match-text";
-import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
+import { describeSpamRule, SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleKey } from "@/lib/spam-rules";
 import type { FormState } from "@/server/form-state";
-import type { SpamSettings as Settings } from "@/server/operations/spam";
-import { listSpamSender, removeSpamSender, setSpamGuidance, setSpamPhrase, type SpamTry, trySpam } from "@/server/spam-settings";
+import type { SpamRuleRow, SpamSettings as Settings } from "@/server/operations/spam";
+import { addSpamRule, allowSpamSender, removeSpamRule, removeSpamSender, setSpamGuidance, type SpamTry, trySpam } from "@/server/spam-settings";
 
 const SENDER = "kim@acme.example or acme.example";
 const aboutSender = (entry: string) => (entry.includes("@") ? null : "and its subdomains");
 /** An address or a domain as the lists keep it: lowercase, and "@acme.example" the domain. */
 const asSender = (entry: string) => entry.trim().toLowerCase().replace(/^@/, "");
 
+/** What the value field suggests for each field. */
+const PLACEHOLDERS: Record<SpamRuleField, string> = {
+  sender_domain: "spam.example",
+  sender_address: "kim@spam.example",
+  sender_name: "Facebook Support",
+  subject: "Your page will be disabled",
+  body: "facebook admin",
+  subject_or_body: "facebook admin",
+  sent_to: "sales@acme.example",
+};
+
 /**
- * Settings → Spam (docs/plan.md, Inbox automation, W2): the spam filter's blocked and allowed lists, the team's phrases,
- * its guidance for the AI, and a box to try a message against it. Each list saves as it's changed (see spam.update); the
- * guidance with the page's "Save changes".
+ * Settings → Spam (docs/plan.md, Inbox automation, W2 and W2b): the spam filter's block rules, its allowed list (shown
+ * only while it has entries), the AI spam check's guidance, and a box to try a message against it. The rules and the
+ * list save as they're changed (see spam.update); the guidance with the page's "Save changes".
  */
-export function SpamSettings({
-  projectSlug,
-  settings,
-  maxPhrase,
-  maxGuidance,
-}: {
-  projectSlug: string;
-  settings: Settings;
-  maxPhrase: number;
-  maxGuidance: number;
-}) {
+export function SpamSettings({ projectSlug, settings, maxValue, maxGuidance }: { projectSlug: string; settings: Settings; maxValue: number; maxGuidance: number }) {
   return (
     <>
-      <EntryList
-        id="spam-blocked"
-        title="Blocked"
-        description="Their email goes to Spam, and what they write signed in to the widget."
-        label="Address or domain to block"
-        placeholder={SENDER}
-        empty="Nobody is blocked"
-        entries={settings.blocked}
-        about={aboutSender}
-        as={asSender}
-        add={(entry) => listSpamSender(projectSlug, true, entry)}
-        remove={(entry) => removeSpamSender(projectSlug, entry)}
-      />
-      <EntryList
-        id="spam-allowed"
-        title="Allowed"
-        description={`Their email, and what they write signed in, skips your phrases. An address, not a domain, also skips the limit of ${NEW_BY_EMAIL_PER_HOUR} new conversations by email an hour.`}
-        label="Address or domain to allow"
-        placeholder={SENDER}
-        empty="Nobody is allowed by name"
-        entries={settings.allowed}
-        about={aboutSender}
-        as={asSender}
-        add={(entry) => listSpamSender(projectSlug, false, entry)}
-        remove={(entry) => removeSpamSender(projectSlug, entry)}
-      />
-      <EntryList
-        id="spam-phrases"
-        title="Phrases"
-        description="A new conversation with one in its subject or first message goes to Spam, unless its sender is allowed, trusted (one of your users, a teammate, someone you've replied to) or was marked Not spam before. Whole words, any case."
-        label="Phrase to add"
-        placeholder="facebook admin"
-        maxLength={maxPhrase}
-        empty="No phrases yet"
-        entries={settings.phrases}
-        as={matchText}
-        add={(entry) => setSpamPhrase(projectSlug, entry, true)}
-        remove={(entry) => setSpamPhrase(projectSlug, entry, false)}
-      />
+      <BlockRules projectSlug={projectSlug} rules={settings.rules} maxValue={maxValue} />
+      {/* Not offered for new entries; any already there stay listed, as they still let senders through, so they can be removed. */}
+      {settings.allowed.length > 0 && (
+        <EntryList
+          id="spam-allowed"
+          title="Allowed"
+          description="Their messages skip your rules."
+          label="Address or domain to allow"
+          placeholder={SENDER}
+          entries={settings.allowed}
+          about={aboutSender}
+          as={asSender}
+          add={(entry) => allowSpamSender(projectSlug, entry)}
+          remove={(entry) => removeSpamSender(projectSlug, entry)}
+        />
+      )}
       {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
       {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
       <TryMessage projectSlug={projectSlug} />
@@ -87,8 +66,127 @@ export function SpamSettings({
   );
 }
 
+/** The block rules: a field, a matcher and a value with Add (Sender domain and "is" to start), then each rule with Remove. */
+function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rules: SpamRuleRow[]; maxValue: number }) {
+  const form = useRef<HTMLFormElement>(null);
+  const [field, setField] = useState<SpamRuleField>("sender_domain");
+  const [matcher, setMatcher] = useState<SpamRuleMatcher>("is");
+  const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
+    const rule = { field, matcher, value: String(formData.get("value") ?? "").trim() };
+    // Said here: the server takes one that's there already as done, and "Added" would be wrong.
+    if (rules.some((other) => spamRuleKey(other) === spamRuleKey(rule))) {
+      return { error: "That rule is already there" };
+    }
+    const result = await addSpamRule(projectSlug, rule);
+    if (!result.error) {
+      toast.success("Rule added");
+      form.current?.reset();
+    }
+    return result;
+  }, {});
+  useFocusAfterRemoval(rules.length, "spam-rule-value");
+  return (
+    <SettingsCard title="Block rules" count={rules.length} description="New conversations that match one go to Spam.">
+      <SettingBlock className="gap-2">
+        <form ref={form} {...keepingFields(action)} className="flex flex-col gap-2 @min-[34rem]/settings:flex-row @min-[34rem]/settings:items-center">
+          <div className="flex gap-2">
+            <Select items={SPAM_RULE_FIELDS} value={field} onValueChange={(next) => setField(next as SpamRuleField)}>
+              <SelectTrigger className="min-w-0 flex-1 @min-[34rem]/settings:w-40 @min-[34rem]/settings:flex-none" aria-label="Field">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SPAM_RULE_FIELD_KEYS.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {SPAM_RULE_FIELDS[key]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select items={SPAM_RULE_MATCHERS} value={matcher} onValueChange={(next) => setMatcher(next as SpamRuleMatcher)}>
+              <SelectTrigger className="min-w-0 flex-1 @min-[34rem]/settings:w-40 @min-[34rem]/settings:flex-none" aria-label="Matcher">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SPAM_RULE_MATCHER_KEYS.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {SPAM_RULE_MATCHERS[key]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex min-w-0 flex-1 gap-2">
+            <Input
+              id="spam-rule-value"
+              name="value"
+              required
+              maxLength={maxValue}
+              placeholder={matcher === "pattern" ? "*@*.spam.example" : PLACEHOLDERS[field]}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              aria-label="Value"
+              aria-invalid={state.error ? true : undefined}
+              aria-describedby={state.error ? "spam-rule-error" : undefined}
+              className="min-w-0 flex-1"
+            />
+            <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled aria-label={pending ? undefined : "Add rule"}>
+              {pending ? "Adding…" : "Add"}
+            </Button>
+          </div>
+        </form>
+        {state.error && <FieldError id="spam-rule-error">{state.error}</FieldError>}
+      </SettingBlock>
+      {rules.length === 0 ? (
+        <SettingBlock>
+          <p className="text-sm text-muted-foreground">No rules yet</p>
+        </SettingBlock>
+      ) : (
+        <ul aria-label="Block rules" className="flex flex-col divide-y">
+          {rules.map((rule) => (
+            <Entry
+              key={rule.id}
+              entry={describeSpamRule(rule)}
+              shown={
+                <>
+                  <span className="text-muted-foreground">
+                    {SPAM_RULE_FIELDS[rule.field]} {SPAM_RULE_MATCHERS[rule.matcher]}
+                  </span>{" "}
+                  {rule.value}
+                  {rule.fromReport && (
+                    <>
+                      {" "}
+                      <Badge variant="secondary">from a report</Badge>
+                    </>
+                  )}
+                </>
+              }
+              removed="Rule removed"
+              remove={() => removeSpamRule(projectSlug, rule.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </SettingsCard>
+  );
+}
+
 /**
- * One list as a card: its count beside the title, one field and Add (as Redirects' two fields, in the card), then its
+ * One removed: its row, and the ⋯ menu that had focus, is gone. Focus goes to the list's field. Only where it was lost:
+ * one a teammate removed leaves focus where it is.
+ */
+function useFocusAfterRemoval(length: number, id: string) {
+  const count = useRef(length);
+  useEffect(() => {
+    if (length < count.current && document.activeElement === document.body) {
+      document.getElementById(id)?.focus();
+    }
+    count.current = length;
+  }, [length, id]);
+}
+
+/**
+ * A list as a card: its count beside the title, one field and Add (as Redirects' two fields, in the card), then its
  * entries, each with Remove under its ⋯. `about`: a muted word after an entry. `as`: an entry as the server compares
  * them, so one that's there already is said, not added.
  */
@@ -98,8 +196,6 @@ function EntryList({
   description,
   label,
   placeholder,
-  maxLength = 320,
-  empty,
   entries,
   about,
   as,
@@ -111,8 +207,6 @@ function EntryList({
   description: ReactNode;
   label: string;
   placeholder: string;
-  maxLength?: number;
-  empty: string;
   entries: string[];
   about?: (entry: string) => string | null;
   as: (entry: string) => string;
@@ -133,15 +227,7 @@ function EntryList({
     }
     return result;
   }, {});
-  // One removed: its row, and the ⋯ menu that had focus, is gone. Focus goes to the list's field. Only where it was
-  // lost: one a teammate removed leaves focus where it is.
-  const count = useRef(entries.length);
-  useEffect(() => {
-    if (entries.length < count.current && document.activeElement === document.body) {
-      document.getElementById(id)?.focus();
-    }
-    count.current = entries.length;
-  }, [entries.length, id]);
+  useFocusAfterRemoval(entries.length, id);
   return (
     <SettingsCard title={title} count={entries.length} description={description}>
       <SettingBlock className="gap-2">
@@ -153,7 +239,7 @@ function EntryList({
             id={id}
             name="entry"
             required
-            maxLength={maxLength}
+            maxLength={320}
             placeholder={placeholder}
             autoComplete="off"
             autoCapitalize="none"
@@ -168,30 +254,35 @@ function EntryList({
         </form>
         {state.error && <FieldError id={`${id}-error`}>{state.error}</FieldError>}
       </SettingBlock>
-      {entries.length === 0 ? (
-        <SettingBlock>
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        </SettingBlock>
-      ) : (
-        <ul aria-label={title} className="flex flex-col divide-y">
-          {entries.map((entry) => (
-            <Entry key={entry} entry={entry} about={about?.(entry) ?? null} remove={remove} />
-          ))}
-        </ul>
-      )}
+      <ul aria-label={title} className="flex flex-col divide-y">
+        {entries.map((entry) => {
+          const muted = about?.(entry);
+          return (
+            <Entry
+              key={entry}
+              entry={entry}
+              shown={
+                <>
+                  {entry}
+                  {muted && <span className="text-muted-foreground"> {muted}</span>}
+                </>
+              }
+              removed={`${entry} removed`}
+              remove={() => remove(entry)}
+            />
+          );
+        })}
+      </ul>
     </SettingsCard>
   );
 }
 
-/** An entry and its ⋯ menu: Remove, at once (adding it again undoes it). */
-function Entry({ entry, about, remove }: { entry: string; about: string | null; remove: (entry: string) => Promise<FormState> }) {
+/** An entry and its ⋯ menu: Remove, at once (adding it again undoes it). `entry`: its name to the ear. */
+function Entry({ entry, shown, removed, remove }: { entry: string; shown: ReactNode; removed: string; remove: () => Promise<FormState> }) {
   const [pending, startTransition] = useTransition();
   return (
     <li className="flex items-center gap-2 px-4 py-2 @min-[34rem]/settings:px-5">
-      <span className="min-w-0 flex-1 text-sm wrap-anywhere">
-        {entry}
-        {about && <span className="text-muted-foreground"> {about}</span>}
-      </span>
+      <span className="min-w-0 flex-1 text-sm wrap-anywhere">{shown}</span>
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} focusableWhenDisabled aria-label={`Actions for ${entry}`} />}>
           <MoreHorizontalIcon />
@@ -201,11 +292,11 @@ function Entry({ entry, about, remove }: { entry: string; about: string | null; 
             variant="destructive"
             onClick={() =>
               startTransition(async () => {
-                const result = await remove(entry);
+                const result = await remove();
                 if (result.error) {
                   toast.error(result.error);
                 } else {
-                  toast.success(`${entry} removed`);
+                  toast.success(removed);
                 }
               })
             }
@@ -218,7 +309,10 @@ function Entry({ entry, about, remove }: { entry: string; about: string | null; 
   );
 }
 
-/** The team's guidance for the AI's checks (checks 6 and 7), in its own words: saved with the page's "Save changes". */
+/**
+ * The AI spam check (checks 6 and 7): the team's guidance in its own words, saved with the page's "Save changes". Off
+ * while it's empty: then the AI isn't asked.
+ */
 function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidance: string; max: number }) {
   const { state, pending, form } = useCustomizeForm({
     save: async (_prev, formData) => {
@@ -231,14 +325,18 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   });
   return (
     <SettingsCard
-      title="Guidance for the AI"
-      description="What is and isn't spam for your team, in your words. The AI reads it when it checks a new conversation that your lists, your phrases and trust in the sender didn't decide. For now it only records in the conversation's Activity what it would have filed."
+      title={
+        <>
+          AI spam check <Badge variant={guidance.trim() ? "soft" : "secondary"}>{guidance.trim() ? "On" : "Off"}</Badge>
+        </>
+      }
+      description="Describe your spam; the AI checks what the rules miss. For now it only notes what it would file."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">
         <SettingBlock className="gap-2">
           <label htmlFor="spam-guidance" className="sr-only">
-            Guidance for the AI
+            Describe your spam
           </label>
           <Textarea
             id="spam-guidance"
