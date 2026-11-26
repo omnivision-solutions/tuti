@@ -2564,13 +2564,43 @@ model ArticleTranslation {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  article         Article         @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  projectLanguage ProjectLanguage @relation(fields: [projectId, language], references: [projectId, code], onDelete: Cascade)
+  article         Article                   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  projectLanguage ProjectLanguage           @relation(fields: [projectId, language], references: [projectId, code], onDelete: Cascade)
+  chunks          ArticleTranslationChunk[]
 
   @@unique([articleId, language])
   @@index([projectId, language])
   @@index([retryAt])
+  /// Search in Japanese, Korean and Chinese (docs/plan.md, Search in every language): words inside words, by trigrams
+  /// (pg_trgm, as the Inbox's search). Built CONCURRENTLY in a migration of its own (see ConversationMessage's).
+  @@index([projectId(ops: raw("text_ops")), body(ops: raw("gin_trgm_ops"))], type: Gin, map: "article_translation_project_body_trgm_idx")
   @@map("article_translation")
+}
+
+/// A published translation's sections, embedded for search in its language (docs/plan.md L7), as ArticleChunk is for the
+/// source: written when the translate job writes the version (@tuti/jobs embedTranslation), replaced as it changes.
+model ArticleTranslationChunk {
+  id            String                      @id @default(cuid())
+  translationId String
+  articleId     String
+  projectId     String
+  /// The translation's language (as its row's), to search one language's sections.
+  language      String
+  /// Order in the version, from 0.
+  position      Int
+  /// The section's heading; "" for text before the first heading.
+  heading       String
+  text          String
+  model         String
+  /// Of all the version's chunks (the same on each), to tell when they need embedding again.
+  contentHash   String
+  embedding     Unsupported("vector(1536)")
+
+  translation ArticleTranslation @relation(fields: [translationId], references: [id], onDelete: Cascade)
+
+  @@unique([translationId, position])
+  @@index([projectId, language])
+  @@map("article_translation_chunk")
 }
 
 /// A saved version of an article: every save that changes its title, text or collection adds

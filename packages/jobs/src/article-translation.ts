@@ -5,6 +5,7 @@ import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES,
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
+import { embedTranslation } from "./articles";
 
 /**
  * Article translations (docs/plan.md, Languages, L6): a published article into each of the project's languages kept up
@@ -242,7 +243,13 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
     retryAt: null,
     retranslated: row.retranslate,
   });
-  return written ? { translated: language } : { skipped: CHANGED };
+  if (!written) {
+    return { skipped: CHANGED };
+  }
+  // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: the backfill, or its next
+  // version, embeds it.
+  await embedTranslation(row.id, log).catch((error: unknown) => log.warn(`Embedding translation ${row.id} failed: ${String(error)}`));
+  return { translated: language };
 }
 
 /** Queues a translate job, never failing the caller: the page waits, and the retry job or Try again picks it up. */

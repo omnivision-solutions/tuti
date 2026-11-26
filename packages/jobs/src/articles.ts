@@ -66,6 +66,77 @@ export async function articleChanged({ articleId }: JobInput<"articleChanged">, 
   return { skipped: false, embedded: next?.chunks.length ?? 0 };
 }
 
+const translationSelect = {
+  articleId: true,
+  projectId: true,
+  language: true,
+  title: true,
+  body: true,
+  content: true,
+  keywords: true,
+  publishedAt: true,
+  article: { select: { publishedAt: true, deletedAt: true, sample: true } },
+} as const;
+type TranslationText = {
+  projectId: string;
+  title: string;
+  body: string;
+  content: unknown;
+  keywords: string[];
+  publishedAt: Date | null;
+  article: { publishedAt: Date | null; deletedAt: Date | null; sample: boolean };
+};
+
+/** A translation's chunks as chunksOf makes an article's: only while both it and its article are published (and not sample content). */
+const translationChunksOf = (translation: TranslationText | null) =>
+  translation && !translation.article.deletedAt && translation.article.publishedAt
+    ? chunksOf({ ...translation, sample: translation.article.sample })
+    : null;
+
+/**
+ * Embeds a published translation's sections for search in its language (docs/plan.md L7), as articleChanged does an
+ * article's: replacing its old chunks, or removing them once it or its article isn't published. Run as the translate job
+ * writes a version; safe to run late or twice: chunks are only written while the version still has the text they came from.
+ */
+export async function embedTranslation(translationId: string, log: JobLogger): Promise<JobResult> {
+  if (!embeddingsEnabled()) {
+    return { skipped: true };
+  }
+  const translation = await prisma.articleTranslation.findUnique({ where: { id: translationId }, select: translationSelect });
+  if (!translation) {
+    return { skipped: true };
+  }
+  const next = translationChunksOf(translation);
+  if (next) {
+    const stored = await prisma.articleTranslationChunk.findFirst({ where: { translationId }, select: { contentHash: true } });
+    if (stored?.contentHash === next.hash) {
+      return { skipped: false, embedded: 0 };
+    }
+  }
+  const vectors = next ? await embed(next.chunks.map((c) => c.embedText)) : [];
+  const written = await prisma.$transaction(async (tx) => {
+    // Locked, so a newer version can't slip in between this check and the write.
+    await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${translationId} FOR UPDATE`;
+    const latest = translationChunksOf(await tx.articleTranslation.findUnique({ where: { id: translationId }, select: translationSelect }));
+    if (latest?.hash !== next?.hash) {
+      return false;
+    }
+    await tx.articleTranslationChunk.deleteMany({ where: { translationId } });
+    for (const [position, chunk] of (next?.chunks ?? []).entries()) {
+      await tx.$executeRaw`
+        INSERT INTO article_translation_chunk (id, "translationId", "articleId", "projectId", language, position, heading, text, model, "contentHash", embedding)
+        VALUES (gen_random_uuid()::text, ${translationId}, ${translation.articleId}, ${translation.projectId}, ${translation.language}, ${position},
+          ${chunk.heading}, ${chunk.text}, ${EMBEDDING_MODEL}, ${next!.hash}, ${toVectorLiteral(vectors[position]!)}::vector)`;
+    }
+    return true;
+  });
+  if (!written) {
+    log.info(`translation ${translationId} changed while it was being embedded; left to the newer run`);
+    return { skipped: true };
+  }
+  return { skipped: false, embedded: next?.chunks.length ?? 0 };
+}
+
 /** For the backfill: embeds every published article (unchanged ones are skipped), carrying on past failures. */
 export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; embedded: number; failed: string[] }> {
   const articles = await prisma.article.findMany({
@@ -87,7 +158,23 @@ export async function embedPublishedArticles(log: JobLogger): Promise<{ articles
       failed.push(id);
     }
   }
-  return { articles: articles.length, embedded, failed };
+  // And their published translations, each in its language.
+  const translations = await prisma.articleTranslation.findMany({
+    where: { publishedAt: { not: null }, article: { publishedAt: { not: null }, deletedAt: null, sample: false } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  for (const { id } of translations) {
+    try {
+      if (Number((await embedTranslation(id, log)).embedded) > 0) {
+        embedded++;
+      }
+    } catch (error) {
+      log.warn(`translation ${id} wasn't embedded: ${error instanceof Error ? error.message : String(error)}`);
+      failed.push(id);
+    }
+  }
+  return { articles: articles.length + translations.length, embedded, failed };
 }
 
 /** How long a deleted article can be restored; then `purgeArticles` removes it for good. */
