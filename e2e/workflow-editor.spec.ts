@@ -89,21 +89,36 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   expect(await writes("user-ent")).toBe(true);
   expect(await writes("user-free")).toBe(false);
 
-  // The row's name opens its editor: changed to Trial and turned off.
+  // The row's name opens its editor: changed to Trial, while a teammate switches it off.
   await started.getByRole("link", { name: "Enterprise first" }).click();
   await owner.waitForURL(/\/settings\/workflows\/[^/]+$/);
   await expect(owner.getByRole("textbox", { name: "Name" })).toHaveValue("Enterprise first");
   await expect(owner.getByRole("combobox", { name: "If" })).toContainText("People in Enterprise");
+  await expect(owner.getByRole("switch", { name: "On" })).toBeChecked();
   await expect(save).toBeDisabled();
   const editor = owner.url();
+  // The teammate's change through the API, the page's refreshes held until this save is in: the editor saves what it
+  // changed only, so the switch-off stays.
+  let saved!: () => void;
+  const savedIn = new Promise<void>((done) => (saved = done));
+  const holdUntilSaved = async (route: Route) => {
+    if (route.request().method() === "GET" && route.request().headers()["rsc"]) await savedIn;
+    await route.fallback();
+  };
+  await owner.route("**/*", holdUntilSaved);
+  await api(`/workflows/${editor.split("/").pop()}`, { enabled: false }, "PATCH");
   await owner.getByRole("textbox", { name: "Name" }).fill("Trial first");
   await owner.getByRole("combobox", { name: "If" }).click();
   await owner.getByRole("option", { name: "People in Trial" }).click();
-  await owner.getByRole("switch", { name: "On" }).click();
   await expect(sentence).toHaveText("When a conversation starts, if the person is in Trial: mark priority.");
   await checkpoint(owner, "editor-edit");
   await save.click();
   await expect(owner.getByText("Saved Trial first")).toBeVisible();
+  saved();
+  await owner.unroute("**/*", holdUntilSaved);
+  expect(((await api(`/workflows/${editor.split("/").pop()}`, undefined, "GET")) as unknown as { enabled: boolean }).enabled).toBe(false);
+  // The page the save brings has it: the editor shows it off, with nothing left to save.
+  await expect(owner.getByRole("switch", { name: "On" })).not.toBeChecked();
   await expect(save).toBeDisabled();
   await expect(owner.getByRole("heading", { name: "Trial first" })).toBeVisible();
   // Off: a user in the group it was for, or the one it's for now, isn't marked.

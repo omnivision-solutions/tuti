@@ -19,6 +19,8 @@ import { deleteWorkflow, saveWorkflow } from "@/server/workflows";
 
 /** What the editor changes. `group`: the reader group's key it's for, null for everyone. */
 type Draft = { name: string; trigger: WorkflowTrigger; group: string | null; actions: WorkflowAction["kind"][]; enabled: boolean };
+const FIELDS = ["name", "trigger", "group", "actions", "enabled"] as const;
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 const ROW_SELECT = "w-full @min-[34rem]/settings:w-64";
 
@@ -34,6 +36,14 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
   const { register } = usePreview();
   const [saved, setSaved] = useState(workflow);
   const [draft, setDraft] = useState(workflow);
+  // The page brings what's stored now (a teammate's change, say, switched off from the list): it's what's saved, and
+  // what the fields show where they weren't changed here.
+  const [stored, setStored] = useState(workflow);
+  if (!same(stored, workflow)) {
+    setStored(workflow);
+    setSaved(workflow);
+    setDraft((current) => Object.fromEntries(FIELDS.map((field) => [field, same(current[field], saved[field]) ? workflow[field] : current[field]])) as Draft);
+  }
   const [saving, startSaving] = useTransition();
   // A new one goes to the list once added: nothing changes while it saves, as a change then wouldn't be saved. Its
   // controls stay focusable (read-only, or disabled but focusable), so the focus stays where it was.
@@ -80,12 +90,14 @@ export function WorkflowEditor({ projectSlug, id, workflow, groups }: { projectS
     const clicked = draft;
     const sent = { ...draft, name: draft.name.trim(), actions };
     startSaving(async () => {
+      // Only what changed here (all of it for a new one): what's left out stays as stored, a teammate's change too.
+      const changed = (field: (typeof FIELDS)[number]) => id === null || !same(sent[field], saved[field]);
       const result = await saveWorkflow(projectSlug, id, {
-        name: sent.name,
-        trigger: sent.trigger,
-        conditions: sent.group === null ? [] : [{ kind: "in_group", group: sent.group }],
-        actions: sent.actions.map((kind) => ({ kind })),
-        enabled: sent.enabled,
+        ...(changed("name") && { name: sent.name }),
+        ...(changed("trigger") && { trigger: sent.trigger }),
+        ...(changed("group") && { conditions: sent.group === null ? [] : [{ kind: "in_group" as const, group: sent.group }] }),
+        ...(changed("actions") && { actions: sent.actions.map((kind) => ({ kind })) }),
+        ...(changed("enabled") && { enabled: sent.enabled }),
       });
       if (result.error) {
         setError(result.error);
