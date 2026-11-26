@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { MESSAGES } from "@tuti/shared/messages";
 import type { Metadata } from "next";
 import { ArrowRightIcon, CircleCheckIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
@@ -20,6 +21,7 @@ import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
 import { portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { boardPosts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { getSession } from "@/server/session";
@@ -33,10 +35,13 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 /** Searched (`?q=`), it's still the overview: one address for search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback">): Promise<Metadata> {
   const { project } = await props.params;
-  return portalPageMetadata(project, { title: "Feedback", description: OVERVIEW_DESCRIPTION, path: "/feedback" });
+  const found = await prisma.project.findUnique({ where: { slug: project }, select: { id: true } });
+  if (!found) {
+    return {};
+  }
+  const { t, language } = await portalTranslator(found.id, "feedback");
+  return portalPageMetadata(project, { title: MESSAGES[language].header.feedback, description: t("description"), path: "/feedback" });
 }
-
-const OVERVIEW_DESCRIPTION = "Vote for the ideas you want most, or share your own.";
 
 /**
  * Feedback: every board the reader sees, each a card with its top open ideas (Trending's order) and how many more, then
@@ -52,6 +57,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
     notFound();
   }
   const viewer = await currentPostViewer(project.id);
+  const { t, language } = await portalTranslator(project.id, "feedback");
   const boards = await boardsWithCounts(project.id, viewer);
   if (boards.length === 0) {
     notFound();
@@ -87,20 +93,22 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
       <VoteButton shape={shape} postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
     );
   const search = (className?: string) => <BoardSearch action={at("/feedback")} q={q ?? ""} className={className} />;
-  const newPost = (round: boolean) => <NewPostMenu round={round} boards={boards.map((board) => ({ ...board, href: `${at(boardPath(board))}?new` }))} />;
+  const newPost = (round: boolean) => (
+    <NewPostMenu round={round} newPost={t("newPost")} boards={boards.map((board) => ({ ...board, href: `${at(boardPath(board))}?new` }))} />
+  );
 
   return (
     <div className="flex flex-col gap-8">
       <PortalPageHeader
-        title="Feedback"
-        description={OVERVIEW_DESCRIPTION}
+        title={MESSAGES[language].header.feedback}
+        description={t("description")}
         pills={
           <FilterPills
-            label="Boards"
+            label={t("boards")}
             current={at("/feedback")}
             items={[
-              { title: "All boards", href: at("/feedback"), count: total },
-              ...boards.map((board) => ({ title: board.name, href: at(boardPath(board)), count: board._count.posts })),
+              { title: t("allBoards"), href: at("/feedback"), count: total.toLocaleString(language) },
+              ...boards.map((board) => ({ title: board.name, href: at(boardPath(board)), count: board._count.posts.toLocaleString(language) })),
             ]}
           />
         }
@@ -114,7 +122,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
         phoneActions={
           <>
             <Popover>
-              <PopoverTrigger aria-label="Search" render={<Button variant="outline" size="icon-lg" className="rounded-full" />}>
+              <PopoverTrigger aria-label={t("search")} render={<Button variant="outline" size="icon-lg" className="rounded-full" />}>
                 <SearchIcon aria-hidden />
               </PopoverTrigger>
               <PopoverContent align="end" className="w-[calc(100vw-2rem)] p-2">
@@ -131,14 +139,19 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
         <div className="sm:hidden">{search()}</div>
       </noscript>
       {results ? (
-        <section aria-label="Ideas" className="flex flex-col gap-6">
+        <section aria-label={t("ideas")} className="flex flex-col gap-6">
           {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
           <p role="status" className="sr-only">
-            {results.posts.length === 0 ? `No ideas match "${q}"` : `${results.posts.length}${results.more ? "+" : ""} ${results.posts.length === 1 && !results.more ? "idea matches" : "ideas match"} "${q}"`}
+            {results.posts.length === 0
+              ? t("noMatchFor", { q: q! })
+              : results.more
+                ? t("moreMatchFor", { count: results.posts.length, q: q! })
+                : t("matchesFor", { count: results.posts.length, q: q! })}
           </p>
           {results.posts.length === 0 ? (
-            <EmptyState title="No ideas match" description="Try other words, or post it on one of the boards." />
+            <EmptyState title={t("noMatch")} description={t("noMatchAnyBoard")} />
           ) : (
+            // The ideas are people's words (the portal's own carry theirs).
             <ul className="flex flex-col divide-y border-b">
               {results.posts.map((post) => {
                 const board = bySlug.get(post.board.slug)!;
@@ -161,7 +174,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
           )}
           {results.more && (
             <Link href={nextPageHref(searchParams, filters)} scroll={false} className={buttonVariants({ variant: "outline", className: "self-center" })}>
-              Load more
+              {t("loadMore")}
             </Link>
           )}
         </section>
@@ -195,14 +208,16 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No ideas yet. Be the first to share one.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t("noIdeasYet")}
+                    </p>
                   )}
                   <div className="mt-auto flex items-center justify-between gap-3 pt-1 text-sm">
                     <span className="text-muted-foreground">
-                      {board._count.posts} {board._count.posts === 1 ? "idea" : "ideas"} still to come
+                      {t("stillToCome", { count: board._count.posts })}
                     </span>
                     <Link href={at(boardPath(board))} className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
-                      Open board
+                      {t("openBoard")}
                       <ArrowRightIcon aria-hidden className="size-3.5" />
                     </Link>
                   </div>
@@ -213,7 +228,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
           {latest.length > 0 && (
             <section aria-labelledby="recently-shipped" className="flex flex-col gap-1">
               <h2 id="recently-shipped" className="text-[0.8125rem] font-medium text-muted-foreground">
-                Recently shipped
+                {t("recentlyShipped")}
               </h2>
               <ul className="flex flex-col divide-y border-b">
                 {latest.map((post) => (
@@ -222,7 +237,9 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                     <Link lang={lang} href={at(postPath({ ...post, board: post.board }))} className="min-w-0 flex-1 truncate text-[0.9375rem] hover:underline">
                       {post.title}
                     </Link>
-                    <span className="shrink-0 text-sm text-muted-foreground">{formatDay(post.shippedAt)}</span>
+                    <span className="shrink-0 text-sm text-muted-foreground">
+                      {formatDay(post.shippedAt, language)}
+                    </span>
                   </li>
                 ))}
               </ul>

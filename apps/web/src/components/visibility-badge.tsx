@@ -1,4 +1,7 @@
+"use client";
+
 import type { PostVisibility } from "@tuti/db";
+import { useLocale, useTranslations } from "next-intl";
 import { LockIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +21,28 @@ const SEEN_BY = {
  * hover; a public one shows nothing. (The team's post page says it in words under its Visibility select.)
  */
 export function VisibilityBadge({ visibility, of = "post" }: { visibility: PostVisibility; of?: "post" | "board" }) {
+  const t = useTranslations("feedback");
+  const lang = useLocale();
   if (visibility === "PUBLIC") {
     return null;
   }
+  if (of === "board") {
+    // Only in the app: English.
+    return (
+      <Badge variant="outline" className="text-muted-foreground" title={SEEN_BY.board[visibility]}>
+        <LockIcon aria-hidden />
+        {VISIBILITY_LABELS[visibility]}
+        <span className="sr-only">: {SEEN_BY.board[visibility].toLowerCase()}</span>
+      </Badge>
+    );
+  }
+  const seenBy = t(`seenBy.${visibility}`);
   return (
-    <Badge variant="outline" className="text-muted-foreground" title={SEEN_BY[of][visibility]}>
+    <Badge variant="outline" className="text-muted-foreground" title={seenBy}>
       <LockIcon aria-hidden />
-      {VISIBILITY_LABELS[visibility]}
-      <span className="sr-only">: {SEEN_BY[of][visibility].toLowerCase()}</span>
+      {t(`visibility.${visibility}`)}
+      {/* After a colon: its first letter lower case (no launch language starts these with a noun). */}
+      <span className="sr-only">: {seenBy.charAt(0).toLocaleLowerCase(lang) + seenBy.slice(1)}</span>
     </Badge>
   );
 }

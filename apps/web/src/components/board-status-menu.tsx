@@ -3,6 +3,7 @@
 import type { PostStatus } from "@tuti/db";
 import { CheckIcon, ChevronDownIcon, ListFilterIcon } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { Fragment } from "react";
 
 import { STATUS_ICONS, STATUS_TEXT } from "@/components/post-status-badge";
@@ -21,15 +22,17 @@ export type StatusChoice = { label: string; count: number; href: string; status?
 export function BoardStatusMenu({ choices, counted }: { choices: StatusChoice[]; counted: boolean }) {
   const current = choices.find((choice) => choice.current) ?? choices[0]!;
   const Icon = current.status ? STATUS_ICONS[current.status] : ListFilterIcon;
+  const t = useTranslations("feedback");
+  const lang = useLocale();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={counted ? `Status: ${current.label}, ${current.count} ${current.count === 1 ? "idea" : "ideas"}` : `Status: ${current.label}`}
+        aria-label={counted ? t("statusMenuCounted", { status: current.label, count: current.count }) : t("statusMenu", { status: current.label })}
         className={pillClass(false, "aria-expanded:bg-muted aria-expanded:text-foreground")}
       >
         <Icon aria-hidden className={cn(current.status && STATUS_TEXT[current.status])} />
         {current.label}
-        {counted && <span className="tabular-nums">{current.count}</span>}
+        {counted && <span className="tabular-nums">{current.count.toLocaleString(lang)}</span>}
         <ChevronDownIcon aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-auto min-w-56 whitespace-nowrap">
@@ -41,7 +44,7 @@ export function BoardStatusMenu({ choices, counted }: { choices: StatusChoice[];
               <DropdownMenuItem render={<Link href={choice.href} scroll={false} aria-current={choice.current ? "true" : undefined} />}>
                 <ChoiceIcon aria-hidden className={cn(choice.status ? STATUS_TEXT[choice.status] : "text-muted-foreground")} />
                 {choice.label}
-                <span className="ml-auto pl-4 text-xs text-muted-foreground tabular-nums">{counted && choice.count}</span>
+                <span className="ml-auto pl-4 text-xs text-muted-foreground tabular-nums">{counted && choice.count.toLocaleString(lang)}</span>
                 <CheckIcon aria-hidden className={choice.current ? "text-primary" : "invisible"} />
               </DropdownMenuItem>
             </Fragment>

@@ -56,7 +56,7 @@ test("a reader opens the portal's German addresses while German is live; an offl
   const langOf = (locator: import("@playwright/test").Locator) => locator.evaluate((element) => element.closest("[lang]")?.getAttribute("lang"));
   await reader.goto("/de/feedback/feature-requests");
   expect(await langOf(reader.getByRole("link", { name: "Dark mode" }))).toBe("en");
-  expect(await langOf(reader.getByRole("main").locator("[aria-label*=\"vote\" i]").first())).toBe("de");
+  expect(await langOf(reader.getByRole("main").locator("[aria-label*=\"Abstimmen\"]").first())).toBe("de");
   // Posting signed out comes back to the board in German after signing in, and so does the account page.
   await expect(reader.locator('input[type="hidden"][name="next"]').first()).toHaveValue("/de/feedback/feature-requests");
   await reader.goto("/de/docs");

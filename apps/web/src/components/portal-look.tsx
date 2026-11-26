@@ -110,14 +110,18 @@ export function PortalMark({ name }: { name: string }) {
 /** The team's links above the docs' tree, or alone beside a tab's overview (Customize → Navigation). */
 export function DocsSidebarLinks({ className }: { className?: string }) {
   const { sidebarLinks } = usePortalLook();
+  const t = useTranslations("header");
+  const lang = useLocale();
+  const team = useTeamLanguage();
   if (sidebarLinks.length === 0) {
     return null;
   }
   return (
-    <ul aria-label="Links" className={cn("flex flex-col gap-0.5 text-sm", className)}>
+    // Named in the reader's language, the team's links in theirs (as the header's).
+    <ul data-sidebar-links lang={lang} aria-label={t("links")} className={cn("flex flex-col gap-0.5 text-sm", className)}>
       {sidebarLinks.map((link, i) => (
         <li key={i}>
-          <a href={link.url} className="flex items-center gap-2 rounded-md px-2 py-1 break-words text-muted-foreground transition-colors hover:text-foreground">
+          <a href={link.url} lang={team} className="flex items-center gap-2 rounded-md px-2 py-1 break-words text-muted-foreground transition-colors hover:text-foreground">
             <LinkIcon aria-hidden className="size-3.5 shrink-0" />
             {link.label}
           </a>

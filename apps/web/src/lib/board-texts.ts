@@ -9,11 +9,11 @@ export const BOARD_TEXT_LIMITS = { postButton: 30, titlePlaceholder: 80, details
 
 type BoardTexts = { postButton?: string | null; titlePlaceholder?: string | null; detailsPlaceholder?: string | null };
 
-/** A board's words for posting, its own or the defaults. */
-export function boardTexts(board: BoardTexts) {
+/** A board's words for posting, its own or the defaults (`defaults`: in the portal page's language). */
+export function boardTexts(board: BoardTexts, defaults: typeof BOARD_TEXT_DEFAULTS = BOARD_TEXT_DEFAULTS) {
   return {
-    postButton: board.postButton ?? BOARD_TEXT_DEFAULTS.postButton,
-    titlePlaceholder: board.titlePlaceholder ?? BOARD_TEXT_DEFAULTS.titlePlaceholder,
-    detailsPlaceholder: board.detailsPlaceholder ?? BOARD_TEXT_DEFAULTS.detailsPlaceholder,
+    postButton: board.postButton ?? defaults.postButton,
+    titlePlaceholder: board.titlePlaceholder ?? defaults.titlePlaceholder,
+    detailsPlaceholder: board.detailsPlaceholder ?? defaults.detailsPlaceholder,
   };
 }
