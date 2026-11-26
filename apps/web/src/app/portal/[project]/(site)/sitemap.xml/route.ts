@@ -77,15 +77,14 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // A tab showing an article in its place (its first, or one the team picked): that article's edits change its page, even
   // when it's unlisted or kept from search engines (still only one everyone may read).
   const landingSlugs = docs.tabs.flatMap((tab) => tabLandingSlug(tab) ?? []);
-  const landings = new Map(
-    (landingSlugs.length > 0
+  const landingRows =
+    landingSlugs.length > 0
       ? await prisma.article.findMany({
           where: { projectId: project.id, ...servedArticle, sample: false, slug: { in: landingSlugs }, ...(await readableArticle(project.id, SIGNED_OUT)) },
-          select: { slug: true, updatedAt: true },
+          select: { id: true, slug: true, updatedAt: true, title: true, description: true, keywords: true, body: true, content: true },
         })
-      : []
-    ).map((article) => [article.slug, article.updatedAt]),
-  );
+      : [];
+  const landings = new Map(landingRows.map((article) => [article.slug, article.updatedAt]));
   const landingDate = (tab: (typeof docs.tabs)[number]) => {
     const landing = tabLandingSlug(tab);
     return landing ? landings.get(landing) : undefined;
@@ -109,7 +108,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     ...collection.collections.flatMap(datesIn),
   ];
   const latestPost = project.posts[0]?.updatedAt;
-  // A tab showing an article in its place is that article's page: in the default language alone, as the article's own.
+  // A tab showing an article in its place is that article's page: in the languages it's translated into, as the article's own.
   // As the tab's page resolves it (tabLanding: an article picked there that's since moved to another tab is its overview),
   // and one everyone may read.
   const articleTabs = new Set(
@@ -123,7 +122,11 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // translated": the sitemap lists only those).
   const [portal, languages] = await Promise.all([portalAddress(slug), pageLanguages(slug)]);
   const live = languages?.live ?? [];
-  const translations = await currentVersions(articles, live);
+  const [translations, landingTranslations] = await Promise.all([currentVersions(articles, live), currentVersions(landingRows, live)]);
+  // A tab (or the docs home) showing an article in its place: in the languages that article is translated into, at its own path.
+  const landingLanguages = new Map(landingRows.map((row) => [row.slug, (landingTranslations.get(row.id) ?? []).map((version) => version.language)]));
+  const tabLanguages = (tab: (typeof docs.tabs)[number] | undefined, path: string): [string, string][] =>
+    tab && showsArticle(tab) ? (landingLanguages.get(tabLandingSlug(tab) ?? "") ?? []).map((language): [string, string] => [language, path]) : [];
   // `teamText`: an article's, post's or changelog entry's page, in the default language only until it has translations (see
   // portalPageMetadata); `inLanguages`: the paths an article's has in the languages it's translated into.
   const pages: { path: string; lastmod?: Date; teamText?: boolean; inLanguages?: [string, string][] }[] = [
@@ -140,6 +143,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]),
       // The tab /docs shows: the first, or the first with something to read (as docsHome).
       teamText: showsArticle(docs.tabs.find((tab) => tab.slug === docs.home) ?? docs.tabs[0]),
+      inLanguages: tabLanguages(docs.tabs.find((tab) => tab.slug === docs.home) ?? docs.tabs[0], "/docs"),
     },
     ...docs.tabs
       .filter((tab) => tab.slug !== docs.home)
@@ -147,6 +151,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         path: docsTabPath(docs, tab.slug),
         lastmod: newest([tabDates.get(tab.slug), landingDate(tab), ...tab.collections.flatMap(datesIn), ...datesOf(tab.uncollected), ...referencesDates(tab.references)]),
         teamText: showsArticle(tab),
+        inLanguages: tabLanguages(tab, docsTabPath(docs, tab.slug)),
       })),
     ...docs.references.map((reference) => ({ path: `/docs/${reference.slug}`, lastmod: referenceDates.get(reference.slug) })),
     ...operations,

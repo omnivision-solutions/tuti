@@ -2,22 +2,30 @@ import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { translationSource } from "@tuti/jobs";
 import type { ReactElement, ReactNode } from "react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import DocsSlugPage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { generateMetadata as docsHomeMetadata } from "@/app/portal/[project]/(site)/docs/page";
 import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
+import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { DocsArticle } from "@/components/portal-docs";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { portalAddress } from "./custom-domains";
+import { shareCard } from "./share-card";
 import { docsPage } from "./docs-queries";
 import { createArticle, createTab, publishArticle, updateTab } from "./operations/docs";
 import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
+
+// The share card's drawing is watched (what it's asked to draw), as share-cards.db.test.ts does.
+vi.mock("@/server/share-card", async (original) => {
+  const actual = await original<typeof import("@/server/share-card")>();
+  return { ...actual, shareCard: vi.fn(actual.shareCard) };
+});
 
 /** The portal's article page in the reader's language (docs/plan.md, Languages, L8; "A page not yet translated"). */
 
@@ -117,6 +125,10 @@ test("hreflang and the canonical: the languages it's translated into, each at it
   expect(translated.title).toBe("Abrechnung");
   // Its share card is made at its German address (its title translated there).
   expect(translated.openGraph?.images).toMatchObject([{ url: `${portal}/de/og/docs/abrechnung` }]);
+  // …and drawn there with the German title.
+  vi.mocked(shareCard).mockClear();
+  expect((await shareImage(new Request("http://x"), { params: Promise.resolve({ project: project.slug, path: ["docs", "abrechnung"] }) })).status).toBe(200);
+  expect(vi.mocked(shareCard).mock.calls[0]?.[1]).toMatchObject({ title: "Abrechnung" });
   at("fr");
   const fallback = await generateMetadata(params("billing"));
   expect(fallback.alternates?.canonical).toBe(`${portal}/docs/billing`);
@@ -156,6 +168,10 @@ test("the docs home showing a translated article in its place: in German at its 
   const metadata = await docsHomeMetadata({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
   expect(metadata.alternates).toMatchObject({ canonical: `${portal}/de/docs`, languages: { en: `${portal}/docs`, de: `${portal}/de/docs`, "x-default": `${portal}/docs` } });
   expect(metadata.openGraph?.images).toMatchObject([{ url: `${portal}/de/og/docs` }]);
+  // The sitemap lists it in German too, at its own address, as the alternate of the English.
+  const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+  expect(xml).toContain(`<loc>${portal}/de/docs</loc>`);
+  expect(xml).toContain(`hreflang="de" href="${portal}/de/docs"`);
   // Its structured data: at the German address.
   const page = await docsPage(project.slug, "abrechnung");
   const tree = await DocsArticle({ project: project.slug, slug: "billing", article: (page as { article: Parameters<typeof DocsArticle>[0]["article"] }).article, path: "/docs" });
