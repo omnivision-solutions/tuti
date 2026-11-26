@@ -167,6 +167,19 @@
     "readChangelog": "Changelog lezen",
     "rss": "RSS"
   },
+  "roadmap": {
+    "description": "Wat gepland is, waar we aan bouwen en wat klaar is.",
+    "signInToVote": "<link>Log in</link> om te stemmen.",
+    "columns": "Kolommen",
+    "meaning": {
+      "PLANNED": "Deze gaan we bouwen.",
+      "IN_PROGRESS": "Hier bouwen we nu aan.",
+      "COMPLETED": "Uitgebracht en klaar voor gebruik."
+    },
+    "nothingHere": "Hier staat nog niets.",
+    "inChangelog": "In de changelog",
+    "inChangelogLabel": "In de changelog: {title}"
+  },
   "changelog": {
     "description": "Wat er nieuw, beter en opgelost is in {name}.",
     "descriptionBare": "Wat er nieuw, beter en opgelost is.",

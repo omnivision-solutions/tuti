@@ -167,6 +167,19 @@
     "readChangelog": "更新情報を見る",
     "rss": "RSS"
   },
+  "roadmap": {
+    "description": "予定しているもの、開発中のもの、完了したもの。",
+    "signInToVote": "投票するには<link>ログイン</link>してください。",
+    "columns": "列",
+    "meaning": {
+      "PLANNED": "開発することが決まったものです。",
+      "IN_PROGRESS": "現在開発中のものです。",
+      "COMPLETED": "リリース済みで、すぐに使えます。"
+    },
+    "nothingHere": "まだ何もありません。",
+    "inChangelog": "更新情報で見る",
+    "inChangelogLabel": "更新情報で見る：{title}"
+  },
   "changelog": {
     "description": "{name}の新機能、改善、修正をお知らせします。",
     "descriptionBare": "新機能、改善、修正をお知らせします。",

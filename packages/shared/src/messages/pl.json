@@ -167,6 +167,19 @@
     "readChangelog": "Zobacz nowości",
     "rss": "RSS"
   },
+  "roadmap": {
+    "description": "Co jest zaplanowane, nad czym pracujemy i co jest gotowe.",
+    "signInToVote": "<link>Zaloguj się</link>, aby głosować.",
+    "columns": "Kolumny",
+    "meaning": {
+      "PLANNED": "Zdecydowaliśmy się je zrealizować.",
+      "IN_PROGRESS": "Właśnie nad nimi pracujemy.",
+      "COMPLETED": "Wydane i gotowe do użycia."
+    },
+    "nothingHere": "Na razie nic tu nie ma.",
+    "inChangelog": "W nowościach",
+    "inChangelogLabel": "W nowościach: {title}"
+  },
   "changelog": {
     "description": "Co nowego, ulepszonego i poprawionego w {name}.",
     "descriptionBare": "Co nowego, ulepszonego i poprawionego.",

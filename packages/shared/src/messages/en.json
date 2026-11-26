@@ -167,6 +167,19 @@
     "readChangelog": "Read the changelog",
     "rss": "RSS"
   },
+  "roadmap": {
+    "description": "What's planned, what we're building and what's done.",
+    "signInToVote": "<link>Sign in</link> to vote.",
+    "columns": "Columns",
+    "meaning": {
+      "PLANNED": "We've decided to build these.",
+      "IN_PROGRESS": "We're building these now.",
+      "COMPLETED": "Shipped and ready to use."
+    },
+    "nothingHere": "Nothing here yet.",
+    "inChangelog": "In the changelog",
+    "inChangelogLabel": "In the changelog: {title}"
+  },
   "changelog": {
     "description": "What's new, improved and fixed in {name}.",
     "descriptionBare": "What's new, improved and fixed.",

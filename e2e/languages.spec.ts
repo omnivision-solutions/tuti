@@ -324,6 +324,47 @@ test("Docs in German: the docs tabs' lock and the sidebar's links, named in Germ
   await expect(menuLinks).toHaveCSS("font-size", "16px");
 });
 
+test("the Roadmap in German: its columns, their meanings, ETAs, votes and the changelog's links, on desktop and on phones", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }, { code: "fr", live: true }] }, "PATCH");
+  await api("/posts", { board: "feature-requests", title: "Dark mode" }); // 1
+  await api("/posts", { board: "feature-requests", title: "CSV export" }); // 2
+  await api("/posts/1", { status: "planned", eta: "2099-06" }, "PATCH");
+  // CSV export shipped in a published entry.
+  await api("/changelog", { title: "CSV export is here", posts: [2] });
+  await api("/changelog/1/publish", {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/roadmap");
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  // Its description for search engines and links' previews too.
+  await expect(reader.locator('meta[name="description"]')).toHaveAttribute("content", "Was geplant ist, woran wir arbeiten und was fertig ist.");
+  await expect(reader.getByText(/^Was geplant ist, woran wir arbeiten und was fertig ist\. Melde dich an, um abzustimmen\.$/)).toBeVisible();
+  const planned = reader.getByRole("region", { name: "Geplant" });
+  await expect(planned).toContainText("Diese werden wir umsetzen.");
+  await expect(planned).toContainText("Erwartet im Juni 2099");
+  // Signed out, the card's vote is a way to sign in; the idea's title is the team's words.
+  await expect(planned.getByRole("link", { name: "Zum Abstimmen anmelden (1 Stimme)" })).toBeVisible();
+  await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("lang", "en");
+  await expect(reader.getByRole("region", { name: "In Arbeit" })).toContainText("Hier ist noch nichts.");
+  await expect(reader.getByRole("region", { name: "Erledigt" }).getByRole("link", { name: "Im Changelog: CSV export is here" })).toBeVisible();
+  await checkpoint(reader, "roadmap-in-german", { fullPage: false });
+
+  // On a phone, a column at a time.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await expect(reader.getByRole("navigation", { name: "Spalten" }).getByRole("link")).toHaveText(["Geplant 1", "In Arbeit 0", "Erledigt 1"]);
+  await checkpoint(reader, "roadmap-in-german-phone", { fullPage: false });
+
+  // Its title follows the page's language (in French, where the word isn't "Roadmap").
+  await reader.goto("/fr/roadmap");
+  await expect(reader).toHaveTitle(/^Feuille de route · /);
+});
+
 test("the changelog in German: its list, tags, months, pages, an entry's page, the email box, a subscriber, the menu and the RSS feed", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
