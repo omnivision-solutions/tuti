@@ -63,8 +63,13 @@ export function browserUse(key = process.env.BROWSER_USE_API_KEY?.trim() ?? "") 
       outputSchema: object;
       secretBindings?: SecretBinding[];
       /** Always sent: null turns off Browser Use's residential proxy (on by default, billed per GB); "us" is it. */
-      browserSettings: { screenWidth: number; screenHeight: number; proxyCountryCode: "us" | null };
+      /** `networkPolicyId`: the domains its browser may open (networkPolicy, screenshots.ts). */
+      browserSettings: { screenWidth: number; screenHeight: number; proxyCountryCode: "us" | null; networkPolicyId: string };
     }) => request<{ id: string; status: RunStatus; sessionId: string; workspaceId: string }>("POST", "/runs", body),
+    /** A network policy: only `allow`'s domains (and their subdomains) open, with `defaultAction` block. */
+    createNetworkPolicy: (body: { name: string; defaultAction: "block"; allow: { domains: string[] } }) => request<{ id: string }>("POST", "/network-policies", body),
+    updateNetworkPolicy: (id: string, body: { defaultAction: "block"; allow: { domains: string[] } }) => request<{ id: string }>("PATCH", `/network-policies/${id}`, body),
+    deleteNetworkPolicy: (id: string) => request<void>("DELETE", `/network-policies/${id}`),
     runStatus: (id: string) => request<{ status: RunStatus }>("GET", `/runs/${id}/status`),
     run: (id: string) => request<RunSummary>("GET", `/runs/${id}`),
     files: (workspaceId: string, includeUrls = true) =>

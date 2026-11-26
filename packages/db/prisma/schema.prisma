@@ -1887,6 +1887,8 @@ model ChangelogEntry {
   subscriberEmails ChangelogEmail[]
   /// The reader groups it's for: listed and shown only to readers in one of them (and the team). None: everyone.
   groups           ChangelogEntryGroup[]
+  /// Screenshot runs that fill its "[Screenshot: …]" lines (changelog.takeScreenshots).
+  screenshotRuns   ScreenshotRun[]
   /// Email-only: emailed to subscribers, listed nowhere (the portal, the widget, feeds, the API to readers), its page
   /// the team's only.
   emailOnly        Boolean                     @default(false)
@@ -3467,6 +3469,12 @@ model ScreenshotSettings {
   window     ScreenshotWindow @default(DESKTOP)
   /// Runs go through Browser Use's residential proxy (billed per GB): only for an app that blocks cloud servers.
   residentialProxy Boolean    @default(false)
+  /// Other domains the app loads from (a third-party sign-in, a CDN, an API elsewhere): its runs' browser opens these too.
+  otherDomains String[]       @default([])
+  /// Its runs' network policy at Browser Use (only the app's host and the sign-in link's open), and the domains it
+  /// allows, space-separated: updated when they change.
+  networkPolicyId      String?
+  networkPolicyDomains String   @default("")
   updatedAt  DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -3488,6 +3496,13 @@ model ScreenshotRun {
   /// Who started it (an API key's creator for API runs); its images are their uploads.
   startedById String?
   test        Boolean            @default(false)
+  /// The changelog entry whose "[Screenshot: …]" lines it fills once it's done (changelog.takeScreenshots), and when
+  /// they were filled (the job, or the editor's read for a run an older worker finished).
+  changelogEntryId String?
+  placedAt    DateTime?
+  /// Set when it put screenshots in: the entry's `updatedAt` it replaced. A save of text shown at that version or later
+  /// is refused (changelog.update's `screenshotsSince`), without comparing one machine's clock with another's.
+  placedOver  DateTime?
   state       ScreenshotRunState @default(RUNNING)
   /// Why it failed as a whole (sign-in, the service).
   error       String             @default("")
@@ -3512,9 +3527,11 @@ model ScreenshotRun {
 
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   startedBy   User?        @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
   screenshots Screenshot[]
 
   @@index([projectId, test, createdAt])
+  @@index([changelogEntryId, createdAt])
   @@map("screenshot_run")
 }
 

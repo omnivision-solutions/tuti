@@ -98,7 +98,7 @@ import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
 import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
-import { getScreenshots, getScreenshotSettings, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
+import { getScreenshots, getScreenshotSettings, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -290,6 +290,7 @@ const all = [
   testScreenshotSettings,
   takeScreenshots,
   getScreenshots,
+  takeChangelogScreenshots,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */
