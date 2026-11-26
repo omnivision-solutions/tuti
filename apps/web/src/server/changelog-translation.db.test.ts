@@ -458,3 +458,14 @@ test("a signed-in reader subscribing on the default language's page gets their s
   }
   expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).language).toBe("de");
 });
+
+test("turning the changelog on from Account keeps an unconfirmed subscription's language when the reader has none saved", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the German page before, not confirmed; the reader has no language saved.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase(), language: "de" } });
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
+});
