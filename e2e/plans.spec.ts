@@ -621,6 +621,6 @@ test("out of credits on the free plan, the banner leaves emails out of what's pa
   await spendCredits(slug);
   await owner.goto(`/app/${slug}/settings/billing`);
   const banner = owner.getByRole("alert").filter({ hasText: "This project is out of credits" });
-  await expect(banner).toContainText("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot and Verify are paused until it has more.");
+  await expect(banner).toContainText("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and AI images are paused until it has more.");
   await expect(banner).not.toContainText("emails");
 });

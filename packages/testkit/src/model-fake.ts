@@ -1,7 +1,26 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { crc32, deflateSync } from "node:zlib";
 
 import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "./openai-fake";
+
+/** What Gemini's image models make at 1K in each ratio, wide × high (Google's table), as the fake answers. */
+const GEMINI_1K: Record<string, [number, number]> = {
+  "1:1": [1024, 1024],
+  "1:4": [512, 2048],
+  "1:8": [384, 3072],
+  "2:3": [848, 1264],
+  "3:2": [1264, 848],
+  "3:4": [896, 1200],
+  "4:1": [2048, 512],
+  "4:3": [1200, 896],
+  "4:5": [928, 1152],
+  "5:4": [1152, 928],
+  "8:1": [3072, 384],
+  "9:16": [768, 1376],
+  "16:9": [1376, 768],
+  "21:9": [1584, 672],
+};
 
 export const FAKE_MODEL_KEY = "sk-or-test-fake";
 
@@ -23,6 +42,12 @@ export type ModelRequest = {
 
 /** A chat message as sent: `tool_calls` on the model's turns that called tools, `tool_call_id` on a tool's result. */
 export type ModelMessage = { role: string; content?: unknown; tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[]; tool_call_id?: string };
+
+/** What an image request asked (a chat completion with `modalities` holding "image"): its model, prompt, reference images (data URLs) and image_config. */
+export type ImageRequest = { model: string; prompt: string; references: string[]; aspectRatio?: unknown; imageSize?: unknown; provider?: unknown; usage?: unknown };
+
+/** What the fake charges for an image: a cent at 1K, more at 2K and 4K. */
+export const FAKE_IMAGE_COST = { "1K": 0.01, "2K": 0.02, "4K": 0.04 } as Record<string, number>;
 
 /** A tool call a scripted step answers with: its id (by default `call_<n>`), the tool's name and its arguments (JSON text). */
 export type FakeToolCall = { id?: string; name: string; arguments: string };
@@ -82,6 +107,13 @@ export type ModelFake = {
   toolCalls(calls: FakeToolCall[], match?: string): void;
   /** The next request fails with this HTTP status. */
   fail(status: number): void;
+  /**
+   * Every image request, in order. Each is answered, unscripted, with a real PNG in its aspect ratio and resolution
+   * (1K as Gemini's table has it: 1024×1024 at 1:1, 1376×768 at 16:9; 2K and 4K twice and four times as wide and tall), costing FAKE_IMAGE_COST.
+   */
+  images: ImageRequest[];
+  /** The next image request fails with this HTTP status, or without one gets a reply with no image in it (still paid for). */
+  failImage(status?: number): void;
   /** Every decision request, in order (also `GET /_fake/decisions`). */
   decisions: DecisionRequest[];
   /**
@@ -121,6 +153,8 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     return hold;
   };
   const requests: ModelRequest[] = [];
+  const images: ImageRequest[] = [];
+  const imageFailures: (number | undefined)[] = [];
   const decisionSteps: { answers: FakeDecision; match?: string; during?: () => Promise<unknown> }[] = [];
   const decisions: DecisionRequest[] = [];
   const standingDecisions: { answers: FakeDecision; match: string }[] = [];
@@ -167,6 +201,10 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
         content?: unknown;
         match?: unknown;
         hold?: unknown;
+        modalities?: unknown;
+        image_config?: { aspect_ratio?: unknown; image_size?: unknown };
+        provider?: unknown;
+        usage?: unknown;
       };
       try {
         body = JSON.parse(raw) as typeof body;
@@ -250,6 +288,42 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
         unexpected.push(`${req.method} ${req.url}`);
         return send(404, { error: { message: `unexpected ${req.method} ${req.url}` } });
       }
+      if (Array.isArray(body.modalities) && body.modalities.includes("image")) {
+        const parts = (body.messages?.[0]?.content ?? []) as { type?: string; text?: string; image_url?: { url?: string } }[];
+        const prompt = Array.isArray(parts) ? parts.find((part) => part.type === "text")?.text : undefined;
+        const [ratio, size] = [body.image_config?.aspect_ratio, body.image_config?.image_size];
+        const scale = { "1K": 1, "2K": 2, "4K": 4 }[String(size)];
+        const [w, h] = String(ratio).split(":").map(Number);
+        if (typeof body.model !== "string" || typeof prompt !== "string" || !scale || !w || !h) {
+          unexpected.push(`an image request without a model, a prompt, or a known aspect ratio and size: ${raw.slice(0, 200)}`);
+          return send(400, { error: { message: "expected a model, a prompt and image_config" } });
+        }
+        images.push({
+          model: body.model,
+          prompt,
+          references: parts.filter((part) => part.type === "image_url").map((part) => part.image_url?.url ?? ""),
+          aspectRatio: ratio,
+          imageSize: size,
+          provider: body.provider,
+          usage: body.usage,
+        });
+        if (imageFailures.length > 0) {
+          const status = imageFailures.shift();
+          if (status !== undefined) {
+            return send(status, { error: { message: "fake failure" } });
+          }
+          return send(200, { id: `fake-image-${images.length}`, model: body.model, choices: [{ index: 0, message: { role: "assistant", content: "I can't draw that." } }], usage: { prompt_tokens: prompt.length, completion_tokens: 5, cost: 0.001 } });
+        }
+        const [wide, high] = GEMINI_1K[String(ratio)] ?? [Math.round(1024 * Math.sqrt(w / h)), Math.round(1024 / Math.sqrt(w / h))];
+        const png = solidPng(wide * scale, high * scale);
+        return send(200, {
+          id: `fake-image-${images.length}`,
+          object: "chat.completion",
+          model: body.model,
+          choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "", images: [{ type: "image_url", image_url: { url: `data:image/png;base64,${png.toString("base64")}` } }] } }],
+          usage: { prompt_tokens: prompt.length, completion_tokens: 1290, cost: FAKE_IMAGE_COST[String(size)], is_byok: false },
+        });
+      }
       const message = (role: string) => body.messages?.find((m) => m.role === role)?.content;
       const [system, user] = [message("system"), message("user")];
       if (typeof body.model !== "string" || typeof system !== "string" || typeof user !== "string") {
@@ -315,6 +389,10 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
     env: { OPENAI_API_KEY: FAKE_MODEL_KEY, OPENAI_BASE_URL: url },
     embeddings,
     requests,
+    images,
+    failImage(status) {
+      imageFailures.push(status);
+    },
     reply(content, during, match) {
       steps.push({ status: 200, content, during, match });
     },
@@ -343,6 +421,7 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
           .splice(0)
           .map((step) => `an unused step: ${step.content ?? (step.toolCalls ? `tool calls ${step.toolCalls.map((call) => call.name).join(", ")}` : `status ${step.status}`)}`),
         ...decisionSteps.splice(0).map((step) => `an unused decision: ${JSON.stringify(step.answers)}`),
+        ...imageFailures.splice(0).map((status) => `an unused image failure: ${status ?? "no image"}`),
       ];
       if (problems.length > 0) {
         throw new Error(`The model fake got:\n${problems.join("\n")}`);
@@ -355,4 +434,27 @@ export async function startModelFake({ embeddings: given }: { embeddings?: OpenA
       }
     },
   };
+}
+
+/** A real PNG of one colour, `width` × `height` (RGB, 8 bits). */
+function solidPng(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  // Each row: filter 0, then its pixels.
+  const row = Buffer.alloc(1 + width * 3);
+  for (let x = 0; x < width; x++) {
+    row.set([90, 120, 200], 1 + x * 3);
+  }
+  const pixels = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(pixels)), chunk("IEND", Buffer.alloc(0))]);
 }

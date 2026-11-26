@@ -38,7 +38,7 @@ export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featur
 export { contentBudget, FEATUREBASE_ICONS } from "./import-docs";
 export { adminMember, contactDetails, contactUsers, continueImport, failStaleImports, handOverOnVerified, handOverPlaceholders, type ImportCounts, importJob, IMPORT_KEY, IMPORT_PARTS, IMPORT_RUN, IMPORT_WAITS, importsSettled, importStale, importStep, importDue, loadAdmins, nextStep, resumeImport, type StepPage, tally, waitBefore } from "./imports";
 export { CHANGELOG_PAGE } from "./import-changelog";
-export { storeImage, uploadImage, UPLOADS_PER_HOUR_TEAM } from "./import-media";
+export { roomForImage, storeImage, uploadImage, UPLOADS_PER_HOUR_TEAM } from "./import-media";
 export { markdownToContent } from "./markdown-content";
 export { type ImportPart, IMPORT_SOURCES, type ImportSourceDefinition } from "./import-sources";
 export { crawlBudget, crawlPace, SiteError } from "./import-sources/website";
@@ -57,7 +57,7 @@ export { emailBrand } from "./email-brand";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, monthlyLimitReached, NEW_PROJECT_EMAILS_PER_DAY, nextMonth, pauseIfOverLimits, pausing, releaseProjectEmail } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
-export { aiFor, duplicatesMeter, screenshotsMeter } from "./ai-usage";
+export { aiFor, duplicatesMeter, imagesMeter, screenshotsMeter } from "./ai-usage";
 export { behindKey, languageTranslationsDone, lostAfterMs, PRODUCT_SETTING_CHANGED, retryBatch, markProductSettingBehind, queueArticleTranslations, queueLanguageTranslations, retryDelay, TRANSLATION_WAITS, translateArticle, translationInstructions, translationSource } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, replyTranslation, sameLanguage, translateMessage, translationFailed, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";

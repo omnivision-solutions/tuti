@@ -74,9 +74,9 @@ export type AiFeature = (typeof AI_FEATURES)[number];
 
 /**
  * What AI usage is recorded and charged for: the features, duplicate detection (its model is the server's, from the
- * config file) and screenshots (an agent in Browser Use's cloud browser, charged what its session cost).
+ * config file), screenshots (an agent in Browser Use's cloud browser, charged what its session cost) and images (generateImage).
  */
-export const USAGE_FEATURES = [...AI_FEATURES, "duplicates", "screenshots"] as const;
+export const USAGE_FEATURES = [...AI_FEATURES, "duplicates", "screenshots", "images"] as const;
 export type UsageFeature = (typeof USAGE_FEATURES)[number];
 
 /**
@@ -417,4 +417,123 @@ export async function decide(
 /** Whether screenshots work on this server: a Browser Use key (BROWSER_USE_API_KEY). */
 export function screenshotsEnabled(): boolean {
   return Boolean(process.env.BROWSER_USE_API_KEY?.trim());
+}
+
+/** AI images' model (docs/plan.md, AI image generator): the config file's ai.imageModel, by default DEFAULT_IMAGE_MODEL. */
+export const imageModel = () => config().ai.imageModel;
+
+/** The aspect ratios it makes (OpenRouter's image_config.aspect_ratio). */
+export const IMAGE_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"] as const;
+
+/**
+ * What the model makes at 1K in each ratio, wide × high (Google's table for Gemini's image models, the default's family);
+ * 2K and 4K are twice and four times as wide and tall.
+ */
+const IMAGE_1K: Record<(typeof IMAGE_RATIOS)[number], readonly [number, number]> = {
+  "1:1": [1024, 1024],
+  "1:4": [512, 2048],
+  "1:8": [384, 3072],
+  "2:3": [848, 1264],
+  "3:2": [1264, 848],
+  "3:4": [896, 1200],
+  "4:1": [2048, 512],
+  "4:3": [1200, 896],
+  "4:5": [928, 1152],
+  "5:4": [1152, 928],
+  "8:1": [3072, 384],
+  "9:16": [768, 1376],
+  "16:9": [1376, 768],
+  "21:9": [1584, 672],
+};
+
+/** Its resolutions (image_config.image_size), with how much larger than 1K each side is. */
+const IMAGE_SIZES = [
+  ["1K", 1],
+  ["2K", 2],
+  ["4K", 4],
+] as const;
+
+/** Cropping off more than this share of what the model makes asks it to keep what matters clear of those edges. */
+const NOTABLE_CROP = 0.05;
+
+/**
+ * What to ask the model for an image of `width` × `height`: the aspect ratio closest to it (compared in log space, so
+ * 2:1 is as far from 1:1 as 1:2 is), the smallest resolution whose image still holds the size once cropped to it (4K
+ * where none does), and which edges the crop takes off when it takes off much.
+ */
+export function imageShape(width: number, height: number): { aspectRatio: (typeof IMAGE_RATIOS)[number]; imageSize: "1K" | "2K" | "4K"; cropped: "top and bottom" | "left and right" | null } {
+  const ratioOf = (name: string) => {
+    const [w, h] = name.split(":").map(Number);
+    return w! / h!;
+  };
+  const wanted = width / height;
+  const distance = (name: string) => Math.abs(Math.log(ratioOf(name) / wanted));
+  const aspectRatio = IMAGE_RATIOS.reduce((best, name) => (distance(name) < distance(best) ? name : best));
+  const ratio = ratioOf(aspectRatio);
+  // The model's image, cropped to width:height, keeps all of one side: it holds the size if neither side is short of it.
+  const [made1kWide, made1kHigh] = IMAGE_1K[aspectRatio];
+  const holds = (scale: number) => made1kWide * scale >= width && made1kHigh * scale >= height;
+  const imageSize = (IMAGE_SIZES.find(([, scale]) => holds(scale)) ?? IMAGE_SIZES[2])[0];
+  const kept = Math.min(ratio, wanted) / Math.max(ratio, wanted);
+  return { aspectRatio, imageSize, cropped: 1 - kept <= NOTABLE_CROP ? null : wanted > ratio ? "top and bottom" : "left and right" };
+}
+
+/** Whether AI images work on this server: OpenRouter's image models need OpenRouter, as its Decisions API does. */
+export const imagesEnabled = decisionsAvailable;
+
+/**
+ * One image from the image model (imageModel): `prompt`, with `references` (data URLs) to work from, in an aspect ratio and resolution
+ * it makes (imageShape). Its bytes as it sent them (PNG or JPEG). Throws on any failure, with the reason.
+ */
+export async function generateImage({
+  prompt,
+  references,
+  aspectRatio,
+  imageSize,
+  meter,
+  timeoutMs = 120_000,
+}: {
+  prompt: string;
+  references: string[];
+  aspectRatio: string;
+  imageSize: string;
+  meter: Meter;
+  timeoutMs?: number;
+}): Promise<Buffer> {
+  const apiKey = chatKey();
+  const model = imageModel();
+  const { response, json } = await askProvider<{
+    model?: unknown;
+    choices?: { message?: { images?: { image_url?: { url?: unknown } }[] } }[];
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } & Parameters<typeof replyCost>[0];
+    error?: { message?: string };
+  }>(`${baseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...references.map((url) => ({ type: "image_url", image_url: { url } }))] }],
+      modalities: ["image", "text"],
+      image_config: { aspect_ratio: aspectRatio, image_size: imageSize },
+      provider: PROVIDER,
+      usage: { include: true },
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    throw requestFailed("Image request failed", response.status, json?.error?.message ?? "no details");
+  }
+  await meter({
+    kind: "chat",
+    model: answeredBy(json?.model, model),
+    inputTokens: tokens(json?.usage?.prompt_tokens),
+    outputTokens: tokens(json?.usage?.completion_tokens),
+    cost: replyCost(json?.usage),
+  });
+  const url = json?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+  const data = typeof url === "string" ? /^data:image\/[a-z]+;base64,([^,]+)$/.exec(url)?.[1] : undefined;
+  if (!data) {
+    throw new Error("The AI reply had no image");
+  }
+  return Buffer.from(data, "base64");
 }
