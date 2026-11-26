@@ -89,12 +89,19 @@ export function withTranslation(
   return out;
 }
 
+/** A section's text under its heading ("" for none), to know it again with its heading reworded. */
+const bodyOf = (blocks: Block[]) => {
+  const rest = blocks[0]?.type === "heading" ? blocks.slice(1) : blocks;
+  return rest.length > 0 ? JSON.stringify(rest) : "";
+};
+
 /** A section's heading text ("" for one with none), to know it again after the text around it moved. */
 const headingOf = (blocks: Block[]) => (blocks[0]?.type === "heading" ? JSON.stringify(blocks[0].content ?? []) : "");
 
 /**
  * The team's edit of `base` (the draft, else the published text) as sections. Each edited section is known again as the base
- * section it was: one with the same text, else the same heading (the intro: the base's intro); between those, the ones left
+ * section it was: one with the same text, else the same heading, else the same text under it (the intro: the base's intro);
+ * between those, the ones left
  * over pair in order where as many are left on each side; one that is none of them is one the team added. A section as it was keeps what it stands for. A changed one is the team's,
  * and counts as updated against the source as it is now, unless it wasn't shown as behind when it was edited (a section of a
  * version kept up to date that the team didn't own, maybe translated from older source text): that one keeps the hash it had,
@@ -115,6 +122,12 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
     if (was) return;
     const heading = headingOf(blocks[n]!);
     matched[n] = heading ? take(base.findIndex((other, i) => !used.has(i) && headingOf(other.blocks) === heading)) : undefined;
+  });
+  // Else the same text under its heading (the heading reworded).
+  matched.forEach((was, n) => {
+    if (was) return;
+    const body = bodyOf(blocks[n]!);
+    matched[n] = body ? take(base.findIndex((other, i) => !used.has(i) && bodyOf(other.blocks) === body)) : undefined;
   });
   // The intro (the one section with no heading, before the first) is the base's intro, however it was edited.
   if (blocks[0] && !headingOf(blocks[0]) && !matched[0] && base[0] && !headingOf(base[0].blocks)) {

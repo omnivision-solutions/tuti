@@ -144,6 +144,10 @@ test("an intro edited in the same save as a section added keeps its source secti
     ["Billing", false],
     [null, true],
   ]);
+  // A heading reworded (its text as it was) in the same save as a section added: still the same section.
+  const renamed = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlung", "Mit Karte zahlen"], ["FAQ", "Fragen"]), source);
+  expect(renamed.sections.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing", null]);
+  expect(renamed.removed).toEqual([]);
   // A heading reworded alone between matched ones: still the same section.
   const reworded = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlung", "Mit Karte zahlen!"]), source);
   expect(reworded.sections.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing"]);
