@@ -28,7 +28,18 @@ const asSender = (entry: string) => entry.trim().toLowerCase().replace(/^@/, "")
  * its guidance for the AI, and a box to try a message against it. Each list saves as it's changed (see spam.update); the
  * guidance with the page's "Save changes".
  */
-export function SpamSettings({ projectSlug, settings, maxPhrase, maxGuidance }: { projectSlug: string; settings: Settings; maxPhrase: number; maxGuidance: number }) {
+export function SpamSettings({
+  projectSlug,
+  settings,
+  maxPhrase,
+  maxGuidance,
+}: {
+  projectSlug: string;
+  settings: Settings;
+  maxPhrase: number;
+  /** Where the server has a model for the spam filter: the guidance's limit; null hides it, as nothing would read it. */
+  maxGuidance: number | null;
+}) {
   return (
     <>
       <EntryList
@@ -70,7 +81,7 @@ export function SpamSettings({ projectSlug, settings, maxPhrase, maxGuidance }: 
         add={(entry) => setSpamPhrase(projectSlug, entry, true)}
         remove={(entry) => setSpamPhrase(projectSlug, entry, false)}
       />
-      <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />
+      {maxGuidance !== null && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
       <TryMessage projectSlug={projectSlug} />
     </>
   );
@@ -221,7 +232,7 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   return (
     <SettingsCard
       title="Guidance for the AI"
-      description="What is and isn't spam for your team, in your words. The AI reads it with each new conversation your lists and phrases didn't decide. For now it only leaves a note on what it would have filed."
+      description="What is and isn't spam for your team, in your words. The AI reads it when it checks a new conversation that your lists, your phrases and trust in the sender didn't decide. For now it only leaves a note on what it would have filed."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">

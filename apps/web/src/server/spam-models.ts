@@ -106,8 +106,11 @@ const oneLine = (text: string, max = 200) => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 };
 
-/** A model's verdict: `spam`, and why in words (for the note); `by` which check gave it. Null: no answer (left as it is). */
-export type SpamJudgement = { spam: boolean; by: "decision" | "chat"; why: string; probability?: number } | null;
+/**
+ * A model's verdict: `spam`, and why in words (for the note: Tuti's own words, never the model's, which a sender could
+ * steer); `reason`, what the chat model said, for the evaluation alone. `by` which check gave it. Null: no answer.
+ */
+export type SpamJudgement = { spam: boolean; by: "decision" | "chat"; why: string; reason?: string; probability?: number } | null;
 
 /**
  * Checks 6 and 7 on what a conversation says: the decision model first, the chat model between its bands (or alone,
@@ -139,7 +142,8 @@ export async function judgeSpam(input: SpamInput, models: { decision: string | n
     return {
       spam: verdict === "spam",
       by: "chat",
-      why: verdict === "spam" ? `the chat model judged it spam${typeof why === "string" && why.trim() ? ` (${oneLine(why)})` : ""}` : `the chat model judged it ${verdict === "unsure" ? "unsure" : "not spam"}`,
+      why: verdict === "spam" ? "the chat model judged it spam" : `the chat model judged it ${verdict === "unsure" ? "unsure" : "not spam"}`,
+      ...(typeof why === "string" && { reason: oneLine(why) }),
     };
   } catch (error) {
     log.warn("The spam filter's model check failed: the conversation stays in the inbox", { error });

@@ -57,7 +57,7 @@ test.skipIf(!spamModelsOn())(`spam checks with ${JSON.stringify(spamModels())}`,
     await Promise.all(
       CASES.slice(i, i + 5).map(async (c) => {
         const judgement = await judgeSpam(inputOf(c), spamModels(), meter);
-        rows.push({ name: c.name, expected: c.spam ? "spam" : "not spam", got: judgement === null ? "no answer" : judgement.spam ? "spam" : "not spam", why: judgement?.why ?? "" });
+        rows.push({ name: c.name, expected: c.spam ? "spam" : "not spam", got: judgement === null ? "no answer" : judgement.spam ? "spam" : "not spam", why: judgement?.reason ?? judgement?.why ?? "" });
       }),
     );
   }

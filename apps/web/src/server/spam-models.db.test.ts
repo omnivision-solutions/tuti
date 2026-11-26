@@ -3,6 +3,10 @@ import { creditBalance, inboxDueToken } from "@tuti/jobs";
 import { configFile, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+// What the path leaves to `after`: kept here to run by hand, as Next.js would once the request has answered.
+const later = vi.hoisted(() => [] as (() => unknown)[]);
+vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (task: () => unknown) => void later.push(task) }));
+
 import { POST as due } from "@/app/api/inbox/due/route";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
@@ -37,6 +41,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
+  later.length = 0;
   // Every scripted answer was used, and nothing asked the models unscripted.
   model.done();
   model.requests.length = 0;
@@ -111,6 +117,19 @@ test("at least 0.9 from the decision model would have filed it: a note says so, 
   expect(await notes(number)).toHaveLength(1);
 });
 
+test("the request that started it leaves one run of its checks to `after`, which writes the note", async () => {
+  const { mail, notes, state } = await setup();
+  const number = await mail();
+  // Nothing was asked before the request answered.
+  expect([later.length, model.decisions, await notes(number)]).toEqual([1, [], []]);
+  model.decide({ spam: 0.97 });
+  await later[0]!();
+  expect(await notes(number)).toEqual([`${NOTE}the decision model was 97% sure it's spam.`]);
+  expect(await state(number)).toEqual({ ...inInbox, due: false });
+  // Run again, it finds nothing due.
+  expect(await later[0]!()).toBe(false);
+});
+
 test("at most 0.3 isn't spam: no note, and the chat model isn't asked", async () => {
   const { mail, check, notes, state } = await setup();
   const number = await mail();
@@ -127,7 +146,8 @@ test("between the bands the chat model decides: spam with its reason, not spam o
   model.reply(JSON.stringify({ verdict: "spam", why: "An SEO agency's cold pitch." }));
   await check(first);
   expect(model.requests[0]!.model).toBe("acme/tiny");
-  expect(await notes(first)).toEqual([`${NOTE}the chat model judged it spam (An SEO agency's cold pitch.).`]);
+  // Not in the model's own words: a sender could steer those into a note that reads as Tuti's.
+  expect(await notes(first)).toEqual([`${NOTE}the chat model judged it spam.`]);
   expect(await state(first)).toEqual({ ...inInbox, due: false });
 
   for (const verdict of ["not_spam", "unsure"]) {
@@ -164,6 +184,8 @@ test("it fails open: a model failing, or a reply that isn't a verdict, leaves th
 
 test("past the day's cap no model is asked; the requests are recorded as the spam filter's and never charged", async () => {
   vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, spam: { decisions: { model: "acme/decider" }, chat: { model: "acme/tiny" }, requestsPerDay: 2 } }));
+  // Midday (UTC), so the day the cap counts doesn't end between the two checks.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
   const { projectId, mail, check, notes, state } = await setup();
   const balance = async () => (await creditBalance(projectId)).balance;
   const before = await balance();
@@ -194,7 +216,7 @@ test("a server without a decision model asks the chat model alone; one without a
   const number = await mail();
   model.reply(JSON.stringify({ verdict: "spam", why: "Phishing" }));
   await check(number);
-  expect([model.decisions, await notes(number)]).toEqual([[], [`${NOTE}the chat model judged it spam (Phishing).`]]);
+  expect([model.decisions, await notes(number)]).toEqual([[], [`${NOTE}the chat model judged it spam.`]]);
 
   // No AI on the server: nothing is due, so neither `after` nor the job ever asks anything.
   vi.stubEnv("OPENAI_API_KEY", "");
@@ -281,6 +303,8 @@ test("a teammate's mark before or while the models answer has decided: nothing i
 });
 
 test("a check left behind (a deploy, a crash) is picked up once by the job when it's due; one from before the deploy never is", async () => {
+  // A fixed time: however long this takes, the job's "now" is before the check is due.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
   const { projectId, mail, notes, state } = await setup();
   await nothingElseDue();
   // From before the deploy: written without `pathDueAt`, as every conversation from before is.

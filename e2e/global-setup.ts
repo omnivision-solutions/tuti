@@ -63,6 +63,9 @@ export default async function globalSetup() {
   );
   // Duplicates: the decision model calls every candidate the embeddings find a duplicate, so the embeddings' fixtures decide.
   model.otherwiseDecide({ "*": { duplicate: 0.9, related: 0.05, different: 0.05 } }, '"existing_0"');
+  // The spam filter's model checks (watching only): every new conversation no free check decided is clearly not spam,
+  // so they never leave a note in a journey. Matched by what only their state holds.
+  model.otherwiseDecide({ spam: 0.1 }, '"examples":{"spam":');
   const s3 = await startS3Fake();
   const github = await startGithubFake();
   // Journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).
