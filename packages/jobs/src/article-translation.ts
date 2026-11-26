@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, keyed, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
@@ -241,7 +241,12 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   };
   // Remembered translations only from the same setting: one made under the other treats the product's words the other way.
   const memory = !fresh && sameSetting ? (row.memory as Record<string, string>) : {};
-  const result = await translateDoc(source.doc, {
+  const parts = sourceSections(source.text);
+  // A version the team writes is translated only where it asked: just those sections are sent (no title, description or
+  // keywords, which are the team's), and only their problems count.
+  const askedParts = row.automatic ? null : parts.filter((part) => asked.includes(part.key));
+  const toTranslate: Doc = askedParts ? { type: "doc", content: askedParts.flatMap((part) => part.blocks) } : source.doc;
+  const result = await translateDoc(toTranslate, {
     from: languageName(article.project.language),
     to: languageName(language),
     instructions: translationInstructions(languageName(language), setting.productAvailable, setting.instructions),
@@ -266,8 +271,9 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   }
   const blocks = result.doc.content ?? [];
   const text = (i: number) => toPlainText(blocks[i]!).trim();
-  const translated: Doc = { type: "doc", content: blocks.slice(source.meta) };
-  const parts = sourceSections(source.text);
+  // Lined up with the source's sections: the asked ones translated, the rest as they are (never used: only the asked are taken).
+  const asTranslated = askedParts && new Map(askedParts.map((part, i) => [part.key, sections(blocks)[i] ?? part.blocks]));
+  const translated: Doc = asTranslated ? { type: "doc", content: parts.flatMap((part) => asTranslated.get(part.key) ?? part.blocks) } : { type: "doc", content: blocks.slice(source.meta) };
   // Retranslating and unpublished changes (docs/plan.md, Languages): the published text and the draft take the new
   // translation in every section the team doesn't own; a version kept up to date in all of them, one the team writes in
   // those it asked for. Sections it asked for are no longer its own.
@@ -275,6 +281,10 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
   let more = false;
   const titleHash = contentHash(article.title);
   const written = await settle((now) => {
+    // Kept up to date or not as when this read it (what was translated depends on it): else the next run writes.
+    if (now.automatic !== row.automatic) {
+      return null;
+    }
     const only = now.automatic ? undefined : new Set(asked);
     // (Asking for sections already made them no longer the team's: an edit made since, in the draft or published, is theirs.)
     const published = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, published: now.automatic });
@@ -306,7 +316,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       updateSections: waiting,
       ...(!draftOnly && { publishedAt: now.publishedAt ?? new Date() }),
       productAvailable: setting.productAvailable,
-      memory: result.memory,
+      // Only the sections asked for were sent: what's remembered of the others stays.
+      memory: askedParts ? { ...(row.memory as Record<string, string>), ...result.memory } : result.memory,
       error: null,
       tries: 0,
       retryAt: null,

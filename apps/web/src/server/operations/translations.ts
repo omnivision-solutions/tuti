@@ -154,6 +154,8 @@ export const getTranslation = defineOperation({
   path: "/articles/{slug}/languages/{language}",
   scope: "read",
   access: "team",
+  // The English article unpublished since (not_published, from sourceOf).
+  errors: [409],
   input: z.object({ slug: articleSlug, language }),
   output: translationOutput,
   run: async ({ projectId }, input) =>
@@ -245,6 +247,10 @@ export const publishTranslation = defineOperation({
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
         throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
+      }
+      // A version never translated has no title yet: published, it would have none.
+      if (!draft.title.trim()) {
+        throw new OperationError(409, "no_title", "Give it a title first");
       }
       const keep = new Set(input.keep);
       const hashes = new Map(parts.map((part) => [part.key, part.hash]));
