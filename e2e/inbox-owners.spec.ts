@@ -9,6 +9,8 @@ import { apiFor, createProject, signUp } from "./helpers";
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test("a conversation the AI has is in With AI and out of the team's views and counts, a priority one says so on its row, and a teammate's reply takes it over", async ({ browser }, testInfo) => {
+  // Signing up, a project, an API key and a dozen pages, each captured, on a shared runner.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -43,6 +45,18 @@ test("a conversation the AI has is in With AI and out of the team's views and co
   // The AI has it: it isn't waiting on the team.
   await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
   await checkpoint(owner, "with-ai");
+  // A search finds it among the team's: its row says who has it, as no view's title does there, and still not Needs reply.
+  const search = owner.getByRole("searchbox", { name: "Search conversations" });
+  await search.fill("export");
+  await search.press("Enter");
+  await expect(owner.getByRole("heading", { name: "Results 1" })).toBeVisible();
+  await expect(rows.first().getByText("With AI", { exact: true })).toBeVisible();
+  await expect(rows.first().getByText("Priority", { exact: true })).toBeVisible();
+  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
+  await checkpoint(owner, "search-with-ai");
+  await search.fill("");
+  await search.press("Enter");
+  await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^With AI\s*1$/);
   // On a phone the row still reads on its lines, the page no wider than the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(rows.first().getByText("Priority", { exact: true })).toBeVisible();
@@ -52,7 +66,7 @@ test("a conversation the AI has is in With AI and out of the team's views and co
 
   // A teammate's reply takes it over: the team's, waiting on the user, and With AI is empty.
   await api("/conversations/1/messages", { body: "I'm on it." });
-  await expect(views.getByRole("link")).toHaveText([/^Needs reply\s*1$/, /^Mine\s*0$/, /^Unassigned\s*0$/, /^Waiting on user\s*1$/, /^With AI\s*0$/, /^Snoozed\s*0$/, /^Closed\s*0$/, /^Spam\s*0$/]);
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply\s*1$/, /^Mine\s*0$/, /^Unassigned\s*1$/, /^Waiting on user\s*1$/, /^With AI\s*0$/, /^Snoozed\s*0$/, /^Closed\s*0$/, /^Spam\s*0$/]);
   await expect(owner.getByText("Nothing's with the AI.")).toBeVisible();
   await checkpoint(owner, "with-ai-empty");
 });
