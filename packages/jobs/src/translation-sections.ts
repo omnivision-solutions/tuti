@@ -94,8 +94,8 @@ const headingOf = (blocks: Block[]) => (blocks[0]?.type === "heading" ? JSON.str
 
 /**
  * The team's edit of `base` (the draft, else the published text) as sections. Each edited section is known again as the base
- * section it was: one with the same text, else the same heading; between those, the ones left over pair in order; one that
- * is none of them is one the team added. A section as it was keeps what it stands for. A changed one is the team's,
+ * section it was: one with the same text, else the same heading (the intro: the base's intro); between those, the ones left
+ * over pair in order where as many are left on each side; one that is none of them is one the team added. A section as it was keeps what it stands for. A changed one is the team's,
  * and counts as updated against the source as it is now, unless it wasn't shown as behind when it was edited (a section of a
  * version kept up to date that the team didn't own, maybe translated from older source text): that one keeps the hash it had,
  * so an edit of an old translation is still behind. `removed`: the base's sections the edit took out.
@@ -116,9 +116,13 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
     const heading = headingOf(blocks[n]!);
     matched[n] = heading ? take(base.findIndex((other, i) => !used.has(i) && headingOf(other.blocks) === heading)) : undefined;
   });
-  // Those matched are fixed points: between two of them (and before the first, after the last), the sections left over pair
-  // with the base's left over there, in order, however many were added or taken out elsewhere. (An intro, with no heading,
-  // pairs with the base's.)
+  // The intro (the one section with no heading, before the first) is the base's intro, however it was edited.
+  if (blocks[0] && !headingOf(blocks[0]) && !matched[0] && base[0] && !headingOf(base[0].blocks)) {
+    matched[0] = take(0);
+  }
+  // Those matched are fixed points: between two of them (and before the first, after the last), sections left over pair with
+  // the base's left over there in order, but only as many on each side (one rewritten in place). Else they're ones the team
+  // added, and the base's ones it took out: no text lost, though one rewritten and moved counts as replaced.
   const anchors = [
     { n: -1, i: -1 },
     ...matched.flatMap((was, n) => (was ? [{ n, i: base.indexOf(was) }] : [])),
@@ -127,8 +131,9 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
   for (const [k, from] of anchors.slice(0, -1).entries()) {
     const to = anchors[k + 1]!;
     const free = base.map((_, i) => i).filter((i) => i > from.i && i < to.i && !used.has(i));
-    for (let n = from.n + 1, f = 0; n < to.n && f < free.length; n++) {
-      if (!matched[n]) matched[n] = take(free[f++]!);
+    const left = blocks.map((_, n) => n).filter((n) => n > from.n && n < to.n && !matched[n]);
+    if (left.length === free.length) {
+      left.forEach((n, f) => (matched[n] = take(free[f]!)));
     }
   }
   const out = blocks.map((section, i): Section => {

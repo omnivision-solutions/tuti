@@ -144,8 +144,20 @@ test("an intro edited in the same save as a section added keeps its source secti
     ["Billing", false],
     [null, true],
   ]);
-  // A heading reworded in the same save as a section added: still the same section.
-  const reworded = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlung", "Mit Karte zahlen!"], ["FAQ", "Fragen"]), source);
-  expect(reworded.sections.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing", null]);
+  // A heading reworded alone between matched ones: still the same section.
+  const reworded = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Zahlung", "Mit Karte zahlen!"]), source);
+  expect(reworded.sections.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", "Billing"]);
   expect(reworded.removed).toEqual([]);
+});
+
+test("a section added next to one rewritten (heading and text) never takes its place: both are the team's, nothing lost", () => {
+  const source = sourceSections(v1);
+  const { sections: edited, removed } = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["FAQ", "Fragen"], ["Zahlung", "Per Karte"]), source);
+  // Two left over for one: neither is known as Billing; Billing counts as taken out.
+  expect(edited.map(({ meta }) => meta.key?.split("\u001f")[0] ?? null)).toEqual(["", "Setup", null, null]);
+  expect(removed.map((key) => key.split("\u001f")[0])).toEqual(["Billing"]);
+  // English changes Billing: the team's sections stay, nothing doubled.
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by invoice"]);
+  const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), sourceSections(v2), { removed: new Set(removed) });
+  expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren", "FAQ", "Fragen", "Zahlung", "Per Karte"]);
 });
