@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { handlers } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
 import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
@@ -132,7 +133,7 @@ test("a teammate's changes, in the app and by the API, each with who did it; an 
   expect((await call(getConversationActivity, asOther, { number })).events.at(-1)).toMatchObject({ actor: "teammate", who: "A former teammate", text: "closed it" });
 }, 20_000);
 
-test("a teammate's reply takes it over in its Activity, with the reply; a note doesn't, and a failed change writes nothing", async () => {
+test("a teammate's reply takes it over and sets it waiting in its Activity, with the reply; a note doesn't, and a failed change writes nothing", async () => {
   const { admin, viaKey, activity } = await setup();
   const { number } = await call(createConversation, admin, { email: "e2e-sam@example.com", body: "Hello" });
   await call(updateConversation, admin, { number, handledBy: "ai" });
@@ -145,13 +146,45 @@ test("a teammate's reply takes it over in its Activity, with the reply; a note d
   expect(await activity(number)).toEqual([
     "The API key “Zapier” took it over from the AI · by replying",
     "Olive Owner handed it back to the AI",
+    "Olive Owner set it waiting on the user · by replying",
     "Olive Owner took it over from the AI · by replying",
     "Olive Owner handed it back to the AI",
   ]);
 
   failTransaction(new Error("connection reset"));
   await expect(call(updateConversation, admin, { number, status: "closed" })).rejects.toThrow("connection reset");
-  expect(await activity(number)).toHaveLength(4);
+  failTransaction(new Error("connection reset"));
+  await expect(call(replyToConversation, admin, { number, body: "Done", close: true })).rejects.toThrow("connection reset");
+  expect(await activity(number)).toHaveLength(5);
+});
+
+test("what a message changes on the way: a reply closing it, the person's message reopening it or ending its snooze, and a snooze ending by itself", async () => {
+  const { projectId, admin, viaKey, activity } = await setup();
+  await upsertProjectUser(projectId, "user-1", { name: "Sam Smith" });
+  const { number } = await call(createConversation, admin, { user: { id: "user-1" }, body: "Hello" });
+  const write = () => call(replyToConversation, viaKey, { number, body: "And another thing", author: { id: "user-1" } });
+
+  await call(replyToConversation, admin, { number, body: "Fixed", close: true });
+  await write();
+  await call(updateConversation, admin, { number, snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
+  await write();
+  await call(updateConversation, admin, { number, snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
+  // Its time passes: the wake job ends it.
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number } }, data: { snoozedUntil: new Date(Date.now() - 1000) } });
+  expect(await handlers.wakeConversations({}, { info: () => {}, warn: () => {} })).toMatchObject({ woken: 1 });
+
+  const rows = await activity(number);
+  expect(rows.map((row) => row.replace(/ · until .*/, " · until …"))).toEqual([
+    "Its snooze ended",
+    "Olive Owner snoozed it · until …",
+    "Sam Smith ended its snooze · by writing",
+    "Olive Owner snoozed it · until …",
+    "Sam Smith reopened it · by writing",
+    "Olive Owner closed it · by replying",
+  ]);
+  // The person's rows are under People; the wake job's under Workflows, with the built-in steps.
+  expect(await activity(number, "people")).toHaveLength(5);
+  expect(await activity(number, "workflows")).toEqual(["Its snooze ended"]);
 });
 
 test("newest first, a page at a time, the team's only; deleted with its conversation", async () => {

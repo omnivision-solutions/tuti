@@ -6,14 +6,17 @@ import type { Actor } from "./operations/define";
 
 /**
  * Writes a conversation's Activity rows (docs/plan.md, Inbox automation, W16), in the transaction of the change they
- * describe: never one without the other. Each kind's details are checked by its schema. A millisecond apart, so they
- * read in the order given.
+ * describe, which holds the conversation: never one without the other. Each kind's details are checked by its schema.
+ * After its latest row and a millisecond apart (as addMessage times messages), so they read in the order they were
+ * written, whichever server's clock runs ahead.
  */
 export async function logEvents(tx: Prisma.TransactionClient, conversationId: string, events: NewEvent[]) {
   if (events.length === 0) {
     return;
   }
-  const at = Date.now();
+  const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
+    SELECT MAX("createdAt") AS latest FROM "conversation_event" WHERE "conversationId" = ${conversationId}`;
+  const at = Math.max(Date.now(), latest ? latest.getTime() + 1 : 0);
   await tx.conversationEvent.createMany({
     data: events.map((event, i) => ({
       conversationId,

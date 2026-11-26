@@ -1139,10 +1139,11 @@ export async function addMessage(
     // when the clock says no later, or another server's clock runs ahead), so messages' times are the order they're
     // written in. A user message is never older than a reply or note the team has already seen.
     // (The latest read in a statement of its own, after the wait: one written by whoever held it is seen.)
-    const [held] = await tx.$queryRaw<{ spam: boolean; spamMarkedAt: Date | null; handledBy: ConversationOwner }[]>`
-      SELECT "spam", "spamMarkedAt", "handledBy" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [held] = await tx.$queryRaw<{ spam: boolean; spamMarkedAt: Date | null; handledBy: ConversationOwner; status: ConversationStatus; snoozedUntil: Date | null }[]>`
+      SELECT "spam", "spamMarkedAt", "handledBy", "status", "snoozedUntil" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
     inSpam = !!held?.spam;
-    const withAi = held?.handledBy === "AI";
+    // As it was before this message, for the changes it makes on the way (its Activity, W16).
+    const before = { withAi: held?.handledBy === "AI", status: held?.status, snoozed: !!held?.snoozedUntil };
     const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
       SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
     // In Spam, after its mark too, whichever server's clock runs ahead: what was written since the mark is told by its time.
@@ -1184,15 +1185,25 @@ export async function addMessage(
         "snoozedUntil" = CASE WHEN (${close} AND NOT ${after}) OR "snoozedUntil" <= ${now} THEN NULL ELSE "snoozedUntil" END,
         "updatedAt" = ${now}
         WHERE "id" = ${conversationId}`;
-      if (withAi) {
-        // Taken over by the reply: in its Activity, with it.
-        await logEvents(tx, conversationId, [{ kind: "handled_by", ...(by ?? { actor: "teammate", actorId: message.authorId }), details: { handledBy: "team", byReply: true } }]);
-      }
+      // What the reply changed on the way, in its Activity with it: taken over, set waiting or closed.
+      const teammate = by ?? { actor: "teammate" as const, actorId: message.authorId };
+      const status = after ? before.status : close ? "CLOSED" : "WAITING";
+      await logEvents(tx, conversationId, [
+        ...(before.withAi ? [{ kind: "handled_by" as const, ...teammate, details: { handledBy: "team" as const, byReply: true } }] : []),
+        ...(status !== before.status ? [{ kind: "status" as const, ...teammate, details: { status: toApiStatus(status!), byMessage: true } }] : []),
+      ]);
       if (outcome) {
         outcome.closed = close && !after;
         outcome.keptOpen = after;
       }
     } else {
+      if (message.author === "USER") {
+        // What their message changed on the way, in its Activity with it: closed, it opens again; snoozed, it wakes.
+        await logEvents(tx, conversationId, [
+          ...(before.status === "CLOSED" ? [{ kind: "status" as const, actor: "user" as const, details: { status: "open" as const, byMessage: true } }] : []),
+          ...(before.snoozed ? [{ kind: "snooze" as const, actor: "user" as const, details: { until: null } }] : []),
+        ]);
+      }
       // In SQL, so two messages at once keep the older waitingSince.
       // The user writing wakes it if it's snoozed.
       await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "activeAt" = ${now}, "snoozedUntil" = NULL, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
@@ -1665,6 +1676,9 @@ export const updateConversation = defineOperation({
       }
       if (input.priority !== undefined && input.priority !== held!.priority) {
         changes.push({ kind: "priority", ...by, details: { priority: input.priority } });
+      }
+      if (input.snoozedUntil !== undefined && input.snoozedUntil?.getTime() !== held!.snoozedUntil?.getTime() && (input.snoozedUntil || held!.snoozedUntil)) {
+        changes.push({ kind: "snooze", ...by, details: { until: input.snoozedUntil?.toISOString() ?? null } });
       }
       if (input.handledBy && input.handledBy.toUpperCase() !== held!.handledBy) {
         changes.push({ kind: "handled_by", ...by, details: { handledBy: input.handledBy } });

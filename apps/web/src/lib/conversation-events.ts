@@ -10,12 +10,15 @@ import { ACTIONS, TRIGGERS, type WorkflowAction } from "./workflows";
  * nothing in it.
  */
 
-/** Who did it. A teammate is a reference (gone with their account: "A former teammate"); an API key, its name then. */
-export const ACTORS = ["teammate", "api_key", "workflow", "spam_filter", "ai", "tuti"] as const;
+/**
+ * Who did it. A teammate is a reference (gone with their account: "A former teammate"); an API key, its name then; the
+ * user, the conversation's person (their message reopening it or ending its snooze).
+ */
+export const ACTORS = ["teammate", "api_key", "user", "workflow", "spam_filter", "ai", "tuti"] as const;
 export type EventActor = (typeof ACTORS)[number];
 
-/** The filters: Workflows is everything done on its own (workflows and the built-in steps), People what the team did. */
-export const PEOPLE: EventActor[] = ["teammate", "api_key"];
+/** The filters: People is what people did (teammates, API keys, the conversation's person), Workflows the rest. */
+export const PEOPLE: EventActor[] = ["teammate", "api_key", "user"];
 
 export const EVENTS = {
   /** A trigger's list ran: every workflow it checked, what each did or why it didn't match. */
@@ -34,7 +37,10 @@ export const EVENTS = {
   }),
   /** The spam filter's verdict where the conversation started. */
   spam_filter: z.object({ spam: z.boolean(), reason: z.string().nullable(), check: z.string().nullable(), phrase: z.string().optional() }),
-  status: z.object({ status: z.enum(["open", "waiting", "closed"]) }),
+  /** `byMessage`: the change came with a message (a teammate's reply, the person writing), not by itself. */
+  status: z.object({ status: z.enum(["open", "waiting", "closed"]), byMessage: z.boolean().optional() }),
+  /** Snoozed till then, or its snooze ended (`until` null): by a teammate, the person writing, or its time passing (Tuti). */
+  snooze: z.object({ until: z.string().nullable() }),
   /** The teammate it was assigned to (a reference: their name is read when shown), or null for unassigned. */
   assignee: z.object({ assigneeId: z.string().nullable() }),
   priority: z.object({ priority: z.boolean() }),
@@ -59,12 +65,13 @@ const STATUS_TEXT = { open: "reopened it", waiting: "set it waiting on the user"
 
 /**
  * An event in words, or null for a kind or details this release can't read (a later release's, while a deploy overlaps
- * the two). `actorName`: the teammate's name now (null once their account is gone), or the key's then. `names`: the
- * teammates' names by id, for an assignee.
+ * the two). `names`: the teammates' names by id (who did it, an assignee); `person`: the conversation's person, as the
+ * Inbox names them.
  */
 export function tellEvent(
   row: { kind: string; actor: string; actorId: string | null; actorName: string | null; details: unknown },
   names: Map<string, string>,
+  person = "The user",
 ): ToldEvent | null {
   const schema = (EVENTS as Record<string, z.ZodType>)[row.kind];
   const parsed = schema?.safeParse(row.details);
@@ -72,8 +79,17 @@ export function tellEvent(
     return null;
   }
   const details = parsed.data as never;
-  const person = row.actor === "teammate" ? (row.actorId && names.get(row.actorId)) || "A former teammate" : row.actor === "api_key" ? `The API key “${row.actorName ?? "unnamed"}”` : null;
-  const told = (text: string, detail: string | null = null): ToldEvent => ({ who: person, text, detail, lines: [] });
+  const who =
+    row.actor === "teammate"
+      ? (row.actorId && names.get(row.actorId)) || "A former teammate"
+      : row.actor === "api_key"
+        ? `The API key “${row.actorName ?? "unnamed"}”`
+        : row.actor === "user"
+          ? person
+          : null;
+  const told = (text: string, detail: string | null = null): ToldEvent => ({ who, text, detail, lines: [] });
+  // How a message's change came: the person writing, or a teammate's reply.
+  const by = row.actor === "user" ? "by writing" : "by replying";
   switch (row.kind as EventKind) {
     case "workflows_ran": {
       const { trigger, workflows } = details as z.output<typeof EVENTS.workflows_ran>;
@@ -102,8 +118,17 @@ export function tellEvent(
         lines: [],
       };
     }
-    case "status":
-      return told(STATUS_TEXT[(details as z.output<typeof EVENTS.status>).status]);
+    case "status": {
+      const { status, byMessage } = details as z.output<typeof EVENTS.status>;
+      return told(STATUS_TEXT[status], byMessage ? by : null);
+    }
+    case "snooze": {
+      const { until } = details as z.output<typeof EVENTS.snooze>;
+      if (until) {
+        return told("snoozed it", `until ${new Date(until).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC`);
+      }
+      return row.actor === "tuti" ? { who: null, text: "Its snooze ended", detail: null, lines: [] } : told("ended its snooze", row.actor === "user" ? by : null);
+    }
     case "assignee": {
       const { assigneeId } = details as z.output<typeof EVENTS.assignee>;
       if (!assigneeId) {
@@ -117,7 +142,7 @@ export function tellEvent(
       return told((details as z.output<typeof EVENTS.spam>).spam ? "marked it as spam" : "marked it not spam");
     case "handled_by": {
       const { handledBy, byReply } = details as z.output<typeof EVENTS.handled_by>;
-      return handledBy === "team" ? told("took it over from the AI", byReply ? "by replying" : "Take over") : told("handed it back to the AI");
+      return handledBy === "team" ? told("took it over from the AI", byReply ? by : "Take over") : told("handed it back to the AI");
     }
   }
 }

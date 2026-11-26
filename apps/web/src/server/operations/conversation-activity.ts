@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { ACTORS, eventPeople, PEOPLE, tellEvent } from "@/lib/conversation-events";
 
-import { conversationNumber, findConversation } from "./conversations";
+import { conversationNumber, conversationPerson, findConversation } from "./conversations";
 import { defineOperation } from "./define";
 
 export const ACTIVITY_FILTERS = ["all", "workflows", "people"] as const;
@@ -15,13 +15,13 @@ const eventOutput = z
     id: z.string().describe("The event's id: `before` for the page after it").meta({ examples: ["cm3k9x2ab0005qz8h1a2b3c4d"] }),
     kind: z
       .string()
-      .describe("What happened: workflows_ran, spam_filter, status, assignee, priority, spam or handled_by; more kinds come")
+      .describe("What happened: workflows_ran, spam_filter, status, snooze, assignee, priority, spam or handled_by; more kinds come")
       .meta({ examples: ["workflows_ran"] }),
-    actor: z.enum(ACTORS).describe("Who did it: a teammate, an API key, the workflows, the spam filter, the AI or Tuti").meta({ examples: ["workflow"] }),
+    actor: z.enum(ACTORS).describe("Who did it: a teammate, an API key, the conversation's person (user), the workflows, the spam filter, the AI or Tuti").meta({ examples: ["workflow"] }),
     who: z
       .string()
       .nullable()
-      .describe("The teammate (\"A former teammate\" once their account is gone), the API key, the trigger that ran, or the built-in step; the start of the sentence")
+      .describe("The teammate (\"A former teammate\" once their account is gone), the API key, the conversation's person, the trigger that ran, or the built-in step; the start of the sentence")
       .meta({ examples: ["A conversation starts"] }),
     text: z.string().describe("What they did, after `who`").meta({ examples: ["ran"] }),
     detail: z.string().nullable().describe("A short detail: why, or how").meta({ examples: ["2 workflows checked"] }),
@@ -47,8 +47,8 @@ export const activityOutput = z
 export type Activity = z.output<typeof activityOutput>;
 
 /**
- * A conversation's Activity (docs/plan.md, Inbox automation, W16), newest first, a page at a time: what workflows and the
- * built-in steps did (`workflows`) and what the team did (`people`).
+ * A conversation's Activity (docs/plan.md, Inbox automation, W16), newest first, a page at a time: what the workflows and
+ * the built-in steps did (`workflows`), and what people did (`people`: teammates, API keys, the conversation's person).
  */
 export async function conversationActivity(conversationId: string, { filter = "all", before, limit = PER_PAGE }: { filter?: ActivityFilter; before?: string; limit?: number } = {}): Promise<Activity> {
   const where: Prisma.ConversationEventWhereInput = {
@@ -67,13 +67,18 @@ export async function conversationActivity(conversationId: string, { filter = "a
   });
   const page = rows.slice(0, limit);
   const ids = [...new Set(page.flatMap(eventPeople))];
+  const person = await prisma.conversation.findUniqueOrThrow({
+    where: { id: conversationId },
+    select: { email: true, name: true, emailVerified: true, user: { select: { name: true, email: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true } } } } },
+  });
+  const { name, email } = conversationPerson(person);
   const names = new Map(
     (ids.length > 0 ? await prisma.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true, name: true } }) : []).map((user) => [user.id, user.name]),
   );
   return {
     // A kind this release can't read (a later release's) is left out.
     events: page.flatMap((row) => {
-      const told = tellEvent(row, names);
+      const told = tellEvent(row, names, name ?? email ?? "The user");
       return told
         ? [{ id: row.id, kind: row.kind, actor: row.actor as (typeof ACTORS)[number], who: told.who, text: told.text, detail: told.detail, workflows: told.lines, createdAt: row.createdAt.toISOString() }]
         : [];
@@ -85,7 +90,7 @@ export async function conversationActivity(conversationId: string, { filter = "a
 export const getConversationActivity = defineOperation({
   name: "conversations.activity",
   title: "List a conversation's activity",
-  summary: "What happened to a conversation, newest first: each workflow run with every workflow checked, the spam filter's verdict, and each change a teammate or API key made",
+  summary: "What happened to a conversation, newest first: each workflow run with every workflow checked, the spam filter's verdict, and each change a teammate, an API key or a message made",
   method: "GET",
   path: "/conversations/{number}/activity",
   scope: "read",
@@ -95,7 +100,7 @@ export const getConversationActivity = defineOperation({
     filter: z
       .enum(ACTIVITY_FILTERS)
       .default("all")
-      .describe("all; workflows: what workflows and the built-in steps did; people: what teammates and API keys did")
+      .describe("all; workflows: what the workflows, the spam filter, the AI and Tuti did; people: what teammates, API keys and the conversation's person did")
       .meta({ examples: ["all"] }),
     before: z.string().max(100).optional().describe("The `next` of the page before: the events earlier than it").meta({ examples: ["cm3k9x2ab0005qz8h1a2b3c4d"] }),
     limit: z.coerce.number().int().min(1).max(100).default(PER_PAGE).describe("How many, up to 100").meta({ examples: [20] }),

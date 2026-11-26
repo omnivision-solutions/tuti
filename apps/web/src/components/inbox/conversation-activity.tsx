@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { HistoryIcon } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { pillClass } from "@/components/filter-pills";
@@ -14,13 +14,14 @@ import { DetailSection } from "./detail-section";
 
 type Event = Activity["events"][number];
 
-/** Each row's dot by who did it: workflows and built-in steps, the spam filter, the AI, a teammate (or their API key). */
+/** Each row's dot by who did it: workflows and built-in steps, the spam filter, the AI, a teammate (or an API key), the person. */
 const DOTS: Record<Event["actor"], string> = {
   workflow: "bg-status-in-progress",
   spam_filter: "bg-status-completed",
   ai: "bg-status-planned",
   teammate: "bg-highlight-foreground",
   api_key: "bg-highlight-foreground",
+  user: "bg-status-open",
   tuti: "bg-status-closed",
 };
 
@@ -57,8 +58,12 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
   // For All: the pages after `first`. For a filter: all its pages.
   const [pages, setPages] = useState<Activity[]>([]);
   const [pending, startTransition] = useTransition();
+  // "Show earlier" pressed from the keyboard or a click: the row after this one (the last shown before) takes focus once
+  // the earlier ones are in, rather than the page, as the button may be gone with the last of them.
+  const focusAfter = useRef<string | null>(null);
+  const list = useRef<HTMLOListElement>(null);
 
-  const load = (to: ActivityFilter, before?: string) =>
+  const load = (to: ActivityFilter, before?: string, focus?: string) =>
     startTransition(async () => {
       const result = await loadConversationActivity(projectSlug, number, to, before);
       if (!result.activity) {
@@ -68,6 +73,7 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
       const page = result.activity;
       setFilter(to);
       setPages((loaded) => (before ? [...loaded, page] : [page]));
+      focusAfter.current = focus ?? null;
     });
 
   // A filter's list follows what's new too (the newest event changed: a refresh).
@@ -78,6 +84,21 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when something new happened
   }, [newest]);
+
+  useLayoutEffect(() => {
+    const after = focusAfter.current;
+    focusAfter.current = null;
+    if (!after) {
+      return;
+    }
+    // Only from the button (or nothing, once it's gone): where they've gone on meanwhile, focus stays.
+    const active = document.activeElement;
+    if (active !== document.body && !list.current?.parentElement?.contains(active)) {
+      return;
+    }
+    const row = list.current?.querySelector<HTMLElement>(`[data-event="${after}"]`)?.nextElementSibling as HTMLElement | null;
+    row?.focus();
+  }, [pages]);
 
   const all = filter === "all" ? [first, ...pages] : pages;
   const seen = new Set<string>();
@@ -93,8 +114,11 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
               key={option.key}
               type="button"
               aria-pressed={filter === option.key}
-              disabled={pending}
+              aria-disabled={pending || undefined}
               onClick={() => {
+                if (pending) {
+                  return;
+                }
                 if (option.key === "all") {
                   setFilter("all");
                   setPages([]);
@@ -109,13 +133,15 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
           ))}
         </div>
         {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{filter === "people" ? "Nobody on the team has changed anything yet." : filter === "workflows" ? "No workflow has run yet." : "Nothing yet."}</p>
+          <p className="text-sm text-muted-foreground">{filter === "people" ? "Nobody has changed anything yet." : filter === "workflows" ? "No workflow has run yet." : "Nothing yet."}</p>
         ) : (
-          <ol className="flex min-w-0 flex-col">
+          <ol ref={list} aria-busy={pending || undefined} className="flex min-w-0 flex-col">
             {events.map((event) => (
               <li
                 key={event.id}
-                className="relative flex min-w-0 flex-col items-start gap-0.5 pb-3 pl-5 text-xs after:absolute after:top-4.5 after:bottom-0 after:left-[0.3125rem] after:w-px after:bg-border last:after:hidden group-[.inbox-details-sheet]/details:text-[0.8125rem]"
+                data-event={event.id}
+                tabIndex={-1}
+                className="relative flex min-w-0 flex-col items-start gap-0.5 pb-3 pl-5 text-xs after:absolute after:top-4.5 after:bottom-0 after:left-[0.3125rem] after:w-px after:bg-border last:after:hidden outline-none focus-visible:ring-2 focus-visible:ring-ring group-[.inbox-details-sheet]/details:text-[0.8125rem]"
               >
                 <span aria-hidden className={cn("absolute top-1 left-0 size-2.75 rounded-full ring-2 ring-card", DOTS[event.actor])} />
                 <p className="max-w-full leading-snug wrap-anywhere">
@@ -139,7 +165,14 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
           </ol>
         )}
         {next && (
-          <Button variant="outline" size="sm" className="self-start" disabled={pending} onClick={() => load(filter, next)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="self-start"
+            disabled={pending}
+            focusableWhenDisabled
+            onClick={() => load(filter, next, events.at(-1)?.id)}
+          >
             Show earlier
           </Button>
         )}

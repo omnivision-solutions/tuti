@@ -483,6 +483,14 @@ export async function wakeConversations(_input: JobInput<"wakeConversations">, l
     // A snooze on one closed or spam (a release from before leaves one when it closes it) is let go of, so it can't
     // open it later, nor hide it if it's opened again.
     await tx.$executeRaw`UPDATE "conversation" SET "snoozedUntil" = NULL WHERE "snoozedUntil" IS NOT NULL AND ("spam" OR "status" = 'CLOSED')`;
+    // Each one's snooze ended, in its Activity (docs/plan.md, Inbox automation, W16), by Tuti: written with the wake.
+    if (rows.length > 0) {
+      await tx.$executeRaw`INSERT INTO "conversation_event" ("id", "conversationId", "kind", "actor", "details", "createdAt")
+        SELECT gen_random_uuid()::text, id, 'snooze', 'tuti', '{"until":null}'::jsonb,
+          -- After its latest row, as the app's own writes time them.
+          GREATEST(${now}::timestamp, (SELECT MAX(e."createdAt") + interval '1 millisecond' FROM "conversation_event" e WHERE e."conversationId" = id))
+        FROM unnest(${rows.map((row) => row.id)}::text[]) AS id`;
+    }
     for (const row of rows) {
       // As server/live.ts's notifyInbox: who it's with, never what it says.
       await tx.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({ projectId: row.projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash })})`;

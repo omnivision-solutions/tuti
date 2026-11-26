@@ -27,7 +27,7 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
 
   await owner.goto(`/app/${slug}/inbox/1`);
   const activity = owner.getByRole("complementary", { name: "Conversation details" }).getByRole("region", { name: "Activity" });
-  const rows = activity.getByRole("listitem").filter({ has: owner.locator("time") });
+  const rows = activity.locator("li[data-event]");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("The API key “Help test” handed it back to the AI");
   await expect(rows.nth(1)).toContainText("A conversation starts ran");
@@ -64,9 +64,32 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
   await owner.getByRole("button", { name: "Show details" }).click();
   const sheet = owner.getByRole("dialog", { name: "Conversation details" }).getByRole("region", { name: "Activity" });
   await sheet.scrollIntoViewIfNeeded();
-  await expect(sheet.getByRole("listitem").filter({ hasText: "Enterprise goes first · didn't match (not in Enterprise)" })).toBeVisible();
+  await expect(sheet.locator("li[data-event]").filter({ hasText: "Enterprise goes first · didn't match (not in Enterprise)" })).toBeVisible();
   const box = (await sheet.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(390);
   expect(await sheet.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await checkpoint(owner, "activity-phone", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+
+  // An API key's change is under People too, by the key's name.
+  await api("/conversations/1", { priority: false }, "PATCH");
+  await expect(rows.nth(0)).toContainText("The API key “Help test” took its priority off");
+  await activity.getByRole("button", { name: "People" }).click();
+  await expect(rows.filter({ hasText: "The API key “Help test”" })).toHaveCount(2);
+  await activity.getByRole("button", { name: "All" }).click();
+
+  // More than a page: the earliest come with Show earlier, the row after the last one shown takes focus, and the button
+  // goes with the last of them.
+  for (let i = 0; i < 20; i++) {
+    await api("/conversations/1", { priority: i % 2 === 0 }, "PATCH");
+  }
+  await owner.reload();
+  await expect(rows).toHaveCount(20);
+  await expect(rows.filter({ hasText: "A conversation starts ran" })).toHaveCount(0);
+  await activity.getByRole("button", { name: "Show earlier" }).click();
+  await expect(rows).toHaveCount(25);
+  await expect(rows.nth(20)).toBeFocused();
+  await expect(rows.last()).toContainText("A conversation starts ran");
+  await expect(activity.getByRole("button", { name: "Show earlier" })).toHaveCount(0);
 });
