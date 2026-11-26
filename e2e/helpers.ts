@@ -150,7 +150,7 @@ export async function apiFor(team: Page, slug: string) {
       body: JSON.stringify(body),
     });
     expect(response.ok).toBe(true);
-    return (await response.json()) as { slug: string };
+    return (await response.json()) as { id: string; slug: string };
   };
 }
 

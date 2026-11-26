@@ -59,8 +59,8 @@ import {
  *
  * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab,
  * `Tuti.open({ ask: "<question>" })` with the AI assistant answering it (over Home the first time; `ask: true`:
- * the assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
- * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
+ * the assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<id or slug>" })` at a docs article, as does clicking any
+ * element with `data-tuti-article="<id or slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
  * A dot on the button says there's an announced changelog entry this visitor hasn't

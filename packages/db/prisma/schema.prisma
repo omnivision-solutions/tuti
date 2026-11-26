@@ -2338,6 +2338,10 @@ enum ArticleListing {
 model Article {
   id              String         @id @default(cuid())
   projectId       String
+  /// Its ID for embeds and the API (`id` in articles.*, `data-tuti-article`): `a_` and 8 lowercase letters and
+  /// digits, a shape no slug can take. Made by the database when it's created, never changed, so a new slug never
+  /// breaks what refers to it.
+  publicId        String         @default(dbgenerated("article_public_id()"))
   /// From the title (or the team's, with `customSlug`); no other live article, tab or collection in the
   /// project has it, so /docs/<slug> is one page. Follows the title while it's a draft, unless it's custom.
   slug            String
@@ -2400,6 +2404,7 @@ model Article {
   verifications     ArticleVerification[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
+  @@unique([projectId, publicId])
   @@index([collectionId])
   @@index([deletedAt])
   @@map("article")

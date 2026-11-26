@@ -113,6 +113,7 @@ export default async function ArticlePage(
     },
     select: {
       id: true,
+      publicId: true,
       slug: true,
       title: true,
       body: true,
@@ -182,6 +183,7 @@ export default async function ArticlePage(
             saved={{
               projectSlug: slug,
               article: {
+                id: article.publicId,
                 slug: article.slug,
                 published: article.publishedAt !== null,
                 collection: edited.collection?.slug ?? null,
