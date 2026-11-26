@@ -1469,7 +1469,7 @@ export const retryTranslation = defineOperation({
       });
     }
     if (retried > 0) {
-      // Open Inbox pages (other teammates' too) show them as queued again, "Translating…", not their old failure.
+      // Open Inbox pages (other teammates' too) refresh, so the old failure goes; only the clicking page says "Translating…" (it knows what it re-queued).
       await notifyInboxNow({ projectId, conversationId: conversation.id, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
     }
     return { retried };
