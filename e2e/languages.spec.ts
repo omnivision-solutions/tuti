@@ -102,3 +102,22 @@ test("on a private portal's sign-in page, a phone can still choose the language 
   await expect(reader.getByRole("dialog").getByRole("group", { name: "Sprache" })).toBeVisible();
   await expect(reader.getByRole("dialog").getByRole("navigation", { name: "Portal" })).toHaveCount(0);
 });
+
+test("a signed-in reader's account menu follows their language", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/");
+  await reader.getByRole("button", { name: "Language: English" }).click();
+  await reader.getByRole("menuitemradio", { name: "Deutsch" }).click();
+  const account = reader.getByRole("button", { name: "Konto" });
+  await expect(account).toHaveAttribute("lang", "de");
+  await account.click();
+  await expect(reader.getByRole("menuitem", { name: "Kontoeinstellungen" })).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("menuitem", { name: "Abmelden" })).toHaveAttribute("lang", "de");
+});
