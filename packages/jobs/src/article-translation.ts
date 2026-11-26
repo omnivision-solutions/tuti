@@ -467,10 +467,11 @@ export const queueArticleTranslations = (articleId: string) => queueTranslations
 export const queueChangelogTranslations = (entryId: string) => queueTranslations(ENTRY, entryId);
 
 /**
- * Queues a language's versions kept up to date (adding the language, Retranslate, the product setting changing), articles'
- * and changelog entries', those waiting for a first translation too; with Automatic for new pages, every published article
- * and entry gets a version first. `fresh`: nothing reused (Retranslate). `waiting`: only those that couldn't be translated
- * (Try again). How many it queued.
+ * Queues a language's versions kept up to date (adding the language, Retranslate, the product setting changing), those
+ * waiting for a first translation too; with Automatic for new pages, every published article gets a version first.
+ * `fresh`: nothing reused (Retranslate). `waiting`: only those that couldn't be translated (Try again). How many it queued.
+ * Articles only for now: changelog entries are translated as they're published and edited, and join these once Settings →
+ * Languages counts them in what it confirms (docs/plan.md L16, a later part), so nothing is charged that wasn't confirmed.
  */
 export async function queueLanguageTranslations(projectId: string, language: string, { fresh = false, waiting = false } = {}): Promise<number> {
   const setting = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { automatic: true } });
@@ -478,7 +479,7 @@ export async function queueLanguageTranslations(projectId: string, language: str
     return 0;
   }
   const pages: Page[] = [];
-  for (const kind of KINDS) {
+  for (const kind of [ARTICLE]) {
     if (setting.automatic) {
       const sources = await kind.without(projectId, language);
       await kind.table().createMany({ data: sources.map(({ id }) => ({ [kind.parent]: id, projectId, language })), skipDuplicates: true });
@@ -587,9 +588,17 @@ export async function entryTranslationsPending(entryId: string): Promise<boolean
   return entry.translations.some((t) => !t.publishedAt || t.sourceHash !== hash);
 }
 
-/** A translation of an entry ended: its announcement, if it's due and was waiting on its translations, goes once none is on its way. */
+/**
+ * A translation of an entry ended: its announcement, if it was waiting on its translations (due within the wait), goes once
+ * none is on its way. One due longer ago isn't waiting on them: it's the email safety net's (resubmitChangelogEmails, which
+ * gives up after two days), never brought back here by a later translation.
+ */
 async function announceWhenTranslated(entryId: string) {
-  const due = await prisma.changelogEntry.findFirst({ where: { id: entryId, subscribersEmailDueAt: { lte: new Date() }, publishedAt: { not: null } }, select: { id: true } });
+  const now = Date.now();
+  const due = await prisma.changelogEntry.findFirst({
+    where: { id: entryId, subscribersEmailDueAt: { lte: new Date(now), gt: new Date(now - ANNOUNCEMENT_WAITS_MS) }, publishedAt: { not: null } },
+    select: { id: true },
+  });
   if (due && !(await entryTranslationsPending(entryId))) {
     await enqueue("changelogEmailed", { entryId });
   }

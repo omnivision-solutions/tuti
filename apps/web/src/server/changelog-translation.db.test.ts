@@ -126,7 +126,7 @@ test("past its wait, the announcement goes untranslated; a translation that fail
   expect((await prisma.changelogTranslation.findFirstOrThrow({ where: { entryId: second.id } })).error).not.toBeNull();
 });
 
-test("the product setting changing retranslates entries kept up to date and marks the team's own behind; Retranslate and the retry job take entries too", async () => {
+test("the product setting changing marks the team's own entries behind; an entry kept up to date takes the new setting on its next translation; the retry job takes entries too", async () => {
   await languages({ languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
   const { entry } = await draft();
   model.reply(reply("de"));
@@ -134,22 +134,36 @@ test("the product setting changing retranslates entries kept up to date and mark
   await languageTranslationsDone();
   await prisma.changelogTranslation.create({ data: { entryId: entry.id, projectId: project.id, language: "fr", automatic: false, title: "Mode sombre", publishedAt: new Date() } });
 
-  model.reply(reply("on"));
+  // Not retranslated in bulk (Settings doesn't count entries in what it confirms yet): the team's own are marked behind.
   await languages({ languages: [{ code: "de", productAvailable: true }, { code: "fr", productAvailable: true }] });
-  expect(await translation()).toMatchObject({ title: "[on] Dark mode", productAvailable: true });
+  expect(model.requests).toHaveLength(1);
   expect(Object.values((await translation("fr")).behind as Record<string, string>)).toContain(PRODUCT_SETTING_CHANGED);
-  expect(model.requests.at(-1)!.system).toContain("The product is available in German");
-
-  // Retranslate: the entry too, nothing reused.
-  model.reply(reply("again"));
-  expect(await call(retranslateLanguage, as(), { code: "de" })).toEqual({ queued: 1 });
+  expect(await call(retranslateLanguage, as(), { code: "de" })).toEqual({ queued: 0 });
+  // Edited, it's translated under the new setting, nothing reused from the old one.
+  model.reply(reply("on", "Dark mode is here"));
+  await call(updateChangelogEntry, as(), { number: entry.number, title: "Dark mode is here" });
   await languageTranslationsDone();
-  expect((await translation()).title).toBe("[again] Dark mode");
+  expect(await translation()).toMatchObject({ title: "[on] Dark mode is here", body: "[on] Switch themes from your profile menu.", productAvailable: true });
+  expect(model.requests.at(-1)!.system).toContain("The product is available in German");
 
   // A version that couldn't be translated, its wait over: the retry job translates it.
   await prisma.changelogTranslation.updateMany({ where: { entryId: entry.id, language: "de" }, data: { error: "Out of credits", retryAt: new Date(Date.now() - 1000), retranslate: { increment: 1 } } });
-  model.reply(reply("retried"));
+  model.reply(reply("retried", "Dark mode is here"));
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   await languageTranslationsDone();
-  expect(await translation()).toMatchObject({ title: "[retried] Dark mode", error: null, retryAt: null });
+  expect(await translation()).toMatchObject({ title: "[retried] Dark mode is here", error: null, retryAt: null });
+});
+
+test("a translation ending long after an announcement was due doesn't send it: that's the email safety net's, which gives up after two days", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry, email } = await draft();
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  // Due for weeks (its sends kept failing): a translation ending now leaves it be.
+  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } });
+  model.reply(JSON.stringify({ segments: { "1": "[de] Dunkler Modus" } }));
+  await call(updateChangelogEntry, as(), { number: entry.number, title: "Dark mode is here" });
+  await languageTranslationsDone();
+  expect(entryEmails(email)).toHaveLength(0);
 });
