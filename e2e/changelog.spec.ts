@@ -1533,8 +1533,10 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await team.keyboard.type(" Typed while it ran.");
   await release();
   await first;
+  // The editor asks every 5 seconds: given longer than an assertion's default.
   await expect(section.getByRole("status")).toHaveText(
     "The screenshots are in the saved text. Reload the page to see them: changes you haven't saved are lost, and saving them first puts the lines back in place of the screenshots.",
+    { timeout: 15_000 },
   );
   await expect(text).toContainText("Typed while it ran.");
   await expect(text.getByRole("img")).toHaveCount(0);
@@ -1549,7 +1551,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await expect(section.getByRole("status")).toHaveText(/^Taking 1 screenshot\./);
   await release();
   await second;
-  await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible();
+  await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible({ timeout: 15_000 });
   await expect(team.getByText("Screenshots done", { exact: true })).toBeVisible();
   await expect(section.getByRole("heading", { name: "Screenshots" })).toBeFocused();
   await expect(section).toContainText("No lines left to fill with a screenshot.");
@@ -1564,7 +1566,7 @@ test("screenshots taken while the editor is open come in once they're done, neve
   await team.keyboard.type(" Still here.");
   await release();
   await third;
-  await expect(section.getByRole("listitem")).toHaveText("“a screen that takes a while, a screen that isn't there”: There's no such screen in the app.");
+  await expect(section.getByRole("listitem")).toHaveText("“a screen that takes a while, a screen that isn't there”: There's no such screen in the app.", { timeout: 15_000 });
   await expect(section.getByRole("status")).toHaveText("");
   await expect(text).toContainText("Still here.");
   // And typing goes on: the section doesn't take focus from the editor.
