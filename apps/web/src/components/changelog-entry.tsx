@@ -48,6 +48,7 @@ export function ChangelogEntryView({
   linkTarget,
   react,
   base = "",
+  lang,
   dateMargin = false,
   back,
   excerpt = false,
@@ -60,8 +61,10 @@ export function ChangelogEntryView({
   linkTarget?: "_blank";
   /** Shows the reaction buttons (on the portal's pages, not in the widget). */
   react?: { projectSlug: string; signedIn: boolean };
-  /** The path the portal is under on the team's site (see lib/portal-base.ts). */
+  /** What its links go under: the path the portal is under on the team's site (see lib/portal-base.ts), then the language's prefix (portalLinkBase). */
   base?: string;
+  /** Its title's and text's language where the page is in another (teamLanguage). */
+  lang?: string;
   /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
   dateMargin?: boolean;
   /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
@@ -103,11 +106,12 @@ export function ChangelogEntryView({
       )}
       <div className={cn("flex min-w-0 flex-1 flex-col gap-3", excerpt && "relative")}>
         {back ? (
-          <PortalPageHeader back={back} title={entry.title} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
+          <PortalPageHeader back={back} title={<span lang={lang}>{entry.title}</span>} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
         ) : (
           <>
             {meta}
             <Title
+              lang={lang}
               id={`entry-${entry.number}`}
               className={cn(
                 "font-heading font-semibold tracking-tight break-words",
@@ -137,9 +141,11 @@ export function ChangelogEntryView({
           />
         )}
         {excerpt ? (
-          <Excerpt doc={entry.doc} />
+          <div lang={lang}>
+            <Excerpt doc={entry.doc} />
+          </div>
         ) : (
-          <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+          <RichText lang={lang} doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         )}
         {onPage && entry.posts.length > 0 ? (
           // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read

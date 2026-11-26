@@ -5,6 +5,9 @@ import { cache, createElement } from "react";
 import { branding } from "@/server/operations/branding";
 import { portalAddress } from "@/server/custom-domains";
 import { portalHomePath } from "@/server/portal-home";
+import { languagePrefix } from "@/lib/language-addresses";
+import { pageLanguages } from "@/server/language-addresses";
+import { portalLanguage } from "@/server/portal-base";
 
 /**
  * A portal's branding and name (its search listing's title, Customize → SEO, else the project's), read once per request by
@@ -40,15 +43,32 @@ export async function portalPageMetadata(
     image?: { url: string; width: number; height: number } | null;
   },
 ): Promise<Metadata> {
-  const [address, site, home] = await Promise.all([portalAddress(slug), portalSite(slug), portalHomePath(slug)]);
-  const url = `${address}${page.path === "/" ? "" : page.path}`;
+  const [address, site, home, languages, { language, prefix }] = await Promise.all([
+    portalAddress(slug),
+    portalSite(slug),
+    portalHomePath(slug),
+    pageLanguages(slug),
+    portalLanguage(),
+  ]);
+  const at = (prefix: string) => `${address}${prefix}${page.path === "/" ? "" : page.path}`;
+  // The languages the page is in (docs/plan.md, Languages): the portal's own pages in each live one; an article's, post's or
+  // changelog entry's (the team's or people's words) only in the default language until it has translations (articles from
+  // L8, entries from L17; posts never), so its other addresses point search engines to the default's. Under a language that
+  // isn't live (the team's preview) none: kept from search engines.
+  const preview = !!prefix && !!language && !languages?.live.includes(language);
+  const inLanguages = page.markdown || page.article || !languages ? [] : languages.live;
+  const url = inLanguages.some((code) => languagePrefix(code) === prefix) ? at(prefix) : at("");
+  const hreflang =
+    inLanguages.length > 0 && languages && !preview
+      ? { languages: { [languages.default]: at(""), ...Object.fromEntries(inLanguages.map((code) => [code, at(languagePrefix(code))])), "x-default": at("") } }
+      : {};
   // The page the portal opens on is the portal in search results: its own description (Customize → SEO) there, if the team wrote one.
   const description = (page.path === home && site?.brand.seo.description) || page.description || undefined;
   const { publishedTime, modifiedTime } = page.article ?? {};
   return {
     title: page.title,
     ...(description && { description }),
-    alternates: { canonical: url, ...(page.markdown && { types: { "text/markdown": `${url}.md` } }) },
+    alternates: { canonical: url, ...hreflang, ...(page.markdown && { types: { "text/markdown": `${url}.md` } }) },
     openGraph: {
       title: page.title,
       ...(description && { description }),
@@ -68,6 +88,7 @@ export async function portalPageMetadata(
         : { type: "website" }),
     },
     ...(page.noindex && { robots: { index: false } }),
+    ...(preview && { robots: { index: false, follow: false } }),
   };
 }
 

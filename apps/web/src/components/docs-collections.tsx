@@ -18,7 +18,8 @@ export function LockedMark({ className }: { className?: string }) {
   );
 }
 
-export function ArticleLinks({ articles, href }: { articles: Articles; href: (slug: string) => string }) {
+/** `lang`: the titles' language where the page is in another (teamLanguage). */
+export function ArticleLinks({ articles, href, lang }: { articles: Articles; href: (slug: string) => string; lang?: string }) {
   return (
     <ul className="flex flex-col">
       {articles.map((article) => (
@@ -26,7 +27,7 @@ export function ArticleLinks({ articles, href }: { articles: Articles; href: (sl
           <Link href={href(article.slug)} className="group flex items-center gap-3 py-3 text-[0.9375rem] break-words transition-colors hover:text-primary">
             <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
             <span className="min-w-0 flex-1">
-              {article.title}
+              <span lang={lang}>{article.title}</span>
               {article.locked && <LockedMark />}
             </span>
             <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -59,18 +60,20 @@ function Rows({
   href,
   collectionHref,
   label,
+  lang,
 }: {
   articles: Articles;
   collections?: DocsCollection[];
   href: (slug: string) => string;
   collectionHref: (slug: string) => string;
   label?: string;
+  lang?: string;
 }) {
   return (
     <ul aria-label={label} className="flex flex-col p-1.5">
       {articles.map((article) => (
         <Row key={article.slug} href={href(article.slug)}>
-          {article.title}
+          <span lang={lang}>{article.title}</span>
           {article.locked && <LockedMark />}
         </Row>
       ))}
@@ -80,7 +83,7 @@ function Rows({
           href={collectionHref(child.slug)}
           icon={<span className="text-muted-foreground">{child.icon ? <CollectionIcon name={child.icon} /> : <FolderIcon aria-hidden className="size-[1.25em]" />}</span>}
         >
-          {child.name}
+          <span lang={lang}>{child.name}</span>
           {child.locked && <LockedMark />}
         </Row>
       ))}
@@ -96,16 +99,19 @@ export function CollectionContents({
   collection,
   href,
   collectionHref,
+  lang,
 }: {
   collection: DocsCollection;
   href: (slug: string) => string;
   collectionHref: (slug: string) => string;
+  /** The team's words' language where the page is in another (teamLanguage). */
+  lang?: string;
 }) {
   return (
     <>
       {collection.articles.length > 0 && (
         <div className={card}>
-          <Rows label="Articles" articles={collection.articles} href={href} collectionHref={collectionHref} />
+          <Rows label="Articles" articles={collection.articles} href={href} collectionHref={collectionHref} lang={lang} />
         </div>
       )}
       {collection.collections.map((child) => (
@@ -113,14 +119,14 @@ export function CollectionContents({
           <div className="flex flex-col gap-0.5 border-b px-4.5 py-3">
             <h2 id={`collection-${child.slug}`} className="flex items-center gap-2 font-medium break-words">
               <Link href={collectionHref(child.slug)} className="min-w-0 hover:underline">
-                {child.name}
+                <span lang={lang}>{child.name}</span>
                 {child.locked && <LockedMark />}
               </Link>
             </h2>
-            {child.description && <p className="text-sm text-muted-foreground">{child.description}</p>}
+            {child.description && <p lang={lang} className="text-sm text-muted-foreground">{child.description}</p>}
           </div>
           {child.articles.length + child.collections.length > 0 && (
-            <Rows articles={child.articles} collections={child.collections} href={href} collectionHref={collectionHref} />
+            <Rows articles={child.articles} collections={child.collections} href={href} collectionHref={collectionHref} lang={lang} />
           )}
         </section>
       ))}
