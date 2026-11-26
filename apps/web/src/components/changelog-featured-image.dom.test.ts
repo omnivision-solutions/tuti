@@ -35,3 +35,18 @@ test("Generate is offered only where the server makes images; out of credits it 
   expect(paused.getAttribute("aria-disabled")).toBe("true");
   expect(paused.title).toBe("This project is out of credits");
 });
+
+test("From this entry lists the form's cover first, then the text's images, the cover once", async () => {
+  const cover = { id: "cover1", url: "https://media.example/cover1.png" };
+  const other = { id: "body2", url: "https://media.example/body2.png" };
+  const withCover = { ...entry, cover } as typeof entry;
+  const generate = (await band({ entry: withCover, generator: { ...generator, bodyImages: [cover, other] } }))!;
+  await act(async () => generate.click());
+  const item = (name: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((each) => (each.getAttribute("aria-label") ?? each.textContent?.trim()) === name);
+  const add = [...document.querySelectorAll<HTMLButtonElement>("button")].find((each) => each.getAttribute("aria-label") === "Add a reference")!;
+  await act(async () => add.click());
+  await act(async () => item("From this entry")!.click());
+  await vi.waitFor(() => expect(item("Image 1")).toBeTruthy());
+  const listed = [...document.querySelectorAll<HTMLElement>('[role="menuitem"][aria-label^="Image"] img')].map((each) => each.getAttribute("src"));
+  expect(listed).toEqual([cover.url, other.url]);
+});
