@@ -18,7 +18,7 @@ import {
 } from "./operations/conversations";
 import { storeAttachments } from "./attachments";
 import { emailText, PARSER_OPTIONS } from "./email-text";
-import { spamVerdict } from "./spam";
+import { senderCounts, spamVerdict } from "./spam";
 
 /**
  * Receiving email in the support inbox (docs/plan.md, Support inbox, "Receiving email"): each project
@@ -106,11 +106,12 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   const projectId = owner.projectId;
   const mail = await simpleParser(raw, PARSER_OPTIONS);
   // The receiver's DMARC result names no domain, and the sender is From's first address: with a second From or more
-  // than one address in it, a pass may be for another one's domain. Then it proves nobody (kept that way, so it never
-  // counts later either); the mail still comes in.
+  // than one address in it, a pass may be for another one's domain. Then it proves nobody (kept that way, "unproven",
+  // so it never counts later either, and the spam filter's lists and trust don't go by its first address); the mail
+  // still comes in.
   const fromFields = mail.headerLines.filter(({ key }) => key.toLowerCase() === "from").length;
-  if (auth.dmarc === "pass" && (fromFields !== 1 || mail.from?.value.length !== 1 || mail.from.value[0]!.group)) {
-    auth = { ...auth, dmarc: "none" };
+  if (auth.dmarc !== "fail" && (fromFields !== 1 || mail.from?.value.length !== 1 || mail.from.value[0]!.group)) {
+    auth = { ...auth, dmarc: "unproven" };
   }
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
@@ -410,8 +411,8 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       body,
       origin: "EMAIL",
       channel: "EMAIL",
-      // The team's decisions and trust go by the address only where DMARC didn't fail: a forged From proves nobody.
-      filter: (tx) => spamVerdict(tx, { projectId, address: (auth.dmarc !== "fail" && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc } }),
+      // The team's decisions and trust go by the address only where its mail could be its own: a forged From proves nobody.
+      filter: (tx) => spamVerdict(tx, { projectId, address: (senderCounts(auth.dmarc) && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc } }),
       received: { ...received, fromAddress: null },
       alongside: async (tx, conversationId, messageId) => {
         if (!userId) {

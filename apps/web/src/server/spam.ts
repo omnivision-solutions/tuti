@@ -29,6 +29,13 @@ export type Arrival = {
   email?: { sender: string; dmarc: string };
 };
 
+/**
+ * Whether an email's From address is taken as its sender, by what the receiver's DMARC check said (`inbound_email.dmarc`):
+ * not where it failed, nor where the mail named more than one From ("unproven", server/inbound.ts), when a pass may be
+ * another address's. A domain with no DMARC record counts: nothing tells its real mail from a forgery today either.
+ */
+export const senderCounts = (dmarc: string) => dmarc !== "fail" && dmarc !== "unproven";
+
 type Answer = { spam: true; reason: SpamReason } | { spam: false; /** No later check is asked, not even one that counts everyone's. */ sparesAll?: boolean };
 
 type Check = {
@@ -110,8 +117,9 @@ async function trusted(db: Db, { projectId, address, userId, proven }: Arrival):
 
 /**
  * Check 4: too many new conversations by email from one address in an hour. Counted from the emails that started them,
- * so never one a signed-out visitor typed the address in, nor mail that failed DMARC (filed by check 3 already): nobody
- * can use up a real sender's count with either.
+ * so never one a signed-out visitor typed the address in, nor mail that failed DMARC (filed by check 3 already) or named
+ * a second From: nobody can use up a real sender's count with any of them. Mail naming a second From is counted with
+ * its own kind too, by its first address.
  */
 async function flood(db: Db, { projectId, email }: Arrival): Promise<Answer | null> {
   if (!email?.sender) {
@@ -121,7 +129,8 @@ async function flood(db: Db, { projectId, email }: Arrival): Promise<Answer | nu
   // The email that started a conversation was stored before it; one that joined it later (a reply) came after.
   const [{ started }] = await db.$queryRaw<[{ started: number }]>`
     SELECT count(*)::int AS started FROM inbound_email e JOIN conversation c ON c.id = e."conversationId"
-    WHERE e."projectId" = ${projectId} AND e.sender = ${email.sender} AND e."createdAt" > ${hourAgo} AND e.dmarc <> 'fail'
+    WHERE e."projectId" = ${projectId} AND e.sender = ${email.sender} AND e."createdAt" > ${hourAgo}
+      AND e.dmarc <> 'fail' AND (e.dmarc <> 'unproven' OR ${!senderCounts(email.dmarc)})
       AND c.origin = 'EMAIL' AND c."createdAt" > ${hourAgo} AND e."createdAt" <= c."createdAt"`;
   return started >= NEW_BY_EMAIL_PER_HOUR ? { spam: true, reason: "flood" } : null;
 }
@@ -190,7 +199,8 @@ type Marked = { id: string; projectId: string; origin: ConversationOrigin; userI
 /**
  * The address a mark on this conversation is a decision about: the one check 1 looked its sender up by. Null where that
  * check never applied, so marking a forgery doesn't block the real sender and unmarking one doesn't allow the next: mail
- * that failed DMARC, an address a signed-out visitor typed or the API gave, an account whose address nobody checked.
+ * that failed DMARC or named a second From, an address a signed-out visitor typed or the API gave, an account whose
+ * address nobody checked.
  */
 export async function conversationSender(db: Db, conversation: Marked): Promise<string | null> {
   if (conversation.userId) {
@@ -205,7 +215,7 @@ export async function conversationSender(db: Db, conversation: Marked): Promise<
     orderBy: { createdAt: "asc" },
     select: { sender: true, dmarc: true },
   });
-  return first && first.dmarc !== "fail" && first.sender ? first.sender : null;
+  return first && senderCounts(first.dmarc) && first.sender ? first.sender : null;
 }
 
 /** Where anyone can get an address: blocking one of these domains would block strangers to each other. Never offered. */

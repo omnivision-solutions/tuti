@@ -1395,7 +1395,8 @@ model InboundEmail {
   /// The raw message, until it's read; null once it is, and for refused mail.
   raw            Bytes?
   size           Int
-  /// The receiver's results: "pass", "fail" or "none".
+  /// The receiver's results: "pass", "fail" or "none"; `dmarc` is "unproven" where the mail named more than one From, so a
+  /// pass could be another address's (server/inbound.ts).
   spf            String        @default("none")
   dkim           String        @default("none")
   dmarc          String        @default("none")

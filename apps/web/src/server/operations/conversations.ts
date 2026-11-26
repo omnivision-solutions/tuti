@@ -956,13 +956,12 @@ export async function announceConversation(projectId: string, conversation: Conv
 
 /**
  * A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo
- * back). Not in a conversation in Spam, which tells nobody: someone the spam filter filed doesn't know it, and writes on.
- * Webhooks hear of those once it's marked Not spam (conversations.update).
+ * back). Not one written in a conversation in Spam (`inSpam`, addMessage's), which tells nobody: someone the spam filter
+ * filed doesn't know it, and writes on. Webhooks hear of those once it's marked Not spam (conversations.update).
  */
-export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
+export async function announceUserMessage(projectId: string, number: number, message: MessageRow & { inSpam: boolean }) {
   const result = messageView(message);
-  const conversation = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { spam: true } });
-  if (!conversation?.spam) {
+  if (!message.inSpam) {
     await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
     await tellTeam(projectId, message.id);
   }
@@ -1102,15 +1101,22 @@ export async function addMessage(
    */
   { close = false, seen, outcome }: { close?: boolean; seen?: Date; outcome?: { closed?: boolean; keptOpen?: boolean } } = {},
 ) {
-  return prisma.$transaction(async (tx) => {
+  // Whether it was in Spam as the message was written, read while the conversation is held: its user's message tells
+  // nobody then (announceUserMessage), and Not spam, which holds it too, tells of exactly those.
+  let inSpam = false;
+  const added = await prisma.$transaction(async (tx) => {
     // Every message holds the conversation first, then takes its time: after the conversation's latest (by a millisecond
     // when the clock says no later, or another server's clock runs ahead), so messages' times are the order they're
     // written in. A user message is never older than a reply or note the team has already seen.
     // (The latest read in a statement of its own, after the wait: one written by whoever held it is seen.)
-    await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [held] = await tx.$queryRaw<{ spam: boolean; spamMarkedAt: Date | null }[]>`
+      SELECT "spam", "spamMarkedAt" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    inSpam = !!held?.spam;
     const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
       SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
-    const now = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0));
+    // In Spam, after its mark too, whichever server's clock runs ahead: what was written since the mark is told by its time.
+    const marked = held?.spam && held.spamMarkedAt ? held.spamMarkedAt.getTime() + 1 : 0;
+    const now = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0, marked));
     const created = await tx.conversationMessage.create({
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
@@ -1156,6 +1162,7 @@ export async function addMessage(
     }
     return written;
   });
+  return { ...added, inSpam };
 }
 
 /**
@@ -1270,7 +1277,7 @@ export const replyToConversation = defineOperation({
   run: async ({ actor, projectId }, input) => {
     // Written as its user (an API key's), it joins one past the plan's history, as their email would.
     const conversation = await findConversation(projectId, input.number, { hidden: !!input.author && actor.kind !== "user" });
-    let message: MessageRow;
+    let message: MessageRow & { inSpam: boolean };
     if (input.note && input.author) {
       throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
     }
@@ -1462,8 +1469,8 @@ export const updateConversation = defineOperation({
     let notice: string | undefined;
     // The spam filter had filed it and a teammate says it isn't spam: told as a new conversation, once (its reason goes).
     let released = false;
-    // Marked Not spam: since when it was in Spam (null: since it started), for what the user wrote there meanwhile.
-    let unmarked: { since: Date | null } | undefined;
+    // Marked Not spam: what its user wrote while it was in Spam, when nobody was told, oldest first.
+    let unheard: MessageRow[] = [];
     const updated = await prisma.$transaction(async (tx) => {
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
@@ -1488,6 +1495,7 @@ export const updateConversation = defineOperation({
       }
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       const marked = input.spam !== undefined && input.spam !== held!.spam;
+      let markedAt = new Date();
       if (marked || input.blockDomain) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
         const admin = !!member && isAdminRole(member.role);
@@ -1495,9 +1503,23 @@ export const updateConversation = defineOperation({
         if (marked) {
           notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason);
           released = !input.spam && !!held!.spamReason;
-          // One marked before marks had a time has none to count from: nothing is told for it.
+          // Read while it's held: a message waits for this, sees it unmarked and tells of itself. Since the filter filed it
+          // (all of it), or since its mark; one marked before marks had a time has none to count from, and nothing is told.
+          // ponytail: the first 100.
           if (!input.spam && (released || held!.spamMarkedAt)) {
-            unmarked = { since: released ? null : held!.spamMarkedAt };
+            unheard = await tx.conversationMessage.findMany({
+              where: { conversationId: conversation.id, author: "USER", note: false, ...(!released && { createdAt: { gt: held!.spamMarkedAt! } }) },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              take: 100,
+              select: messageSelect,
+            });
+          }
+          // Marked as spam no earlier than its latest message, whichever server's clock runs ahead: only what's written
+          // after is told on Not spam (addMessage times those after the mark).
+          if (input.spam) {
+            const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
+              SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversation.id}`;
+            markedAt = new Date(Math.max(markedAt.getTime(), latest?.getTime() ?? 0));
           }
         }
         if (input.blockDomain) {
@@ -1518,7 +1540,7 @@ export const updateConversation = defineOperation({
           // Assigned or unassigned by the team: no longer the imported holder's to take over (handOverPlaceholders).
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
-          ...(marked && { spamMarkedAt: new Date(), spamReason: null }),
+          ...(marked && { spamMarkedAt: markedAt, spamReason: null }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),
           // Closed or spam is done with: a snooze no longer brings it back.
           ...((input.status === "closed" || input.spam === true) && input.snoozedUntil === undefined && { snoozedUntil: null }),
@@ -1530,26 +1552,18 @@ export const updateConversation = defineOperation({
       await notifyInbox(tx, { projectId, conversationId: row.id, number: row.number, userId: row.userId, visitorHash: row.visitorHash, email: row.email });
       return row;
     });
-    if (unmarked) {
-      // What the user wrote while it was in Spam, when nobody was told (announceUserMessage). ponytail: the first 100.
-      const [first, ...later] = await prisma.conversationMessage.findMany({
-        where: { conversationId: updated.id, author: "USER", note: false, ...(unmarked.since && { createdAt: { gt: unmarked.since } }) },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        take: 100,
-        select: messageSelect,
-      });
-      // It's unmarked whatever happens here, and saying it again would tell nobody: a failure is logged, not thrown.
-      try {
-        // Filed by the filter: its first message is the new conversation's, told to the team too. The rest, to webhooks.
-        if (released && first) {
-          await announceConversation(projectId, updated, first);
-        }
-        for (const message of released ? later : first ? [first, ...later] : []) {
-          await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
-        }
-      } catch (error) {
-        log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
+    // It's unmarked whatever happens here, and saying it again would tell nobody: a failure is logged, not thrown.
+    try {
+      // Filed by the filter: its first message is the new conversation's, told to the team too. The rest, to webhooks.
+      const first = released ? unheard.shift() : undefined;
+      if (first) {
+        await announceConversation(projectId, updated, first);
       }
+      for (const message of unheard) {
+        await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
+      }
+    } catch (error) {
+      log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
     }
     return { ...view(updated, await projectSlug(projectId)), ...(notice && { notice }) };
   },

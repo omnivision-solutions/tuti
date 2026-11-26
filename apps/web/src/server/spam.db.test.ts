@@ -258,6 +258,49 @@ test("mail that failed DMARC is filed whatever its address is allowed or trusted
   expect((await filed()).slice(4)).toEqual(["marked", "inbox", "inbox"]);
 });
 
+test("an email naming two From addresses proves neither: no list or trust goes by its first, nothing is learned from marking it, and it's counted on its own", { timeout: 60_000 }, async () => {
+  const { mail, filed, list, admin, senders } = await setup();
+  // The second address's domain is the one that passed, for all the receiver's result says.
+  const two = (first: string) => mail(`${first}, e2e-x@attacker.example`);
+  await list("e2e-kim@blocked.example", true);
+  await list("e2e-forms@relay.example", false);
+  await two("e2e-kim@blocked.example"); // #1: not filed for an address it only names
+  await call(updateConversation, admin, { number: 1, spam: true });
+  await expect(call(updateConversation, admin, { number: 1, spam: true, blockDomain: true })).rejects.toMatchObject({ status: 409 });
+  expect(await senders()).toHaveLength(2);
+  // Naming an allowed address first doesn't spare it the flood limit: past it, it's filed.
+  for (let i = 0; i <= NEW_BY_EMAIL_PER_HOUR; i++) {
+    await two("e2e-forms@relay.example");
+  }
+  expect((await filed()).slice(0, 2).concat((await filed()).slice(-2))).toEqual(["marked", "inbox", "inbox", "flood"]);
+  // Nor does it use up the address's own count: its real mail, allowed, still arrives.
+  await mail("e2e-forms@relay.example");
+  expect((await filed()).at(-1)).toBe("inbox");
+});
+
+test("each message written around a mark is told once, whichever server's clock runs ahead", async () => {
+  const { project, projectId, admin } = await setup({ hook: true });
+  const sam = await upsertProjectUser(projectId, "user-42", { name: "Sam", email: "e2e-sam@example.com" });
+  const auth = { token: widgetToken(projectId, sam) };
+  const told = async () =>
+    (await prisma.webhookDelivery.findMany({ where: { webhook: { projectId }, event: "conversation.message_created" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map(
+      (delivery) => (delivery.payload as { data: { message: { body: string } } }).data.message.body,
+    );
+  const ahead = new Date(Date.now() + 60_000);
+  expect(await widgetStartConversation(project.slug, auth, "Hello")).toEqual({ number: 1 });
+  // Written (and told) before the mark, by a server whose clock runs a minute ahead of the one that marks it.
+  expect(await widgetSendMessage(project.slug, auth, 1, "Before the mark")).toEqual({});
+  await prisma.conversationMessage.updateMany({ where: { projectId, body: "Before the mark" }, data: { createdAt: ahead } });
+  await call(updateConversation, admin, { number: 1, spam: true });
+  // Written in Spam, by a server whose clock runs behind the mark's.
+  await prisma.conversation.updateMany({ where: { projectId }, data: { spamMarkedAt: new Date(ahead.getTime() + 60_000) } });
+  expect(await widgetSendMessage(project.slug, auth, 1, "In Spam")).toEqual({});
+  expect(await told()).toEqual(["Before the mark"]);
+  await call(updateConversation, admin, { number: 1, spam: false });
+  expect(await widgetSendMessage(project.slug, auth, 1, "After it")).toEqual({});
+  expect(await told()).toEqual(["Before the mark", "In Spam", "After it"]);
+});
+
 test("a sender at a domain with no DMARC record counts: marked as spam they're filed, and Not spam sticks", async () => {
   const { mail, filed, admin, asMember, senders } = await setup();
   await mail("e2e-kim@nodmarc.example", NONE); // #1
