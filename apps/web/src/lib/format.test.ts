@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, formatDate, formatDay, formatMonth, formatShortDate, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
+import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, formatDate, formatDay, formatMonth, formatShortDate, shortDate, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
 
 test.each([
   ["2026-11-10T00:01:00Z", "2026-11-10T23:59:00Z", "Today · 10 November"],
@@ -149,4 +149,12 @@ test("a portal page's days, months and times ago are in its language; English ke
   expect(formatDate(day, "ja")).toBe("2026年11月19日");
   const now = new Date("2026-11-22T12:00:00Z");
   expect([timeAgo(day, now), timeAgo(day, now, "de"), timeAgo(now, now, "de"), timeAgo(now, now)]).toEqual(["3 days ago", "vor 3 Tagen", "jetzt", "just now"]);
+});
+
+test("the changelog timeline's dates: English months in three letters (Sep, not en-GB's Sept), another language's own short month", () => {
+  const september = new Date("2026-09-07T12:00:00Z");
+  expect(shortDate(september, "en")).toBe("7 Sep 2026");
+  expect(shortDate(new Date("2026-11-19T00:00:00Z"), "en")).toBe("19 Nov 2026");
+  expect(shortDate(september, "de")).toBe("7. Sept. 2026");
+  expect(shortDate(september, "fr")).toBe("7 sept. 2026");
 });
