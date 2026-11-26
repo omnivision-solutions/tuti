@@ -16,7 +16,7 @@ export function appConfig(env: Env): ExpoConfig {
     name: "Tuti",
     slug: "tuti",
     scheme: "tuti",
-    version: "0.1.0",
+    version: "1.0.0",
     orientation: "default",
     userInterfaceStyle: "automatic",
     icon: "./assets/icon.png",
