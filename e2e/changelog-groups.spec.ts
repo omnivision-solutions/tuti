@@ -160,7 +160,7 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await audience.getByRole("checkbox", { name: "Enterprise" }).check();
   await owner.getByRole("button", { name: "Publish" }).click();
   const publish = owner.getByRole("alertdialog");
-  await expect(publish.getByRole("heading", { name: "Save Audience and Goes to before publishing" })).toBeVisible();
+  await expect(publish.getByRole("heading", { name: "Save before publishing" })).toBeVisible();
   await expect(publish.getByRole("button", { name: "Publish" })).toBeDisabled();
   await publish.getByRole("button", { name: "Cancel" }).click();
   await owner.getByRole("button", { name: "Save", exact: true }).click();

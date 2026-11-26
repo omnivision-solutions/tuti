@@ -832,10 +832,12 @@ export function WhoSeesIt({
   // (started afresh after a save, or with the form when new saved text replaces it, which drops the picks too).
   const saving = useContext(ChangelogSavingContext);
   const listChanged = listed === emailOnly;
+  // Some groups picked with nothing saved for any (none ticked yet, or the plan refused one) would publish to everyone.
+  const held = changed || listChanged || someGroups !== picked.length > 0;
   useEffect(() => {
-    saving?.setGroupsChanged(changed || listChanged);
+    saving?.setGroupsChanged(held);
     return () => saving?.setGroupsChanged(false);
-  }, [saving, changed, listChanged]);
+  }, [saving, held]);
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
   const needsId = useId();
@@ -858,55 +860,57 @@ export function WhoSeesIt({
             disabled={pending}
             onValueChange={(value) => {
               setSomeGroups(value === "some");
-              // Everyone is no groups: the chips go, and so do the picks (unpicking always works, on any plan).
+              // Everyone is no groups: the chips hide and aren't sent (unpicking always works, on any plan); back on
+              // Some groups, they're as they were.
               if (value === "everyone" && (picked.length > 0 || changed)) {
                 setChanged(true);
                 onChange();
               }
             }}
           />
-          {someGroups && (
-            <div className="flex flex-wrap gap-2">
-              {groups.map((group) => (
-                <label
-                  key={group.key}
-                  className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
-                >
-                  <input
-                    type="checkbox"
-                    name="groups"
-                    value={group.key}
-                    defaultChecked={picked.includes(group.key)}
-                    // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
-                    aria-disabled={pending || undefined}
-                    aria-describedby={upgrade ? needsId : undefined}
-                    onClick={(event) => {
-                      if (pending) {
-                        event.preventDefault();
-                        return;
-                      }
-                      // Picking one needs the plan: the prompt opens and it stays unpicked.
-                      if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
-                        event.preventDefault();
-                        setUpgrading(true);
-                      }
-                    }}
-                    onChange={(event) => {
-                      // The pick the prompt refused, or made while a save runs (onClick put it back), isn't a change.
-                      if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
-                        return;
-                      }
-                      setChanged(true);
-                      onChange();
-                    }}
-                    className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
-                  />
-                  <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
-                  {group.name}
-                </label>
-              ))}
-            </div>
-          )}
+          {/* Hidden, not gone: picks not saved yet come back with Some groups. */}
+          <div hidden={!someGroups} className="flex flex-wrap gap-2">
+            {groups.map((group) => (
+              <label
+                key={group.key}
+                className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+              >
+                <input
+                  type="checkbox"
+                  name="groups"
+                  value={group.key}
+                  defaultChecked={picked.includes(group.key)}
+                  // Under Everyone, not sent: no groups.
+                  disabled={!someGroups}
+                  // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
+                  aria-disabled={pending || undefined}
+                  aria-describedby={upgrade ? needsId : undefined}
+                  onClick={(event) => {
+                    if (pending) {
+                      event.preventDefault();
+                      return;
+                    }
+                    // Picking one needs the plan: the prompt opens and it stays unpicked.
+                    if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
+                      event.preventDefault();
+                      setUpgrading(true);
+                    }
+                  }}
+                  onChange={(event) => {
+                    // The pick the prompt refused, or made while a save runs (onClick put it back), isn't a change.
+                    if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
+                      return;
+                    }
+                    setChanged(true);
+                    onChange();
+                  }}
+                  className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
+                />
+                <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
+                {group.name}
+              </label>
+            ))}
+          </div>
           {upgrade && (
             <>
               <span id={needsId} hidden>
@@ -2248,7 +2252,7 @@ export function ChangelogEntryActions({
                 ? "Replace a line before publishing"
                 : `Replace ${markers.length} lines before publishing`
               : groupsUnsaved
-                ? "Save Audience and Goes to before publishing"
+                ? "Save before publishing"
                 : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
@@ -2256,7 +2260,7 @@ export function ChangelogEntryActions({
           <AlertDialogDescription render={<div />} className={cn("flex flex-col gap-3", markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
             {markers.length === 0 && groupsUnsaved ? (
-              <p>{`You changed Audience or Goes to for “${title}” and haven't saved it. Save, then publish.`}</p>
+              <p>{`You changed who “${title}” is for or where it goes and haven't saved it. Save, then publish.`}</p>
             ) : markers.length > 0 ? (
               <p>{`“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`}</p>
             ) : (

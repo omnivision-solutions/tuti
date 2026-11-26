@@ -110,22 +110,41 @@ const entry = {
   subscribersSent: 0,
 };
 
-test("Audience: Everyone shows no chips; Some groups shows them; going back to Everyone drops the picks and sends that", async () => {
+test("Audience: Everyone hides the chips; Some groups shows them; going back to Everyone sends no groups, and Some groups again has the picks as they were", async () => {
   const box = document.createElement("form");
   document.body.append(box);
   const onChange = vi.fn();
   await act(async () => createRoot(box).render(h(WhoSeesIt, { groups, picked: [], upgrade: null, onChange })));
+  const chips = () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.closest("div")!;
   expect(box.querySelector<HTMLInputElement>('input[value="everyone"]')!.checked).toBe(true);
-  expect(box.querySelector('input[name="groups"]')).toBeNull();
+  expect(chips().hidden).toBe(true);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
-  // Only showing the chips is no change.
+  expect(chips().hidden).toBe(false);
+  // Only showing the chips is no change to send.
   expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
   await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
-  expect(box.querySelector<HTMLInputElement>('input[value="beta"]')!.checked).toBe(true);
+  expect(new FormData(box).getAll("groups")).toEqual(["beta"]);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="everyone"]')!.click());
-  expect(box.querySelector('input[name="groups"]')).toBeNull();
+  expect(chips().hidden).toBe(true);
   expect(new FormData(box).getAll("groups")).toEqual([]);
   expect(box.querySelector('input[name="groupsEditable"]')).not.toBeNull();
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
+  expect(new FormData(box).getAll("groups")).toEqual(["beta"]);
+});
+
+test("Some groups with none saved holds Publish: published so, it would go to everyone", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  const Held = () => h("output", null, String(useContext(ChangelogSavingContext)?.groupsChanged));
+  await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(Held), h(WhoSeesIt, { groups, picked: [], upgrade, onChange: () => {} }))));
+  expect(box.querySelector("output")?.textContent).toBe("false");
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
+  expect(box.querySelector("output")?.textContent).toBe("true");
+  // On a plan without groups the pick is refused: still held.
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
+  expect(box.querySelector("output")?.textContent).toBe("true");
+  await act(async () => box.querySelector<HTMLInputElement>('input[value="everyone"]')!.click());
+  expect(box.querySelector("output")?.textContent).toBe("false");
 });
 
 test("an entry saved for some groups opens on Some groups, its chips picked", async () => {

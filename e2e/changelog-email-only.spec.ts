@@ -38,7 +38,7 @@ test("an email-only entry: the team marks it in the editor, it's emailed to subs
   // Not saved yet: Publish waits.
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
-  await expect(dialog.getByRole("heading", { name: "Save Audience and Goes to before publishing" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Save before publishing" })).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
