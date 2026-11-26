@@ -90,7 +90,7 @@ const conversationFields = {
     .meta({ examples: [null] }),
   handledBy: z
     .enum(HANDLERS)
-    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over")
+    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. Nothing answers for the AI yet: one it has waits there, with nobody told, till a teammate takes it over")
     .meta({ examples: ["team"] }),
   priority: z.boolean().describe("Marked priority: the Inbox's list says so on its row").meta({ examples: [false] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
@@ -1507,7 +1507,7 @@ export const updateConversation = defineOperation({
       handledBy: z
         .enum(HANDLERS)
         .optional()
-        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Closing and reopening leave it")
+        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Nothing answers for the AI yet: one handed to it waits in With AI, and the team isn't told, till a teammate takes it over. Closing and reopening leave it")
         .meta({ examples: ["team"] }),
       priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso
