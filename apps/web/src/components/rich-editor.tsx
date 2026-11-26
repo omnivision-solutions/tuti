@@ -290,12 +290,16 @@ export function RichEditor({
           run: () => {
             const image = editor && editable(editor.getAttributes("image"));
             if (editor && image) {
+              editedPos.current = editor.state.selection.from;
               setEdited({ pos: editor.state.selection.from, image });
               setEditingImage(true);
             }
           },
         }
       : undefined;
+  // Where the edited image is now: moved with every change to the text (none once it's deleted), so a copy of it that
+  // slid into its old place is never taken for it.
+  const editedPos = useRef(-1);
   /** The made image in the edited one's place (its alt text, size and alignment kept), or after it: one step to undo. */
   const placeImage = (made: GeneratedImage, replace: boolean) => {
     if (!editor || !edited) {
@@ -304,17 +308,10 @@ export function RichEditor({
     Object.entries(made.urls).forEach(([key, url]) => mediaUrls.set(key, url));
     const { doc } = editor.state;
     const isEdited = (node: ProseMirrorNode | null | undefined) => node?.type.name === "image" && node.attrs.mediaId === edited.image.id;
-    // Where it was, or (moved since) its only copy: with several copies of the upload, which one moved isn't known, so
-    // none is guessed at (the dialog stays, its tries kept).
-    const copies: number[] = [];
-    doc.descendants((node, at) => {
-      if (isEdited(node)) {
-        copies.push(at);
-      }
-    });
-    const pos = isEdited(doc.nodeAt(edited.pos)) ? edited.pos : copies.length === 1 ? copies[0]! : -1;
-    if (pos < 0 && copies.length > 1) {
-      toast.error("The image moved: pick it again to use this one.");
+    // Where it is now; gone (deleted, or its place now something else), nothing is guessed at: the dialog stays, its tries kept.
+    const pos = editedPos.current >= 0 && isEdited(doc.nodeAt(editedPos.current)) ? editedPos.current : -1;
+    if (pos < 0) {
+      toast.error("The image isn't in the text any more: pick an image to use this one.");
       return;
     }
     const node = pos >= 0 ? doc.nodeAt(pos) : null;
@@ -492,6 +489,12 @@ export function RichEditor({
         outerRef.current = editor;
       }
       onCreate?.(editor);
+    },
+    onTransaction: ({ transaction }) => {
+      if (editedPos.current >= 0) {
+        const mapped = transaction.mapping.mapResult(editedPos.current);
+        editedPos.current = mapped.deleted ? -1 : mapped.pos;
+      }
     },
     onUpdate: ({ editor, transaction }) => {
       // What it was given stays what it sends.
