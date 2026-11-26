@@ -73,6 +73,7 @@ export function useCustomizeForm({
   toDraft,
   busy = false,
   saved,
+  clearOnSave = [],
 }: {
   save: (state: FormState, data: FormData) => Promise<FormState>;
   /** After a save that went through. */
@@ -80,6 +81,8 @@ export function useCustomizeForm({
   toDraft?: (data: FormData) => Draft;
   busy?: boolean;
   saved?: [name: string, value: string][];
+  /** Fields emptied once a save goes through (secrets, saved and never shown again), as what's saved holds them. */
+  clearOnSave?: string[];
 }) {
   const id = useId();
   const ref = useRef<HTMLFormElement>(null);
@@ -108,6 +111,13 @@ export function useCustomizeForm({
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, data) => {
     const result = await save(prev, data);
     if (!result.error) {
+      for (const name of clearOnSave) {
+        data.set(name, "");
+        const field = ref.current?.elements.namedItem(name);
+        if (field instanceof HTMLInputElement) {
+          field.value = "";
+        }
+      }
       // What was sent is what's saved: a change made while it saved is still one to save.
       baseline.current = snapshotOf(data);
       read();

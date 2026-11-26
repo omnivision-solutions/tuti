@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { type TeamRole, prisma } from "@tuti/db";
 import { importsSettled, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
-import { billingFile, configFile, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
+import { billingFile, type BrowserUseFake, configFile, startBrowserUseFake, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
@@ -50,6 +50,7 @@ import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
 import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
+import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
@@ -103,6 +104,7 @@ const modules = {
   posts,
   "project-settings": projectSettings,
   projects,
+  screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
   "sso-settings": ssoSettings,
@@ -805,6 +807,14 @@ const matrix: Matrix = {
       },
     },
   },
+  screenshots: {
+    saveScreenshotSettings: {
+      allowed: "ADMIN",
+      call: (slug) => screenshots.saveScreenshotSettings(slug, {}, form({ appUrl: "https://app.example.com", signIn: "password", username: "e2e-demo@example.com", password: "demo", window: "phone" })),
+    },
+    // Browser Use (the fake) signs in and takes the screen it lands on, inline; the fixture's project is set up for it.
+    testScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => screenshots.testScreenshots(slug)) },
+  },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },
     deleteWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.deleteWebhook(slug, f.webhookId) },
@@ -845,6 +855,7 @@ let githubFake: GithubFake;
 let stripe: StripeFake;
 let featurebaseFake: FeaturebaseFake;
 let receiver: WebhookReceiver;
+let browserUse: BrowserUseFake;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
 
@@ -860,6 +871,7 @@ beforeAll(async () => {
   // Buying credits and plans opens the local Stripe fake's pages (with credits or plans on just for that call).
   stripe = await startStripeFake();
   featurebaseFake = await startFeaturebaseFake();
+  browserUse = await startBrowserUseFake();
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env, ...stripe.env, ...featurebaseFake.env })) {
     vi.stubEnv(name, value);
   }
@@ -882,7 +894,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), featurebaseFake.close(), ses.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), featurebaseFake.close(), ses.close(), browserUse.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 
@@ -997,6 +1009,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
+  // Screenshots set up, for their Test.
+  await prisma.screenshotSettings.create({ data: { projectId, appUrl: "https://app.example.com" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
   // for its check, which the site answers (for the site actions); else a custom domain waiting for
   // DNS, with its TXT record there to verify it.
