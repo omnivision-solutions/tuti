@@ -173,13 +173,13 @@ test("the backfill embeds published translations too, carrying on past one that 
   await article("invoices", { de: { title: "Abrechnung", body: "Rechnungen herunterladen." }, fr: { title: "Factures", body: "Télécharger les factures." } });
   await article("drafted", { de: { title: "Entwurf", body: "Noch nicht veröffentlicht.", published: false } });
   const result = await embedPublishedArticles(log);
-  expect(result).toMatchObject({ failed: [], translations: 2, translationsEmbedded: 2, translationsFailed: [] });
+  // (It runs over the whole database: this test's own project is what's checked.)
+  expect(result).toMatchObject({ failed: [], translationsFailed: [] });
   expect((await prisma.articleTranslationChunk.findMany({ where: { projectId: project.id }, select: { language: true } })).map((c) => c.language).sort()).toEqual(["de", "fr"]);
   // One failing (the provider down for it) doesn't stop the rest.
   await prisma.articleTranslationChunk.deleteMany({ where: { projectId: project.id } });
   model.embeddings.failNext(500);
   const again = await embedPublishedArticles(log);
-  expect(again).toMatchObject({ failed: [], translationsEmbedded: 1 });
   expect(again.translationsFailed).toHaveLength(1);
   expect(await prisma.articleTranslationChunk.count({ where: { projectId: project.id } })).toBe(1);
 });
