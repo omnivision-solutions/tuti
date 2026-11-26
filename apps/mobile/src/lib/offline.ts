@@ -6,7 +6,7 @@ import { spokenAgeOf } from "./inbox";
 
 /**
  * What was last loaded, kept on the phone to be read with no connection: the Inbox's views and lists (per project and
- * view) and the conversations opened. Expo's SQLite key-value store, a database of its own. One account's at a time:
+ * view), the conversations opened and their Activity's newest page. Expo's SQLite key-value store, a database of its own. One account's at a time:
  * signing out, or a session the server ended, forgets it all (`forgetCached`), so whoever signs in next never sees the
  * last one's customers. And it belongs to one session: a sign-in clears it and writes a new owner into it, kept in the
  * session too; nothing is read or written unless the two match, so a clear that failed (or a session from before) reads
@@ -33,6 +33,8 @@ const PINNED = "pinned|";
 export const projectsKey = (session: { server: string }) => `${PINNED}${session.server}|projects`;
 export const viewsKey = (session: { server: string; project?: string }) => `${PINNED}${session.server}|${session.project ?? ""}|views`;
 export const conversationKey = (session: { server: string; project?: string }, number: number) => `${session.server}|${session.project ?? ""}|conversation|${number}`;
+/** A conversation's Activity, its newest page of all of it (the details sheet's). */
+export const activityKey = (session: { server: string; project?: string }, number: number) => `${session.server}|${session.project ?? ""}|activity|${number}`;
 
 /** Who the cache is for: written at sign-in, once it's cleared, and outside what's pushed out. */
 const OWNER = `${PINNED}owner`;

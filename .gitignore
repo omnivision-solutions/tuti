@@ -23,3 +23,5 @@ test-results
 playwright-report
 e2e-screenshots
 e2e-mail
+# The private evaluations repository, cloned in for `pnpm test:live`: real labelled data, never committed here.
+packages/jobs/src/evals/

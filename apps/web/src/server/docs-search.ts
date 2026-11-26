@@ -16,7 +16,7 @@ export type DocsSearchResult = { slug: string; title: string; snippet: string; l
 
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
-const SEARCH_EMBED_TIMEOUT_MS = 2000;
+export const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
 /**
  * How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, whether it matches by
@@ -378,7 +378,7 @@ async function wordMatches(projectId: string, query: string, limit: number, read
 }
 
 /** On one line, cut at a word near SNIPPET_LENGTH. */
-function snippet(text: string): string {
+export function snippet(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
   if (line.length <= SNIPPET_LENGTH) {
     return line;

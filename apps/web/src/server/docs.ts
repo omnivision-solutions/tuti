@@ -36,7 +36,8 @@ import {
   updateTab,
 } from "./operations/docs";
 import { dismissDocsGap as dismissGapOperation } from "./operations/docs-insights";
-import { asTeam, call } from "./operations/run";
+import { asAdmin, asTeam, call } from "./operations/run";
+import { takeArticleScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 
 /** The team's docs actions (see the articles.*, collections.* and tabs.* operations). */
 
@@ -229,6 +230,12 @@ export async function publishArticle(projectSlug: string, slug: string, edits?: 
   });
   // The queue requests batch error codes even when no revision exists; keep legacy callers’ error shapes.
   return withErrorCodes && result.error ? { ...result, code: code ?? "forbidden" } : code === "edits_required" ? { ...result, code } : result;
+}
+
+/** The article editor's "Take screenshots" (articles.takeScreenshots): the "[Screenshot: …]" lines it listed and the admin confirmed, filled in the background. */
+export async function takeArticleScreenshots(projectSlug: string, slug: string, shows: string[]): Promise<FormState> {
+  const shots = (Array.isArray(shows) ? shows : []).map((show) => ({ show: String(show) }));
+  return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { slug: String(slug), shots }));
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */

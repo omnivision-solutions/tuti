@@ -7,6 +7,7 @@ import { OutOfCredits } from "./credits";
 import { freeLanguageSlug } from "./docs-slugs";
 import { behindKey, behindSections, docOfSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, versionSections, withTranslation } from "./translation-sections";
 import { lockProject } from "./running-draft";
+import { embedTranslation } from "./articles";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 
 /**
@@ -118,8 +119,11 @@ export async function translateArticle(input: JobInput<"translateArticle">, log:
 type Data = Prisma.ArticleTranslationUpdateManyMutationInput;
 /** The version as it is when the job writes (its row locked): the write is made from it, so a save of the team's isn't lost. */
 type Locked = Prisma.ArticleTranslationGetPayload<{ select: typeof lockedSelect }>;
-/** `data`, or what to write made from the version as it is then (null: nothing). */
-type Settle = (data: Data | ((now: Locked) => Data | null)) => Promise<boolean>;
+/**
+ * `data`, or what to write made from the version as it is then (null: nothing). `newVersion`: the write is a new text, whose
+ * old search sections go with it (search by meaning never answers with them).
+ */
+type Settle = (data: Data | ((now: Locked) => Data | null), newVersion?: boolean) => Promise<boolean>;
 const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
 
 /** A version's draft as stored (ArticleTranslation.draft). */
@@ -198,7 +202,8 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       // Translated, but its naming failed then: named now.
       await nameVersion(article.projectId, row.id);
     }
-    return { skipped: "up to date" };
+    // Its search data too: one whose embedding failed is embedded here when the retry job brings it back (none to do: a lookup).
+    return (await searchable(row.id, row.tries, row.retryAt, log)) ? { skipped: "up to date" } : { failed: SEARCH_WAITS };
   }
   // Turned off on the server: nothing to ask, and nothing a Try again would change.
   if (!aiEnabled()) {
@@ -211,7 +216,7 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
    * between), and the language's product setting is still `version` and no Retranslate was asked for since it read the
    * row (both in the update's own WHERE). False: it changed, and the job that change queued writes instead.
    */
-  const settle: Settle = (data) =>
+  const settle: Settle = (data, newVersion = false) =>
     prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${articleId} FOR UPDATE`;
       const now = await tx.article.findUnique({ where: { id: articleId }, select: sourceSelect });
@@ -226,6 +231,11 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
         return false;
       }
       const { count } = await tx.articleTranslation.updateMany({ where: { id: row.id, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data: written });
+      if (count > 0 && newVersion && "content" in written) {
+        // The old text's search sections go in the same transaction: until the new one's are embedded (searchable, next),
+        // search by meaning finds nothing of it, never the old text under the new title (its words still find it).
+        await tx.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
+      }
       return count > 0;
     });
   started.settle = settle;
@@ -352,12 +362,44 @@ async function translateOne({ articleId, language }: JobInput<"translateArticle"
       retryAt: null,
       retranslated: row.retranslate,
     };
-  });
+  }, true);
   if (written) {
+    // Named first (its own transaction, the project locked), then searchable (docs/plan.md L7): a failure there never undoes
+    // the translation, it's embedded later. Its retry time as this run left it: the write just cleared it.
     await nameVersion(article.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${articleId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
+    await searchable(row.id, 0, null, log);
     if (more) await queueVersion(articleId, language);
   }
   return written ? { translated: language } : { skipped: CHANGED };
+}
+
+/** Why a version up to date is tried again: its sections couldn't be embedded for search. */
+const SEARCH_WAITS = "its search data couldn't be written";
+
+/**
+ * Embeds a written version's sections for search in its language (embedTranslation). Failing (the embeddings provider
+ * didn't answer), its retry time is set, backing off as a translation's does (`tries`, the failures in a row so far):
+ * the retry job brings it back here, where, up to date, it's only embedded; embedded, the count starts again. The version
+ * itself is shown as written meanwhile, its error left alone.
+ */
+async function searchable(translationId: string, tries: number, read: Date | null, log: JobLogger) {
+  try {
+    await embedTranslation(translationId, log);
+    if (tries > 0) {
+      await prisma.articleTranslation.updateMany({ where: { id: translationId, error: null }, data: { tries: 0 } });
+    }
+    return true;
+  } catch (error) {
+    log.warn(`Embedding translation ${translationId} for search failed: ${String(error).slice(0, 300)}`);
+    // The backoff replaces the time this run read (its own safety net, the retry job's claim); a newer queuing's, set
+    // meanwhile, is kept where it's earlier, so a late failure never pushes it back.
+    const next = new Date(Date.now() + retryDelay(tries + 1));
+    await prisma.$executeRaw`
+      UPDATE article_translation SET tries = ${tries + 1}, "updatedAt" = now(),
+        "retryAt" = CASE WHEN "retryAt" IS NOT DISTINCT FROM ${read}::timestamp(3) THEN ${next}::timestamp(3) ELSE LEAST(COALESCE("retryAt", ${next}::timestamp(3)), ${next}::timestamp(3)) END
+      WHERE id = ${translationId}`;
+    return false;
+  }
 }
 
 /** Queues a translate job, never failing the caller: the page waits, and the retry job or Try again picks it up. */
