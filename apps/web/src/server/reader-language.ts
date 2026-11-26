@@ -38,5 +38,7 @@ export async function chooseLanguage(projectSlug: string, code: string, at?: { f
   if (session) {
     await prisma.user.update({ where: { id: session.user.id }, data: { language } });
   }
-  return at ? { path: await pathIn(String(projectSlug), String(at.path), String(at.from), language, project.language) } : {};
+  // Only a path built here (an article's at its slug there): any other page is the same one there, which the switcher has.
+  const path = at && (await pathIn(String(projectSlug), String(at.path), String(at.from), language, project.language));
+  return path ? { path } : {};
 }

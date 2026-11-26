@@ -399,9 +399,11 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 
 /** The retry-article-translations job: versions that couldn't be translated, whose wait is over, tried again. */
 export async function retryArticleTranslations(): Promise<JobResult> {
+  // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
+  const named = await nameUnnamed();
   // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.
   if (!aiEnabled()) {
-    return { skipped: NO_AI };
+    return { skipped: NO_AI, ...(named > 0 && { named }) };
   }
   // Pages a batch here will still queue (its own runs' too) are left to it; the rest is claimed in one update, so a run
   // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
@@ -433,7 +435,7 @@ export async function retryArticleTranslations(): Promise<JobResult> {
   });
   // Each job's end sets the next try's time, or clears it.
   await queueEach(due);
-  return { queued: due.length };
+  return { queued: due.length, ...(named > 0 && { named }) };
 }
 
 /**
@@ -455,4 +457,28 @@ async function nameVersion(projectId: string, versionId: string) {
     const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { id: versionId, articleId: version.articleId, slug: null }, version.article.slug);
     await tx.articleTranslation.update({ where: { id: versionId }, data: { slug } });
   });
+}
+
+/** Unnamed versions named per run of the retry job. */
+export const NAME_BATCH = 200;
+
+/**
+ * Versions translated before versions had slugs of their own (L6 part one) have none: named a batch per run of the retry job
+ * (meanwhile, served at the article's default-language slug). How many it named.
+ * ponytail: a scan for unnamed versions every run; a partial index on them is the upgrade if the table grows large.
+ */
+async function nameUnnamed(): Promise<number> {
+  const unnamed = await prisma.articleTranslation.findMany({
+    where: { slug: null, publishedAt: { not: null }, article: { deletedAt: null } },
+    take: NAME_BATCH,
+    select: { id: true, projectId: true },
+  });
+  let named = 0;
+  for (const { id, projectId } of unnamed) {
+    await nameVersion(projectId, id).then(
+      () => named++,
+      (error: unknown) => serverLog.error("Naming an article's version failed", { versionId: id, error }),
+    );
+  }
+  return named;
 }

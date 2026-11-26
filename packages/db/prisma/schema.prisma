@@ -2575,6 +2575,7 @@ model ArticleTranslation {
   @@unique([articleId, language])
   @@unique([projectId, language, slug])
   @@index([projectId, language])
+  @@index([projectId, slug])
   @@index([retryAt])
   @@map("article_translation")
 }

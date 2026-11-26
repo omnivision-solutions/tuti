@@ -1,6 +1,6 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { freeLanguageSlug, languageTranslationsDone, lockProject, translateArticle, translationSource } from "@tuti/jobs";
+import { freeLanguageSlug, handlers, languageTranslationsDone, lockProject, translateArticle, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -15,7 +15,7 @@ import { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/
 import { docsPage } from "./docs-queries";
 import { createRedirect } from "./operations/redirects";
 import { chooseLanguage } from "./reader-language";
-import { createArticle, createCollection, customDocsSlug, publishArticle, setArticleLanguageSlug } from "./operations/docs";
+import { createArticle, createCollection, customDocsSlug, deleteArticle, publishArticle, restoreArticle, setArticleLanguageSlug } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -300,10 +300,13 @@ test("the switcher goes to the same article at its own slug in the chosen langua
   expect(await switched("de", "/docs/konto", "fr")).toBe("/docs/facturation");
   // No version in German yet: its default-language slug, which the German address finds too.
   expect(await switched("fr", "/docs/konto", "de")).toBe("/docs/invoices");
-  expect(await switched("en", "/roadmap", "de")).toBe("/roadmap");
+  // Any other page is the same one there: no path back, none of the one asked about, a malformed one neither.
+  expect(await switched("en", "/roadmap", "de")).toBeUndefined();
+  expect(await switched("en", "//evil.example/docs/billing", "de")).toBeUndefined();
+  expect(await chooseLanguage(project.slug, "fr", { from: "en", path: "/docs/%E0" })).toEqual({});
   // A private portal's articles are named to nobody who may not read it (here, someone signed out).
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
-  expect(await switched("en", "/docs/billing", "fr")).toBe("/docs/billing");
+  expect(await switched("en", "/docs/billing", "fr")).toBeUndefined();
 });
 
 test("a locked article shows its lock at its language slug too, and an AI tool asking there for Markdown gets it", async () => {
@@ -320,4 +323,43 @@ test("a locked article shows its lock at its language slug too, and an AI tool a
   at("de");
   expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "locked", article: { title: "Billing" } });
   expect(await docsPage(project.slug, "zahlungen")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
+});
+
+test("a refusal says whether the slug is reserved (400) or taken (409), whatever the article that has it is called", async () => {
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "The reserved seats", body: "Seats." });
+  await call(publishArticle, as(), { slug: "the-reserved-seats" });
+  await version(articleId, "de", "abrechnung");
+  await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "the-reserved-seats" })).rejects.toMatchObject({ status: 409, code: "conflict" });
+  await expect(call(setArticleLanguageSlug, as(), { slug: "billing", language: "de", newSlug: "api" })).rejects.toMatchObject({ status: 400, code: "invalid_input" });
+});
+
+test("a deleted article brought back keeps its slugs in other languages while they're free, else gets new ones from its titles", async () => {
+  const articleId = await billing();
+  await call(createArticle, as(), { title: "Invoices", body: "Monthly." });
+  await call(publishArticle, as(), { slug: "invoices" });
+  await version(articleId, "de", "abrechnung", "Abrechnung");
+  await version(articleId, "fr", "facturation", "Facturation");
+  await call(deleteArticle, as(), { slug: "billing" });
+  // Meanwhile another article takes its German slug (a deleted article keeps none).
+  await version((await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "invoices" } })).id, "de", null);
+  await call(setArticleLanguageSlug, as(), { slug: "invoices", language: "de", newSlug: "abrechnung" });
+  await call(restoreArticle, as(), { slug: "billing" });
+  const slugs = await prisma.articleTranslation.findMany({ where: { articleId }, orderBy: { language: "asc" }, select: { language: true, slug: true } });
+  expect(slugs).toEqual([
+    { language: "de", slug: "abrechnung-2" },
+    { language: "fr", slug: "facturation" },
+  ]);
+});
+
+test("versions translated before they had slugs are served at the default-language slug, then named by the retry job", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
+  await version(articleId, "de", null, "Abrechnung");
+  at("de");
+  expect(await docsPage(project.slug, "billing")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+  // (Every project's: this file's other tests leave some too.)
+  expect(await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} })).toMatchObject({ named: expect.any(Number) });
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ slug: "abrechnung" });
+  expect(await docsPage(project.slug, "billing")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
 });

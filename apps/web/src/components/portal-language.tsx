@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 import { useAddressIn, usePortalPath, usePortalSlug } from "@/components/portal-base";
 import { TeamLanguageContext } from "@/components/portal-look";
-import { languagePrefix } from "@/lib/language-addresses";
+import { isPortalPath, languagePrefix } from "@/lib/language-addresses";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { chooseLanguage } from "@/server/reader-language";
@@ -52,7 +52,9 @@ function useChooseLanguage(languages: Language[], current: Language) {
         return;
       }
       // A full load: both addresses are one route to Next.js's router, which would keep the layout (the header's language) as it was.
-      window.location.assign(addressIn(code === languages[0] ? "" : languagePrefix(code), there));
+      // Only a path of the portal's own: anything else (never sent, but it came over the network) is the language's home.
+      const page = there === undefined ? undefined : isPortalPath(there) ? there : "/";
+      window.location.assign(addressIn(code === languages[0] ? "" : languagePrefix(code), page));
     });
   return { choose, pending };
 }

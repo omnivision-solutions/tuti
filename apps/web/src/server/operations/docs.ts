@@ -20,6 +20,7 @@ import {
   claimDocsSlug,
   claimLanguageSlug,
   languageSlugRefused,
+  restoreLanguageSlugs,
   docsSlugsTaken,
   freeDocsSlug,
   RESERVED_ARTICLE_SLUGS,
@@ -1361,6 +1362,8 @@ export const restoreArticle = defineOperation({
             where: { id },
             data: { deletedAt: null, slug: await freeDocsSlug(tx, projectId, deleted.slug, "article", { id, slug: deleted.slug }) },
           });
+          // Its slugs in the other languages too.
+          await restoreLanguageSlugs(tx, projectId, id);
         }
         // Autopilot's edits waiting in the changes that the version takes out: said first (a 409), then dismissed with it.
         const edits = version ? await editsInChanges(id, tx) : [];
@@ -2403,7 +2406,7 @@ export const setArticleLanguageSlug = defineOperation({
       if (version.slug !== input.newSlug) {
         const refused = await languageSlugRefused(tx, projectId, input.language, input.newSlug, { ...version, articleId: article.id });
         if (refused) {
-          throw new OperationError(refused.includes("reserved") ? 400 : 409, refused.includes("reserved") ? "invalid_input" : "conflict", refused);
+          throw refused.reason === "reserved" ? new OperationError(400, "invalid_input", refused.message) : new OperationError(409, "conflict", refused.message);
         }
         await claimLanguageSlug(tx, projectId, input.language, input.newSlug, { ...version, articleId: article.id });
       }

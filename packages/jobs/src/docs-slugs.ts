@@ -134,13 +134,22 @@ export async function freeLanguageSlug(
  * Why `slug` can't be an article's own slug in `language` (the team's, `customSlug`), or null when it can: reserved, a tab's,
  * collection's or API reference's (current or old), or another live article's in that language or in the default one.
  */
-export async function languageSlugRefused(tx: Prisma.TransactionClient, projectId: string, language: string, slug: string, version: { id: string; articleId: string }) {
+export async function languageSlugRefused(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  language: string,
+  slug: string,
+  version: { id: string; articleId: string },
+): Promise<{ reason: "reserved" | "taken"; message: string } | null> {
+  if (RESERVED_ARTICLE_SLUGS.includes(slug)) {
+    return { reason: "reserved", message: `“${slug}” is reserved; pick another` };
+  }
   if ((await sharedSlugsTaken(tx, projectId, slug)).includes(slug)) {
-    return RESERVED_ARTICLE_SLUGS.includes(slug) ? `“${slug}” is reserved; pick another` : "That address is taken by a tab, collection or API reference";
+    return { reason: "taken", message: "That address is taken by a tab, collection or API reference" };
   }
   const other = await tx.articleTranslation.findFirst({ where: { projectId, language, slug, id: { not: version.id }, article: { deletedAt: null } }, select: { article: { select: { title: true } } } });
   const article = other?.article ?? (await tx.article.findFirst({ where: { projectId, slug, id: { not: version.articleId }, deletedAt: null }, select: { title: true } }));
-  return article ? `That address is taken by the article “${article.title}”` : null;
+  return article ? { reason: "taken", message: `That address is taken by the article “${article.title}”` } : null;
 }
 
 /**
@@ -189,4 +198,25 @@ export async function claimDocsSlug(
     });
   }
   return candidate;
+}
+
+/**
+ * A deleted article brought back (articles.restore): each of its versions keeps its slug while it's still free there, else
+ * (taken since, as deleted articles keep no slugs, or let go to another) gets one from its title, as a new version would.
+ * Call it with the project locked, after the article has its default-language slug back.
+ */
+export async function restoreLanguageSlugs(tx: Prisma.TransactionClient, projectId: string, articleId: string) {
+  const [article, versions] = await Promise.all([
+    tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { slug: true } }),
+    tx.articleTranslation.findMany({ where: { articleId, publishedAt: { not: null } }, select: { id: true, language: true, slug: true, title: true } }),
+  ]);
+  for (const version of versions) {
+    const own = { id: version.id, articleId };
+    if (version.slug && !(await languageSlugRefused(tx, projectId, version.language, version.slug, own))) {
+      continue;
+    }
+    // Its old address isn't kept: another article may have it now.
+    const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { ...own, slug: null }, article.slug);
+    await tx.articleTranslation.update({ where: { id: version.id }, data: { slug, customSlug: false } });
+  }
 }

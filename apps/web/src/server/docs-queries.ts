@@ -469,53 +469,66 @@ export const docsPage = cache(async (projectSlug: string, slug: string): Promise
  * other address of a hidden, AI-only or restricted article leads to it. Null: none (a tab's, a collection's, or nothing).
  */
 export const articleNamed = cache(async (projectSlug: string, slug: string): Promise<{ slug: string; own: string } | null> => {
-  const { language, defaultLanguage } = await portalLanguage().catch(() => ({ language: null, defaultLanguage: null }));
-  const other = language && defaultLanguage && language !== defaultLanguage ? language : null;
-  const article = { project: { slug: projectSlug }, ...published };
-  const select = { article: { select: { id: true, slug: true } } } as const;
-  const steps = [
-    async () => (other ? (await prisma.articleTranslation.findFirst({ where: { language: other, slug, article }, select }))?.article : null),
-    () => prisma.article.findFirst({ where: { ...article, slug }, select: { id: true, slug: true } }),
-    async () =>
-      other
-        ? (await prisma.articleOldSlug.findFirst({ where: { language: other, slug, article }, orderBy: { createdAt: "desc" }, select }))?.article
-        : (await prisma.docsRedirect.findFirst({ where: { slug, article }, select }))?.article,
-    async () => (await prisma.articleTranslation.findFirst({ where: { slug, article }, orderBy: { projectLanguage: { createdAt: "asc" } }, select }))?.article,
-    async () => (await prisma.articleOldSlug.findFirst({ where: { slug, article }, orderBy: { createdAt: "desc" }, select }))?.article,
-  ];
-  for (const step of steps) {
-    const found = await step();
-    if (found) {
-      if (!(await articleAt(projectSlug, found.slug))) {
-        return null;
-      }
-      const version = other && (await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: other } }, select: { slug: true } }));
-      return { slug: found.slug, own: version?.slug ?? found.slug };
-    }
+  const [{ language, defaultLanguage }, project] = await Promise.all([
+    portalLanguage().catch(() => ({ language: null, defaultLanguage: null })),
+    prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } }),
+  ]);
+  if (!project) {
+    return null;
   }
-  return null;
+  const other = language && defaultLanguage && language !== defaultLanguage ? language : null;
+  const projectId = project.id;
+  const article = published;
+  const select = { article: { select: { id: true, slug: true } } } as const;
+  // Each by an index ((projectId, language, slug), (projectId, slug)), all at once; the first in order that has one decides.
+  const found = (
+    await Promise.all([
+      other ? prisma.articleTranslation.findFirst({ where: { projectId, language: other, slug, article }, select }).then((row) => row?.article) : null,
+      prisma.article.findFirst({ where: { projectId, slug, ...article }, select: { id: true, slug: true } }),
+      other
+        ? prisma.articleOldSlug.findFirst({ where: { projectId, language: other, slug, article }, orderBy: { createdAt: "desc" }, select }).then((row) => row?.article)
+        : prisma.docsRedirect.findFirst({ where: { projectId, slug, article }, select }).then((row) => row?.article),
+      prisma.articleTranslation.findFirst({ where: { projectId, slug, article }, orderBy: { projectLanguage: { createdAt: "asc" } }, select }).then((row) => row?.article),
+      prisma.articleOldSlug.findFirst({ where: { projectId, slug, article }, orderBy: { createdAt: "desc" }, select }).then((row) => row?.article),
+    ])
+  ).find(Boolean);
+  if (!found || !(await articleAt(projectSlug, found.slug))) {
+    return null;
+  }
+  const version = other && (await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: other } }, select: { slug: true } }));
+  return { slug: found.slug, own: version?.slug ?? found.slug };
 });
 
 /**
  * The language switcher's target for `path` (the portal's own, without a prefix) read in `from`, in `to` (docs/plan.md,
  * Languages: "the switcher links each language's own slug, found by the article"): an article's page at its slug in `to`
- * (its default-language one where it has none there); any other path as it is. `defaultLanguage`: the project's.
+ * (its default-language one where it has none there). Null for any other path (the same page there): only a path built
+ * here is ever returned, never the one asked about. `defaultLanguage`: the project's.
  */
-export async function pathIn(projectSlug: string, path: string, from: string, to: string, defaultLanguage: string): Promise<string> {
+export async function pathIn(projectSlug: string, path: string, from: string, to: string, defaultLanguage: string): Promise<string | null> {
   const match = /^\/docs\/([^/]+)$/.exec(path);
-  // Only for someone who may read the portal: a private one's articles are named to nobody else.
-  if (!match || from === to || !(await readableProject(projectSlug))) {
-    return path;
+  let slug: string;
+  try {
+    slug = decodeURIComponent(match?.[1] ?? "");
+  } catch {
+    // A malformed address (/docs/%E0): no article's.
+    return null;
   }
-  const slug = decodeURIComponent(match[1]!);
-  const article = { project: { slug: projectSlug }, ...published };
+  // Only for someone who may read the portal: a private one's articles are named to nobody else.
+  const project = slug && from !== to ? await readableProject(projectSlug) : null;
+  if (!project) {
+    return null;
+  }
+  const article = { projectId: project.id, ...published };
   const select = { id: true, slug: true } as const;
-  const found =
-    (from !== defaultLanguage ? (await prisma.articleTranslation.findFirst({ where: { language: from, slug, article }, select: { article: { select } } }))?.article : null) ??
-    (await prisma.article.findFirst({ where: { ...article, slug }, select }));
+  const [version, byDefault] = await Promise.all([
+    from !== defaultLanguage ? prisma.articleTranslation.findFirst({ where: { projectId: project.id, language: from, slug, article }, select: { article: { select } } }) : null,
+    prisma.article.findFirst({ where: { ...article, slug }, select }),
+  ]);
+  const found = version?.article ?? byDefault;
   // Only an article this reader sees: another's slug says nothing about it.
   if (!found || !(await articleAt(projectSlug, found.slug))) {
-    return path;
+    return null;
   }
   const own = to === defaultLanguage ? found.slug : ((await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: found.id, language: to } }, select: { slug: true } }))?.slug ?? found.slug);
   return `/docs/${encodeURIComponent(own)}`;

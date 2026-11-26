@@ -3,6 +3,7 @@ ALTER TABLE "article_translation" ADD COLUMN "slug" TEXT,
 ADD COLUMN "customSlug" BOOLEAN NOT NULL DEFAULT false;
 
 CREATE UNIQUE INDEX "article_translation_projectId_language_slug_key" ON "article_translation"("projectId", "language", "slug");
+CREATE INDEX "article_translation_projectId_slug_idx" ON "article_translation"("projectId", "slug");
 
 CREATE TABLE "article_old_slug" (
     "id" TEXT NOT NULL,
