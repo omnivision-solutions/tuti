@@ -123,6 +123,9 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
 
   // On a phone: no handle to drag, the menu moves it; the switch stays as saved.
   await owner.setViewportSize({ width: 390, height: 844 });
+  // The live stream never opens from here on: opening (or reopening), it refreshes the page, which could take the row
+  // deleted below away and hide whether a refused switch goes back on.
+  await owner.route("**/api/live?*", () => {});
   await owner.reload();
   await expect(names()).toHaveText(["Third", "Second"]);
   await expect(owner.getByRole("switch", { name: "Second" })).not.toBeChecked();
@@ -138,9 +141,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await api(`/workflows/${third.id}`, undefined, "DELETE");
   await owner.getByRole("switch", { name: "Third" }).click();
   await expect(owner.getByText("There's no workflow with that id")).toBeVisible();
-  // It goes back on; a refresh landing after that (the page catching up with the delete) may take the row away, which
-  // is right too: the toast is what proves the switch was refused.
-  await expect(owner.getByRole("switch", { name: "Third", checked: false })).toHaveCount(0);
+  await expect(owner.getByRole("switch", { name: "Third" })).toBeChecked();
   // Nothing wider than the screen.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "workflows-phone");
