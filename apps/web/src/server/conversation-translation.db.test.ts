@@ -608,6 +608,18 @@ test("an email waits for its message's translation without claiming the conversa
   expect(email.text).toContain("Translated from Deutsch");
 });
 
+test("an email for a conversation told recently ends at once, without waiting for the translation", async () => {
+  const { conversation, messages } = await pending(GERMAN);
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: new Date() } });
+  let paused = false;
+  noticeWait.pause = () => {
+    paused = true;
+    return new Promise<void>(() => {});
+  };
+  expect(await handlers.conversationMessage({ messageId: messages[0]!.id }, quiet)).toEqual({ skipped: "told recently" });
+  expect(paused).toBe(false);
+});
+
 test("a push to phones that show no message text goes at once: a title has nothing to wait for", async () => {
   const expo = await startExpoPushFake();
   try {

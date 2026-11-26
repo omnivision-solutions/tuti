@@ -115,6 +115,10 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
     await Promise.all(recipients.map((member) => sendEmail({ to: member.user.email, ...email })));
     return { emailed: recipients.length };
   }
+  // Told recently: nothing to wait for (most messages in a chat), so no slot is held for a translation it won't send.
+  if (conversation.notifiedAt && conversation.notifiedAt.getTime() > Date.now() - NOTIFY_EVERY_MS) {
+    return { skipped: "told recently" };
+  }
   // Its translation waited for first, nothing claimed meanwhile: a run stopped while it waits leaves the conversation's turn
   // as it was, for conversation-notices-resubmit to find.
   const email = emailOf(await textOf());
