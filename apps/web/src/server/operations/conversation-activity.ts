@@ -67,11 +67,12 @@ export async function conversationActivity(conversationId: string, { filter = "a
   });
   const page = rows.slice(0, limit);
   const ids = [...new Set(page.flatMap(eventPeople))];
-  const person = await prisma.conversation.findUniqueOrThrow({
+  // Gone meanwhile (deleted while a page renders): its rows are gone with it.
+  const person = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: { email: true, name: true, emailVerified: true, user: { select: { name: true, email: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true } } } } },
   });
-  const { name, email } = conversationPerson(person);
+  const { name, email } = person ? conversationPerson(person) : { name: null, email: null };
   const names = new Map(
     (ids.length > 0 ? await prisma.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true, name: true } }) : []).map((user) => [user.id, user.name]),
   );
