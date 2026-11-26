@@ -40,6 +40,7 @@ import * as groups from "./groups";
 import * as imports from "./imports";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
+import * as languages from "./languages";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -95,6 +96,7 @@ const modules = {
   imports,
   inbox,
   invitations,
+  languages,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
   media,
@@ -509,6 +511,10 @@ const matrix: Matrix = {
   inbox: {
     markConversationRead: { allowed: "MEMBER", call: (slug) => inbox.markConversationRead(slug, 1, new Date().toISOString()) },
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
+    // Translation is off in the fixture: no preview, and the model isn't asked.
+    previewReplyTranslation: { allowed: "MEMBER", call: (slug) => inbox.previewReplyTranslation(slug, 1, "Thanks!") },
+    // No message's translation failed in the fixture: nothing is queued.
+    retryTranslation: { allowed: "MEMBER", call: (slug) => inbox.retryTranslation(slug, 1) },
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
     draftReplyWithAi: {
       allowed: "MEMBER",
@@ -570,6 +576,13 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
+  },
+  languages: {
+    // The fixture has German besides English, so the default stays as it is.
+    setDefaultLanguage: { allowed: "ADMIN", call: (slug) => languages.setDefaultLanguage(slug, "en") },
+    addLanguage: { allowed: "ADMIN", call: (slug) => languages.addLanguage(slug, "fr") },
+    updateLanguage: { allowed: "ADMIN", call: (slug) => languages.updateLanguage(slug, "de", { live: true, instructions: "Use du." }) },
+    removeLanguage: { allowed: "ADMIN", call: (slug) => languages.removeLanguage(slug, "de") },
   },
   groups: {
     saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", conditions: JSON.stringify(inGroupNamed("enterprise")) })) },
@@ -925,6 +938,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId, userId: users.MEMBER.id, role: "MEMBER" },
     ],
   });
+  // German besides English (Settings → Languages).
+  await prisma.projectLanguage.create({ data: { projectId, code: "de" } });
   const target = await prisma.user.create({
     data: { id: crypto.randomUUID(), name: "Target", email: `e2e-${crypto.randomUUID()}@example.com` },
   });

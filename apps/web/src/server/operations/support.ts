@@ -280,9 +280,7 @@ export const updateSupportSettings = defineOperation({
       translate: z
         .boolean()
         .optional()
-        .describe(
-          "Turn Translate conversations on or off: the user's messages translated into the team's language, and replies into theirs. Not available yet: true is refused (409) until the Inbox shows translated conversations",
-        )
+        .describe("Turn Translate conversations on or off: the user's messages translated into the team's language, and replies into theirs")
         .meta({ examples: [true] }),
     })
     .refine((input) => Object.values(input).some((value) => value !== undefined), "Send inbox, email, draftInstructions, teamLanguage or translate")
@@ -290,11 +288,6 @@ export const updateSupportSettings = defineOperation({
   example: { inbox: true },
   output: settingsOutput,
   run: async ({ projectId }, input) => {
-    // Until the Inbox shows translated conversations (docs/plan.md L22, part two), nothing in the app could read or send
-    // one: on is refused. Part two lifts this.
-    if (input.translate) {
-      throw new OperationError(409, "not_available_yet", "Translating conversations isn't available yet: the Inbox can't show translated conversations");
-    }
     if (input.translate && !aiEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
     }

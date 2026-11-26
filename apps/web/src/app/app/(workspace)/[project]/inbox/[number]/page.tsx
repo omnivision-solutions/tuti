@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, sameLanguage, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
@@ -26,6 +26,7 @@ import {
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageDay } from "@/components/inbox/message-day";
 import { MessageText } from "@/components/inbox/message-text";
+import { MessageTranslation } from "@/components/inbox/message-translation";
 import { DetailSection } from "@/components/inbox/detail-section";
 import { ConversationMore } from "@/components/inbox/more-actions";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -127,6 +128,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         origin: true,
         spam: true,
         sample: true,
+        // The customer's language: replies are previewed and sent in it while the project translates (docs/plan.md L22).
+        language: true,
         email: true,
         name: true,
         emailVerified: true,
@@ -159,6 +162,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             authorUser: { select: { name: true } },
             attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
             attachmentsDropped: true,
+            teamText: true,
+            language: true,
+            translationError: true,
           },
         },
       },
@@ -263,6 +269,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const canSnooze = !conversation.spam && conversation.status !== "CLOSED";
   const snoozedUntil = canSnooze && conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null;
   const posts = conversation.posts.map((link) => link.post);
+  // Replies go out in the customer's language, previewed under the composer (docs/plan.md L22).
+  const { teamLanguage, translate } = await translationSettings(projectId);
+  const translated = translate && conversation.language && !sameLanguage(conversation.language, teamLanguage) ? { language: conversation.language, teamLanguage } : undefined;
   type Message = (typeof conversation.messages)[number];
   // Someone else on the email (in Cc) shows as their address.
   const byName = (message: Message) =>
@@ -376,9 +385,23 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                                 Internal note · {name}
                               </p>
                             )}
-                            <p className="text-sm break-words whitespace-pre-wrap">
-                              <MessageText text={message.body} ugc={message.author === "USER"} />
-                            </p>
+                            {message.note ? (
+                              <p className="text-sm break-words whitespace-pre-wrap">
+                                <MessageText text={message.body} ugc={false} />
+                              </p>
+                            ) : (
+                              <MessageTranslation
+                                body={message.body}
+                                teamText={message.teamText}
+                                language={message.language}
+                                error={message.translationError}
+                                fromTeam={fromTeam}
+                                // Try again runs only where it can: translation on, and AI on the server.
+                                canRetry={translate && aiEnabled()}
+                                projectSlug={slug}
+                                number={conversation.number}
+                              />
+                            )}
                             <MessageAttachments
                               cards
                               attachments={message.attachments.map((a) => links.get(a.id)!)}
@@ -448,6 +471,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
                   emailWaits={wait && { why: wait.why, warning: wait.warning, link: wait.link }}
+                  translated={translated}
                 />
               </div>
             </div>

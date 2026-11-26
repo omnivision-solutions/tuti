@@ -1,6 +1,6 @@
 import { type ConversationOrigin, type ConversationOwner, type ConversationStatus, type MessageAuthor, type MessageChannel, Prisma, prisma } from "@tuti/db";
-import { enqueue, historySince, inSomePlansHistory, replyTranslation, translationFailed, visibleConversations } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { enqueue, historySince, inSomePlansHistory, replyTranslation, translationFailed, translationSettings, visibleConversations } from "@tuti/jobs";
+import { aiEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { rowLine, subjectFrom } from "@/lib/format";
@@ -1385,6 +1385,57 @@ export const translateReply = defineOperation({
     return "error" in translation
       ? { status: "failed" as const, text: null, language: translation.language, error: translation.error }
       : { status: "translated" as const, text: translation.text, language: translation.language, error: null };
+  },
+});
+
+export const retryTranslation = defineOperation({
+  name: "conversations.retryTranslation",
+  title: "Retry failed translations",
+  summary:
+    "Where the project translates conversations: the user's messages whose translation failed (their `translationError`) are translated again, in the background. Their translation shows on the conversation once it's in. With none that failed, nothing happens.",
+  method: "POST",
+  path: "/conversations/{number}/translation-retries",
+  scope: "write",
+  access: "team",
+  errors: [409, 503],
+  input: z.object({ number: conversationNumber }),
+  example: { number: 12 },
+  output: z
+    .object({ retried: z.number().int().describe("How many messages are being translated again").meta({ examples: [1] }) })
+    .describe("What's being translated again"),
+  run: async ({ projectId }, input) => {
+    const conversation = await findConversation(projectId, input.number);
+    const failed = await prisma.conversationMessage.findMany({
+      where: { conversationId: conversation.id, author: "USER", note: false, teamText: null, translationError: { not: null } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, translationError: true },
+    });
+    if (failed.length === 0) {
+      return { retried: 0 };
+    }
+    if (!(await translationSettings(projectId)).translate) {
+      throw new OperationError(409, "translation_off", "This project doesn't translate conversations");
+    }
+    if (!aiEnabled()) {
+      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server, so conversations can't be translated");
+    }
+    let retried = 0;
+    // One at a time, as each arrived: the job settles the conversation's language by the newest.
+    for (const { id, translationError } of failed) {
+      // Claimed by clearing why it failed: a second Try again meanwhile finds nothing to queue (no second paid translation),
+      // and the job sets it again if this one fails too.
+      const { count } = await prisma.conversationMessage.updateMany({ where: { id, teamText: null, translationError: { not: null } }, data: { translationError: null } });
+      if (count === 0) {
+        continue;
+      }
+      retried++;
+      await enqueue("translateMessage", { messageId: id }).catch(async (error: unknown) => {
+        // Not queued: it shows its Try again again.
+        await translationFailed(id, translationError!);
+        throw error;
+      });
+    }
+    return { retried };
   },
 });
 
