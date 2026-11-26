@@ -275,6 +275,10 @@ export function RichEditor({
     if (node) {
       const image = { mediaId: made.id, w: made.width, h: made.height };
       const at = replace ? pos : pos + node.nodeSize;
+      // The image it becomes keeps the tries (and Edit with AI on it again picks the one placed); undone, the old one has its own still.
+      if (replace) {
+        triesFor.set(made.id, triesFor.get(edited.image.id) ?? []);
+      }
       editor
         .chain()
         .command(({ tr }) => {

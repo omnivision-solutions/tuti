@@ -197,3 +197,22 @@ test("each image keeps its tries while the editor is open: back from another ima
   expect(button("Try 1")).toBeTruthy();
   expect(document.body.textContent).toContain("Edited · 1 of 1");
 });
+
+test("after Replace image, Edit with AI on the new image has the tries it came from, the placed one picked", async () => {
+  let made = 0;
+  generateImage.mockImplementation(async () => ({ image: { id: `madeimage0000000000${++made}x`, url: `https://media.example/made${made}.png`, width: 1000, height: 500 } }));
+  const { ref, pick, generate, button, click } = await editor();
+  await pick();
+  await generate();
+  await click("Try again");
+  await click("Try 1");
+  await click("Replace image");
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  expect(ref.current!.state.doc.child(1).attrs.mediaId).toBe("madeimage00000000001x");
+  await pick();
+  await click("Edit with AI");
+  expect(button("Try 1")).toBeTruthy();
+  expect(button("Try 2")).toBeTruthy();
+  expect(button("Try 1")!.getAttribute("aria-pressed")).toBe("true");
+  expect(document.body.textContent).toContain("Edited · 1 of 2");
+});

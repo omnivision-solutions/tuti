@@ -134,7 +134,11 @@ export function ImageGenerator({
   const [said, setSaid] = useState("");
   const [using, startUsing] = useTransition();
   const [useError, setUseError] = useState<string | null>(null);
-  const [selected, setSelected] = useState(Math.max(0, initialTries.length - 1));
+  // The try the edited image is (one placed before), or the last.
+  const [selected, setSelected] = useState(() => {
+    const placed = initialTries.findIndex((each) => each.id === editing?.id);
+    return placed >= 0 ? placed : Math.max(0, initialTries.length - 1);
+  });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
