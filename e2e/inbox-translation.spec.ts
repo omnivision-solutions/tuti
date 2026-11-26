@@ -190,7 +190,7 @@ test("in the widget, a German customer gets the team's reply in German, with wha
   // Scrolled into view as it opens, clear of the reply box below it.
   await expect(original).toBeInViewport({ ratio: 1 });
   const shown = (await original.boundingBox())!;
-  const replyBox = (await kai.getByRole("textbox", { name: "Message" }).boundingBox())!;
+  const replyBox = (await kai.getByRole("textbox", { name: "Reply" }).boundingBox())!;
   expect(shown.y + shown.height).toBeLessThanOrEqual(replyBox.y);
   await kai.setViewportSize({ width: 1280, height: 800 });
   await expect(thread.getByText("Hide original")).toBeVisible();
