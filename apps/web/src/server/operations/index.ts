@@ -20,6 +20,7 @@ import {
   unlinkConversationPost,
   updateConversation,
 } from "./conversations";
+import { getConversationActivity } from "./conversation-activity";
 import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
@@ -120,6 +121,7 @@ const all = [
   listArticlesToInsert,
   getConversation,
   getConversationPerson,
+  getConversationActivity,
   createConversation,
   replyToConversation,
   translateReply,

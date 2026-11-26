@@ -46,8 +46,8 @@ export type WorkflowAction = z.output<typeof workflowAction>;
 
 /**
  * What each action is: which triggers offer it, and whether it's a marking one (the next workflow still runs) or a
- * deciding one (it ends its trigger's list for that message). `did`: what its workflow's note says it did, after the
- * workflow's name. server/inbox-path.ts has what each does.
+ * deciding one (it ends its trigger's list for that message). `did`: what the conversation's Activity says it did, after
+ * the workflow's name. server/inbox-path.ts has what each does.
  */
 export const ACTIONS: Record<WorkflowAction["kind"], { label: string; triggers: readonly WorkflowTrigger[]; deciding: boolean; did: string }> = {
   mark_priority: { label: "Mark priority", triggers: ["conversation_started", "user_replied"], deciding: false, did: "marked this priority" },

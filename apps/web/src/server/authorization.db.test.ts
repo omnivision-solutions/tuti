@@ -538,6 +538,7 @@ const matrix: Matrix = {
     takeOverConversation: { allowed: "MEMBER", call: (slug) => inbox.takeOverConversation(slug, 1) },
     setConversationPriority: { allowed: "MEMBER", call: (slug) => inbox.setConversationPriority(slug, 1, true) },
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
+    loadConversationActivity: { allowed: "MEMBER", call: (slug) => inbox.loadConversationActivity(slug, 1, "all") },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
