@@ -232,7 +232,7 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   return (
     <SettingsCard
       title="Guidance for the AI"
-      description="What is and isn't spam for your team, in your words. The AI reads it when it checks a new conversation that your lists, your phrases and trust in the sender didn't decide. For now it only records in the conversation's Activity what it would have filed."
+      description="What is and isn't spam for your team, in your words. Once it's written, the AI checks each new conversation nothing above decided, holding it for up to 2 minutes, and files only what it's sure is spam."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">

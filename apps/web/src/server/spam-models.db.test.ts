@@ -13,24 +13,26 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from "rea
 import SpamSettingsPage from "@/app/app/(workspace)/[project]/settings/(admin)/spam/page";
 import { POST as due } from "@/app/api/inbox/due/route";
 import { SpamSettings } from "@/components/inbox/spam-settings";
+import { tellEvent } from "@/lib/conversation-events";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
-import { tellEvent } from "@/lib/conversation-events";
 
 import { mailSubdomain, supportAddress } from "./inbound";
-import { replyToConversation, startConversation, updateConversation } from "./operations/conversations";
+import { listConversations, listInboxViews, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { getSpamSettings, updateSpamSettings } from "./operations/spam";
-import { CHECKS_DUE_AFTER_MS, GIVE_UP_AFTER_MS, runDueInbox, runSpamChecks, spamSignals } from "./spam-models";
+import { createWorkflow } from "./operations/workflows";
+import { runDueInbox, runSpamChecks, SPAM_HOLD_MS, spamSignals } from "./spam-models";
 
 /**
- * The spam filter's model checks, watching only (docs/plan.md, Inbox automation, W3): checks 6 and 7 on a new
- * conversation no free check decided, once its request has answered or from the inbox-due job, writing only a note.
+ * The spam filter's AI check (docs/plan.md, Inbox automation, W4): a new conversation no free check decided is held
+ * while the decision model checks it, once its request has answered; 0.95 or more files it, anything else (a model
+ * failing included) releases it with the notices a new conversation gets, and the inbox-due job releases whatever is
+ * still held after 2 minutes.
  */
 
 const DOMAIN = "tuti.email";
-const FILED = "Spam filter would have filed it as spam: ";
 
 let model: ModelFake;
 beforeAll(async () => {
@@ -49,18 +51,21 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
   later.length = 0;
-  // Every scripted answer was used, and nothing asked the models unscripted.
+  // Every scripted answer was used, and nothing asked the models unscripted (the chat model never is).
   model.done();
   model.requests.length = 0;
   model.decisions.length = 0;
 });
 
-async function setup() {
+async function setup({ guidance = "SEO pitches are spam" } = {}) {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const projectId = project.id;
-  await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true } });
-  await prisma.webhook.create({ data: { projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id } });
+  // The AI check runs only for a team that wrote its guidance.
+  await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true, spamGuidance: guidance } });
+  await prisma.webhook.create({
+    data: { projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created", "conversation.message_created"], createdById: owner.id },
+  });
   const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId };
   const to = supportAddress(await mailSubdomain(projectId), DOMAIN);
   actAs(null);
@@ -74,158 +79,136 @@ async function setup() {
       expect(await postEmail(rawEmail({ from, to, ...more }), { recipient: to })).toEqual({ status: 200, body: { outcome: "added" } });
       return (await prisma.conversation.findFirstOrThrow({ where: { projectId }, orderBy: { number: "desc" }, select: { number: true } })).number;
     },
+    /** The sender's reply by email, to the conversation's reply address. */
+    reply: async (number: number, from = "e2e-stranger@example.com") => {
+      const recipient = supportAddress(await mailSubdomain(projectId), DOMAIN, (await conversation(number)).replyToken);
+      expect(await postEmail(rawEmail({ from, to: recipient, subject: "Re: Hello", body: "One more thing" }), { recipient })).toEqual({ status: 200, body: { outcome: "added" } });
+    },
     conversation,
     /** Its checks, as `after` runs them once its request has answered. */
     check: async (number: number) => runSpamChecks((await conversation(number)).id),
-    /** What the checks recorded: the conversation's "would have filed" rows in its Activity, as told; never a Tuti note. */
-    filed: async (number: number) => {
+    /** The spam filter's rows in its Activity, as told; never a Tuti note in the thread. */
+    activity: async (number: number) => {
       expect(await prisma.conversationMessage.count({ where: { conversation: { projectId, number }, author: "TUTI" } })).toBe(0);
-      const rows = await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number }, kind: "spam_would_file" }, orderBy: { createdAt: "asc" } });
+      const rows = await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number }, actor: "spam_filter" }, orderBy: { createdAt: "asc" } });
       return rows.map((row) => {
-        expect(row.actor).toBe("spam_filter");
         const told = tellEvent(row, new Map())!;
         return `${told.who} ${told.text}: ${told.detail}`;
       });
     },
-    /** How the conversation is: in the inbox as today, never held or filed while watching; and whether its checks are due. */
+    /** Where it stands: held (as spam), filed (its reason) or in the inbox; and whether its checks are due. */
     state: async (number: number) => {
-      const { spam, spamReason, pathDueAt } = await conversation(number);
-      return { spam, spamReason, due: pathDueAt !== null };
+      const { spam, spamReason, spamHeldAt, pathDueAt } = await conversation(number);
+      return { spam, spamReason, held: spamHeldAt !== null, due: pathDueAt !== null };
     },
-    /** The webhook's deliveries and the team's emails about new conversations: each once. */
+    /** Whether the Inbox lists it anywhere (every view, Spam included, and the API's spam list), and the views' counts. */
+    listed: async (number: number) => {
+      const { views } = await call(listInboxViews, admin, {});
+      const lists = await Promise.all([
+        ...["open", "unassigned", "mine", "spam"].map((view) => call(listConversations, admin, { view } as never)),
+        call(listConversations, admin, { spam: "true" } as never),
+      ]);
+      return { listed: lists.some((list) => list.conversations.some((c) => c.number === number)), views };
+    },
+    /** What was told, each once: the webhooks' deliveries by event, oldest first, and the team's emails about new conversations. */
     told: async () => ({
-      webhooks: await prisma.webhookDelivery.count({ where: { webhook: { projectId }, event: "conversation.created" } }),
+      webhooks: (await prisma.webhookDelivery.findMany({ where: { webhook: { projectId } }, orderBy: { createdAt: "asc" }, select: { event: true } })).map((d) => d.event),
       emails: mailbox.emails.filter((email) => email.to.includes(owner.email) && /^New conversation/.test(email.subject)).length,
     }),
   };
 }
 
-const inInbox = { spam: false, spamReason: null };
+const held = { spam: true, spamReason: null, held: true, due: true };
+const released = { spam: false, spamReason: null, held: false, due: false };
+const filedByModel = { spam: true, spamReason: "model", held: false, due: false };
+const nobodyTold = { webhooks: [], emails: 0 };
+const toldOnce = { webhooks: ["conversation.created"], emails: 1 };
 
 /** The job runs every project's: what earlier tests in this file left due is set aside first. */
 const nothingElseDue = () => prisma.conversation.updateMany({ where: { pathDueAt: { not: null } }, data: { pathDueAt: null } });
 
-test("at least 0.9 from the decision model would have filed it: its Activity says so, and nothing else changes", async () => {
-  const { projectId, mail, check, filed, state, told } = await setup();
+test("a new conversation the free checks left undecided is held: in no view or count, nobody told, its check left to `after`", async () => {
+  const { mail, state, listed, told, activity } = await setup();
   const number = await mail();
-  // The free checks left it undecided: due for the models, in the inbox as today, the team told once.
-  expect(await state(number)).toEqual({ ...inInbox, due: true });
-  expect(await told()).toEqual({ webhooks: 1, emails: 1 });
+  expect(await state(number)).toEqual(held);
+  expect((await listed(number)).listed).toBe(false);
+  expect((await listed(number)).views.every((view) => view.count === 0)).toBe(true);
+  expect(await told()).toEqual(nobodyTold);
+  // Nothing was asked before the request answered; the free checks' verdict waits for the model's.
+  expect([later.length, model.decisions, await activity(number)]).toEqual([1, [], []]);
+});
 
+test("0.95 or more from the decision model files it, with its reason; nothing is told, and a second run does nothing", async () => {
+  const { projectId, mail, state, told, activity, listed } = await setup();
+  const number = await mail();
   model.decide({ spam: 0.96 });
-  expect(await check(number)).toBe(true);
+  expect(await later[0]!()).toBe(true);
   expect(model.decisions[0]!.model).toBe("acme/decider");
-  expect(await filed(number)).toEqual([`${FILED}the decision model was 96% sure; watching only`]);
-  // Its details are the reason alone: which model, and how sure. Nothing of the sender's.
-  expect(await prisma.conversationEvent.findMany({ where: { conversation: { projectId, number }, kind: "spam_would_file" }, select: { details: true, actorId: true, actorName: true } })).toEqual([
-    { details: { by: "decision", probability: 0.96 }, actorId: null, actorName: null },
-  ]);
-  // Watching only: not held, filed or told again; its checks are done.
-  expect(await state(number)).toEqual({ ...inInbox, due: false });
-  expect(await told()).toEqual({ webhooks: 1, emails: 1 });
-
-  // Run again (the job, a retry): nothing is asked, nothing written twice.
-  expect(await check(number)).toBe(false);
-  expect(await filed(number)).toHaveLength(1);
-});
-
-test("the request that started it leaves one run of its checks to `after`, which records it", async () => {
-  const { mail, filed, state } = await setup();
-  const number = await mail();
-  // Nothing was asked before the request answered.
-  expect([later.length, model.decisions, await filed(number)]).toEqual([1, [], []]);
-  model.decide({ spam: 0.97 });
-  await later[0]!();
-  expect(await filed(number)).toEqual([`${FILED}the decision model was 97% sure; watching only`]);
-  expect(await state(number)).toEqual({ ...inInbox, due: false });
-  // Run again, it finds nothing due.
+  expect(await state(number)).toEqual(filedByModel);
+  expect(await activity(number)).toEqual(["Spam filter filed it as spam: the AI check was 96% sure it's spam"]);
+  // In Spam now, with its reason; never told.
+  expect((await listed(number)).listed).toBe(true);
+  expect((await call(listConversations, { actor: { kind: "user" as const, userId: (await prisma.teamMember.findFirstOrThrow({ where: { projectId } })).userId }, projectId }, { view: "spam" } as never)).conversations[0]).toMatchObject({ number, spamReason: "model" });
+  expect(await told()).toEqual(nobodyTold);
+  // Run again (the job, a retry): nothing asked, nothing written twice.
   expect(await later[0]!()).toBe(false);
+  // Earlier tests' held conversations are released too: this one is told nothing more.
+  await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000));
+  expect(await activity(number)).toHaveLength(1);
 });
 
-test("at most 0.3 isn't spam: no note, and the chat model isn't asked", async () => {
-  const { mail, check, filed, state } = await setup();
+test("under 0.95 releases it as a new conversation, told once: its webhook and the team's email; the chat model is never asked", async () => {
+  const { mail, check, state, told, activity, listed } = await setup();
   const number = await mail();
-  model.decide({ spam: 0.3 });
+  model.decide({ spam: 0.94 });
   expect(await check(number)).toBe(true);
-  expect([await filed(number), model.requests]).toEqual([[], []]);
-  expect(await state(number)).toEqual({ ...inInbox, due: false });
+  expect(await state(number)).toEqual(released);
+  expect(await activity(number)).toEqual(["Spam filter let it through: the AI check was 94% sure it's spam"]);
+  expect((await listed(number)).listed).toBe(true);
+  expect(await told()).toEqual(toldOnce);
+  expect(model.requests).toEqual([]);
+  // Never told twice: a second run, or the job.
+  expect(await check(number)).toBe(false);
+  // Earlier tests' held conversations are released too: this one is told nothing more.
+  await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000));
+  expect(await told()).toEqual(toldOnce);
 });
 
-test("between the bands the chat model decides: spam with its reason, not spam or unsure leaving nothing", async () => {
-  const { mail, check, filed, state } = await setup();
-  const first = await mail();
-  model.decide({ spam: 0.6 });
-  model.reply(JSON.stringify({ verdict: "spam", why: "An SEO agency's cold pitch." }));
-  await check(first);
-  expect(model.requests[0]!.model).toBe("acme/tiny");
-  // Not in the model's own words: a sender could steer those into a note that reads as Tuti's.
-  expect(await filed(first)).toEqual([`${FILED}the chat model judged it spam; watching only`]);
-  expect(await state(first)).toEqual({ ...inInbox, due: false });
-
-  for (const verdict of ["not_spam", "unsure"]) {
-    const number = await mail();
-    model.decide({ spam: 0.6 });
-    model.reply(`Here you go: {"verdict": "${verdict}", "why": "Hard to say"}`);
-    await check(number);
-    expect([verdict, await filed(number), await state(number)]).toEqual([verdict, [], { ...inInbox, due: false }]);
-  }
-});
-
-test("it fails open: a model failing, or a reply that isn't a verdict, leaves the conversation as it is, its checks done", async () => {
-  const { projectId, mail, check, filed, state } = await setup();
-  // The decision model's answer isn't a probability: it failed, and the chat model isn't asked after it.
-  const unanswered = await mail();
-  model.decide({ spam: 2 });
-  await check(unanswered);
-  expect([await filed(unanswered), await state(unanswered), model.requests]).toEqual([[], { ...inInbox, due: false }, []]);
-
-  // The chat model fails.
-  const failed = await mail();
-  model.decide({ spam: 0.5 });
-  model.fail(500);
-  await check(failed);
-  expect([await filed(failed), await state(failed)]).toEqual([[], { ...inInbox, due: false }]);
-  // Its chat request was taken from the day's cap and never answered: given back. The two decisions answered stay.
-  expect(await prisma.aiUsage.findMany({ where: { projectId, feature: "spam" }, orderBy: { createdAt: "asc" }, select: { kind: true } })).toEqual([{ kind: "decision" }, { kind: "decision" }]);
-
-  // It answers, but not with a verdict.
-  const muddled = await mail();
-  model.decide({ spam: 0.5 });
-  model.reply("It's probably spam, I'd say.");
-  await check(muddled);
-  expect([await filed(muddled), await state(muddled)]).toEqual([[], { ...inInbox, due: false }]);
-});
-
-test("past the day's cap no model is asked; the requests are recorded as the spam filter's and never charged", async () => {
-  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, spam: { decisions: { model: "acme/decider" }, chat: { model: "acme/tiny" }, requestsPerDay: 2 } }));
-  // Midday (UTC), so the day the cap counts doesn't end between the two checks.
+test("it fails open: a model failing, or the day's cap reached, releases it; the requests are the spam filter's and never charged", { timeout: 30_000 }, async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true }, spam: { decisions: { model: "acme/decider" }, requestsPerDay: 2 } }));
+  // Midday (UTC), so the day the cap counts doesn't end between the checks.
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
-  const { projectId, mail, check, filed, state } = await setup();
+  const { projectId, mail, check, state, activity, told } = await setup();
   const balance = async () => (await creditBalance(projectId)).balance;
   const before = await balance();
 
-  // Two requests: the decision, then the chat model.
-  const first = await mail();
-  model.decide({ spam: 0.5 });
-  model.reply(JSON.stringify({ verdict: "spam", why: "A scam" }));
-  await check(first);
-  expect(await filed(first)).toHaveLength(1);
+  // Its answer isn't a probability: it failed.
+  const failed = await mail("e2e-a@example.com");
+  model.decide({ spam: 2 });
+  await check(failed);
+  expect(await state(failed)).toEqual(released);
+  expect(await activity(failed)).toEqual(["Spam filter let it through: the AI check didn't answer, so it wasn't held any longer"]);
+
+  const answered = await mail("e2e-b@example.com");
+  model.decide({ spam: 0.1 });
+  await check(answered);
   const usage = await prisma.aiUsage.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { feature: true, kind: true, credits: true } });
   expect(usage.map((row) => [row.feature, row.kind, row.credits?.toNumber()])).toEqual([
     ["spam", "decision", 0],
-    ["spam", "chat", 0],
+    ["spam", "decision", 0],
   ]);
   expect(await balance()).toBe(before);
 
-  // The cap is reached: the next is left as it is, nothing asked.
-  const second = await mail();
-  await check(second);
-  expect([await filed(second), await state(second)]).toEqual([[], { ...inInbox, due: false }]);
-  expect(model.decisions).toHaveLength(1);
+  // The cap is reached: released, nothing asked.
+  const capped = await mail("e2e-c@example.com");
+  await check(capped);
+  expect(await state(capped)).toEqual(released);
+  expect(model.decisions).toHaveLength(2);
+  expect((await told()).webhooks).toEqual(Array(3).fill("conversation.created"));
 });
 
-test("checks at once never all see room under the cap: each request is taken from it before it's sent", async () => {
-  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "acme/decider" }, chat: { model: "off" }, requestsPerDay: 1 } }));
+test("checks at once never all see room under the cap: each request is taken from it before it's sent", { timeout: 30_000 }, async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "acme/decider" }, requestsPerDay: 1 } }));
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
   const { projectId, mail, check } = await setup();
   const numbers = [await mail("e2e-a@example.com"), await mail("e2e-b@example.com"), await mail("e2e-c@example.com")];
@@ -236,55 +219,53 @@ test("checks at once never all see room under the cap: each request is taken fro
   expect(await prisma.aiUsage.count({ where: { projectId, feature: "spam" } })).toBe(1);
 });
 
-test("a server without a decision model asks the chat model alone; one without any model leaves nothing due", async () => {
-  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "off" }, chat: { model: "acme/tiny" } } }));
-  const { mail, check, filed, state } = await setup();
-  const number = await mail();
-  model.reply(JSON.stringify({ verdict: "spam", why: "Phishing" }));
-  await check(number);
-  expect([model.decisions, await filed(number)]).toEqual([[], [`${FILED}the chat model judged it spam; watching only`]]);
+test("nothing is held without the team's guidance, without a decision model (the chat model alone never files), or without AI", { timeout: 30_000 }, async () => {
+  const { mail, state, told, activity } = await setup({ guidance: "  " });
+  const inInbox = { spam: false, spamReason: null, held: false, due: false };
+  const unguided = await mail("e2e-a@example.com");
+  expect([await state(unguided), await told()]).toEqual([inInbox, toldOnce]);
+  expect(await activity(unguided)).toEqual(["Spam filter let it through: no check filed it"]);
 
-  // No AI on the server: nothing is due, so neither `after` nor the job ever asks anything.
+  const { mail: mail2, state: state2 } = await setup();
+  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "off" }, chat: { model: "acme/tiny" } } }));
+  expect(await state2(await mail2("e2e-b@example.com"))).toEqual(inInbox);
+  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "acme/decider" } } }));
   vi.stubEnv("OPENAI_API_KEY", "");
-  await nothingElseDue();
-  const none = await mail();
-  expect(await state(none)).toEqual({ ...inInbox, due: false });
-  expect(await runDueInbox(new Date(Date.now() + CHECKS_DUE_AFTER_MS))).toEqual({ checked: 0 });
+  expect(await state2(await mail2("e2e-c@example.com"))).toEqual(inInbox);
+  expect(later).toEqual([]);
 });
 
-test("only a conversation no free check decided is due: not one filed, nor one a decision or trust let through", async () => {
+test("only a conversation no free check decided is held: not one filed, nor one a decision or trust let through", { timeout: 30_000 }, async () => {
   const { projectId, admin, mail, state } = await setup();
-  // A phrase files it (check 5).
+  const inInbox = { spam: false, spamReason: null, held: false, due: false };
   await call(updateSpamSettings, admin, { addPhrases: ["facebook admin"], allow: ["e2e-friend@example.com"] });
-  const filed = await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" });
-  expect(await state(filed)).toMatchObject({ spam: true, spamReason: "phrase", due: false });
+  // A phrase files it (check 5).
+  expect(await state(await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" }))).toEqual({ spam: true, spamReason: "phrase", held: false, due: false });
   // The allowed list lets it through (check 1).
-  const allowed = await mail("e2e-friend@example.com");
-  expect(await state(allowed)).toEqual({ ...inInbox, due: false });
+  expect(await state(await mail("e2e-friend@example.com"))).toEqual(inInbox);
   // Someone the team has replied to is trusted (check 2).
   const replied = await mail("e2e-customer@example.com");
+  model.decide({ spam: 0.1 });
+  await runSpamChecks((await prisma.conversation.findFirstOrThrow({ where: { projectId, number: replied } })).id);
   await call(replyToConversation, admin, { number: replied, body: "Hi there" });
-  const trusted = await mail("e2e-customer@example.com");
-  expect(await state(trusted)).toEqual({ ...inInbox, due: false });
+  expect(await state(await mail("e2e-customer@example.com"))).toEqual(inInbox);
   // The team's own, over the API, skips the filter.
   await startConversation(projectId, { userId: null, email: "e2e-api@example.com", body: "Hello", origin: "API", channel: "API" });
-  expect(await prisma.conversation.count({ where: { projectId, pathDueAt: { not: null } } })).toBe(1);
+  expect(await prisma.conversation.count({ where: { projectId, spamHeldAt: { not: null } } })).toBe(0);
 });
 
-test("the models read the sender, subject, start of the message, its signals, the team's guidance and its latest marked conversations", async () => {
+test("the model reads the sender, subject, start of the message, its signals, the team's guidance and its latest marked conversations", { timeout: 30_000 }, async () => {
   const { admin, mail, check, conversation } = await setup();
   await call(updateSpamSettings, admin, { guidance: "  Agencies pitching SEO are spam  " });
   expect((await call(getSpamSettings, admin, {})).guidance).toBe("Agencies pitching SEO are spam");
-  // Marked each way by a teammate, one of them long: cut to 500 characters.
+  // Marked each way by a teammate while held, one of them long: cut to 500 characters.
   const pitch = await mail("e2e-seo@example.com", { subject: "Rank #1 on Google", body: `We can help. ${"x".repeat(600)}` });
   await call(updateConversation, admin, { number: pitch, spam: true });
-  // Not spam, after it had gone to Spam.
   const real = await mail("e2e-kim@example.com", { subject: "Export broken" });
-  await call(updateConversation, admin, { number: real, spam: true });
   await call(updateConversation, admin, { number: real, spam: false });
   for (const number of [pitch, real]) {
-    // Marked: decided, so their own checks ask nothing and are done.
-    expect(await runSpamChecks((await conversation(number)).id)).toBe(true);
+    // Marked: decided, so their own checks ask nothing.
+    expect(await runSpamChecks((await conversation(number)).id)).toBe(false);
   }
 
   const number = await mail("e2e-paypal-team@example.com", {
@@ -310,85 +291,98 @@ test("the models read the sender, subject, start of the message, its signals, th
     guidance: "Agencies pitching SEO are spam",
     examples: { spam: [["Rank #1 on Google", 500]], notSpam: ["Export broken"] },
   });
-  // The Reply-To, which may be another of the sender's addresses, is kept only till the models have read it.
+  // The Reply-To, which may be another of the sender's addresses, is kept only till the model has read it.
   expect(await prisma.inboundEmail.count({ where: { conversationId: (await conversation(number)).id, replyTo: { not: null } } })).toBe(0);
 });
 
-test("a teammate's mark before or while the models answer has decided: nothing is asked, or their answer is dropped", async () => {
-  const { admin, mail, check, filed, state } = await setup();
-  const during = await mail();
-  model.decide({ spam: 0.99 }, undefined, () => call(updateConversation, admin, { number: during, spam: true }));
-  await check(during);
-  expect([await filed(during), await state(during)]).toEqual([[], { spam: true, spamReason: null, due: false }]);
+test("a teammate's mark during the hold wins over the verdict: Mark as spam keeps it from everyone, Not spam releases it with the notices, once", { timeout: 30_000 }, async () => {
+  const { admin, mail, check, state, told, activity } = await setup();
+  // Marked spam while the model answers "not spam": the answer is dropped, and nobody is told.
+  const marked = await mail("e2e-a@example.com");
+  model.decide({ spam: 0.01 }, undefined, () => call(updateConversation, admin, { number: marked, spam: true }));
+  expect(await check(marked)).toBe(false);
+  expect(await state(marked)).toEqual({ spam: true, spamReason: null, held: false, due: false });
+  expect([await told(), await activity(marked)]).toEqual([nobodyTold, []]);
 
-  // Another sender: the first's mark decides their next conversation (check 1).
-  const before = await mail("e2e-other@example.com");
-  expect(await state(before)).toEqual({ ...inInbox, due: true });
-  await call(updateConversation, admin, { number: before, spam: true });
-  await call(updateConversation, admin, { number: before, spam: false });
-  expect(await check(before)).toBe(true);
-  expect([await filed(before), await state(before), model.decisions]).toEqual([[], { ...inInbox, due: false }, [expect.anything()]]);
+  // Not spam while the model answers "spam": released with its notices, and the answer is dropped.
+  const unmarked = await mail("e2e-b@example.com");
+  model.decide({ spam: 0.99 }, undefined, () => call(updateConversation, admin, { number: unmarked, spam: false }));
+  expect(await check(unmarked)).toBe(false);
+  expect(await state(unmarked)).toEqual(released);
+  expect(await told()).toEqual(toldOnce);
+  // Earlier tests' held conversations are released too: this one is told nothing more.
+  await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000));
+  expect(await told()).toEqual(toldOnce);
 });
 
-test("a check left behind (a deploy, a crash) is picked up once by the job when it's due; one from before the deploy never is", async () => {
-  // A fixed time: however long this takes, the job's "now" is before the check is due.
-  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
-  const { projectId, mail, filed, state } = await setup();
-  await nothingElseDue();
-  // From before the deploy: written without `pathDueAt`, as every conversation from before is.
-  await startConversation(projectId, { userId: null, email: "e2e-old@example.com", body: "Hello", origin: "EMAIL", channel: "EMAIL" });
+test("a user's reply during the hold is told with the first message on release, never before it, and fires no workflow of its own", { timeout: 30_000 }, async () => {
+  const { projectId, admin, mail, reply, check, state, told, conversation } = await setup();
+  await call(createWorkflow, admin, { name: "Starts", trigger: "conversation_started", conditions: [], actions: [{ kind: "mark_priority" }] });
+  await call(createWorkflow, admin, { name: "Replies", trigger: "user_replied", conditions: [], actions: [{ kind: "mark_priority" }] });
   const number = await mail();
-  // `after` never ran it (outside a request here, as after a crash): not due yet, so the job leaves it to `after`.
-  expect(await runDueInbox()).toEqual({ checked: 0 });
+  await reply(number);
+  // Held: no workflow has run, nobody is told of either message.
+  expect(await state(number)).toEqual(held);
+  expect([(await conversation(number)).priority, await told()]).toEqual([false, nobodyTold]);
+  const runs = () => prisma.conversationEvent.findMany({ where: { conversation: { projectId, number }, kind: "workflows_ran" }, select: { details: true } });
 
-  // Due: the job runs it, once, even with two minutes at once.
-  model.decide({ spam: 0.95 });
-  const later = new Date(Date.now() + CHECKS_DUE_AFTER_MS + 1000);
-  expect(await Promise.all([runDueInbox(later), runDueInbox(later)])).toEqual(expect.arrayContaining([{ checked: 1 }, { checked: 0 }]));
-  expect(await filed(number)).toEqual([`${FILED}the decision model was 95% sure; watching only`]);
-  expect(await state(number)).toEqual({ ...inInbox, due: false });
-  expect(await runDueInbox(new Date(Date.now() + 60 * 60_000))).toEqual({ checked: 0 });
-  // The old one was never asked about (one decision request in all).
-  expect(model.decisions).toHaveLength(1);
+  model.decide({ spam: 0.2 });
+  await check(number);
+  // Released: "A conversation starts" ran once, in the release; the reply fired nothing of its own.
+  expect((await conversation(number)).priority).toBe(true);
+  expect((await runs()).map((run) => (run.details as { trigger: string }).trigger)).toEqual(["conversation_started"]);
+  expect(await prisma.conversationMessage.count({ where: { conversationId: (await conversation(number)).id, author: "USER", workflowsRanAt: { not: null } } })).toBe(1);
+  // Told once each, the first message first.
+  expect(await told()).toEqual({ webhooks: ["conversation.created", "conversation.message_created"], emails: 1 });
+  await check(number);
+  await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000));
+  expect(await told()).toEqual({ webhooks: ["conversation.created", "conversation.message_created"], emails: 1 });
 });
 
-test("a check still due an hour after its conversation started is given up: cleared, nothing asked, the conversation as it is", async () => {
+test("one filed by the model runs no workflow; Not spam then runs \"A conversation starts\" and tells of both messages, once", { timeout: 30_000 }, async () => {
+  const { admin, mail, reply, check, told, conversation } = await setup();
+  await call(createWorkflow, admin, { name: "Starts", trigger: "conversation_started", conditions: [], actions: [{ kind: "mark_priority" }] });
+  const number = await mail();
+  await reply(number);
+  model.decide({ spam: 0.99 });
+  await check(number);
+  expect([(await conversation(number)).priority, await told()]).toEqual([false, nobodyTold]);
+  await call(updateConversation, admin, { number, spam: false });
+  expect((await conversation(number)).priority).toBe(true);
+  expect(await told()).toEqual({ webhooks: ["conversation.created", "conversation.message_created"], emails: 1 });
+});
+
+test("anything still held after 2 minutes (a model slow or down, a crash) is released by the job, once, asking nothing", { timeout: 30_000 }, async () => {
+  // A fixed time: however long this takes, the job's "now" is before the hold ends.
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
-  const { mail, conversation, filed, state } = await setup();
+  const { projectId, mail, state, told, activity, conversation } = await setup();
   await nothingElseDue();
+  // From before W4 (W3's watching): due, never held. The job only clears it, telling nobody again.
+  const old = await startConversation(projectId, { userId: null, email: "e2e-old@example.com", body: "Hello", origin: "EMAIL", channel: "EMAIL" });
+  await prisma.conversation.update({ where: { id: old.conversation.id }, data: { pathDueAt: new Date() } });
   const number = await mail("e2e-stuck@example.com", { headers: { "Reply-To": "e2e-elsewhere@example.com" } });
-  const { id } = await conversation(number);
-  expect(await prisma.inboundEmail.count({ where: { conversationId: id, replyTo: { not: null } } })).toBe(1);
-  // No answer scripted: a model asked would fail the test.
-  expect(await runDueInbox(new Date(Date.now() + GIVE_UP_AFTER_MS + 1000))).toEqual({ checked: 0 });
-  expect([await state(number), await filed(number), model.decisions]).toEqual([{ ...inInbox, due: false }, [], []]);
-  expect(await prisma.inboundEmail.count({ where: { conversationId: id, replyTo: { not: null } } })).toBe(0);
+  // `after` never ran (outside a request here, as after a crash): not 2 minutes yet, so the job leaves it.
+  expect(await runDueInbox(new Date(Date.now() + 1000))).toEqual({ checked: 1 });
+  expect(await state(number)).toEqual(held);
+
+  // Two minutes on: released once, even with two minutes at once; no model asked (none scripted).
+  const end = new Date(Date.now() + SPAM_HOLD_MS + 1000);
+  expect(await Promise.all([runDueInbox(end), runDueInbox(end)])).toEqual(expect.arrayContaining([{ checked: 1 }, { checked: 0 }]));
+  expect(await state(number)).toEqual(released);
+  expect(await activity(number)).toEqual(["Spam filter let it through: the AI check didn't answer, so it wasn't held any longer"]);
+  expect(await told()).toEqual(toldOnce);
+  expect(await prisma.inboundEmail.count({ where: { conversationId: (await conversation(number)).id, replyTo: { not: null } } })).toBe(0);
+  // The model's late answer finds nothing to settle: nothing asked, nothing told again.
+  expect(await later[0]!()).toBe(false);
+  expect([model.decisions, await told()]).toEqual([[], toldOnce]);
 });
 
 test("a conversation the free checks decided keeps no Reply-To: nothing will read it", async () => {
   const { admin, mail, conversation, state } = await setup();
   await call(updateSpamSettings, admin, { allow: ["e2e-friend@example.com"] });
   const number = await mail("e2e-friend@example.com", { headers: { "Reply-To": "e2e-friend-home@example.com" } });
-  expect(await state(number)).toEqual({ ...inInbox, due: false });
+  expect(await state(number)).toEqual({ spam: false, spamReason: null, held: false, due: false });
   expect(await prisma.inboundEmail.count({ where: { conversationId: (await conversation(number)).id, replyTo: { not: null } } })).toBe(0);
-});
-
-test("the job never asks about a check past the hour, however many of those are left beyond the batch it gives up", async () => {
-  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-26T12:00:00Z") });
-  const { projectId } = await setup();
-  await nothingElseDue();
-  // More stale checks than one minute gives up (100), as after a long outage.
-  const old = new Date(Date.now() - GIVE_UP_AFTER_MS - 60_000);
-  await prisma.conversation.createMany({
-    data: Array.from({ length: 101 }, (_, i) => ({ projectId, number: 1000 + i, subject: "Old", origin: "EMAIL" as const, email: `e2e-old-${i}@example.com`, createdAt: old, pathDueAt: old })),
-  });
-  // No answer scripted: a model asked would fail the test.
-  expect(await runDueInbox()).toEqual({ checked: 0 });
-  expect(model.decisions).toEqual([]);
-  // The one left over is given up the next minute.
-  expect(await prisma.conversation.count({ where: { projectId, pathDueAt: { not: null } } })).toBe(1);
-  await runDueInbox();
-  expect(await prisma.conversation.count({ where: { projectId, pathDueAt: { not: null } } })).toBe(0);
 });
 
 /** The element `type` in a tree of React elements, as a page returns it (nothing rendered). */
@@ -408,7 +402,7 @@ function find(node: ReactNode, type: unknown): ReactElement<Record<string, unkno
   return null;
 }
 
-test("the guidance is there (Settings → Spam's card, spam.get) only where the server has a model for the filter", async () => {
+test("the guidance is there (Settings → Spam's card, spam.get) only where the server has the model for the filter", async () => {
   const { owner, admin } = await setup();
   await call(updateSpamSettings, admin, { guidance: "SEO pitches are spam" });
   const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: admin.projectId }, select: { slug: true } });
@@ -420,10 +414,10 @@ test("the guidance is there (Settings → Spam's card, spam.get) only where the 
   };
   expect([await shown(), (await call(getSpamSettings, admin, {})).guidance]).toEqual(["SEO pitches are spam", "SEO pitches are spam"]);
 
-  // No AI on the server, both models off, or a cap of 0: nothing reads it, so it isn't shown.
+  // No AI on the server, the decision model off (the chat model alone never files), or a cap of 0: nothing reads it, so it isn't shown.
   for (const off of [
     () => vi.stubEnv("OPENAI_API_KEY", ""),
-    () => vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "off" }, chat: { model: "off" } } })),
+    () => vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "off" }, chat: { model: "acme/tiny" } } })),
     () => vi.stubEnv("TUTI_CONFIG", configFile({ spam: { requestsPerDay: 0 } })),
   ]) {
     vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
@@ -444,7 +438,7 @@ test("the job's endpoint runs only with the server's token", async () => {
 });
 
 test("the worker's minute: without the web app's address or the secret it says so only while a check is due; with them it runs the endpoint with its token", async () => {
-  const { mail, conversation, filed } = await setup();
+  const { mail, conversation, state } = await setup();
   await nothingElseDue();
   const logged = vi.spyOn(log, "error").mockImplementation(() => {});
   onTestFinished(() => logged.mockRestore());
@@ -484,10 +478,10 @@ test("the worker's minute: without the web app's address or the secret it says s
     return due(request);
   });
   onTestFinished(() => void vi.unstubAllGlobals());
-  model.decide({ spam: 0.95 });
   expect(await inboxDue()).toEqual({ checked: 1 });
   expect(sent).toEqual([{ url: "https://tuti.example/api/inbox/due", authorization: `Bearer ${inboxDueToken()}` }]);
-  expect(await filed(number)).toEqual([`${FILED}the decision model was 95% sure; watching only`]);
+  // Released, nothing asked: it fails open.
+  expect(await state(number)).toEqual(released);
 });
 
 test("signals are hints in words, and none for ordinary mail", () => {

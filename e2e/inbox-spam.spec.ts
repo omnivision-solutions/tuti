@@ -6,6 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, expectMoreView, moreView, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
+import { nextDecision } from "./model";
 
 // Wide enough for the Inbox's four panes: its views, the list, the conversation and its details.
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -143,4 +144,48 @@ test("Not spam on a conversation from a blocked address says it unblocks it, a l
     await owner.keyboard.press("Escape");
     await expect(item).toBeHidden();
   }
+});
+
+test("with guidance written, the AI check holds a stranger's email: one it's unsure of is released to the inbox, one it's sure of is filed with its reason", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
+  const address = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
+  const api = await apiFor(owner, slug);
+  // The AI check runs only for a team that wrote its guidance.
+  await api("/spam", { guidance: "Agencies pitching SEO work are spam" }, "PATCH");
+
+  // A customer's question: the model fake is sure it isn't spam (global setup), so it's held only till it answers.
+  await receive(address, rawEmail("Kim Lee <e2e-kim@acme-customer.example>", "Export broken", "Exporting to CSV gives me an empty file."));
+  // An SEO pitch: the model is sure it is.
+  await nextDecision({ spam: 0.99 }, "e2e-growth@rankfast.example");
+  await receive(address, rawEmail("Growth Team <e2e-growth@rankfast.example>", "Get to #1 on Google", "Our agency guarantees page one in 30 days."));
+
+  // Released and filed once the requests have answered: a reload till the Inbox shows both where they belong.
+  await expect(async () => {
+    await owner.goto(`/app/${slug}/inbox`);
+    await expectMoreView(owner, "Needs reply 1");
+    await expectMoreView(owner, "Spam 1");
+  }).toPass({ timeout: 30_000 });
+
+  const rows = owner.getByRole("main").getByRole("listitem");
+  await expect(rows.filter({ hasText: "Export broken" })).toBeVisible();
+  const activity = owner.getByRole("complementary", { name: "Conversation details" }).getByRole("region", { name: "Activity" });
+
+  // The pitch is in Spam, saying why, its Activity with how sure the AI check was.
+  await owner.goto(`/app/${slug}/inbox/2?view=spam`);
+  await expect(owner.locator(".inbox-spam-notice")).toContainText("Marked as spam: the spam filter judged this spam");
+  await expect(activity.locator("li[data-event]").first()).toContainText("Spam filter filed it as spam");
+  await expect(activity.locator("li[data-event]").first()).toContainText("the AI check was 99% sure it's spam");
+  await checkpoint(owner, "filed-by-the-ai-check");
+
+  // The customer's is in the inbox, its Activity saying the check let it through.
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.locator(".inbox-spam-notice")).toHaveCount(0);
+  await expect(activity.locator("li[data-event]").first()).toContainText("Spam filter let it through");
 });
