@@ -249,6 +249,11 @@ model Project {
   /// changelogAiHour, for the per-project hourly cap.
   changelogAiHour                DateTime     @default(now())
   changelogAiCount               Int          @default(0)
+  /// AI images (images.generate) in the hour that started at aiImagesHour, for the
+  /// per-project hourly cap: counted before the model is asked, so images asked for at
+  /// once can't all get past it.
+  aiImagesHour                   DateTime     @default(now())
+  aiImagesCount                  Int          @default(0)
   /// The widget's launcher on customers' sites (see the widget.* operations): its
   /// label, colour (`#rrggbb`; null is the brand green, with its dark-mode shade),
   /// corner ("bottom-right" or "bottom-left"), and up to 5 quick links shown at the
@@ -3265,7 +3270,7 @@ model ImportedRecord {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots.
+  /// What it was for: answers, escalations, support, changelog, code_changes, translation, duplicates, screenshots, images.
   feature      String
   /// chat, decision or agent (a browser agent's run; embeddings aren't recorded).
   kind         String

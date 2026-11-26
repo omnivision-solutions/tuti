@@ -4,6 +4,9 @@ import type { AiRole } from "../ai";
 
 const model = (description: string) => z.string().trim().min(1).max(200).nullable().describe(description).default(null);
 
+/** The AI image generator's model without `ai.imageModel` (docs/plan.md, AI image generator). */
+export const DEFAULT_IMAGE_MODEL = "google/gemini-nano-banana-2.1";
+
 // The roles by name, not from ../ai: that module reads config(), and importing it here would be a cycle.
 const role = () => z.string().trim().min(1).max(200).optional();
 const row = z.strictObject({
@@ -35,6 +38,15 @@ export const ai = z
         translation: model("Translating conversations' model, instead of `ai.model` (without either, openai/gpt-6.1-terra)"),
       })
       .prefault({}),
+    imageModel: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .describe(
+        "The AI image generator's model, an OpenRouter model that makes images in Gemini's aspect ratios (1:1 to 21:9, 1:8 and 8:1) at 1K, 2K and 4K (image_config). Image generation needs OpenRouter",
+      )
+      .default(DEFAULT_IMAGE_MODEL),
     maxPrice: z
       .number()
       .positive()

@@ -100,6 +100,7 @@ import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
 import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
+import { generateImageOperation } from "./images";
 import { getScreenshots, getScreenshotSettings, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
@@ -160,6 +161,7 @@ const all = [
   updateChangelogEntry,
   editChangelogSection,
   composeChangelogCover,
+  generateImageOperation,
   listMissingChanges,
   addChangelogPullRequests,
   removeChangelogPullRequest,
