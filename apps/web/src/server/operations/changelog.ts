@@ -1689,7 +1689,7 @@ export const publishChangelogEntry = defineOperation({
     emailSubscribers: z
       .boolean()
       .default(false)
-      .describe("Email it to the changelog's confirmed subscribers (a public portal's): the first time it's published that way only")
+      .describe("Email it to the changelog's confirmed subscribers (on a private portal, those who may read it): the first time it's published that way only")
       .meta({ examples: [true] }),
   }),
   output: entryOutput.describe("The entry, published"),
@@ -1728,11 +1728,11 @@ export const publishChangelogEntry = defineOperation({
       if (count === 0) {
         return null;
       }
-      // Emailed to subscribers once per entry: never again when it's unpublished and published again. Only from a
-      // public portal (a private one's subscribers may not be its readers: changelogEmailed sends nothing there), and
-      // never a sample entry (Home's sample content is for the team to try things with) or a quiet imported one.
-      const { portalAccess } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-      if (emailSubscribers && portalAccess === "PUBLIC" && !quiet) {
+      // Emailed to subscribers once per entry: never again when it's unpublished and published again (a private
+      // portal's, to those who may read it: changelogEmailed), and never a sample entry (Home's sample content is for
+      // the team to try things with) or a quiet imported one.
+      // (The previous release, part one, already emails a private portal's due entry to its readers: safe during a deploy.)
+      if (emailSubscribers && !quiet) {
         await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
       }
       // Due now, or still from a publish before (unpublished before they all went): they go now, due from now, so the

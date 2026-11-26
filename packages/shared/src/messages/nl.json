@@ -1,0 +1,9 @@
+{
+  "header": {
+    "signIn": "Inloggen",
+    "menu": "Menu",
+    "closeMenu": "Menu sluiten",
+    "language": "Taal: {language}",
+    "languages": "Taal"
+  }
+}

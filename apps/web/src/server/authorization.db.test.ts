@@ -40,6 +40,7 @@ import * as groups from "./groups";
 import * as imports from "./imports";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
+import * as languages from "./languages";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -50,6 +51,7 @@ import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
 import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
+import * as readerLanguage from "./reader-language";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
@@ -94,6 +96,7 @@ const modules = {
   imports,
   inbox,
   invitations,
+  languages,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
   media,
@@ -104,6 +107,7 @@ const modules = {
   posts,
   "project-settings": projectSettings,
   projects,
+  "reader-language": readerLanguage,
   screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
@@ -343,6 +347,10 @@ const matrix: Matrix = {
     },
     deleteApiReference: { allowed: "MEMBER", call: (slug) => apiReferences.deleteApiReference(slug, "matrix-api") },
   },
+  // Anyone may choose the portal's language (its default here), signed in or not: a private portal's sign-in page has the switcher.
+  "reader-language": {
+    chooseLanguage: { allowed: "public", call: (slug) => readerLanguage.chooseLanguage(slug, "en") },
+  },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
   "docs-readers": {
     answerArticle: { allowed: "public", call: (slug) => docsReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
@@ -569,6 +577,13 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
+  },
+  languages: {
+    // The fixture has German besides English, so the default stays as it is.
+    setDefaultLanguage: { allowed: "ADMIN", call: (slug) => languages.setDefaultLanguage(slug, "en") },
+    addLanguage: { allowed: "ADMIN", call: (slug) => languages.addLanguage(slug, "fr") },
+    updateLanguage: { allowed: "ADMIN", call: (slug) => languages.updateLanguage(slug, "de", { live: true, instructions: "Use du." }) },
+    removeLanguage: { allowed: "ADMIN", call: (slug) => languages.removeLanguage(slug, "de") },
   },
   groups: {
     saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", conditions: JSON.stringify(inGroupNamed("enterprise")) })) },
@@ -924,6 +939,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId, userId: users.MEMBER.id, role: "MEMBER" },
     ],
   });
+  // German besides English (Settings → Languages).
+  await prisma.projectLanguage.create({ data: { projectId, code: "de" } });
   const target = await prisma.user.create({
     data: { id: crypto.randomUUID(), name: "Target", email: `e2e-${crypto.randomUUID()}@example.com` },
   });

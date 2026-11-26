@@ -1,4 +1,4 @@
-import { BoxesIcon, CameraIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
+import { BoxesIcon, CameraIcon, CodeXmlIcon, CreditCardIcon, DownloadIcon, GitPullRequestArrowIcon, GlobeIcon, HandCoinsIcon, InboxIcon, KeyRoundIcon, LanguagesIcon, MessagesSquareIcon, PenLineIcon, PlugIcon, Settings2Icon, ShieldIcon, SparklesIcon, TablePropertiesIcon, UsersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
@@ -23,10 +23,12 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
     },
     {
       title: "Portal",
-      // Changelog (how entries are drafted and their covers) after the docs' pages: no preview beside it, so not one of PORTAL_PAGES.
+      // Changelog (how entries are drafted and their covers) after the docs' pages, and Languages after SEO: no preview
+      // beside them, so not among PORTAL_PAGES.
       pages: PORTAL_PAGES.flatMap(({ slug: page, title, icon: Icon }) => [
         { title, href: at(page), icon: <Icon aria-hidden /> },
         ...(page === "content-actions" ? [{ title: "Changelog", href: at("changelog"), icon: <PenLineIcon aria-hidden /> }] : []),
+        ...(page === "seo" ? [{ title: "Languages", href: at("languages"), icon: <LanguagesIcon aria-hidden /> }] : []),
       ]),
     },
     {

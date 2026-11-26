@@ -594,10 +594,10 @@ test("Users → Subscribers lists the changelog's email subscribers, users or no
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
   await owner.goto(`/app/${slug}/users?view=subscribers`);
-  await expect(owner.getByText("Your portal is private, so its changelog isn't emailed to anyone.")).toBeVisible();
+  await expect(owner.getByText("Your portal is private, so its changelog is emailed only to subscribers who can read it.")).toBeVisible();
 });
 
-test("on a server selling plans, Users → Subscribers says when the project's email is paused", async ({ browser }) => {
+test("on a server selling plans, Users → Subscribers says when the project's email is paused, private portal or not", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
@@ -607,7 +607,8 @@ test("on a server selling plans, Users → Subscribers says when the project's e
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
   try {
-    await db.query(`UPDATE project SET "emailPausedAt" = now() WHERE slug = $1`, [slug]);
+    // Private too: paused is what's said, as nothing is sent at all.
+    await db.query(`UPDATE project SET "emailPausedAt" = now(), "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
   } finally {
     await db.end();
   }

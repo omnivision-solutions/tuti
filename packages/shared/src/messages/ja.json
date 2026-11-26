@@ -1,0 +1,9 @@
+{
+  "header": {
+    "signIn": "ログイン",
+    "menu": "メニュー",
+    "closeMenu": "メニューを閉じる",
+    "language": "言語: {language}",
+    "languages": "言語"
+  }
+}

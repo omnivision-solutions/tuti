@@ -259,13 +259,14 @@ the list picks none to approve at once.
   beside the subject, which shows its full text on hover (and wraps in full on phones). A Docs page's header is one row that never wraps: a narrow article editor drops its state's details, never its actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
-  The team's changelog (`/changelog`) is one pane and one list: its tags as pills with their counts in the header
-  (`FilterPills`, `?tag=`, as on its portal), its search (`PaneSearch`) and New entry; then the drafts under a group label (the one whose
-  release notes wait first, with "Draft with AI" at its row's end while its text is unwritten and AI can run, else
-  "Write it"; then the running draft), then the published entries
-  under their months. Each row leads with a date column (when it went out, or a draft's last edit), its cover small at
-  the end only where it has one, and under its title what it holds or what readers did (pull requests, the posts it
-  lists as its editor does, reactions, comments), saying nothing for none.
+  The team's changelog (`/changelog`) is one pane and one list: its tags as pills in the header, without counts (most
+  entries have most tags) (`FilterPills`, `?tag=`), its search (`PaneSearch`) and New entry; then the drafts in a dashed
+  panel under their group label (the one whose release notes wait first, with "Draft with AI" at its row's end while
+  its text is unwritten and AI can run, else "Write it"; then the running draft), then the published entries under
+  their years. Each row leads with its cover (160px wide, 96 on phones; the 480px size; where any entry has one, an entry without keeps its place
+  as a dashed box, so titles line up; with none, no boxes), then its title and one quiet line: the date (when it went
+  out, or a draft's last edit), its tags as words (Breaking in its colour), what it holds or completes (pull requests,
+  posts, comments), saying nothing for none; how many reactions it had sits at the row's end.
   A changelog entry's editor has a sidebar
   beside the text with a line on its left, as a post's has (under it on phones, after a line; no card), its groups
   under group labels: its status first (Draft, or Published and the date), its tags as chips, the posts it completes

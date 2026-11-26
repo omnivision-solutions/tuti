@@ -35,7 +35,7 @@ export function reachSentence(reach: ChangelogReach, name: string, email: string
     case "unconfirmed":
       return `${name}'s changelog isn't emailed to ${email}.`;
     case "private":
-      return `${name}'s portal is private, so its changelog isn't emailed to ${email}.`;
+      return `${name}'s portal is private and ${email} isn't one of its readers, so its changelog isn't emailed there.`;
     case "opted-out":
       return `You've turned off all of ${name}'s emails, so its changelog isn't emailed to ${email} either.`;
   }
@@ -336,13 +336,13 @@ export async function findConfirmation(projectSlug: string, confirm: string) {
     /**
      * Confirms (with `emailsOn`, the opted-out page's button, turning the project's emails back on at the address too:
      * every account's opt-out there), once: the same token, unused and unexpired, checked as it writes, so a link
-     * replaced or used meanwhile does nothing. Not while the portal's private: nothing is emailed from one (changelogEmailed).
+     * replaced or used meanwhile does nothing. On a private portal too: what it sends to the address then is its reach (only to a reader).
      */
     confirm: (emailsOn: boolean) =>
       prisma.$transaction(async (tx) => {
         const now = new Date();
         const { count } = await tx.changelogSubscriber.updateMany({
-          where: { id, confirmTokenHash, confirmExpiresAt: { gt: now }, confirmUsedAt: null, project: { portalAccess: "PUBLIC" } },
+          where: { id, confirmTokenHash, confirmExpiresAt: { gt: now }, confirmUsedAt: null },
           data: { confirmedAt: now, confirmUsedAt: now, unsubscribedAt: null },
         });
         // Only the opt-outs from before the link was sent: one made since stays (and voids the link).

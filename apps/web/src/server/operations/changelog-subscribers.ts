@@ -102,7 +102,7 @@ const skippedOutput = z
 export const addChangelogSubscribers = defineOperation({
   name: "changelogSubscribers.add",
   title: "Add changelog subscribers",
-  summary: `Subscribe people to the changelog's emails, up to ${MAX_SUBSCRIBERS_AT_ONCE} at once, by address or by user: confirmed at once on your word (no email asks), for entries emailed from now on. Never someone who unsubscribed or turned off your project's emails; those are returned in \`skipped\`. A private portal emails none`,
+  summary: `Subscribe people to the changelog's emails, up to ${MAX_SUBSCRIBERS_AT_ONCE} at once, by address or by user: confirmed on your word (no email asks), for entries emailed from now on. Never someone who unsubscribed or turned off your project's emails; those are returned in \`skipped\`. Private portals email readers only`,
   method: "POST",
   path: "/changelog-subscribers",
   scope: "write",
@@ -170,7 +170,7 @@ export const listChangelogSubscribers = defineOperation({
             status: z
               .enum(SUBSCRIBER_STATUSES)
               .describe(
-                "`subscribed`: confirmed (emailed while your portal is public and your project's email isn't paused); `pending`: a confirmation link was emailed; `unsubscribed`: they left, and only they can come back; `opted_out`: all of your project's emails to them are off; `removed`: by you (you can add them back)",
+                "`subscribed`: confirmed (emailed while your project's email isn't paused; on a private portal, only if they may read it); `pending`: a confirmation link was emailed; `unsubscribed`: they left, and only they can come back; `opted_out`: all of your project's emails to them are off; `removed`: by you (you can add them back)",
               )
               .meta({ examples: ["subscribed"] }),
             subscribedAt: z.string().nullable().describe("When they were confirmed, or null").meta({ examples: ["2026-11-18T16:05:00.000Z"] }),

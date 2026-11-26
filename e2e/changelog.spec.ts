@@ -246,8 +246,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // The team's list (back from the entry's pane header) shows it with its tag.
   await team.getByRole("link", { name: "All entries" }).click();
   await team.waitForURL(`**/app/${slug}/changelog`);
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("New", { exact: true })).toBeVisible();
-  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("Breaking")).toHaveCSS("color", breaking);
+  // Its tags in its row's line, as words.
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("New, Breaking");
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("Breaking", { exact: true })).toHaveCSS("color", breaking);
 
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
@@ -290,9 +291,13 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect.poll(() => emoji(tada)).not.toContain("grayscale");
   await checkpoint(ada, "portal-changelog-reacted");
   await team.goto(`/app/${slug}/changelog`);
-  // Its row says what it holds and what readers did with it: the post it lists and their reactions; no draft's "Edited".
+  // Its row says, in one quiet line, when it went out, its tags and the post it lists, and beside it how many reactions
+  // it had; no draft's "Edited", and its tags as words, not chips.
   const published = team.getByRole("listitem").filter({ hasText: "Dark mode is here" });
-  await expect(published).toContainText("1 post · 🎉 1");
+  await expect(published).toContainText("1 post");
+  await expect(published).toContainText("1 reaction");
+  // No entry has a cover yet: no empty boxes to line titles up against.
+  await expect(team.locator("main span[aria-hidden].border-dashed")).toHaveCount(0);
   await expect(published.locator("time")).toHaveText(/^Published \d{1,2} [A-Z][a-z]{2,3}$/);
   // Signed out: the counts, and a nudge to sign in.
   const reader = await newPerson(browser, portalUrl(slug));
@@ -336,12 +341,12 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
 
-  // One list, by month: no drafts, so no Drafts group (an old link to its tab lands on the same list); nothing but the
+  // One list, by year: no drafts, so no Drafts group (an old link to its tab lands on the same list); nothing but the
   // search and the new entry in its header.
   await team.goto(`/app/${slug}/changelog?tab=drafts`);
-  // (A month's name, as the list's groups are named.)
-  const thisMonth = /^[A-Z][a-z]+ \d{4}$/;
-  await expect(team.getByRole("region", { name: thisMonth }).getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  // (A year, as the list's groups are named.)
+  const thisYear = /^\d{4}$/;
+  await expect(team.getByRole("region", { name: thisYear }).getByRole("link", { name: "Dark mode is here" })).toBeVisible();
   await expect(team.getByRole("region", { name: "Drafts" })).toHaveCount(0);
   await expect(team.getByRole("button", { name: "Writing style" })).toHaveCount(0);
 
@@ -537,21 +542,21 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(text).toContainText("Search looks at post titles and comments.");
   await expect(text).not.toContainText("Plain words only.");
 
-  // With a draft and a published entry, one list: the drafts above, then the published ones by month.
+  // With a draft and a published entry, one list: the drafts above, then the published ones by year.
   await team.goto(`/app/${slug}/changelog`);
   const draftsGroup = team.getByRole("region", { name: "Drafts" });
   await expect(draftsGroup.getByRole("link", { name: "Faster search" })).toBeVisible();
   await expect(draftsGroup.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
-  const monthGroup = team.getByRole("region", { name: thisMonth });
-  await expect(monthGroup.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
-  expect((await draftsGroup.boundingBox())!.y).toBeLessThan((await monthGroup.boundingBox())!.y);
-  // A draft says when it was last edited, in the date column.
+  const yearGroup = team.getByRole("region", { name: thisYear });
+  await expect(yearGroup.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  expect((await draftsGroup.boundingBox())!.y).toBeLessThan((await yearGroup.boundingBox())!.y);
+  // A draft says when it was last edited, first in its line.
   await expect(draftsGroup.getByRole("listitem").locator("time")).toHaveText(/^Edited \d{1,2} [A-Z][a-z]{2,3}( \d{4})?$/);
   await checkpoint(team, "team-changelog-list");
-  // The tags its entries have, as pills with their counts: one picked lists its entries.
+  // The tags its entries have, as pills (no counts: most entries have most tags): one picked lists its entries.
   const tagPills = team.locator('[data-slot="pane-header"]').getByRole("navigation", { name: "Tags" });
-  await expect(tagPills.getByRole("link")).toHaveText(["All 2", "New 1", "Breaking 1"]);
-  await tagPills.getByRole("link", { name: "New 1" }).click();
+  await expect(tagPills.getByRole("link")).toHaveText(["All", "New", "Breaking"]);
+  await tagPills.getByRole("link", { name: "New" }).click();
   await expect(team).toHaveURL(/\?tag=new$/);
   await expect(team.getByRole("link", { name: "Faster search" })).toHaveCount(0);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
@@ -562,13 +567,13 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team).toHaveURL(/\?(tag=new&q=invoices|q=invoices&tag=new)$/);
   await expect(team.getByText("No entries match your search")).toBeVisible();
   // The tag picked still shows as picked, with nothing in it; All is a pill away.
-  await expect(tagPills.getByRole("link", { name: "New 0" })).toHaveAttribute("aria-current", "page");
-  await expect(tagPills.getByRole("link", { name: "All 0" })).toBeVisible();
+  await expect(tagPills.getByRole("link", { name: "New", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(tagPills.getByRole("link", { name: "All", exact: true })).toBeVisible();
   await team.getByRole("link", { name: "Clear search" }).click();
   await expect(team).toHaveURL(/\?tag=new$/);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
   // Across every tag, it finds the draft by its title or its text.
-  await tagPills.getByRole("link", { name: "All 2" }).click();
+  await tagPills.getByRole("link", { name: "All" }).click();
   await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
   await search.fill("post titles");
   await search.press("Enter");
@@ -1340,7 +1345,7 @@ test("the next release waits to be written; its entry gets a featured image read
   expect(listCover.y).toBeGreaterThan((await older.getByRole("heading").boundingBox())!.y);
   expect(listCover.y + listCover.height).toBeLessThanOrEqual((await older.getByRole("link", { name: /Built from an idea/ }).boundingBox())!.y);
   // The team's list shows an entry's featured image small at the row's end (decorative: the title names it), loaded;
-  // an entry without one shows none, and the date column keeps the titles lined up. (An old link to a tab lands here too.)
+  // an entry without one keeps its place, so the titles line up. (An old link to a tab lands here too.)
   await team.goto(`/app/${slug}/changelog?tab=published`);
   const thumbnail = team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).locator("img");
   await expect(thumbnail).toHaveAttribute("alt", "");
@@ -1351,10 +1356,12 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(noCover.locator("svg.lucide-image")).toHaveCount(0);
   const titleX = async (title: string) => (await team.getByRole("link", { name: title, exact: true }).boundingBox())!.x;
   expect(await titleX("Faster exports")).toBe(await titleX("Dark mode is here"));
-  expect((await thumbnail.boundingBox())!.x).toBeGreaterThan(await titleX("Dark mode is here"));
+  // The cover leads the row; one without has its place kept (a dashed box), so the titles line up.
+  expect((await thumbnail.boundingBox())!.x).toBeLessThan(await titleX("Dark mode is here"));
+  await expect(noCover.locator("span[aria-hidden].border-dashed")).toHaveCount(1);
   await checkpoint(team, "team-changelog-thumbnails");
   await team.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(70);
+  await expect.poll(async () => (await thumbnail.boundingBox())!.width).toBeLessThan(110);
   await checkpoint(team, "team-changelog-thumbnails-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
 
