@@ -40,6 +40,13 @@ const WORDS = new Set<string>(["subject", "body", "subject_or_body"]);
 export const describeSpamRule = (rule: { field: string; matcher: string; value: string }) =>
   `${SPAM_RULE_FIELDS[rule.field as SpamRuleField]} ${SPAM_RULE_MATCHERS[rule.matcher as SpamRuleMatcher]} ${rule.value}`;
 
+/** A value as a rule keeps it: addresses and domains lowercase, and "@acme.example" the domain. */
+export function spamRuleValue(field: SpamRuleField, value: string) {
+  const trimmed = value.trim();
+  const lower = field === "sender_domain" || field === "sender_address" || field === "sent_to" ? trimmed.toLowerCase() : trimmed;
+  return field === "sender_domain" ? lower.replace(/^@/, "") : lower;
+}
+
 /** Lowercase, look-alikes folded, runs of space as one. */
 const fold = (text: string) => text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 

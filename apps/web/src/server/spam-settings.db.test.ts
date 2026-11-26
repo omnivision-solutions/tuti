@@ -256,7 +256,11 @@ test("trying a message says what the free checks would do with it and which rule
     reason: null,
     why: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
   });
+  // The sender's name and where it was sent, for the rules on them.
+  await update({ addRules: [rule("sender_name", "contains", "giveaway"), rule("sent_to", "is", "sales@acme.example")] });
+  expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", name: "Big Giveaway" })).toMatchObject({ spam: true, why: "it matches your rule “Sender name contains giveaway”" });
+  expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", to: ["Sales@acme.example"] })).toMatchObject({ spam: true, why: "it matches your rule “Sent to is sales@acme.example”" });
   await update({ allow: ["e2e-lee@strangers.example"] });
   expect(await attempt("e2e-lee@strangers.example", "facebook admin")).toEqual({ spam: false, reason: null, why: "your lists and marks let this sender through" });
-  expect(await rows()).toEqual([before[0], before[1], before[2] + 1, before[3]]);
+  expect(await rows()).toEqual([before[0], before[1], before[2] + 1, before[3] + 2]);
 });

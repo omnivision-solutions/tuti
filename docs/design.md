@@ -895,7 +895,7 @@ widths, in light and dark (in development only).
     makes one of the choices (Changelog's Your background) is a tile of its own in the grid until it holds an image,
     then that choice, with Replace and × under its name.
   - A list (people, groups, keys, webhooks; redirects' two fields are one line in their card, as is the one field of
-    each of Spam's lists: Blocked, Allowed, Phrases) has its count beside the
+    Spam's Allowed list, and Spam's block rules' field and matcher selects and value, which wrap to two lines on a phone) has its count beside the
     card's title (`count`), its "Add"
     button at the title's right (`action`) opening a dialog, and each row's actions under one ⋯ menu. An empty list
     is one muted line in the card, not an `EmptyState`. A page that is one list (Groups) has no card title, which would

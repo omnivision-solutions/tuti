@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
-import { describeSpamRule, SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleKey } from "@/lib/spam-rules";
+import { describeSpamRule, SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleKey, spamRuleValue } from "@/lib/spam-rules";
 import type { FormState } from "@/server/form-state";
 import type { SpamRuleRow, SpamSettings as Settings } from "@/server/operations/spam";
 import { addSpamRule, allowSpamSender, removeSpamRule, removeSpamSender, setSpamGuidance, type SpamTry, trySpam } from "@/server/spam-settings";
@@ -41,6 +41,8 @@ const PLACEHOLDERS: Record<SpamRuleField, string> = {
  * list save as they're changed (see spam.update); the guidance with the page's "Save changes".
  */
 export function SpamSettings({ projectSlug, settings, maxValue, maxGuidance }: { projectSlug: string; settings: Settings; maxValue: number; maxGuidance: number }) {
+  // The last allowed entry removed takes its card: focus goes to the rules' field.
+  useFocusAfterRemoval(settings.allowed.length, settings.allowed.length > 0 ? "spam-allowed" : "spam-rule-value");
   return (
     <>
       <BlockRules projectSlug={projectSlug} rules={settings.rules} maxValue={maxValue} />
@@ -49,7 +51,7 @@ export function SpamSettings({ projectSlug, settings, maxValue, maxGuidance }: {
         <EntryList
           id="spam-allowed"
           title="Allowed"
-          description="Their messages skip your rules."
+          description="Their messages skip your rules on what they say."
           label="Address or domain to allow"
           placeholder={SENDER}
           entries={settings.allowed}
@@ -72,7 +74,7 @@ function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rul
   const [field, setField] = useState<SpamRuleField>("sender_domain");
   const [matcher, setMatcher] = useState<SpamRuleMatcher>("is");
   const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
-    const rule = { field, matcher, value: String(formData.get("value") ?? "").trim() };
+    const rule = { field, matcher, value: spamRuleValue(field, String(formData.get("value") ?? "")) };
     // Said here: the server takes one that's there already as done, and "Added" would be wrong.
     if (rules.some((other) => spamRuleKey(other) === spamRuleKey(rule))) {
       return { error: "That rule is already there" };
@@ -227,7 +229,6 @@ function EntryList({
     }
     return result;
   }, {});
-  useFocusAfterRemoval(entries.length, id);
   return (
     <SettingsCard title={title} count={entries.length} description={description}>
       <SettingBlock className="gap-2">
@@ -358,7 +359,14 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
 /** The box to try a message: what the filter would do with an email from this address, and why. Nothing is saved. */
 function TryMessage({ projectSlug }: { projectSlug: string }) {
   const [state, action, pending] = useActionState<SpamTry, FormData>(
-    (_prev, formData) => trySpam(projectSlug, { sender: String(formData.get("sender") ?? ""), subject: String(formData.get("subject") ?? ""), text: String(formData.get("text") ?? "") }),
+    (_prev, formData) =>
+      trySpam(projectSlug, {
+        sender: String(formData.get("sender") ?? ""),
+        name: String(formData.get("name") ?? ""),
+        to: String(formData.get("to") ?? "").trim() || undefined,
+        subject: String(formData.get("subject") ?? ""),
+        text: String(formData.get("text") ?? ""),
+      }),
     {},
   );
   return (
@@ -366,6 +374,12 @@ function TryMessage({ projectSlug }: { projectSlug: string }) {
       <form {...keepingFields(action)} className="flex flex-col divide-y">
         <SettingRow label="From" htmlFor="spam-try-sender">
           <Input id="spam-try-sender" name="sender" type="email" required maxLength={320} placeholder="kim@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />
+        </SettingRow>
+        <SettingRow label="Sender name" htmlFor="spam-try-name">
+          <Input id="spam-try-name" name="name" maxLength={200} placeholder="Kim Lee" autoComplete="off" className="@min-[34rem]/settings:w-80" />
+        </SettingRow>
+        <SettingRow label="Sent to" htmlFor="spam-try-to">
+          <Input id="spam-try-to" name="to" type="email" maxLength={320} placeholder="sales@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />
         </SettingRow>
         <SettingRow label="Subject" htmlFor="spam-try-subject">
           <Input id="spam-try-subject" name="subject" maxLength={200} autoComplete="off" className="@min-[34rem]/settings:w-80" />

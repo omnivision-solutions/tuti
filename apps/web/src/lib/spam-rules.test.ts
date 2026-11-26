@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { describeSpamRule, matchesPattern, type SpamRule, type SpamRuleInput, spamRuleKey, spamRuleMatches } from "./spam-rules";
+import { describeSpamRule, matchesPattern, type SpamRule, type SpamRuleInput, spamRuleKey, spamRuleMatches, spamRuleValue } from "./spam-rules";
 
 const matches = (field: SpamRule["field"], matcher: SpamRule["matcher"], value: string, input: SpamRuleInput) => spamRuleMatches({ field, matcher, value }, input);
 
@@ -63,6 +63,12 @@ describe("each matcher, ignoring case", () => {
     expect(matchesPattern(`${"*a".repeat(50)}b`, "a".repeat(10_000))).toBe(false);
     expect(performance.now() - started).toBeLessThan(2_000);
   });
+});
+
+test("a value as kept: addresses and domains lowercase, a domain's @ dropped, text as written", () => {
+  expect(spamRuleValue("sender_domain", " @Spam.Example ")).toBe("spam.example");
+  expect(spamRuleValue("sent_to", "Sales@Acme.example")).toBe("sales@acme.example");
+  expect(spamRuleValue("subject", " Facebook Admin ")).toBe("Facebook Admin");
 });
 
 test("a rule in words, and two rules that compare the same are one", () => {

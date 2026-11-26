@@ -40,10 +40,16 @@ export async function setSpamGuidance(projectSlug: string, guidance: string): Pr
 export type SpamTry = { error?: string; spam?: boolean; why?: string };
 
 /** Tries a message against the filter (spam.try): what it would do with it, changing nothing. */
-export async function trySpam(projectSlug: string, message: { sender: string; subject: string; text: string }): Promise<SpamTry> {
+export async function trySpam(projectSlug: string, message: { sender: string; name?: string; to?: string; subject: string; text: string }): Promise<SpamTry> {
   let result: SpamTry = {};
   const state = await asAdmin(projectSlug, "Only project owners and admins can try the spam filter", async (context) => {
-    const { spam, why } = await call(trySpamFilter, context, { sender: String(message?.sender ?? ""), subject: String(message?.subject ?? ""), text: String(message?.text ?? "") });
+    const { spam, why } = await call(trySpamFilter, context, {
+      sender: String(message?.sender ?? ""),
+      name: String(message?.name ?? ""),
+      to: message?.to ? [String(message.to)] : [],
+      subject: String(message?.subject ?? ""),
+      text: String(message?.text ?? ""),
+    });
     result = { spam, why };
   });
   return state.error ? state : result;

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { matchText } from "@/lib/match-text";
 import { SPAM_REASON_KEYS, spamPassedWhy, spamWhy } from "@/lib/spam-reasons";
-import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher } from "@/lib/spam-rules";
+import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleValue } from "@/lib/spam-rules";
 
 import { userWithAddress } from "../inbound";
 import { addSpamRule, allowSender, blockableDomain, spamVerdict } from "../spam";
@@ -84,9 +84,7 @@ const rule = z
     value: z.string().trim().min(1, "Enter a value").max(MAX_SPAM_RULE_VALUE, `Keep it under ${MAX_SPAM_RULE_VALUE} characters`).describe("What it compares with"),
   })
   .transform((input, ctx) => {
-    // Addresses and domains as the filter compares them: lowercase, and "@acme.example" the domain.
-    const lower = ["sender_domain", "sender_address", "sent_to"].includes(input.field) ? input.value.toLowerCase() : input.value;
-    const value = input.field === "sender_domain" ? lower.replace(/^@/, "") : lower;
+    const value = spamRuleValue(input.field, input.value);
     const problem = ruleProblem(input.field, input.matcher, value);
     if (problem) {
       ctx.addIssue({ code: "custom", message: problem, path: ["value"] });
@@ -217,6 +215,8 @@ export const trySpamFilter = defineOperation({
     sender: emailAddress.describe("The address it would come from").meta({ examples: ["e2e-kim@spam.example"] }),
     subject: z.string().trim().max(200).default("").describe("Its subject"),
     text: z.string().trim().max(10_000).default("").describe("Its text"),
+    name: z.string().trim().max(200).default("").describe("The sender's name, as in its From"),
+    to: z.array(emailAddress).max(10).default([]).describe("The addresses it was sent to (its To and Cc)"),
   }),
   output: z.object({
     spam: z.boolean().describe("Whether it would go to Spam").meta({ examples: [true] }),
@@ -228,9 +228,9 @@ export const trySpamFilter = defineOperation({
     why: z.string().describe("The same in words: the reason it would go to Spam (the rule that matched, where one did), or what let it through").meta({ examples: ["it matches your rule “Subject or body contains facebook admin”"] }),
   }).describe("What the filter would do with the message"),
   example: { sender: "e2e-kim@spam.example", subject: "Facebook Admin", text: "Your page will be disabled." },
-  run: async ({ projectId }, { sender: address, subject, text }) => {
+  run: async ({ projectId }, { sender: address, subject, text, name, to }) => {
     const userId = await userWithAddress(projectId, address);
-    const verdict = await spamVerdict(prisma, { projectId, address, userId, proven: true, email: { sender: address, dmarc: "pass" }, subject, text });
+    const verdict = await spamVerdict(prisma, { projectId, address, userId, proven: true, email: { sender: address, dmarc: "pass" }, subject, text, name: name || null, sentTo: to });
     return {
       spam: verdict.spam,
       reason: verdict.reason,

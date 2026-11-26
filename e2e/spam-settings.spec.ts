@@ -63,6 +63,8 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   // One that's there already, however it's written, says so.
   await add("facebook-admin", "Subject or body", "contains");
   await expect(rules).toContainText("That rule is already there");
+  await add("@SPAM-corp.example", "Sender domain", "is");
+  await expect(rules).toContainText("That rule is already there");
   await rules.getByLabel("Value").fill("");
 
   // The AI spam check: Off till it's described, saved with the page's Save changes, and On on the next visit.
@@ -88,6 +90,11 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await attempt.getByRole("button", { name: "Try it" }).click();
   await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: it matches your rule “Sender domain is spam-corp.example”.");
   await expect(attempt.getByLabel("Message")).toHaveValue("This is the facebook admin: your page will be disabled.");
+  await attempt.getByLabel("From").fill("e2e-win@prizes.example");
+  await attempt.getByLabel("Sender name").fill("Big GIVEAWAY team");
+  await attempt.getByLabel("Message").fill("Claim your prize.");
+  await attempt.getByRole("button", { name: "Try it" }).click();
+  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: it matches your rule “Sender name matches pattern *giveaway*”.");
   // The whole screen in one picture: the pane scrolls inside the window, so the window is made tall enough for it.
   await expect(owner.getByText("Guidance saved")).toBeHidden({ timeout: 10_000 });
   await owner.setViewportSize({ width: 1440, height: 1300 });
@@ -133,10 +140,12 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   const api = await apiFor(owner, slug);
   await api("/spam", { allow: ["e2e-forms@relay.example"] }, "PATCH");
   await owner.goto(`/app/${slug}/settings/spam`);
-  await expect(card("Allowed")).toContainText("Their messages skip your rules.");
+  await expect(card("Allowed")).toContainText("Their messages skip your rules on what they say.");
   await expect(card("Allowed").getByRole("listitem")).toHaveText(["e2e-forms@relay.example"]);
   await card("Allowed").getByRole("button", { name: "Actions for e2e-forms@relay.example" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("e2e-forms@relay.example removed")).toBeVisible();
   await expect(owner.getByRole("heading", { name: /^Allowed/, level: 2 })).toHaveCount(0);
+  // Its card went with it: the keyboard's focus is in the rules' value field.
+  await expect(rules.getByLabel("Value")).toBeFocused();
 });

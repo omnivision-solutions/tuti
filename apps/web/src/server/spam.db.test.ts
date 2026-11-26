@@ -80,11 +80,16 @@ async function setup({ hook = false } = {}) {
         .sort((a, b) => a.at.getTime() - b.at.getTime())
         .map(({ said }) => said);
     },
-    /** An address or domain blocked (its "is" rule) or on the allowed list. */
-    list: (sender: string, blocked: boolean) =>
-      blocked
+    /**
+     * An address or domain blocked (its "is" rule) or on the allowed list. Then a few milliseconds pass, so what's
+     * written next sorts after it in `senders`, which goes by the time each was written.
+     */
+    list: async (sender: string, blocked: boolean) => {
+      await (blocked
         ? prisma.spamRule.create({ data: { projectId, field: sender.includes("@") ? "sender_address" : "sender_domain", matcher: "is", value: sender } })
-        : prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }),
+        : prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    },
     /** How many new conversations the project's webhooks were told of. */
     told: () => prisma.webhookDelivery.count({ where: { webhook: { projectId }, event: "conversation.created" } }),
   };
