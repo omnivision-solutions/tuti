@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { nativeLanguageName } from "@/lib/language-name";
-import { previewToShow, type ReplyPreview, wantsPreview } from "@/lib/reply-preview";
+import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "@/lib/reply-preview";
 import { draftReplyWithAi, previewReplyTranslation, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
@@ -153,7 +153,8 @@ export function ReplyForm({
       if (stale) {
         return;
       }
-      setPreview(
+      // Cancelled (stale) once a send starts; a failure that still replaces a failed send's keeps its Send and close.
+      setPreview((shown) => previewAfter(shown,
         "error" in result
           ? { for: toTranslate, failed: result.error }
           : "failed" in result
@@ -162,7 +163,7 @@ export function ReplyForm({
               ? { for: toTranslate, ...result.preview }
               : // Nothing in it to translate (a link, a number): it goes as written.
                 { for: toTranslate, asWritten: true },
-      );
+      ));
     }, PREVIEW_AFTER_MS);
     return () => {
       stale = true;

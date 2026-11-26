@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { previewToShow, type ReplyPreview, wantsPreview } from "./reply-preview";
+import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "./reply-preview";
 
 test("a failed text isn't asked again while its failure shows; edited away and back, it is", () => {
   const failed: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer" };
@@ -24,4 +24,13 @@ test("a preview in a language that's no longer the customer's isn't shown, and n
   expect(previewToShow({ for: "Thanks!", text: "Danke!", language: "de" }, "Thanks!", "fr")).toBeUndefined();
   expect(wantsPreview(undefined, undefined)).toBe(false);
   expect(wantsPreview(undefined, "")).toBe(false);
+});
+
+test("a late preview failure in place of a failed Send and close keeps the close; anything else replaces it as it is", () => {
+  const sent: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer", close: true };
+  const late: ReplyPreview = { for: "Thanks!", failed: "The translation failed its checks" };
+  expect(previewAfter(sent, late)).toEqual({ ...late, close: true });
+  expect(previewAfter(sent, { for: "Thanks a lot!", failed: "No" })).toEqual({ for: "Thanks a lot!", failed: "No" });
+  expect(previewAfter(sent, { for: "Thanks!", text: "Danke!", language: "de" })).toEqual({ for: "Thanks!", text: "Danke!", language: "de" });
+  expect(previewAfter(undefined, late)).toBe(late);
 });

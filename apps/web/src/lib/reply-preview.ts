@@ -10,6 +10,14 @@ export function previewToShow(preview: ReplyPreview | undefined, text: string | 
 }
 
 /**
+ * A preview that's come in, in place of the one shown: a failure in place of a failed send of the same text keeps how it was
+ * being sent (Send and close), so "Send in English" still closes it.
+ */
+export function previewAfter(shown: ReplyPreview | undefined, next: ReplyPreview): ReplyPreview {
+  return "failed" in next && shown && "failed" in shown && shown.for === next.for && shown.close ? { ...next, close: shown.close } : next;
+}
+
+/**
  * Whether to ask for a preview of this text: not while its failure is shown (with "Send in English"), which asking again
  * by itself would only pay for again, nor while it's being sent (the send translates it, and its outcome is what shows);
  * once the text changes, or the preview is reset, it's asked for.
