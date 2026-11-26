@@ -812,6 +812,12 @@
           "minimum": 0,
           "description": "Credits every project is given once, lasting like a top-up"
         },
+        "perEmail": {
+          "default": 0.2,
+          "type": "number",
+          "minimum": 0,
+          "description": "Credits each email past the plan's monthly allowance spends"
+        },
         "low": {
           "default": 100,
           "type": "number",

@@ -12,6 +12,7 @@ export const credits = z
     perUsageDollar: z.number().positive().describe("Credits a dollar of model cost spends (with perTopupDollar's default, no margin)").default(100),
     topupExpiryDays: z.number().int().min(0).describe("Whole days a top-up's credits last; 0: for good").default(365),
     free: z.number().min(0).describe("Credits every project is given once, lasting like a top-up").default(0),
+    perEmail: z.number().min(0).describe("Credits each email past the plan's monthly allowance spends").default(0.2),
     low: z.number().min(0).describe("Under this balance owners and admins are emailed (and once it's out); 0: only once it's out").default(100),
   })
   .prefault({});

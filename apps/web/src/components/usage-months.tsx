@@ -15,29 +15,33 @@ export async function UsageMonths({ projectId }: { projectId: string }) {
   return (
     <div id="usage" className="flex scroll-mt-8 flex-col gap-7">
       {months.length === 0 ? (
-        <SettingsCard title="AI usage">
+        <SettingsCard title="Usage">
           <SettingBlock>
-            <p className="text-muted-foreground">No AI use yet.</p>
+            <p className="text-muted-foreground">No usage yet.</p>
           </SettingBlock>
         </SettingsCard>
       ) : (
-        months.map((month) => (
+        months.map((month) => {
+          // Emails paid with credits are a row of their own: not AI requests.
+          const emails = month.features.find((feature) => feature.feature === "emails")?.requests ?? 0;
+          return (
           <SettingsCard
             key={month.month}
-            title={`AI usage · ${monthName(month.month)}`}
+            title={`Usage · ${monthName(month.month)}`}
             description={
               <>
                 {count(month.requests)} AI {month.requests === 1 ? "request" : "requests"}, {count(month.inputTokens + month.outputTokens)} tokens
                 {month.unpriced > 0 && `; ${count(month.unpriced)} without a price from the provider${inCredits ? `, charged no credits` : ""}`}
+                {emails > 0 && `; ${count(emails)} ${emails === 1 ? "email" : "emails"} past the plan's`}
               </>
             }
             action={<span className="shrink-0 text-sm font-medium tabular-nums">{inCredits ? `${credits(month.credits)} credits` : money(month.cost)}</span>}
           >
-            <table className="w-full text-sm" aria-label={`AI use in ${monthName(month.month)}`}>
+            <table className="w-full text-sm" aria-label={`Use in ${monthName(month.month)}`}>
               <thead className="text-left text-xs text-muted-foreground">
                 <tr className="*:px-4 *:pt-3 *:pb-1 *:font-medium @min-[34rem]/settings:*:px-5">
                   <th>Feature</th>
-                  <th className="text-right">Requests</th>
+                  <th className="text-right">Requests or emails</th>
                   <th className="hidden text-right sm:table-cell">Tokens</th>
                   <th className="text-right">{inCredits ? "Credits" : "Cost"}</th>
                 </tr>
@@ -54,7 +58,8 @@ export async function UsageMonths({ projectId }: { projectId: string }) {
               </tbody>
             </table>
           </SettingsCard>
-        ))
+          );
+        })
       )}
     </div>
   );

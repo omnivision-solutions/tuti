@@ -1346,9 +1346,14 @@ model ProjectEmailMonth {
   projectId   String
   /// The month's first day.
   month       DateTime  @db.Date
+  /// The emails sent this month that the plan includes (those paid with credits are paidEmails).
   emails      Int       @default(0)
   /// When its owners and admins were told it reached its limit this month.
   limitToldAt DateTime?
+  /// Emails past the plan's included ones, paid with the project's credits (claimProjectEmail), and the
+  /// credits charged, at the rate of the time (credits.perEmail).
+  paidEmails  Int       @default(0)
+  paidCredits Decimal   @default(0) @db.Decimal(20, 6)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -3132,7 +3137,7 @@ model AiUsage {
   @@map("ai_usage")
 }
 
-/// What a credit pays for: AI requests, or (later) email to the project's users.
+/// What a credit grant pays for: AI requests (and emails past a plan's included ones), or a plan license month's included emails.
 enum CreditKind {
   AI
   EMAIL

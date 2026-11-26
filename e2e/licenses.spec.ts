@@ -2,12 +2,15 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 
+import pg from "pg";
+
 import { appsumoWebhook } from "../packages/testkit/src/appsumo-fake";
 import { checkpoints } from "./checkpoint";
+import { spendCredits } from "./credits";
 import { useUpLicenseEmails } from "./email-days";
 import { CLOUD_URL, cloudEnv, cloudPortalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { expect, test } from "./fixtures";
-import { createProject, fillSignUp, newPerson } from "./helpers";
+import { createProject, fillSignUp, newPerson, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 
 /** A buyer's code from AppSumo's sign-in (the fake's), for license `key`. */
@@ -153,6 +156,7 @@ test("Billing says a project's plan comes from its license and unassigns it, ask
   await expect(owner.getByText(/^Resets \d{1,2} [A-Z][a-z]+( \d{4})?$/)).toBeVisible();
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("4,000 of 4,000 left")).toBeVisible();
   await expect(owner.getByRole("progressbar", { name: "Emails left" })).toHaveAttribute("aria-valuenow", "4000");
+  await expect(owner.getByText("Then 0.2 credits each.", { exact: true })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-license");
   // On a phone: nothing runs off the side, and the license's "⋯" stays beside the plan's name.
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -344,22 +348,55 @@ test("a licensed project whose month's emails are used: Billing says none are le
   await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
   await useUpLicenseEmails(slug);
+  // Past the license's emails, the project's credits pay for more (its free ones, given as Billing first shows them):
+  // the reply doesn't wait.
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.getByRole("group", { name: "Emails" }).getByText("0 of 4,000 left", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Then 0.2 credits each.", { exact: true })).toBeVisible();
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.getByRole("textbox", { name: "Reply" })).toBeVisible();
+  await expect(owner.locator(".inbox-email-waits")).toHaveCount(0);
+  // Without credits to pay for more, it waits for the license's next month.
+  await spendCredits(slug);
 
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByRole("group", { name: "Emails" }).getByText("0 of 4,000 left", { exact: true })).toBeVisible();
+  // Out of credits, the banner says what stops: on a plan whose emails past its allowance spend credits, those too.
+  await expect(owner.getByRole("alert").filter({ hasText: "This project is out of credits" })).toContainText(
+    "AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and emails past the plan's monthly allowance are paused until it has more.",
+  );
   // Billing and the inbox write the day alike, short as en-GB has it ("5 Sept").
   const until = /^Resets (\d{1,2} [A-Z][a-z]+)( \d{4})?$/;
   await expect(owner.getByText(until)).toBeVisible();
   const [, day] = until.exec((await owner.getByText(until).textContent())!)!;
   await owner.goto(`/app/${slug}/inbox/1`);
-  await expect(owner.locator(".inbox-email-waits")).toHaveText(`This month's emails from your license are used: replies are emailed on ${day}. Billing`);
+  // Credits are what's missing: buying them sends it now.
+  await expect(owner.locator(".inbox-email-waits")).toHaveText(`This month's included emails are used and not enough credits are left: buy credits to email replies now, or they go on ${day}. Billing`);
   await checkpoint(owner, "reply-waits-for-license-month");
   // Sent, it's saved, its email held: said as it's sent, and under the reply, short, with the whole reason as its title.
-  const why = `Emailed ${day}: your license's emails for this month are used (Settings → Billing)`;
+  const why = `Emailed ${day} unless you buy credits: this month's included emails are used and not enough credits are left (Settings → Billing)`;
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText(why);
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByTitle(why).locator("[aria-hidden]")).toHaveText(`Emailed ${day}`);
   await expect(owner.getByTitle(why).locator(".sr-only")).toHaveText(why);
+
+  // A member can't buy credits (Billing is the owners' and admins'): told who can, with no link to Billing.
+  const member = await signUp(browser, CLOUD_URL, "Mo Member");
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`INSERT INTO team_member (id, "projectId", "userId", role) SELECT gen_random_uuid()::text, p.id, u.id, 'MEMBER' FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`, [slug, member.email]);
+  } finally {
+    await db.end();
+  }
+  await member.goto(`/app/${slug}/inbox/1`);
+  const waits = member.locator(".inbox-email-waits");
+  await expect(waits).toHaveText(`This month's included emails are used and not enough credits are left: replies are emailed on ${day} unless an owner or admin buys credits.`);
+  await expect(waits.getByRole("link", { name: "Billing" })).toHaveCount(0);
+  const memberWhy = `Emailed ${day} unless an owner or admin buys credits: this month's included emails are used and not enough credits are left`;
+  await member.getByRole("textbox", { name: "Reply" }).fill("One more thing: it's under Invoices too.");
+  await member.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(member.getByRole("region", { name: /Notifications/ })).toContainText(memberWhy);
 });

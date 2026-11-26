@@ -228,7 +228,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const emailable = !conversation.spam && !conversation.sample && !!person.email && !blocked;
   const waitsForPause = emailPaused && emailable;
   const month = !emailPaused && emailable ? await emailsThisMonth(projectId) : null;
-  const monthFull = month?.left === 0;
+  // Past what the plan includes, emails a paid plan's credits pay for still go: only those it can't wait.
+  const monthFull = month?.held === true;
   // On a license, its emails come with its next month, not the calendar's.
   const licenseMonth = month?.until && formatDay(month.until);
   const capped = !emailPaused && emailable && !monthFull && (await cappedProjects()).includes(projectId);
@@ -242,6 +243,21 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         warning: "Your project's email is paused: replies are emailed once it's on again.",
         link: admin ? { label: "Settings", href: `/app/${slug}/settings/support` } : undefined,
       }
+    : monthFull && month?.perEmail != null
+      ? // Past the included ones, credits pay for more (claimProjectEmail): it's credits that are missing, and buying them sends it now.
+        // Only owners and admins can buy them (Billing is theirs): everyone else is told who can.
+        admin
+        ? {
+            status: `Emailed ${licenseMonth ?? "next month"}`,
+            why: `Emailed ${licenseMonth ?? "next month"} unless you buy credits: this month's included emails are used and not enough credits are left (Settings → Billing)`,
+            warning: `This month's included emails are used and not enough credits are left: buy credits to email replies now, or they go ${licenseMonth ? `on ${licenseMonth}` : "next month"}.`,
+            link: { label: "Billing", href: `/app/${slug}/settings/billing` },
+          }
+        : {
+            status: `Emailed ${licenseMonth ?? "next month"}`,
+            why: `Emailed ${licenseMonth ?? "next month"} unless an owner or admin buys credits: this month's included emails are used and not enough credits are left`,
+            warning: `This month's included emails are used and not enough credits are left: replies are emailed ${licenseMonth ? `on ${licenseMonth}` : "next month"} unless an owner or admin buys credits.`,
+          }
     : monthFull && licenseMonth
       ? {
           status: `Emailed ${licenseMonth}`,

@@ -22,3 +22,20 @@ test("an AI_CREDITS variable still set stops start-up, naming its key", () => {
   vi.stubEnv("AI_CREDITS_LOW", "50");
   expect(() => checkConfig()).toThrow("AI_CREDITS → credits.enabled, AI_CREDITS_LOW → credits.low");
 });
+
+test("what credits pay for names emails past the allowance only for a project whose emails spend them: a paid plan's, with plans and credits on", async () => {
+  const { billingFile } = await import("@tuti/testkit");
+  const { emailsSpendCredits } = await import("./plans");
+  const { creditFeatures } = await import("./credits");
+  expect(creditFeatures()).toBe("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot and Verify");
+  expect(creditFeatures(true)).toBe("AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and emails past the plan's monthly allowance");
+  // Self-hosted (no billing file): never.
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: true } }));
+  expect(emailsSpendCredits("pro")).toBe(false);
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect([emailsSpendCredits("pro"), emailsSpendCredits(null), emailsSpendCredits("free")]).toEqual([true, false, false]);
+  // A plan with no email limit (the default file's Business) never pays for an email: its emails don't wait on credits.
+  expect(emailsSpendCredits("business")).toBe(false);
+  vi.stubEnv("TUTI_CONFIG", configFile({ credits: { enabled: false } }));
+  expect(emailsSpendCredits("pro")).toBe(false);
+});
