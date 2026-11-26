@@ -38,3 +38,28 @@ in `APP_ID`, so a fork builds its own app without changing this directory. Expo'
 with only the EAS environment's variables, so `EAS_PROJECT_ID` and `EXPO_OWNER` are set there too, in each
 environment (development, preview, production): a build without the project would get no push token, and is refused. Android's push tokens need the app's
 Firebase config: `GOOGLE_SERVICES_JSON` is its path, an EAS file variable on Expo's builders.
+
+## Builds and updates
+
+Three build profiles in `eas.json`, each on its own update channel. Run them from `apps/mobile`, with `EXPO_OWNER` and
+`EAS_PROJECT_ID` set as for any build:
+
+```sh
+npx eas-cli build --profile development --platform ios       # a simulator build that loads its JavaScript from Metro
+npx eas-cli build --profile development --platform android   # the same, an APK
+npx eas-cli build --profile preview --platform all           # installable builds for testing: an APK, and an iPhone build for registered devices
+npx eas-cli build --profile production --platform all        # store builds (submitted by hand, not from here)
+```
+
+Fixes to the app's own code (JavaScript, images) go out without a store review as an over-the-air update, to the
+builds on one channel, with that channel's EAS environment (`--environment` loads the same variables and files the
+build had):
+
+```sh
+npx eas-cli update --channel preview --environment preview --message "What changed"
+npx eas-cli update --channel production --environment production --message "What changed"
+```
+
+An update reaches only builds with the same native code: the runtime version is the fingerprint of everything native
+(the native modules, their patches in `patches/`, and `app.config.ts`). A change to any of those needs a new build, and
+updates published after it go to the new builds only.
