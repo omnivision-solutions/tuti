@@ -427,3 +427,24 @@ test("the changelog in German: its list, tags, months, pages, an entry's page, t
   await expect(member.locator("[data-sonner-toast]", { hasText: "Kommentar gelöscht" })).toBeVisible();
   await expect(thread.getByRole("heading", { name: "0 Kommentare" })).toBeVisible();
 });
+
+test("on a phone, a changelog page with both its page links fits, in French's long words", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "fr", live: true, newPages: "manual" }] }, "PATCH");
+  // 41 entries: page 2 of 3 has both Newer and Older.
+  for (let n = 1; n <= 41; n++) {
+    await api("/changelog", { title: `Update ${n}`, body: "Small fixes." });
+  }
+  await Promise.all(Array.from({ length: 41 }, (_, i) => api(`/changelog/${i + 1}/publish`, {})));
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/fr/changelog/page/2");
+  await expect(reader.getByRole("link", { name: "Entrées plus récentes" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Entrées plus anciennes" })).toBeVisible();
+  expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
