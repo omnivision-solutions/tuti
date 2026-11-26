@@ -254,3 +254,14 @@ test("a teammate taken off the team: each conversation they had unassigned in it
   }
   expect(await activity(other)).toEqual([]);
 });
+
+test("a snooze a teammate ends by hand is a row of theirs; ending one that isn't set writes nothing", async () => {
+  const { admin, activity } = await setup();
+  const { number } = await call(createConversation, admin, { email: "e2e-sam@example.com", body: "Hello" });
+  await call(updateConversation, admin, { number, snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
+  await call(updateConversation, admin, { number, snoozedUntil: null });
+  expect((await activity(number))[0]).toBe("Olive Owner ended its snooze");
+  const rows = (await activity(number)).length;
+  await call(updateConversation, admin, { number, snoozedUntil: null });
+  expect(await activity(number)).toHaveLength(rows);
+});
