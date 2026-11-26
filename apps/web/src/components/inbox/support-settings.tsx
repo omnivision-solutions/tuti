@@ -50,9 +50,21 @@ export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; o
 
 /**
  * Translate conversations and the team's language (docs/plan.md L22), each saved as it changes. Without AI on the server
- * the switch can't be turned on, and says why.
+ * the switch can't be turned on (only off), and says why; what it costs only where credits are on.
  */
-export function TranslationSettings({ projectSlug, translate, teamLanguage, ai }: { projectSlug: string; translate: boolean; teamLanguage: string; ai: boolean }) {
+export function TranslationSettings({
+  projectSlug,
+  translate,
+  teamLanguage,
+  ai,
+  credits,
+}: {
+  projectSlug: string;
+  translate: boolean;
+  teamLanguage: string;
+  ai: boolean;
+  credits: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const [on, setOn] = useState(translate);
   const [language, setLanguage] = useState(teamLanguage);
@@ -73,7 +85,11 @@ export function TranslationSettings({ projectSlug, translate, teamLanguage, ai }
     <>
       <SettingRow
         label="Translate conversations"
-        description={ai || on ? "Customers' messages are shown in your team's language, and your replies go out in theirs. Uses AI credits." : "Needs AI, which isn't set up on this server."}
+        description={
+          ai
+            ? `Customers' messages are shown in your team's language, and your replies go out in theirs.${credits ? " Uses AI credits." : ""}`
+            : "Needs AI, which isn't set up on this server."
+        }
         htmlFor="translate-conversations"
         inline
       >
@@ -89,7 +105,7 @@ export function TranslationSettings({ projectSlug, translate, teamLanguage, ai }
           }}
         />
       </SettingRow>
-      <SettingRow label={<span id="team-language-label">Team language</span>} description="What your team reads and writes conversations in." inline>
+      <SettingRow label={<span id="team-language-label">Team language</span>} description="What your team reads and writes conversations in." htmlFor="team-language" inline>
         <Select
           items={items}
           value={language}
@@ -103,7 +119,7 @@ export function TranslationSettings({ projectSlug, translate, teamLanguage, ai }
             save({ teamLanguage: next }, () => setLanguage(previous), "Team language saved");
           }}
         >
-          <SelectTrigger className="w-32 @min-[20rem]/settings:w-40" aria-labelledby="team-language-label">
+          <SelectTrigger id="team-language" className="w-32 @min-[20rem]/settings:w-40" aria-labelledby="team-language-label" aria-describedby="team-language-description">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

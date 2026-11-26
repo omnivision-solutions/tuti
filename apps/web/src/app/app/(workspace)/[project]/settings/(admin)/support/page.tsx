@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { pausedNotice } from "@tuti/email";
-import { aiEnabled } from "@tuti/shared";
+import { aiEnabled, creditsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CopyValue } from "@/components/dns-setup";
@@ -42,7 +42,7 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
     <SettingsPane title="Inbox and email">
       <SettingsCard title="Inbox">
         <SupportInboxSwitch projectSlug={project.slug} on={settings.inbox} />
-        <TranslationSettings projectSlug={project.slug} translate={settings.translate} teamLanguage={settings.teamLanguage} ai={aiEnabled()} />
+        <TranslationSettings projectSlug={project.slug} translate={settings.translate} teamLanguage={settings.teamLanguage} ai={aiEnabled()} credits={creditsEnabled()} />
       </SettingsCard>
       {settings.email && (
         <SettingsCard title="Email">
