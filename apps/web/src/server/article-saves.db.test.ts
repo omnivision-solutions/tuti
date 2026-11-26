@@ -1,5 +1,5 @@
 import { type Doc, editedSections, toPlainText } from "@tuti/content";
-import { docOf, hasTeammateEdit, lockProject } from "@tuti/jobs";
+import { docOf, hasTeammateEdit, landEdit, lockProject } from "@tuti/jobs";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -751,4 +751,19 @@ test("an editor that sent the newest as it is (no new version) goes on from the 
   const more = rewrite("Dark", "Dark is here, in Settings.")(copied);
   await call(updateArticle, team(), { slug: article.slug, content: more, revision: saved.revision!, edited: editedSections(copied, more) });
   expect(await changes(article.id)).toBe(toPlainText(more));
+});
+
+test("an edit written on an older text that another edit already made (two pull requests, one change) lands nothing", async () => {
+  const article = await sectioned();
+  const before = await prisma.article.findUniqueOrThrow({ where: { id: article.id }, select: { body: true, content: true, changes: { select: { body: true, content: true } } } });
+  const writtenOn = docOf(before.changes ?? before);
+  const change = rewrite("Light", "[Screenshot: the Light theme]");
+  const first = await landArticleEdit(project.id, article.id, 63, change);
+  const second = await prisma.codeChangeAction.create({ data: { codeChangeId: first.codeChangeId, kind: "ARTICLE_EDIT", articleId: article.id, probability: 0.9, reason: "PR 64's edit" } });
+  const outcome = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, project.id);
+    return landEdit(tx, article.id, second.id, writtenOn, change(writtenOn));
+  });
+  expect(outcome).toBe("nothing");
+  expect(await prisma.articleRevision.count({ where: { codeChangeActionId: second.id } })).toBe(0);
 });
