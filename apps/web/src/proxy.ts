@@ -11,7 +11,8 @@ import { destinationKey, redirectKey, redirectLocation } from "@/lib/portal-redi
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
 import { redirectFor } from "@/server/portal-redirects";
-import { LANGUAGE, languagePrefix, ownAddress, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
+import { LANGUAGE, languagePrefix, ownAddress, preferredLanguage, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
+import { LANGUAGE_COOKIE } from "@/lib/reader-language";
 import { isOperationPage, portalLanguages } from "@/server/language-addresses";
 import type { Language } from "@tuti/shared/languages";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
@@ -241,6 +242,19 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
     const response = NextResponse.redirect(redirectLocation(inLanguage.path, origin, request.nextUrl.search), 307);
     response.headers.set("cache-control", "no-store");
     return framedByApp(response);
+  }
+  // "Send visitors to their language" (off by default): a first visit to the portal's home (no language chosen in this
+  // browser yet) goes to the live language the browser asks for (Accept-Language); never other pages, nor Customize's
+  // preview. Kept as this browser's choice (the switcher's cookie), so the visit after stays where the reader went.
+  const framed = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value || request.headers.get("sec-fetch-dest") === "iframe";
+  if (reading && address === "/" && languages?.sendVisitors && !request.cookies.has(LANGUAGE_COOKIE) && !framed) {
+    const wanted = preferredLanguage(request.headers.get("accept-language"), [languages.default, ...languages.live]);
+    if (wanted && wanted !== languages.default) {
+      const response = NextResponse.redirect(redirectLocation(languagePrefix(wanted), origin, request.nextUrl.search), 307);
+      response.headers.set("cache-control", "no-store");
+      response.cookies.set(LANGUAGE_COOKIE, wanted, { httpOnly: true, sameSite: "lax", secure: origin.startsWith("https:"), maxAge: 60 * 60 * 24 * 365, path: "/" });
+      return framedByApp(response);
+    }
   }
   const language = inLanguage && (live || preview) ? inLanguage.code : null;
   const prefix = language ? languagePrefix(language) : "";

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext } from "react";
 
 import { authClientAt } from "@/lib/auth-client";
@@ -53,4 +53,12 @@ export function usePortalPath(): string {
   const own = base && (path === base || path.startsWith(`${base}/`)) ? path.slice(base.length) || "/" : path;
   const inLanguage = prefix ? splitLanguage(own) : null;
   return inLanguage ? inLanguage.path : own;
+}
+
+/** This page's address in another language, by its prefix ("" for the default language's): the language switcher's. */
+export function useAddressIn(): (prefix: string) => string {
+  const { base } = useContext(PortalBase);
+  const path = usePortalPath();
+  const search = useSearchParams().toString();
+  return (prefix) => `${withBase(base, withLanguage(prefix, path))}${search ? `?${search}` : ""}`;
 }

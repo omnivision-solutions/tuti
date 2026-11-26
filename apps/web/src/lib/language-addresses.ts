@@ -55,3 +55,27 @@ export function languageFrom(headers: Headers | undefined | null): { language: L
   const prefix = headers?.get(LANGUAGE.prefix) ?? "";
   return { language: isLanguage(language) ? language : null, prefix: BY_PREFIX.has(prefix) ? prefix : "" };
 }
+
+/**
+ * The language of `offered` an Accept-Language header asks for most (q-values, then order): a code matched whole, else by its
+ * first part (de-AT → de, pt → pt-BR, zh-Hans-CN → zh-CN); null when it asks for none of them.
+ */
+export function preferredLanguage(accept: string | null, offered: Language[]): Language | null {
+  const asked = (accept ?? "")
+    .split(",")
+    .map((part, index) => {
+      const [tag = "", ...params] = part.split(";").map((s) => s.trim().toLowerCase());
+      const q = Number(params.find((p) => p.startsWith("q="))?.slice(2) ?? 1);
+      return { tag, q: Number.isFinite(q) ? q : 0, index };
+    })
+    .filter(({ tag, q }) => tag && tag !== "*" && q > 0)
+    .sort((a, b) => b.q - a.q || a.index - b.index);
+  const primary = (tag: string) => tag.split("-")[0];
+  for (const { tag } of asked) {
+    const match = offered.find((code) => code.toLowerCase() === tag) ?? offered.find((code) => primary(code.toLowerCase()) === primary(tag));
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}

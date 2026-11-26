@@ -1,11 +1,14 @@
 "use client";
 
+import type { Language } from "@tuti/shared/languages";
 import { MenuIcon, XIcon } from "lucide-react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { feedbackHref, PORTAL_PARTS } from "@/components/portal-nav";
+import { LanguageList } from "@/components/portal-language";
 import { PortalLogo, usePortalLook } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -56,7 +59,7 @@ const within = (path: string, href: string) => path === href || path.startsWith(
 /**
  * The header's menu on phones and tablets (wider screens show it all already): the current part's
  * navigation (from the page: the docs' tree, the changelog's entries by date; the boards on Feedback), then the team's header links
- * (Customize → Navigation), which the header leaves out at those widths. Opening a link
+ * (Customize → Navigation), which the header leaves out at those widths, and on phones the languages. Opening a link
  * closes it. Left out when there's nothing to put in it.
  */
 export function PortalMenu({
@@ -65,6 +68,8 @@ export function PortalMenu({
   boards,
   parts = false,
   newChangelog = false,
+  languages = [],
+  language,
 }: {
   name: string;
   homeHref: string;
@@ -73,7 +78,13 @@ export function PortalMenu({
   parts?: boolean;
   /** The changelog has an announcement this reader hasn't seen (the header's dot, in the menu on phones). */
   newChangelog?: boolean;
+  /** The live languages to choose from on phones (the header's switcher, with more than one), and the one the page is in. */
+  languages?: Language[];
+  language?: Language;
 }) {
+  const t = useTranslations("header");
+  // Its own text's language, the messages'.
+  const lang = useLocale();
   const [open, setOpen] = useState(false);
   const path = usePortalPath();
   const at = usePortalHref();
@@ -102,7 +113,8 @@ export function PortalMenu({
       })}
     </nav>
   ) : null;
-  if (!part && headerLinks.length === 0 && !parts) {
+  const languageList = language && languages.length > 1;
+  if (!part && headerLinks.length === 0 && !parts && !languageList) {
     return null;
   }
 
@@ -114,7 +126,7 @@ export function PortalMenu({
   };
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Menu" className={cn("md:hidden", !part && headerLinks.length === 0 && "sm:hidden")} />}>
+      <SheetTrigger render={<Button variant="ghost" size="icon" lang={lang} aria-label={t("menu")} className={cn("md:hidden", !part && headerLinks.length === 0 && "sm:hidden")} />}>
         <MenuIcon />
       </SheetTrigger>
       {/* The whole screen wherever it shows (below tablet width), whatever's selected in it closing it if it's a link. */}
@@ -125,10 +137,10 @@ export function PortalMenu({
         className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none"
       >
         <div className="flex items-center justify-between gap-2 border-b px-6 py-2">
-          <SheetTitle className="sr-only">Menu</SheetTitle>
+          <SheetTitle lang={lang} className="sr-only">{t("menu")}</SheetTitle>
           <SheetDescription className="sr-only">{name}: where to go from here.</SheetDescription>
           <PortalLogo name={name} href={homeHref} />
-          <SheetClose render={<Button variant="ghost" size="icon-sm" aria-label="Close the menu" />}>
+          <SheetClose render={<Button variant="ghost" size="icon-sm" lang={lang} aria-label={t("closeMenu")} />}>
             <XIcon />
           </SheetClose>
         </div>
@@ -164,6 +176,7 @@ export function PortalMenu({
           )}
           {/* A size up from the sidebar: these are taps on a phone. */}
           {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
+          {languageList && <LanguageList languages={languages} current={language} />}
           {headerLinks.length > 0 && (
             <nav aria-label="Links" className="flex flex-col gap-0.5 px-4 py-5">
               {headerLinks.map((link, i) => (

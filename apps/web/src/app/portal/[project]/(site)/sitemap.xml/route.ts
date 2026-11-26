@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
 import { languagePrefix } from "@/lib/language-addresses";
-import { portalLanguages } from "@/server/language-addresses";
+import { pageLanguages } from "@/server/language-addresses";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { shownOperations } from "@/server/api-reference-queries";
@@ -146,7 +146,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
     ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt, teamText: true })),
   ].slice(0, MAX_URLS);
-  const [portal, languages] = await Promise.all([portalAddress(slug), portalLanguages(slug)]);
+  const [portal, languages] = await Promise.all([portalAddress(slug), pageLanguages(slug)]);
   const live = languages?.live ?? [];
   const escape = (url: string) => url.replace(/&/g, "&amp;");
   // A page in the live languages too (docs/plan.md, Languages): each language's address listed, each with every language's

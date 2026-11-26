@@ -190,7 +190,7 @@ test("Next.js's files are served under /_tuti on every host (a team's site forwa
 describe("language addresses (docs/plan.md, Languages: L3)", () => {
   beforeEach(() => {
     // German live, French offline (stored), Spanish never added.
-    portal.languages = { default: "en", live: ["de"], stored: ["de", "fr"] };
+    portal.languages = { default: "en", live: ["de"], stored: ["de", "fr"], sendVisitors: false };
   });
   const visit = (path: string, init: { method?: string; cookie?: string } = {}) =>
     proxy(new NextRequest(`http://acme.tuti.example${path}`, { method: init.method, headers: { host: "acme.tuti.example", ...(init.cookie && { cookie: init.cookie }) } }));
@@ -284,7 +284,7 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     expect(await where("/fr/legacy")).toBe("307 https://acme.tuti.example/legacy");
     expect(await where("/old-kb")).toBe("308 https://acme.tuti.example/kb2");
     // Once French is live, the rule to it goes on.
-    portal.languages = { default: "en", live: ["de", "fr"], stored: ["de", "fr"] };
+    portal.languages = { default: "en", live: ["de", "fr"], stored: ["de", "fr"], sendVisitors: false };
     expect(await where("/docs/payments")).toBe("308 https://acme.tuti.example/fr/docs/payments?from=old");
   });
 
@@ -302,7 +302,7 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     // Forms posted there are the default language's.
     expect(await where("/fr/feedback/ideas", { method: "POST" })).toBe("/feedback/ideas en -");
     // A language that goes offline sends its live addresses away too.
-    portal.languages = { default: "en", live: [], stored: ["de", "fr"] };
+    portal.languages = { default: "en", live: [], stored: ["de", "fr"], sendVisitors: false };
     expect(await where("/de/docs/billing")).toBe("307 https://acme.tuti.example/docs/billing");
   });
 
@@ -323,8 +323,28 @@ describe("language addresses (docs/plan.md, Languages: L3)", () => {
     expect(await where("/es/docs/billing", { cookie: "tuti_preview_reader=team" })).toBe("307 https://acme.tuti.example/docs/billing");
   });
 
+  test("Send visitors to their language: a first visit to the home goes to the live language the browser asks for, kept as its choice", async () => {
+    const home = (path: string, headers: Record<string, string> = {}) =>
+      proxy(new NextRequest(`http://acme.tuti.example${path}`, { headers: { host: "acme.tuti.example", ...headers } }));
+    const browser = { "accept-language": "de-DE,de;q=0.9,en;q=0.8" };
+    // Off by default.
+    expect((await home("/", browser)).headers.get("x-middleware-rewrite")).toBeTruthy();
+    portal.languages = { default: "en", live: ["de"], stored: ["de", "fr"], sendVisitors: true };
+    const sent = await home("/?ref=ad", browser);
+    expect([sent.status, sent.headers.get("location"), sent.headers.get("cache-control")]).toEqual([307, "https://acme.tuti.example/de?ref=ad", "no-store"]);
+    expect(sent.cookies.get("tuti_language")?.value).toBe("de");
+    // Not once this browser has a language (chosen, or sent before), not other pages, not for the default language or one
+    // that isn't live (French), nor in Customize's preview.
+    expect((await home("/", { ...browser, cookie: "tuti_language=en" })).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/roadmap", browser)).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/", { "accept-language": "en-GB,de;q=0.5" })).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/", { "accept-language": "fr" })).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/", { ...browser, "sec-fetch-dest": "iframe" })).headers.get("x-middleware-rewrite")).toBeTruthy();
+    expect((await home("/de", browser)).headers.get("x-middleware-request-x-tuti-language")).toBe("de");
+  });
+
   test("a portal with no other languages: its prefixes, its default.s own too, go to the default language.s page", async () => {
-    portal.languages = { default: "de", live: [], stored: [] };
+    portal.languages = { default: "de", live: [], stored: [], sendVisitors: false };
     expect(await where("/docs")).toBe("/docs de -");
     expect(await where("/de/docs")).toBe("307 https://acme.tuti.example/docs");
   });

@@ -33,7 +33,7 @@ test("a reader opens the portal's German addresses while German is live; an offl
   await checkpoint(reader, "german-roadmap");
   // Its links, made on the server and in the browser, keep the language; signing in comes back to the page in it.
   await expect(reader.getByRole("link", { name: "Acme" }).first()).toHaveAttribute("href", "/de");
-  await expect(reader.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", `/de/sign-in?next=${encodeURIComponent("/de/roadmap")}`);
+  await expect(reader.getByRole("banner").getByRole("link", { name: "Anmelden" })).toHaveAttribute("href", `/de/sign-in?next=${encodeURIComponent("/de/roadmap")}`);
   // The portal's links keep the reader in German.
   await reader.getByRole("link", { name: "Changelog" }).first().click();
   await expect(reader).toHaveURL(`${portalUrl(slug)}/de/changelog`);

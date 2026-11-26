@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { languageFrom, splitLanguage, withLanguage } from "./language-addresses";
+import { languageFrom, preferredLanguage, splitLanguage, withLanguage } from "./language-addresses";
 
 test("links add the language's prefix back (portalHref, usePortalHref); not to the API, Next.js's files or other sites", () => {
   expect(["/", "/docs/billing", "/?tab=new", "/#top", "/sign-in?next=%2Fdocs"].map((path) => withLanguage("/de", path))).toEqual([
@@ -28,4 +28,16 @@ test("a language's prefix is its code in lowercase; the headers proxy.ts sets ar
   expect(splitLanguage("/pt-BR/docs")).toBeNull();
   expect(languageFrom(new Headers({ "x-tuti-language": "de", "x-tuti-language-prefix": "/de" }))).toEqual({ language: "de", prefix: "/de" });
   expect(languageFrom(new Headers({ "x-tuti-language": "xx", "x-tuti-language-prefix": "//evil.example" }))).toEqual({ language: null, prefix: "" });
+});
+
+test("the language a browser asks for most, of those offered: whole, else by its first part", () => {
+  const offered = ["en", "de", "pt-BR", "zh-CN"] as const;
+  expect(preferredLanguage("de-AT,de;q=0.9,en;q=0.8", [...offered])).toBe("de");
+  expect(preferredLanguage("fr-FR, en;q=0.5, de;q=0.7", [...offered])).toBe("de");
+  expect(preferredLanguage("pt", [...offered])).toBe("pt-BR");
+  expect(preferredLanguage("zh-Hans-CN", [...offered])).toBe("zh-CN");
+  expect(preferredLanguage("PT-br;q=0.4, en;q=0.4", [...offered])).toBe("pt-BR");
+  expect(preferredLanguage("fr, *;q=0.5", [...offered])).toBeNull();
+  expect(preferredLanguage("de;q=0, fr", [...offered])).toBeNull();
+  expect(preferredLanguage(null, [...offered])).toBeNull();
 });

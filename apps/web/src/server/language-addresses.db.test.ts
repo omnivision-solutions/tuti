@@ -43,7 +43,7 @@ const inLanguage = (language: string, prefix = "") => (request.headers = { "x-tu
 
 test("the proxy reads which languages are live as languages.get does, and a change at once", async () => {
   const { project, context, visit } = await setUp();
-  expect(await portalLanguages(project.slug)).toEqual({ default: "en", live: ["de"], stored: ["de", "fr"] });
+  expect(await portalLanguages(project.slug)).toEqual({ default: "en", live: ["de"], stored: ["de", "fr"], sendVisitors: false });
   expect((await visit("/de/docs/billing")).headers.get("x-middleware-rewrite")).toMatch(/\/portal\/[^/]+\/docs\/billing$/);
   expect((await visit("/fr/docs/billing")).headers.get("location")).toMatch(/\/docs\/billing$/);
 

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { changelogTag } from "@/components/changelog-pages";
-import { TAG_LABELS, TagBadge } from "@/components/changelog-tag";
+import { TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { EmptyState } from "@/components/empty-state";
 import { FilterPills } from "@/components/filter-pills";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -16,8 +16,8 @@ import { PaneSearch } from "@/components/pane-search";
 import { SampleBadge } from "@/components/sample-badge";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { formatDay, formatMonth, formatShortDate } from "@/lib/format";
-import { reactionSummary } from "@/lib/reactions";
+import { formatDay, formatShortDate } from "@/lib/format";
+import { REACTIONS } from "@/lib/reactions";
 import { draftToWrite, reactionCounts } from "@/server/changelog-queries";
 import { lastingImage } from "@/server/media-urls";
 import { getMembership } from "@/server/membership";
@@ -28,8 +28,9 @@ const plural = (count: number, one: string, many = `${one}s`) => `${count} ${cou
 
 /**
  * The team's changelog, one list: the drafts (the one whose release notes wait first, then the running draft, then the
- * latest edited), then the published entries by month, newest first. `?q=` searches titles and text, `?tag=` picks a
- * tag (pills with their counts). Old `?tab=` links land here too: the param is ignored.
+ * latest edited), then the published entries by year, newest first, each a line: its cover, title, date and tags, and
+ * how many reactions it had. `?q=` searches titles and text, `?tag=` picks a
+ * tag (pills, no counts: most entries have most tags). Old `?tab=` links land here too: the param is ignored.
  */
 export default async function TeamChangelogPage(props: PageProps<"/app/[project]/changelog">) {
   const { project: slug } = await props.params;
@@ -66,15 +67,15 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     // Release notes waiting to be written: the draft the newest release closed, else the running one with merged pull requests.
     draftToWrite(projectId),
   ]);
-  // The tags the search's entries have (and the one picked, even with none), as pills with their counts; the list, those with the tag picked.
+  // The tags the search's entries have (and the one picked, even with none), as pills; the list, those with the tag picked.
   const tags = (Object.keys(TAG_LABELS) as (keyof typeof TAG_LABELS)[]).filter((t) => t === tag || found.some((e) => e.tags.includes(t)));
   const listed = tag ? found.filter((e) => e.tags.includes(tag)) : found;
   const reactions = await reactionCounts(listed.filter((e) => e.publishedAt).map((e) => e.id));
   const first = (e: (typeof listed)[number]) => (e.number === ready?.number ? 2 : e.collecting ? 1 : 0);
   const drafts = listed.filter((e) => !e.publishedAt).sort((a, b) => first(b) - first(a));
-  const months = Map.groupBy(
+  const years = Map.groupBy(
     listed.filter((e) => e.publishedAt),
-    (e) => formatMonth(e.publishedAt!),
+    (e) => String(e.publishedAt!.getUTCFullYear()),
   );
   // Draft with AI is the way into the draft whose notes wait while AI can run and its text is still its pull requests'
   // titles or Autopilot's lines (as its editor decides, where Draft with AI then leads); Write it otherwise (and if it
@@ -102,20 +103,27 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     </Link>
   );
 
+  // Covers' places kept only where some entry has one (titles line up); with none, no empty boxes.
+  const anyCover = listed.some((e) => lastingImage(e.cover));
   const row = (entry: (typeof listed)[number]) => {
     const href = `${base}/${entry.number}`;
     const cover = lastingImage(entry.cover)?.url;
     const writeIt = entry.number === ready?.number;
     const date = entry.publishedAt ?? entry.updatedAt;
+    const counts = entry.publishedAt ? reactions(entry.id) : null;
+    const reacted = counts ? REACTIONS.reduce((sum, r) => sum + counts[r], 0) : 0;
     return (
       <ItemRow
         key={entry.number}
-        // A date column, as the portal's timeline: when it went out, or for a draft when it was last edited.
+        // Its featured image (the 480px size: sharp at 2×), or its place kept, so the titles line up; decorative, the
+        // title names the entry.
         leading={
-          <time dateTime={date.toISOString()} className="w-14 shrink-0 self-start pt-0.5 text-xs text-muted-foreground tabular-nums">
-            <span className="sr-only">{entry.publishedAt ? "Published " : "Edited "}</span>
-            {entry.publishedAt ? formatDay(date) : formatShortDate(date)}
-          </time>
+          !anyCover ? undefined : cover ? (
+            // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+            <img src={cover} alt="" loading="lazy" className="aspect-[1200/630] w-40 shrink-0 self-start rounded-md border object-cover @max-[48rem]/app:w-24" />
+          ) : (
+            <span aria-hidden className="aspect-[1200/630] w-40 shrink-0 self-start rounded-md border border-dashed bg-muted/40 @max-[48rem]/app:w-24" />
+          )
         }
         title={
           <Link href={href} className="hover:underline">
@@ -126,27 +134,40 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
           ...(entry.sample ? [<SampleBadge key="sample" />] : []),
           ...(entry.collecting ? [<Badge key="collecting" variant="outline">Collecting pull requests</Badge>] : []),
           ...(!entry.publishedAt && entry.releasedAt ? [<Badge key="released" variant="outline">Released</Badge>] : []),
-          ...entry.tags.map((t) => <TagBadge key={t} tag={t} />),
         ]}
-        // What it holds (a draft) or what readers did with it (published); nothing said when there's none.
-        meta={
-          [
+        // One quiet line: when it went out (a draft, when it was last edited), its tags, what it holds or completes, and
+        // what readers said; nothing said when there's none.
+        meta={[
+          <time key="date" dateTime={date.toISOString()} className="tabular-nums">
+            <span className="sr-only">{entry.publishedAt ? "Published " : "Edited "}</span>
+            {entry.publishedAt ? formatDay(date) : formatShortDate(date)}
+          </time>,
+          // Its tags as words, Breaking in the destructive colour (TAG_VARIANTS), as its chip elsewhere.
+          ...(entry.tags.length > 0
+            ? [
+                <span key="tags">
+                  {" · "}
+                  {entry.tags.map((t, i) => (
+                    <span key={t}>
+                      {i > 0 && ", "}
+                      <span className={TAG_VARIANTS[t] === "destructive" ? "text-destructive-foreground" : undefined}>{TAG_LABELS[t]}</span>
+                    </span>
+                  ))}
+                </span>,
+              ]
+            : []),
+          ...[
             !entry.publishedAt && entry._count.pullRequests > 0 && plural(entry._count.pullRequests, "merged pull request"),
             entry._count.posts > 0 && plural(entry._count.posts, "post"),
-            entry.publishedAt && reactionSummary(reactions(entry.id)),
             entry._count.comments > 0 && plural(entry._count.comments, "comment"),
           ]
             .filter(Boolean)
-            .join(" · ") || undefined
-        }
+            .map((part) => <span key={String(part)}> · {part}</span>),
+        ]}
         actions={
-          (writeIt || cover) && (
+          (writeIt || reacted > 0) && (
             <>
-              {cover && (
-                // Its featured image, small (the 480px size: sharp at 2×); decorative, the title names the entry.
-                // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-                <img src={cover} alt="" loading="lazy" className="aspect-[1200/630] w-19 shrink-0 rounded-md border object-cover @max-[48rem]/app:w-15" />
-              )}
+              {reacted > 0 && <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">{plural(reacted, "reaction")}</span>}
               {writeIt && (
                 // Its release notes wait: its editor. Draft with AI round on phones.
                 <Link href={href} className={buttonVariants({ variant: "outline", size: "sm", className: draftWithAi ? "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" : undefined })}>
@@ -160,12 +181,10 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       />
     );
   };
-  const group = (title: string, entries: typeof listed) => (
-    <section key={title} aria-label={title} className="flex flex-col gap-2">
-      <h2 className="group-label flex items-center gap-2">
-        {title}
-        <Badge variant="secondary">{entries.length}</Badge>
-      </h2>
+  // A year's entries under its name; the drafts in a dashed panel of their own, above them.
+  const group = (title: string, entries: typeof listed, drafts = false) => (
+    <section key={title} aria-label={title} className={drafts ? "flex flex-col gap-3 rounded-lg border border-dashed p-3" : "flex flex-col gap-2"}>
+      <h2 className="group-label">{title}</h2>
       <ItemList>{entries.map(row)}</ItemList>
     </section>
   );
@@ -184,7 +203,6 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                 items={[undefined, ...tags].map((t) => ({
                   href: view(t, q),
                   title: t ? TAG_LABELS[t] : "All",
-                  count: t ? found.filter((e) => e.tags.includes(t)).length : found.length,
                 }))}
               />
             )
@@ -229,8 +247,8 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
             )
           ) : (
             <>
-              {drafts.length > 0 && group("Drafts", drafts)}
-              {[...months].map(([month, entries]) => group(month, entries))}
+              {drafts.length > 0 && group("Drafts", drafts, true)}
+              {[...years].map(([year, entries]) => group(year, entries))}
             </>
           )}
         </PaneBody>

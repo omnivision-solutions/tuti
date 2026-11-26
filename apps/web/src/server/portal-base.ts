@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 
 import { languageFrom, withLanguage } from "@/lib/language-addresses";
-import { portalLanguages } from "@/server/language-addresses";
+import { pageLanguages } from "@/server/language-addresses";
 import { BASE_HEADER, BASE_PATTERN, withBase } from "@/lib/portal-base";
 
 /** The path the portal is under on the team's site for this request ("" on its own addresses). */
@@ -42,6 +42,6 @@ export async function portalLinks(): Promise<(path: string) => string> {
  * and entries (L17) take their own.
  */
 export async function untranslatedLang(slug: string): Promise<string | undefined> {
-  const [{ prefix }, languages] = await Promise.all([portalLanguage(), portalLanguages(slug)]);
+  const [{ prefix }, languages] = await Promise.all([portalLanguage(), pageLanguages(slug)]);
   return prefix && languages ? languages.default : undefined;
 }

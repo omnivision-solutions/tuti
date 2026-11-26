@@ -6,7 +6,7 @@ import { branding } from "@/server/operations/branding";
 import { portalAddress } from "@/server/custom-domains";
 import { portalHomePath } from "@/server/portal-home";
 import { languagePrefix } from "@/lib/language-addresses";
-import { portalLanguages } from "@/server/language-addresses";
+import { pageLanguages } from "@/server/language-addresses";
 import { portalLanguage } from "@/server/portal-base";
 
 /**
@@ -47,7 +47,7 @@ export async function portalPageMetadata(
     portalAddress(slug),
     portalSite(slug),
     portalHomePath(slug),
-    portalLanguages(slug),
+    pageLanguages(slug),
     portalLanguage(),
   ]);
   const at = (prefix: string) => `${address}${prefix}${page.path === "/" ? "" : page.path}`;

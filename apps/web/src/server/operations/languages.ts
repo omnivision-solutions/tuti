@@ -28,6 +28,7 @@ const languagesOutput = z
   .object({
     default: z.object({ code: code.describe("Its code").meta({ examples: ["en"] }), name: z.string().describe("Its name in English").meta({ examples: ["English"] }) }).describe("The language the team writes in"),
     languages: z.array(languageOutput).describe("The other languages, in the order they were added"),
+    sendVisitors: z.boolean().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (saved; not acted on until pages have an address per language)").meta({ examples: [false] }),
   })
   .describe("The portal's languages");
 
@@ -36,7 +37,7 @@ const languageSelect = { code: true, automatic: true, instructions: true, produc
 async function projectLanguages(projectId: string): Promise<z.output<typeof languagesOutput>> {
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { plan: true, language: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+    select: { plan: true, language: true, sendToLanguage: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
   });
   // Past the plan's limit (after a downgrade) only the oldest within it are live; the rest are kept, offline until an upgrade.
   const limit = languageLimit(project.plan);
@@ -53,6 +54,7 @@ async function projectLanguages(projectId: string): Promise<z.output<typeof lang
       // Counted among those offered only.
       live: live && (limit === null || index < limit - 1),
     })),
+    sendVisitors: project.sendToLanguage,
   };
 }
 
@@ -81,7 +83,7 @@ export const updateLanguages = defineOperation({
   name: "languages.update",
   title: "Update the languages",
   summary:
-    "Change the default language (only while it's the only one), or set the other languages: the list in full, a language left out is removed and a new one added (offline, automatic for new pages). Fields left out keep their value. The plan limits how many, the default included (402).",
+    "Change the default language (only while it's the only one), sending visitors to their language, or the other languages: the list in full, a language left out is removed and a new one added (offline, automatic for new pages). Fields left out keep their value. The plan limits how many (402).",
   method: "PATCH",
   path: "/languages",
   scope: "write",
@@ -108,11 +110,12 @@ export const updateLanguages = defineOperation({
         )
         .max(LANGUAGE_CODES.length - 1)
         .optional()
-        .describe("The other languages, in full"),
+        .describe("The other languages, in full (the plan's limit counts the default too, so it's included in how many)"),
+      sendVisitors: z.boolean().optional().describe("“Send visitors to their language”: a first visit to the portal's home is to go to the live language the browser asks for (off by default; saved, not acted on until pages have an address per language)"),
     })
-    .refine((input) => input.default !== undefined || input.languages !== undefined, "Send default or languages")
+    .refine((input) => input.default !== undefined || input.languages !== undefined || input.sendVisitors !== undefined, "Send default, languages or sendVisitors")
     .refine((input) => new Set(input.languages?.map(({ code }) => code)).size === (input.languages?.length ?? 0), "Each language once")
-    .meta({ anyOf: [{ required: ["default"] }, { required: ["languages"] }] }),
+    .meta({ anyOf: [{ required: ["default"] }, { required: ["languages"] }, { required: ["sendVisitors"] }] }),
   example: { languages: [{ code: "de", newPages: "automatic", instructions: "Use du, not Sie." }] },
   output: languagesOutput,
   run: async ({ projectId }, input) => {
@@ -126,7 +129,7 @@ export const updateLanguages = defineOperation({
         throw new OperationError(409, "conflict", "Remove the other languages first: the default language changes only while it's the only one");
       }
       if (!input.languages) {
-        await tx.project.update({ where: { id: projectId }, data: { language } });
+        await tx.project.update({ where: { id: projectId }, data: { language, sendToLanguage: input.sendVisitors } });
         return;
       }
       const clash = input.languages.find(({ code }) => code === language);
@@ -143,7 +146,7 @@ export const updateLanguages = defineOperation({
           throw new OperationError(402, "plan_required", languagesFull(project.plan, limit));
         }
       }
-      await tx.project.update({ where: { id: projectId }, data: { language } });
+      await tx.project.update({ where: { id: projectId }, data: { language, sendToLanguage: input.sendVisitors } });
       // Only languages this release offers: one it doesn't know (a newer release's, during a deploy) can't be in the list, so it stays.
       await tx.projectLanguage.deleteMany({ where: { projectId, code: { in: LANGUAGE_CODES, notIn: input.languages.map(({ code }) => code) } } });
       // Those added together keep the list's order: a millisecond apart.

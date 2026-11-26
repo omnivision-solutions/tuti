@@ -1,6 +1,8 @@
 import { prisma } from "@tuti/db";
-import { LANGUAGES, log } from "@tuti/shared";
+import { DEFAULT_LANGUAGE, LANGUAGES, log } from "@tuti/shared";
+import { MESSAGES } from "@tuti/shared/messages";
 import type { Metadata } from "next";
+import { createTranslator } from "next-intl";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
@@ -13,6 +15,7 @@ import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/comp
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { PortalAssistant } from "@/components/portal-assistant";
 import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
+import { LanguageSwitcher, PortalIntl } from "@/components/portal-language";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -24,7 +27,7 @@ import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { currentReader, mayRead } from "@/server/portal-access";
 import { portalBase, portalLanguage } from "@/server/portal-base";
-import { portalLanguages } from "@/server/language-addresses";
+import { pageLanguages } from "@/server/language-addresses";
 import { TeamHtml } from "@/components/team-html";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalSite, SHARE_IMAGE } from "@/server/portal-metadata";
@@ -89,6 +92,14 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // Portal sessions are per host: this is the user signed in on this portal.
   const session = await getSession();
   const requestHeaders = await headers();
+  // The page's language (docs/plan.md, Languages): its address's (proxy.ts), the default one's on its own addresses. The
+  // switcher, with more than one live, goes to the same page in another; only the portal's own text that's moved to messages
+  // follows it (L5).
+  const [languages, { language: addressLanguage }] = await Promise.all([pageLanguages(slug), portalLanguage()]);
+  const language = addressLanguage ?? languages?.default ?? DEFAULT_LANGUAGE;
+  const choices = languages && languages.live.length > 0 ? [languages.default, ...languages.live] : [];
+  const messages = MESSAGES[language];
+  const t = createTranslator({ locale: language, messages, namespace: "header" });
   const onApp = resolveHost(requestHeaders.get("host")).kind === "app";
   // On a private portal, the pages anyone may open (signing in) don't show what's on it.
   // proxy.ts keeps them from the rest; this only hides the parts. Whoever proxy.ts lets in reads them:
@@ -119,6 +130,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
 
   return (
     <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
+      <PortalIntl language={language} messages={messages}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {/* Under a path of the team's site, the stored theme is the site's too: a pick made there stays, switch or not. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} readerPicks={brand.themeSwitch || !!mount} />}
@@ -147,16 +159,17 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
               As tall without JavaScript as with its menu button, so the header doesn't grow once the page's script runs. */}
           <div className="ml-auto flex min-h-9 shrink-0 items-center gap-2 sm:gap-3">
             <PortalHeaderLinks />
+            {choices.length > 1 && <LanguageSwitcher languages={choices} current={language} />}
             {session ? (
               // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
               <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
             ) : (
               <SignInLink className={buttonVariants({ variant: "outline", size: "sm", className: "[:root:has([data-auth-page])_&]:hidden" })}>
-                Sign in
+                <span lang={language}>{t("signIn")}</span>
               </SignInLink>
             )}
             {/* For everyone: on a private portal's sign-in page it has the team's links (no parts). */}
-            <PortalMenu name={project.name} homeHref={withBase(base, prefix || "/")} boards={canRead ? project.boards : []} parts={canRead} newChangelog={newChangelog} />
+            <PortalMenu name={project.name} homeHref={withBase(base, prefix || "/")} boards={canRead ? project.boards : []} parts={canRead} newChangelog={newChangelog} languages={choices} language={language} />
           </div>
         </div>
         </header>
@@ -194,13 +207,14 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin (TeamHtml
           checks the page's real origin). Never on a Tuti address (a script there could pass for Tuti) or the app's own domain. */}
       {brand.customHtml && ownOrigin && <TeamHtml html={brand.customHtml} origin={ownOrigin} />}
+      </PortalIntl>
     </PortalBaseProvider>
   );
 }
 
 /** The language of the team's preview of one that isn't live (proxy.ts lets only the team open its addresses), else null. */
 async function notLiveYet(slug: string) {
-  const [{ language, prefix }, languages] = await Promise.all([portalLanguage(), portalLanguages(slug)]);
+  const [{ language, prefix }, languages] = await Promise.all([portalLanguage(), pageLanguages(slug)]);
   return prefix && language && !languages?.live.includes(language) ? language : null;
 }
 
