@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
@@ -216,6 +216,22 @@ test("the same message run twice writes one note and changes nothing twice, what
   await unmark(started.conversation.number);
   expect(await runWorkflows(projectId, started.conversation.id, note.id, "user_replied")).toEqual({});
   expect(await priority(started.conversation.number)).toBe(false);
+});
+
+test("a list that fails holds nothing up: the message is in, the team is told of it, and it isn't marked as run", async () => {
+  const { projectId, workflow, start, reply, priority, notes, told } = await setup();
+  await workflow("Replies", "user_replied");
+  const number = await start("user-1");
+  // The reply's own transaction goes through; the list's, right after it, fails.
+  failTransaction(new Error("connection reset"), { skip: 1 });
+  expect(await reply(number, "user-1")).toMatchObject({ author: "user", body: "And another thing" });
+  expect([await priority(number), await notes(number), await told()]).toEqual([false, [], ["conversation.created", "conversation.message_created"]]);
+
+  // Nothing says it ran, so running it again does what the first run couldn't.
+  const message = await prisma.conversationMessage.findFirstOrThrow({ where: { conversation: { projectId, number }, body: "And another thing" } });
+  expect(message.workflowsRanAt).toBeNull();
+  expect(await runWorkflows(projectId, message.conversationId, message.id, "user_replied")).toEqual({ priority: true });
+  expect(await notes(number)).toEqual(["Replies marked this priority"]);
 });
 
 test("a workflow this release can't read doesn't run, and the next one still does", async () => {
