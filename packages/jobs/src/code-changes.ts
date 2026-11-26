@@ -935,8 +935,8 @@ async function finish(
         landed.push(proposal.articleId!);
       } else if (outcome === "conflict") {
         conflicts.push(proposal.articleId!);
-      } else if (outcome === "gone") {
-        // Deleted meanwhile: nothing to edit.
+      } else if (outcome === "gone" || outcome === "nothing") {
+        // Deleted meanwhile, or another edit made the same change: nothing to edit.
         await tx.codeChangeAction.delete({ where: { id: action.id } });
       }
     }
