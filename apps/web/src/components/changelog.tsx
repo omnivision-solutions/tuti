@@ -75,7 +75,6 @@ import {
   rewriteChangelogEntry,
   saveChangelogEntry,
   saveChangelogStyle,
-  changelogScreenshotsRunning,
   takeChangelogScreenshots,
   unpublishChangelogEntry,
 } from "@/server/changelog";
@@ -774,8 +773,9 @@ function EntryScreenshotsSection({
       return;
     }
     const timer = setInterval(async () => {
-      const result = await changelogScreenshotsRunning(projectSlug, number);
-      if (!("running" in result) || result.running) {
+      const response = await fetch(`/app/${projectSlug}/changelog/${number}/screenshots`).catch(() => null);
+      const result: { running?: boolean; savedAt?: string } | null = response?.ok ? await response.json() : null;
+      if (!result || result.running !== false) {
         return;
       }
       clearInterval(timer);

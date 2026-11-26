@@ -29,7 +29,7 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
-import { entryScreenshotsRunning, takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -211,15 +211,6 @@ export async function removeChangelogPullRequest(projectSlug: string, number: nu
 /** The entry editor's "Take screenshots" (changelog.takeScreenshots): its "[Screenshot: …]" lines filled in the background. */
 export async function takeChangelogScreenshots(projectSlug: string, number: number): Promise<FormState> {
   return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { number: Number(number) }));
-}
-
-/** Whether the entry's screenshots are still being taken: the editor asks while they are, and reloads once they're in. */
-export async function changelogScreenshotsRunning(projectSlug: string, number: number) {
-  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
-    return { error: DENIED };
-  }
-  return await entryScreenshotsRunning(membership.project.id, Number(number));
 }
 
 /** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */
