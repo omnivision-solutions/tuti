@@ -263,7 +263,8 @@ export default function Details() {
             onPress={() => void (triage.status === "closed" ? change({ status: "open" }, "Reopened") : change({ status: "closed" }, "Closed"))}
           />
         )}
-        {triage && (
+        {/* Only where the server knows of priority (it says whether it's marked): one from before would refuse the change. */}
+        {triage && triage.priority !== undefined && (
           <Row
             label={triage.priority ? "Not priority" : "Mark priority"}
             busy={busy}

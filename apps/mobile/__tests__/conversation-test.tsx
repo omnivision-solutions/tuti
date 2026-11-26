@@ -402,6 +402,7 @@ describe("a conversation the AI has", () => {
   });
 
   it("says the AI is answering in place of the reply box; Take over makes it the team's, and then the reply box is there", async () => {
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
     serve(withAi);
     await render(<ConversationRoute />);
 
@@ -416,6 +417,8 @@ describe("a conversation the AI has", () => {
     expect(screen.queryByText("The AI is answering.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
     expect(announce).toHaveBeenCalledWith("Taken over");
+    // A screen reader's focus, on the button that's gone, is on the reply field.
+    expect(focus).toHaveBeenCalledWith(expect.objectContaining({ props: expect.objectContaining({ accessibilityLabel: "Reply" }) }), "focus");
     // Kept for reading offline as the team's.
     expect(cached<Conversation>(conversationKey(mockSession, 12), mockSession.owner)?.data.handledBy).toBe("team");
   });

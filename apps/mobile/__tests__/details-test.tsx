@@ -263,7 +263,7 @@ describe("the details sheet", () => {
 
   it("marks it priority and back, and says so to screen readers", async () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
-    serve(SAM);
+    serve(SAM, { ...OPEN, priority: false });
     await render(<Details />);
 
     await fireEvent.press(await screen.findByRole("button", { name: "Mark priority" }));
@@ -274,6 +274,14 @@ describe("the details sheet", () => {
     expect(patches().at(-1)).toEqual({ priority: false });
     expect(announce).toHaveBeenLastCalledWith("No longer priority");
     expect(await screen.findByRole("button", { name: "Mark priority" })).toBeTruthy();
+  });
+
+  it("offers no priority on a server from before it, which would refuse the change", async () => {
+    // Its answer has no `priority`.
+    serve(SAM);
+    await render(<Details />);
+    expect(await screen.findByRole("button", { name: "Mark as spam" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /priority/i })).toBeNull();
   });
 
   it("says With AI as the status of one the AI has, never Needs reply, and offers no way to hand one back", async () => {

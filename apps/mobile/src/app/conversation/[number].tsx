@@ -4,7 +4,7 @@ import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { openBrowserAsync } from "expo-web-browser";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ComponentRef, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   AccessibilityInfo,
   ActionSheetIOS,
@@ -289,6 +289,17 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
   // teammate's reply would take it over too, and the AI could answer mid-draft). Closed too: it's still the AI's.
   const withAi = !!conversation && triage?.handledBy === "ai";
   const [taking, setTaking] = useState(false);
+  // Taken over here: a screen reader's focus, on the button that's gone, goes to the reply field that took its place.
+  const replyField = useRef<ComponentRef<typeof TextInput>>(null);
+  const tookOver = useRef(false);
+  useEffect(() => {
+    if (!withAi && tookOver.current) {
+      tookOver.current = false;
+      if (replyField.current) {
+        AccessibilityInfo.sendAccessibilityEvent(replyField.current, "focus");
+      }
+    }
+  }, [withAi]);
   const takeOver = async () => {
     if (taking) {
       return;
@@ -296,7 +307,9 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
     setTaking(true);
     setNotice(null);
     try {
-      showTriage(draftKey, await updateConversation(api, number, { handledBy: "team" }));
+      const taken = await updateConversation(api, number, { handledBy: "team" });
+      tookOver.current = true;
+      showTriage(draftKey, taken);
       AccessibilityInfo.announceForAccessibility("Taken over");
       // What's kept of it for reading offline says so too.
       refresh();
@@ -552,6 +565,7 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
           </View>
         )}
         <TextInput
+          ref={replyField}
           value={text}
           onChangeText={(text) => setDraft((now) => typed(now, kind, text))}
           placeholder={kind === "note" ? "Write a note only your team sees…" : "Write a reply…"}
