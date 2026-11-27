@@ -231,8 +231,9 @@ export function ChangelogVersionForm({
       if (!current()) {
         return result;
       }
-      // Its own save is what the next one goes from.
-      setLoaded(result.version!);
+      // Its own save is what the next one goes from, unless a newer read was taken meanwhile (its token, not this answer's).
+      const sentToken = String(formData.get("version") ?? "");
+      setLoaded((now) => (now === sentToken ? result.version! : now));
       if (edits.current === sent) {
         dirty.current = false;
         setEdited(false);

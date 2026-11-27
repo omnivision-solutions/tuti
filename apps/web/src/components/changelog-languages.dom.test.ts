@@ -348,3 +348,15 @@ test("a save's answer that comes after a newer read leaves the newer read's toke
   await submit();
   expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v2");
 });
+
+test("a save's answer that comes after the same text's newer read was taken keeps that read's token", async () => {
+  let answer = (_: unknown) => {};
+  saveChangelogVersion.mockReturnValueOnce(new Promise((resolve) => (answer = resolve))).mockResolvedValue({ version: "v-next" });
+  const { render } = await form({ version: "v1" });
+  // Saved as it is (to clear a mark, say), nothing typed; a newer read with the same text lands before its answer.
+  await submit();
+  await render({ version: "v2" });
+  await act(async () => answer({ version: "v-late" }));
+  await submit();
+  expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v2");
+});
