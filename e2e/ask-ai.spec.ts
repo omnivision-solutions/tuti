@@ -16,9 +16,11 @@ test("the team asks AI to rewrite part of a changelog entry, sees its version in
   const marker = randomUUID().slice(0, 8);
   await api("/changelog", { title: "Faster exports", body: `Exports are quick now (${marker}).\n\nThey run in the background and email you when they're done.` });
 
+  // The page's live stream refreshes it once it opens (LiveRefresh's `ready`): selected after that, on a page that's set up.
+  // (A refresh keeps the editor and its selection; selecting before the editor has taken over the page's text doesn't.)
+  const readyRefresh = team.waitForRequest((request) => request.headers().rsc === "1" && new URL(request.url()).pathname === `/app/${slug}/changelog/1`);
   await team.goto(`/app/${slug}/changelog/1`);
-  // Settled (nothing still loading that could refresh the editor under the selection) before selecting.
-  await team.waitForLoadState("networkidle");
+  await readyRefresh;
   const text = team.getByRole("textbox", { name: "What changed" });
   const askAi = team.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Ask AI" });
   // The second line, selected from the keyboard: again until it holds (the whole line, its toolbar shown), as the editor
