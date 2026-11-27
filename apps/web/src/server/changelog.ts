@@ -85,16 +85,16 @@ export async function saveChangelogEntry(
 
 /**
  * Saves an entry's version in another language from its editor (the language pill): its title and text, against the
- * `version` it was opened at. Saving stops Keep up to date (changelog.saveTranslation).
+ * `version` it was read at (the form's). Saving stops Keep up to date (changelog.saveTranslation).
  */
-export async function saveChangelogVersion(projectSlug: string, number: number, language: string, version: string, _state: FormState, formData: FormData): Promise<FormState> {
+export async function saveChangelogVersion(projectSlug: string, number: number, language: string, _state: FormState, formData: FormData): Promise<FormState> {
   const result = await asTeam(projectSlug, DENIED, (context) =>
     call(saveChangelogTranslation, context, {
       number,
       language: language as "de",
       title: String(formData.get("title") ?? ""),
       content: formData.get("content") || undefined,
-      version,
+      version: String(formData.get("version") ?? ""),
     }),
   );
   if (!result.error) {

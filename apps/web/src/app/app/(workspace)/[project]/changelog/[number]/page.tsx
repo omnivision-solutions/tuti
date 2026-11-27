@@ -13,7 +13,8 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage, type VersionState } from "@/components/changelog-languages";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
+import { NO_AI_WAITING, versionState } from "@/lib/changelog-versions";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
@@ -168,9 +169,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }
       : null;
   const readerUrl = entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null;
-  // Its languages (docs/plan.md L16), once it's published (its versions are made from what's published): the pill and
-  // the sidebar's Languages, and the version `?language=` opens.
-  const languages = entry.publishedAt ? await entryLanguages(membership.project.id, slug, entry) : null;
+  // Its languages (docs/plan.md L16), once it's published (its versions are made from what's published; a sample entry is
+  // never translated): the pill and the sidebar's Languages, and the version `?language=` opens.
+  const languages = entry.publishedAt && !entry.sample ? await entryLanguages(membership.project.id, slug, entry) : null;
   const { language: asked } = await props.searchParams;
   const opened = languages?.slice(1).find((language) => language.code === asked) ?? null;
   const version =
@@ -183,7 +184,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         state: opened.state,
         keepUpToDate: read.keepUpToDate,
         version: read.version,
-        waiting: read.waiting,
+        waiting: read.waiting ?? (opened.state === "waiting" ? NO_AI_WAITING : null),
         // Not written yet: the default language's title and text, to write over.
         title: read.title || entry.title,
         content: (read.content ?? displayDoc(entry)) as Doc,
@@ -267,8 +268,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
             {version ? (
+              // Starts afresh when its text changes (a save, a translation), not when Keep up to date flips: unsaved edits stay.
               <ChangelogVersionForm
-                key={version.version}
+                key={createHash("sha256").update(JSON.stringify([version.code, version.title, version.content])).digest("base64url")}
                 projectSlug={slug}
                 number={entry.number}
                 defaultName={languages![0]!.name}
@@ -380,26 +382,12 @@ async function entryLanguages(projectId: string, slug: string, entry: { id: stri
   if (project.languages.length === 0) {
     return null;
   }
-  const versions = await prisma.changelogTranslation.findMany({ where: { entryId: entry.id }, select: { language: true, automatic: true, publishedAt: true, sourceHash: true, error: true } });
+  const versions = await prisma.changelogTranslation.findMany({ where: { entryId: entry.id }, select: { language: true, automatic: true, publishedAt: true, sourceHash: true, error: true, behind: true } });
   const { hash } = translationSource({ ...entry, content: entry.content as Doc | null });
   const base = `/app/${slug}/changelog/${entry.number}`;
   const name = (code: string) => (isLanguage(code) ? LANGUAGES[code].native : code);
   return [
     { code: project.language, name: name(project.language), state: "default", href: base },
-    ...project.languages.map(({ code }) => ({ code, name: name(code), state: versionState(versions.find((version) => version.language === code), hash), href: `${base}?language=${code}` })),
+    ...project.languages.map(({ code }) => ({ code, name: name(code), state: versionState(versions.find((version) => version.language === code), hash, aiEnabled()), href: `${base}?language=${code}` })),
   ];
-}
-
-/** Where a version stands: made from the entry as it is (translated, or the team's), on its way, or behind; none yet: not written. */
-function versionState(version: { automatic: boolean; publishedAt: Date | null; sourceHash: string | null; error: string | null } | undefined, hash: string): VersionState {
-  if (!version) {
-    return "unwritten";
-  }
-  if (version.publishedAt && version.sourceHash === hash) {
-    return version.automatic ? "current" : "written";
-  }
-  if (version.automatic) {
-    return version.error ? "waiting" : "translating";
-  }
-  return version.publishedAt ? "behind" : "unwritten";
 }

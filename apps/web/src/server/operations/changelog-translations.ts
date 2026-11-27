@@ -25,26 +25,28 @@ const translationOutput = z
     title: z.string().describe("Its title (empty until it's written or translated)").meta({ examples: ["Dunkler Modus"] }),
     content: z.record(z.string(), z.unknown()).nullable().describe("Its text: the editor's JSON document (null until it's written or translated)").meta({ examples: [docExample] }),
     publishedAt: z.iso.datetime().nullable().describe("When it was first written or translated: until then readers get the default language's").meta({ examples: ["2026-11-27T09:00:00.000Z"] }),
-    behind: z.boolean().describe("The entry's text changed since it was written or translated").meta({ examples: [false] }),
+    behind: z.boolean().describe("The entry's text, or the language's \"Our product is available in\", changed since it was written or translated").meta({ examples: [false] }),
     waiting: z.string().nullable().describe("Why it couldn't be translated (it's tried again), or null").meta({ examples: [null] }),
     version: z.string().describe("What it says now, for changelog.saveTranslation's `version`: a save made from an older read is refused").meta({ examples: ["5f2c9a…"] }),
   })
   .describe("A changelog entry's version in another language");
 
-const versionSelect = { automatic: true, title: true, body: true, content: true, publishedAt: true, sourceHash: true, error: true } as const;
-type Version = { automatic: boolean; title: string; body: string; content: unknown; publishedAt: Date | null; sourceHash: string | null; error: string | null };
+const versionSelect = { automatic: true, title: true, body: true, content: true, publishedAt: true, sourceHash: true, error: true, behind: true } as const;
+type Version = { automatic: boolean; title: string; body: string; content: unknown; publishedAt: Date | null; sourceHash: string | null; error: string | null; behind: unknown };
 
 /** What a version says now (none: there's no version yet), for a save's `version`. */
 const versionToken = (version: Version | null) => contentHash(JSON.stringify(version ? [version.automatic, version.title, version.content, version.publishedAt] : null));
 
-function output(code: string, version: Version | null, automaticForNew: boolean, sourceHash: string): z.output<typeof translationOutput> {
+function output(code: string, version: Version | null, sourceHash: string): z.output<typeof translationOutput> {
   return {
     language: code,
-    keepUpToDate: version?.automatic ?? automaticForNew,
+    // No version yet: nothing translates it until it's turned on (or the entry's text changes).
+    keepUpToDate: version?.automatic ?? false,
     title: version?.title ?? "",
     content: version?.publishedAt ? (displayDoc(version) as Record<string, unknown>) : null,
     publishedAt: version?.publishedAt?.toISOString() ?? null,
-    behind: !!version?.publishedAt && version.sourceHash !== sourceHash,
+    // Made from other text, or marked behind (the product setting changed: markProductSettingBehind).
+    behind: !!version?.publishedAt && (version.sourceHash !== sourceHash || Object.keys((version.behind as object | null) ?? {}).length > 0),
     waiting: version?.error ?? null,
     version: versionToken(version),
   };
@@ -54,7 +56,7 @@ function output(code: string, version: Version | null, automaticForNew: boolean,
 async function entryAndLanguage(projectId: string, number: number, code: (typeof LANGUAGE_CODES)[number]) {
   const [entry, setting] = await Promise.all([
     prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, title: true, body: true, content: true, publishedAt: true } }),
-    prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code } }, select: { automatic: true } }),
+    prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code } }, select: { code: true } }),
   ]);
   if (!entry) {
     throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
@@ -76,9 +78,9 @@ export const getChangelogTranslation = defineOperation({
   input: z.object({ number: entryNumber, language }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
-    const { entry, setting, sourceHash } = await entryAndLanguage(projectId, input.number, input.language);
+    const { entry, sourceHash } = await entryAndLanguage(projectId, input.number, input.language);
     const version = await prisma.changelogTranslation.findUnique({ where: { entryId_language: { entryId: entry.id, language: input.language } }, select: versionSelect });
-    return output(input.language, version, setting.automatic, sourceHash);
+    return output(input.language, version, sourceHash);
   },
 });
 
@@ -86,7 +88,7 @@ export const saveChangelogTranslation = defineOperation({
   name: "changelog.saveTranslation",
   title: "Save a changelog entry's translation",
   summary:
-    "Write a published changelog entry's version in another language (readers get it at once, and it stops being kept up to date, so a translation never replaces it), or turn Keep up to date on (translated again from the entry as it is) or off.",
+    "Write a published changelog entry's version in another language (it stops being kept up to date, so a translation never replaces it), or turn Keep up to date on (translated again from the entry as it is) or off.",
   method: "PATCH",
   path: "/changelog/{number}/languages/{language}",
   scope: "write",
@@ -115,7 +117,7 @@ export const saveChangelogTranslation = defineOperation({
     if (writing && input.version === undefined) {
       throw new OperationError(400, "invalid_input", "Send the `version` you read it at with the text");
     }
-    const { entry, setting } = await entryAndLanguage(projectId, input.number, input.language);
+    const { entry } = await entryAndLanguage(projectId, input.number, input.language);
     if (!entry.publishedAt) {
       throw new OperationError(409, "not_published", "Publish the entry first: its other languages are made from what's published");
     }
@@ -143,13 +145,15 @@ export const saveChangelogTranslation = defineOperation({
         if (text) {
           await attachMedia(tx, projectId, text.mediaIds);
         }
-        // Made from the entry as it is now (the team wrote it beside it), readers' at once; the team's from now on.
+        // Made from the entry as it is now (the team wrote it beside it, under the product setting as it is: nothing behind);
+        // the team's from now on.
         const data = {
           automatic: false,
           title,
           ...(text && { body: text.text, content: text.doc }),
           publishedAt: version?.publishedAt ?? new Date(),
           sourceHash,
+          behind: {},
           error: null,
           tries: 0,
           retryAt: null,
@@ -179,6 +183,6 @@ export const saveChangelogTranslation = defineOperation({
       await queueEntryVersion(entry.id, input.language);
     }
     const now = await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { title: true, body: true, content: true } });
-    return output(input.language, saved.version, setting.automatic, translationSource(now).hash);
+    return output(input.language, saved.version, translationSource(now).hash);
   },
 });

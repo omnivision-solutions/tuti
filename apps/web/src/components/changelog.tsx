@@ -183,11 +183,11 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
  * The entry's Save in the top bar (at the bottom of the screen on phones, PageActions' `pinned`): it submits
  * the ChangelogForm below. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
  */
-export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
+export function ChangelogSaveButton({ isNew = false, form = CHANGELOG_FORM, primary = isNew }: { isNew?: boolean; form?: string; primary?: boolean }) {
   const saving = useContext(ChangelogSavingContext);
   const pending = saving?.pending ?? false;
   return (
-    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading}>
+    <Button type="submit" form={form} variant={primary ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading}>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );

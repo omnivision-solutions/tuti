@@ -268,7 +268,8 @@ const matrix: Matrix = {
         const form = new FormData();
         form.set("title", "Matrix-Eintrag");
         form.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] }));
-        return changelog.saveChangelogVersion(slug, 1, "de", contentHash(JSON.stringify(null)), {}, form);
+        form.set("version", contentHash(JSON.stringify(null)));
+        return changelog.saveChangelogVersion(slug, 1, "de", {}, form);
       },
     },
     keepChangelogVersionUpToDate: { allowed: "MEMBER", call: (slug) => changelog.keepChangelogVersionUpToDate(slug, 1, "de", false) },

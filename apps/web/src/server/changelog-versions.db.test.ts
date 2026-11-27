@@ -113,3 +113,16 @@ test("a draft's versions wait for its publish, a first version needs its text, a
   // Not one of the project's languages.
   expect((await refused(call(getChangelogTranslation, as(), { number, language: "fr" }))).status).toBe(404);
 });
+
+test("the product setting changing marks the team's version behind, and saving it clears that", async () => {
+  const number = await published("manual");
+  const empty = await call(getChangelogTranslation, as(), { number, language: "de" });
+  const saved = await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Wechsle das Design im Profilmenü."), version: empty.version });
+  // "Our product is available in German" turned on: the team's version is marked behind (markProductSettingBehind).
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual", productAvailable: true }] });
+  await languageTranslationsDone();
+  const marked = await call(getChangelogTranslation, as(), { number, language: "de" });
+  expect(marked).toMatchObject({ behind: true, keepUpToDate: false });
+  expect(marked.version).toBe(saved.version);
+  expect(await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: marked.version })).toMatchObject({ behind: false });
+});

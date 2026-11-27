@@ -4,15 +4,17 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useContext, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { ChangelogSaveButton, ChangelogSavingContext } from "@/components/changelog";
 import { pillClass } from "@/components/filter-pills";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
-import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FieldError } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import type { VersionState } from "@/lib/changelog-versions";
+import { keepingFields } from "@/lib/forms";
 import { keepChangelogVersionUpToDate, saveChangelogVersion } from "@/server/changelog";
 import type { FormState } from "@/server/form-state";
 
@@ -21,7 +23,6 @@ import type { FormState } from "@/server/form-state";
  * Languages, and the form a version in another language is written in.
  */
 
-export type VersionState = "default" | "current" | "written" | "translating" | "waiting" | "behind" | "unwritten";
 
 const STATES: Record<VersionState, { label: string; dot: string }> = {
   default: { label: "Default", dot: "bg-primary" },
@@ -115,13 +116,13 @@ function versionLine(view: VersionView, defaultName: string) {
     case "current":
       return `Translated automatically from ${defaultName}. Saving your edits turns off Keep up to date.`;
     case "translating":
-      return `Translating from ${defaultName}. Readers see ${defaultName} until it's done.`;
+      return `Translating from ${defaultName}…`;
     case "waiting":
-      return `Can't translate it yet: ${view.waiting}. It's tried again.`;
+      return `Can't translate it yet: ${view.waiting}.`;
     case "behind":
       return `${defaultName} changed since this was saved.`;
     case "unwritten":
-      return `Not written yet: it starts as the ${defaultName} text. Readers see ${defaultName} until you save.`;
+      return `Not written yet: it starts as the ${defaultName} text.`;
     default:
       return null;
   }
@@ -143,17 +144,22 @@ export function ChangelogVersionForm({
   /** The sidebar's Languages. */
   languages: EntryLanguage[];
 }) {
-  const [state, action] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveChangelogVersion(projectSlug, number, view.code, view.version, prev, formData);
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
       toast.success("Saved");
     }
     return result;
   }, {});
+  // The top bar's Save says when it's saving, and waits (ChangelogSaveButton).
+  const saving = useContext(ChangelogSavingContext);
+  useEffect(() => saving?.setPending(pending), [saving, pending]);
   const line = versionLine(view, defaultName);
   const attention = view.state === "behind" || view.state === "waiting";
   return (
-    <form id={VERSION_FORM} action={action} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+    <form id={VERSION_FORM} {...keepingFields(action)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+      {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
+      <input type="hidden" name="version" value={view.version} />
       <div lang={view.code} className="flex min-w-0 flex-col gap-4">
         {line && (
           <p className={cn("rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")} lang="en">
@@ -214,10 +220,4 @@ function KeepUpToDate({ projectSlug, number, code, on, defaultName }: { projectS
 }
 
 /** The top bar's Save for a version (its form is below it). */
-export function ChangelogVersionSave() {
-  return (
-    <Button type="submit" form={VERSION_FORM}>
-      Save
-    </Button>
-  );
-}
+export const ChangelogVersionSave = () => <ChangelogSaveButton form={VERSION_FORM} primary />;
