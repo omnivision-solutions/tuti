@@ -364,5 +364,21 @@
   },
   "docs": {
     "notTranslated": "Questa pagina non è ancora disponibile in italiano: è mostrata nella lingua originale."
+  },
+  "emails": {
+    "signInTo": "Accedi a {name}",
+    "signInPreview": "Il tuo link per accedere a {name}.",
+    "signInText": "Ecco il tuo link per accedere a {name}.",
+    "ignoreIt": "Se non l’hai chiesto tu, ignora questa email.",
+    "linkExpires": "Il link funziona una volta sola e scade tra {minutes, plural, one {# minuto} other {# minuti}}.",
+    "resetTitle": "Reimposta la password",
+    "resetPreview": "Imposta una nuova password per {name}.",
+    "resetText": "Qualcuno ha chiesto di reimpostare la password del tuo account su <b>{name}</b>.",
+    "resetButton": "Imposta una nuova password",
+    "resetIgnore": "Se non l’hai chiesto tu, ignora questa email: la tua password resta la stessa.",
+    "changedTitle": "La tua password è stata cambiata",
+    "changedPreview": "La tua password è appena stata cambiata.",
+    "changedText": "La password del tuo account è appena stata cambiata con un link di reimpostazione, e sei stato disconnesso ovunque altrove.",
+    "changedWarning": "Se non sei stato tu, usa «{forgot}» nella pagina di accesso per impostarne subito una nuova."
   }
 }

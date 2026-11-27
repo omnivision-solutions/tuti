@@ -662,7 +662,10 @@ test("signing in, signing up and resetting a password in German, the sign-in lin
   await expect(reader.getByRole("button", { name: "Andere E-Mail-Adresse verwenden" })).toBeVisible();
   await expect(reader.getByRole("link", { name: "Zurück zu Acme" })).toBeVisible();
   // The link as it was emailed: asked on a German page, it opens at the German address, and its page asks to confirm in German.
-  const link = linkIn(await latestEmailTo(email), portalUrl(slug));
+  // Its email is in German too.
+  const signInEmail = await latestEmailTo(email);
+  expect(signInEmail.subject).toBe("Bei Acme anmelden");
+  const link = linkIn(signInEmail, portalUrl(slug));
   expect(new URL(link).pathname).toBe("/de/sign-in/link");
   await reader.goto(link);
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
@@ -689,13 +692,15 @@ test("signing in, signing up and resetting a password in German, the sign-in lin
   await expect(visitor.getByRole("button", { name: "Registrierungslink per E-Mail senden" })).toBeVisible();
   await expect(visitor.getByText(/^Schon ein Konto\?\s*Anmelden$/)).toBeVisible();
   await checkpoint(visitor, "sign-up-in-german-phone", { fullPage: false });
-  // Resetting a password.
+  // Resetting a password: for an account, so its email (in German) is sent.
+  const account = await signUp(browser, portalUrl(slug), "Rita Reader");
   await visitor.goto("/de/forgot-password");
   await expect(visitor).toHaveTitle(/^Passwort zurücksetzen/);
   await expect(visitor.getByText("Wir mailen dir einen Link, um ein neues festzulegen.")).toBeVisible();
-  await visitor.getByLabel("E-Mail").fill(email);
+  await visitor.getByLabel("E-Mail").fill(account.email);
   await visitor.getByRole("button", { name: "Link per E-Mail senden" }).click();
-  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} gibt`))).toBeVisible();
+  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${account.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} gibt`))).toBeVisible();
+  expect((await latestEmailTo(account.email, { subject: /Passwort/ })).subject).toBe("Passwort zurücksetzen");
   await visitor.goto("/de/forgot-password?link=failed");
   await expect(visitor.getByText("Dieser Link ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
   // Single sign-on's error: the reader's words in German, what went wrong for whoever set it up in English.
