@@ -644,6 +644,7 @@ export function ChangelogForm({
   const editor = useRef<Editor | null>(null);
   /** The editor's Ask AI on the whole text, for the header's button. */
   const askWhole = useRef<(() => void) | null>(null);
+  const askPausedId = useId();
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
@@ -716,6 +717,7 @@ export function ChangelogForm({
         <div className="flex flex-col gap-2">
           {canAskAi && !saving?.locked && (
             <div className="flex justify-end">
+              {/* Off, it still takes focus and says why: read with it (and its title on hover). */}
               <Button
                 id={ASK_AI_BUTTON}
                 type="button"
@@ -724,11 +726,17 @@ export function ChangelogForm({
                 disabled={aiPaused}
                 focusableWhenDisabled
                 title={aiPaused ? "This project is out of credits" : undefined}
+                aria-describedby={aiPaused ? askPausedId : undefined}
                 onClick={() => askWhole.current?.()}
               >
                 <SparklesIcon />
                 Ask AI
               </Button>
+              {aiPaused && (
+                <span id={askPausedId} className="sr-only">
+                  This project is out of credits
+                </span>
+              )}
             </div>
           )}
           <RichEditor

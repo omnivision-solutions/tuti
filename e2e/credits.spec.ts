@@ -56,8 +56,9 @@ test("out of credits, each feature pauses its own way; with credits again, a pau
     "AI answers, Ask a person summaries, inbox drafts and summaries, changelog drafts, Autopilot, Verify and AI images are paused",
   );
   // Its one way in, the header's Ask AI (Draft with AI is in its dialog).
-  await expect(owner.getByRole("button", { name: "Ask AI", exact: true })).toBeDisabled();
-  await expect(owner.getByRole("button", { name: "Ask AI", exact: true })).toHaveAttribute("title", "This project is out of credits");
+  const headerAskAi = owner.getByRole("button", { name: "Ask AI", exact: true });
+  await expect(headerAskAi).toHaveAttribute("aria-disabled", "true");
+  await expect(headerAskAi).toHaveAccessibleDescription("This project is out of credits");
   await checkpoint(owner, "team-changelog-out-of-credits");
 
   // An article's Ask AI on selected text: shown, off, and why.
