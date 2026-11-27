@@ -18,7 +18,8 @@ export async function saveScreenshotSettings(projectSlug: string, _state: FormSt
     appUrl: text("appUrl") ?? "",
     signIn,
     username: signIn === "password" ? text("username") : undefined,
-    password: signIn === "password" ? text("password") : undefined,
+    // The password box under Other domains, there when one is added and a password is saved, as the password's own.
+    password: signIn === "password" ? text("password") || text("domainPassword") : undefined,
     signInLink: signIn === "link" ? text("signInLink") : undefined,
     about: text("about")?.replace(/\r\n/g, "\n"),
     window: text("window") as "desktop" | "phone" | undefined,
@@ -26,6 +27,7 @@ export async function saveScreenshotSettings(projectSlug: string, _state: FormSt
     residentialProxy: formData.get("residentialProxy") === "on",
     // One per line (or separated by commas or spaces); empty clears them.
     otherDomains: (text("otherDomains") ?? "").split(/[\s,]+/).filter(Boolean),
+    skippedDomains: (text("skippedDomains") ?? "").split(/[\s,]+/).filter(Boolean),
   };
   return asAdmin(projectSlug, DENIED, (context) => call(updateScreenshotSettings, context, input));
 }

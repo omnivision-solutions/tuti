@@ -3742,8 +3742,8 @@ model ScreenshotSettings {
   /// it was made for: deleted when that changes.
   profileId            String?
   profileSignIn        String           @default("")
-  /// The sign-in services found in the app's page and scripts (screenshotSettings.suggestions: [{ provider, hosts }]),
-  /// and the app address they were found at, with the scanner's version (sign-in-hosts.ts scannedFor): found again once either changes.
+  /// The sign-in services found in the app's page and scripts (screenshotSettings.signInDomains: [{ provider, hosts }],
+  /// allowed for its runs beside otherDomains), and the app address they were found at, with the scanner's version (sign-in-hosts.ts scannedFor): found again once either changes.
   signInServices       Json?
   signInServicesFor    String?
   /// When that answer was found: one older than a week is found again (the app may sign in elsewhere now); empty for
@@ -3753,6 +3753,8 @@ model ScreenshotSettings {
   /// when it started. One per project at a time; one older than SCAN_STALE_MS is taken for lost.
   signInScanFor        String?
   signInScanAt         DateTime?
+  /// Hosts found in signInServices that the team removed: never allowed for them (sign-in-hosts.ts foundDomains).
+  skippedDomains       String[]         @default([])
   updatedAt            DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

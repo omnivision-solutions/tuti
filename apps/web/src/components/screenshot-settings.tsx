@@ -1,29 +1,27 @@
 "use client";
 
-import { LoaderCircleIcon } from "lucide-react";
+import { InfoIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { useCustomizeForm } from "@/components/customize-shell";
+import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
 import { SettingBlock, SettingRow, SettingsCard } from "@/components/settings-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import type { settingsView } from "@/server/operations/screenshots";
 import { saveScreenshotSettings, testScreenshots } from "@/server/screenshots";
 
 type Settings = Awaited<ReturnType<typeof settingsView>>;
 type SignIn = Settings["signIn"];
-type Suggestion = { provider: string; hosts: string[] };
-
-/** How a run that couldn't sign in starts its error (@tuti/jobs SCREENSHOT_ERRORS.signIn). */
-const SIGN_IN_FAILED = "The agent couldn't sign in";
-const list = (items: string[]) => new Intl.ListFormat("en", { type: "conjunction" }).format(items);
+type Found = { host: string; provider: string };
 
 const SIGN_INS = [
   { value: "password", label: "Password" },
@@ -52,20 +50,8 @@ const CHECK_FOR_MS = 3 * 60_000;
 export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projectSlug: string; settings: Settings; aboutMax: number }) {
   const id = useId();
   const [signIn, setSignIn] = useState<SignIn>(settings.signIn);
-  const otherDomains = useRef<HTMLTextAreaElement>(null);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  /** Adds the service's hosts to Other domains, for "Save changes" (which asks for the password again). */
-  const add = (suggestion: Suggestion) => {
-    const field = otherDomains.current!;
-    const listed = field.value.split(/[\s,]+/).filter(Boolean);
-    field.value = [...listed, ...suggestion.hosts.filter((host) => !listed.includes(host))].join("\n");
-    // As if typed: the form sees a change to save.
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    setSuggestions((all) => all.filter((other) => other !== suggestion));
-    // Its button goes: focus where the hosts went.
-    field.focus();
-  };
-  // Saves that went through: a new sign-in link isn't sent back to the page, so each one reads the suggestions again.
+  const [found, setFound] = useState<Found[]>([]);
+  // Saves that went through: each reads the sign-in domains again (the address may have changed).
   const [saves, setSaves] = useState(0);
   const { state, pending, form } = useCustomizeForm({
     onSaved: () => setSaves((count) => count + 1),
@@ -79,17 +65,14 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
       return result;
     },
   });
-  // What the suggestions shown were read for: busy until the answer for the settings as they are now.
-  const [readFor, setReadFor] = useState<[string, number] | null>(null);
-  // Found by the server from the app's page (once per address, kept): read again with every save, as what the browser
-  // opens already (the domains, the sign-in link's host) may have changed.
-  // Keyed on what decides them and the saves that went through (a refused one changes nothing), not the settings
-  // object: a Test's refresh every few seconds makes a new one.
-  const looked = JSON.stringify([settings.appUrl, settings.signIn, settings.otherDomains]);
-  const loading = Boolean(settings.appUrl) && (readFor?.[0] !== looked || readFor[1] !== saves);
+  // What the domains shown were read for. Found by the server from the app's page (once per address, kept): read again
+  // with every save that went through (a refused one changes nothing). Keyed on the address, not the settings object:
+  // a Test's refresh makes a new one.
+  const [readFor, setReadFor] = useState<string | null>(null);
+  // Read for this address already: what's shown stays while a save reads it again (a removal, say); another address's never does.
+  const known = readFor === settings.appUrl;
   // The server is reading the app (in the background): asked again every few seconds, for as long as a read can take.
   const [checking, setChecking] = useState(false);
-  const waiting = Boolean(settings.appUrl) && checking;
   useEffect(() => {
     if (!settings.appUrl) {
       return;
@@ -99,8 +82,8 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
     let polls = CHECK_FOR_MS / CHECK_EVERY_MS;
     // The first look may start a read; the next ones only ask how it went.
     const ask = (start: boolean) =>
-      fetch(`/app/${projectSlug}/settings/screenshots/suggestions${start ? "" : "?start=false"}`)
-        .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[]; checking: boolean }>) : null))
+      fetch(`/app/${projectSlug}/settings/screenshots/sign-in-domains${start ? "" : "?start=false"}`)
+        .then((response) => (response.ok ? (response.json() as Promise<{ domains: Found[]; checking: boolean }>) : null))
         .catch(() => null)
         .then((answer) => {
           if (!current) {
@@ -114,13 +97,11 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
             }
             return;
           }
-          const result = answer ?? { suggestions: [], checking: false };
-          // Not those already added to Other domains and not saved yet (a look again while checking would bring them back).
-          const listed = new Set(otherDomains.current?.value.split(/[\s,]+/).filter(Boolean));
-          setSuggestions(result.suggestions.filter((suggestion) => !suggestion.hosts.every((host) => listed.has(host))));
+          const result = answer ?? { domains: [], checking: false };
+          setFound(result.domains);
           // Still checking once it stops asking (the worker may be busy): said so, never shown as nothing found.
           setChecking(result.checking);
-          setReadFor([looked, saves]);
+          setReadFor(settings.appUrl);
           if (result.checking && polls-- > 0) {
             timer = setTimeout(() => void ask(false), CHECK_EVERY_MS);
           }
@@ -130,8 +111,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
       current = false;
       clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `looked` stands for the settings it reads
-  }, [projectSlug, looked, saves]);
+  }, [projectSlug, settings.appUrl, saves]);
 
   return (
     <>
@@ -220,44 +200,153 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               Other domains
             </label>
             <p id="screenshots-other-domains-description" className="-mt-1.5 text-sm text-muted-foreground">
-              One per line. The password may be typed on these.
+              Your app&apos;s API, sign-in page or CDN.
             </p>
-            <Textarea
-              ref={otherDomains}
-              id="screenshots-other-domains"
-              name="otherDomains"
-              defaultValue={settings.otherDomains.join("\n")}
-              rows={2}
-              aria-describedby="screenshots-other-domains-description"
-              placeholder="acme.auth0.com"
+            <DomainField
+              settings={settings}
+              signIn={signIn}
+              found={known ? found : []}
+              checking={Boolean(settings.appUrl) && (!known || checking)}
+              saves={saves}
             />
-            <div className="contents" aria-busy={loading || waiting} data-suggestions>
-              {!loading && waiting && <p className="text-sm text-muted-foreground">Checking how your app signs in…</p>}
-              {/* Only the answer for the settings as they are: never another address's while it's read again. */}
-              {!loading &&
-                Boolean(settings.appUrl) &&
-                suggestions.map((suggestion, index) => (
-                  <div key={suggestion.provider} className="flex items-center gap-3 rounded-lg bg-muted px-3 py-2 text-sm">
-                    <p id={`${id}-suggestion-${index}`} className="min-w-0 flex-1 break-words">
-                      {suggestion.provider} sign-in needs {list(suggestion.hosts)}
-                    </p>
-                    <Button type="button" variant="outline" size="sm" className="shrink-0" aria-describedby={`${id}-suggestion-${index}`} onClick={() => add(suggestion)}>
-                      Add
-                    </Button>
-                  </div>
-                ))}
-            </div>
             {state.error && <FieldError>{state.error}</FieldError>}
           </SettingBlock>
         </form>
       </SettingsCard>
-      <TestCard projectSlug={projectSlug} settings={settings} suggested={!loading && suggestions.length > 0} />
+      <TestCard projectSlug={projectSlug} settings={settings} />
     </>
   );
 }
 
+/** A host as typed or pasted: lowercased, without a scheme, path or port. */
+const hostOf = (text: string) =>
+  text
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
+    .replace(/[/:?#].*$/, "");
+
+/**
+ * Other domains as chips: those typed (otherDomains), then those found for the app's sign-in ("Auto", allowed without
+ * adding them; removing one skips it, skippedDomains). Both saved by "Save changes" through hidden fields. Adding one
+ * with a password saved asks for it again (the server's rule: it can be typed there), in a box under the chips.
+ */
+function DomainField({ settings, signIn, found, checking, saves }: { settings: Settings; signIn: SignIn; found: Found[]; checking: boolean; saves: number }) {
+  const [typed, setTyped] = useState(settings.otherDomains);
+  const [skipped, setSkipped] = useState(settings.skippedDomains);
+  // Those saved: a domain not among them is new (after a save, what was sent).
+  const [saved, setSaved] = useState(settings.otherDomains);
+  const [seenSaves, setSeenSaves] = useState(saves);
+  if (seenSaves !== saves) {
+    setSeenSaves(saves);
+    setSaved(typed);
+  }
+  const [draft, setDraft] = useState("");
+  const typedField = useRef<HTMLInputElement>(null);
+  const skippedField = useRef<HTMLInputElement>(null);
+  useFieldChanged(typedField, typed);
+  useFieldChanged(skippedField, skipped);
+  const auto = found.filter(({ host }) => !typed.includes(host) && !skipped.includes(host));
+  const added = signIn === "password" && settings.passwordSet && typed.some((host) => !saved.includes(host) && !found.some((one) => one.host === host));
+
+  const commit = (text: string) => {
+    const hosts = text.split(/[\s,]+/).map(hostOf).filter(Boolean);
+    // One found and removed comes back as found; any other is typed.
+    setSkipped((all) => all.filter((host) => !hosts.includes(host)));
+    setTyped((all) => [...new Set([...all, ...hosts.filter((host) => !skipped.includes(host))])]);
+    setDraft("");
+  };
+
+  return (
+    <>
+      <input ref={typedField} type="hidden" name="otherDomains" value={typed.join("\n")} />
+      <input ref={skippedField} type="hidden" name="skippedDomains" value={skipped.join("\n")} />
+      <div
+        className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent p-1.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
+        aria-busy={checking}
+        data-domains
+      >
+        {typed.map((host) => (
+          <Chip key={host} host={host} onRemove={() => setTyped((all) => all.filter((one) => one !== host))} />
+        ))}
+        {auto.map(({ host, provider }) => (
+          <Chip key={host} host={host} provider={provider} onRemove={() => setSkipped((all) => [...all, host])} />
+        ))}
+        {checking && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-0.5 text-xs text-muted-foreground">
+            <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+            Checking sign-in
+          </span>
+        )}
+        <input
+          id="screenshots-other-domains"
+          value={draft}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (/[\s,]/.test(value)) {
+              commit(value);
+            } else {
+              setDraft(value);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && draft.trim()) {
+              event.preventDefault();
+              commit(draft);
+            } else if (event.key === "Backspace" && !draft && typed.length > 0) {
+              setTyped((all) => all.slice(0, -1));
+            }
+          }}
+          onBlur={() => draft.trim() && commit(draft)}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="Add a domain"
+          aria-describedby="screenshots-other-domains-description"
+          className="h-6 min-w-36 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <div aria-live="polite" className="sr-only">
+        {checking ? "Checking how your app signs in." : auto.length > 0 ? `Added for ${[...new Set(auto.map(({ provider }) => provider))].join(", ")} sign-in: ${auto.map(({ host }) => host).join(", ")}.` : ""}
+      </div>
+      {added && (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="screenshots-domain-password" className="text-sm text-muted-foreground">
+            Enter the password again to add a domain.
+          </label>
+          <Input id="screenshots-domain-password" name="domainPassword" type="password" autoComplete="current-password" className="@min-[34rem]/settings:w-72" />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A domain: typed, or found for the app's sign-in (`provider`), with an info popover saying why it was added. */
+function Chip({ host, provider, onRemove }: { host: string; provider?: string; onRemove: () => void }) {
+  return (
+    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full border py-0.5 pr-0.5 pl-2.5 font-mono text-xs", provider ? "border-primary/30 bg-primary/8" : "bg-muted")}>
+      <span className="min-w-0 truncate">{host}</span>
+      {provider && (
+        <Popover>
+          <PopoverTrigger openOnHover aria-label={`Why ${host} was added`} className="inline-flex items-center gap-0.5 rounded-full font-sans text-[0.6875rem] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Auto
+            <InfoIcon aria-hidden className="size-3" />
+          </PopoverTrigger>
+          <PopoverContent className="max-w-72 p-3 text-sm">
+            <p className="font-medium">Added for {provider} sign-in</p>
+            <p className="text-muted-foreground">Your app signs in through {provider}, so screenshots need this. Remove it if you don&apos;t.</p>
+          </PopoverContent>
+        </Popover>
+      )}
+      <button type="button" onClick={onRemove} aria-label={`Remove ${host}`} className="grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+        <XIcon aria-hidden className="size-3" />
+      </button>
+    </span>
+  );
+}
+
 /** The Test: the agent signs in with the saved settings and shows where it lands; read again while it runs. */
-function TestCard({ projectSlug, settings, suggested }: { projectSlug: string; settings: Settings; suggested: boolean }) {
+function TestCard({ projectSlug, settings }: { projectSlug: string; settings: Settings }) {
   const router = useRouter();
   const [starting, startTransition] = useTransition();
   // Only a Test started here is announced: a refused one (no run) mustn't read out the last one's result.
@@ -330,7 +419,6 @@ function TestCard({ projectSlug, settings, suggested }: { projectSlug: string; s
             <Alert variant="destructive">
               <AlertDescription>
                 {test.error ?? shot?.failed ?? "The test didn't finish."}
-                {suggested && test.error?.startsWith(SIGN_IN_FAILED) && <span className="block">Try the suggested domains.</span>}
               </AlertDescription>
             </Alert>
           )}

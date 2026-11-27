@@ -8,11 +8,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { call } from "@/server/operations/run";
 import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
-import { suggestScreenshotDomains } from "@/server/operations/screenshots";
+import { getScreenshotSignInDomains } from "@/server/operations/screenshots";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
- * Settings → Screenshots' suggestions (screenshotSettings.suggestions): the sign-in services an app's page and scripts
+ * Settings → Screenshots' sign-in domains (screenshotSettings.signInDomains): the sign-in services an app's page and scripts
  * call, read from a fake app on this machine (tests' Tuti is on localhost, where only that is fetched). The read is the
  * screenshot-sign-in-scan job's (inline here: done before the look that started it answers "checking").
  */
@@ -105,8 +105,14 @@ beforeEach(async () => {
   project = await createProject(owner);
 });
 
-/** A look at the suggestions; `start: false` (the screen's polls) only reads. */
-const look = (input: { start?: boolean } = {}) => call(suggestScreenshotDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+/** The hosts found, by service, as the scanner keeps them. */
+const byService = (domains: { host: string; provider: string }[]) =>
+  [...new Set(domains.map(({ provider }) => provider))].map((provider) => ({ provider, hosts: domains.filter((one) => one.provider === provider).map(({ host }) => host) }));
+/** A look at the sign-in domains (by service); `start: false` (the screen's polls) only reads. */
+const look = async (input: { start?: boolean } = {}) => {
+  const { domains, checking } = await call(getScreenshotSignInDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+  return { suggestions: byService(domains), checking };
+};
 /** The suggestions once the read is done: a first look starts it (and says it's checking), the next reads its answer. */
 const suggestions = async () => {
   const first = await look();
@@ -115,7 +121,7 @@ const suggestions = async () => {
 const saved = () => prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
 const settle = (data: { appUrl: string; otherDomains?: string[] }) => prisma.screenshotSettings.upsert({ where: { projectId: project.id }, create: { projectId: project.id, ...data }, update: data });
 
-test("finds the app's sign-in service in its own scripts, once per address, and leaves out hosts already allowed", async () => {
+test("finds the app's sign-in service in its own scripts, once per address", async () => {
   expect(await suggestions()).toEqual([]);
   await settle({ appUrl: `${base}/` });
   const firebase = { provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] };
@@ -126,9 +132,6 @@ test("finds the app's sign-in service in its own scripts, once per address, and 
   // Kept: not read again for the same address.
   expect(await suggestions()).toEqual([firebase]);
   expect(requests).toHaveLength(3);
-  // A host listed isn't suggested.
-  await settle({ appUrl: `${base}/`, otherDomains: ["securetoken.googleapis.com"] });
-  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com"] }]);
 
   // Another address is read again; one that can't be read suggests nothing, and isn't kept.
   await settle({ appUrl: `${base}/missing`, otherDomains: [] });
@@ -145,7 +148,7 @@ test("a script that didn't load isn't kept as nothing found: the next look reads
   expect(requests).toEqual(["/", "/app", "/assets/main.js", "/", "/app", "/assets/main.js"]);
 });
 
-test("never suggests what Other domains refuses (a shared suffix), nor a host the browser opens already (under the app's, the sign-in link's)", async () => {
+test("never a shared suffix, nor a Clerk host on another site than the app's", async () => {
   const appUrl = "https://app.example.com";
   await settle({ appUrl });
   await prisma.screenshotSettings.update({
@@ -157,7 +160,7 @@ test("never suggests what Other domains refuses (a shared suffix), nor a host th
       signInServices: [{ provider: "Clerk", hosts: ["vercel.app", "github.io", "acme-12.clerk.accounts.dev", "sub.app.example.com", "login.acme.example"] }],
     },
   });
-  expect(await suggestions()).toEqual([{ provider: "Clerk", hosts: ["acme-12.clerk.accounts.dev"] }]);
+  expect(await suggestions()).toEqual([{ provider: "Clerk", hosts: ["acme-12.clerk.accounts.dev", "sub.app.example.com"] }]);
 });
 
 test("off localhost, only public addresses over https: an app at a private address isn't read", async () => {

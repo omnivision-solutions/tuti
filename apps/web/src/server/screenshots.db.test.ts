@@ -1,5 +1,8 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { prisma } from "@tuti/db";
-import { creditBalance, grantCredits, handlers, lockProject, SCREENSHOT_SECRET, takeScreenshots as takeScreenshotRun, withoutLink } from "@tuti/jobs";
+import { creditBalance, grantCredits, handlers, lockProject, SCREENSHOT_SECRET, scannedFor, takeScreenshots as takeScreenshotRun, withoutLink } from "@tuti/jobs";
 import { type BrowserUseFake, configFile, creditsOn, type S3Fake, startBrowserUseFake, startS3Fake } from "@tuti/testkit";
 import { openValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -808,6 +811,39 @@ test("adding another domain while a password or sign-in link is saved needs it s
     message: "Enter the sign-in link again to add another domain: the browser can go there with it",
   });
   expect(await call(updateScreenshotSettings, as(), { otherDomains: ["evil.example.net"], signInLink: LINK })).toMatchObject({ otherDomains: ["evil.example.net"] });
+});
+
+test("hosts found for the app's sign-in are allowed and bound to the password with no one adding them; removing one needs nothing sent again", async () => {
+  await setUp();
+  const appUrl = "https://app.example.com/home";
+  await prisma.screenshotSettings.update({
+    where: { projectId: project.id },
+    data: { signInServicesFor: scannedFor(appUrl), signInServices: [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }] },
+  });
+  const bound = () => (browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[])[0]!.allowedDomains;
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(bound()).toEqual(["app.example.com", "identitytoolkit.googleapis.com", "securetoken.googleapis.com"]);
+  // Removed without the password; listed again among the other domains, allowed already, so without it too.
+  expect(await call(updateScreenshotSettings, as(), { skippedDomains: ["securetoken.googleapis.com"] })).toMatchObject({ skippedDomains: ["securetoken.googleapis.com"] });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(bound()).toEqual(["app.example.com", "identitytoolkit.googleapis.com"]);
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["identitytoolkit.googleapis.com"] })).toMatchObject({ otherDomains: ["identitytoolkit.googleapis.com"] });
+  // One removed isn't allowed, so typing it needs the password.
+  await expect(call(updateScreenshotSettings, as(), { otherDomains: ["securetoken.googleapis.com"] })).rejects.toMatchObject({ status: 400 });
+});
+
+test("a run before the app was read for its sign-in's hosts reads it first, so its browser opens them", async () => {
+  const app = createServer((request, response) => {
+    response.end(request.url === "/" ? '<script src="/main.js"></script>' : 'fetch("https://identitytoolkit.googleapis.com/v1/accounts")');
+  });
+  await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
+  try {
+    await setUp({ appUrl: `http://localhost:${(app.address() as AddressInfo).port}/` });
+    await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+    expect((browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[])[0]!.allowedDomains).toEqual(["identitytoolkit.googleapis.com", "localhost", "securetoken.googleapis.com"]);
+  } finally {
+    app.close();
+  }
 });
 
 const profileOf = (run = browserUse.runs.at(-1)!) => (run.body.browserSettings as { profileId?: string }).profileId;

@@ -222,6 +222,30 @@ export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
 export const partlyScannedFor = (appUrl: string) => `partial ${scannedFor(appUrl)}`;
 
 /**
+ * The hosts found for the app at its saved address (a full answer or a partial one), allowed for its runs as the
+ * other domains are, without the team adding them: each with its service. Not those the team removed
+ * (`skippedDomains`), nor a shared suffix (vercel.app), nor a Clerk host on another site than the app's (Clerk's own
+ * domain for an app is always under it): only the app's own code names them, so whoever could change that controls the
+ * app already.
+ */
+export function foundDomains(settings: { appUrl: string; signInServices: unknown; signInServicesFor: string | null; skippedDomains: string[] }): { host: string; provider: string }[] {
+  if (settings.signInServicesFor !== scannedFor(settings.appUrl) && settings.signInServicesFor !== partlyScannedFor(settings.appUrl)) {
+    return [];
+  }
+  const site = getDomain(new URL(settings.appUrl).hostname, { allowPrivateDomains: true });
+  const services = Array.isArray(settings.signInServices) ? (settings.signInServices as SignInService[]) : [];
+  return services.flatMap(({ provider, hosts }) =>
+    hosts
+      .filter((host) => !settings.skippedDomains.includes(host))
+      .filter((host) => {
+        const domain = getDomain(host, { allowPrivateDomains: true });
+        return domain !== null && (provider !== "Clerk" || host.endsWith(".clerk.accounts.dev") || domain === site);
+      })
+      .map((host) => ({ host, provider })),
+  );
+}
+
+/**
  * The sign-in services the app at `appUrl` calls: its page (over https, an http address asked for over https) and the
  * scripts it loads from its own site, read within size and time limits; null when the page couldn't be read.
  * `complete` when every script was read too: what's found otherwise may be missing one.

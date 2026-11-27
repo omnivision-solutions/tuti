@@ -271,7 +271,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
   "screenshotSettings.test": () => ({}),
-  "screenshotSettings.suggestions": () => ({}),
+  "screenshotSettings.signInDomains": () => ({}),
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
   "changelog.takeScreenshots": () => ({ number: 3, shots: [{ show: "The dashboard" }] }),
