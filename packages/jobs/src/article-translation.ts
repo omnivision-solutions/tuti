@@ -990,24 +990,37 @@ export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: G
     // make a run send it again), so its next translation of them, the job's or Update those sections', is anew; the sections
     // of one the team writes marked behind; one kept up to date gets its safety net (queued after the save commits). In an
     // article's version kept up to date (docs/plan.md: "a glossary change replaces your edits in the sections it touches"), the
-    // team's edits there in its published text are no longer theirs, so the job translates them anew; those it kept, and its
-    // draft's (where the team's edits never give way), stay theirs and are marked behind; those it took out stay out.
+    // team's edits there in its published text are no longer theirs, so the job translates them anew (in its draft too, where
+    // the draft has them as published); those it kept, one standing for more than one source section (made anew it would
+    // keep only its first's text), and those edited in its draft (where the team's edits never give way) stay theirs and are
+    // marked behind; those it took out stay out.
     const rows = mine.map(({ id, language, automatic, reasons }) => {
       const version = read.get(id);
       const memory = Object.fromEntries(Object.entries(version?.memory ?? {}).filter(([text]) => !matchTerms(text, language)));
       const stands = (meta: SectionMeta, key: string) => meta.key === key || (meta.also ?? []).includes(key);
       const touches = (meta: SectionMeta) => Object.keys(reasons).some((key) => stands(meta, key));
-      const sections = (version?.sections ?? []).map((meta) => (automatic && meta.own && !meta.kept && touches(meta) ? { ...meta, own: undefined } : meta));
-      const stays = (key: string) => (version?.sections ?? []).some((meta) => meta.own && meta.kept && stands(meta, key)) || (version?.drafted ?? []).some((meta) => meta.own && stands(meta, key));
+      const published = version?.sections ?? [];
+      // The team's in a way a new translation can't replace: kept, or standing for more than one source section.
+      const holds = (meta: SectionMeta) => !!meta.kept || (meta.also ?? []).length > 0;
+      // A draft's section is the team's edit there only where it differs from the published one (a draft starts as a copy).
+      const draftEdit = (meta: SectionMeta) => !published.some((other) => other.key === meta.key && other.own && other.text === meta.text);
+      const give = (meta: SectionMeta) => automatic && meta.own && touches(meta) && !holds(meta);
+      const sections = published.map((meta) => (give(meta) ? { ...meta, own: undefined } : meta));
+      const drafted = version?.drafted && version.drafted.map((meta) => (give(meta) && !draftEdit(meta) ? { ...meta, own: undefined } : meta));
+      const stays = (key: string) =>
+        published.some((meta) => meta.own && holds(meta) && stands(meta, key)) || (version?.drafted ?? []).some((meta) => meta.own && stands(meta, key) && (holds(meta) || draftEdit(meta)));
       const behind = automatic ? Object.fromEntries(Object.entries(reasons).filter(([key]) => stays(key))) : reasons;
-      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(behind)}, ${automatic}, ${JSON.stringify(sections)})`;
+      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(behind)}, ${automatic}, ${JSON.stringify(sections)}, ${JSON.stringify(drafted ?? null)})`;
     });
-    const owners = kind.name === "article" ? Prisma.sql`, sections = v.sections::jsonb` : Prisma.empty;
+    const owners =
+      kind.name === "article"
+        ? Prisma.sql`, sections = v.sections::jsonb, draft = CASE WHEN t.draft IS NULL OR v.drafted::jsonb = 'null'::jsonb THEN t.draft ELSE jsonb_set(t.draft, '{sections}', v.drafted::jsonb) END`
+        : Prisma.empty;
     for (let i = 0; i < rows.length; i += 500) {
       await tx.$executeRaw`
         UPDATE ${table} t SET memory = v.memory::jsonb, behind = t.behind || v.behind::jsonb, "updatedAt" = now(),
           "retryAt" = CASE WHEN v.net::boolean AND t.error IS NULL THEN (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000}) ELSE t."retryAt" END${owners}
-        FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net, sections) WHERE t.id = v.id`;
+        FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net, sections, drafted) WHERE t.id = v.id`;
     }
   }
   // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).

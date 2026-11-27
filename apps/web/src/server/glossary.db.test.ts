@@ -689,3 +689,49 @@ test("on a version kept up to date, the team's draft edit stays when a term in i
   expect(read.draft!.behind).toEqual([key]);
   expect(read.behind).toEqual([]);
 });
+
+test("on a version kept up to date, the team's section standing for two source sections keeps both's text when a term in it changes, marked behind", async () => {
+  await translated();
+  // The team joins Boards and Billing (Billing's heading taken out), editing both's text: one section standing for both
+  // (`also`, as a merge with the intro leaves it).
+  const de = { slug: "boards", language: "de" as const };
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![2]!.content![0]!.text = "Unser eigener Text.";
+  content.content![4]!.content![0]!.text = "Unsere eigene Zahlung.";
+  content.content!.splice(3, 1);
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  await call(publishTranslation, as(), de);
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+  const parts = sourceSections(translationSource(article).text);
+  const [boards, billing] = [parts.find((part) => part.key.startsWith("Boards"))!.key, parts.find((part) => part.key.startsWith("Billing"))!.key];
+  const { id, sections } = await version("boards");
+  await prisma.articleTranslation.update({
+    where: { id },
+    data: { sections: (sections as { key: string | null }[]).map((meta) => (meta.key === boards ? { ...meta, also: [billing] } : meta)) },
+  });
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  const after = await version("boards");
+  expect(String(after.body)).toContain("Unser eigener Text.");
+  expect(String(after.body)).toContain("Unsere eigene Zahlung.");
+  expect(after.behind).toEqual({ [boards]: glossaryChangedFor("Board") });
+});
+
+test("a published edit in a section using a changed term, with a draft editing only another: both texts take the new term, so publishing the draft keeps it", async () => {
+  const { de } = await teamBoards(true);
+  // A draft that edits only Billing (its Boards a copy of the published one).
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![4]!.content![0]!.text = "Unsere eigene Zahlung.";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  const published = await call(publishTranslation, as(), de);
+  const body = JSON.stringify(published.content);
+  expect(body).toContain("[de2] Make a Brett for ideas.");
+  expect(body).not.toContain("Unser eigener Text.");
+  expect(body).toContain("Unsere eigene Zahlung.");
+});
