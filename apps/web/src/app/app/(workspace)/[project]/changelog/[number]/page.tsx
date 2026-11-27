@@ -13,7 +13,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave } from "@/components/changelog-languages";
 import { NO_AI_WAITING } from "@/lib/changelog-versions";
 import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
