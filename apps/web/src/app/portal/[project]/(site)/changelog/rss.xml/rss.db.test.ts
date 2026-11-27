@@ -23,7 +23,7 @@ test("the changelog feed lists published entries only, newest first, with text t
   const response = await GET(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) });
   expect(response.headers.get("content-type")).toBe("application/rss+xml; charset=utf-8");
   const feed = await response.text();
-  const titles = [...feed.matchAll(/<item[^>]*><title>(.*?)<\/title>/g)].map((m) => m[1]);
+  const titles = [...feed.matchAll(/<item><title[^>]*>(.*?)<\/title>/g)].map((m) => m[1]);
   expect(titles).toEqual(["Tags &amp; &lt;things&gt;", "Older"]);
   expect(feed).not.toContain("Draft only");
   expect(feed).toContain(`<link>http://${project.slug}.localhost:3100/changelog/3</link>`);
@@ -40,7 +40,7 @@ test("at a language's address, the feed has each entry in its version there wher
   const project = await createProject(owner);
   await call(updateLanguages, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { languages: [{ code: "de", live: true, newPages: "manual" }] });
   const translated = await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", body: "Switch themes.", publishedAt: new Date("2026-01-01T10:00:00Z") } });
-  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 2, title: "Faster search", body: "Quicker.", publishedAt: new Date("2026-02-01T10:00:00Z") } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 2, title: "Faster search", body: "Quicker.", tags: ["NEW"], publishedAt: new Date("2026-02-01T10:00:00Z") } });
   await prisma.changelogTranslation.create({
     data: { entryId: translated.id, projectId: project.id, language: "de", automatic: false, title: "Dunkler Modus", body: "Wechsle das Design.", publishedAt: new Date() },
   });
@@ -48,16 +48,18 @@ test("at a language's address, the feed has each entry in its version there wher
   try {
     request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de", "x-tuti-language-default": "en" };
     const german = await feed();
-    expect([...german.matchAll(/<item[^>]*><title>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dunkler Modus"]);
+    expect([...german.matchAll(/<item><title[^>]*>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dunkler Modus"]);
     expect(german).toContain("<description>Wechsle das Design.</description>");
     expect(german).toContain("<language>de</language>");
-    // The one not translated says its text is the default language's; the translated one is the feed's.
-    expect(german).toContain('<item xml:lang="en"><title>Faster search</title>');
+    // The one not translated says its title and text are the default language's; its tags, and the translated one, are the feed's.
+    expect(german).toContain('<item><title xml:lang="en">Faster search</title>');
+    expect(german).toContain('<description xml:lang="en">Quicker.</description>');
+    expect(german).toContain("<category>Neu</category>");
     expect(german).toContain("<item><title>Dunkler Modus</title>");
     expect(german).toContain(`<link>http://${project.slug}.localhost:3100/de/changelog/1</link>`);
     request.headers = { "x-tuti-language": "en", "x-tuti-language-default": "en" };
     const english = await feed();
-    expect([...english.matchAll(/<item[^>]*><title>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dark mode"]);
+    expect([...english.matchAll(/<item><title[^>]*>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dark mode"]);
     expect(english).toContain("<language>en</language>");
   } finally {
     request.headers = {};

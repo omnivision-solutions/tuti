@@ -34,15 +34,17 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     // At this language's address either way (its page there shows the default language's with a line until it's
     // translated): its guid stays the same once it is, so feed readers don't list it twice.
     const url = `${portal}/changelog/${entry.number}`;
+    // Not translated into the feed's language: its title and text are the default language's, and say so (as its page's
+    // `lang`); its tags are the feed's.
+    const lang = entry.untranslated && defaultLanguage ? ` xml:lang="${xml(defaultLanguage)}"` : "";
     return [
-      // Not translated into the feed's language: its text is the default language's, and says so (as its page's `lang`).
-      entry.untranslated && defaultLanguage ? `<item xml:lang="${xml(defaultLanguage)}">` : "<item>",
-      `<title>${xml(entry.title)}</title>`,
+      "<item>",
+      `<title${lang}>${xml(entry.title)}</title>`,
       `<link>${xml(url)}</link>`,
       `<guid isPermaLink="true">${xml(url)}</guid>`,
       `<pubDate>${entry.publishedAt.toUTCString()}</pubDate>`,
       ...entry.tags.map((tag) => `<category>${xml(t(`tag.${tag}`))}</category>`),
-      `<description>${xml(toPlainText(entry.doc))}</description>`,
+      `<description${lang}>${xml(toPlainText(entry.doc))}</description>`,
       "</item>",
     ].join("");
   });
