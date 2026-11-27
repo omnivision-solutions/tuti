@@ -387,3 +387,18 @@ test("Not spam's removal of the rule waits for the rules' lock, as every change 
   expect((await removal).notice).toBe("Filed by your rule: Subject contains crypto. It's removed.");
   expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
 });
+
+test("Not spam on one a phrase filed before the rules names the rule the phrase became, and can remove it", async () => {
+  const { projectId, admin, update, mail } = await setup();
+  await update({ addRules: [rule("subject_or_body", "contains", "crypto"), rule("subject_or_body", "contains", "bitcoin")] });
+  await mail("e2e-lee@strangers.example", { subject: "Crypto" }); // #1
+  await mail("e2e-kim@strangers.example", { subject: "Bitcoin" }); // #2
+  // As the release before filed them: for a phrase, with the phrase alone.
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spamReason: "phrase", spamPhrase: "crypto" } });
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 2 } }, data: { spamReason: "phrase", spamPhrase: "bitcoin" } });
+  const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } });
+  expect(await spamChoices(prisma, conversation, true)).toMatchObject({ removesRule: "Subject or body contains crypto" });
+  expect((await call(updateConversation, admin, { number: 1, spam: false })).notice).toBe("Filed by your rule: Subject or body contains crypto. It still applies.");
+  expect((await call(updateConversation, admin, { number: 2, spam: false, removeRule: true })).notice).toBe("Filed by your rule: Subject or body contains bitcoin. It's removed.");
+  expect((await call(getSpamSettings, admin, {})).rules.map((r) => r.value)).toEqual(["crypto"]);
+});

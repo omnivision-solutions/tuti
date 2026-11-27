@@ -297,15 +297,22 @@ export function blockableDomain(address: string): string | null {
   return domain && !FREE_MAIL_DOMAINS.has(domain) ? domain : null;
 }
 
-/** Reasons a block rule gives: only with one of them on a conversation are its kept words (`spamPhrase`) a rule's. */
-const RULE_REASONS = new Set(["rule", "blocked_address", "blocked_domain"]);
+/**
+ * Reasons a block rule gives: only with one of them on a conversation are its kept words (`spamPhrase`) a rule's. A
+ * phrase's (filed before the rules) is the rule its migration made of it: "Subject or body contains <phrase>".
+ */
+const RULE_REASONS = new Set(["rule", "blocked_address", "blocked_domain", "phrase"]);
 
 /**
  * The rule that filed a conversation, while the filter's reason is still on it and the rule is still there. A teammate's
  * mark clears the reason: words left from before are no rule's doing.
  */
 async function ruleThatFiled(db: Db, projectId: string, reason: string | null | undefined, phrase: string | null | undefined): Promise<Rule | null> {
-  return phrase && RULE_REASONS.has(reason ?? "") ? ((await rulesOf(db, projectId)).find((rule) => describeSpamRule(rule) === phrase) ?? null) : null;
+  if (!phrase || !RULE_REASONS.has(reason ?? "")) {
+    return null;
+  }
+  const words = reason === "phrase" ? `Subject or body contains ${phrase}` : phrase;
+  return (await rulesOf(db, projectId)).find((rule) => describeSpamRule(rule) === words) ?? null;
 }
 
 /**
@@ -394,7 +401,7 @@ export async function recordMark(
   if (!spam && reason === "flood") {
     notices.push(`The hourly limit still applies: past ${NEW_BY_EMAIL_PER_HOUR} new conversations by email from one address in an hour, more go to Spam.`);
   }
-  if (!spam && reason === "phrase" && !sender) {
+  if (!spam && reason === "phrase" && !sender && !filedBy) {
     notices.push("Nothing is remembered about its sender: a message with one of your phrases still goes to Spam.");
   }
   if (!spam && reason === "dmarc_failed") {
