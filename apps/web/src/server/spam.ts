@@ -306,8 +306,8 @@ const RULE_REASONS = new Set(["rule", "blocked_address", "blocked_domain", "phra
 
 /**
  * The rule that filed a conversation, while it's still there: the filter's, while its reason is still on the
- * conversation (a teammate's mark clears it, and words left from before are no rule's doing); else the one a teammate's
- * report added with it ("Report spam and block …", `reportedRuleId`).
+ * conversation (a teammate's mark clears it, and words left from before are no rule's doing); else, or once that one's
+ * removed, the one a teammate's report added with it ("Report spam and block …", `reportedRuleId`).
  */
 async function ruleThatFiled(
   db: Db,
@@ -315,11 +315,9 @@ async function ruleThatFiled(
   { spamReason: reason, spamPhrase: phrase, reportedRuleId }: { spamReason?: string | null; spamPhrase?: string | null; reportedRuleId?: string | null },
 ): Promise<Rule | null> {
   const rules = await rulesOf(db, projectId);
-  if (phrase && RULE_REASONS.has(reason ?? "")) {
-    const words = reason === "phrase" ? `Subject or body contains ${phrase}` : phrase;
-    return rules.find((rule) => describeSpamRule(rule) === words) ?? null;
-  }
-  return (reportedRuleId && rules.find((rule) => rule.id === reportedRuleId)) || null;
+  const words = phrase && RULE_REASONS.has(reason ?? "") ? (reason === "phrase" ? `Subject or body contains ${phrase}` : phrase) : null;
+  // The filter's first; once it's removed, the one a report added, if any.
+  return (words && rules.find((rule) => describeSpamRule(rule) === words)) || (reportedRuleId && rules.find((rule) => rule.id === reportedRuleId)) || null;
 }
 
 /**
@@ -429,7 +427,7 @@ export async function recordMark(
 
 /** A rule from a report, under the filter's limit, as Settings' are: past it, refused (the report with it). */
 async function addReportedRule(db: Db, projectId: string, rule: SpamRule): Promise<string> {
-  const id = await addSpamRule(db, projectId, rule, true);
+  const { id } = await addSpamRule(db, projectId, rule, true);
   if ((await db.spamRule.count({ where: { projectId } })) > MAX_SPAM_RULES) {
     throw new OperationError(409, "too_many", `The filter holds up to ${MAX_SPAM_RULES} rules: remove some first`);
   }
@@ -483,21 +481,22 @@ export const lockSpamRules = (db: Db, projectId: string) => db.$executeRaw`SELEC
 /**
  * A block rule, an owner's or admin's doing (`fromReport`: by marking a conversation as spam). One the same as a rule
  * there already (`spamRuleKey`) isn't added again. A "Sender address is" or "Sender domain is" rule takes the address or
- * domain off the allowed list: on one list at a time. Returns whether it was added.
+ * domain off the allowed list: on one list at a time. Returns the rule's ID, the new one's or the same one's already
+ * there, and whether it was added.
  */
-export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fromReport = false): Promise<string> {
+export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fromReport = false): Promise<{ id: string; added: boolean }> {
   await lockSpamRules(db, projectId);
   const key = spamRuleKey(rule);
   const same = await db.spamRule.findMany({ where: { projectId, field: rule.field, matcher: rule.matcher }, select: { id: true, field: true, matcher: true, value: true, appliesTo: true } });
   const there = same.find((other) => spamRuleKey(other as SpamRule) === key);
   if (there) {
-    return there.id;
+    return { id: there.id, added: false };
   }
   const { id } = await db.spamRule.create({ data: { projectId, ...rule, fromReport }, select: { id: true } });
   if (isSenderRule(rule) && rule.matcher === "is") {
     await db.spamSender.deleteMany({ where: { projectId, conversationId: null, sender: rule.value } });
   }
-  return id;
+  return { id, added: true };
 }
 
 /**

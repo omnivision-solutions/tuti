@@ -15,7 +15,7 @@ import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { deleteUser } from "./operations/users";
 import { upsertProjectUser } from "./project-users";
-import { arrivalOf, blockableDomain, spamChoices, spamVerdict } from "./spam";
+import { addSpamRule, arrivalOf, blockableDomain, spamChoices, spamVerdict } from "./spam";
 import { widgetSendMessage, widgetStartConversation } from "./widget-inbox";
 
 /**
@@ -299,6 +299,29 @@ test("a report's rule is kept apart from the filter's: reporting a filed convers
   await call(updateConversation, admin, { number: 3, spam: false });
   await call(updateConversation, admin, { number: 3, spam: true });
   expect([(await row(3)).reportedRuleId, (await spamChoices(prisma, await row(3), true)).removesRule]).toEqual([null, null]);
+});
+
+test("adding a rule that's there already says so, with the same rule's ID", async () => {
+  const { projectId } = await setup();
+  const rule = { field: "sender_domain" as const, matcher: "is" as const, value: "spam.example" };
+  const first = await addSpamRule(prisma, projectId, rule);
+  expect(first).toEqual({ id: expect.any(String), added: true });
+  expect(await addSpamRule(prisma, projectId, { ...rule, value: "SPAM.example" })).toEqual({ id: first.id, added: false });
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(1);
+});
+
+test("once the filter's rule is removed, Not spam offers the one a report added with it", async () => {
+  const { projectId, mail, admin } = await setup();
+  const crypto = await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto" } });
+  await mail("e2e-kim@corp.example"); // #1
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spam: true, spamReason: "rule", spamPhrase: "Subject or body contains crypto" } });
+  await call(updateConversation, admin, { number: 1, spam: true, blockDomain: true });
+  const choices = async () => spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } }), true);
+  expect(await choices()).toMatchObject({ removesRule: "Subject or body contains crypto" });
+  await prisma.spamRule.delete({ where: { id: crypto.id } });
+  expect(await choices()).toMatchObject({ removesRule: "Sender domain is corp.example" });
+  expect((await call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).notice).toBe("Filed by your rule: Sender domain is corp.example. It's removed.");
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
 });
 
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
