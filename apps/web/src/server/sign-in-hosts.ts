@@ -30,7 +30,7 @@ const SERVICES: { provider: string; hint: string[]; near?: string[]; marker?: Re
   // Never Okta's own sign-in and sites.
   { provider: "Okta", hint: ["okta"], near: [".okta.com", ".oktapreview.com", ".okta-emea.com"], found: [/\b[a-z0-9][a-z0-9-]{0,62}\.(?:okta|oktapreview|okta-emea)\.com\b/g], not: /^(?:www|login|developer|help|support|status)\./ },
   {
-    provider: "Amazon Cognito", hint: ["cognito"], near: ["cognito-idp.", ".amazoncognito.com", "userpoolid", "user_pools_id"],
+    provider: "Amazon Cognito", hint: ["cognito"], near: ["cognito-idp.", ".amazoncognito.com", "userpoolid", "user_pool_id", "user_pools_id"],
     found: [
       new RegExp(String.raw`\bcognito-idp\.${REGION}\.amazonaws\.com\b`, "g"),
       new RegExp(String.raw`\b[a-z0-9-]{1,63}\.auth\.${REGION}\.amazoncognito\.com\b`, "g"),
@@ -57,18 +57,36 @@ const realHost = (host: string) => {
   return !!parsed.domain && (parsed.isIcann === true || parsed.isPrivate === true);
 };
 
-const MAX_HITS = 100;
+const MAX_HITS = 1_000;
 /** Before a name, room for a host's labels; after it, for a publishable key or a Clerk host's labels. */
 const BEFORE = 200;
 const AFTER = 600;
 
-/** The text around each of `names` in `text` (lower case), from `original` (its case) where they line up, apart. */
-function windows(text: string, original: string, names: string[]): string {
-  const source = original.length === text.length ? original : text;
+const HOST_CHAR = /[a-z0-9.-]/i;
+
+/**
+ * The text around each of `names` (any case) in `text`, apart; a host cut at a window's edge is left out, so a part
+ * of one is never taken for a host.
+ */
+function windows(text: string, names: string[]): string {
   const parts: string[] = [];
   for (const name of names) {
-    for (let at = text.indexOf(name), hits = 0; at !== -1 && hits < MAX_HITS; at = text.indexOf(name, at + name.length), hits++) {
-      parts.push(source.slice(Math.max(0, at - BEFORE), at + name.length + AFTER));
+    const pattern = new RegExp(name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), "gi");
+    let hits = 0;
+    for (const { index: at } of text.matchAll(pattern)) {
+      if (hits++ >= MAX_HITS) {
+        break;
+      }
+      const start = Math.max(0, at - BEFORE);
+      const end = Math.min(text.length, at + name.length + AFTER);
+      let part = text.slice(start, end);
+      if (start > 0 && HOST_CHAR.test(text[start - 1]!)) {
+        part = part.replace(/^[a-z0-9.-]*/i, "");
+      }
+      if (end < text.length && HOST_CHAR.test(text[end]!)) {
+        part = part.replace(/[a-z0-9.-]*$/i, "");
+      }
+      parts.push(part);
     }
   }
   return parts.join("\n");
@@ -88,7 +106,7 @@ export function findSignInServices(texts: string[]): SignInService[] {
     if (service.marker?.test(text)) {
       service.hosts!.forEach((host) => hosts.add(host));
     }
-    const near = windows(text, original, service.near ?? []);
+    const near = windows(original, service.near ?? []);
     const lower = near.toLowerCase();
     const candidates = [...(service.found ?? []).flatMap((pattern) => [...lower.matchAll(pattern)].map(([host]) => host)), ...(service.derived?.(near) ?? [])];
     for (const host of candidates) {

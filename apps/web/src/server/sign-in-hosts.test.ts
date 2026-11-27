@@ -26,6 +26,16 @@ describe("findSignInServices", () => {
   });
 });
 
+test("a window's edge never cuts a host into another: a host about BEFORE back isn't suggested cut short", () => {
+  // longname.auth0.com sits so that the second name's window starts inside it, at "name".
+  const text = `x longname.auth0.com${" ".repeat(182)}team.auth0.com`;
+  expect(findSignInServices([text])).toEqual([{ provider: "Auth0", hosts: ["longname.auth0.com", "team.auth0.com"] }]);
+});
+
+test("Amplify Gen 2's user_pool_id gives the Cognito host", () => {
+  expect(findSignInServices(['{"auth":{"user_pool_id":"eu-west-1_AbC123xyz"},"cognito":1}'])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.eu-west-1.amazonaws.com"] }]);
+});
+
 test("long hostile text is scanned in linear time: a run of hyphenated labels, unclosed tags", () => {
   // With every service's names in it, so each one's patterns run.
   const names = " identitytoolkit.googleapis.com auth0.com .auth0.com okta .okta.com cognito cognito-idp. .amazoncognito.com userpoolid clerk //clerk. .clerk.accounts.dev pk_live_ pk_test_ supabase.co .supabase.co ";
