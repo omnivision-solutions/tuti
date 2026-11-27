@@ -108,7 +108,7 @@ export const ImageNode = Node.create<{ mediaUrl?: (key: string) => string | unde
 });
 
 /** The stored size the editor shows: big enough for the column, no bigger. */
-const editorWidth = (w: number) => imageWidths(w).find((width) => width >= 960) ?? w;
+export const editorWidth = (w: number) => imageWidths(w).find((width) => width >= 960) ?? w;
 
 /** Longest file name kept for an attachment (the server shortens longer ones as they're uploaded). */
 export const MAX_FILE_NAME_LENGTH = 200;

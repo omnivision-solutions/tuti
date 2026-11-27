@@ -10,10 +10,15 @@ import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/r
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
   CODE_TABS_EDIT,
+  editorWidth,
+  imageKey,
+  isMediaId,
+  isPixelSize,
   newTabLabel,
   extensions,
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
+  MAX_IMAGE_SIZE,
   isCodeFilename,
   isEmptyDoc,
   isSafeLink,
@@ -52,6 +57,7 @@ import {
   MinusIcon,
   PaperclipIcon,
   QuoteIcon,
+  SparklesIcon,
   SquareCodeIcon,
   TableIcon,
   TableOfContentsIcon,
@@ -69,6 +75,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
+import { type GeneratedImage, ImageGenerator, type ImageEditing, type KeptTries, type Try } from "@/components/image-generator";
+import { toast } from "sonner";
+import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
 
 /** What the file picker offers for attachments and videos (the server checks each file too). */
@@ -96,6 +105,69 @@ export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
 /** An editor's placeholder as its props say it now (see "placeholderNow"). */
 const PLACEHOLDER_NOW = new PluginKey<null>("placeholderNow");
 
+/** The images a try is being made for, and each one's last error, kept by the image (its root) it was made for. */
+/**
+ * Where the image at `pos` (an upload, `mediaId`) is after `transaction`, or -1 once it's gone. Followed through its own
+ * node being replaced by one the same size (its alt text, size or alignment changed) and through a move within the
+ * transaction (a drag: taken out, and a copy of its upload put in that wasn't there before).
+ */
+function followImage(transaction: Transaction, pos: number, mediaId: string): number {
+  if (pos < 0) {
+    return pos;
+  }
+  let at = pos;
+  for (const step of transaction.steps) {
+    const map = step.getMap();
+    const mapped = map.mapResult(at);
+    if (!mapped.deleted) {
+      at = mapped.pos;
+      continue;
+    }
+    let kept = -1;
+    map.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      if (oldStart <= at && at < oldEnd && newEnd - newStart === oldEnd - oldStart) {
+        kept = newStart + (at - oldStart);
+      }
+    });
+    at = kept;
+    if (at < 0) {
+      break;
+    }
+  }
+  if (at >= 0) {
+    return at;
+  }
+  // Moved: the one copy of its upload this transaction put in (each copy there before, mapped, is accounted for).
+  const isIt = (node: ProseMirrorNode) => node.type.name === "image" && node.attrs.mediaId === mediaId;
+  const before = new Set<number>();
+  transaction.before.descendants((node, place) => {
+    if (isIt(node) && place !== pos) {
+      const mapped = transaction.mapping.mapResult(place);
+      if (!mapped.deleted) {
+        before.add(mapped.pos);
+      }
+    }
+  });
+  const added: number[] = [];
+  transaction.doc.descendants((node, place) => {
+    if (isIt(node) && !before.has(place)) {
+      added.push(place);
+    }
+  });
+  return added.length === 1 ? added[0]! : -1;
+}
+
+type PageTries = { tries: Try[]; generating: string[]; errors: Record<string, string> };
+/**
+ * The AI tries made in each project's editors since the page loaded, and which are being made: outside the editor, so
+ * a save that draws it again, or an article's new address, keeps them; one list for all of its images (each was paid for).
+ */
+const pageTries = new Map<string, PageTries>();
+/** The editors showing them: each drawn again when they change, so one made again while a try was being made gets it. */
+const pageListeners = new Set<() => void>();
+/** For tests: every page's tries forgotten. */
+export const forgetPageTries = () => pageTries.clear();
+
 export function RichEditor({
   profile,
   name,
@@ -116,6 +188,7 @@ export function RichEditor({
   toolbarId,
   toolbarEnd,
   findings,
+  imageEditing,
 }: {
   profile: Profile;
   name: string;
@@ -148,6 +221,8 @@ export function RichEditor({
   toolbarId?: string;
   toolbarEnd?: ReactNode;
   findings?: VerificationFinding[];
+  /** "Edit with AI" on its images (AI images, the team's); null where the server can't make them. `title`: what it's in. */
+  imageEditing?: (ImageEditing & { title?: string }) | null;
 }) {
   const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -216,6 +291,103 @@ export function RichEditor({
   };
   // Paste and drop handlers are set up with the editor, before `editor` below has a value.
   const editorRef = useRef<Editor | null>(null);
+
+  // "Edit with AI": the image picked (where it was, as it was). Its dialog starts afresh for each image, with the page's
+  // tries (pageTries): one list for every image here, so a try is never lost to which image it was made for.
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    const listener = () => redraw((n) => n + 1);
+    pageListeners.add(listener);
+    return () => {
+      pageListeners.delete(listener);
+    };
+  }, []);
+  // By project, not page: a new entry's first save moves it to its own address, with its tries.
+  const pageKey = uploads?.projectSlug ?? "";
+  const keptTries = (editedId: string): KeptTries => {
+    const now = (): PageTries => pageTries.get(pageKey) ?? { tries: [], generating: [], errors: {} };
+    const set = (next: PageTries) => {
+      pageTries.set(pageKey, next);
+      pageListeners.forEach((listener) => listener());
+    };
+    // The image this one came from (a try placed in the text is its source's), so its own tries are told from others.
+    const root = now().tries.find((each) => each.id === editedId)?.root ?? editedId;
+    return {
+      ...now(),
+      root,
+      generating: now().generating.includes(root),
+      error: now().errors[root] ?? null,
+      add: (made) => set({ ...now(), tries: [...now().tries, { ...made, root }] }),
+      setGenerating: (on) => set({ ...now(), generating: on ? [...now().generating, root] : now().generating.filter((each) => each !== root) }),
+      setError: (message) => {
+        const { [root]: _was, ...others } = now().errors;
+        set({ ...now(), errors: message === null ? others : { ...others, [root]: message } });
+      },
+    };
+  };
+  const [edited, setEdited] = useState<{ pos: number; image: { id: string; url: string; width: number; height: number } } | null>(null);
+  const [editingImage, setEditingImage] = useState(false);
+  // One of the project's finished uploads, shown here (one its own or another project's, never signed for it, isn't).
+  const editable = (attrs: Record<string, unknown>) => {
+    const { mediaId, w, h } = attrs;
+    const url = isMediaId(mediaId) && isPixelSize(w) && isPixelSize(h) && mediaUrls.get(imageKey(mediaId, editorWidth(w)));
+    return url ? { id: mediaId as string, url, width: w as number, height: h as number } : null;
+  };
+  const editImage =
+    uploads && imageEditing
+      ? {
+          paused: imageEditing.paused,
+          can: (attrs: Record<string, unknown>) => editable(attrs) !== null,
+          run: () => {
+            const image = editor && editable(editor.getAttributes("image"));
+            if (editor && image) {
+              editedPos.current = editor.state.selection.from;
+              editedId.current = image.id;
+              setEdited({ pos: editor.state.selection.from, image });
+              setEditingImage(true);
+            }
+          },
+        }
+      : undefined;
+  // Where the edited image is now: moved with every change to the text (none once it's deleted), so a copy of it that
+  // slid into its old place is never taken for it.
+  const editedPos = useRef(-1);
+  const editedId = useRef("");
+  /** The made image in the edited one's place (its alt text, size and alignment kept), or after it: one step to undo. */
+  const placeImage = (made: GeneratedImage, replace: boolean) => {
+    if (!editor || !edited) {
+      return;
+    }
+    Object.entries(made.urls).forEach(([key, url]) => mediaUrls.set(key, url));
+    const { doc } = editor.state;
+    const isEdited = (node: ProseMirrorNode | null | undefined) => node?.type.name === "image" && node.attrs.mediaId === edited.image.id;
+    // Where it is now (followImage); lost (deleted, or cut and pasted back), nothing is guessed at, as another copy of it
+    // may be there: the dialog stays, its tries kept, to pick the image again.
+    const tracked = editedPos.current >= 0 && editedPos.current < doc.content.size && isEdited(doc.nodeAt(editedPos.current));
+    const pos = tracked ? editedPos.current : -1;
+    if (pos < 0) {
+      toast.error("The image isn't in the text any more: pick an image to use this one.");
+      return;
+    }
+    const node = pos >= 0 ? doc.nodeAt(pos) : null;
+    if (node) {
+      const image = { mediaId: made.id, w: made.width, h: made.height };
+      const at = replace ? pos : pos + node.nodeSize;
+      editor
+        .chain()
+        .command(({ tr }) => {
+          if (replace) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...image });
+          } else {
+            tr.insert(at, node.type.create({ ...image, width: node.attrs.width, align: node.attrs.align }));
+          }
+          return true;
+        })
+        .setNodeSelection(at)
+        .run();
+    }
+    setEditingImage(false);
+  };
   // The editor reads its attributes on every update; the effect below keeps the error state current.
   const aria = useRef<Record<string, string>>({});
 
@@ -373,6 +545,11 @@ export function RichEditor({
       }
       onCreate?.(editor);
     },
+    onTransaction: ({ transaction }) => {
+      if (editedPos.current >= 0) {
+        editedPos.current = followImage(transaction, editedPos.current, editedId.current);
+      }
+    },
     onUpdate: ({ editor, transaction }) => {
       // What it was given stays what it sends.
       if (unreadableRef.current) {
@@ -462,16 +639,16 @@ export function RichEditor({
         )}
       >
         {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
-        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} className="border-b px-1 py-1" />}
+        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} editImage={editImage} className="border-b px-1 py-1" />}
         {editor && toolbarHost && createPortal(<>
-          {!unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} expanded />}
+          {!unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} editImage={editImage} expanded />}
           {toolbarEnd}
         </>, toolbarHost)}
         <EditorContent editor={editor} />
         {editor && bare && !unreadable && (
           <>
             <div ref={menus} />
-            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
+            <SelectionBar editor={editor} onPrompt={setPrompt} editImage={editImage} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
             <SlashMenu
               editor={editor}
               host={menusHost}
@@ -514,6 +691,29 @@ export function RichEditor({
         )}
         <input type="hidden" name={name} value={value} />
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
+        {editor && uploads && imageEditing && edited && (
+          <ImageGenerator
+            key={edited.image.id}
+            kept={keptTries(edited.image.id)}
+            projectSlug={uploads.projectSlug}
+            open={editingImage}
+            onOpenChange={setEditingImage}
+            title="Edit image"
+            subtitle={imageEditing.title?.trim() ? `In “${imageEditing.title.trim()}”` : undefined}
+            editing={edited.image}
+            defaultSize={{ label: "Same as original", ...generatable(edited.image) }}
+            logo={imageEditing.logo}
+            credits={imageEditing.credits}
+            useLabel="Replace image"
+            onUse={(made) => placeImage(made, true)}
+            alsoUse={{ label: "Insert as new", onUse: (made) => placeImage(made, false) }}
+            // Back to the text, the image (or the new one) picked.
+            finalFocus={() => {
+              editor.commands.focus();
+              return false;
+            }}
+          />
+        )}
       </div>
       {uploading > 0 &&
         (held ? (
@@ -545,6 +745,14 @@ const ALIGN_ICONS: Record<(typeof IMAGE_ALIGNMENTS)[number], LucideIcon> = {
   center: AlignCenterIcon,
   right: AlignRightIcon,
 };
+
+/** An image's size as one AI can make: its own, or (a side under 64 or over 2,400 pixels) scaled into range, its shape kept as far as it can be. */
+export function generatable({ width, height }: { width: number; height: number }) {
+  const up = Math.max(1, MIN_GENERATED_SIDE / Math.min(width, height));
+  const down = Math.min(1, MAX_IMAGE_SIZE / (Math.max(width, height) * up));
+  const side = (n: number) => Math.min(MAX_IMAGE_SIZE, Math.max(MIN_GENERATED_SIDE, Math.round(n * up * down)));
+  return { width: side(width), height: side(height) };
+}
 
 /** Whether a block is or holds a collapsible block. */
 function holdsDetails(node: ProseMirrorNode): boolean {
@@ -787,7 +995,7 @@ function SlashMenu({
 }
 
 /** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
-function SelectionBar({ editor, onPrompt, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
+function SelectionBar({ editor, onPrompt, editImage, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; editImage?: EditImage; host: () => HTMLElement }) {
   // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
@@ -819,13 +1027,16 @@ function SelectionBar({ editor, onPrompt, host, label }: { label: string; editor
       className="z-50"
       ref={bar}
     >
-      <Toolbar label={label} editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
+      <Toolbar label={label} editor={editor} onPrompt={onPrompt} editImage={editImage} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
     </BubbleMenu>
   );
 }
 
+/** "Edit with AI" on a picked image: whether it can be (one of the project's finished uploads), and opening its dialog. */
+type EditImage = { paused: boolean; can: (attrs: Record<string, unknown>) => boolean; run: () => void };
+
 /** `onImage`: picks images to upload (with uploads set up). */
-function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string; expanded?: boolean }) {
+function Toolbar({ editor, onPrompt, onImage, editImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; editImage?: EditImage; className?: string; expanded?: boolean }) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -837,7 +1048,7 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label
       italic: editor.isActive("italic"),
       code: editor.isActive("code"),
       link: editor.isActive("link"),
-      image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string }) : null,
+      image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string; mediaId: unknown; w: unknown; h: unknown }) : null,
       table: editor.isActive("table"),
       codeBlock: namedCode(editor) ? { tabs: codeTab(editor)?.node(-1).childCount ?? 0 } : null,
     }),
@@ -918,6 +1129,16 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label
             />
           ))}
           <Tool icon={TextIcon} label="Alt text" active={false} onClick={() => onPrompt("alt")} />
+          {editImage?.can(active.image) && (
+            <Tool
+              icon={SparklesIcon}
+              label="Edit with AI"
+              active={false}
+              disabled={editImage.paused}
+              reason={editImage.paused ? "This project is out of credits" : undefined}
+              onClick={editImage.run}
+            />
+          )}
         </div>
       )}
       {active.codeBlock && (
@@ -961,25 +1182,44 @@ function Tool({
   label,
   active,
   onClick,
+  disabled,
+  reason,
 }: {
   icon: LucideIcon;
   label: string;
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
+  /** Why it's off: its description, read with it, and its tooltip (shown on hover and keyboard focus). */
+  reason?: string;
 }) {
+  const reasonId = useId();
   return (
-    <IconTooltip label={label}><Button
+    <>
+    <IconTooltip label={reason ? `${label} · ${reason}` : label}><Button
       type="button"
       variant={active ? "secondary" : "ghost"}
       size="icon-sm"
       aria-label={label}
       aria-pressed={active}
+      disabled={disabled}
+      focusableWhenDisabled
+      aria-describedby={reason ? reasonId : undefined}
+      // Off, a press (a tap: tooltips don't open on touch screens) says why. Seen before the button's own handler,
+      // which ignores presses while it's off.
+      onClickCapture={disabled && reason ? () => toast(reason) : undefined}
       // Keep focus (and the selection) in the text while clicking; keyboard users still reach it with Tab.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
       <Icon />
     </Button></IconTooltip>
+    {reason && (
+      <span id={reasonId} className="sr-only">
+        {reason}
+      </span>
+    )}
+    </>
   );
 }
 
