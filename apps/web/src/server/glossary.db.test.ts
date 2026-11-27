@@ -489,3 +489,44 @@ test("a page published as a glossary save plans: its translation, refused by the
   // Two runs (the publish's, refused; the save's): no third one paying again.
   expect(model.requests.filter((request) => String(request.messages.at(-1)!.content).includes("Install it on a Board."))).toHaveLength(2);
 });
+
+test("one term changed: only its segments go to the model, those using another, unchanged term are reused", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(updateGlossary, as(), { terms: [{ term: "Acme", keep: true }, { term: "Board", translations: { de: "Tafel" } }] });
+  const content = doc("Intro", ["Boards", "Make a Board for ideas."], ["Billing", "Acme bills by card."]);
+  await call(createArticle, as(), { title: "Boards", content });
+  model.reply(reply("Boards", content, "de", "Tafel"));
+  await call(publishArticle, as(), { slug: "boards" });
+  await languageTranslationsDone();
+  model.requests.length = 0;
+  model.reply(reply("Boards", content, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Acme", keep: true }, { term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(1);
+  const sent = String(model.requests[0]!.messages.at(-1)!.content);
+  expect(sent).toContain("Make a Board for ideas.");
+  expect(sent).not.toContain("Acme bills by card.");
+  expect(String((await version("boards")).body)).toContain("[de] Acme bills by card.");
+});
+
+test("a save landing as a translation reads the glossary: the memory it cleared is read after, so a removed term's old word isn't reused", async () => {
+  await translated();
+  // Boards' billing edited and published; its job reads the version (memory with Board's Tafel), then the glossary. Just
+  // before that read, a save removing Board lands, as far as this version goes: Board gone, its remembered segment cleared
+  // (the save's own run left out, so the job's write is what's checked).
+  const edited = doc("Intro", ["Boards", "Make a Board for ideas."], ["Billing", "Pay by card or bank."]);
+  const findMany = prisma.glossaryTerm.findMany.bind(prisma.glossaryTerm);
+  const spy = vi.spyOn(prisma.glossaryTerm, "findMany").mockImplementationOnce((async (args: Parameters<typeof findMany>[0]) => {
+    await prisma.glossaryTerm.deleteMany({ where: { projectId: project.id } });
+    const { id, memory } = await version("boards");
+    const rest = Object.fromEntries(Object.entries(memory as Record<string, string>).filter(([text]) => !text.includes("Board")));
+    await prisma.articleTranslation.update({ where: { id }, data: { memory: rest } });
+    return findMany(args);
+  }) as never);
+  model.reply(reply("Boards", edited, "de2"));
+  await call(updateArticle, as(), { slug: "boards", content: edited, publish: true });
+  await languageTranslationsDone();
+  spy.mockRestore();
+  expect(String(model.requests.at(-1)!.messages.at(-1)!.content)).toContain("Make a Board for ideas.");
+  expect(String((await version("boards")).body)).not.toContain("Tafel");
+});
