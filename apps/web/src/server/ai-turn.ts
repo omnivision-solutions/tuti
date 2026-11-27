@@ -8,7 +8,7 @@ import { AUTOMATED_REPLIES_PER_HOUR, type HandoverReason } from "@/lib/workflows
 import { readerToSend } from "./docs-search";
 import { handOverAndTell } from "./inbox-path";
 import { notifyInbox } from "./live";
-import { answersEnabled, answerTurn, MAX_EARLIER_TURNS, type Turn } from "./operations/docs-ask";
+import { answersEnabled, answerTurn, type DocsAnswer, MAX_EARLIER_TURNS, type Turn } from "./operations/docs-ask";
 import { summarize, SUMMARY_TIMEOUT_MS } from "./operations/docs-escalate";
 
 /**
@@ -66,15 +66,16 @@ export const REPLY_AT = 0.3;
 
 /**
  * Whether a new conversation from `origin` starts with the AI ("AI answers first", by channel): email's switch
- * (`project.emailAiFirst`, off until the team turns it on; Settings → Workflows → AI answers first, W14). The widget's Messages are W13's, "Ask a
- * person" is the user asking, and one the team starts over the API is its own.
+ * (`project.emailAiFirst`, off until the team turns it on) and the widget's Messages' (`project.widgetAiFirst`, on by
+ * default; W13), both in Settings → Workflows → AI answers first (W14). "Ask a person" is the user asking, and one the
+ * team starts over the API is its own.
  */
 export async function aiAnswersFirst(projectId: string, origin: ConversationOrigin): Promise<boolean> {
-  if (origin !== "EMAIL") {
+  if (origin !== "EMAIL" && origin !== "WIDGET") {
     return false;
   }
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { emailAiFirst: true } });
-  return !!project?.emailAiFirst;
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { emailAiFirst: true, widgetAiFirst: true } });
+  return origin === "EMAIL" ? !!project?.emailAiFirst : !!project?.widgetAiFirst;
 }
 
 /** Why the AI can't answer here now (W14's "off for"): none where it can. */
@@ -181,10 +182,13 @@ export async function toAi(projectId: string, conversationId: string, messageId:
     if (!conversation || conversation.spam || conversation.spamHeldAt || (!start && conversation.handledBy !== "AI")) {
       return false;
     }
-    const message = await tx.conversationMessage.findFirst({ where: { id: messageId, conversationId, author: "USER", handedOverAt: null }, select: { channel: true } });
+    const message = await tx.conversationMessage.findFirst({
+      where: { id: messageId, conversationId, author: "USER", handedOverAt: null },
+      select: { channel: true, _count: { select: { attachments: true } } },
+    });
     // An email whose sender isn't proven would never get the answer (never an automated reply to mail we can't prove):
-    // the team has it instead.
-    if (!message || (message.channel === "EMAIL" && !automatedRepliesEmailed(conversation))) {
+    // the team has it instead. So has a widget message with files, which the AI can't read.
+    if (!message || (message.channel === "EMAIL" && !automatedRepliesEmailed(conversation)) || (message.channel === "WIDGET" && message._count.attachments > 0)) {
       return false;
     }
     await tx.conversation.update({ where: { id: conversationId }, data: { handledBy: "AI", pathDueAt: new Date(Date.now() + AI_TURN_DUE_MS) } });
@@ -236,6 +240,9 @@ export async function readMessage(state: { message: string; earlier: Turn[] }, m
   const [person, reply] = [answers.person as { noul: number }, answers.reply as { noul: number }];
   return { person: person.noul >= PERSON_AT, needsReply: reply.noul >= REPLY_AT };
 }
+
+/** What the widget shows of the AI's answer (`conversation_message.aiAnswer`): its text, sources, and question (the thumbs). */
+export type AiAnswer = { questionId: string; text: string; sources: DocsAnswer["sources"] };
 
 type Message = { id: string; author: "USER" | "TEAM" | "AI"; body: string; channel: MessageChannel; createdAt: Date; handedOverAt: Date | null };
 
@@ -381,14 +388,64 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
   }
   const sources = answer.sources.map((source) => (source.url ? `${source.title} (${source.url})` : source.title));
   const body = sources.length > 0 ? `${answer.answer}\n\nSources: ${sources.join(", ")}` : answer.answer;
-  return (await post(projectId, conversationId, latest, body)) ? "answered" : "dropped";
+  const aiAnswer: AiAnswer = { questionId: answer.id, text: answer.answer, sources: answer.sources };
+  return (await post(projectId, conversationId, latest, body, aiAnswer)) ? "answered" : "dropped";
+}
+
+/**
+ * "Ask a person" under the AI's answers in the widget's Messages (W13): the conversation the AI has is handed over for
+ * "the user asked", for the user's latest message, with the AI's summary as a note for the team (as its turn's handovers
+ * have), then the team is told. False where the AI doesn't have it (handed over already, the team's, in Spam); "busy"
+ * while the AI is writing or another press is handing it over.
+ */
+export async function askPerson(projectId: string, conversation: { id: string; number: number }): Promise<boolean | "busy"> {
+  // Claimed first, as a turn is (`pathDueAt` leased; never over a running turn's lease), so presses at once pay for one
+  // summary: the others find it claimed. The handover clears the lease; one left by a crash lasts only the summary's wait,
+  // past the turns' window (a turn can't take it meanwhile).
+  const lease = new Date(Date.now() + AI_TURN_DUE_MS + SUMMARY_TIMEOUT_MS + 10_000);
+  const { count } = await prisma.conversation.updateMany({
+    where: {
+      id: conversation.id,
+      projectId,
+      handledBy: "AI",
+      spam: false,
+      spamHeldAt: null,
+      OR: [{ pathDueAt: null }, { pathDueAt: { lte: new Date(Date.now() + AI_TURN_DUE_MS) } }],
+    },
+    data: { pathDueAt: lease },
+  });
+  if (count === 0) {
+    const now = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { handledBy: true, spam: true, spamHeldAt: true } });
+    return now?.handledBy === "AI" && !now.spam && !now.spamHeldAt ? "busy" : false;
+  }
+  const messages = (
+    await prisma.conversationMessage.findMany({
+      where: { conversationId: conversation.id, note: false, author: { in: ["USER", "TEAM", "AI"] } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: MESSAGES_READ,
+      select: { id: true, author: true, body: true, channel: true, createdAt: true, handedOverAt: true },
+    })
+  ).reverse() as Message[];
+  const latest = messages.findLast((message) => message.author === "USER");
+  // Handed over for it already (a workflow kept it with the AI): nothing to ask again, nor a summary to pay for.
+  if (!latest || latest.handedOverAt) {
+    await prisma.conversation.updateMany({ where: { id: conversation.id, pathDueAt: lease }, data: { pathDueAt: null } });
+    return false;
+  }
+  // What they asked last and the AI's answer to it (or, still unanswered, their messages since), and what came before.
+  const { question, earlier } = turnsOf(messages);
+  const last = question ? { question, answer: null } : earlier.at(-1)!;
+  const before = question ? earlier : earlier.slice(0, -1);
+  const note = await summarize(projectId, { question: last.question, askedBefore: before.map((t) => t.question), answer: last.answer, notHelpful: false, note: null }, SUMMARY_TIMEOUT_MS);
+  const handed = await handOverAndTell(projectId, conversation, latest.id, "user_asked", { onlyFromAi: true, note });
+  return !!handed?.handedOver;
 }
 
 /**
  * Writes the AI's answer to `latest`, checked again under the conversation's lock: only while the AI has it, `latest` is
  * still the user's newest message (a newer one's turn answers both) and nothing answered or handed it over meanwhile.
  */
-async function post(projectId: string, conversationId: string, latest: Message, body: string): Promise<boolean> {
+async function post(projectId: string, conversationId: string, latest: Message, body: string, aiAnswer: AiAnswer): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const [conversation] = await tx.$queryRaw<
       { spam: boolean; spamHeldAt: Date | null; handledBy: "AI" | "TEAM"; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]
@@ -411,7 +468,7 @@ async function post(projectId: string, conversationId: string, latest: Message, 
     const at = new Date(Math.max(Date.now(), last ? last.getTime() + 1 : 0));
     // As the set reply is written: it answers nobody on the team's side, so the conversation's status and wait stay.
     await tx.conversationMessage.create({
-      data: { projectId, conversationId, author: "AI", authorId: null, channel: latest.channel, body, requestId: latest.id, createdAt: at },
+      data: { projectId, conversationId, author: "AI", authorId: null, channel: latest.channel, body, aiAnswer, requestId: latest.id, createdAt: at },
     });
     await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: at, activeAt: at, pathDueAt: null } });
     await notifyInbox(tx, { projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
@@ -445,13 +502,20 @@ export async function teamRepliedSince(tx: Tx, conversationId: string, message: 
   return replied > 0;
 }
 
-/** Ends a turn with nothing to do: `pathDueAt` cleared, unless a newer message from the user (than `latest`) has its own turn due. */
+/**
+ * Ends a turn with nothing to do: `pathDueAt` cleared, unless a newer message from the user (than `latest`) has its own turn
+ * due. Open pages hear of it: the widget's thread stops saying "Answering…".
+ */
 async function settle(conversationId: string, latest: string | null) {
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [conversation] = await tx.$queryRaw<{ projectId: string; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
+      SELECT "projectId", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
     const newest = await newestFromUser(tx, conversationId);
-    if ((newest?.id ?? null) === latest) {
-      await tx.conversation.updateMany({ where: { id: conversationId, spamHeldAt: null }, data: { pathDueAt: null } });
+    if (conversation && (newest?.id ?? null) === latest) {
+      const { count } = await tx.conversation.updateMany({ where: { id: conversationId, spamHeldAt: null, pathDueAt: { not: null } }, data: { pathDueAt: null } });
+      if (count > 0) {
+        await notifyInbox(tx, { ...conversation, conversationId });
+      }
     }
   });
 }
