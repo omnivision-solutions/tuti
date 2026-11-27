@@ -427,3 +427,24 @@ test("what's sent is plain objects throughout, a heading's attrs too (a server a
     value === null || typeof value !== "object" || ((Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype) && Object.values(value).every(plainThroughout));
   expect(plainThroughout(rewriteText.mock.lastCall![1])).toBe(true);
 });
+
+test("on a text with nothing written yet it says so; closed without asking, focus goes back to the button that opened it", async () => {
+  let openWhole: (() => void) | null = null;
+  await editor({ initial: { type: "doc", content: [{ type: "paragraph" }] }, askAi: { ...askAi, opener: (open: (() => void) | null) => (openWhole = open) } });
+  await vi.waitFor(() => expect(openWhole).toBeTruthy());
+  const header = document.createElement("button");
+  header.textContent = "Header Ask AI";
+  document.body.append(header);
+  header.focus();
+  await act(async () => openWhole!());
+  const cancel = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((each) => each.textContent === "Cancel")!;
+  await act(async () => cancel.click());
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await vi.waitFor(() => expect(document.activeElement).toBe(header));
+
+  await act(async () => openWhole!());
+  const shorter = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((each) => each.textContent === "Shorter")!;
+  await act(async () => shorter.click());
+  expect(toast).toHaveBeenCalledWith("There's no text to edit yet.");
+  expect(rewriteText).not.toHaveBeenCalled();
+});

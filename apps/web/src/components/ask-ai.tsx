@@ -170,6 +170,8 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
   const [recent, setRecent] = useState<string[]>([]);
   /** Opened on the whole text, not the selection. */
   const [whole, setWhole] = useState(false);
+  /** What had focus as it opened on the whole text (a header's button): focus goes back to it if nothing is asked. */
+  const returnTo = useRef<HTMLElement | null>(null);
   const next = useRef(0);
   // The editor going (a save that changes the title or text remounts the form; leaving the page) takes a version working or
   // showing with it: said so, in words true of either.
@@ -311,17 +313,21 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
       from = Selection.findFrom(doc.resolve($from.after()), 1, true)?.from ?? from;
     }
     setOpen(false);
-    if (from < to) {
-      // The selection made the trimmed range, so focus coming back from the dialog is on it (and moves on to Accept).
-      editor.commands.setTextSelection({ from, to });
-      void run(from, to, instruction);
+    if (from >= to) {
+      // A new entry with nothing written yet (the header's Ask AI): said so, not closed without a word.
+      toast("There's no text to edit yet.");
+      return;
     }
+    // The selection made the trimmed range, so focus coming back from the dialog is on it (and moves on to Accept).
+    editor.commands.setTextSelection({ from, to });
+    void run(from, to, instruction);
   };
 
   return {
     plugin: () => askAiPlugin(actions),
     /** The dialog, on the selection; `all`: on the whole text. */
     open: (all = false) => {
+      returnTo.current = all && document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setRecent(recentInstructions());
       setWhole(all);
       setOpen(true);
@@ -333,6 +339,7 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
           whole={whole}
           recent={recent}
           draft={whole ? setup.draft : null}
+          returnTo={returnTo}
           onClose={() => setOpen(false)}
           onAsk={start}
           editor={editor}
@@ -348,6 +355,7 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
 function AskAiDialog({
   open,
   whole,
+  returnTo,
   draft,
   recent,
   onClose,
@@ -357,6 +365,8 @@ function AskAiDialog({
   open: boolean;
   /** On the whole text, not the selection. */
   whole: boolean;
+  /** Where focus goes if it closes without asking (opened on the whole text). */
+  returnTo: { current: HTMLElement | null };
   /** Draft with AI, offered beside it (it replaces the whole text). */
   draft?: (() => void) | null;
   /** The person's own instructions, last used first (read as it opens). */
@@ -366,14 +376,26 @@ function AskAiDialog({
   editor: Editor;
 }) {
   const inputId = useId();
+  /** Asked, not just closed: focus goes to the text the AI edits. */
+  const asked = useRef(false);
+  const ask = (instruction: string) => {
+    asked.current = true;
+    onAsk(instruction);
+  };
   const own = (instruction: string) => {
     remember(instruction);
-    onAsk(instruction);
+    ask(instruction);
   };
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
+        // Back to the text, which the AI is now editing; closed without asking from a header's button, back to that button.
         finalFocus={() => {
+          const toText = asked.current || !whole;
+          asked.current = false;
+          if (!toText) {
+            return returnTo.current ?? true;
+          }
           editor.commands.focus();
           return false;
         }}
@@ -396,7 +418,7 @@ function AskAiDialog({
           </DialogHeader>
           <div role="group" aria-label="Presets" className="flex flex-wrap gap-2">
             {ASK_AI_PRESETS.map(([label, instruction]) => (
-              <Button key={label} type="button" variant="outline" size="sm" onClick={() => onAsk(instruction)}>
+              <Button key={label} type="button" variant="outline" size="sm" onClick={() => ask(instruction)}>
                 {label}
               </Button>
             ))}

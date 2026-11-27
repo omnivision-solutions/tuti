@@ -694,7 +694,7 @@ const updateInput = z.object({
     expectedUpdatedAt: z.iso
       .datetime()
       .optional()
-      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt`, or the `expectedUpdatedAt` changelog.rewrite returns")
+      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt` as you read it")
       .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
     screenshotsSince: z.iso
       .datetime()
