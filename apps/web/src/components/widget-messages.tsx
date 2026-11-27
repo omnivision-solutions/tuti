@@ -826,17 +826,19 @@ function Conversation({
   const list = useRef<HTMLOListElement>(null);
   const panel = useCallback(() => list.current?.closest("[data-widget-scroll]") ?? null, []);
   useScrollToEnd(opened?.messages.length ?? 0, panel);
-  const lastAnswer = opened?.messages.findLast((m) => m.answer);
   // Where the focus goes once Ask a person is gone: the line saying where the team's reply comes.
   const status = useRef<HTMLParagraphElement>(null);
-  const askPerson = async (button: HTMLElement) => {
-    const result = await widgetAskPerson(projectSlug, auth, number).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
-    if ("error" in result) {
-      return result.error;
-    }
-    await reload();
-    keepFocus(button, status.current);
-  };
+  const [asking, startAsking] = useTransition();
+  const [askError, setAskError] = useState<string>();
+  const askPerson = (button: HTMLElement) =>
+    startAsking(async () => {
+      const result = await widgetAskPerson(projectSlug, auth, number).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      setAskError("error" in result ? result.error : undefined);
+      if (!("error" in result)) {
+        await reload();
+        keepFocus(button, status.current);
+      }
+    });
 
   return (
     <div className="flex flex-1 flex-col gap-3">
@@ -876,19 +878,22 @@ function Conversation({
                     </details>
                   )}
                   <MessageAttachments attachments={m.attachments} dropped={m.dropped} imported />
-                  {m.answer && (
-                    <AiAnswerFooter
-                      projectSlug={projectSlug}
-                      answer={m.answer}
-                      // Under its latest answer, while the AI has the conversation.
-                      askPerson={opened.withAi && m.id === lastAnswer?.id ? askPerson : undefined}
-                    />
-                  )}
+                  {m.answer && <AiAnswerFooter projectSlug={projectSlug} answer={m.answer} />}
                 </div>
               </li>
             ))}
           </ol>
         </>
+      )}
+      {/* While the AI has it and isn't writing: under its latest answer (or their message it said nothing to, a "hi"). */}
+      {opened?.askPerson && !opened.answering && (
+        <div className="flex flex-col items-start gap-1">
+          <Button variant="outline" size="sm" disabled={asking} focusableWhenDisabled onClick={(event) => askPerson(event.currentTarget)}>
+            <MessageCircleIcon data-icon="inline-start" />
+            Ask a person
+          </Button>
+          {askError && <p className="text-sm text-destructive">{askError}</p>}
+        </div>
       )}
       {/* Waiting for the team's reply, theirs the latest: where it comes, and when. A live region on the page from the
           start (empty until then), so screen readers hear it appear once they've sent a message. */}
@@ -922,20 +927,10 @@ function Conversation({
   );
 }
 
-/** Under the AI's answer in the thread: its sources, thumbs up or down, and Ask a person (`askPerson`, under its latest). */
-function AiAnswerFooter({
-  projectSlug,
-  answer,
-  askPerson,
-}: {
-  projectSlug: string;
-  answer: NonNullable<Opened["messages"][number]["answer"]>;
-  /** Hands the conversation to the team; an error to show if it couldn't. */
-  askPerson?: (button: HTMLElement) => Promise<string | undefined>;
-}) {
+/** Under the AI's answer in the thread: its sources, and thumbs up or down. */
+function AiAnswerFooter({ projectSlug, answer }: { projectSlug: string; answer: NonNullable<Opened["messages"][number]["answer"]> }) {
   const at = usePortalHref();
   const [rated, setRated] = useState(answer.helpful);
-  const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const rate = (helpful: boolean) =>
     startTransition(async () => {
@@ -966,23 +961,7 @@ function AiAnswerFooter({
           <ThumbsDownIcon className={cn(rated === false && "fill-current")} />
         </Button>
         <span role="status">{rated !== null && "Thanks for letting us know."}</span>
-        {askPerson && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pending}
-            focusableWhenDisabled
-            onClick={(event) => {
-              const button = event.currentTarget;
-              startTransition(async () => setError(await askPerson(button)));
-            }}
-          >
-            <MessageCircleIcon data-icon="inline-start" />
-            Ask a person
-          </Button>
-        )}
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

@@ -347,7 +347,8 @@ export async function askPerson(projectId: string, conversation: { id: string; n
   ).reverse() as Message[];
   const latest = messages.findLast((message) => message.author === "USER");
   const owner = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { handledBy: true, spam: true } });
-  if (!latest || owner?.handledBy !== "AI" || owner.spam) {
+  // Handed over for it already (a workflow kept it with the AI): nothing to ask again, nor a summary to pay for.
+  if (!latest || latest.handedOverAt || owner?.handledBy !== "AI" || owner.spam) {
     return false;
   }
   // What they asked last and the AI's answer to it (or, still unanswered, their messages since), and what came before.

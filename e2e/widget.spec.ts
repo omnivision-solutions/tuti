@@ -1430,28 +1430,46 @@ test("a new message in the widget's Messages starts a conversation the AI answer
   await expect(answer).toContainText("AI ·", { timeout: 30_000 });
   await expect(widget.getByText("Answering…")).toHaveCount(0);
   await expect(answer.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
-  await expect(answer.getByRole("button", { name: "Ask a person" })).toBeVisible();
+  // Ask a person under it; new messages are read out as they come.
+  const askPerson = widget.getByRole("button", { name: "Ask a person" });
+  await expect(askPerson).toBeVisible();
+  await expect(thread).toHaveAttribute("aria-live", "polite");
   // While the AI has it, nobody promises the team's reply.
   await expect(widget.getByText(/^We'll reply here/)).toHaveCount(0);
   await answer.getByRole("button", { name: "Helpful", exact: true }).click();
   await expect(answer.getByText("Thanks for letting us know.")).toBeVisible();
   await checkpoint(visitor, "widget-messages-ai-answer");
 
-  // A follow-up in the reply box: answered in the thread too, Ask a person now under that answer alone.
+  // A follow-up in the reply box: answered in the thread too, Ask a person under it.
   await nextDecision({ person: 0.05, reply: 0.9 }, followUp);
   await nextModelReply(JSON.stringify({ answer: "Yes: pick Admin when you invite them.", sources: ["s1"] }), followUp);
   await widget.getByRole("textbox", { name: "Reply" }).fill(followUp);
   await widget.getByRole("button", { name: "Send" }).click();
   const second = thread.getByRole("listitem").filter({ hasText: "Yes: pick Admin when you invite them." });
   await expect(second).toContainText("AI ·", { timeout: 30_000 });
-  await expect(thread.getByRole("button", { name: "Ask a person" })).toHaveCount(1);
-  await expect(second.getByRole("button", { name: "Ask a person" })).toBeVisible();
+  await expect(askPerson).toHaveCount(1);
 
-  // Ask a person: the team has it, with the AI's summary; the panel says where their reply comes.
+  // Ask a person failing (here, the request is cut off) says so, and it can be tried again.
+  let cut = false;
+  await visitor.route("**/widget**", async (route) => {
+    if (!cut && route.request().method() === "POST") {
+      cut = true;
+      await route.abort();
+    } else {
+      await route.fallback();
+    }
+  });
+  await askPerson.click();
+  await expect(widget.getByText("Couldn't send it. Check your connection and try again.")).toBeVisible();
+  await visitor.unroute("**/widget**");
+
+  // Ask a person: the team has it, with the AI's summary; the panel says where their reply comes, and the focus goes there.
   await nextModelReply("They want to make a colleague an admin.", followUp);
-  await second.getByRole("button", { name: "Ask a person" }).click();
-  await expect(widget.getByText(/^We'll reply here/)).toBeVisible();
-  await expect(thread.getByRole("button", { name: "Ask a person" })).toHaveCount(0);
+  await askPerson.click();
+  const replyWhere = widget.getByText(/^We'll reply here/);
+  await expect(replyWhere).toBeVisible();
+  await expect(replyWhere).toBeFocused();
+  await expect(askPerson).toHaveCount(0);
   await checkpoint(visitor, "widget-messages-asked-a-person");
 
   await owner.goto(`/app/${slug}/inbox`);
@@ -1463,6 +1481,14 @@ test("a new message in the widget's Messages starts a conversation the AI answer
   await expect(owner.getByText("Sent", { exact: true })).toBeVisible();
   await expect(thread).toContainText("Hi! I've made them an admin for you.");
   await expect(thread.getByRole("listitem").filter({ hasText: "Hi! I've made them an admin for you." })).toContainText("Olive Owner ·");
+
+  // With Messages hidden but opened by the page's own code, the AI still answers there: its first line says so.
+  await api("/widget", { hidden: ["messages"] }, "PATCH");
+  const hiddenTab = await (await browser.newContext()).newPage();
+  await hiddenTab.goto(sitePage("customer.localhost", slug));
+  await hiddenTab.evaluate(() => (window as unknown as { Tuti: { open: (options: object) => void } }).Tuti.open({ tab: "messages" }));
+  await expect(hiddenTab.frameLocator('iframe[title="Feedback"]').getByText("Ask anything: you'll get an answer right away, and a person if you need one.")).toBeVisible();
+  await api("/widget", { hidden: [] }, "PATCH");
 
   // Turned off in Customize → Widget, a new message goes straight to the team.
   await owner.goto(`/app/${slug}/settings/widget`);

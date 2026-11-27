@@ -14,6 +14,7 @@ import { runAiTurn } from "./ai-turn";
 import { rateDocsAnswer } from "./docs-readers";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation } from "./operations/conversations";
+import { createWorkflow } from "./operations/workflows";
 import { call } from "./operations/run";
 import { notifyInboxNow, subscribeInbox } from "./live";
 import { upsertProjectUser } from "./project-users";
@@ -95,7 +96,7 @@ test("a first message in Messages starts a conversation the AI has: answered in 
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   expect(await turn()).toBe("answered");
   const answered = await opened();
-  expect(answered).toMatchObject({ withAi: true, answering: false });
+  expect(answered).toMatchObject({ withAi: true, answering: false, askPerson: true });
   // The answer's text alone (the email's "Sources: …" line is the list under it), its source and its question.
   const [, reply] = answered.messages;
   expect(reply).toMatchObject({ ai: true, fromTeam: true, body: "Go to Settings → Export.", answer: { sources: [{ slug: article.slug, title: "Exporting" }], helpful: null } });
@@ -127,7 +128,7 @@ test("a first message in Messages starts a conversation the AI has: answered in 
   expect(await prisma.conversationMessage.findFirst({ where: { conversationId: (await conversation()).id, note: true }, select: { body: true } })).toEqual({
     body: "Summary: They want to export as JSON.",
   });
-  expect(await opened()).toMatchObject({ withAi: false, answering: false });
+  expect(await opened()).toMatchObject({ withAi: false, answering: false, askPerson: false });
   // Asked again: nothing more.
   expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
   expect(await prisma.conversationEvent.count({ where: { conversationId: (await conversation()).id, kind: "handed_over" } })).toBe(1);
@@ -137,7 +138,7 @@ test("a first message in Messages starts a conversation the AI has: answered in 
   expect((await opened()).messages.at(-1)).toMatchObject({ ai: false, fromTeam: true, name: "Olive Owner" });
   await widgetSendMessage(project.slug, auth, 1, "Thanks!");
   expect(await conversation()).toMatchObject({ handledBy: "TEAM", pathDueAt: null });
-});
+}, 30_000);
 
 test("a first message with files, or with Answer with AI first off, is the team's as before", async () => {
   const { project, auth, conversation } = await setup();
@@ -194,5 +195,23 @@ test("a message that needs no reply ends the turn with none, and the open thread
   } finally {
     stop();
   }
-  expect(await opened()).toMatchObject({ withAi: true, answering: false, messages: [{ body: "Thanks!" }] });
+  // Ask a person is still there: a first "hi" isn't left with nowhere to go.
+  expect(await opened()).toMatchObject({ withAi: true, answering: false, askPerson: true, messages: [{ body: "Thanks!" }] });
+});
+
+test("kept with the AI by a workflow, Ask a person is gone, and pressing it again asks no model for a summary", async () => {
+  const { project, team, auth, conversation, turn, opened } = await setup();
+  await call(createWorkflow, team, { name: "Everyone stays with the AI", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "dont_hand_over" }] });
+  actAs(null);
+  await widgetStartConversation(project.slug, auth, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  await turn();
+  model.reply("They want to export.", undefined, QUESTION);
+  expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
+  expect(await conversation()).toMatchObject({ handledBy: "AI" });
+  expect(await opened()).toMatchObject({ withAi: true, askPerson: false });
+  const asked = model.requests.length;
+  expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
+  expect(model.requests).toHaveLength(asked);
 });

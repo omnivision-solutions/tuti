@@ -130,8 +130,8 @@ async function theirConversation(who: Person, number: number) {
 /**
  * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
  * With whether it's waiting for the team's reply (`awaitingReply`: not closed, nor marked spam, which it never says), the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
- * and how long the team usually takes to reply (`replyMs`, usualReplyMs). `withAi`: the AI has it (W13: its answers offer
- * "Ask a person"), and `answering` while its turn is due.
+ * and how long the team usually takes to reply (`replyMs`, usualReplyMs). `withAi`: the AI has it (W13), `answering` while
+ * its turn is due, and `askPerson` while Ask a person would hand it to the team (not once their latest message was).
  */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
@@ -141,6 +141,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     replyMs: number | null;
     withAi: boolean;
     answering: boolean;
+    askPerson: boolean;
     /** The language the team writes in: a translated reply's original is in it. */
     teamLanguage: string;
     messages: {
@@ -194,6 +195,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         attachmentsDropped: true,
         importId: true,
         aiAnswer: true,
+        handedOverAt: true,
       },
     }),
     // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
@@ -218,6 +220,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     withAi,
     // Its turn is due (not the spam filter's hold): the AI is writing, or about to.
     answering: withAi && !!conversation.pathDueAt && !conversation.spamHeldAt && messages.at(-1)?.author === "USER",
+    askPerson: withAi && messages.findLast((m) => m.author === "USER")?.handedOverAt === null,
     teamLanguage,
     messages: messages.map((m) => ({
       id: m.id,
