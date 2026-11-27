@@ -346,3 +346,21 @@ test("on the retry job's claim, a failure's backoff replaces the claim's time, h
   expect(after.retryAt!.getTime() - Date.now()).toBeGreaterThan(retryDelay(5) - 60_000);
   expect(retryDelay(5)).toBeGreaterThan(lostAfterMs());
 });
+
+test("an embedding attempt that finds the version's text changed under it leaves the newer text's failure state for its retry", async () => {
+  await article("invoices", { de: { title: "Abrechnung", body: "Rechnungen herunterladen." } });
+  const row = await prisma.articleTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } });
+  // Waiting for its search data (a failure before), due now.
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { tries: 1, retryAt: new Date(Date.now() - 1000) } });
+  const release = model.embeddings.holdNext();
+  const asked = model.embeddings.received;
+  const running = translateArticle({ articleId: row.articleId, language: "de" }, log);
+  await vi.waitFor(() => expect(model.embeddings.received).toBeGreaterThan(asked));
+  // Meanwhile the team publishes new text, whose own embedding fails: its tries and its time to try again.
+  const retryAt = new Date(Date.now() + 60 * 60_000);
+  await prisma.articleTranslation.update({ where: { id: row.id }, data: { body: "Rechnungen jederzeit herunterladen.", tries: 2, retryAt } });
+  release();
+  await running;
+  // The older attempt, now stale, leaves them: the retry job still brings the new text back.
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { id: row.id } })).toMatchObject({ tries: 2, retryAt });
+});

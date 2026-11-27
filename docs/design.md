@@ -249,8 +249,10 @@ the list picks none to approve at once.
   phrase “facebook admin”"), "a teammate marked it" for a mark.
   Not spam's toast says what stays in the way (a blocked address or domain and who can change it, the hourly limit);
   where an owner's or admin's takes a blocked address off the list, the button says so first ("Not spam, and unblock
-  <address>"). For owners and admins More actions has "Mark as spam, also block <domain>…" under Mark as spam, where
-  the sender's domain can be blocked; it asks first.
+  <address>"). More actions has "Report spam"; for owners and admins, "Report spam and block sender" (the address
+  under it, muted) and "Report spam and block domain" (the organisational domain under it), where the sender's address is
+  proven and, for the domain, it isn't free mail. None asks first: for an owner or admin, Not spam undoes each ("Not spam,
+  and unblock <address>", "Not spam, and remove the rule").
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,
@@ -314,10 +316,10 @@ the list picks none to approve at once.
   (picked or dropped), and Make a cover and Generate (AI images, `ImageGenerator`: the prompt and references
   on the left, the result and its tries on the right; stacked on phones) beside it. One way into AI: while the text is still the pull requests'
   titles or the line Autopilot wrote for each (untouched: not drafted with AI, edited or reworded on approval), the
-  toolbar's Draft with AI (the main action, Publish asking first); once it's written, Edit with AI's menu
-  over the text, Draft with AI in it, and Ask AI in the selection bar on selected text (`AskAi`: presets, the
-  person's last instructions and their own in a dialog; the AI's version under the struck-through text, with
-  Accept, Try again and Discard; Accept is an edit like any other, undone with undo).
+  toolbar's Draft with AI (the main action, Publish asking first); once it's written, Ask AI: over the text on
+  the whole text (a draft's Draft with AI in its dialog), and in the selection bar on selected text (`AskAi`:
+  presets, the person's last instructions and their own in a dialog; the AI's version under the struck-through
+  text, with Accept, Try again and Discard; Accept is an edit like any other, undone with undo).
   Autopilot's column is what it updates, under To review (updates waiting for the
   team or going out by themselves) and Reviewed, each in two sections, Feedback (posts
   on every board) then Help center (articles, and new articles' drafts), the ones that

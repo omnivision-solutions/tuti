@@ -148,7 +148,8 @@ export async function embedTranslation(translationId: string, log: JobLogger): P
   });
   if (!written) {
     log.info(`translation ${translationId} changed while it was being embedded; left to the newer run`);
-    return { skipped: true };
+    // `changed`: what it embedded isn't the version's text any more (not a skip because embeddings are off).
+    return { skipped: true, changed: true };
   }
   return { skipped: false, embedded: next?.chunks.length ?? 0 };
 }

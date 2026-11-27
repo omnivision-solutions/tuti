@@ -857,3 +857,40 @@ test("the docs in German: tabs' and collections' names translated on the home, a
   await reader.goto("/docs");
   await expect(reader.getByRole("list", { name: "Collections" }).getByRole("heading", { name: "Invoicing" })).toBeVisible();
 });
+
+test("searching the docs in German finds the articles translated there by their German, at their German address", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // German written by the team: nothing asks the model. Billing's German version as the editor will save it (L11).
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const billing = await api("/articles", { title: "Billing", body: "Pay by card." });
+  await api(`/articles/${billing.slug}/publish`, {});
+  const setup = await api("/articles", { title: "Setup", body: "Install the app." });
+  await api(`/articles/${setup.slug}/publish`, {});
+  await query(
+    `INSERT INTO article_translation (id, "articleId", "projectId", language, title, slug, body, automatic, "publishedAt", "updatedAt")
+     SELECT gen_random_uuid()::text, a.id, a."projectId", 'de', 'Abrechnung', 'abrechnung', 'Mit Karte zahlen.', false, now(), now()
+     FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, billing.slug],
+  );
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  // The search dialog as the reader types: the German title, marked German.
+  await reader.goto("/de/docs");
+  await reader.getByRole("main").getByRole("button", { name: /^(Dokumentation durchsuchen|Suchen oder KI fragen)$/ }).click();
+  await reader.getByRole("dialog").getByRole("combobox").fill("Karte");
+  await expect(reader.getByRole("dialog").getByRole("option", { name: /Abrechnung/ }).locator("[lang=de]").first()).toHaveText("Abrechnung");
+  await reader.keyboard.press("Escape");
+  // The results' page.
+  await reader.goto("/de/docs?q=Karte");
+  const result = reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Abrechnung" });
+  await expect(result).toHaveAttribute("href", "/de/docs/abrechnung");
+  await expect(result.locator("[lang=de]")).toHaveText("Abrechnung");
+  await checkpoint(reader, "docs-search-in-german", { fullPage: false });
+  // An article not translated: found by its English, marked as the team's.
+  await reader.goto("/de/docs?q=install");
+  await expect(reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Setup" }).locator("[lang=en]")).toHaveText("Setup");
+});
