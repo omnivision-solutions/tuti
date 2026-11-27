@@ -49,6 +49,8 @@ test("long hostile text is scanned in linear time: a run of hyphenated labels, u
   // With every service's names in it, so each one's patterns run.
   const names = " identitytoolkit.googleapis.com auth0.com .auth0.com okta .okta.com cognito cognito-idp. .amazoncognito.com userpoolid clerk //clerk. .clerk.accounts.dev pk_live_ pk_test_ supabase.co .supabase.co ";
   findSignInServices([("a-".repeat(1_000) + names).repeat(500), ("aa-a".repeat(500) + names).repeat(500), "a-".repeat(2_000_000) + names]);
+  // Capitals, and an İ so the lowered text is longer: the fold on its own path.
+  findSignInServices(["İ" + ("aA-".repeat(1_000) + names).repeat(500)]);
   for (const text of ['<link href="x" '.repeat(100_000), "<script src".repeat(100) + " ".repeat(500_000)]) {
     scriptsOf({ url: new URL("https://app.example.com"), text });
   }

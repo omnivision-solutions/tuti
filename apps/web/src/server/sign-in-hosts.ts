@@ -66,11 +66,10 @@ const isHostChar = (char: string | undefined) => char !== undefined && /[a-z0-9.
 
 /**
  * The text around each of `names` (ASCII, lower case) in `text`, apart; a host cut at a window's edge is left out, so a
- * part of one is never taken for a host. Found in `text` with only A–Z lowered, so offsets match it and a key in the
- * window keeps its case.
+ * part of one is never taken for a host. Found in `folded` (`text` lowered with its offsets kept), cut from `text`, so a
+ * key in the window keeps its case.
  */
-function windows(text: string, names: string[]): string {
-  const folded = text.replace(/[A-Z]/g, (char) => char.toLowerCase());
+function windows(text: string, folded: string, names: string[]): string {
   const parts: string[] = [];
   for (const name of names) {
     for (let at = folded.indexOf(name), hits = 0; at !== -1 && hits < MAX_HITS; at = folded.indexOf(name, at + name.length), hits++) {
@@ -92,6 +91,8 @@ function windows(text: string, names: string[]): string {
 export function findSignInServices(texts: string[]): SignInService[] {
   const original = texts.join("\n");
   const text = original.toLowerCase();
+  // The lowered text where its offsets match the original's (nearly always); else only A–Z lowered, runs at a time.
+  const folded = text.length === original.length ? text : original.replace(/[A-Z]+/g, (run) => run.toLowerCase());
   const found: SignInService[] = [];
   for (const service of SERVICES) {
     // Its patterns only where its name is: most text names none, and is skipped without a scan.
@@ -102,7 +103,7 @@ export function findSignInServices(texts: string[]): SignInService[] {
     if (service.marker?.test(text)) {
       service.hosts!.forEach((host) => hosts.add(host));
     }
-    const near = windows(original, service.near ?? []);
+    const near = windows(original, folded, service.near ?? []);
     const lower = near.toLowerCase();
     const candidates = [...(service.found ?? []).flatMap((pattern) => [...lower.matchAll(pattern)].map(([host]) => host)), ...(service.derived?.(near) ?? [])];
     for (const host of candidates) {
