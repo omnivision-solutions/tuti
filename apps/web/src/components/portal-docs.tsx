@@ -331,13 +331,13 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   // The level above: the collection it's in, else its tab or all of them.
   const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
   // The team's words (its and its parent's names, its description, its articles): in the default language under another's
-  // address (teamLanguage).
+  // address (teamLanguage), but names and descriptions translated into the page's (their own `lang`, docs/plan.md L9).
   const lang = await teamLanguage();
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug} browse={(await pageTranslator("helpCenter")).t("browseDocs")}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
-          <Link lang={parent ? lang : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
+          <Link lang={parent ? (parent.lang ?? lang) : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
             {up.label}
           </Link>
           <PortalPageHeader
@@ -349,12 +349,12 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
                     <CollectionIcon name={collection.icon} />
                   </span>
                 )}
-                <span lang={lang} className="min-w-0">
+                <span lang={collection.lang ?? lang} className="min-w-0">
                   {collection.name}
                 </span>
               </span>
             }
-            description={collection.description && <span lang={lang}>{collection.description}</span>}
+            description={collection.description && <span lang={collection.lang ?? lang}>{collection.description}</span>}
           />
           {collection.sample && <SampleBadge />}
         </div>
@@ -460,7 +460,7 @@ export async function DocsArticle({
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
               )}
-              <Link lang={collection ? lang : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
+              <Link lang={collection ? (collection.lang ?? lang) : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
                 {up.label}
               </Link>
             </nav>

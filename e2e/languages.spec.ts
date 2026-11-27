@@ -631,7 +631,7 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
 });
 
-test("the docs home in German: its tabs' and collections' names translated, marked as German", async ({ browser }, testInfo) => {
+test("the docs in German: tabs' and collections' names translated on the home, a collection's page and an article's, marked as German", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -657,8 +657,13 @@ test("the docs home in German: its tabs' and collections' names translated, mark
   }).toPass();
   await expect(collections.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
   await checkpoint(reader, "docs-home-names-in-german", { fullPage: false });
-  // The sidebar's tree beside an article too.
+  // The collection's page: its heading and description.
+  await reader.goto("/de/docs/invoicing");
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(reader.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  // An article in it: the breadcrumb's link to it, and the sidebar's tree.
   await reader.goto(`/de/docs/${article.slug}`);
+  await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Rechnungen" })).toHaveAttribute("lang", "de");
   await expect(reader.getByRole("navigation", { name: "Dokumentation" }).locator("[lang=de]", { hasText: "Rechnungen" })).toBeVisible();
   // At the default language's address, the team's names.
   await reader.goto("/docs");
