@@ -689,7 +689,7 @@ test("signing in, signing up and resetting a password in German, the sign-in lin
   await expect(visitor.getByText("Wir mailen dir einen Link, um ein neues festzulegen.")).toBeVisible();
   await visitor.getByLabel("E-Mail").fill(email);
   await visitor.getByRole("button", { name: "Link per E-Mail senden" }).click();
-  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${email.replace(/[.]/g, "\\.")} gibt`))).toBeVisible();
+  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} gibt`))).toBeVisible();
   await visitor.goto("/de/forgot-password?link=failed");
   await expect(visitor.getByText("Dieser Link ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
   // Single sign-on's error: the reader's words in German, what went wrong for whoever set it up in English.
