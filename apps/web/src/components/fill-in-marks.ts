@@ -1,28 +1,34 @@
 import type { Node } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { markerSpans } from "@tuti/content";
+import { MARKERS, markerSpans } from "@tuti/content";
 
 export const FILL_INS = new PluginKey<DecorationSet>("fillIns");
 
 /**
  * What a draft left for the team to fill in ("[Check: …]", "[Screenshot: …]"), highlighted where it is: the same
- * markers publishing refuses (markersIn), so each one in the way is easy to find. Decorations: never saved.
+ * markers publishing refuses (markersIn), so each one in the way is easy to find. Decorations: never saved. A
+ * changelog entry's are any marker, code included; an article's only "[Screenshot: …]" outside code, since one quoted as
+ * code shows how to ask for a screenshot.
  */
-export function fillInsPlugin() {
+export function fillInsPlugin(kind: keyof typeof MARKERS) {
+  const code = kind === "any";
   // ponytail: redrawn from the whole text on each change; fine at an entry's or article's length.
   const draw = (doc: Node) => {
     const marks: Decoration[] = [];
     doc.descendants((node, pos) => {
+      if (node.type.name === "codeBlock" && !code) {
+        return false;
+      }
       if (!node.isTextblock) {
         return true;
       }
-      // Its text, each character's position beside it: anything else inline (a line break, an image) ends a line.
+      // Its text, each character's position beside it: anything else inline (a line break, an image, an article's code) ends a line.
       let text = "";
       const at: number[] = [];
       node.forEach((child, offset) => {
         const start = pos + 1 + offset;
-        const piece = child.isText ? child.text! : "\n";
+        const piece = child.isText && (code || !child.marks.some((mark) => mark.type.name === "code")) ? child.text! : "\n".repeat(child.nodeSize);
         for (let i = 0; i < piece.length; i++) {
           at.push(start + i);
         }
@@ -30,7 +36,7 @@ export function fillInsPlugin() {
       });
       let line = 0;
       for (const each of text.split("\n")) {
-        for (const [from, to] of markerSpans(each)) {
+        for (const [from, to] of markerSpans(each, kind)) {
           marks.push(Decoration.inline(at[line + from]!, at[line + to - 1]! + 1, { class: "rounded-sm bg-highlight text-highlight-foreground", "data-fill-in": "" }));
         }
         line += each.length + 1;

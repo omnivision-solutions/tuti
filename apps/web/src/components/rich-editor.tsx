@@ -460,7 +460,9 @@ export function RichEditor({
         ],
       }),
       // Lines a draft left to fill in, highlighted where publishing would refuse them.
-      ...(profile === "changelog" || profile === "article" ? [Extension.create({ name: "fillIns", addProseMirrorPlugins: () => [fillInsPlugin()] })] : []),
+      ...(profile === "changelog" || profile === "article"
+        ? [Extension.create({ name: "fillIns", addProseMirrorPlugins: () => [fillInsPlugin(profile === "changelog" ? "any" : "screenshot")] })]
+        : []),
       // A new placeholder, sent in a transaction (a reply box names whose Reply opened it).
       Extension.create({
         name: "placeholderNow",

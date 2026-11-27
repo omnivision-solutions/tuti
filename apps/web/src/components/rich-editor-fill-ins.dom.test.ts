@@ -42,19 +42,31 @@ async function editor(profile: Profile) {
 }
 const highlighted = () => [...document.querySelectorAll("[data-fill-in]")].map((each) => each.textContent);
 
-test("lines a draft left to fill in are highlighted in a changelog entry and an article, as publishing finds them; as typed too", async () => {
-  for (const profile of ["changelog", "article"] as const) {
-    const open = await editor(profile);
-    expect(highlighted()).toEqual(["[Screenshot: the help panel]", "[Check: and on [iOS]?]", "[ check : left open"]);
-    expect(document.querySelector("[data-fill-in]")!.className).toContain("bg-highlight");
-    await act(async () => open.chain().insertContentAt(1 + "Help opens beside the app.".length, " [Check: a date?]").run());
-    expect(highlighted()).toContain("[Check: a date?]");
-    // Replaced, it's no longer highlighted.
-    await act(async () => open.commands.setContent({ type: "doc", content: [{ type: "paragraph", content: [text("Out on web and iOS.")] }] }));
-    expect(highlighted()).toEqual([]);
-    await act(async () => roots.splice(0).forEach((root) => root.unmount()));
-    document.body.replaceChildren();
-  }
+test("a changelog entry's lines left to fill in are highlighted, as publishing finds them (any marker, code too); as typed too", async () => {
+  const open = await editor("changelog");
+  expect(highlighted()).toEqual(["[Screenshot: the help panel]", "[Check: and on [iOS]?]", "[ check : left open"]);
+  expect(document.querySelector("[data-fill-in]")!.className).toContain("bg-highlight");
+  await act(async () => open.chain().insertContentAt(1 + "Help opens beside the app.".length, " [Check: a date?]").run());
+  expect(highlighted()).toContain("[Check: a date?]");
+  // Replaced, it's no longer highlighted.
+  await act(async () => open.commands.setContent({ type: "doc", content: [{ type: "paragraph", content: [text("Out on web and iOS.")] }] }));
+  expect(highlighted()).toEqual([]);
+});
+
+test("an article's are only its screenshot lines outside code, as its publishing finds them: one quoted as code is an example", async () => {
+  const open = await editor("article");
+  expect(highlighted()).toEqual(["[Screenshot: the help panel]"]);
+  await act(async () =>
+    open.commands.setContent({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [text("Ask for one with "), { type: "text", text: "[Screenshot: what to show]", marks: [{ type: "code" }] }, text(" on its own line.")] },
+        { type: "codeBlock", content: [text("[Screenshot: the theme menu]")] },
+        { type: "paragraph", content: [text("[Screenshot: the export button]")] },
+      ],
+    }),
+  );
+  expect(highlighted()).toEqual(["[Screenshot: the export button]"]);
 });
 
 test("a comment or post isn't a draft: nothing highlighted", async () => {
