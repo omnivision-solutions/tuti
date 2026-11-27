@@ -107,3 +107,25 @@ test("refused: a language the project doesn't have, the team's own with no name,
   await expect(call(updateCollectionTranslation, as(), { slug: "nowhere", language: "fr", keepUpToDate: false, name: "Nulle part" })).rejects.toMatchObject({ status: 404 });
   expect(labelIn(await billing(), "fr")).toBeNull();
 });
+
+test("the team's own name alone: the description written there before stays", async () => {
+  await setUp();
+  await call(updateCollectionTranslation, as(), { slug: "billing", language: "fr", keepUpToDate: false, name: "Facturation", description: "Payer et factures." });
+  await call(updateCollectionTranslation, as(), { slug: "billing", language: "fr", keepUpToDate: false, name: "Paiements" });
+  expect(labelIn(await billing(), "fr")).toEqual({ name: "Paiements", description: "Payer et factures." });
+});
+
+test("kept up to date is refused with AI off (it would never be made) and on a sample collection (never translated); nothing is saved", async () => {
+  await setUp();
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await expect(call(updateCollectionTranslation, as(), { slug: "billing", language: "fr", keepUpToDate: true })).rejects.toMatchObject({ status: 409, code: "ai_off" });
+  expect((await billing()).translations).not.toHaveProperty("fr");
+  vi.stubEnv("OPENAI_API_KEY", model.env.OPENAI_API_KEY!);
+  await prisma.collection.updateMany({ where: { projectId: project.id, slug: "billing" }, data: { sample: true } });
+  await expect(call(updateCollectionTranslation, as(), { slug: "billing", language: "fr", keepUpToDate: true })).rejects.toMatchObject({ status: 409, code: "sample" });
+  expect((await billing()).translations).not.toHaveProperty("fr");
+  // The team's own is fine there.
+  await call(updateCollectionTranslation, as(), { slug: "billing", language: "fr", keepUpToDate: false, name: "Facturation" });
+  expect(labelIn(await billing(), "fr")).toEqual({ name: "Facturation", description: "" });
+});
+

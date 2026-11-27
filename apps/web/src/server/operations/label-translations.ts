@@ -79,9 +79,9 @@ export const updateCollectionTranslation = defineOperation({
   input: z.object({
     slug: collectionSlug,
     language,
-    keepUpToDate: z.boolean().describe("Kept up to date by AI; the name and description sent are then left out").meta({ examples: [false] }),
+    keepUpToDate: z.boolean().describe("Kept up to date by AI (not for a sample collection, nor with AI off); the name and description sent are then left out").meta({ examples: [false] }),
     name: collectionName.optional().describe("Its name there, up to 60 characters (required unless kept up to date)").meta({ examples: ["Erste Schritte"] }),
-    description: z.string().trim().max(300).optional().describe("Its description there, up to 300 characters").meta({ examples: ["Die Grundlagen in fünf Minuten."] }),
+    description: z.string().trim().max(300).optional().describe("Its description there, up to 300 characters; left out, it stays as it was there").meta({ examples: ["Die Grundlagen in fünf Minuten."] }),
   }),
   output: translationOutput,
   example: { keepUpToDate: false, name: "Erste Schritte", description: "Die Grundlagen in fünf Minuten." },
@@ -98,16 +98,21 @@ export const updateCollectionTranslation = defineOperation({
       if (!found) {
         throw new OperationError(400, "invalid_input", `${LANGUAGES[input.language].name} isn't one of your languages`);
       }
-      const [row] = await tx.$queryRaw<{ id: string; name: string; description: string; translations: LabelTranslations }[]>`
-        SELECT id, name, description, translations FROM collection WHERE "projectId" = ${projectId} AND slug = ${input.slug} FOR UPDATE`;
+      const [row] = await tx.$queryRaw<{ id: string; name: string; description: string; translations: LabelTranslations; sample: boolean }[]>`
+        SELECT id, name, description, translations, sample FROM collection WHERE "projectId" = ${projectId} AND slug = ${input.slug} FOR UPDATE`;
       if (!row) {
         throw new OperationError(404, "not_found", `There's no collection “${input.slug}”`);
+      }
+      // Sample content is never translated (as sample articles aren't): only the team's own there.
+      if (input.keepUpToDate && row.sample) {
+        throw new OperationError(409, "sample", "Sample collections aren't translated: write its name there instead");
       }
       const was = row.translations[input.language];
       // Kept up to date: made again (its source cleared, so the job finds it), readers seeing the default language's meanwhile.
       const entry: LabelTranslation = input.keepUpToDate
         ? { name: was?.name ?? "", description: was?.description ?? "", auto: true, source: was?.auto && was.source === labelSource(row.name, row.description) ? was.source : null }
-        : { name: input.name!, description: input.description ?? "", auto: false, source: labelSource(row.name, row.description) };
+        : // A description left out stays as it was there.
+          { name: input.name!, description: input.description ?? was?.description ?? "", auto: false, source: labelSource(row.name, row.description) };
       const translations = { ...row.translations, [input.language]: entry };
       await tx.collection.update({ where: { id: row.id }, data: { translations: translations as Prisma.InputJsonValue } });
       return { name: row.name, description: row.description, translations };

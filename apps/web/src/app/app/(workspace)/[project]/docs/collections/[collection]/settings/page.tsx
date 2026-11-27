@@ -34,7 +34,10 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
   }
   // Its name and description in the project's other languages (none: no Translations).
   const translations = (await collectionTranslations(projectId, collection.slug)).flatMap((row) => (isLanguage(row.language) ? [{ ...row, native: LANGUAGES[row.language].native }] : []));
-  const { language: defaultLanguage } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { language: true } });
+  const [{ language: defaultLanguage }, { sample }] = await Promise.all([
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { language: true } }),
+    prisma.collection.findUniqueOrThrow({ where: { id: collection.id }, select: { sample: true } }),
+  ]);
   // Where it can go: not in itself or one inside it, and no deeper than collections go with the ones in it.
   const levels = height(docs.collections, collection.id);
   const parents = docs.collections
@@ -75,7 +78,8 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
             slug={collection.slug}
             defaultName={isLanguage(defaultLanguage) ? LANGUAGES[defaultLanguage].name : defaultLanguage}
             translations={translations}
-            ai={aiEnabled()}
+            // Sample content is never translated: only the team's own there.
+            ai={aiEnabled() && !sample}
           />
         )}
         <SettingsCard>
