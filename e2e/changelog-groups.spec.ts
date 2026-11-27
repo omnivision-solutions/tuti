@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 
 import pg from "pg";
 
-import { expect, test } from "./fixtures";
+import { expect, type Page, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -36,10 +36,10 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   // Everyone's quietly, the enterprise one announced: only enterprise customers have something new.
   await api("/changelog/1/publish", { announce: false });
   await api("/changelog/2/publish", {});
-  const newDot = (page: typeof owner) => page.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ }).getByText("New");
-  const shippedIn = (page: typeof owner) => page.getByRole("main").getByRole("link", { name: "Audit log export" });
+  const newDot = (page: Page) => page.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ }).getByText("New");
+  const shippedIn = (page: Page) => page.getByRole("main").getByRole("link", { name: "Audit log export" });
 
-  const titles = (page: typeof owner) => page.getByRole("main").getByRole("heading", { level: 2 });
+  const titles = (page: Page) => page.getByRole("main").getByRole("heading", { level: 2 });
 
   // Signed out: only everyone's, and the other's page isn't there.
   const visitor = await newPerson(browser, portalUrl(slug));

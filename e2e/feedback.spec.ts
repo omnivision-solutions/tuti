@@ -327,7 +327,7 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await expect(tabs).toHaveAttribute("data-more", "both");
   // A tab partly past the row's end, under the fade, is clicked where it is: it opens.
   const all = tabs.getByRole("link", { name: "All 10" });
-  await all.evaluate((tab) => {
+  await all.evaluate((tab: HTMLElement) => {
     const row = tab.parentElement!;
     row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth - 20;
   });
@@ -341,7 +341,7 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   await team.goto(`/app/${slug}/feedback?status=all`);
   await expect
     .poll(() =>
-      all.evaluate((tab) => {
+      all.evaluate((tab: HTMLElement) => {
         const row = tab.parentElement!;
         const centred = Math.min(Math.max(0, tab.offsetLeft - (row.clientWidth - tab.offsetWidth) / 2), row.scrollWidth - row.clientWidth);
         return Math.abs(row.scrollLeft - centred);
@@ -351,7 +351,7 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   // (Completed, a tab with one after it: the row can scroll it past the fade. All, the last, ends the row.)
   const completed = tabs.getByRole("link", { name: "Completed 0" });
   await tabs.getByRole("link", { name: "In progress 0" }).focus();
-  await completed.evaluate((tab) => {
+  await completed.evaluate((tab: HTMLElement) => {
     const row = tab.parentElement!;
     row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth + 10;
   });
