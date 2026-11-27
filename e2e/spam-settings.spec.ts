@@ -155,7 +155,10 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await card("Allowed").getByRole("button", { name: "Actions for e2e-forms@relay.example" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   await expect(owner.getByText("e2e-forms@relay.example removed")).toBeVisible();
+  // The card stays for this visit, with the keyboard's focus in it; on the next it's gone.
+  await expect(card("Allowed")).toContainText("Nobody is allowed by name");
+  await expect(card("Allowed").getByLabel("Address or domain to allow")).toBeFocused();
+  await owner.reload();
+  await expect(rules).toBeVisible();
   await expect(owner.getByRole("heading", { name: /^Allowed/, level: 2 })).toHaveCount(0);
-  // Its card went with it: the keyboard's focus is in the rules' value field.
-  await expect(rules.getByLabel("Value")).toBeFocused();
 });

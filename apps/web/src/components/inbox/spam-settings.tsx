@@ -67,19 +67,20 @@ export function SpamSettings({
   /** Try a message's To to start with: the project's support address, where it has one. */
   supportAddress: string;
 }) {
-  // The last allowed entry removed takes its card: focus goes to the rules' field.
-  useFocusAfterRemoval(settings.allowed.length, settings.allowed.length > 0 ? "spam-allowed" : "spam-rule-value");
+  // Decided once per visit: removing the last entry leaves the card, with its empty line and the keyboard's focus in it.
+  const [showAllowed] = useState(settings.allowed.length > 0);
   return (
     <>
       <BlockRules projectSlug={projectSlug} rules={settings.rules} maxValue={maxValue} />
       {/* Not offered for new entries; any already there stay listed, as they still let senders through, so they can be removed. */}
-      {settings.allowed.length > 0 && (
+      {showAllowed && (
         <EntryList
           id="spam-allowed"
           title="Allowed"
           description="Rules on their domain don't apply to them."
           label="Address or domain to allow"
           placeholder={SENDER}
+          empty="Nobody is allowed by name"
           entries={settings.allowed}
           about={aboutSender}
           as={asSender}
@@ -223,6 +224,7 @@ function EntryList({
   description,
   label,
   placeholder,
+  empty,
   entries,
   about,
   as,
@@ -234,6 +236,7 @@ function EntryList({
   description: ReactNode;
   label: string;
   placeholder: string;
+  empty: string;
   entries: string[];
   about?: (entry: string) => string | null;
   as: (entry: string) => string;
@@ -254,6 +257,7 @@ function EntryList({
     }
     return result;
   }, {});
+  useFocusAfterRemoval(entries.length, id);
   return (
     <SettingsCard title={title} count={entries.length} description={description}>
       <SettingBlock className="gap-2">
@@ -280,25 +284,31 @@ function EntryList({
         </form>
         {state.error && <FieldError id={`${id}-error`}>{state.error}</FieldError>}
       </SettingBlock>
-      <ul aria-label={title} className="flex flex-col divide-y">
-        {entries.map((entry) => {
-          const muted = about?.(entry);
-          return (
-            <Entry
-              key={entry}
-              entry={entry}
-              shown={
-                <>
-                  {entry}
-                  {muted && <span className="text-muted-foreground"> {muted}</span>}
-                </>
-              }
-              removed={`${entry} removed`}
-              remove={() => remove(entry)}
-            />
-          );
-        })}
-      </ul>
+      {entries.length === 0 ? (
+        <SettingBlock>
+          <p className="text-sm text-muted-foreground">{empty}</p>
+        </SettingBlock>
+      ) : (
+        <ul aria-label={title} className="flex flex-col divide-y">
+          {entries.map((entry) => {
+            const muted = about?.(entry);
+            return (
+              <Entry
+                key={entry}
+                entry={entry}
+                shown={
+                  <>
+                    {entry}
+                    {muted && <span className="text-muted-foreground"> {muted}</span>}
+                  </>
+                }
+                removed={`${entry} removed`}
+                remove={() => remove(entry)}
+              />
+            );
+          })}
+        </ul>
+      )}
     </SettingsCard>
   );
 }

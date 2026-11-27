@@ -1,10 +1,11 @@
-import { type Doc, fromPlainText, keyed, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, segmentsOf, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
-import { aiEnabled, complete, contentHash, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
+import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
 import { freeLanguageSlug } from "./docs-slugs";
+import { behindKey, behindSections, docOfSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, versionSections, withTranslation } from "./translation-sections";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 import { embedTranslation } from "./articles";
 import { lockProject } from "./running-draft";
@@ -18,9 +19,6 @@ import { lockProject } from "./running-draft";
 
 /** Why a manual version's sections are behind after "Our product is available in" changed. */
 export const PRODUCT_SETTING_CHANGED = "The product's language setting changed.";
-
-/** A section's key (@tuti/content keyed) as `behind` stores it: Postgres's JSON can't hold its NUL, so a unit separator. */
-export const behindKey = (key: string) => key.replace("\u0000", "\u001f");
 
 /** Why a translation waits, as Settings → Languages shows it. */
 export const TRANSLATION_WAITS = {
@@ -94,6 +92,8 @@ type Version = {
   source: SourceText & { projectId: string; publishedAt: Date | null; sample: boolean; defaultLanguage: string };
   /** An article's version's own slug (L6 part two): null until it's named. An entry's versions have none. */
   slug?: string | null;
+  /** An article's version's sections the team asked to update (Update those sections). An entry's versions have none. */
+  updateSections?: unknown;
 };
 
 /** A version's row as the queues read it. */
@@ -165,7 +165,7 @@ const ARTICLE: Kind = {
   about: ABOUT_ARTICLE,
   table: (client = prisma) => client.articleTranslation as unknown as Table,
   async read(articleId, language) {
-    const row = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId, language } }, select: { ...versionSelect, slug: true, article: { select: articleSource } } });
+    const row = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId, language } }, select: { ...versionSelect, slug: true, updateSections: true, article: { select: articleSource } } });
     return row && { ...row, setting: row.projectLanguage, source: { ...row.article, defaultLanguage: row.article.project.language } };
   },
   async lockSource(tx, articleId) {
@@ -281,15 +281,62 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
   }
 }
 
-/** `newVersion`: the write is a new translation, whose old sections go with it (search by meaning never answers with them). */
-type Settle = (data: Record<string, unknown>, newVersion?: boolean) => Promise<boolean>;
+type Data = Record<string, unknown>;
+/** An article's version as it is when the job writes (its row locked): the write is made from it, so a save of the team's isn't lost. */
+type Locked = Prisma.ArticleTranslationGetPayload<{ select: typeof lockedSelect }>;
+/**
+ * `data`, or (an article's version) what to write made from the version as it is then (null: nothing). `newVersion`: the
+ * write is a new text, whose old search sections go with it (search by meaning never answers with them).
+ */
+type Settle = (data: Data | ((now: Locked) => Data | null), newVersion?: boolean) => Promise<boolean>;
+const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
+
+/** A version's draft as stored (ArticleTranslation.draft). */
+export type Draft = { title: string; titleEdited: boolean; content: Doc; sections: SectionMeta[]; /** Source sections the team took out of it. */ removed?: string[] };
+
+/** A version's text (published or its draft) for working out what's behind: on a version the team writes, every section is theirs and one the source has that it doesn't is behind too, but those it took out. */
+export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Iterable<string> };
+
+/**
+ * Why each section is behind (`behind`): the team's sections whose source section changed since they were translated or
+ * edited, in the published text or the draft ("English changed since this was edited."); `kept`, other reasons kept.
+ */
+export function behindOf(sourceLanguage: string, source: ReturnType<typeof sourceSections>, lists: BehindList[], kept: Record<string, string> = {}) {
+  const [changed, added] = [sourceChanged(sourceLanguage), sourceAdded(sourceLanguage)];
+  const out: Record<string, string> = { ...kept };
+  for (const { list, teamWrites, removed } of lists) {
+    const own = teamWrites ? ownedByTeam(list) : list;
+    for (const key of behindSections(own, source)) out[key] = changed;
+    if (teamWrites) {
+      const has = new Set(list.map(({ meta }) => meta.key));
+      for (const key of behindSections(own, source, { missing: true, removed: new Set(removed) })) if (!has.has(key)) out[key] ??= added;
+    }
+  }
+  return out;
+}
+
+/** Why a section is behind when the source has it and a version the team writes doesn't (added, or renamed). */
+export const sourceAdded = (sourceLanguage: string) => `${languageName(sourceLanguage)} has this section, and this version doesn't yet.`;
+
+/** Why a section is behind when its source section changed since the team's edit. */
+export const sourceChanged = (sourceLanguage: string) => `${languageName(sourceLanguage)} changed in this section since it was edited.`;
+
+/** `behind`'s reasons besides the source changing (the product setting's, the glossary's): kept as they are by a write that works that one out again. */
+export const otherReasons = (behind: unknown, sourceLanguage: string) =>
+  Object.fromEntries(Object.entries((behind ?? {}) as Record<string, string>).filter(([, why]) => why !== sourceChanged(sourceLanguage) && why !== sourceAdded(sourceLanguage)));
 /** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
 type Started = { settle?: Settle; retryAt?: Date | null };
 
 async function translateOne(kind: Kind, parentId: string, language: string, log: JobLogger, { lastTry }: JobRun, started: Started): Promise<JobResult> {
   const row = await kind.read(parentId, language);
   started.retryAt = row?.retryAt;
-  if (!row?.automatic) {
+  // An article's version the team writes is translated only where it asked (Update those sections).
+  const asked = (row?.updateSections ?? []) as string[];
+  if (!row || (!row.automatic && asked.length === 0)) {
+    // Its search data still: one the team published whose embedding failed is embedded here when the retry job brings it back.
+    if (kind.name === "article" && row?.publishedAt && row.source.publishedAt) {
+      return (await searchable(row.id, row.tries, row.retryAt, log)) ? { skipped: "not kept up to date" } : { failed: SEARCH_WAITS };
+    }
     return { skipped: "not kept up to date" };
   }
   const { source: published, setting } = row;
@@ -300,7 +347,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   const sameSetting = row.productAvailable === setting.productAvailable;
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
-  if (!fresh && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
+  if (!fresh && asked.length === 0 && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
     if (kind.name === "article" && !row.slug) {
       // Translated, but its naming failed then: named now. Never failing the job (a lock timeout, a slug taken meanwhile):
       // the retry job's nameUnnamed, or the next job, names it.
@@ -327,9 +374,20 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
       if (!now || translationSource(now).hash !== source.hash) {
         return false;
       }
-      const { count } = await kind.table(tx).updateMany({ where: { id: row.id, automatic: true, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data });
-      if (count > 0 && newVersion && kind.name === "article") {
-        // The old version's sections go in the same transaction: until the new one's are embedded (searchable, next),
+      let written: Data | null = data as Data;
+      if (typeof data === "function") {
+        // An article's version too, as the team's own writes lock it (articles.saveTranslation, …), after the article.
+        await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${row.id} FOR UPDATE`;
+        const locked = await tx.articleTranslation.findUnique({ where: { id: row.id }, select: lockedSelect });
+        written = locked && data(locked);
+      }
+      if (!written) {
+        return false;
+      }
+      // Kept up to date or not as when this read it (what was translated depends on it): else the next run writes.
+      const { count } = await kind.table(tx).updateMany({ where: { id: row.id, automatic: row.automatic, retranslate: row.retranslate, projectLanguage: { productVersion: version } }, data: written });
+      if (count > 0 && newVersion && kind.name === "article" && "content" in written) {
+        // The old text's search sections go in the same transaction: until the new one's are embedded (searchable, next),
         // search by meaning finds nothing of it, never the old text under the new title (its words still find it).
         await tx.articleTranslationChunk.deleteMany({ where: { translationId: row.id } });
       }
@@ -363,7 +421,14 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   };
   // Remembered translations only from the same setting: one made under the other treats the product's words the other way.
   const memory = !fresh && sameSetting ? (row.memory as Record<string, string>) : {};
-  const result = await translateDoc(source.doc, {
+  const parts = sourceSections(source.text);
+  // An article's version the team writes is translated only where it asked: just those sections are sent (no title,
+  // description or keywords, which are the team's), and only their problems count.
+  const askedParts = row.automatic ? null : parts.filter((part) => asked.includes(part.key));
+  // The source's segments as they are now: what a version the team writes may remember.
+  const current = new Set(askedParts ? segmentsOf(source.doc).segments.map((segment) => segment.text) : []);
+  const toTranslate: Doc = askedParts ? { type: "doc", content: askedParts.flatMap((part) => part.blocks) } : source.doc;
+  const result = await translateDoc(toTranslate, {
     from: languageName(published.defaultLanguage),
     to: languageName(language),
     instructions: translationInstructions(languageName(language), setting.productAvailable, setting.instructions),
@@ -386,29 +451,109 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     log.warn(`Translating ${kind.name} ${parentId} into ${language}: ${result.problems.map((p) => p.reason).join("; ").slice(0, 300)}`);
     return waits(`${TRANSLATION_WAITS.checks}: ${result.problems[0]!.reason}`);
   }
-  const written = await settle({
-    ...kind.fields(result.doc.content ?? [], source.meta, published),
-    publishedAt: row.publishedAt ?? new Date(),
-    sourceHash: source.hash,
-    productAvailable: setting.productAvailable,
-    memory: result.memory,
-    behind: {},
-    error: null,
-    tries: 0,
-    retryAt: null,
-    retranslated: row.retranslate,
+  if (kind.name !== "article") {
+    const written = await settle({
+      ...kind.fields(result.doc.content ?? [], source.meta, published),
+      publishedAt: row.publishedAt ?? new Date(),
+      sourceHash: source.hash,
+      productAvailable: setting.productAvailable,
+      memory: result.memory,
+      behind: {},
+      error: null,
+      tries: 0,
+      retryAt: null,
+      retranslated: row.retranslate,
+    }, true);
+    return written ? { translated: language } : { skipped: CHANGED };
+  }
+  const blocks = result.doc.content ?? [];
+  const text = (i: number) => toPlainText(blocks[i]!).trim();
+  // Lined up with the source's sections: the asked ones translated, the rest as they are (never used: only the asked are taken).
+  const asTranslated = askedParts && new Map(askedParts.map((part, i) => [part.key, sections(blocks)[i] ?? part.blocks]));
+  const translated: Doc = asTranslated ? { type: "doc", content: parts.flatMap((part) => asTranslated.get(part.key) ?? part.blocks) } : { type: "doc", content: blocks.slice(source.meta) };
+  // Retranslating and unpublished changes (docs/plan.md, Languages): the published text and the draft take the new
+  // translation in every section the team doesn't own; a version kept up to date in all of them, one the team writes in
+  // those it asked for. Sections it asked for are no longer its own.
+  // Asked for meanwhile (after this read): left for the next run, which this one queues.
+  let more = false;
+  const titleHash = contentHash(published.title);
+  const written = await settle((now) => {
+    // Kept up to date or not as when this read it (what was translated depends on it): else the next run writes.
+    if (now.automatic !== row.automatic) {
+      return null;
+    }
+    // Only what's still asked for as it writes: one another run did meanwhile, or the team chose since to keep (publishing with
+    // `keep`) or edited again (saving), is no longer overridden.
+    const still = new Set(asked.filter((key) => (now.updateSections as string[]).includes(key)));
+    const only = now.automatic ? undefined : still;
+    // The sections asked for take the new translation, whoever owns them (an edit made since included): that's what was asked.
+    const live = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: still, published: now.automatic, removed: new Set(now.removedSections as string[]) });
+    const draft = now.draft as Draft | null;
+    const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, asked: still, removed: new Set(draft.removed) });
+    const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
+    more = waiting.length > 0;
+    // The team's published title stays theirs until the source's title changes.
+    const ownTitle = now.titleSource === titleHash;
+    const content = docOfSections(live);
+    // A version the team writes that it never published: only its draft is written (nothing of it goes live by itself).
+    const draftOnly = !now.automatic && !now.publishedAt;
+    // A version the team writes keeps its other reasons (the product setting's, the glossary's) but where it was updated.
+    const kept = now.automatic ? {} : Object.fromEntries(Object.entries(now.behind as Record<string, string>).filter(([key]) => !still.has(key)));
+    return {
+      ...(now.automatic && {
+        ...(!ownTitle && { title: text(0), titleSource: null }),
+        description: text(1),
+        keywords: (published.keywords ?? []).map((_, i) => text(2 + i)),
+        sourceHash: source.hash,
+      }),
+      ...(!draftOnly && { content: content as Prisma.InputJsonValue, body: toPlainText(content), sections: metaOf(live) as Prisma.InputJsonValue }),
+      ...(draft &&
+        drafted && {
+          // Its title the team's while it's edited there, or while the published one is theirs.
+          draft: { ...draft, title: draft.titleEdited || ownTitle || !now.automatic ? draft.title : text(0), content: docOfSections(drafted), sections: metaOf(drafted) } as Prisma.InputJsonValue,
+        }),
+      behind: behindOf(
+        published.defaultLanguage,
+        parts,
+        [
+          ...(draftOnly ? [] : [{ list: live, teamWrites: !now.automatic, removed: now.removedSections as string[] }]),
+          ...(drafted ? [{ list: drafted, teamWrites: !now.automatic, removed: draft.removed }] : []),
+        ],
+        kept,
+      ),
+      updateSections: waiting,
+      ...(!draftOnly && { publishedAt: now.publishedAt ?? new Date() }),
+      productAvailable: setting.productAvailable,
+      // Only the sections asked for were sent: what's remembered of the others stays, but only what this run could use (made
+      // under the same setting, not after a Retranslate) and only for the source's text as it is now.
+      memory: askedParts ? Object.fromEntries(Object.entries({ ...memory, ...result.memory }).filter(([text]) => current.has(text))) : result.memory,
+      error: null,
+      tries: 0,
+      retryAt: null,
+      retranslated: row.retranslate,
+    };
   }, true);
-  if (!written) {
-    return { skipped: CHANGED };
-  }
-  if (kind.name === "article") {
-    // Named first (its own transaction, the project locked), then searchable.
+  if (written) {
+    // Named first (its own transaction, the project locked), then searchable (docs/plan.md L7): a failure there never undoes
+    // the translation, it's embedded later. Its retry time as this run left it: the write just cleared it.
     await nameVersion(published.projectId, row.id).catch((error: unknown) => log.warn(`Naming article ${parentId}'s ${language} version failed: ${String(error).slice(0, 300)}`));
-    // Searchable in its language (docs/plan.md L7). A failure here never undoes the translation: it's embedded later.
-    // Its retry time as this run left it: the write just cleared it.
     await searchable(row.id, 0, null, log);
+    if (more) await queueVersion(parentId, language);
   }
-  return { translated: language };
+  return written ? { translated: language } : { skipped: CHANGED };
+}
+
+/**
+ * A version the team published (articles.publishTranslation), after its own transaction: named, on its first publish, and
+ * its new text made searchable (a failure is retried by the retry job, as the job's is). Never throws.
+ */
+export async function versionPublished(projectId: string, versionId: string, first: boolean) {
+  const log = { info: () => {}, warn: (message: string) => serverLog.warn(message) };
+  if (first) {
+    await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+  }
+  const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
+  await searchable(versionId, tries, retryAt, log).catch((error: unknown) => serverLog.error("Embedding an article's version failed", { versionId, error }));
 }
 
 /** Why a version up to date is tried again: its sections couldn't be embedded for search. */
@@ -539,6 +684,21 @@ async function queueTranslations(kind: Kind, parentId: string, addedBy?: Date) {
 export const queueArticleTranslations = (articleId: string) => queueTranslations(ARTICLE, articleId);
 
 /**
+ * One article's version translated in the background (Update those sections, or a published draft's sections that need
+ * the new translation): its safety net first, then queued, as a language's pages are.
+ */
+export async function queueVersion(articleId: string, language: string) {
+  await safetyNet(ARTICLE, { articleId, language });
+  queueAll(() => queueEach([{ kind: ARTICLE, parentId: articleId, language }]));
+}
+
+/** An article's versions the translate job writes: those kept up to date, and others where the team asked for sections (Update those sections). */
+const translatedByJob = {
+  // (And a published one the team writes whose search data couldn't be written: the job embeds it.)
+  OR: [{ automatic: true }, { NOT: { updateSections: { equals: [] } } }, { publishedAt: { not: null }, tries: { gt: 0 } }],
+} satisfies Prisma.ArticleTranslationWhereInput;
+
+/**
  * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). Failing, the entry
  * is marked (translationsQueueFailedAt), for the retry job to queue it again; the error still goes to the caller.
  */
@@ -608,11 +768,26 @@ export async function markProductSettingBehind(tx: Prisma.TransactionClient, pro
 
 /** The retry-article-translations job: versions (articles' and changelog entries') that couldn't be translated, whose wait is over, tried again. */
 export async function retryArticleTranslations(): Promise<JobResult> {
+  const articles = ARTICLE.translatable as Prisma.ArticleWhereInput;
+  // Sections asked for with no time to try again (a job the previous release's worker skipped during a deploy, as it doesn't
+  // know them): due now, so this run queues them.
+  await prisma.articleTranslation.updateMany({ where: { retryAt: null, NOT: { updateSections: { equals: [] } }, article: articles }, data: { retryAt: new Date() } });
   // Naming needs no AI: versions translated before they had slugs get theirs whatever the server's set up with.
   const named = await nameUnnamed();
-  // Without AI nothing can translate them: their times stay, so they're taken once AI is set up.
+  // Without AI nothing can translate them: their times stay, so they're taken once AI is set up. Only search data can be
+  // written (embeddings on, chat off): an article's versions the team writes that need no more than that are queued, the job
+  // embeds them.
   if (!aiEnabled()) {
-    return { skipped: NO_AI, ...(named > 0 && { named }) };
+    if (!embeddingsEnabled()) {
+      return { skipped: NO_AI, ...(named > 0 && { named }) };
+    }
+    const due = await prisma.articleTranslation.updateManyAndReturn({
+      where: { retryAt: { lte: new Date() }, automatic: false, publishedAt: { not: null }, tries: { gt: 0 }, updateSections: { equals: [] }, article: articles },
+      data: { retryAt: new Date(Date.now() + lostAfterMs()) },
+      select: { articleId: true, language: true },
+    });
+    await queueEach(due.map(({ articleId, language }) => ({ kind: ARTICLE, parentId: articleId, language })));
+    return { skipped: NO_AI, queued: due.length, ...(named > 0 && { named }) };
   }
   let queued = 0;
   for (const kind of KINDS) {
@@ -652,6 +827,8 @@ async function retryKind(kind: Kind): Promise<number> {
   // that overlaps a slow one takes none of its pages. The claim is the safety net's next time, so pages a restart keeps
   // this run from reaching come back too.
   const now = new Date();
+  // An article's versions the job writes (translatedByJob); an entry's, those kept up to date.
+  const byJob = kind.name === "article" ? translatedByJob : { automatic: true };
   // Read a page at a time past those held here, so a big batch's pages never crowd out everything else's.
   const ready: Row[] = [];
   // Paged by the (retryAt, id) read, not a cursor row: a held page's job moving its time can't shift where reading resumes.
@@ -659,8 +836,7 @@ async function retryKind(kind: Kind): Promise<number> {
     const page = await kind.table().findMany({
       where: {
         retryAt: { lte: now },
-        automatic: true,
-        ...(after && { OR: [{ retryAt: { gt: after.retryAt } }, { retryAt: after.retryAt, id: { gt: after.id } }] }),
+        AND: [byJob, ...(after ? [{ OR: [{ retryAt: { gt: after.retryAt } }, { retryAt: after.retryAt, id: { gt: after.id } }] }] : [])],
       },
       orderBy: [{ retryAt: "asc" }, { id: "asc" }],
       take: retryBatch.size,
@@ -672,7 +848,7 @@ async function retryKind(kind: Kind): Promise<number> {
     after = { retryAt: last.retryAt!, id: last.id };
   }
   const due = await kind.table().updateManyAndReturn({
-    where: { id: { in: ready.map(({ id }) => id) }, retryAt: { lte: now }, automatic: true },
+    where: { id: { in: ready.map(({ id }) => id) }, retryAt: { lte: now }, ...byJob },
     data: { retryAt: new Date(Date.now() + lostAfterMs()) },
     select: { id: true, [kind.parent]: true, language: true, retryAt: true },
   });
@@ -727,14 +903,15 @@ async function announceWhenTranslated(entryId: string) {
  * with the project locked, and that lock is never taken while holding the article's (whose other writers, search's
  * sections, wait on the project's row by its foreign key). Left unnamed if this fails: the page's next job names it.
  */
-async function nameVersion(projectId: string, versionId: string) {
+export async function nameVersion(projectId: string, versionId: string) {
   await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const version = await tx.articleTranslation.findUnique({
       where: { id: versionId },
-      select: { slug: true, title: true, language: true, articleId: true, article: { select: { slug: true, deletedAt: true } } },
+      select: { slug: true, title: true, language: true, articleId: true, publishedAt: true, article: { select: { slug: true, deletedAt: true } } },
     });
-    if (!version || version.slug || version.article.deletedAt) {
+    // Only once it's published: an address is for reading it.
+    if (!version || version.slug || version.article.deletedAt || !version.publishedAt) {
       return;
     }
     const slug = await freeLanguageSlug(tx, projectId, version.language, version.title, { id: versionId, articleId: version.articleId, slug: null }, version.article.slug);

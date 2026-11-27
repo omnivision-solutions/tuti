@@ -4,6 +4,8 @@ import { prisma } from "@tuti/db";
 import { billingFile, type BrowserUseFake, configFile, type DnsFake, startBrowserUseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
+import { languageTranslationsDone, translationSource } from "@tuti/jobs";
+import { contentHash } from "@tuti/shared";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -84,6 +86,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
   "articles.publish": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
   "articles.languageSlug": () => ({ slug: "matrix-article", language: "de", newSlug: "matrix-seite" }),
+  "articles.getTranslation": () => ({ slug: "matrix-article", language: "de" }),
+  "articles.saveTranslation": (f) => ({ slug: "matrix-article", language: "de", version: f.translationVersion, content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] } }),
+  "articles.publishTranslation": () => ({ slug: "matrix-article", language: "de" }),
+  // Its one section (the text before any heading), translated again in the background (see the write's case below).
+  "articles.updateTranslation": () => ({ slug: "matrix-article", language: "de", sections: ["\u001f0"] }),
   "articles.publishChanges": () => ({ slug: "matrix-article" }),
   "articles.discardChanges": () => ({ slug: "matrix-article" }),
   "articles.unpublish": () => ({ slug: "matrix-article" }),
@@ -396,16 +403,26 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   await prisma.article.createMany({
     data: [
-      { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
+      { projectId: project.id, slug: "matrix-article", title: "Matrix article", body: "Matrix text.", publishedAt: new Date(), collectionId: basics.id },
       { projectId: project.id, slug: "matrix-draft", title: "Matrix draft" },
       // A draft with a line asking for a screenshot.
       { projectId: project.id, slug: "matrix-screenshots", title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
   // The published article's German version (German is the fixture's language), to give its own slug.
-  const matrixArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "matrix-article" }, select: { id: true } });
-  await prisma.articleTranslation.create({
-    data: { articleId: matrixArticle.id, projectId: project.id, language: "de", automatic: false, title: "Matrix-Artikel", slug: "matrix-artikel" },
+  const matrixArticle = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "matrix-article" } });
+  const translation = await prisma.articleTranslation.create({
+    data: {
+      articleId: matrixArticle.id,
+      projectId: project.id,
+      language: "de",
+      automatic: false,
+      title: "Matrix-Artikel",
+      slug: "matrix-artikel",
+      publishedAt: new Date(),
+      // Unpublished changes, to publish.
+      draft: { title: "Matrix-Artikel", titleEdited: false, content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Matrix-Text." }] }] }, sections: [] },
+    },
   });
   // An earlier version of the draft, to restore.
   const revision = await prisma.articleRevision.create({
@@ -519,6 +536,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   return {
     marker,
+    // What articles.saveTranslation's `version` is for the German version as it is (articles.getTranslation's).
+    translationVersion: contentHash(JSON.stringify([translation.title, translation.content, translation.draft, translationSource(matrixArticle).hash])),
     screenshotRunId: screenshotRun.id,
     linkId: link.id,
     commentId: comment.id,
@@ -700,7 +719,12 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   if (operation.name === "conversations.summarize") {
     model.reply("They want an invoice for October.");
   }
+  if (operation.name === "articles.updateTranslation") {
+    model.reply(JSON.stringify({ segments: { "1": "Matrix-Artikel", "2": "Matrix-Text." } }));
+  }
   const result = await call(operation, input(), keys.write);
   // Its result is checked against its output as it runs (defineOperation).
   expect(result).toMatchObject({ status: 200 });
+  // What it queued in the background (inline here) is done before the next case.
+  await languageTranslationsDone();
 });

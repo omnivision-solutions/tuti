@@ -91,6 +91,7 @@ import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
 import { getLanguages, retranslateLanguage, updateLanguages } from "./languages";
+import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
@@ -187,6 +188,10 @@ const all = [
   updateArticle,
   publishArticle,
   setArticleLanguageSlug,
+  getTranslation,
+  saveTranslation,
+  publishTranslation,
+  updateTranslationSections,
   publishChanges,
   discardChanges,
   unpublishArticle,

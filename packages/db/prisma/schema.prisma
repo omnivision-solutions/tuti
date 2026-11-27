@@ -2637,6 +2637,19 @@ model ArticleTranslation {
   memory           Json      @default("{}")
   /// Sections behind the source, by the source's section key (@tuti/jobs behindKey): why ("The product's language setting changed.").
   behind           Json      @default("{}")
+  /// What each section of the published text stands for (@tuti/jobs translation-sections): the source section's key, its
+  /// hash when translated or edited, and whether the team owns it (an edit kept on publishing), which the job never replaces.
+  sections         Json      @default("[]")
+  /// The team's unpublished changes: { title, titleEdited, content, sections } (sections as above; `own` ones the team
+  /// edited). The translate job writes the sections the team hasn't edited. Null: none.
+  draft            Json?
+  /// Sections the team asked to translate again (Update those sections): the job's next run writes them, then clears this.
+  updateSections   Json      @default("[]")
+  /// Source sections the team took out of the published text: the job doesn't put them back, nor count them as missing.
+  removedSections  Json      @default("[]")
+  /// The team published its own title: the hash of the source's title then. A version kept up to date keeps it until the
+  /// source's title changes.
+  titleSource      String?
   /// Why it waits: it couldn't be translated ("Out of credits", …). Null once it is.
   error            String?
   /// Tries that failed in a row, for the backoff; `retryAt`: when it's tried again on its own.
