@@ -121,7 +121,7 @@ test("a new email conversation starts with the AI, which answers from the docs o
   expect(later).toHaveLength(1);
   expect(teamEmails(owner.email)).toBe(0);
 
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   expect(await turn()).toBe("answered");
   expect(await state()).toEqual({ handledBy: "AI", due: false, thread: [`USER: ${QUESTION}`, "AI: Go to Settings → Export."] });
@@ -146,13 +146,13 @@ test("a new email conversation starts with the AI, which answers from the docs o
 test("asking for a person hands it over with a summary for the team, told by email and conversation.handed_over; the team's reply is the team's", async () => {
   const { owner, admin, mail, reply, turn, state, handovers, told } = await setup();
   await mail();
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   await turn();
 
   await reply("A person please");
   expect((await state()).due).toBe(true);
-  model.decide({ person: 0.95 }, "A person please");
+  model.decide({ person: 0.95, reply: 0.9 }, "A person please");
   model.reply("They want to talk to a person about exporting.", undefined, "askedBefore");
   expect(await turn()).toBe("handed_over");
   expect(await state()).toEqual({
@@ -177,7 +177,7 @@ test("each reason to hand over: no answer in the docs, an off-limits topic, a mo
   const { projectId, mail, turn, handovers } = await setup();
   // Nothing in the docs is close: handed over without asking the answer model.
   await mail("Do you sell gift cards?");
-  model.decide({ person: 0.05 }, "gift cards");
+  model.decide({ person: 0.05, reply: 0.9 }, "gift cards");
   model.reply("They ask about gift cards.", undefined, "askedBefore");
   expect(await turn(1)).toBe("handed_over");
   expect(await handovers()).toEqual(["no_answer"]);
@@ -185,14 +185,14 @@ test("each reason to hand over: no answer in the docs, an off-limits topic, a mo
   // An off-limits topic: the answer model isn't asked.
   await prisma.project.update({ where: { id: projectId }, data: { assistantOffLimits: ["refunds"] } });
   await mail("I want refunds");
-  model.decide({ person: 0.05 }, "I want refunds");
+  model.decide({ person: 0.05, reply: 0.9 }, "I want refunds");
   model.reply("They want a refund.", undefined, "askedBefore");
   expect(await turn(2)).toBe("handed_over");
   expect((await handovers()).at(-1)).toBe("off_limits");
 
   // The answer model failing: the AI is unavailable, and the summary fails too (the note is left out).
   await mail();
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.fail(500);
   model.fail(500);
   expect(await turn(3)).toBe("handed_over");
@@ -200,10 +200,24 @@ test("each reason to hand over: no answer in the docs, an off-limits topic, a mo
   expect(await prisma.conversationMessage.count({ where: { conversation: { projectId, number: 3 }, note: true } })).toBe(0);
 });
 
+test("thanks after an answer needs no reply: the AI keeps it, with no handover and no gap logged; their next question gets its turn", async () => {
+  const { projectId, mail, reply, turn, state, handovers } = await setup();
+  await mail();
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  await turn();
+  await reply("Thanks, that worked!");
+  model.decide({ person: 0.02, reply: 0.05 }, "that worked");
+  expect(await turn()).toBe("nothing");
+  expect(await state()).toMatchObject({ handledBy: "AI", due: false });
+  expect(await handovers()).toEqual([]);
+  expect(await prisma.docsQuestion.count({ where: { projectId } })).toBe(1);
+});
+
 test("taken over while the AI writes: its answer is dropped", async () => {
   const { admin, mail, turn, state } = await setup();
   await mail();
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), () => call(updateConversation, admin, { number: 1, handledBy: "team" }), QUESTION);
   expect(await turn()).toBe("dropped");
   expect(await state()).toEqual({ handledBy: "TEAM", due: false, thread: [`USER: ${QUESTION}`] });
@@ -213,7 +227,7 @@ test("a second message while the first turn writes: one answer, to both, and no 
   const { mail, reply, turn, state, handovers } = await setup();
   await mail("hi");
   // The first turn finds nothing in the docs for "hi" and would hand over; the second message arrives meanwhile.
-  model.decide({ person: 0.05 }, '"hi"', () => reply(QUESTION));
+  model.decide({ person: 0.05, reply: 0.9 }, '"hi"', () => reply(QUESTION));
   model.reply("They said hi.", undefined, "askedBefore");
   expect(await turn()).toBe("dropped");
   expect(await handovers()).toEqual([]);
@@ -221,7 +235,7 @@ test("a second message while the first turn writes: one answer, to both, and no 
 
   // The second's turn answers both.
   model.embeddings.setVector(`hi\n\n${QUESTION}`, [1, 0]);
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   expect(await turn()).toBe("answered");
   expect(await state()).toEqual({ handledBy: "AI", due: false, thread: ["USER: hi", `USER: ${QUESTION}`, "AI: Go to Settings → Export."] });
@@ -231,7 +245,7 @@ test("a second message while the first turn writes: one answer, to both, and no 
 test("two turns at once: one runs, one answer", async () => {
   const { mail, turn, state } = await setup();
   await mail();
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   expect((await Promise.all([turn(), turn()])).sort()).toEqual(["answered", "nothing"]);
   expect((await state()).thread).toEqual([`USER: ${QUESTION}`, "AI: Go to Settings → Export."]);
@@ -241,7 +255,7 @@ test("a turn started while another runs for the same message leaves it to that o
   const { mail, turn, state } = await setup();
   await mail();
   let second: unknown;
-  model.decide({ person: 0.05 }, QUESTION, async () => {
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION, async () => {
     second = await turn();
   });
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
@@ -266,7 +280,7 @@ test("a workflow that keeps it with the AI when the user asks for a person: no h
   const { admin, mail, turn, state, handovers } = await setup();
   await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "reply_text", text: "Our team is away; the AI can help." }, { kind: "dont_hand_over" }] });
   await mail("Can I talk to a human?");
-  model.decide({ person: 0.95 }, "talk to a human");
+  model.decide({ person: 0.95, reply: 0.9 }, "talk to a human");
   model.reply("They want a human.", undefined, "askedBefore");
   expect(await turn()).toBe("kept");
   expect(await handovers()).toEqual([]);
@@ -278,7 +292,7 @@ test("out of credits: a new conversation goes to the team as the AI is off, and 
   const { projectId, mail, reply, turn, state, handovers } = await setup();
   await grantCredits(projectId, "MANUAL", 100, { days: null });
   await mail();
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   await turn();
   await prisma.creditGrant.deleteMany({ where: { projectId } });
@@ -340,7 +354,7 @@ test("giving a message to the AI failing hands it over, a new conversation's and
   expect(teamEmails(owner.email)).toBe(1);
 
   await mail("Another question");
-  model.decide({ person: 0.05 }, "Another question");
+  model.decide({ person: 0.05, reply: 0.9 }, "Another question");
   model.reply("They ask another question.", undefined, "askedBefore");
   await turn(2);
   // Handed over for no answer; given back to the AI over the API, its next reply fails to reach the AI.
@@ -372,7 +386,10 @@ test("a turn its request never ran is run by the inbox-due job, and handed over 
   await prisma.conversation.update({ where: { id }, data: { pathDueAt: new Date(Date.now() - 1000) } });
   await prisma.conversationMessage.updateMany({ where: { conversationId: id }, data: { createdAt: new Date(Date.now() - AI_TURN_GIVE_UP_MS - 1000) } });
   model.reply("They ask how to export.", undefined, "askedBefore");
+  // Run once the job's request has answered: its model calls never hold the job up.
   expect(await runDueInbox()).toEqual({ checked: 1 });
+  expect(await state()).toMatchObject({ handledBy: "AI" });
+  await later.at(-1)!();
   expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
   expect(await handovers()).toEqual(["ai_off"]);
   expect(await runDueInbox()).toEqual({ checked: 0 });
@@ -383,7 +400,7 @@ test("Straight to a person: a new conversation and a reply to one the AI has go 
   await call(createWorkflow, admin, { name: "Billing to a person", trigger: "user_replied", conditions: [], actions: [{ kind: "straight_to_person" }] });
   await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "dont_hand_over" }] });
   await mail();
-  model.decide({ person: 0.05 }, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   await turn();
   await reply("About my invoice");

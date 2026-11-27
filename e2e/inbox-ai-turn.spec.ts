@@ -34,7 +34,7 @@ test("an email the AI answers first: answered from the docs and kept from the te
   const sender = "Sam Sender <e2e-sam-ai-turn@example.com>";
 
   // Their question: not a request for a person, and the docs answer it.
-  await nextDecision({ person: 0.05 }, question);
+  await nextDecision({ person: 0.05, reply: 0.9 }, question);
   await nextModelReply(JSON.stringify({ answer: "Go to Settings → Export: it downloads everything as CSV.", sources: ["s1"] }), question);
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail(sender, "Exporting", question));
 
@@ -56,7 +56,7 @@ test("an email the AI answers first: answered from the docs and kept from the te
   // "A person please": handed to the team, with the AI's summary for them.
   const [{ replyToken }] = await query(`SELECT c."replyToken" FROM conversation c JOIN project p ON p.id = c."projectId" WHERE p.slug = $1 AND c.number = 1`, [slug]);
   const asked = `A person please, about ${slug}`;
-  await nextDecision({ person: 0.95 }, asked);
+  await nextDecision({ person: 0.95, reply: 0.9 }, asked);
   await nextModelReply("They want a person to help them export their data.", asked);
   await receive(`support+${replyToken}@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail(sender, "Re: Exporting", asked));
   await expect(async () => {

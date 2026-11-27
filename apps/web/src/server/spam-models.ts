@@ -275,10 +275,16 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
     ORDER BY "createdAt" LIMIT 100`;
   let checked = 0;
   for (const { id, aiTurn } of due) {
-    // The AI's turn its request didn't run (server/ai-turn.ts): run now, or handed over 10 minutes on.
+    // The AI's turn its request didn't run (server/ai-turn.ts): run once this request has answered, so its model calls
+    // never hold up the holds here or the worker's request (or now, outside a request); handed over 10 minutes on.
     if (aiTurn) {
-      if ((await runAiTurn(id)) !== "nothing") {
+      try {
+        after(() => runAiTurn(id));
         checked++;
+      } catch {
+        if ((await runAiTurn(id)) !== "nothing") {
+          checked++;
+        }
       }
       continue;
     }

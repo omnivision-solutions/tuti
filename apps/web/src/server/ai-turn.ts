@@ -44,6 +44,8 @@ const QUESTION_CHARS = 2000;
 const MESSAGES_READ = 50;
 /** At least this sure the user asks for a person, the decision model hands over. */
 export const PERSON_AT = 0.5;
+/** Under this sure the latest message needs a reply ("thanks", "ok", a lone "hi"), the turn ends without one. */
+export const REPLY_AT = 0.5;
 
 /**
  * Whether a new conversation from `origin` starts with the AI ("AI answers first", by channel): email's switch
@@ -135,12 +137,25 @@ const PERSON = {
       false: "They ask a question, report a problem or reply to an answer, however frustrated, without asking for a person",
     },
   },
+  reply: {
+    type: "noul" as const,
+    instructions:
+      "Does the latest message need a reply: a question, a problem, a request or something left open? Thanks, an acknowledgement (\"ok\", \"got it\", \"that worked\") or a greeting alone needs none.",
+    criteria: {
+      true: "It needs a reply: it asks, reports, requests or leaves something open",
+      false: "It needs none: only thanks, an acknowledgement or a greeting",
+    },
+  },
 };
 
-/** The decision model's yes or no: does the user's latest message ask for a person? Throws where the model fails. */
-export async function asksForAPerson(state: { message: string; earlier: Turn[] }, meter: Meter): Promise<boolean> {
-  const { noul } = (await decide({ ...state, message: state.message.slice(0, QUESTION_CHARS) }, PERSON, { meter, timeoutMs: 15_000 })).person as { noul: number };
-  return noul >= PERSON_AT;
+/**
+ * The decision model on the user's latest message, before the docs are searched: does it ask for a person, and does it
+ * need a reply at all? Throws where the model fails.
+ */
+export async function readMessage(state: { message: string; earlier: Turn[] }, meter: Meter): Promise<{ person: boolean; needsReply: boolean }> {
+  const answers = await decide({ ...state, message: state.message.slice(0, QUESTION_CHARS) }, PERSON, { meter, timeoutMs: 15_000 });
+  const [person, reply] = [answers.person as { noul: number }, answers.reply as { noul: number }];
+  return { person: person.noul >= PERSON_AT, needsReply: reply.noul >= REPLY_AT };
 }
 
 type Message = { id: string; author: "USER" | "TEAM" | "AI"; body: string; channel: MessageChannel; createdAt: Date; handedOverAt: Date | null };
@@ -246,16 +261,21 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
   // Asked before the docs are searched, where the server has a decision model; else the answer model says so.
   let askPerson = !decisionsAvailable();
   if (!askPerson) {
-    const wants = await aiFor(projectId, "answers")
-      .then(({ meter }) => asksForAPerson({ message: question, earlier }, meter))
+    const read = await aiFor(projectId, "answers")
+      .then(({ meter }) => readMessage({ message: question, earlier }, meter))
       .catch((error: unknown) => {
-        log.warn("Asking whether a user asks for a person failed: the answer model says", { projectId, conversationId, error });
+        log.warn("Reading a user's message for the AI's turn failed: the answer model says", { projectId, conversationId, error });
         return null;
       });
-    if (wants) {
+    if (read?.person) {
       return handTo("user_asked");
     }
-    askPerson = wants === null;
+    if (read && !read.needsReply) {
+      // Thanks, "ok", a lone "hi": nothing to answer or hand over. The AI keeps it; their next message gets a turn.
+      await settle(conversationId, latest.id);
+      return "nothing";
+    }
+    askPerson = read === null;
   }
   const follows = await prisma.docsQuestion.findFirst({ where: { projectId, conversationId, source: "INBOX" }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const answer = await answerTurn(projectId, {
