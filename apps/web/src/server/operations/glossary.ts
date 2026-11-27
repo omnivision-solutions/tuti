@@ -41,7 +41,7 @@ const termInput = z.object({
   term: z.string().trim().min(1).max(MAX_TERM_LENGTH).describe("The term, as the team writes it").meta({ examples: ["Board"] }),
   keep: z.boolean().optional().describe("Never translated, in any language (its translations are left out)").meta({ examples: [false] }),
   translations: z
-    .record(z.enum(LANGUAGE_CODES), z.string().trim().max(MAX_TERM_LENGTH))
+    .partialRecord(z.enum(LANGUAGE_CODES), z.string().trim().max(MAX_TERM_LENGTH))
     .optional()
     .describe("Its word in each language, by code; a language left out (or empty): the model decides")
     .meta({ examples: [{ de: "Board", fr: "Tableau" }] }),
@@ -52,7 +52,7 @@ export const updateGlossary = defineOperation({
   title: "Update the glossary",
   summary:
     "Replace the glossary's terms. Versions kept up to date that use a changed term are translated again in the background (costs credits where they're on); in the others, the sections that use one are marked behind. With `dryRun`, only says how many.",
-  method: "PUT",
+  method: "PATCH",
   path: "/glossary",
   scope: "write",
   access: "admin",
@@ -60,10 +60,12 @@ export const updateGlossary = defineOperation({
     terms: z.array(termInput).max(MAX_GLOSSARY_TERMS).describe(`Every term (up to ${MAX_GLOSSARY_TERMS}); one left out is removed`),
     dryRun: z.boolean().optional().describe("Save nothing: only count what saving would translate again and mark behind"),
   }),
-  output: glossaryOutput.extend({
-    retranslating: z.number().int().describe("Versions kept up to date that use a changed term, translated again").meta({ examples: [3] }),
-    behind: z.number().int().describe("Versions the team writes with sections marked behind for a changed term").meta({ examples: [1] }),
-  }),
+  output: glossaryOutput
+    .extend({
+      retranslating: z.number().int().describe("Versions kept up to date that use a changed term, translated again").meta({ examples: [3] }),
+      behind: z.number().int().describe("Versions the team writes with sections marked behind for a changed term").meta({ examples: [1] }),
+    })
+    .describe("The glossary, and what saving it translates again or marks behind"),
   example: { terms: [{ term: "Acme", keep: true }, { term: "Board", translations: { de: "Board", fr: "Tableau" } }] },
   run: async ({ projectId }, { terms, dryRun = false }) => {
     const seen = new Set<string>();
@@ -77,7 +79,7 @@ export const updateGlossary = defineOperation({
     const after = terms.map(({ term, keep = false, translations = {} }) => ({
       term,
       keep,
-      translations: keep ? {} : Object.fromEntries(Object.entries(translations).filter(([, word]) => word)),
+      translations: keep ? {} : (Object.fromEntries(Object.entries(translations).filter(([, word]) => word)) as Record<string, string>),
     }));
     const { changes } = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
