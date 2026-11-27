@@ -30,7 +30,8 @@ const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep &
  * A save refused as a teammate saved meanwhile (docs/design.md: what was typed kept, the newest version beside it): the
  * teammate's changes from `before` to `theirs` put into `rows`, marked. A term they added is added; one they changed takes
  * their word in each language not edited here, what was typed here staying, and their Never translated only if neither it
- * nor any word was changed here (else the words typed would be hidden, and not saved); one they removed stays, for the
+ * nor any word was changed here (else the words typed would be hidden, and not saved); one they removed goes, unless it
+ * was edited here (then it stays, for the
  * team to remove or keep; one added both here and there gets their words in the languages left empty here; one they
  * changed that was removed (or renamed) here comes back, for the team to decide again.
  */
@@ -38,15 +39,15 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
   const byTerm = (list: GlossaryTermInput[]) => new Map(list.map((term) => [term.term.trim().toLowerCase(), term]));
   const old = byTerm(before);
   const now = byTerm(theirs);
-  const merged: MergeRow[] = rows.map((row) => {
+  const merged: MergeRow[] = rows.flatMap((row): MergeRow[] => {
     const name = row.term.trim().toLowerCase();
     const was = old.get(name);
     const is = now.get(name);
-    if (was && !is) return { ...row, meanwhile: "Removed meanwhile" };
+    if (was && !is) return row.term.trim() === was.term && same(row, was) ? [] : [{ ...row, meanwhile: "Removed meanwhile" }];
     if (!was && is && !same(row, is)) {
       const empty = Object.entries(is.translations).filter(([code]) => !(row.translations[code] ?? "").trim());
       const differ = Object.entries(is.translations).filter(([code, word]) => (row.translations[code] ?? "").trim() && row.translations[code]!.trim() !== word);
-      return { ...row, translations: { ...row.translations, ...Object.fromEntries(empty) }, meanwhile: "Changed meanwhile", ...(differ.length > 0 && { theirs: Object.fromEntries(differ) }) };
+      return [{ ...row, translations: { ...row.translations, ...Object.fromEntries(empty) }, meanwhile: "Changed meanwhile", ...(differ.length > 0 && { theirs: Object.fromEntries(differ) }) }];
     }
     if (was && is && !same(was, is)) {
       const codes = new Set([...Object.keys(was.translations), ...Object.keys(is.translations), ...Object.keys(row.translations)]);
@@ -56,9 +57,9 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
       const keep = row.keep === was.keep && ![...codes].some(edited) ? is.keep : row.keep;
       // Changed on both sides, differently: what was typed stays, theirs shown beside it, for the team to choose.
       const both = [...codes].filter((code) => edited(code) && (is.translations[code] ?? "") !== (was.translations[code] ?? "") && (is.translations[code] ?? "") !== (row.translations[code] ?? "").trim());
-      return { ...row, keep, translations, meanwhile: "Changed meanwhile", ...(both.length > 0 && { theirs: Object.fromEntries(both.map((code) => [code, is.keep && !row.keep ? NEVER : (is.translations[code] ?? "")])) }) };
+      return [{ ...row, keep, translations, meanwhile: "Changed meanwhile", ...(both.length > 0 && { theirs: Object.fromEntries(both.map((code) => [code, is.keep && !row.keep ? NEVER : (is.translations[code] ?? "")])) }) }];
     }
-    return row;
+    return [row];
   });
   const here = new Set(rows.map((row) => row.term.trim().toLowerCase()));
   for (const [name, term] of now) {

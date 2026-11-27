@@ -19,7 +19,7 @@ test("a term a teammate made Never translated, nothing typed for it here: theirs
   expect(mergeMeanwhile([row("Board", { de: "Tafel" })], before, theirs, key)).toEqual([{ ...row("Board", {}, true), meanwhile: "Changed meanwhile" }]);
 });
 
-test("a teammate's word for another language taken beside the one typed here; their new term added; their removed one kept, marked", () => {
+test("a teammate's word for another language taken beside the one typed here; their new term added; their removed one, edited here, kept, marked", () => {
   const before: GlossaryTermInput[] = [
     { term: "Board", keep: false, translations: { de: "Tafel" } },
     { term: "Old", keep: true, translations: {} },
@@ -28,9 +28,9 @@ test("a teammate's word for another language taken beside the one typed here; th
     { term: "Board", keep: false, translations: { de: "Tafel", fr: "Planche" } },
     { term: "Zeta", keep: true, translations: {} },
   ];
-  expect(mergeMeanwhile([row("Board", { de: "Planke" }), row("Old", {}, true)], before, theirs, key)).toEqual([
+  expect(mergeMeanwhile([row("Board", { de: "Planke" }), row("Old", { de: "Alt" })], before, theirs, key)).toEqual([
     { ...row("Board", { de: "Planke", fr: "Planche" }), meanwhile: "Changed meanwhile" },
-    { ...row("Old", {}, true), meanwhile: "Removed meanwhile" },
+    { ...row("Old", { de: "Alt" }), meanwhile: "Removed meanwhile" },
     { key: "new", term: "Zeta", keep: true, translations: {}, meanwhile: "Added meanwhile" },
   ]);
 });
@@ -87,5 +87,14 @@ test("a word changed both here and by a teammate: the one typed here stays, thei
   expect(mergeMeanwhile([row("Zeta", { de: "Zett" })], [], [{ term: "Zeta", keep: false, translations: { de: "Zeh" } }], key)).toEqual([
     { ...row("Zeta", { de: "Zett" }), meanwhile: "Changed meanwhile", theirs: { de: "Zeh" } },
   ]);
+});
+
+test("a term a teammate removed, untouched here: it goes (their removal wins), unmarked", () => {
+  const before: GlossaryTermInput[] = [
+    { term: "Board", keep: false, translations: { de: "Tafel" } },
+    { term: "Old", keep: true, translations: {} },
+  ];
+  const theirs: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Tafel" } }];
+  expect(mergeMeanwhile([row("Board", { de: "Planke" }), row("Old", {}, true)], before, theirs, key)).toEqual([row("Board", { de: "Planke" })]);
 });
 
