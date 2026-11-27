@@ -36,6 +36,15 @@ test("Amplify Gen 2's user_pool_id gives the Cognito host", () => {
   expect(findSignInServices(['{"auth":{"user_pool_id":"eu-west-1_AbC123xyz"},"cognito":1}'])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.eu-west-1.amazonaws.com"] }]);
 });
 
+test("text whose lower case is longer (İ) still reads a Clerk key in its own case", () => {
+  expect(findSignInServices([`${"İ".repeat(50)} publishableKey:"pk_live_${btoa("clerk.acme.com$")}"`])).toEqual([{ provider: "Clerk", hosts: ["clerk.acme.com"] }]);
+});
+
+test("a vendor chunk naming a key hundreds of times before the app's config doesn't hide it", () => {
+  const vendor = 'if(a.userPoolId){} '.repeat(500);
+  expect(findSignInServices([`${vendor}Amplify.configure({Auth:{Cognito:{userPoolId:"us-east-1_AbC123xyz"}}})`])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.us-east-1.amazonaws.com"] }]);
+});
+
 test("long hostile text is scanned in linear time: a run of hyphenated labels, unclosed tags", () => {
   // With every service's names in it, so each one's patterns run.
   const names = " identitytoolkit.googleapis.com auth0.com .auth0.com okta .okta.com cognito cognito-idp. .amazoncognito.com userpoolid clerk //clerk. .clerk.accounts.dev pk_live_ pk_test_ supabase.co .supabase.co ";
