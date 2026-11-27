@@ -199,7 +199,7 @@ export const updateScreenshotSettings = defineOperation({
   input: z.object({
     appUrl: webAddress("Enter your app's full address, starting with https://")
       .optional()
-      .describe("Your app's address, where the agent starts. Moved to another site (host, scheme or port), the saved password and sign-in link are forgotten unless new ones are sent with it"),
+      .describe("Your app's address, where the agent starts. Changed in any way (another page on the same site too), the saved password and sign-in link are forgotten unless sent again with it"),
     signIn: z.enum(SIGN_INS, { error: "Pick password, link or none" }).optional().describe("How it signs in: `password`, `link` or `none`; the other way's secret is forgotten"),
     username: z.string().trim().max(320, "Keep the username under 320 characters").optional().describe("The username or email to sign in with (`password`)"),
     password: z.string().max(1000, "Keep the password under 1,000 characters").optional().describe("The password (`password`); left out or empty keeps the saved one"),
@@ -295,7 +295,8 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
     window: (input.window?.toUpperCase() ?? saved?.window ?? "DESKTOP") as ScreenshotWindow,
     residentialProxy: input.residentialProxy ?? saved?.residentialProxy ?? false,
     otherDomains: input.otherDomains ? [...new Set(input.otherDomains)] : (saved?.otherDomains ?? []),
-    skippedDomains: input.skippedDomains ? [...new Set(input.skippedDomains)] : (saved?.skippedDomains ?? []),
+    // Found per address: another address's are found again, none removed.
+    skippedDomains: input.skippedDomains && sameAddress ? [...new Set(input.skippedDomains)] : sameAddress ? saved.skippedDomains : [],
   };
   await tx.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
 }
@@ -397,7 +398,7 @@ export const getScreenshotSignInDomains = defineOperation({
   name: "screenshotSettings.signInDomains",
   title: "Get screenshot sign-in domains",
   summary:
-    "The hosts of the hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), allowed for its runs beside the other domains; remove one with screenshotSettings.update's `skippedDomains`. Read in the background: ask again while `checking`.",
+    "Hosts of the sign-in services your app calls (Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), found in its code and allowed for its runs; remove one with screenshotSettings.update's `skippedDomains`. Read in the background: ask again while `checking`.",
   method: "GET",
   path: "/screenshots/settings/sign-in-domains",
   scope: "read",

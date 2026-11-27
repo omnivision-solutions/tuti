@@ -44,7 +44,9 @@ beforeAll(async () => {
       response.writeHead(302, { location: "/app" }).end();
     } else if (request.url?.startsWith("/search")) {
       // A page that echoes its address in its text, and has its config in an inline script.
-      response.writeHead(200, { "content-type": "text/html" }).end(`<html><p>Results for ${decodeURIComponent(request.url)}</p><script>const config={domain:"acme.auth0.com"}</script></html>`);
+      response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(`<html><p>Results for ${decodeURIComponent(request.url)}</p><script>self.__data={domain:"acme.auth0.com",api:"identitytoolkit.googleapis.com"}</script></html>`);
     } else if (request.url === "/app") {
       response.writeHead(200, { "content-type": "text/html" }).end('<html><script type="module" src="/assets/main.js"></script><script src="https://cdn.elsewhere.example/x.js"></script></html>');
     } else if (request.url === "/assets/main.js" && scriptFailures > 0) {
@@ -136,11 +138,13 @@ test("finds the app's sign-in service in its own scripts, once per address", asy
   expect(await suggestions()).toEqual([firebase]);
   expect(requests).toHaveLength(3);
 
-  // Another address is read again; one that can't be read suggests nothing, and isn't kept.
+  // Another address is read again; one that can't be read finds nothing, kept only as found partly (read again next look).
   await settle({ appUrl: `${base}/missing`, otherDomains: [] });
   expect(await suggestions()).toEqual([]);
   expect(requests.at(-1)).toBe("/missing");
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/`));
+  expect(await saved()).toMatchObject({ signInServicesFor: partlyScannedFor(`${base}/missing`), signInServicesAt: null, signInServices: [] });
+  await suggestions();
+  expect(requests.filter((path) => path === "/missing")).toHaveLength(2);
 });
 
 test("a script that didn't load isn't kept as nothing found: the next look reads it again", async () => {
@@ -173,9 +177,9 @@ test("off localhost, only public addresses over https: an app at a private addre
     await settle({ appUrl });
     expect(await suggestions()).toEqual([]);
   }
-  // Never even connected to: refused when looked up (a name) or before (an address).
+  // Never even connected to: refused when looked up (a name) or before (an address); nothing found.
   expect(connections).toBe(0);
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+  expect(await saved()).toMatchObject({ signInServicesFor: partlyScannedFor(`https://[::1]:${port}/`), signInServices: [] });
 });
 
 test("Tuti on localhost without SCREENSHOTS_ALLOW_LOCALHOST (a self-hosted server) doesn't read a local app either", async () => {
@@ -236,9 +240,9 @@ test("an answer saved by the earlier scanner, under the bare address, is found a
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
-test("only the page's scripts are read, never its text, which can echo its address", async () => {
+test("a tenant's host is never taken from the page itself (its text and inline data can be its users'), only a service's own", async () => {
   await settle({ appUrl: `${base}/search?q=evil.auth0.com` });
-  expect(await suggestions()).toEqual([{ provider: "Auth0", hosts: ["acme.auth0.com"] }]);
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
 test("settings without an app address suggest nothing", async () => {
@@ -257,11 +261,13 @@ test("a sign-in link that no longer opens (another server secret) still gets sug
 });
 
 test("reads of the app count against the fetch limits: past them, 429 and nothing fetched", async () => {
-  await settle({ appUrl: `${base}/missing` });
+  // Each address once (one read before, even of nothing, is shown rather than refused).
   for (let i = 0; i < FETCHES_PER_MEMBER_PER_MINUTE; i++) {
+    await settle({ appUrl: `${base}/missing?${i}` });
     expect(await suggestions()).toEqual([]);
   }
   const fetched = requests.length;
+  await settle({ appUrl: `${base}/missing?last` });
   await expect(suggestions()).rejects.toMatchObject({ status: 429 });
   expect(requests).toHaveLength(fetched);
 });

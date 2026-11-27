@@ -148,7 +148,7 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await expect(checking).toBeHidden();
     await expect(save).toBeDisabled();
     // Why, on the label.
-    await owner.getByRole("button", { name: "Why identitytoolkit.googleapis.com was added" }).hover();
+    await owner.getByRole("button", { name: "Auto: why identitytoolkit.googleapis.com was added" }).hover();
     await expect(owner.getByText("Added for Firebase sign-in", { exact: true })).toBeVisible();
     await checkpoint(owner, "team-settings-screenshots-found");
     await owner.mouse.move(0, 0);
@@ -212,6 +212,13 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await expect(again).toBeHidden();
     await owner.reload();
     await expect(owner.getByRole("button", { name: "Remove api.example.net" })).toBeVisible();
+
+    // A found host also listed by hand (before it was found): removing it removes it, not back as Auto.
+    await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
+    await owner.getByLabel("Other domains").fill("identitytoolkit.googleapis.com ");
+    await expect(owner.getByRole("button", { name: "Auto: why identitytoolkit.googleapis.com was added" })).toBeHidden();
+    await identity.click();
+    await expect(identity).toBeHidden();
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }

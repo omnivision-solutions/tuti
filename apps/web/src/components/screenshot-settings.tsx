@@ -280,12 +280,20 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
       <input ref={typedField} type="hidden" name="otherDomains" value={typed.join("\n")} />
       <input ref={skippedField} type="hidden" name="skippedDomains" value={skipped.join("\n")} />
       <div
-        className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent p-1.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
+        className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-card p-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-background"
         aria-busy={checking}
         data-domains
       >
         {typed.map((host) => (
-          <Chip key={host} host={host} onRemove={() => remove(host, () => setTyped((all) => all.filter((one) => one !== host)))} />
+          <Chip key={host} host={host} onRemove={() =>
+              remove(host, () => {
+                setTyped((all) => all.filter((one) => one !== host));
+                // Found too (listed before it was found): removed from those as well, or it'd stay, as Auto.
+                if (found.some((one) => one.host === host)) {
+                  setSkipped((all) => [...all, host]);
+                }
+              })
+            } />
         ))}
         {auto.map(({ host, provider }) => (
           <Chip key={host} host={host} provider={provider} onRemove={() => remove(host, () => setSkipped((all) => [...all, host]))} />
@@ -347,7 +355,7 @@ function Chip({ host, provider, onRemove }: { host: string; provider?: string; o
       <span className="min-w-0 truncate">{host}</span>
       {provider && (
         <Popover>
-          <PopoverTrigger openOnHover aria-label={`Why ${host} was added`} className="inline-flex items-center gap-0.5 rounded-full font-sans text-[0.6875rem] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <PopoverTrigger openOnHover aria-label={`Auto: why ${host} was added`} className="inline-flex items-center gap-0.5 rounded-full font-sans text-[0.6875rem] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Auto
             <InfoIcon aria-hidden className="size-3" />
           </PopoverTrigger>

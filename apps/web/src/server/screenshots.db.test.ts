@@ -832,6 +832,8 @@ test("hosts found for the app's sign-in are allowed and bound to the password wi
   expect(await call(updateScreenshotSettings, as(), { otherDomains: ["identitytoolkit.googleapis.com"] })).toMatchObject({ otherDomains: ["identitytoolkit.googleapis.com"] });
   // One removed isn't allowed, so typing it needs the password.
   await expect(call(updateScreenshotSettings, as(), { otherDomains: ["securetoken.googleapis.com"] })).rejects.toMatchObject({ status: 400 });
+  // Found per address: another address (sent with the password) starts with none removed, whatever the screen sends.
+  expect(await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other", password: PASSWORD, skippedDomains: ["securetoken.googleapis.com"] })).toMatchObject({ skippedDomains: [] });
 });
 
 test("a run before the app was read for its sign-in's hosts reads it first, so its browser opens them", async () => {

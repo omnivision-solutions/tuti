@@ -212,7 +212,8 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
   // The app not read yet for its sign-in's hosts (a Test right after the address changed): read first (15 seconds at
   // most), so the browser opens them; a read failing goes without them.
   if (settings.signInServicesFor !== scannedFor(settings.appUrl) && settings.signInServicesFor !== partlyScannedFor(settings.appUrl)) {
-    await scanSignInServices({ projectId: run.projectId, appUrl: settings.appUrl }).catch((error: unknown) => log.warn("Reading an app's sign-in hosts before a screenshot run failed", { projectId: run.projectId, error }));
+    // A claim of its own (no read the page started is claimed at this instant): it leaves the page's read's alone.
+    await scanSignInServices({ projectId: run.projectId, appUrl: settings.appUrl, claimedAt: new Date().toISOString() }).catch((error: unknown) => log.warn("Reading an app's sign-in hosts before a screenshot run failed", { projectId: run.projectId, error }));
     settings = (await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId } })) ?? settings;
   }
   if (await aiPaused(run.projectId)) {
