@@ -196,6 +196,22 @@ test("past the automated replies' cap nothing replies or keeps it: an auto-respo
   expect((await told()).at(-1)).toBe("conversation.handed_over too_many_replies");
 });
 
+test("the cap alone stops a set reply: a conversation that never had one gets none once the AI's replies reach it", async () => {
+  const { projectId, admin, conversation, workflow, start, reply, state, activity } = await setup();
+  // No workflow yet: the team's, with no set reply. Then handed to the AI, whose replies in the hour reach the cap.
+  expect(await start("vip-1")).toBe(1);
+  await call(updateConversation, admin, { number: 1, handledBy: "ai" });
+  const { id } = await conversation(1);
+  await prisma.conversationMessage.createMany({
+    data: Array.from({ length: AUTOMATED_REPLIES_PER_HOUR }, (_, i) => ({ projectId, conversationId: id, author: "AI" as const, channel: "API" as const, body: `Automated ${i}` })),
+  });
+  await workflow("VIPs stay with the AI", [{ kind: "reply_text", text: "Thanks, we're on it." }, { kind: "dont_hand_over" }], "vip");
+  await reply(1, "vip-1");
+  expect(await prisma.conversationMessage.count({ where: { conversationId: id, author: "AI", requestId: { not: null } } })).toBe(0);
+  expect((await state(1)).handledBy).toBe("TEAM");
+  expect((await activity(1)).slice(-2)).toEqual(["ran (too_many_replies): VIPs stay with the AI -", "handed over: too_many_replies"]);
+});
+
 test("a set reply is emailed only where the address is proven, as an automated reply", async () => {
   const { projectId, admin, to, workflow, state } = await setup();
   await workflow("Hello", [{ kind: "reply_text", text: "Thanks, we got it." }, { kind: "dont_hand_over" }]);
