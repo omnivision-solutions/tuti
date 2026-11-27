@@ -197,7 +197,9 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
     }
     if (was) {
       const behindUnseen = automatic && !was.meta.own;
-      return { blocks: section, meta: { key: was.meta.key, hash: behindUnseen || was.meta.key === null ? was.meta.hash : (hashes.get(was.meta.key) ?? null), own: true } };
+      // Kept (publishing with `keep`) stays kept: an edit updates the section, it doesn't take back never replacing it.
+      const hash = behindUnseen || was.meta.key === null ? was.meta.hash : (hashes.get(was.meta.key) ?? null);
+      return { blocks: section, meta: { key: was.meta.key, hash, own: true, ...(was.meta.kept && { kept: true as const }) } };
     }
     // Nothing to line up with yet (written before its first translation): the source's section in its place, as it is now.
     const key = base.length === 0 ? (source[i]?.key ?? null) : null;

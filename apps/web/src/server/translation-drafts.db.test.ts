@@ -737,3 +737,25 @@ test("a sample article's version the team publishes is never made searchable", a
   await languageTranslationsDone();
   expect(await prisma.articleTranslationChunk.count({ where: { projectId: project.id } })).toBe(0);
 });
+
+test("kept, then edited and published: up to date now, and still the team's when its English changes later (behind, never replaced)", async () => {
+  await translated();
+  await editBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  const billing = (await call(getTranslation, as(), de)).draft!.behind[0]!;
+  await call(publishTranslation, as(), { ...de, keep: [billing] });
+  // The team brings the kept Billing up to date by hand: no longer behind.
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content!.at(-1)!.content![0]!.text = "Mit Karte oder Rechnung zahlen";
+  expect((await call(saveTranslation, as(), { ...de, content, version: read.version })).draft!.behind).toEqual([]);
+  const published = await call(publishTranslation, as(), de);
+  expect(published.behind).toEqual([]);
+  // English changes Billing again: the team's text stays (it's kept), shown as behind.
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by invoice only"]), "de3");
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("Mit Karte oder Rechnung zahlen");
+  expect(text(after.content)).not.toContain("[de3] Pay by invoice only");
+  expect(after.behind.map(({ section }) => section)).toEqual([billing]);
+});
+
