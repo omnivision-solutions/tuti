@@ -239,3 +239,18 @@ test("Keep up to date turned on where there's no version yet, then Save before i
   // Saving turned Keep up to date off: the translation finishing writes nothing over it.
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ title: "Dunkler Modus", keepUpToDate: false });
 });
+
+test("a save's token is against the entry's text it was checked under, never a read after it (an edit landing in between)", async () => {
+  const number = await published("manual");
+  const empty = await call(getChangelogTranslation, as(), { number, language: "de" });
+  // Any read of the entry after the save's own (under its lock) sees the English edited.
+  const reading = vi.spyOn(prisma.changelogEntry, "findUniqueOrThrow").mockResolvedValue({ title: "Dark mode is here", body: BODY, content: null } as never);
+  let saved;
+  try {
+    saved = await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Wechsle das Design im Profilmenü."), version: empty.version });
+  } finally {
+    reading.mockRestore();
+  }
+  // The token is the one a read now gives: the English it was saved beside.
+  expect(saved.version).toBe((await call(getChangelogTranslation, as(), { number, language: "de" })).version);
+});

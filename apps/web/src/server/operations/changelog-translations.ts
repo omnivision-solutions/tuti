@@ -178,14 +178,14 @@ export const saveChangelogTranslation = defineOperation({
           tries: 0,
           retryAt: null,
         };
-        return { version: await tx.changelogTranslation.upsert({ where, create: { entryId: entry.id, projectId, language: input.language, ...data }, update: data, select: versionSelect }), queue: false };
+        return { version: await tx.changelogTranslation.upsert({ where, create: { entryId: entry.id, projectId, language: input.language, ...data }, update: data, select: versionSelect }), queue: false, sourceHash };
       }
       if (input.keepUpToDate === undefined) {
-        return { version, queue: false };
+        return { version, queue: false, sourceHash };
       }
       // Off with no version yet: nothing to keep, and the language's setting says what a new one is.
       if (!version && !input.keepUpToDate) {
-        return { version, queue: false };
+        return { version, queue: false, sourceHash };
       }
       // Turned on, it's translated anew (a Retranslate, nothing reused): the team's text, made from the entry as it is, would
       // otherwise read as up to date to the job.
@@ -196,13 +196,14 @@ export const saveChangelogTranslation = defineOperation({
         update: { automatic: input.keepUpToDate, ...(on && { retranslate: { increment: 1 } }) },
         select: versionSelect,
       });
-      return { version: updated, queue: on };
+      return { version: updated, queue: on, sourceHash };
     });
     // Turned on: translated again from the entry as it is (the safety net set first, so the retry job has it if this run is lost).
     if (saved.queue) {
       await queueEntryVersion(entry.id, input.language);
     }
-    const now = await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { title: true, body: true, content: true } });
-    return output(input.language, saved.version, translationSource(now).hash);
+    // Its token against the entry's text as read under the lock, the text this change was checked against: read again after,
+    // an edit landing in between would put English in it this editor never saw, and its next save would pass.
+    return output(input.language, saved.version, saved.sourceHash);
   },
 });
