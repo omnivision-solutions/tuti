@@ -1207,6 +1207,49 @@ Ask AI on a selection, or on the whole text, in the changelog and help center ed
 - [x] R3. The same in the help center's article editor (a saved article or a new one): its selection bar's Ask AI, written like the rest of the article; its edits recorded and charged as "Help center edits".
 - [x] R4. The header's Ask AI on the whole text as it is on screen (unsaved typing included), replacing the changelog's old "Edit with AI" menu (and its "Save your changes first"); a draft's Draft with AI in its dialog. `changelog.rewrite` and its server actions removed (no users yet: no deprecation); API clients edit their own copy and save it with `changelog.update`.
 
+## One way in: every call through tRPC, auth in one place (asked 2026-11-27)
+
+The web app calls the server through Next's server actions, whose IDs change with every build. So a tab opened before a deploy fails its next save, unsaved changes and all, even when the function didn't change. Auth runs in six places: `operations/run.ts` for most actions, inline in 23 action files with no operation behind them, `api-auth.ts` for REST and MCP, `requireOwner` inside two operations, two layouts and 55 pages for what pages read, and `/api/live` and `/api/media` on their own. This replaces all of it with one way in, done once and cleanly: no users yet (2026-11-05), so nothing keeps the old ways working beside the new.
+
+```mermaid
+flowchart LR
+  web[Web app · portal · widget] --> trpc["/api/trpc"]
+  mobile[Mobile app] --> trpc
+  keys[API keys] --> rest["REST /api/v1"]
+  agents[AI agents] --> mcp[MCP]
+  pages[Server pages] --> caller[createCaller]
+  rest --> caller
+  mcp --> caller
+  trpc --> mw
+  caller --> mw["tRPC context + middleware<br/>who: cookie · key · mobile token · reader · visitor<br/>may they: project · access · scope · owner<br/>logging · errors"]
+  live["/api/live · /api/media"] -. same context function .-> mw
+  mw --> ops["Operations (defineOperation)<br/>no auth inside"]
+```
+
+Decided (2026-11-27):
+- **Operations stay the one definition.** `defineOperation` keeps everything REST, the API docs and MCP are generated from. The tRPC router is generated from the operations list, one procedure per operation under the operation's name (`aiFirst.update`), typed end to end; nobody writes a procedure by hand. A new flag, `internal`, marks operations the app needs but the public API doesn't (sessions, invitations, sign-in links, checkout, page-shaped reads): in tRPC, not in REST, MCP or the docs, `method` and `path` optional.
+- **Auth in one place.** The context says who's calling: the app's or the portal's cookie session (per host, as today), a project API key, the mobile app's session token, a portal reader, a widget visitor. The middleware says whether they may: the project (from its slug, or the key's), `access` and `scope` (`refusal` moves here), owners (`requireOwner` moves here; the owner's id goes into the context). Operations check nothing themselves. Calls with a cookie must come from the same origin, as server actions' did. The session and membership are read once per request (`cache`), however many procedures a page calls.
+- **Every caller goes through it.** The web app, the portal and the widget (pages on the portal's hosts; `/api/*` is served on every host already) call `/api/trpc`; the mobile app too; REST and MCP call the router in process (`createCaller`); server-rendered pages read through `createCaller` as well, with one helper that turns "not signed in" into the sign-in page and "not allowed" or "not found" into a 404. `/api/live`, `/api/widget/live` and `/api/media` stay routes (a stream, file uploads) and use the same context function. Left as they are, since they aren't a person: `/api/auth` (Better Auth), webhooks (Stripe, GitHub, email, AppSumo) with their signatures, the job endpoints with their secret, `/api/health`, `widget.js`.
+- **Pages stay server-rendered.** A page's reads run on the server, in process, through the caller; React Query is only for what the browser fetches or saves. After a save the page refreshes (`router.refresh()`) or the query is invalidated.
+- **Stable names, inputs that only grow.** A procedure's name never changes, and its input only gains optional fields, so a tab or an installed app from before a deploy keeps working, unsaved changes included. Outputs only gain fields. No versions on procedures.
+- **The mobile app uses tRPC like the web app**: it imports the router's type (type only, nothing of the web app runs in it), and its hand-written response types go. REST becomes only the public API for API keys and stops taking session tokens.
+- **Libraries:** `@trpc/server`, `@trpc/client` and `@trpc/tanstack-react-query` 11, `@tanstack/react-query` 5, `superjson` (dates arrive as dates).
+
+Order: T1 alone first; then T2, T10 and T11 beside the screens (T3 to T9), two at a time, one PR per screen as AGENTS.md asks; T12 last. Screens the Languages lane is still editing wait for its PRs.
+
+- [ ] T1. The foundation: the libraries; `server/trpc/context.ts` (who), `server/trpc/init.ts` (the middleware: project, access, scope, owners, logging slow calls and errors, `OperationError` as the tRPC error with its HTTP status), `server/trpc/router.ts` (generated from the operations list), `/api/trpc/[trpc]`, the provider in the app's and the portal's root layouts, `serverCaller()` for pages; `defineOperation`'s `internal`; a lint rule against `"use server"` (a warning until T12). Settings → AI answers first moved end to end: its page reads through the caller, its saves through tRPC, its server actions deleted. Tests: the router has a procedure for every operation under its name; the authorization matrix calls procedures through `createCaller` (each actor kind, each `access`, a key's `scope`, another project's slug); cookie calls from another origin refused; the screen's journey unchanged
+- [ ] T2. REST and MCP through the router: `/api/v1/[...path]` and `/api/mcp` call `createCaller` with the key's context; their own auth goes (`api-auth.ts` keeps only reading the key, inside the context); internal operations aren't served. Tests: the API and MCP db tests pass unchanged
+- [ ] T3. Settings, a PR per screen: each screen's reads through the caller, its saves through tRPC, its server actions and inline checks deleted; settings with no operation (API keys, SSO, webhooks, team and invitations, email pause, licenses) become operations, `internal` where the public API shouldn't have them. Tests: each screen's journey, the matrix's rows
+- [ ] T4. Inbox: the list, a conversation, its details and Activity, the reply box (a PR each)
+- [ ] T5. Feedback: boards, posts, a post's page, similar posts, the roadmap (a PR each)
+- [ ] T6. Changelog: the list, the editor, subscribers, translations (a PR each)
+- [ ] T7. Help center: articles, the editor, collections, insights, API references (a PR each)
+- [ ] T8. The portal and the widget, for readers and visitors: voting, comments, subscribing, Messages, Ask AI, the reader's and visitor's sessions (`lib/visitor-session.ts`, `lib/widget-session.ts`, `lib/preview-session.ts`) as the context's reader and visitor (a PR each)
+- [ ] T9. Signing in and the account: sign-in links, password reset, invitations, the portal handoff, new project, account, licenses and checkout (a PR each)
+- [ ] T10. `/api/live`, `/api/widget/live` and `/api/media` on the context function, their own checks deleted. Tests: their db tests (another project's stream and file refused)
+- [ ] T11. The mobile app on tRPC: `@trpc/client` with the router's type, which reaches the app as declarations (the router's type emitted into a small workspace package the app depends on for types only, built before the app's typecheck), since both apps' `@/` paths would collide if the app read the web app's source; the app's hand-written types deleted, its tests on the new client; REST stops taking session tokens (`sendsSession`, `authenticateTeammate` go). Tests: the app's unit tests, the devices and API db tests
+- [ ] T12. The end: the last `"use server"` files, `operations/run.ts`, `FormState`, `serverActions` in `next.config.ts` and `pages-authorize.db.test.ts` (the matrix covers pages) deleted; the lint rule an error; AGENTS.md's "Features are operations" rewritten for the router (a feature is an operation; the app, the mobile app, REST and MCP call it through the router; auth only in the context and middleware; inputs only gain optional fields)
+
 ## Later
 
 - [ ] The app host's hourly limit on emailed links (`SIGN_IN_LINKS_PER_PORTAL_PER_HOUR`, shared by password resets) is one count for the whole server: on a server with many teams it wants a limit of its own, or none beside the per-address and per-visitor ones
