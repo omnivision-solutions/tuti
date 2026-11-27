@@ -1797,10 +1797,16 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(assistant).toBeHidden();
   await openAssistant(visitor);
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
+  // Shown again, the earlier answers' thanks take no focus: only a rating just saved moves it.
+  const thanksUnfocused = async () => {
+    for (const thanks of await conversation.getByText("Thanks for letting us know.").all()) await expect(thanks).not.toBeFocused();
+  };
+  await thanksUnfocused();
   // So does a reload (for the tab's session).
   await visitor.reload();
   await openAssistant(visitor);
   await expect(conversation).toContainText(followUp);
+  await thanksUnfocused();
 
   // A question that fails to reach the server (offline) says so, with Try again, rather than thinking forever.
   await offline();

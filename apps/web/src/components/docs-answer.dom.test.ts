@@ -39,7 +39,10 @@ test("a rating's thanks takes focus once, as it saves; later renders leave focus
   // The reader moves on (the search box, a source); the page renders again.
   elsewhere.focus();
   await act(async () => root.render(h(DocsAnswer, { ...props })));
-  expect(document.activeElement).toBe(elsewhere);
+  expect(document.activeElement).toBe(elsewhere);  // Nor when focus is on the page itself: only a rating just saved moves it.
+  elsewhere.blur();
+  await act(async () => root.render(h(DocsAnswer, { ...props })));
+  expect(document.activeElement).toBe(document.body);
 });
 
 test("a reader who moves on while the rating saves keeps their focus", async () => {
