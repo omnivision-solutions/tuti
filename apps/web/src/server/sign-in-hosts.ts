@@ -85,8 +85,8 @@ export function findSignInServices(texts: string[]): SignInService[] {
 
 const PAGE_BYTES = 2_000_000;
 const SCRIPT_BYTES = 5_000_000;
-/** All the scripts together: one read never holds more than PAGE_BYTES + this in memory, or scans more. */
-const SCRIPTS_BYTES = 8_000_000;
+/** All the scripts together, shared out (5 MB each up to 4 scripts, ~1.3 MB each for 15: an app with many has small chunks): one read never holds more than PAGE_BYTES + this. */
+const SCRIPTS_BYTES = 20_000_000;
 const MAX_SCRIPTS = 15;
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 6_000;
