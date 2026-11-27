@@ -25,6 +25,8 @@ let connections = 0;
 let reading = 0;
 /** A 3 MB script. */
 const heavy = " ".repeat(3_000_000);
+/** A 2 MB script of 1 million characters. */
+const wide = "é".repeat(1_000_000);
 let mostReading = 0;
 /** Script reads that fail (500) before it loads. */
 let scriptFailures = 0;
@@ -49,6 +51,10 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 30 }, (_, i) => `<script src="/assets/h${i}.js"></script>`).join(""));
     } else if (request.url?.startsWith("/assets/h")) {
       response.writeHead(200, { "content-type": "text/javascript" }).end(heavy);
+    } else if (request.url === "/wide") {
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 30 }, (_, i) => `<script src="/assets/w${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/assets/w")) {
+      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(wide);
     } else if (request.url?.startsWith("/assets/s")) {
       // The sign-in SDK deep in a Next.js page's chunks, at the end of a large one, as on a real app (its 26th of 40).
       reading++;
@@ -162,6 +168,13 @@ test("a page whose scripts pass 40 MB together reads no more of them, and the an
   // 14 fill the budget; up to 7 more were already on their way.
   expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+});
+
+test("the budget counts the bytes read, not the characters", async () => {
+  await settle({ appUrl: `${base}/wide` });
+  expect(await suggestions()).toEqual([]);
+  // 20 fill the budget; up to 7 more were already on their way.
+  expect(requests.filter((path) => path.startsWith("/assets/w")).length).toBeLessThan(28);
 });
 
 test("an answer saved by the earlier scanner, under the bare address, is found again", async () => {

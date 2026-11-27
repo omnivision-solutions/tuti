@@ -164,7 +164,7 @@ function allowed(url: URL): boolean {
 }
 
 /** A URL's body as text, up to `max` bytes, following redirects only to allowed URLs; null when it can't be read. */
-async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: URL; text: string } | null> {
+async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: URL; text: string; bytes: number } | null> {
   for (let hop = 0; hop <= MAX_REDIRECTS && allowed(url); hop++) {
     const response = await fetch(url, { redirect: "manual", signal, headers: { accept: "text/html,*/*" }, ...(!localTesting() && { dispatcher: publicOnly }) });
     const location = response.headers.get("location");
@@ -186,7 +186,8 @@ async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: U
         break;
       }
     }
-    return { url, text: Buffer.concat(chunks).subarray(0, max).toString("utf8") };
+    const body = Buffer.concat(chunks).subarray(0, max);
+    return { url, text: body.toString("utf8"), bytes: body.length };
   }
   return null;
 }
@@ -233,15 +234,20 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     await Promise.all(
       Array.from({ length: SCRIPTS_AT_ONCE }, async () => {
         for (let script = queue.shift(); script && left > 0; script = queue.shift()) {
-          const read = await get(script, Math.min(SCRIPT_BYTES, left), signal).catch(() => null);
-          left -= read?.text.length ?? 0;
-          complete &&= !!read;
+          // Taken from the budget before reading (8 at once can't each count on the same bytes left); what a read
+          // didn't use is given back, all of it kept for one that failed (it may have read some first).
+          const allowance = Math.min(SCRIPT_BYTES, left);
+          left -= allowance;
+          const read = await get(script, allowance, signal).catch(() => null);
+          left += read ? allowance - read.bytes : 0;
+          // A script cut short by the budget, not by its own limit, isn't the same bytes each time.
+          complete &&= !!read && (allowance === SCRIPT_BYTES || read.bytes < allowance);
           found.push(read ? findIn(read.text) : []);
         }
       }),
     );
     // Which scripts the budget let in depends on which came back first: not kept, as a script that didn't load isn't.
-    return { services: merge(found), complete: complete && left > 0 };
+    return { services: merge(found), complete: complete && queue.length === 0 };
   } catch {
     return null;
   }
