@@ -1,12 +1,12 @@
 import { type Doc, emailImageKey, fromPlainText } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { changelogEmail, sendEmail } from "@tuti/email";
-import { type JobInput, planIncludes, plansEnabled } from "@tuti/shared";
+import { type JobInput, languageLimit, liveLanguages, planIncludes, plansEnabled } from "@tuti/shared";
 import { type GroupRule, storedRule } from "@tuti/shared/group-conditions";
 
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
-import { ANNOUNCEMENT_WAITS_MS, entryTranslationsPending } from "./article-translation";
+import { ANNOUNCEMENT_WAITS_MS, entryTranslationsPending, translationSource } from "./article-translation";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
 import { emailBrand } from "./email-brand";
@@ -148,8 +148,8 @@ async function audience(
   db: Prisma.TransactionClient = prisma,
 ) {
   const readers = await hasReaders(projectId, db);
-  return db.$queryRaw<{ id: string; email: string; token: string }[]>`
-    SELECT s."id", s."email", s."token" ${audienceSql(projectId, emailedAt, readers, unsentOf, groups)}
+  return db.$queryRaw<{ id: string; email: string; token: string; language: string | null }[]>`
+    SELECT s."id", s."email", s."token", s."language" ${audienceSql(projectId, emailedAt, readers, unsentOf, groups)}
       ${only ? Prisma.sql`AND s."id" = ${only}` : Prisma.empty}
     ORDER BY s."createdAt", s."id"`;
 }
@@ -321,7 +321,10 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       sample: true,
       emailOnly: true,
       projectId: true,
-      project: { select: { name: true, slug: true, brandColor: true } },
+      project: {
+        select: { name: true, slug: true, brandColor: true, plan: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+      },
+      translations: { where: { publishedAt: { not: null } }, select: { language: true, automatic: true, title: true, body: true, content: true, sourceHash: true } },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -361,15 +364,33 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
-  // An email-only entry has no page for readers: no link to one.
-  const entryUrl = entry.emailOnly ? null : `${origin}/changelog/${entry.number}`;
+  // An email-only entry has no page for readers: no link to one. `base`: the portal's address in the email's language, under
+  // its prefix for a translated version (/de, as the web app's languagePrefix), the default language's own otherwise.
+  const entryUrl = (base: string) => (entry.emailOnly ? null : `${base}/changelog/${entry.number}`);
   const doc = (entry.content as Doc | null) ?? fromPlainText(entry.body);
   const images = entryImages(doc, entry.cover?.status === "READY" ? entry.coverId : null, log);
+  // Each subscriber gets it in their language (docs/plan.md L16) where its version there is current: one the team wrote,
+  // or one translated from the entry as it is now (a stale one, its translation still to come or failed, isn't: they get
+  // the default language's, as readers of a page not yet translated do).
+  const { hash } = translationSource(entry);
+  // Only a language the portal serves: live, and within the plan's limit (the portal's own rule, liveLanguages), never one
+  // taken offline or past a downgrade's limit.
+  const served = new Set<string>(liveLanguages(entry.project.languages, languageLimit(entry.project.plan)));
+  const versions = new Map(
+    entry.translations
+      .filter((t) => served.has(t.language) && (!t.automatic || t.sourceHash === hash))
+      .map((t) => {
+        const version = (t.content as Doc | null) ?? fromPlainText(t.body);
+        // Its own images (one the team put in theirs, which the source hasn't), and the entry's cover.
+        return [t.language, { title: t.title, doc: version, ...entryImages(version, entry.cover?.status === "READY" ? entry.coverId : null, log) }];
+      }),
+  );
   let emailed = 0;
   let failed = 0;
   let held = false;
   let stopped = false;
-  for (const { id, email, token } of people) {
+  for (const { id, email, token, language } of people) {
+    const version = language ? versions.get(language) : undefined;
     // Claimed before sending, so a retry or a second run doesn't email them twice.
     const claimedAt = await claim({ id: entryId, projectId, emailedAt }, id);
     if (claimedAt === "stop") {
@@ -388,17 +409,16 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       break;
     }
     const query = `token=${encodeURIComponent(token)}`;
+    const base = version ? `${origin}/${language!.toLowerCase()}` : origin;
     const error = await whileClaimed(entryId, id, claimedAt, log, () =>
       sendEmail({
         to: email,
         ...changelogEmail({
           ...brand,
-          entryTitle: entry.title,
-          entryUrl,
+          ...(version ? { entryTitle: version.title, doc: version.doc, coverUrl: version.coverUrl, mediaUrls: version.mediaUrls, lang: language! } : { entryTitle: entry.title, doc, ...images }),
+          entryUrl: entryUrl(base),
           publishedAt,
-          doc,
-          ...images,
-          unsubscribeUrl: `${origin}/changelog/subscription?${query}`,
+          unsubscribeUrl: `${base}/changelog/subscription?${query}`,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

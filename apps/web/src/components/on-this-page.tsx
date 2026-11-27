@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /** An article's sections beside it, the one being read marked: the one just linked to while it's near the top (or in view at the bottom of the page), else the last heading above the top third of the screen (none yet: the first; at the bottom of the page, the last one). */
-export function OnThisPage({ headings }: { headings: Heading[] }) {
+export function OnThisPage({ headings, lang }: { headings: Heading[]; /** What the headings are in (the article's text's language). */ lang?: string }) {
   const [current, setCurrent] = useState<string | null>(null);
   useEffect(() => {
     const update = () => {
@@ -35,7 +35,7 @@ export function OnThisPage({ headings }: { headings: Heading[] }) {
   return (
     <nav aria-label="On this page" className="flex flex-col gap-3 text-sm">
       <p className="font-medium text-muted-foreground">On this page</p>
-      <ul className="flex flex-col border-l">
+      <ul lang={lang} className="flex flex-col border-l">
         {headings.map((heading) => (
           <li key={heading.id}>
             <a
