@@ -435,6 +435,9 @@ async function placedWithFailedQueuing() {
   // The placement stands; the entry is marked for the retry job.
   expect((placed.content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
   expect(placed.translationsQueueFailedAt).not.toBeNull();
+  // Fresh, it's left to the queuing that set it (that may still be under way): the retry job takes it once that's past.
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { translationsQueueFailedAt: new Date(Date.now() - 2 * 60_000) } });
   const { segments } = segmentsOf(translationSource(placed).doc);
   return { entry, placed, reply: JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }) };
 }

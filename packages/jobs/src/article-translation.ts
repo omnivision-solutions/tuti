@@ -794,9 +794,13 @@ export async function retryArticleTranslations(): Promise<JobResult> {
  * it queued. (Only marked ones: a version missing in an Automatic language is otherwise one nobody confirmed, an entry
  * published while the language was Manual, say.)
  */
+/** How long a changelog entry's mark is left to the queuing that set it before the retry job takes it. */
+export const QUEUING_GRACE_MS = 60_000;
+
 async function entriesLeftBehind(): Promise<number> {
   const entries = await prisma.changelogEntry.findMany({
-    where: { translationsQueueFailedAt: { not: null } },
+    // Not one marked in the last minute: its queuing may still be under way (it clears the mark once it's done).
+    where: { translationsQueueFailedAt: { lt: new Date(Date.now() - QUEUING_GRACE_MS) } },
     orderBy: [{ translationsQueueFailedAt: "asc" }, { id: "asc" }],
     take: retryBatch.size,
     select: { id: true, translationsQueueFailedAt: true },

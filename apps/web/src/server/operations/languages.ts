@@ -52,9 +52,10 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
     where: { id: projectId },
     select: { plan: true, language: true, sendToLanguage: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
   });
+  // Counted against the published pages (Settings' `pages`): a sample, unpublished or deleted article's version isn't one.
   const live = { publishedAt: { not: null }, sample: false };
   const [translated, waiting, reasons, entriesTranslated, entriesWaiting, entryReasons] = await Promise.all([
-    prisma.articleTranslation.groupBy({ by: ["language"], where: { projectId, publishedAt: { not: null }, article: { deletedAt: null } }, _count: true }),
+    prisma.articleTranslation.groupBy({ by: ["language"], where: { projectId, publishedAt: { not: null }, article: { ...live, deletedAt: null } }, _count: true }),
     prisma.articleTranslation.groupBy({
       by: ["language"],
       where: { projectId, automatic: true, article: live, OR: [{ publishedAt: null }, { error: { not: null } }] },
