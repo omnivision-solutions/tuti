@@ -28,6 +28,7 @@ import {
   updateChangelogStyle,
 } from "./operations/changelog";
 import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { saveChangelogTranslation, VERSION_CHANGED } from "./operations/changelog-translations";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -78,6 +79,52 @@ export async function saveChangelogEntry(
     redirect(`/app/${projectSlug}/changelog/${created}`);
   }
   return result;
+}
+
+/**
+ * Saves an entry's version in another language from its editor (the language pill): its title and text, against the
+ * `version` it was read at (the form's). Saving stops Keep up to date (changelog.saveTranslation).
+ */
+export async function saveChangelogVersion(projectSlug: string, number: number, language: string, _state: FormState, formData: FormData): Promise<FormState & { version?: string }> {
+  let version: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    version = (
+      await call(saveChangelogTranslation, context, {
+        number,
+        language: language as "de",
+        title: String(formData.get("title") ?? ""),
+        content: formData.get("content") || undefined,
+        version: String(formData.get("version") ?? ""),
+      })
+    ).version;
+  });
+  if (result.error) {
+    return result;
+  }
+  refresh();
+  // What it says now: the form's next save goes from it (its text may be unchanged, so it isn't loaded again).
+  return { version };
+}
+
+/**
+ * Keep up to date on an entry's version (it's translated again) or off, against the `version` the page last read. Refused
+ * as changed meanwhile, `changed` says so: the editor reads the page again, or, with edits typed, keeps them on screen.
+ */
+export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState & { version?: string; changed?: boolean }> {
+  let saved: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    saved = (await call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) })).version;
+  });
+  // Changed meanwhile: the editor reads the page again where nothing's typed (it'd remount the form, losing it), else says so.
+  if (result.error === VERSION_CHANGED) {
+    return { error: VERSION_CHANGED, changed: true };
+  }
+  if (result.error) {
+    return result;
+  }
+  refresh();
+  // What it says now (a first version made, say): the form's next save goes from it.
+  return { version: saved };
 }
 
 /** The posts "Link post…" offers an entry for what's typed: planned, in progress or completed ones (searchPosts); sample ones for a sample entry, the others for the rest. */
