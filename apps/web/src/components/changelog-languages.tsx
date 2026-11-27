@@ -550,7 +550,8 @@ export function ArticleVersionSave({ behind = [], gone = [], defaultName }: { be
                 </AlertDialogTitle>
                 <AlertDialogDescription>Ticked sections take the new translation. Unticked ones keep your edit.</AlertDialogDescription>
               </AlertDialogHeader>
-              <fieldset className="flex flex-col gap-2">
+              {/* A long list scrolls inside the dialog (as the command menu's results do), its buttons staying in view. */}
+              <fieldset className="flex max-h-[min(24rem,50dvh)] flex-col gap-2 overflow-y-auto">
                 <legend className="sr-only">Sections to translate again</legend>
                 {behind.map((key) => (
                   <label key={key} className="flex items-start gap-2 text-sm">

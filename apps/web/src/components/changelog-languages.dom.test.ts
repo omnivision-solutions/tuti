@@ -462,7 +462,31 @@ test("Update those sections with typing not saved asks to save first; with no AI
   expect(update).not.toHaveBeenCalled();
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
   document.body.replaceChildren();
-  await form({ state: "waiting", keepUpToDate: true, waiting: "Out of credits" }, { kind: "article", behind: { count: 1, changes: null, update: null } });
-  expect(document.body.textContent).toContain("Can't translate it yet: Out of credits.");
+  await form({ state: "behind", keepUpToDate: false }, { kind: "article", behind: { count: 1, changes: null, update: null } });
   expect([...document.querySelectorAll("button")].some((each) => each.textContent === "Update those sections")).toBe(false);
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  // Can't translate (waiting): the line says why, Show changes stays, and Update isn't offered though the page passed it.
+  await form({ state: "waiting", keepUpToDate: true, waiting: "Out of credits" }, { kind: "article", behind: { count: 1, changes: h("p", null, "Billing"), update } });
+  expect(document.body.textContent).toContain("Can't translate it yet: Out of credits.");
+  const shown = [...document.querySelectorAll("button")].map((each) => each.textContent);
+  expect(shown).toContain("Show changes");
+  expect(shown).not.toContain("Update those sections");
+});
+
+test("Publish's question: a section English took out starts unticked and says ticking removes it; a long list scrolls inside the dialog", async () => {
+  const box = document.createElement("div");
+  document.body.append(box);
+  const root = createRoot(box);
+  roots.push(root);
+  await act(async () => root.render(h(ChangelogSavingContext, { value: { setPending } }, h(ArticleVersionSave, { behind: ["Billing\u001f0", "Setup\u001f0"], gone: ["Setup\u001f0"], defaultName: "English" }))));
+  await act(async () => [...document.querySelectorAll("button")].find((each) => each.textContent === "Publish")!.click());
+  const choices = [...document.querySelectorAll<HTMLInputElement>('input[name="take"]')];
+  expect(choices.map((each) => [each.value, each.checked])).toEqual([
+    ["Billing\u001f0", true],
+    ["Setup\u001f0", false],
+  ]);
+  expect(choices[1]!.closest("label")!.textContent).toBe("SetupTaken out of English: ticking removes it.");
+  expect(choices[0]!.closest("label")!.textContent).toBe("Billing");
+  expect(document.querySelector("fieldset")!.className).toContain("overflow-y-auto");
 });

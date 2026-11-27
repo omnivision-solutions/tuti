@@ -1000,7 +1000,7 @@ test("a version the team writes marked behind only for the product setting says 
   const marked = await readArticleVersion(project.id, de.slug, "de");
   expect(marked.state).toBe("setting");
   // Not counted on the orange line as English changing, nor asked about on publishing.
-  expect(marked.behind).toEqual({ sections: [], ask: [] });
+  expect(marked.behind).toEqual({ sections: [], ask: [], gone: [] });
 });
 
 test("writing a version kept up to date before its first translation arrives turns Keep up to date off: the English it showed is never kept as translated", async () => {
@@ -1169,7 +1169,7 @@ test("Update those sections from the editor goes from the read it showed: refuse
   // Someone rewrites Billing against the new English and saves it: no longer behind.
   const content = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Per Karte oder Rechnung"]);
   await call(saveTranslation, as(), { ...de, content, version: page.read.version });
-  expect((await readArticleVersion(project.id, de.slug, "de")).behind).toEqual({ sections: [], ask: [] });
+  expect((await readArticleVersion(project.id, de.slug, "de")).behind).toEqual({ sections: [], ask: [], gone: [] });
   // The page read before that: its Update those sections is refused, the edit kept, nothing asked of the model.
   actAs(owner);
   expect(await updateArticleVersionSections(project.slug, de.slug, "de", page.behind.sections, page.read.version)).toMatchObject({ error: expect.stringContaining("changed since you opened it") });
@@ -1241,4 +1241,27 @@ test("a row made by someone else between the write's read and its insert isn't t
     spy.mockRestore();
   }
   expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("Publish's question: none with no AI set up (nothing would translate); a section English took out is listed as gone", async () => {
+  await teamWritten();
+  // English rewrites Billing and drops Setup.
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const { behind } = await readArticleVersion(project.id, de.slug, "de");
+  const named = (keys: string[]) => keys.map((key) => key.split("\u001f")[0]).sort();
+  expect(named(behind.ask)).toEqual(["Billing", "Setup"]);
+  expect(named(behind.gone)).toEqual(["Setup"]);
+  vi.stubEnv("OPENAI_API_KEY", "");
+  expect((await readArticleVersion(project.id, de.slug, "de")).behind.ask).toEqual([]);
+});
+
+test("a version the team writes: a section it took out isn't asked about on publishing, though English changed there", async () => {
+  await teamWritten();
+  const read = await call(getTranslation, as(), de);
+  // The team takes Billing out of its draft; English then changes Billing.
+  await call(saveTranslation, as(), { ...de, content: doc("Hallo", ["Einrichtung", "Unsere Installation"]), version: read.version });
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  expect((await readArticleVersion(project.id, de.slug, "de")).behind.ask).toEqual([]);
 });

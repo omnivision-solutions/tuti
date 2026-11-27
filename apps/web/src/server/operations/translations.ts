@@ -367,7 +367,12 @@ export async function readArticleVersion(projectId: string, slug: string, langua
         state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind),
         waiting: version.error,
         // `gone`: those English took out (taking the new translation removes the team's text there).
-        behind: { sections, ask: sections.filter((key) => has.has(key)), gone: sections.filter((key) => has.has(key) && !source.parts.some((part) => part.key === key)) },
+        // With no AI set up nothing would translate: Publish doesn't ask (`ask` empty), and keeps the team's edits.
+        behind: {
+          sections,
+          ask: aiEnabled() ? sections.filter((key) => has.has(key)) : [],
+          gone: sections.filter((key) => has.has(key) && !source.parts.some((part) => part.key === key)),
+        },
       };
     },
     { read: true },
