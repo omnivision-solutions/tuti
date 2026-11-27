@@ -340,6 +340,10 @@ export async function recordMark(
   { phrase = null, removeRule = false }: { phrase?: string | null; removeRule?: boolean } = {},
 ): Promise<string | undefined> {
   const notices: string[] = [];
+  if (removeRule) {
+    // As every writer of the rules: read and removed under the lock, so an "add" of the same rule waits for it.
+    await lockSpamRules(db, conversation.projectId);
+  }
   const filedBy = spam ? null : await ruleThatFiled(db, conversation.projectId, reason, phrase);
   if (removeRule) {
     if (!admin) {
