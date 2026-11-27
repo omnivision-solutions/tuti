@@ -99,7 +99,7 @@ type Version = {
 };
 
 /** A version's row as the queues read it. */
-type Row = { id: string; language: string; retryAt: Date | null } & Partial<Record<"articleId" | "entryId", string>>;
+type Row = { id: string; language: string; retryAt: Date | null; memory?: unknown } & Partial<Record<"articleId" | "entryId", string>>;
 /**
  * The translations table's delegate, as the machinery uses it: article_translation and changelog_translation have the
  * same columns (but their source's), so one shape serves both.
@@ -447,7 +447,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   // so a remembered one with an old, longer word could pass).
   // Read again now, after the glossary: one the glossary's save cleaned meanwhile is never used with the glossary from before
   // (a save after this, the write's check refuses).
-  const memoryNow = (kind.name === "article" ? await prisma.articleTranslation.findUnique({ where: { id: row.id }, select: { memory: true } }) : await prisma.changelogTranslation.findUnique({ where: { id: row.id }, select: { memory: true } }))?.memory;
+  const [memoryNow] = (await kind.table().findMany({ where: { id: row.id }, select: { memory: true } })).map(({ memory }) => memory);
   const remembered = !fresh && sameSetting ? ((memoryNow ?? row.memory) as Record<string, string>) : {};
   const memory = row.glossaryHash === glossary.hash ? remembered : Object.fromEntries(Object.entries(remembered).filter(([text]) => termsUsed(text, glossary.terms).length === 0));
   const parts = sourceSections(source.text);
