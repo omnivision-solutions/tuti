@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { enterSaves } from "@/lib/forms";
-import { mergeMeanwhile, type MergeRow } from "@/lib/glossary-merge";
+import { glossaryKey, mergeMeanwhile, type MergeRow } from "@/lib/glossary-merge";
 import { type GlossarySaved, type GlossaryTermInput, saveGlossary } from "@/server/glossary";
 
 type Language = { code: string; native: string };
@@ -53,7 +53,7 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
   const addId = `${id}-add`;
   const keyed = (list: GlossaryTermInput[]) => list.map((term, i) => ({ ...term, key: `${id}-${i}` }));
   const [rows, setRows] = useState<Row[]>(() => keyed(terms));
-  const [saved, setSaved] = useState(JSON.stringify(terms));
+  const [saved, setSaved] = useState(glossaryKey(terms));
   // The version the edits started from, sent with each save; and the latest the server sent, followed once nothing's typed.
   const [base, setBase] = useState(hash);
   const [latest, setLatest] = useState({ hash, terms });
@@ -87,10 +87,10 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
       }));
   // A row with words (or Never translated) but no term: never dropped quietly, it's for the team to name or remove.
   const unnamed = rows.find((row) => !row.term.trim() && (row.keep || Object.values(row.translations).some((word) => word.trim())));
-  const dirty = JSON.stringify(toSave()) !== saved || !!unnamed;
+  const dirty = glossaryKey(toSave()) !== saved || !!unnamed;
   if (!dirty && latest.hash !== base) {
     setRows(keyed(latest.terms));
-    setSaved(JSON.stringify(latest.terms));
+    setSaved(glossaryKey(latest.terms));
     setBase(latest.hash);
   }
   const { register } = usePreview();
@@ -111,7 +111,7 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
     }
     const { terms: theirs, hash: now } = result.latest;
     setRows((list) => mergeMeanwhile(list, JSON.parse(saved) as GlossaryTermInput[], theirs, () => `${id}-new-${added.current++}`));
-    setSaved(JSON.stringify(theirs));
+    setSaved(glossaryKey(theirs));
     setBase(now);
     setLatest({ hash: now, terms: theirs });
     toast.error("Changed meanwhile: check the marked terms, then save");
@@ -124,7 +124,7 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
         refused(result);
         return;
       }
-      setSaved(JSON.stringify(terms));
+      setSaved(glossaryKey(terms));
       setBase(result.hash!);
       setLatest({ hash: result.hash!, terms });
       setRows((list) => list.map((row) => ({ ...row, meanwhile: undefined })));

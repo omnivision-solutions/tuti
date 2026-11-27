@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import type { GlossaryTermInput } from "@/server/glossary";
 
-import { mergeMeanwhile, type MergeRow } from "./glossary-merge";
+import { glossaryKey, mergeMeanwhile, type MergeRow } from "./glossary-merge";
 
 const key = () => "new";
 const row = (term: string, translations: Record<string, string>, keep = false): MergeRow => ({ key: term, term, keep, translations });
@@ -40,5 +40,39 @@ test("a term added both here and by a teammate: their words fill the languages l
   expect(mergeMeanwhile([row("zeta", { de: "Zeta" })], [], theirs, key)).toEqual([{ ...row("zeta", { de: "Zeta", fr: "Zêta" }), meanwhile: "Changed meanwhile" }]);
   // The same on both sides: nothing to look at.
   expect(mergeMeanwhile([row("Zeta", { de: "Zett", fr: "Zêta" })], [], theirs, key)).toEqual([row("Zeta", { de: "Zett", fr: "Zêta" })]);
+});
+
+test("a term removed here that a teammate changed comes back, marked; one they didn't change stays removed", () => {
+  const before: GlossaryTermInput[] = [
+    { term: "Board", keep: false, translations: { de: "Tafel" } },
+    { term: "Old", keep: true, translations: {} },
+  ];
+  const theirs: GlossaryTermInput[] = [
+    { term: "Board", keep: false, translations: { de: "Brett" } },
+    { term: "Old", keep: true, translations: {} },
+  ];
+  expect(mergeMeanwhile([], before, theirs, key)).toEqual([{ key: "new", term: "Board", keep: false, translations: { de: "Brett" }, meanwhile: "Changed meanwhile" }]);
+});
+
+test("a term renamed here that a teammate changed: the old one comes back beside the renamed row, marked", () => {
+  const before: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Tafel" } }];
+  const theirs: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Tafel", fr: "Planche" } }];
+  expect(mergeMeanwhile([row("Boards", { de: "Tafel" })], before, theirs, key)).toEqual([
+    row("Boards", { de: "Tafel" }),
+    { key: "new", term: "Board", keep: false, translations: { de: "Tafel", fr: "Planche" }, meanwhile: "Changed meanwhile" },
+  ]);
+});
+
+test("the same terms in another order, their languages too, are the same list to save", () => {
+  const server: GlossaryTermInput[] = [
+    { term: "Acme", keep: true, translations: {} },
+    { term: "Board", keep: false, translations: { de: "Tafel", fr: "Planche" } },
+  ];
+  const page: GlossaryTermInput[] = [
+    { term: "Board", keep: false, translations: { fr: "Planche", de: "Tafel" } },
+    { term: "Acme", keep: true, translations: {} },
+  ];
+  expect(glossaryKey(page)).toBe(glossaryKey(server));
+  expect(JSON.parse(glossaryKey(page))).toEqual(server);
 });
 
