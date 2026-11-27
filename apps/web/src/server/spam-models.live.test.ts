@@ -2,13 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { expect, test } from "vitest";
 
-import { judgeSpam, type SpamInput, spamModels, spamModelsOn, spamSignals } from "./spam-models";
+import { judgeSpam, type SpamInput, spamModel, spamSignals } from "./spam-models";
 
 /**
- * The spam filter's model checks on the evaluation set (`pnpm test:live`, with OPENAI_API_KEY, an OpenRouter key; a
- * config file at TUTI_CONFIG with `spam.decisions.model` and `spam.chat.model` for others than the defaults), for real.
- * The checks stay watch-only (docs/plan.md, Inbox automation, W4) until this shows almost no real mail caught. Without
- * the key it's skipped: "not run", never "passed". Prints each answer, to tune the bands or compare models.
+ * The spam filter's AI check on the evaluation set (`pnpm test:live`, with OPENAI_API_KEY, an OpenRouter key; a config
+ * file at TUTI_CONFIG with `spam.decisions.model` for another than the default), for real: the decision model, filing at
+ * SPAM_AT or more (docs/plan.md, Inbox automation, W4). It must catch almost no real mail. Without the key it's skipped:
+ * "not run", never "passed". Prints each answer, to tune the band or compare models.
  *
  * Real labelled conversations never go in this repository: the set is the private evaluations repository's
  * (`spam/cases.json`, cloned into packages/jobs/src/evals/ as Autopilot's is), read when it's there. Here are only a few
@@ -39,6 +39,7 @@ const CASES: Case[] = existsSync(PRIVATE) ? (JSON.parse(readFileSync(PRIVATE, "u
 
 /** The evaluation's spend isn't a project's: nothing is reserved or recorded. */
 const reserve = async () => ({ meter: async () => {}, release: async () => {} });
+const model = spamModel();
 
 const inputOf = (c: Case): SpamInput => ({
   sender: c.sender,
@@ -50,14 +51,14 @@ const inputOf = (c: Case): SpamInput => ({
   examples: { spam: [], notSpam: [] },
 });
 
-test.skipIf(!spamModelsOn())(`spam checks with ${JSON.stringify(spamModels())}`, { timeout: 600_000 }, async () => {
+test.skipIf(!model)(`spam checks with ${model}`, { timeout: 600_000 }, async () => {
   const rows: { name: string; expected: string; got: string; why: string }[] = [];
   // A few at a time: a large set mustn't hit the provider all at once.
   for (let i = 0; i < CASES.length; i += 5) {
     await Promise.all(
       CASES.slice(i, i + 5).map(async (c) => {
-        const judgement = await judgeSpam(inputOf(c), spamModels(), reserve);
-        rows.push({ name: c.name, expected: c.spam ? "spam" : "not spam", got: judgement === null ? "no answer" : judgement.spam ? "spam" : "not spam", why: judgement?.reason ?? judgement?.why ?? "" });
+        const judgement = await judgeSpam(inputOf(c), model!, reserve);
+        rows.push({ name: c.name, expected: c.spam ? "spam" : "not spam", got: judgement === null ? "no answer" : judgement.spam ? "spam" : "not spam", why: judgement ? `${Math.floor(judgement.probability * 100)}%` : "" });
       }),
     );
   }
@@ -66,7 +67,7 @@ test.skipIf(!spamModelsOn())(`spam checks with ${JSON.stringify(spamModels())}`,
   const spam = rows.filter((row) => row.expected === "spam");
   const caught = real.filter((row) => row.got === "spam").length / Math.max(real.length, 1);
   const found = spam.filter((row) => row.got === "spam").length / Math.max(spam.length, 1);
-  console.log(spamModels(), { realMailCaught: caught, spamFound: found });
+  console.log(model, { realMailCaught: caught, spamFound: found });
   // A run that proves nothing fails: a set without real mail, or a model that didn't answer (a wrong key, a model down,
   // which the checks fail open on), would show nothing caught.
   expect(real.length).toBeGreaterThan(0);

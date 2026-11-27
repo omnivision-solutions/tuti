@@ -104,6 +104,15 @@ test("the email has a link to a page that asks to confirm, then signs a new addr
   expect(await view(link)).toEqual({ location: FAILED });
 });
 
+test("asked at a language's address, the link opens at that address (/de/sign-in/link), so its page is in that language", async () => {
+  const email = newAddress();
+  // What proxy.ts sets on a German address's request.
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  expect(await ask(email)).toEqual({ sentTo: email });
+  const link = await linkTo(email);
+  expect(link.origin + link.pathname).toBe(`http://${portalHost()}/de/sign-in/link`);
+});
+
 test("from a portal's sign-up, a new account gets the name typed, trimmed; an existing account keeps its own", async () => {
   const askNamed = (email: string, name: string) => {
     const form = new FormData();

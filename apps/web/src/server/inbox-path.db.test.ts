@@ -291,7 +291,7 @@ test("a conversation in Spam runs nothing; Not spam on what the filter filed run
   const { projectId, admin, owner, workflow, mail, replyAddress, start, reply, priority, notes, told } = await setup();
   await workflow("New ones", "conversation_started");
   await workflow("Replies", "user_replied");
-  await prisma.spamSender.create({ data: { projectId, sender: "spam.example", blocked: true, byAdmin: true } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_domain", matcher: "is", value: "spam.example" } });
 
   // Filed by the filter: no workflow runs, and nobody is told.
   await mail("e2e-kim@spam.example"); // #1

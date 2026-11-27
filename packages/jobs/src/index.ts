@@ -17,7 +17,7 @@ import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
 import { screenshotRun } from "./screenshots";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
-export { replyRecipient, type ReplyRecipient } from "./conversations";
+export { automatedRepliesEmailed, replyRecipient, type ReplyRecipient } from "./conversations";
 export { checkPushReceipts, PUSH_TEXT_MAX, RECEIPT_AFTER_MS } from "./push";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
@@ -25,6 +25,8 @@ import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
 import { retryArticleTranslations, translateArticle, translateChangelogEntry } from "./article-translation";
+import { translateLabels } from "./label-translation";
+export { forgetLabels, labelIn, type LabelTranslation, type LabelTranslations, labelSource, queueLabels, retranslateLabels, translateLabels } from "./label-translation";
 export { behindKey, behindSections, docOfSections, editedSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, versionSections, withTranslation } from "./translation-sections";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
@@ -62,7 +64,7 @@ export { inboxDue, inboxDueToken } from "./inbox-due";
 export { aiFor, duplicatesMeter, imagesMeter, screenshotsMeter } from "./ai-usage";
 export { ANNOUNCEMENT_WAITS_MS, behindOf, type BehindList, type Draft, entryTranslationsPending, languageTranslationsDone, lostAfterMs, markProductSettingBehind, nameBatch, nameVersion, otherReasons, PRODUCT_SETTING_CHANGED, queueArticleTranslations, queueChangelogTranslations, queueEntryVersion, queueLanguageTranslations, queueVersion, retryBatch, retryDelay, sourceAdded, sourceChanged, translateArticle, translateChangelogEntry, TRANSLATION_WAITS, translationInstructions, translationSource, versionPublished } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
-export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
+export { allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
 export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
@@ -111,6 +113,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   translateMessage,
   translateArticle,
   translateChangelogEntry,
+  translateLabels,
   retryArticleTranslations: () => retryArticleTranslations(),
   checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,

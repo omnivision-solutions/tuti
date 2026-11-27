@@ -2,19 +2,26 @@
 
 import { ChevronRightIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 import { usePortalLook, useTeamLanguage } from "@/components/portal-look";
-import { DOCS_HEADING } from "@/lib/portal-look";
 
-/** The docs' home's heading, centred over its search: the team's title and subtitle (Customize → Docs home), or the defaults. */
+/**
+ * The docs' home's heading, centred over its search: the team's title and subtitle (Customize → Docs home, in their
+ * language), or the defaults (the portal's, in the page's).
+ */
 export function DocsHomeHeader() {
   const { docsHome } = usePortalLook();
+  const t = useTranslations("helpCenter");
+  const team = useTeamLanguage();
   return (
     <div className="flex flex-col items-center gap-3 text-center">
-      <h1 className="font-heading text-[2.25rem] leading-[1.05] font-[650] tracking-[-0.03em] break-words sm:text-[3.5rem]">
-        {docsHome.title || DOCS_HEADING.title}
+      <h1 lang={docsHome.title ? team : undefined} className="font-heading text-[2.25rem] leading-[1.05] font-[650] tracking-[-0.03em] break-words sm:text-[3.5rem]">
+        {docsHome.title || t("headingTitle")}
       </h1>
-      <p className="text-base text-muted-foreground sm:text-lg">{docsHome.subtitle || DOCS_HEADING.subtitle}</p>
+      <p lang={docsHome.subtitle ? team : undefined} className="text-base text-muted-foreground sm:text-lg">
+        {docsHome.subtitle || t("headingSubtitle")}
+      </p>
     </div>
   );
 }
@@ -31,12 +38,13 @@ export function useShowsPopular(articles: unknown[]) {
 export function PopularChips({ articles }: { articles: { href: string; title: string }[] }) {
   // The titles: the team's words (useTeamLanguage).
   const lang = useTeamLanguage();
+  const t = useTranslations("helpCenter");
   if (!useShowsPopular(articles)) {
     return null;
   }
   return (
     // One row; on phones it scrolls sideways.
-    <ul aria-label="Suggested articles" className="-mx-4 flex max-w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:max-w-full sm:flex-wrap sm:justify-center sm:px-0">
+    <ul aria-label={t("suggested")} className="-mx-4 flex max-w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:max-w-full sm:flex-wrap sm:justify-center sm:px-0">
       {articles.slice(0, 3).map((article) => (
         <li key={article.href}>
           <Link
@@ -56,13 +64,14 @@ export function PopularChips({ articles }: { articles: { href: string; title: st
 export function PopularArticles({ articles }: { articles: { href: string; title: string }[] }) {
   // The titles: the team's words (useTeamLanguage).
   const lang = useTeamLanguage();
+  const t = useTranslations("helpCenter");
   if (!useShowsPopular(articles)) {
     return null;
   }
   return (
     <section aria-labelledby="popular-articles" className="flex flex-col gap-3">
       <h2 id="popular-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
-        Popular articles
+        {t("popular")}
       </h2>
       <ul className="grid sm:grid-cols-2 sm:gap-x-10">
         {articles.map((article) => (
