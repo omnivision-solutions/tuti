@@ -776,3 +776,16 @@ test("the product switch translates again only the entry versions there are: a l
   expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
   expect(model.requests).toHaveLength(0);
 });
+
+test("Try again tries again the versions that failed, and starts none: a published entry with no version in the language gets none", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
+  const { entry } = await draft();
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  // German made Automatic (that starts nothing); then Try again.
+  await languages({ languages: [{ code: "de", newPages: "automatic" }] });
+  expect(await call(retranslateLanguage, as(), { code: "de", waiting: true })).toEqual({ queued: 0 });
+  await languageTranslationsDone();
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
+  expect(model.requests).toHaveLength(0);
+});

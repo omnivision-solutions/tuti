@@ -728,8 +728,9 @@ export async function queueLanguageTranslations(
   const pages: Page[] = [];
   for (const kind of KINDS) {
     // `newEntries` false (the product switch): an entry's version is never started there, only its existing ones translated
-    // again; starting them is for what's confirmed with a count (adding the language, Retranslate).
-    if (setting.automatic && (kind !== ENTRY || newEntries)) {
+    // again; starting them is for what's confirmed with a count (adding the language, Retranslate). Try again (`waiting`)
+    // starts none either: it tries again those that failed, and a version it started wouldn't be one of them.
+    if (setting.automatic && !waiting && (kind !== ENTRY || newEntries)) {
       const sources = await kind.without(projectId, language);
       await kind.table().createMany({ data: sources.map(({ id }) => ({ [kind.parent]: id, projectId, language })), skipDuplicates: true });
     }
