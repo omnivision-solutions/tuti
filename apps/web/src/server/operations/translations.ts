@@ -6,6 +6,7 @@ import {
   type Draft,
   editedSections,
   metaOf,
+  lostAfterMs,
   otherReasons,
   queueVersion,
   removedChanged,
@@ -93,6 +94,7 @@ const versionSelect = {
   draft: true,
   behind: true,
   updateSections: true,
+  tries: true,
 } as const;
 type Version = Prisma.ArticleTranslationGetPayload<{ select: typeof versionSelect }>;
 
@@ -306,7 +308,10 @@ export const publishTranslation = defineOperation({
   output: translationOutput,
   run: async ({ projectId }, input) => {
     let retranslate: { articleId: string; language: string } | null = null;
-    let wentLive: { id: string; first: boolean } | null = null;
+    let wentLive: { id: string; first: boolean; marker: Date } | null = null;
+    // Its search data to write, recorded with the publish itself: a retry time, and a try (the retry job takes a version the team
+    // writes only with one), cleared once it's embedded (versionPublished). Lost before that, the retry job embeds it.
+    const marker = new Date(Date.now() + lostAfterMs());
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
       const source = await sourceOf(tx, articleId);
       const { parts, sourceLanguage, titleHash } = source;
@@ -367,6 +372,8 @@ export const publishTranslation = defineOperation({
           removedSections: draft.removed ?? [],
           removedHashes: (draft.removedHashes ?? {}) as Prisma.InputJsonValue,
           behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
+          retryAt: marker,
+          tries: Math.max(version.tries, 1),
           // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.
           updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update])],
         },
@@ -374,7 +381,7 @@ export const publishTranslation = defineOperation({
       });
       // Its old search sections go with its old text: the new one's are embedded after (versionPublished).
       await tx.articleTranslationChunk.deleteMany({ where: { translationId: version.id } });
-      wentLive = { id: version.id, first: version.publishedAt === null };
+      wentLive = { id: version.id, first: version.publishedAt === null, marker };
       // A run on its way now writes nothing (above): queued again wherever one may be (kept up to date, or sections asked for).
       // One with nothing to do ends at once.
       if (update.length > 0 || version.automatic || (version.updateSections as string[]).length > 0) retranslate = { articleId, language: input.language };
@@ -382,8 +389,8 @@ export const publishTranslation = defineOperation({
     });
     // Named on its first publish (its address there), then searchable in its language.
     // (Set in the transaction's callback, which TypeScript doesn't follow.)
-    const live = wentLive as { id: string; first: boolean } | null;
-    if (live) await versionPublished(projectId, live.id, live.first);
+    const live = wentLive as { id: string; first: boolean; marker: Date } | null;
+    if (live) await versionPublished(projectId, live.id, live.first, live.marker);
     if (retranslate) await queueTranslation(retranslate);
     return result;
   },

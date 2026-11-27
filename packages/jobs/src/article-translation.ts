@@ -580,13 +580,22 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
  * A version the team published (articles.publishTranslation), after its own transaction: named, on its first publish, and
  * its new text made searchable (a failure is retried by the retry job, as the job's is). Never throws.
  */
-export async function versionPublished(projectId: string, versionId: string, first: boolean) {
+export async function versionPublished(projectId: string, versionId: string, first: boolean, marker?: Date) {
   const log = { info: () => {}, warn: (message: string) => serverLog.warn(message) };
-  if (first) {
-    await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+  // Never failing the publish, which has committed: the marker it wrote with it (`marker`, a retry time with `tries`) is left
+  // for the retry job, which embeds it, wherever this doesn't get as far as clearing it.
+  try {
+    if (first) {
+      await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+    }
+    const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
+    if ((await searchable(versionId, tries, retryAt, log)) && marker) {
+      // Embedded: the publish's marker goes (unless something since set another).
+      await prisma.articleTranslation.updateMany({ where: { id: versionId, retryAt: marker, error: null }, data: { retryAt: null, tries: 0 } });
+    }
+  } catch (error) {
+    serverLog.error("Embedding an article's version failed", { versionId, error });
   }
-  const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
-  await searchable(versionId, tries, retryAt, log).catch((error: unknown) => serverLog.error("Embedding an article's version failed", { versionId, error }));
 }
 
 /** Why a version up to date is tried again: its sections couldn't be embedded for search. */

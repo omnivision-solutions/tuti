@@ -70,3 +70,46 @@ test("with chat off, a version the team writes whose embedding failed on publish
   expect(await prisma.articleTranslationChunk.count({ where: { translationId: waiting.id } })).toBeGreaterThan(0);
   expect(model.requests).toHaveLength(0);
 });
+
+test("search data that can't be set up after a publish commits never fails the publish: its marker brings the retry job", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+  await call(publishArticle, as(), { slug: "billing" });
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  const sections = sourceSections(translationSource(article).text).map(({ key, hash }) => ({ key, hash }));
+  const content: Doc = { type: "doc", content: [paragraph("Mit Karte zahlen.")] };
+  await prisma.articleTranslation.create({ data: { articleId: article.id, projectId: project.id, language: "de", automatic: false, title: "Abrechnung", content, body: toPlainText(content), sections, publishedAt: new Date() } });
+  const read = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, content: { type: "doc", content: [paragraph("Per Karte zahlen.")] }, version: read.version });
+  // Reading the version to embed it fails once, after the publish has committed (the database, briefly).
+  const reading = vi.spyOn(prisma.articleTranslation, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+  try {
+    expect(toPlainText((await call(publishTranslation, as(), de)).content as Doc)).toContain("Per Karte zahlen.");
+  } finally {
+    reading.mockRestore();
+  }
+  const marked = await prisma.articleTranslation.findFirstOrThrow({ where: { articleId: article.id } });
+  expect(marked.retryAt).not.toBeNull();
+  expect(marked.tries).toBeGreaterThan(0);
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: marked.id } })).toBe(0);
+  // Due: the retry job embeds it, and the marker goes.
+  await prisma.articleTranslation.update({ where: { id: marked.id }, data: { retryAt: new Date(Date.now() - 1000) } });
+  expect(await handlers.retryArticleTranslations({}, log)).toMatchObject({ queued: 1 });
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: marked.id } })).toBeGreaterThan(0);
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { id: marked.id } })).toMatchObject({ retryAt: null, tries: 0 });
+});
+
+test("a publish whose search data is written clears its marker", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+  await call(publishArticle, as(), { slug: "billing" });
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  const sections = sourceSections(translationSource(article).text).map(({ key, hash }) => ({ key, hash }));
+  const content: Doc = { type: "doc", content: [paragraph("Mit Karte zahlen.")] };
+  await prisma.articleTranslation.create({ data: { articleId: article.id, projectId: project.id, language: "de", automatic: false, title: "Abrechnung", content, body: toPlainText(content), sections, publishedAt: new Date() } });
+  const read = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, content: { type: "doc", content: [paragraph("Per Karte zahlen.")] }, version: read.version });
+  await call(publishTranslation, as(), de);
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId: article.id } })).toMatchObject({ retryAt: null, tries: 0 });
+});
