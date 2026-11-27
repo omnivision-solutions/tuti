@@ -79,7 +79,7 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
   }
   const setting = await prisma.projectLanguage.findUnique({
     where: { projectId_code: { projectId, code: language } },
-    select: { automatic: true, productAvailable: true, productVersion: true, labelsVersion: true, instructions: true, labelsTries: true, project: { select: { language: true } } },
+    select: { automatic: true, productAvailable: true, productVersion: true, labelsVersion: true, createdAt: true, instructions: true, labelsTries: true, project: { select: { language: true } } },
   });
   if (!setting) {
     return { skipped: "not a language of the project" };
@@ -163,12 +163,15 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
   return { translated: written };
 }
 
-type Versions = { productVersion: number; labelsVersion: number };
+type Versions = { productVersion: number; labelsVersion: number; createdAt: Date };
 
-/** Whether the language's product setting is still the one a job started under, and no Retranslate was asked for since. */
+/**
+ * Whether the language's product setting is still the one a job started under, no Retranslate was asked for since, and
+ * it's the same language (removed and added again, its counters start again: `createdAt` tells them apart).
+ */
 async function sameSetting(db: Prisma.TransactionClient | typeof prisma, projectId: string, language: string, started: Versions) {
-  const now = await db.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { productVersion: true, labelsVersion: true } });
-  return now?.productVersion === started.productVersion && now.labelsVersion === started.labelsVersion;
+  const now = await db.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { productVersion: true, labelsVersion: true, createdAt: true } });
+  return now?.productVersion === started.productVersion && now.labelsVersion === started.labelsVersion && now.createdAt.getTime() === started.createdAt.getTime();
 }
 
 /**

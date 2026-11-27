@@ -154,3 +154,14 @@ test("a removed language's label translations go with it: added again, its label
   await german();
   expect(labelIn(await collection("billing"), "de")?.name).toBe("Zahlungen");
 });
+
+test("a language removed and added again while a labels job translates: that job writes nothing, the label is made anew", async () => {
+  await german();
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), async () => {
+    await call(updateLanguages, as(), { languages: [] });
+    await call(updateLanguages, as(), { languages: [{ code: "de", productAvailable: true }] });
+  });
+  model.reply(labelsReply({ "0.n": "Abrechnung (neu)" }));
+  await call(createCollection, as(), { name: "Billing", description: "" });
+  expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung (neu)");
+});
