@@ -2,6 +2,7 @@
 
 import { cn } from "cn";
 import { PlusIcon, Trash2Icon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -29,7 +30,7 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? `1 $
  * when empty) or Never translated; on phones (and with many languages, or none) a card per term. Saving asks first when pages
  * use a term that changed: how many are translated again, and how many the team writes get sections to update.
  */
-export function GlossarySettings(props: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[] }) {
+export function GlossarySettings(props: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[]; hash: string }) {
   return (
     <SettingsPane title="Glossary" description="Words kept as they are, or always translated one way." back={{ href: `/app/${props.projectSlug}/settings/languages`, label: "Languages" }}>
       <GlossaryEditor {...props} />
@@ -39,15 +40,25 @@ export function GlossarySettings(props: { projectSlug: string; languages: Langua
 
 /**
  * The terms, as a form of the pane's: its "Save changes" (or Enter in a field) submits it, and leaving with changes not saved
- * asks first, as on every settings page.
+ * asks first, as on every settings page. With nothing typed it follows fresh server data (a teammate's save); with edits, a
+ * save over a glossary saved since is refused (its hash), the edits kept.
  */
-function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[] }) {
+function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[]; hash: string }) {
   const id = useId();
   const formId = `${id}-form`;
   const addId = `${id}-add`;
   const keyed = (list: GlossaryTermInput[]) => list.map((term, i) => ({ ...term, key: `${id}-${i}` }));
   const [rows, setRows] = useState<Row[]>(() => keyed(terms));
   const [saved, setSaved] = useState(JSON.stringify(terms));
+  // The version the edits started from, sent with each save; and the latest the server sent, followed once nothing's typed.
+  const [base, setBase] = useState(hash);
+  const [latest, setLatest] = useState({ hash, terms });
+  const [sent, setSent] = useState(hash);
+  if (hash !== sent) {
+    setSent(hash);
+    setLatest({ hash, terms });
+  }
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   // The dialog's counts, and the terms they're for: what Save took when it was pressed (edits after it aren't in it, and stay unsaved).
   const [confirm, setConfirm] = useState<{ retranslating: number; behind: number; terms: GlossaryTermInput[] } | null>(null);
@@ -74,6 +85,11 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
   // A row with words (or Never translated) but no term: never dropped quietly, it's for the team to name or remove.
   const unnamed = rows.find((row) => !row.term.trim() && (row.keep || Object.values(row.translations).some((word) => word.trim())));
   const dirty = JSON.stringify(toSave()) !== saved || !!unnamed;
+  if (!dirty && latest.hash !== base) {
+    setRows(keyed(latest.terms));
+    setSaved(JSON.stringify(latest.terms));
+    setBase(latest.hash);
+  }
   const { register } = usePreview();
   useEffect(() => register(formId, { dirty, pending, saving: pending }), [register, formId, dirty, pending]);
   useEffect(() => () => register(formId, null), [register, formId]);
@@ -86,13 +102,17 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
   };
   const commit = (terms: GlossaryTermInput[]) =>
     startTransition(async () => {
-      const result = await saveGlossary(projectSlug, terms);
+      const result = await saveGlossary(projectSlug, terms, base);
+      setConfirm(null);
       if (result.error) {
         toast.error(result.error);
+        // Refused as the glossary changed meanwhile: its latest fetched, shown once the edits are undone (kept till then).
+        router.refresh();
         return;
       }
-      setConfirm(null);
       setSaved(JSON.stringify(terms));
+      setBase(result.hash!);
+      setLatest({ hash: result.hash!, terms });
       toast.success("Saved the glossary");
     });
   const save = () => {
@@ -105,9 +125,10 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
     const terms = toSave();
     startTransition(async () => {
       // What saving would change first: pages that use a changed term are worth asking about (docs/plan.md, "Nothing large without asking").
-      const preview = await saveGlossary(projectSlug, terms, true);
+      const preview = await saveGlossary(projectSlug, terms, base, true);
       if (preview.error) {
         toast.error(preview.error);
+        router.refresh();
         return;
       }
       if ((preview.retranslating ?? 0) + (preview.behind ?? 0) > 0) {

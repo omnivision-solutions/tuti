@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { GlossarySettings } from "@/components/glossary-settings";
 import { getAdminProject } from "@/server/membership";
+import { withHash } from "@/server/operations/glossary";
 import { projectLanguages } from "@/server/operations/languages";
 
 export const metadata: Metadata = { title: "Glossary · Languages · Settings" };
@@ -18,5 +19,5 @@ export default async function GlossaryPage(props: PageProps<"/app/[project]/sett
   }
   const [terms, saved] = await Promise.all([projectGlossary(project.id), projectLanguages(project.id)]);
   const languages = saved.languages.flatMap(({ code }) => (isLanguage(code) ? [{ code, native: LANGUAGES[code].native }] : []));
-  return <GlossarySettings projectSlug={slug} languages={languages} terms={terms} />;
+  return <GlossarySettings projectSlug={slug} languages={languages} {...withHash(terms)} />;
 }

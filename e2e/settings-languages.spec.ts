@@ -269,6 +269,18 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await terms.getByRole("button", { name: "Remove this term", exact: true }).click();
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
 
+  // A teammate saves meanwhile (adding Zeta): a save from the list shown here is refused, the edit kept; undone, the
+  // teammate's list shows.
+  await api("/glossary", { terms: [...saved.terms, { term: "Zeta", translations: { fr: "Zêta" } }] }, "PATCH");
+  await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Planke");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("The glossary changed since you opened it. Reload to see it, then save again")).toBeVisible();
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Planke");
+  await expect(terms.getByRole("textbox", { name: "Zeta in Français" })).toHaveCount(0);
+  await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Brett");
+  await expect(terms.getByRole("textbox", { name: "Zeta in Français" })).toHaveValue("Zêta");
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
   // Saved: there after a reload, and as a card per term on a phone.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.reload();

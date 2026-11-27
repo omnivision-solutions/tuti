@@ -30,7 +30,7 @@ const glossaryOutput = z
   .describe("The glossary");
 
 /** The glossary with its version's hash (of its terms in one order, whatever order they came in). */
-const withHash = (terms: Glossary) => ({
+export const withHash = (terms: Glossary) => ({
   terms,
   hash: contentHash(
     JSON.stringify(
