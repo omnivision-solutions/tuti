@@ -8,6 +8,7 @@ import { handBackConversation, setConversationPriority, takeOverConversation } f
 import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import type { Actor } from "./operations/define";
 import { call } from "./operations/run";
+import { createWorkflow } from "./operations/workflows";
 
 const sam = { id: "user-42", name: "Sam", email: "e2e-sam@example.com" };
 
@@ -122,6 +123,10 @@ test("Hand back to the AI is offered only where the AI would answer: AI on the s
   // Never one in Spam, or held by the spam filter.
   expect(await would({ spam: true })).toBe(false);
   expect(await would({ spamHeldAt: new Date() })).toBe(false);
+  // A private portal: nobody it doesn't let in is answered from its docs, a signed-out visitor or a user who isn't a reader.
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  expect(await would({ userId: null, visitorHash: "visitor" })).toBe(false);
+  expect(await would({ userId: (await signUp("Nora Notareader")).id })).toBe(false);
 });
 
 /**
@@ -164,6 +169,8 @@ test("Hand back to the AI after the AI answered: nobody waits, so it's allowed, 
   await call(createConversation, { actor: key, projectId: project.id }, { user: sam, body: "Can I export my reports?" });
   const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
   const [question] = await prisma.conversationMessage.findMany({ where: { conversationId: conversation.id } });
+  // A conversation the AI had from its first message: never handed over.
+  await prisma.conversationMessage.update({ where: { id: question!.id }, data: { handedOverAt: null } });
   // The AI's answer, as its turn writes it.
   await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "AI", channel: "API", body: "Reports → Export.", requestId: question!.id } });
   actAs(owner);
@@ -181,4 +188,37 @@ test("a message that slips in while handing back, where giving it to the AI fail
   expect(after).toMatchObject({ handledBy: "TEAM", pathDueAt: null });
   const handovers = await prisma.conversationEvent.findMany({ where: { conversationId: after.id, kind: "handed_over" }, orderBy: { createdAt: "asc" }, select: { details: true } });
   expect(handovers.at(-1)).toEqual({ details: { reason: "ai_off" } });
+});
+
+/** A conversation one of the project's users starts over the API, handed to the team as it starts; its row. */
+async function startedAndHandedOver() {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
+  return { owner, project, key, start: () => call(createConversation, { actor: key, projectId: project.id }, { user: sam, body: "Can I pay with crypto?" }) };
+}
+
+test("Hand back to the AI is refused where the user's message went to the team with only the AI's words after it: “Ask a person” after an AI answer", async () => {
+  const { owner, project, start } = await startedAndHandedOver();
+  await start();
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  // As "Ask a person" starts one: the question handed over, then the AI's answer copied in after it.
+  expect(await prisma.conversationMessage.count({ where: { conversationId: conversation.id, handedOverAt: { not: null } } })).toBe(1);
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "AI", channel: "API", body: "Cards and bank transfers only." } });
+  actAs(owner);
+  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Reply first: they're waiting on your team." });
+});
+
+test("Hand back to the AI is refused after a workflow's set reply as the conversation went to the team", async () => {
+  const { owner, project, start } = await startedAndHandedOver();
+  await call(createWorkflow, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { name: "Set reply", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "reply_text", text: "Thanks, a person will be in touch." }] });
+  await start();
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  expect(conversation.handledBy).toBe("TEAM");
+  expect((await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: conversation.id }, orderBy: { createdAt: "desc" } })).author).toBe("AI");
+  actAs(owner);
+  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Reply first: they're waiting on your team." });
+  // A teammate's reply answers it: it can go back.
+  await call(replyToConversation, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number: 1, body: "We take cards." });
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
 });

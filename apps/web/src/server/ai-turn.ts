@@ -87,15 +87,35 @@ export async function aiAvailable(projectId: string): Promise<boolean> {
   return !!article && !(await aiPaused(projectId));
 }
 
-/**
- * Whether a conversation's user waits for a reply: the latest message that isn't a note is theirs (the team's or the AI's
- * answers it). Where Hand back to the AI is refused, and not offered (the page reads the same latest message).
- */
+/** Whether the latest message that isn't a note is the user's (a team's or the AI's reply answers it). */
 export const awaitsReply = (latest: { author: string } | null) => latest?.author === "USER";
 
 /**
+ * Whether a conversation's user waits on the team: the latest message that isn't a note is theirs, or their latest message
+ * was handed over to the team (`handedOverAt`) and no teammate has replied since. An answer from the AI counts as a reply
+ * only where it wasn't followed by a handover ("Ask a person" after an AI answer, a workflow's set reply as it went to the
+ * team). The one rule for Hand back to the AI: the page offers it, and the action allows it, only where nobody waits.
+ */
+export async function userWaits(conversationId: string): Promise<boolean> {
+  const latest = (author?: "USER") =>
+    prisma.conversationMessage.findFirst({
+      where: { conversationId, note: false, ...(author ? { author } : { author: { in: ["USER", "TEAM", "AI"] } }) },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { author: true, createdAt: true, handedOverAt: true },
+    });
+  const [said, asked] = await Promise.all([latest(), latest("USER")]);
+  if (awaitsReply(said)) {
+    return true;
+  }
+  if (!asked?.handedOverAt) {
+    return false;
+  }
+  return (await prisma.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } })) === 0;
+}
+
+/**
  * Whether the AI would answer this conversation's user if it had the conversation: it can answer here now (aiAvailable),
- * and its answer can reach them (in the widget, a signed-out visitor's; by email only where the address is proven, as
+ * may read them the docs (a private portal's reader), and its answer can reach them (in the widget, a signed-out visitor's; by email only where the address is proven, as
  * toAi requires of an email). Where "Hand back to the AI" is offered. Not in Spam, nor held.
  */
 export async function aiWouldAnswer(
@@ -105,7 +125,8 @@ export async function aiWouldAnswer(
   if (conversation.spam || conversation.spamHeldAt || !(automatedRepliesEmailed(conversation) || conversation.visitorHash)) {
     return false;
   }
-  return aiAvailable(projectId);
+  // A private portal answers nobody it doesn't let in from its docs (the turn hands those over at once).
+  return (await readerToSend(projectId, conversation.userId)) !== false && (await aiAvailable(projectId));
 }
 
 /**
