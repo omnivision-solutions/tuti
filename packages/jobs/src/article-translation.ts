@@ -691,18 +691,18 @@ const translatedByJob = {
 } satisfies Prisma.ArticleTranslationWhereInput;
 
 /**
- * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). Failing, the entry
- * is marked (translationsQueueFailedAt), for the retry job to queue it again; the error still goes to the caller.
+ * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). The entry is marked
+ * first (translationsQueueFailedAt) and the mark cleared once it's queued, so queuing that fails, or a restart partway,
+ * leaves it marked for the retry job to queue again; the error still goes to the caller. (Marked after a failure instead,
+ * the mark could be lost with it.)
  */
 export async function queueChangelogTranslations(entryId: string) {
-  try {
-    await queueTranslations(ENTRY, entryId);
-  } catch (error) {
-    // Its own time, not the entry's change (updatedAt, which @updatedAt would move).
-    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = now() WHERE id = ${entryId}`.catch((marking: unknown) =>
-      serverLog.error("Marking a changelog entry's failed translation queuing failed", { entryId, error: marking }),
-    );
-    throw error;
+  // Its own time, not the entry's change (updatedAt, which @updatedAt would move).
+  const [mark] = await prisma.$queryRaw<{ at: Date }[]>`UPDATE changelog_entry SET "translationsQueueFailedAt" = now() WHERE id = ${entryId} RETURNING "translationsQueueFailedAt" AS at`;
+  await queueTranslations(ENTRY, entryId);
+  if (mark) {
+    // Unless a newer queuing set its own meanwhile (that one clears it).
+    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${entryId} AND "translationsQueueFailedAt" = ${mark.at}::timestamp(3)`;
   }
 }
 
@@ -789,41 +789,23 @@ export async function retryArticleTranslations(): Promise<JobResult> {
 }
 
 /**
- * Changelog entries whose translations' queuing failed: those queueChangelogTranslations marked (the mark cleared unless it
- * failed again meanwhile), and, should the mark itself be lost, published ones with no version yet in a language that's
- * Automatic for new pages (Settings → Languages confirmed entries in it; nothing else leaves one without). Queued again as
- * a publish does. How many it queued.
- * ponytail: the second read goes through the project's published entries on each run; a partial index on published,
- * non-sample entries is the upgrade if changelogs grow large.
+ * Changelog entries whose translations' queuing failed, or didn't finish: queueChangelogTranslations marks an entry before
+ * queuing and clears it after. Queued again as a publish does, the mark cleared unless a newer queuing set its own. How many
+ * it queued. (Only marked ones: a version missing in an Automatic language is otherwise one nobody confirmed, an entry
+ * published while the language was Manual, say.)
  */
 async function entriesLeftBehind(): Promise<number> {
-  const marked = await prisma.changelogEntry.findMany({
+  const entries = await prisma.changelogEntry.findMany({
     where: { translationsQueueFailedAt: { not: null } },
     orderBy: [{ translationsQueueFailedAt: "asc" }, { id: "asc" }],
     take: retryBatch.size,
     select: { id: true, translationsQueueFailedAt: true },
   });
-  const unmarked =
-    marked.length < retryBatch.size
-      ? await prisma.$queryRaw<{ id: string }[]>`
-          SELECT e.id FROM changelog_entry e
-          WHERE e."publishedAt" IS NOT NULL AND NOT e.sample AND e."translationsQueueFailedAt" IS NULL
-            AND EXISTS (
-              SELECT 1 FROM project_language l
-              WHERE l."projectId" = e."projectId" AND l.automatic
-                AND NOT EXISTS (SELECT 1 FROM changelog_translation t WHERE t."entryId" = e.id AND t.language = l.code)
-            )
-          ORDER BY e."publishedAt", e.id
-          LIMIT ${retryBatch.size - marked.length}`
-      : [];
-  const entries = [...marked, ...unmarked.map(({ id }) => ({ id, translationsQueueFailedAt: null }))];
   let queued = 0;
   for (const { id, translationsQueueFailedAt: failedAt } of entries) {
     try {
       await queueTranslations(ENTRY, id);
-      if (failedAt) {
-        await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${id} AND "translationsQueueFailedAt" = ${failedAt}::timestamp(3)`;
-      }
+      await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${id} AND "translationsQueueFailedAt" = ${failedAt}::timestamp(3)`;
       queued++;
     } catch (error) {
       serverLog.error("Queuing a changelog entry's translations failed", { entryId: id, error });

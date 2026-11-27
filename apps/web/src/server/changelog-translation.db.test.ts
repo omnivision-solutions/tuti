@@ -603,23 +603,22 @@ test("adding a language translates the published entries; their other changes (t
   expect(model.requests).toHaveLength(2);
 });
 
-test("the retry job finds a published entry with no version in an Automatic language without any mark (the mark lost too); never a Manual one or a sample", async () => {
-  await languages({ languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
+test("an entry is marked while its translations are queued, cleared once they are; the retry job never translates versions nobody confirmed", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
   const { entry } = await draft();
-  model.reply(reply("de"));
   await call(publishChangelogEntry, as(), { number: entry.number });
   await languageTranslationsDone();
-  const sample = await call(createChangelogEntry, as(), { title: "Sample", body: BODY });
-  await prisma.changelogEntry.update({ where: { id: await idOf(sample.number) }, data: { publishedAt: new Date(), sample: true } });
-  // Its German version gone, as when queuing failed and so did marking it.
-  await prisma.changelogTranslation.deleteMany({ where: { entryId: entry.id } });
-  model.reply(reply("de"));
-  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
-  await languageTranslationsDone();
-  expect(await translation()).toMatchObject({ title: "[de] Dark mode" });
-  expect(await prisma.changelogTranslation.count({ where: { projectId: project.id, language: "fr" } })).toBe(0);
-  // Nothing left behind: the next run queues nothing.
+  expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).translationsQueueFailedAt).toBeNull();
+  // Published while German was Manual, then German turned Automatic: nothing queues the entry (nobody confirmed it).
+  await languages({ languages: [{ code: "de", newPages: "automatic" }] });
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  // A gap from before entries joined a language's bulk translating: left as it is too.
+  model.reply(reply("de"));
+  await call(retranslateLanguage, as(), { code: "de" });
+  await languageTranslationsDone();
+  await prisma.changelogTranslation.deleteMany({ where: { entryId: entry.id } });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
 });
 
 test("languages.get counts a language's published entries with a version, and those waiting and why", async () => {
