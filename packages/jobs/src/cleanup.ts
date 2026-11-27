@@ -111,6 +111,11 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
         UNION ALL SELECT content FROM article WHERE "projectId" = ${projectId}
         UNION ALL SELECT r.content FROM article_revision r JOIN article a ON a.id = r."articleId" WHERE a."projectId" = ${projectId}
         UNION ALL SELECT ch.content FROM article_changes ch JOIN article a ON a.id = ch."articleId" WHERE a."projectId" = ${projectId}
+        -- Versions in other languages: the team's uploads in them, and the source's images a translation copies (kept while
+        -- a version shows them, even once the source drops one); an article version's draft too.
+        UNION ALL SELECT content FROM changelog_translation WHERE "projectId" = ${projectId}
+        UNION ALL SELECT content FROM article_translation WHERE "projectId" = ${projectId}
+        UNION ALL SELECT draft FROM article_translation WHERE "projectId" = ${projectId}
       ),
       used AS (
         SELECT jsonb_path_query(content, '$.**.mediaId') #>> '{}' AS id FROM content WHERE content IS NOT NULL

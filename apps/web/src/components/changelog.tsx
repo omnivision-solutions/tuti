@@ -183,11 +183,12 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
  * The entry's Save in the top bar (at the bottom of the screen on phones, PageActions' `pinned`): it submits
  * the ChangelogForm below. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
  */
-export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
+export function ChangelogSaveButton({ isNew = false, form = CHANGELOG_FORM, primary = isNew }: { isNew?: boolean; form?: string; primary?: boolean }) {
   const saving = useContext(ChangelogSavingContext);
   const pending = saving?.pending ?? false;
   return (
-    <Button type="submit" form={CHANGELOG_FORM} variant={isNew ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading}>
+    // Focusable while disabled: a keyboard user who pressed it keeps their place while it saves.
+    <Button type="submit" form={form} variant={primary ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading} focusableWhenDisabled>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );
@@ -619,9 +620,12 @@ export function ChangelogForm({
   groupsUpgrade = null,
   screenshots = null,
   canTakeScreenshots = false,
+  languages = null,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** Its languages (a published entry's, with other languages): the sidebar's Languages, after its status. */
+  languages?: ReactNode;
   /** Its "[Screenshot: …]" lines and their runs (a saved entry's). */
   screenshots?: LineScreenshots | null;
   /** An owner or admin: they take screenshots (changelog.takeScreenshots). */
@@ -764,6 +768,7 @@ export function ChangelogForm({
             <p className="flex flex-wrap items-center gap-1">{standing}</p>
           </section>
         )}
+        {languages}
         {/* When the text shown was saved: a save refuses to put back lines screenshots replaced since (saveChangelogEntry). */}
         {screenshots && <input type="hidden" name="screenshotsSeenAt" value={screenshots.savedAt} />}
         {entry && screenshots && (

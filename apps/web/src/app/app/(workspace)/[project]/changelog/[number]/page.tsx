@@ -13,6 +13,9 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionEditor, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
+import { NO_AI_WAITING, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
+import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
@@ -25,6 +28,8 @@ import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold, generatorSources } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { getChangelogTranslation } from "@/server/operations/changelog-translations";
+import { call } from "@/server/operations/run";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
@@ -165,6 +170,28 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }
       : null;
   const readerUrl = entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null;
+  // Its languages (docs/plan.md L16), once it's published (its versions are made from what's published; a sample entry is
+  // never translated): the pill and the sidebar's Languages, and the version `?language=` opens.
+  const languages = await entryLanguages(membership.project.id, slug, entry);
+  const { language: asked } = await props.searchParams;
+  const opened = languages?.slice(1).find((language) => language.code === asked) ?? null;
+  const version =
+    opened &&
+    (await (async () => {
+      const read = await call(getChangelogTranslation, { actor: { kind: "user", userId: membership.userId }, projectId: membership.project.id }, { number: entry.number, language: opened.code as "de" });
+      return {
+        code: opened.code,
+        name: opened.name,
+        state: opened.state,
+        keepUpToDate: read.keepUpToDate,
+        version: read.version,
+        waiting: read.waiting ?? (opened.state === "waiting" ? NO_AI_WAITING : null),
+        // Not written yet: the default language's title and text, to write over.
+        title: read.title || entry.title,
+        content: (read.content ?? displayDoc(entry)) as Doc,
+        own: read.content !== null,
+      };
+    })());
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
 
   return (
@@ -177,7 +204,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             back={{ href: `/app/${slug}/changelog`, label: "All entries" }}
             titleInForm
             title={entry.title}
+            filters={languages && <ChangelogLanguagePill languages={languages} current={version?.code ?? languages[0]!.code} />}
             actions={
+              version ? (
+                <PageActions pinned>
+                  <ChangelogVersionSave />
+                </PageActions>
+              ) : (
               <PageActions
                 pinned
                 more={
@@ -227,6 +260,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   part="publish"
                 />
               </PageActions>
+              )
             }
           />
           <PaneBody className="lg:[container-type:size] flex flex-col gap-4 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
@@ -235,6 +269,19 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               afresh; publishing or unpublishing keeps unsaved edits, and so does a new saved cover (one composed in
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
+            {version ? (
+              // One per language, carrying what's typed; its form mounted afresh for each read with new text.
+              <ChangelogVersionEditor
+                key={versionFormKey(version)}
+                formKey={versionTextKey(version)}
+                projectSlug={slug}
+                number={entry.number}
+                defaultName={languages![0]!.name}
+                view={version}
+                mediaUrls={await mediaUrls(version.content)}
+                languages={languages!}
+              />
+            ) : (
             <ChangelogForm
               key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
               projectSlug={slug}
@@ -282,7 +329,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               pullRequests={pullRequests}
               screenshots={await entryScreenshots(membership.project.id, entry)}
               canTakeScreenshots={isAdminRole(membership.role)}
+              languages={languages && <ChangelogLanguageList languages={languages} current={languages[0]!.code} />}
             />
+            )}
             {/* Always there, so focus has its heading to go to once the last is deleted. */}
             <section className="flex max-w-3xl flex-col gap-4 border-t pt-6" aria-label="Comments">
               <h2 id={COMMENTS_HEADING} tabIndex={-1} className="text-sm font-semibold outline-none">
@@ -324,4 +373,3 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     </ChangelogSaving>
   );
 }
-
