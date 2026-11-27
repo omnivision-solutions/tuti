@@ -191,7 +191,8 @@ function ConversationScreen({ number, draftKey, pane = false, onLeave }: { numbe
             setError(null);
           } else if (saved) {
             setConversation(saved.data);
-            showTriage(draftKey, saved.data, triageSince);
+            // Never Hand back from a copy kept offline: whether it's offered is the server's to say now.
+            showTriage(draftKey, { ...saved.data, handBack: undefined }, triageSince);
             setSavedAt(saved.at);
             setError(null);
           } else {

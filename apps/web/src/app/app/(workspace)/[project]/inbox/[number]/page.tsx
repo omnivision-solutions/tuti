@@ -53,7 +53,7 @@ import { spamWhy } from "@/lib/spam-reasons";
 import { conversationReads } from "@/server/conversation-reads";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
-import { aiWouldAnswer, userWaits } from "@/server/ai-turn";
+import { handBackOffered } from "@/server/ai-turn";
 import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -302,7 +302,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const withAi = conversation.handledBy === "AI";
   // Hand back to the AI: only on the team's, never while its user waits on the team (their message would go unanswered),
   // and only where the AI would answer their next one.
-  const canHandBack = !withAi && !(await userWaits(conversation.id)) && (await aiWouldAnswer(projectId, conversation));
+  const canHandBack = await handBackOffered(projectId, conversation);
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = said?.author === "TEAM";
   // The column beside the messages, hidden or not as this browser left it (DetailsToggle).

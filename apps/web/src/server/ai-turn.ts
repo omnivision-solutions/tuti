@@ -107,11 +107,12 @@ export const awaitsReply = (latest: { author: string } | null) => latest?.author
  * was handed to the team (`handedOverAt`, with the handover's `handed_over` Activity row: one a Don't hand over kept with
  * the AI has none) and no teammate has replied since. An answer from the AI counts as a reply
  * only where it wasn't followed by a handover ("Ask a person" after an AI answer, a workflow's set reply as it went to the
- * team). The one rule for Hand back to the AI: the page offers it, and the action allows it, only where nobody waits.
+ * team). The one rule for Hand back to the AI: it's offered (handBackOffered), and allowed (conversations.update's
+ * `ifNobodyWaits`, read under the conversation's lock), only where nobody waits.
  */
-export async function userWaits(conversationId: string): Promise<boolean> {
+export async function userWaits(conversationId: string, db: Pick<typeof prisma, "conversationMessage" | "conversationEvent"> = prisma): Promise<boolean> {
   const latest = (author?: "USER") =>
-    prisma.conversationMessage.findFirst({
+    db.conversationMessage.findFirst({
       where: { conversationId, note: false, ...(author ? { author } : { author: { in: ["USER", "TEAM", "AI"] } }) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: { author: true, createdAt: true, handedOverAt: true },
@@ -127,8 +128,8 @@ export async function userWaits(conversationId: string): Promise<boolean> {
   // matched by the handover's own time. handOver writes `handedOverAt` and then the row in one transaction, from one clock,
   // so the row is never earlier; the message's `createdAt` may be (it's timed after the conversation's latest message).
   const [toTeam, replied] = await Promise.all([
-    prisma.conversationEvent.count({ where: { conversationId, kind: "handed_over", createdAt: { gte: asked.handedOverAt } } }),
-    prisma.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } }),
+    db.conversationEvent.count({ where: { conversationId, kind: "handed_over", createdAt: { gte: asked.handedOverAt } } }),
+    db.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } }),
   ]);
   return toTeam > 0 && replied === 0;
 }
@@ -147,6 +148,17 @@ export async function aiWouldAnswer(
   }
   // A private portal answers nobody it doesn't let in from its docs (the turn hands those over at once).
   return (await readerToSend(projectId, conversation.userId)) !== false && (await aiAvailable(projectId));
+}
+
+/**
+ * Whether "Hand back to the AI" is offered on a conversation (the web's page, the mobile app's details, through
+ * conversations.get's `handBack`): the team has it, nobody waits on the team, and the AI would answer its user's next message.
+ */
+export async function handBackOffered(
+  projectId: string,
+  conversation: { id: string; handledBy: "AI" | "TEAM"; spam: boolean; spamHeldAt: Date | null; userId: string | null; emailVerified: boolean; visitorHash: string | null },
+): Promise<boolean> {
+  return conversation.handledBy === "TEAM" && !(await userWaits(conversation.id)) && (await aiWouldAnswer(projectId, conversation));
 }
 
 /**

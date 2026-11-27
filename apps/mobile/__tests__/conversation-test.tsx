@@ -7,7 +7,7 @@ import { onForgetChosen } from "@/lib/layout";
 import { ApiError } from "@/lib/api";
 import { cached, cacheGeneration, conversationKey, forgetCached, keep, startCache } from "@/lib/offline";
 import { CLOSE_LEFT, type Conversation, FIRST_SENT, forgetDrafts, getDraft, type Message, type Unsent, updateDraft } from "@/lib/conversation";
-import { showTriage } from "@/lib/details";
+import { getTriage, showTriage } from "@/lib/details";
 
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
 jest.mock("expo-router", () => {
@@ -423,6 +423,26 @@ describe("a conversation the AI has", () => {
     expect(cached<Conversation>(conversationKey(mockSession, 12), mockSession.owner)?.data.handledBy).toBe("team");
   });
 
+  it("drops Hand back as Take over answers: whether it's offered is the server's to say again once the team has it", async () => {
+    // A stale offer on screen as it's taken over; the update answers without `handBack`, as conversations.update does.
+    let now: Conversation = { ...withAi, handBack: true };
+    mockApi.mockImplementation(async (path, init) => {
+      if (path === "/conversations/12" && init?.method === "PATCH") {
+        const { handBack: _handBack, ...rest } = { ...now, ...(init.body as Partial<Conversation>) };
+        now = rest;
+      }
+      return path === "/conversations/12" ? now : {};
+    });
+    await render(<ConversationRoute />);
+    await screen.findByText("The AI has this conversation.");
+    expect(getTriage(key)?.handBack).toBe(true);
+
+    await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    expect(getTriage(key)).toMatchObject({ handledBy: "team" });
+    expect(getTriage(key)?.handBack).toBeUndefined();
+  });
+
   it("moves a screen reader to the reply field when a fetch brings it before Take over's own answer, and only then", async () => {
     const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
     serve(withAi);
@@ -525,6 +545,16 @@ describe("a conversation the AI has", () => {
       await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
       expect(await screen.findByText(NETWORK)).toBeTruthy();
       expect(screen.getByRole("button", { name: "Take over" })).toBeTruthy();
+    });
+
+    it("never offers Hand back from a kept copy: whether it's offered is the server's to say now", async () => {
+      // Kept as the server answered it, offered then.
+      keep(conversationKey(mockSession, 12), { ...conversation([message({})]), handledBy: "team", handBack: true }, cacheGeneration(), mockSession.owner);
+      offline();
+      await render(<ConversationRoute />);
+      expect(await screen.findByText(/^Offline · updated/)).toBeTruthy();
+      expect(getTriage(key)).toMatchObject({ handledBy: "team" });
+      expect(getTriage(key)?.handBack).toBeUndefined();
     });
 
     it("reads one kept before the app knew who has it as the team's, and not priority", async () => {
