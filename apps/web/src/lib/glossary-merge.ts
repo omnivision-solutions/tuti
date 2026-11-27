@@ -4,6 +4,17 @@ import type { GlossaryTermInput } from "@/server/glossary";
 export type MergeRow = GlossaryTermInput & { key: string; /** Changed by a teammate while this was edited (a refused save merged it in). */ meanwhile?: Meanwhile };
 type Meanwhile = "Added meanwhile" | "Changed meanwhile" | "Removed meanwhile";
 
+/**
+ * A list of terms as one string, whatever order its terms and their languages are in (the server's, or the page's after a
+ * merge): what the editor compares to tell whether there's anything to save. Parses back to the list.
+ */
+export const glossaryKey = (list: GlossaryTermInput[]) =>
+  JSON.stringify(
+    list
+      .map(({ term, keep, translations }) => ({ term, keep, translations: Object.fromEntries(Object.entries(translations).sort(([a], [b]) => (a < b ? -1 : 1))) }))
+      .sort((a, b) => (a.term < b.term ? -1 : a.term > b.term ? 1 : 0)),
+  );
+
 const words = (term: GlossaryTermInput) => JSON.stringify(Object.entries(term.translations).filter(([, word]) => word).sort());
 const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep && words(a) === words(b);
 
@@ -12,7 +23,8 @@ const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep &
  * teammate's changes from `before` to `theirs` put into `rows`, marked. A term they added is added; one they changed takes
  * their word in each language not edited here, what was typed here staying, and their Never translated only if neither it
  * nor any word was changed here (else the words typed would be hidden, and not saved); one they removed stays, for the
- * team to remove or keep; one added both here and there gets their words in the languages left empty here.
+ * team to remove or keep; one added both here and there gets their words in the languages left empty here; one they
+ * changed that was removed (or renamed) here comes back, for the team to decide again.
  */
 export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], theirs: GlossaryTermInput[], newKey: () => string): MergeRow[] {
   const byTerm = (list: GlossaryTermInput[]) => new Map(list.map((term) => [term.term.trim().toLowerCase(), term]));
@@ -39,7 +51,10 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
   });
   const here = new Set(rows.map((row) => row.term.trim().toLowerCase()));
   for (const [name, term] of now) {
-    if (!old.has(name) && !here.has(name)) merged.push({ ...term, key: newKey(), meanwhile: "Added meanwhile" });
+    if (here.has(name)) continue;
+    const was = old.get(name);
+    if (!was) merged.push({ ...term, key: newKey(), meanwhile: "Added meanwhile" });
+    else if (!same(was, term)) merged.push({ ...term, key: newKey(), meanwhile: "Changed meanwhile" });
   }
   return merged;
 }
