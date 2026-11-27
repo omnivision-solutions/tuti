@@ -65,3 +65,22 @@ test("at a language's address, the feed has each entry in its version there wher
     request.headers = {};
   }
 });
+
+test("the team's preview of a language that isn't live is for them only: private, no-store; a live one's feed is kept in shared caches", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  const languages = (live: boolean) =>
+    call(updateLanguages, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { languages: [{ code: "de", live, newPages: "manual" }] });
+  const cache = async () => (await GET(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).headers.get("cache-control");
+  try {
+    request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de", "x-tuti-language-default": "en" };
+    await languages(false);
+    expect(await cache()).toBe("private, no-store");
+    await languages(true);
+    expect(await cache()).toBe("public, max-age=300");
+    request.headers = { "x-tuti-language": "en", "x-tuti-language-default": "en" };
+    expect(await cache()).toBe("public, max-age=300");
+  } finally {
+    request.headers = {};
+  }
+});

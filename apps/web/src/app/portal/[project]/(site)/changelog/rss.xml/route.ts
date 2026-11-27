@@ -3,6 +3,7 @@ import { prisma } from "@tuti/db";
 
 import { SIGNED_OUT } from "@/lib/read-access";
 import { portalAddress } from "@/server/custom-domains";
+import { pageLanguages } from "@/server/language-addresses";
 import { entryLanguageAsked, publishedEntries } from "@/server/changelog-queries";
 import { portalLanguage } from "@/server/portal-base";
 import { portalTranslator } from "@/server/portal-language";
@@ -24,7 +25,16 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   }
   // In the address's language (/de/changelog/rss.xml): its title, description and the entries' tags, and its links to that
   // language's pages (the entries are the team's words).
-  const [address, { prefix, defaultLanguage }, { t, language }, asked] = await Promise.all([portalAddress(slug), portalLanguage(), portalTranslator(project.id, "changelog"), entryLanguageAsked()]);
+  const [address, { prefix, defaultLanguage }, { t, language }, asked, languages] = await Promise.all([
+    portalAddress(slug),
+    portalLanguage(),
+    portalTranslator(project.id, "changelog"),
+    entryLanguageAsked(),
+    pageLanguages(slug),
+  ]);
+  // The team's preview of a language that isn't live: its translations aren't released, so no shared cache may keep them
+  // (proxy.ts sets this too; here it holds whatever's in front of the route).
+  const preview = !!asked && !languages?.live.some((code) => code === asked);
   const portal = `${address}${prefix}`;
   // Not sample content (Home's "Add sample content"): feed readers keep what they're sent. For everyone only: no feed
   // reader signs in, and it's kept in shared caches. Each entry in the address's language where its version there is
@@ -63,6 +73,6 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     "</rss>",
   ].join("\n");
   return new Response(feed, {
-    headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": "public, max-age=300" },
+    headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": preview ? "private, no-store" : "public, max-age=300" },
   });
 }
