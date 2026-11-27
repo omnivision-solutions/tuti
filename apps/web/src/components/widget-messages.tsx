@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
-import { replyTime, subjectFrom, timeAgo } from "@/lib/format";
+import { replyTimeUnit, subjectFrom, timeAgo } from "@/lib/format";
+import { useLocale, useTranslations } from "next-intl";
 import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_LABEL, WIDGET_ROW } from "@/lib/portal-look";
@@ -106,6 +107,7 @@ export function useVisitor(projectSlug: string): Visitor | null {
  * new conversation is the AI's first (server/ai-turn.ts): its answers come in the thread, with Ask a person under them.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = false }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode; aiFirst?: boolean }) {
+  const t = useTranslations("widget");
   const { signedIn, error, known: pageAnswered, pending: pageSigningIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
@@ -159,7 +161,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = fa
     ref: root,
     tabIndex: -1,
     role: "region",
-    "aria-label": "Messages",
+    "aria-label": t("messages"),
     onFocus: (event: React.FocusEvent) => {
       lastFocused.current = event.target;
     },
@@ -214,7 +216,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = fa
     <div {...rootProps} className="flex flex-1 flex-col gap-3 outline-none">
       {status}
       {failed}
-      {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
+      {signingIn && <p className="text-sm text-muted-foreground">{t("signingIn")}</p>}
       {/* No box of its own: a fieldset's content doesn't grow with it, and the conversation must, to keep its reply box at the bottom. */}
       <fieldset disabled={signingIn} className="contents">
         {view}
@@ -424,6 +426,8 @@ function ConversationList({
   onOpen: (number: number) => void;
   onNew: () => void;
 }) {
+  const t = useTranslations("widget");
+  const language = useLocale();
   const [conversations, setConversations] = useState<Listed | null>(null);
   const [error, setError] = useState<string>();
   // Their list couldn't be read at all (offline, the server failing): said, with Try again, until it can.
@@ -482,15 +486,15 @@ function ConversationList({
           // Where the assistant's focus goes back to when what opened it is gone.
           <Button ref={newMessage} size="lg" onClick={onNew} className="w-full" data-assistant-return>
             <SquarePenIcon data-icon="inline-start" />
-            New message
+            {t("newMessage")}
           </Button>
         )}
       </TeamCard>
       {loading && <ListSkeleton />}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p lang="en" className="text-sm text-destructive">{error}</p>}
       {failed && !conversations && (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-destructive">{FAILED}</p>
+          <p className="text-sm text-destructive">{t(FAILED)}</p>
           <Button
             ref={tryAgain}
             variant="outline"
@@ -503,29 +507,29 @@ function ConversationList({
               void reload().finally(() => setRetrying(false));
             }}
           >
-            {retrying ? "Trying again…" : "Try again"}
+            {retrying ? t("tryingAgain") : t("tryAgainButton")}
           </Button>
         </div>
       )}
-      {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
+      {conversations?.length === 0 && <EmptyState title={t("noMessages")} description={t("noMessagesLine")} />}
       {conversations && conversations.length > 0 && (
         <div className="flex flex-col gap-1">
-          <h2 className={WIDGET_LABEL}>Your conversations</h2>
-          <ul className="flex flex-col divide-y" aria-label="Conversations">
+          <h2 className={WIDGET_LABEL}>{t("yourConversations")}</h2>
+          <ul className="flex flex-col divide-y" aria-label={t("conversations")}>
             {conversations.map((c) => (
               <li key={c.number}>
                 <button type="button" onClick={() => onOpen(c.number)} className={cn(WIDGET_ROW, "w-[calc(100%+1rem)]")}>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className={cn("truncate text-sm", c.unseen > 0 ? "font-semibold" : "font-medium")}>{c.subject}</span>
                     {/* The latest message's first line, theirs marked as such. */}
-                    {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? `You: ${c.line}` : c.line}</span>}
+                    {c.line && <span className="truncate text-sm text-muted-foreground">{c.yours ? t("youLine", { line: c.line }) : c.line}</span>}
                     <span className="text-xs text-muted-foreground">
-                      {c.closed ? "Closed" : c.replied ? "Replied" : "Waiting for a reply"} · {timeAgo(new Date(c.lastMessageAt))}
+                      {c.closed ? t("closed") : c.replied ? t("replied") : t("waiting")} · {timeAgo(new Date(c.lastMessageAt), new Date(), language)}
                     </span>
                   </span>
                   {c.unseen > 0 && (
                     <span className="size-2.5 shrink-0 rounded-full bg-unread">
-                      <span className="sr-only">New reply</span>
+                      <span className="sr-only">{t("newReply")}</span>
                     </span>
                   )}
                   <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -539,8 +543,9 @@ function ConversationList({
   );
 }
 
-const LOADING = "Loading conversations…";
-const FAILED = "Couldn't load your conversations.";
+/** What the list says (ListStatus), as `widget` messages' keys: translated where they're said. */
+const LOADING = "loadingConversations";
+const FAILED = "couldntLoadConversations";
 
 /**
  * What the list says to screen readers (LOADING, FAILED, or nothing). The region is put on the page empty
@@ -549,21 +554,23 @@ const FAILED = "Couldn't load your conversations.";
  * A load quicker than that says nothing.
  */
 function ListStatus({ text }: { text: string }) {
+  const t = useTranslations("widget");
   const region = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     // Already saying it: the same loading (the page answered, then the list loads) isn't said again; a
     // repeated failure is emptied at once and said again (a retry that fails as fast as this).
-    if (region.current!.textContent === text) {
+    const said = text ? t(text as typeof LOADING | typeof FAILED) : "";
+    if (region.current!.textContent === said) {
       if (text === LOADING) {
         return;
       }
       region.current!.textContent = "";
     }
     const timer = setTimeout(() => {
-      region.current!.textContent = text;
+      region.current!.textContent = said;
     }, 100);
     return () => clearTimeout(timer);
-  }, [text]);
+  }, [text, t]);
   return <p ref={region} role="status" className="sr-only" />;
 }
 
@@ -597,7 +604,6 @@ function ListSkeleton() {
 
 /** A message box (⌘/Ctrl+Enter sends), with an email field first when `email` is given (someone signed out). */
 /** No attachments here: someone new isn't anyone yet (their visitor token comes with their first message). */
-const noUploads: StartUpload = async () => ({ error: "Send your first message, then attach files" });
 
 function Composer({
   placeholder,
@@ -613,6 +619,9 @@ function Composer({
   /** Where files they attach upload (with "Attach files"); without it, there's no attaching. */
   upload?: StartUpload;
 }) {
+  const t = useTranslations("widget");
+  // No attaching before the first message: what it says, in the panel's language.
+  const noUploads: StartUpload = async () => ({ error: t("attachAfterFirst") });
   const files = useUploads(upload ?? noUploads);
   const [text, setText] = useState("");
   const [address, setAddress] = useState(email ?? "");
@@ -623,7 +632,7 @@ function Composer({
       // Offline, or the server failing: say so by the form, and keep what they wrote.
       const sent = text;
       const attached = files.ids;
-      const result = await send(sent, address, attached).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const result = await send(sent, address, attached).catch(() => ({ error: t("couldntSend") }));
       setError(result.error);
       if (!result.error) {
         // Only what was sent: anything typed meanwhile stays.
@@ -642,8 +651,8 @@ function Composer({
       {email !== undefined && (
         <Input
           type="email"
-          aria-label="Your email"
-          placeholder="Your email"
+          aria-label={t("yourEmail")}
+          placeholder={t("yourEmail")}
           autoComplete="email"
           required
           value={address}
@@ -663,12 +672,12 @@ function Composer({
           }
         }}
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p lang={error === t("couldntSend") ? undefined : "en"} className="text-sm text-destructive">{error}</p>}
       {upload && <UploadList uploads={files.uploads} remove={files.remove} />}
       <div className={upload ? "flex items-center justify-between gap-2" : "flex justify-end"}>
         {upload && <AttachButton attach={files.attach} />}
         <Button type="submit" disabled={pending || files.uploading}>
-          {pending ? "Sending…" : "Send"}
+          {pending ? t("sending") : t("send")}
         </Button>
       </div>
     </form>
@@ -676,16 +685,17 @@ function Composer({
 }
 
 /** "We'll reply here, usually in a few minutes. If you've left by then, we'll email you at …": where the team's reply comes, and when. */
-function replyWhere(email: string | null, ms: number | null) {
-  const here = ms === null ? "We'll reply here." : `We'll reply here, usually in ${replyTime(ms)}.`;
-  return email ? `${here} If you've left${ms === null ? "" : " by then"}, we'll email you at ${email}.` : here;
+function replyWhere(email: string | null, ms: number | null, t: ReturnType<typeof useTranslations<"widget">>) {
+  const here = ms === null ? t("replyHere") : t("replyHereIn", { when: t("replyWhen", replyTimeUnit(ms)) });
+  return email ? `${here} ${ms === null ? t("emailIfLeft", { email }) : t("emailIfLeftByThen", { email })}` : here;
 }
 
 function BackButton({ onBack }: { onBack: () => void }) {
+  const t = useTranslations("widget");
   return (
     <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 self-start">
       <ChevronLeftIcon />
-      Messages
+      {t("messages")}
     </Button>
   );
 }
@@ -705,20 +715,24 @@ function FirstMessage({
   /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
   onSignedIn: (number: number) => void;
 }) {
+  const t = useTranslations("widget");
   const at = usePortalHref();
   return (
     <div className="flex flex-col gap-4">
       <TeamCard team={team} />
       <p className="text-sm text-muted-foreground">
-        {aiFirst ? "Ask anything: you'll get an answer right away, and a person if you need one." : "Leave your email so the team can get back to you."}{" "}
-        <a href={at("/sign-in")} target="_blank" rel="noreferrer" className="underline underline-offset-4">
-          Sign in
-        </a>{" "}
-        to see your past conversations.
+        {aiFirst ? t("aiFirstLine") : t("leaveEmail")}{" "}
+        {t.rich("signInPast", {
+          link: (chunks) => (
+            <a href={at("/sign-in")} target="_blank" rel="noreferrer" className="underline underline-offset-4">
+              {chunks}
+            </a>
+          ),
+        })}
       </p>
       <Composer
-        label="Message"
-        placeholder="How can we help?"
+        label={t("message")}
+        placeholder={t("howCanWeHelp")}
         email=""
         send={async (text, email) => {
           const result = await widgetStartConversation(projectSlug, {}, text, email);
@@ -753,12 +767,13 @@ function NewConversation({
   onStarted: (number: number) => void;
   onNewVisitor: (number: number) => void;
 }) {
+  const t = useTranslations("widget");
   return (
     <div className="flex flex-col gap-3">
       <BackButton onBack={onBack} />
       <Composer
-        label="Message"
-        placeholder="How can we help?"
+        label={t("message")}
+        placeholder={t("howCanWeHelp")}
         email={visitorEmail ?? undefined}
         upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
         send={async (text, email, attachments) => {
@@ -796,6 +811,8 @@ function Conversation({
   number: number;
   onBack: () => void;
 }) {
+  const t = useTranslations("widget");
+  const language = useLocale();
   const [opened, setOpened] = useState<Opened | null>(null);
   // Replies count as seen only while the panel is on screen; opening it again shows (and so sees) them.
   const shown = useShown();
@@ -832,7 +849,7 @@ function Conversation({
   const [askError, setAskError] = useState<string>();
   const askPerson = (button: HTMLElement) =>
     startAsking(async () => {
-      const result = await widgetAskPerson(projectSlug, auth, number).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const result = await widgetAskPerson(projectSlug, auth, number).catch(() => ({ error: t("couldntSend") }));
       setAskError("error" in result ? result.error : undefined);
       if (!("error" in result)) {
         await reload();
@@ -843,7 +860,7 @@ function Conversation({
   return (
     <div className="flex flex-1 flex-col gap-3">
       <BackButton onBack={onBack} />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p lang="en" className="text-sm text-destructive">{error}</p>}
       {opened && (
         <>
           {/* A subject someone wrote, in full; one made from the first message (shown in full below it) at most two lines. */}
@@ -851,12 +868,12 @@ function Conversation({
             {opened.subject}
           </h2>
           {/* New messages are read out as they come (the AI's answer, the team's reply). */}
-          <ol ref={list} className="flex flex-col gap-2" aria-label="Messages" aria-live="polite" aria-relevant="additions">
+          <ol ref={list} className="flex flex-col gap-2" aria-label={t("messages")} aria-live="polite" aria-relevant="additions">
             {opened.messages.map((m) => (
               <li key={m.id} className={cn("flex", !m.fromTeam && "justify-end")}>
                 <div className={cn("max-w-[85%] rounded-xl border px-3 py-2", !m.fromTeam && "bg-muted")}>
                   <p className="text-xs text-muted-foreground">
-                    {m.ai ? "AI" : m.fromTeam ? (m.name ?? "The team") : "You"} · {timeAgo(new Date(m.createdAt))}
+                    {m.ai ? t("ai") : m.fromTeam ? (m.name ?? t("theTeam")) : t("you")} · {timeAgo(new Date(m.createdAt), new Date(), language)}
                   </p>
                   <p lang={m.language ?? undefined} className="text-sm break-words whitespace-pre-wrap">
                     <MessageText text={m.body} ugc={!m.fromTeam} />
@@ -869,15 +886,20 @@ function Conversation({
                       onToggle={(event) => event.currentTarget.open && event.currentTarget.lastElementChild?.scrollIntoView({ block: "nearest" })}
                     >
                       <summary className="w-fit cursor-pointer list-none font-medium underline underline-offset-2 [&::-webkit-details-marker]:hidden">
-                        <span className="group-open:hidden">Show original</span>
-                        <span className="hidden group-open:inline">Hide original</span>
+                        <span className="group-open:hidden">{t("showOriginal")}</span>
+                        <span className="hidden group-open:inline">{t("hideOriginal")}</span>
                       </summary>
                       <p lang={opened.teamLanguage} className="mt-1 scroll-mb-40 text-sm break-words whitespace-pre-wrap text-foreground">
                         <MessageText text={m.original} ugc={false} />
                       </p>
                     </details>
                   )}
-                  <MessageAttachments attachments={m.attachments} dropped={m.dropped} imported />
+                  <MessageAttachments
+                    attachments={m.attachments}
+                    dropped={m.dropped}
+                    imported
+                    words={{ attachments: t("attachments"), dropped: t("attachmentsDropped", { count: m.dropped }) }}
+                  />
                   {m.answer && <AiAnswerFooter projectSlug={projectSlug} answer={m.answer} />}
                 </div>
               </li>
@@ -890,10 +912,11 @@ function Conversation({
         <div className="flex flex-col items-start gap-1">
           <Button variant="outline" size="sm" disabled={asking} focusableWhenDisabled onClick={(event) => askPerson(event.currentTarget)}>
             <MessageCircleIcon data-icon="inline-start" />
-            Ask a person
+            {t("askPerson")}
           </Button>
           {askError && (
-            <p role="alert" className="text-sm text-destructive">
+            // The server's own words stay English (L5); the panel's own failure is in its language.
+            <p role="alert" lang={askError === t("couldntSend") ? undefined : "en"} className="text-sm text-destructive">
               {askError}
             </p>
           )}
@@ -903,9 +926,9 @@ function Conversation({
           start (empty until then), so screen readers hear it appear once they've sent a message. */}
       <p ref={status} tabIndex={-1} role="status" className="text-center text-sm break-words text-muted-foreground outline-none">
         {opened?.answering
-          ? "Answering…"
+          ? t("answering")
           : opened?.awaitingReply && !opened.withAi && opened.messages.findLast((m) => !m.ai)?.fromTeam === false
-            ? replyWhere(opened.emailedTo, opened.replyMs)
+            ? replyWhere(opened.emailedTo, opened.replyMs, t)
             : ""}
       </p>
       {opened && (
@@ -913,8 +936,8 @@ function Conversation({
           {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}
           <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t bg-card px-4 pt-3 pb-4">
             <Composer
-              label="Reply"
-              placeholder="Write a reply…"
+              label={t("reply")}
+              placeholder={t("writeReply")}
               upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
               send={async (text, _email, attachments) => {
                 const result = await widgetSendMessage(projectSlug, auth, number, text, attachments);
@@ -933,6 +956,7 @@ function Conversation({
 
 /** Under the AI's answer in the thread: its sources, and thumbs up or down. */
 function AiAnswerFooter({ projectSlug, answer }: { projectSlug: string; answer: NonNullable<Opened["messages"][number]["answer"]> }) {
+  const t = useTranslations("widget");
   const at = usePortalHref();
   const [rated, setRated] = useState(answer.helpful);
   const [pending, startTransition] = useTransition();
@@ -958,13 +982,13 @@ function AiAnswerFooter({ projectSlug, answer }: { projectSlug: string; answer: 
       )}
       {/* The thumbs stay (pressed once rated, and can be changed), so the focus stays on them. */}
       <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-        <Button variant="ghost" size="icon-sm" aria-label="Helpful" aria-pressed={rated === true} disabled={pending} focusableWhenDisabled onClick={() => rate(true)}>
+        <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} aria-pressed={rated === true} disabled={pending} focusableWhenDisabled onClick={() => rate(true)}>
           <ThumbsUpIcon className={cn(rated === true && "fill-current")} />
         </Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Not helpful" aria-pressed={rated === false} disabled={pending} focusableWhenDisabled onClick={() => rate(false)}>
+        <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} aria-pressed={rated === false} disabled={pending} focusableWhenDisabled onClick={() => rate(false)}>
           <ThumbsDownIcon className={cn(rated === false && "fill-current")} />
         </Button>
-        <span role="status">{rated !== null && "Thanks for letting us know."}</span>
+        <span role="status">{rated !== null && t("thanks")}</span>
       </div>
     </div>
   );

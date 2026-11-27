@@ -17,14 +17,15 @@ import { docsHref } from "@/lib/widget-docs";
 import { articleById, articleCount, articleNamed, articleTabs, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle, stillAsked } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
-import { portalHref, portalLinks } from "@/server/portal-base";
+import { portalHref, portalLinks, teamLanguage } from "@/server/portal-base";
+import { pageTranslator } from "@/server/portal-language";
 
 /**
  * What a page this reader may not read, but sees with a lock, says in the panel: to sign in (as
  * for a private portal; the customer's page can sign them in here), or that they don't have access.
  */
-function LockedMessage({ projectSlug, signedIn }: { projectSlug: string; signedIn: boolean }) {
-  return signedIn ? <p className="text-sm text-muted-foreground">You don&apos;t have access to this.</p> : <WidgetLocked projectSlug={projectSlug} />;
+async function LockedMessage({ projectSlug, signedIn }: { projectSlug: string; signedIn: boolean }) {
+  return signedIn ? <p className="text-sm text-muted-foreground">{(await pageTranslator("helpCenter")).t("noAccess")}</p> : <WidgetLocked projectSlug={projectSlug} />;
 }
 
 /**
@@ -58,7 +59,7 @@ export async function WidgetDocs({
         projectSlug={projectSlug}
         slug={article}
         back={link(docsHref(query ? { q: query } : { docsTab, collection }))}
-        backLabel={query ? "Search results" : "All articles"}
+        backLabel={(await pageTranslator("helpCenter")).t(query ? "searchResults" : "allArticles")}
         from={query ? undefined : collection}
       />
     );
@@ -85,7 +86,8 @@ async function SearchResults({ projectId, projectSlug, query }: { projectId: str
  * Collections as rows that open them, each with its icon on a neutral tile, its description and how many articles
  * this reader may open in it (none in a locked one, which shows nothing), as the portal's docs count them.
  */
-function CollectionLinks({ collections, label, href }: { collections: DocsCollection[]; label: string; href: (slug: string) => string }) {
+async function CollectionLinks({ collections, label, href }: { collections: DocsCollection[]; label: string; href: (slug: string) => string }) {
+  const [{ t }, team] = await Promise.all([pageTranslator("helpCenter"), teamLanguage()]);
   return (
     <ul aria-label={label} className="flex flex-col divide-y">
       {collections.map((collection) => {
@@ -97,12 +99,17 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
                 <CollectionIcon name={collection.icon} />
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium break-words">
+                {/* Its name and description: translated into the page's language (L9, its own lang), else the team's. */}
+                <span lang={collection.lang ?? team} className="font-medium break-words">
                   {collection.name}
                   {collection.locked && <LockedMark />}
                 </span>
-                {collection.description && <span className="text-sm break-words text-muted-foreground">{collection.description}</span>}
-                {count > 0 && <span className="text-xs text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</span>}
+                {collection.description && (
+                  <span lang={collection.lang ?? team} className="text-sm break-words text-muted-foreground">
+                    {collection.description}
+                  </span>
+                )}
+                {count > 0 && <span className="text-xs text-muted-foreground">{t("articleCount", { count })}</span>}
               </span>
               <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </Link>
@@ -119,7 +126,7 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
  * none. A collection's list (`collection`): the way back, its articles, then the collections in it.
  */
 async function Collections({ projectSlug, docsTab, collection: slug }: { projectSlug: string; docsTab?: string; collection?: string }) {
-  const [contents, link] = await Promise.all([docsContents(projectSlug), portalLinks()]);
+  const [contents, link, { t }, { t: w }, team] = await Promise.all([docsContents(projectSlug), portalLinks(), pageTranslator("helpCenter"), pageTranslator("widget"), teamLanguage()]);
   // The widget lists articles: a tab of API references only isn't one of its tabs.
   const docs = { ...contents, tabs: articleTabs(contents) };
   // One this reader may read, else the top level.
@@ -129,13 +136,13 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
   // With two or more, the docs' tabs as the portal's pills, the open one the neutral fill.
   const tabs = tab && docs.tabs.length > 1 && (
     <FilterPills
-      label="Docs tabs"
+      label={t("docsTabs")}
       current={link(docsHref({ docsTab: tab.slug }))}
       items={docs.tabs.map((t) => ({
         href: link(docsHref({ docsTab: t.slug })),
         title: (
           <>
-            {t.name}
+            <span lang={t.lang ?? team}>{t.name}</span>
             {t.locked && <LockedMark className="ml-0 text-current" />}
           </>
         ),
@@ -148,19 +155,25 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
       <>
         {tabs}
         <div className="flex flex-col gap-2">
-          <BackLink href={link(docsHref(parent ? { ...at, collection: parent.slug } : at))}>{parent ? parent.name : "All articles"}</BackLink>
+          <BackLink href={link(docsHref(parent ? { ...at, collection: parent.slug } : at))}>{parent ? <span lang={parent.lang ?? team}>{parent.name}</span> : t("allArticles")}</BackLink>
           <h2 className="flex items-center gap-2 font-heading text-lg font-bold tracking-tight break-words">
             <CollectionIcon name={collection.icon} />
-            <span className="min-w-0">{collection.name}</span>
+            <span lang={collection.lang ?? team} className="min-w-0">
+              {collection.name}
+            </span>
           </h2>
-          {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
+          {collection.description && (
+            <p lang={collection.lang ?? team} className="text-sm text-muted-foreground">
+              {collection.description}
+            </p>
+          )}
         </div>
         {collection.locked && <LockedMessage projectSlug={projectSlug} signedIn={docs.signedIn} />}
-        {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={(article) => link(docsHref({ ...at, collection: collection.slug, article }))} />}
+        {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} lang={team} href={(article) => link(docsHref({ ...at, collection: collection.slug, article }))} />}
         {collection.collections.length > 0 && (
           <CollectionLinks
             collections={collection.collections}
-            label={`Collections in ${collection.name}`}
+            label={w("collectionsIn", { name: collection.name })}
             href={(child) => link(docsHref({ ...at, collection: child }))}
           />
         )}
@@ -172,15 +185,15 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
     <>
       {tabs}
       {tab?.locked && <LockedMessage projectSlug={projectSlug} signedIn={docs.signedIn} />}
-      {collections.length > 0 && <CollectionLinks collections={collections} label="Collections" href={(c) => link(docsHref({ ...at, collection: c }))} />}
+      {collections.length > 0 && <CollectionLinks collections={collections} label={t("collections")} href={(c) => link(docsHref({ ...at, collection: c }))} />}
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
           {collections.length > 0 && (
             <h2 id="more-articles" className={WIDGET_LABEL}>
-              More articles
+              {t("moreArticles")}
             </h2>
           )}
-          <ArticleLinks articles={uncollected} href={(article) => link(docsHref({ ...at, article }))} />
+          <ArticleLinks articles={uncollected} lang={team} href={(article) => link(docsHref({ ...at, article }))} />
         </section>
       )}
     </>
@@ -201,7 +214,7 @@ async function WidgetArticle({
   /** The collection it was opened from: the way back is named after it. */
   from?: string;
 }) {
-  const link = await portalLinks();
+  const [link, { t: w }, team] = await Promise.all([portalLinks(), pageTranslator("widget"), teamLanguage()]);
   // An article's ID opens it at its slug; another language's slug (an AI answer's source, docs/plan.md L10), or an old slug of
   // one that has since moved, where it is now.
   const byId = await articleById(projectSlug, asked);
@@ -214,8 +227,8 @@ async function WidgetArticle({
   if (!article) {
     return (
       <EmptyState
-        title="Article not found"
-        description="It may have been moved or unpublished."
+        title={w("articleNotFound")}
+        description={w("articleNotFoundLine")}
         action={
           <Link href={back} className={buttonVariants({ variant: "outline" })}>
             {backLabel}
@@ -227,25 +240,32 @@ async function WidgetArticle({
   return (
     <article className="flex flex-col gap-4" aria-labelledby="article-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <BackLink href={back}>{from && article.collection?.slug === from ? article.collection.name : backLabel}</BackLink>
+        <BackLink href={back}>{from && article.collection?.slug === from ? <span lang={team}>{article.collection.name}</span> : backLabel}</BackLink>
         <Link
           href={await portalHref(`/docs/${slug}`)}
           target="_blank"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground [&>svg]:size-4"
         >
-          Open in new tab
+          {w("openInNewTab")}
           <ExternalLinkIcon aria-hidden />
         </Link>
       </div>
       <div className="flex flex-col gap-1">
-        {article.collection && <p className="text-sm text-muted-foreground">{article.collection.name}</p>}
-        <h1 id="article-title" className="font-heading text-xl font-bold tracking-tight break-words">
+        {article.collection && (
+          <p lang={team} className="text-sm text-muted-foreground">
+            {article.collection.name}
+          </p>
+        )}
+        {/* The team's words, in the default language (the article's version there is the portal's page's, L8). */}
+        <h1 id="article-title" lang={team} className="font-heading text-xl font-bold tracking-tight break-words">
           {article.title}
         </h1>
       </div>
       {"doc" in article ? (
         <RichText
           doc={article.doc}
+          // The team's words, in the default language, as its title.
+          lang={team}
           mediaUrls={await mediaUrls(article.doc)}
           headingIds
           // Its links to the portal's other articles open them here in the panel; to its other docs pages, on the portal.
