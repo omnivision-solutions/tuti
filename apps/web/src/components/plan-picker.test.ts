@@ -57,3 +57,15 @@ test("a plan's numbers read as one line each, in lower case after the number lik
   expect(labels).toContain("credits a month");
   expect(labels).not.toContain("Credits a month");
 });
+
+test("the free plan's credits to start read in lower case too", async () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const free = { ...plan("free", null), facts: { ...facts, credits: null, startCredits: 100 } };
+  await act(async () => {
+    createRoot(root).render(h(PlanPicker, { projectSlug: "acme", current: "free", pricingPage: null, plans: [free, plan("pro", { month: 39, year: 32 })] }));
+  });
+  const labels = [...root.querySelectorAll("dt")].map((dt) => dt.textContent);
+  expect(labels).toContain("credits to start");
+  expect(labels).not.toContain("Credits to start");
+});
