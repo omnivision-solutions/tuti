@@ -141,6 +141,13 @@ test("Report spam, and block the sender or the domain, files their next emails, 
   await owner.goto(`/app/${slug}/inbox`);
   await expectMoreView(owner, "Needs reply 2");
   await expectMoreView(owner, "Spam 7");
+
+  // An allowed address is never offered for blocking: the allowed list is changed in Settings.
+  const api = await apiFor(owner, slug);
+  await api("/spam", { allow: ["e2e-lee@spam-corp.example"] }, "PATCH");
+  await owner.goto(`/app/${slug}/inbox/6`);
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: /^Report spam/ })).toHaveText(["Report spam"]);
 });
 
 test("Not spam on a conversation from a blocked address says it unblocks it, a long address wrapping inside More actions and on the Spam line", async ({ browser }, testInfo) => {

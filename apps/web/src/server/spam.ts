@@ -337,9 +337,11 @@ export async function spamChoices(
   const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation) : null;
   // A full filter takes no more rules: a report then is a report alone.
   const room = !!sender && (await db.spamRule.count({ where: { projectId: conversation.projectId } })) < MAX_SPAM_RULES;
+  const domain = sender && blockableDomain(sender);
   return {
-    blockSender: room && !on?.blockedAddresses.length ? sender : null,
-    blockDomain: room && !on?.domain?.blocked ? blockableDomain(sender!) : null,
+    // Never for what the allowed list lets through: that's changed in Settings, and a report's rule would take it off.
+    blockSender: room && !on?.blockedAddresses.length && !on?.allowedAddress ? sender : null,
+    blockDomain: room && domain && !on?.domain && !(await allowedEntry(db, conversation.projectId, domain)) ? domain : null,
     unblocks: sender && on?.blockedAddresses.length ? sender : null,
     removesRule: filedBy && !on?.blockedAddresses.some((rule) => rule.id === filedBy.id) ? describeSpamRule(filedBy) : null,
   };
@@ -425,6 +427,10 @@ export async function recordMark(
   return notices.join(" ") || undefined;
 }
 
+/** The allowed list's entry for exactly this address or domain, if there is one. */
+const allowedEntry = (db: Db, projectId: string, sender: string) =>
+  db.spamSender.findFirst({ where: { projectId, conversationId: null, blocked: false, sender }, select: { id: true } });
+
 /** A rule from a report, under the filter's limit, as Settings' are: past it, refused (the report with it). */
 async function addReportedRule(db: Db, projectId: string, rule: SpamRule): Promise<string | null> {
   const { id, added } = await addSpamRule(db, projectId, rule, true);
@@ -449,6 +455,9 @@ export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean
   if (!sender) {
     throw new OperationError(409, "no_sender", "This conversation's sender isn't proven, so there's no address to block");
   }
+  if (await allowedEntry(db, conversation.projectId, sender)) {
+    throw new OperationError(409, "allowed", "This address is on the allowed list: change it in Settings → Spam");
+  }
   return { value: sender, ruleId: await addReportedRule(db, conversation.projectId, { field: "sender_address", matcher: "is", value: sender }) };
 }
 
@@ -469,6 +478,10 @@ export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean
       "no_domain",
       sender ? "Anyone can get an address at this domain, so it isn't blocked: marking as spam blocks this address" : "This conversation's sender isn't proven, so there's no domain to block",
     );
+  }
+  const on = await listed(db, conversation.projectId, sender);
+  if ((on.domain && !on.domain.blocked) || (await allowedEntry(db, conversation.projectId, domain))) {
+    throw new OperationError(409, "allowed", "This domain is on the allowed list: change it in Settings → Spam");
   }
   return { value: domain, ruleId: await addReportedRule(db, conversation.projectId, { field: "sender_domain", matcher: "is", value: domain }) };
 }

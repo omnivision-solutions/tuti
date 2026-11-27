@@ -336,6 +336,34 @@ test("once the filter's rule is removed, Not spam offers the one a report added 
   expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
 });
 
+test("a report never blocks what the allowed list lets through: not offered, refused, and the allowed entry stays", async () => {
+  const { projectId, mail, filed, admin } = await setup();
+  await prisma.spamSender.createMany({
+    data: [
+      { projectId, sender: "e2e-forms@relay.example", blocked: false, byAdmin: true },
+      { projectId, sender: "partner.example", blocked: false, byAdmin: true },
+    ],
+  });
+  await mail("e2e-forms@relay.example"); // #1: an allowed address
+  await mail("e2e-kim@mail.partner.example"); // #2: an allowed domain
+  const choices = async (number: number) =>
+    spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } }), true);
+  expect(await choices(1)).toMatchObject({ blockSender: null, blockDomain: "relay.example" });
+  expect(await choices(2)).toMatchObject({ blockSender: "e2e-kim@mail.partner.example", blockDomain: null });
+  await expect(call(updateConversation, admin, { number: 1, spam: true, blockSender: true })).rejects.toThrow(
+    new OperationError(409, "allowed", "This address is on the allowed list: change it in Settings → Spam"),
+  );
+  await expect(call(updateConversation, admin, { number: 2, spam: true, blockDomain: true })).rejects.toThrow(
+    new OperationError(409, "allowed", "This domain is on the allowed list: change it in Settings → Spam"),
+  );
+  // Refused whole: nothing marked, no rule, the allowed entries as they were.
+  expect([await filed(), await prisma.spamRule.count({ where: { projectId } })]).toEqual([["inbox", "inbox"], 0]);
+  expect((await prisma.spamSender.findMany({ where: { projectId, conversationId: null }, orderBy: { sender: "asc" } })).map((row) => row.sender)).toEqual([
+    "e2e-forms@relay.example",
+    "partner.example",
+  ]);
+});
+
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
   const { projectId, mail, filed, admin } = await setup();
   await prisma.spamRule.createMany({ data: Array.from({ length: 500 }, (_, i) => ({ projectId, field: "subject", matcher: "is", value: `pitch ${i}` })) });

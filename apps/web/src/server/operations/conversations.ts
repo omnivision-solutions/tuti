@@ -1552,14 +1552,14 @@ export const updateConversation = defineOperation({
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Owners and admins only (403). Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC), and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
+          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Owners and admins only (403). Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC), (409 `allowed`) where the address is on the allowed list, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
         )
         .meta({ examples: [false] }),
       blockDomain: z
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
+          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven, (409 `allowed`) where the domain is on the allowed list, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
         )
         .meta({ examples: [false] }),
       removeRule: z
