@@ -212,18 +212,17 @@ test("while the app is read again, the page keeps asking for as long as a read c
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Rhea Recheck");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings/screenshots`);
-  await owner.getByLabel("App address").fill("https://app.example.com");
-  await owner.getByRole("button", { name: "Save changes" }).click();
-  await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
-
-  // An answer read again (over a week old, say), on a busy worker: the server's answers, faked.
+  // An answer read again (over a week old, say), on a busy worker: the server's answers, faked, so nothing is read.
   const firebase = { provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] };
   const auth0 = { provider: "Auth0", hosts: ["acme.auth0.com"] };
   let done = false;
   await owner.route("**/settings/screenshots/suggestions*", (route) =>
     route.fulfill({ json: done ? { suggestions: [firebase, auth0], checking: false } : { suggestions: [firebase], checking: true } }),
   );
+  await owner.goto(`/app/${slug}/settings/screenshots`);
+  await owner.getByLabel("App address").fill("https://app.example.com");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
   await owner.clock.install();
   await owner.reload();
   const checking = owner.getByText("Checking how your app signs in…", { exact: true });
@@ -232,18 +231,18 @@ test("while the app is read again, the page keeps asking for as long as a read c
   await owner.getByRole("button", { name: "Add", exact: true }).click();
   await expect(suggestion).toBeHidden();
 
-  // The next asks, still checking, don't bring it back while its hosts are in the field.
-  const asked = owner.waitForRequest((request) => new URL(request.url()).searchParams.get("start") === "false");
-  await owner.clock.runFor(2_000);
-  await asked;
-  await owner.clock.runFor(2_000);
-  await expect(checking).toBeVisible();
-  await expect(suggestion).toBeHidden();
-
-  // A read that waited its turn past half a minute: its answer still shows.
-  await owner.clock.runFor(60_000);
+  // Each next ask, 2 seconds after the last answer: still checking, it doesn't bring it back while its hosts are in the
+  // field; and the page keeps asking well past half a minute (a read may wait its turn on a busy worker).
+  for (let ask = 0; ask < 20; ask++) {
+    const asked = owner.waitForRequest((request) => new URL(request.url()).searchParams.get("start") === "false");
+    await owner.clock.runFor(2_000);
+    await asked;
+    await expect(checking).toBeVisible();
+    await expect(suggestion).toBeHidden();
+  }
+  // Its answer then shows.
   done = true;
-  await owner.clock.runFor(4_000);
+  await owner.clock.runFor(2_000);
   await expect(owner.getByText("Auth0 sign-in needs acme.auth0.com", { exact: true })).toBeVisible();
   await expect(checking).toBeHidden();
   await expect(suggestion).toBeHidden();
