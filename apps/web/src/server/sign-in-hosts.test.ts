@@ -32,6 +32,10 @@ test("a window's edge never cuts a host into another: a host about BEFORE back i
   expect(findSignInServices([text])).toEqual([{ provider: "Auth0", hosts: ["longname.auth0.com", "team.auth0.com"] }]);
 });
 
+test("a userPoolId alone gives the Cognito host", () => {
+  expect(findSignInServices(['{"userPoolId":"us-east-1_AbC123xyz"}'])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.us-east-1.amazonaws.com"] }]);
+});
+
 test("Amplify Gen 2's user_pool_id gives the Cognito host", () => {
   expect(findSignInServices(['{"auth":{"user_pool_id":"eu-west-1_AbC123xyz","aws_region":"eu-west-1"}}'])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.eu-west-1.amazonaws.com"] }]);
 });
