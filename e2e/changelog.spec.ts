@@ -114,6 +114,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
+  // What publishing does with it: Ada asked for Dark mode, so she's emailed.
+  await expect(team.getByRole("complementary", { name: "Entry settings" })).toContainText("Publishing completes linked posts and emails their voters.");
   // Saved, not published: its status says Draft, first in the sidebar (as a post's is), and there's nothing to view on the portal yet.
   await expect(sidebar.getByRole("region", { name: "Status" })).toHaveText("Status Draft");
   await expect(team.locator("a", { hasText: "View on portal" })).toHaveCount(0);
@@ -556,6 +558,8 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   await checkpoint(team, "team-changelog-merged-post-dropped");
+  // Only the team asked for it: nobody to email.
+  await expect(team.getByText("Publishing completes linked posts.", { exact: true })).toBeVisible();
 
   // "Link post…" searches every planned, in-progress and completed post, not just the 100 changed last.
   for (let n = 5; n <= 105; n += 10) {
@@ -1724,8 +1728,8 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await expect(email).toBeChecked();
   await expect(email).toHaveAccessibleDescription("1 subscriber");
   await expect(announced.getByRole("switch", { name: "Widget" })).toBeChecked();
-  // The sidebar scrolls on its own: to its end, where this is.
-  await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
+  // The sidebar scrolls with the page: to Email, where this is.
+  await email.scrollIntoViewIfNeeded();
   await checkpoint(team, "team-changelog-goes-to");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");

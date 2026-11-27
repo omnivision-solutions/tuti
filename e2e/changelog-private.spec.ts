@@ -55,7 +55,7 @@ test("a private portal's changelog by email: its readers subscribe and get the e
   await team.goto(`/app/${slug}/changelog/1`);
   const goesTo = team.getByRole("group", { name: "Published in" });
   await expect(goesTo.getByRole("switch", { name: "Email" })).toHaveAccessibleDescription("1 reader subscribed");
-  await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
+  await goesTo.getByRole("switch", { name: "Email" }).scrollIntoViewIfNeeded();
   await checkpoint(team, "private-changelog-editor");
   await api("/changelog/1/publish", { emailSubscribers: true });
   const entry = await latestEmailTo(address, { subject: /^Acme: Dark mode is here$/ });

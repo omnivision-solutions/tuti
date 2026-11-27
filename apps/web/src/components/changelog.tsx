@@ -621,7 +621,12 @@ export function ChangelogForm({
   canTakeScreenshots = false,
   languages = null,
   fillIns = 0,
+  completing = 0,
+  completionEmails = 0,
 }: {
+  /** How many of its saved posts publishing would complete, and how many emails that sends (emailedOnCompletion). */
+  completing?: number;
+  completionEmails?: number;
   projectSlug: string;
   entry: Entry | null;
   /** How many lines its saved text has left to fill in ("[Check: …]", "[Screenshot: …]"): said under its status, since Publish waits for them. */
@@ -662,7 +667,14 @@ export function ChangelogForm({
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
-  const shipsPosts = (entry?.published ? entry.posts : linked).length > 0 && !entry?.sample && !entry?.importedOn;
+  // What publishing does with its linked posts, as saved (the page counts them as a Completed dialog does): said only for
+  // a draft that completes some, and emails only where someone would get one.
+  const shipsLine =
+    entry && !entry.published && !entry.sample && !entry.importedOn && completing > 0
+      ? completionEmails > 0
+        ? "Publishing completes linked posts and emails their voters."
+        : "Publishing completes linked posts."
+      : null;
   // Saves so far: Who sees it and Published in start afresh after each (from the saved groups), its picks sent again only once changed.
   const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
@@ -867,12 +879,7 @@ export function ChangelogForm({
             onChange={link}
           />
           {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
-          {/* What linking a post does, while one is and it's true (a sample or imported entry is published quietly). */}
-          {shipsPosts && (
-            <p className="text-xs text-muted-foreground">
-              {entry?.published ? "Publishing completed its posts and emailed their voters." : "Publishing completes linked posts and emails their voters."}
-            </p>
-          )}
+          {shipsLine && <p className="text-xs text-muted-foreground">{shipsLine}</p>}
         </section>
       </aside>
     </form>

@@ -202,6 +202,6 @@ describe("Audience", () => {
     expect(id).toBeTruthy();
     // With any other description it has (the groups it reaches), the plan's.
     expect(id!.split(" ").some((each) => html.includes(`id="${each}" hidden="">Reader groups need the Business plan</span>`))).toBe(true);
-    expect(picker(null)).not.toMatch(/<input[^>]*name="groups"[^>]*aria-describedby/);
+    expect(picker(null)).not.toContain("Reader groups need the Business plan");
   });
 });

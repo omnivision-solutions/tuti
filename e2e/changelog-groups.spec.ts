@@ -116,14 +116,11 @@ test("an entry for some groups only: their readers see it on the changelog, ever
     const box = (await owner.getByRole("group", { name: "Published in" }).getByRole("switch", { name }).boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(390);
   }
-  // What linking a post does is said only where one is: Audit log export's, which completed Audit logs.
-  await expect(owner.getByText("Publishing completed its posts and emailed their voters.")).toHaveCount(0);
+  // Published, it says nothing of what publishing does with its posts.
+  await expect(owner.getByText(/^Publishing completes/)).toHaveCount(0);
   await owner.getByRole("heading", { name: "Pull requests" }).scrollIntoViewIfNeeded();
   await checkpoint(owner, "editor-sidebar-phone", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
-  await owner.goto(`/app/${slug}/changelog/2`);
-  await expect(owner.getByRole("complementary", { name: "Entry settings" })).toContainText("Publishing completed its posts and emailed their voters.");
-  await owner.goto(`/app/${slug}/changelog/1`);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveCount(0);
   await owner.goto(`/app/${slug}/changelog/1`);
