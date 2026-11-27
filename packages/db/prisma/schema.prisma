@@ -3695,6 +3695,10 @@ model ScreenshotSettings {
   /// it was made for: deleted when that changes.
   profileId            String?
   profileSignIn        String           @default("")
+  /// The sign-in services found in the app's page and scripts (screenshotSettings.suggestions: [{ provider, hosts }]),
+  /// and the app address they were found at: found again once the address changes.
+  signInServices       Json?
+  signInServicesFor    String?
   updatedAt            DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
