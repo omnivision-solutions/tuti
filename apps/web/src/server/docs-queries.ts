@@ -1,6 +1,6 @@
 import { type Doc, toMarkdown } from "@tuti/content";
 import { type DocsLanding, type NoAccess, type Prisma, prisma } from "@tuti/db";
-import { translationSource } from "@tuti/jobs";
+import { labelIn, translationSource } from "@tuti/jobs";
 import { cache } from "react";
 
 import { inArticleOrder } from "@/lib/article-order";
@@ -146,6 +146,8 @@ export type DocsCollection = {
   locked?: true;
   /** Sample content (server/sample-content.ts): kept from search engines. */
   sample?: true;
+  /** The language its name and description are in, where they're translated into the page's (docs/plan.md L9); else the team's. */
+  lang?: string;
 };
 
 /**
@@ -166,6 +168,8 @@ export type DocsTabView = {
   locked?: true;
   /** Locked, and all that's in it is API references. */
   onlyReferences?: true;
+  /** The language its name is in, where it's translated into the page's (docs/plan.md L9); else the team's. */
+  lang?: string;
 };
 
 /** The tabs with articles in them for this reader (or locked with some): the widget lists articles, not API references. */
@@ -206,6 +210,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         description: true,
         icon: true,
         sample: true,
+        translations: true,
         ...levelSelect,
         articles: articleSelect,
       },
@@ -219,6 +224,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         projectId: true,
         slug: true,
         name: true,
+        translations: true,
         ...levelSelect,
         landing: true,
         landingArticle: { select: { slug: true, deletedAt: true } },
@@ -233,6 +239,12 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
     }),
   ]);
   type Row = (typeof rows)[number];
+  // Names and descriptions in the page's language where they're translated (docs/plan.md L9), else the team's.
+  const { language } = await portalLanguage();
+  const named = (row: { name: string; description?: string; translations: unknown }) => {
+    const translated = labelIn(row, language);
+    return translated ? { name: translated.name, description: translated.description, lang: language! } : { name: row.name, description: row.description ?? "" };
+  };
   // What's for some readers only is left out for everyone else (`reader`, or whoever's reading): a
   // page needs its tab, every collection it's in and itself to let them through.
   const levels = [...tabRows, ...rows, ...rows.flatMap((row) => row.articles), ...uncollected];
@@ -256,11 +268,12 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
     );
   // Left out (null) when there's nothing in it for this reader.
   const view = (row: Row): DocsCollection | null => {
-    const { slug, name, description, icon, articles, id, sample } = row;
+    const { slug, icon, articles, id, sample } = row;
+    const { name, description, lang } = named(row);
     if (!allowed(row)) {
-      return withLocks && locks(...levelsOf(row)) && hasArticles(row) ? { slug, name, description: "", icon, articles: [], collections: [], locked: true } : null;
+      return withLocks && locks(...levelsOf(row)) && hasArticles(row) ? { slug, name, description: "", icon, articles: [], collections: [], locked: true, ...(lang && { lang }) } : null;
     }
-    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id), ...(sample && { sample: true as const }) };
+    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id), ...(sample && { sample: true as const }), ...(lang && { lang }) };
     return collection.articles.length > 0 || collection.collections.length > 0 ? collection : null;
   };
   const nest = (parentId: string): DocsCollection[] => rows.filter((row) => row.parentId === parentId).flatMap((row) => view(row) ?? []);
@@ -274,10 +287,12 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
   const loose = readable(reader, tabRows[0]) ? articlesFor(uncollected, [tabRows[0]]) : [];
   const referencesIn = (tabId: string | null) =>
     referenceRows.filter((row) => row.tabId === tabId || (row.tabId === null && tabId === (tabRows[0]?.id ?? null))).map(({ slug, name }) => ({ slug, name }));
-  const tabs = tabRows.flatMap(({ id, slug, name, landing, landingArticle, landingCollection, ...level }, index): DocsTabView[] => {
+  const tabs = tabRows.flatMap(({ id, slug, name: _name, translations, landing, landingArticle, landingCollection, ...level }, index): DocsTabView[] => {
+    const { name, lang } = named({ name: _name, translations });
     const tab = {
       slug,
       name,
+      ...(lang && { lang }),
       landing,
       // A deleted article's slug may be another's now.
       page: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
@@ -312,6 +327,8 @@ export type DocsTreeCollection = {
   collections: DocsTreeCollection[];
   open: boolean;
   locked?: true;
+  /** As DocsCollection's. */
+  lang?: string;
 };
 
 /**
@@ -321,9 +338,9 @@ export type DocsTreeCollection = {
  */
 export function docsTree(docs: DocsContents, tab: string | null, at: string | null) {
   const { collections, uncollected, references } = docs.tabs.find((t) => t.slug === tab) ?? docs.tabs[0] ?? docs;
-  const branch = ({ slug, name, icon, articles, collections, locked }: DocsCollection): DocsTreeCollection => {
+  const branch = ({ slug, name, icon, articles, collections, locked, lang }: DocsCollection): DocsTreeCollection => {
     const inside = collections.map(branch);
-    return { slug, name, icon, articles, collections: inside, open: slug === at || inside.some((c) => c.open), ...(locked && { locked }) };
+    return { slug, name, icon, articles, collections: inside, open: slug === at || inside.some((c) => c.open), ...(locked && { locked }), ...(lang && { lang }) };
   };
   return { collections: collections.map(branch), uncollected, references };
 }
