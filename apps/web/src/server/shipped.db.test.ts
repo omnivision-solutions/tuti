@@ -18,6 +18,7 @@ import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { issueLicense } from "@/test/license";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 vi.mock("@tuti/shared/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
@@ -420,6 +421,14 @@ describe("when a post ships", () => {
     const fromPage = await unsubscribe(new Request(url(await tokenOf(author.id)), { method: "POST" }), { params });
     expect(fromPage.status).toBe(303);
     expect(fromPage.headers.get("location")).toBe(`/unsubscribe?token=${await tokenOf(author.id)}`);
+    // Pressed at a language's address (the page its email linked, in the reader's language): back to the page there.
+    request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+    try {
+      const fromGerman = await unsubscribe(new Request(url(await tokenOf(author.id)), { method: "POST" }), { params });
+      expect(fromGerman.headers.get("location")).toBe(`/de/unsubscribe?token=${await tokenOf(author.id)}`);
+    } finally {
+      request.headers = {};
+    }
 
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Export to CSV" });
     await call(setVote, as(voter.id), { number: post.number, voted: true });

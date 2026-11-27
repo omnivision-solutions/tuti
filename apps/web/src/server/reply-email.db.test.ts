@@ -280,3 +280,22 @@ test("a send that fails while another run finishes: the reply stays due, and the
   await handlers.replyEmailed({ commentId: reply.id }, { info: () => {}, warn: () => {} });
   expect(emailsTo(voter.email)).toHaveLength(1);
 });
+
+test("each voter's email in their language while the portal serves it: its words, its card, and its links at that language's address", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const voter = await verified("Voter");
+  await prisma.user.update({ where: { id: voter.id }, data: { language: "de" } });
+  const { post } = await votedFor(voter);
+  await call(createComment, as(owner.id), { number: post.number, body: "Kommt nächste Woche.", emailVoters: true });
+  const [email] = emailsTo(voter.email);
+  expect(email!.subject).toBe("Re: Dark mode");
+  expect(email!.html).toMatch(/<html[^>]* lang="de"/);
+  expect(email!.text).toContain("Neue Antwort auf eine Idee, für die du gestimmt hast");
+  // Its card: the votes' word and status in German, the board's name the team's words (marked as the default's).
+  const { voteCount } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { voteCount: true } });
+  expect(email!.text.replace(/\s+/g, " ")).toContain(`${voteCount} ${voteCount === 1 ? "Stimme" : "Stimmen"} Feature requests Dark mode Offen`);
+  expect(email!.html).toMatch(/<div lang="en"[^>]*>Feature requests<\/div>/);
+  expect(email!.html).toMatch(/<p lang="en"[^>]*>Kommt nächste Woche\.<\/p>/);
+  expect(email!.text).toContain(`/de/feedback/feature-requests/dark-mode-${post.number}`);
+  expect(email!.text).toContain("/de/unsubscribe?token=");
+});

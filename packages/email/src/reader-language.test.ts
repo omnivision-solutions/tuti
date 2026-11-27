@@ -3,7 +3,9 @@ import { expect, test } from "vitest";
 
 import { emailLanguage } from "./language";
 import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
+import { shippedEmail } from "./shipped-email";
 import { signInLinkEmail } from "./sign-in-link-email";
+import { statusEmail } from "./status-email";
 
 const project = { projectName: "Acme", accent: null, poweredBy: true, logo: null };
 
@@ -38,4 +40,21 @@ test("a language the app doesn't have is English", () => {
   expect(emailLanguage("xx")).toBe("en");
   expect(emailLanguage(null)).toBe("en");
   expect(emailLanguage("pt-BR")).toBe("pt-BR");
+});
+
+test("a post's news in German: the post's title and the team's note, in the default language, marked so for screen readers", async () => {
+  const post = { postTitle: "CSV export", board: "Feature requests", votes: 3, postUrl: "https://acme.example/de/feedback/x", unsubscribeUrl: "https://acme.example/de/unsubscribe?token=t" };
+  const note = { from: "Tess", text: "Shipped with streaming." };
+  const shipped = shippedEmail({ ...project, ...post, note, language: "de", teamLanguage: "en" });
+  expect(shipped.subject).toBe("Erledigt: CSV export");
+  const html = await render(shipped.body);
+  expect(html).toMatch(/<h1[^>]*><span lang="en">CSV export<\/span> ist fertig<\/h1>/);
+  expect(html).toMatch(/<p lang="en"[^>]*>Shipped with streaming\.<\/p>/);
+  expect(html).toMatch(/<div lang="en"[^>]*>Feature requests<\/div>/);
+  expect(await render(shipped.body, { plainText: true })).toContain("Erledigt");
+  const status = await render(statusEmail({ ...project, ...post, status: "PLANNED", note, language: "de", teamLanguage: "en" }).body);
+  expect(status).toMatch(/<h1[^>]*><span lang="en">CSV export<\/span> ist geplant<\/h1>/);
+  expect(status).toMatch(/<p lang="en"[^>]*>Shipped with streaming\.<\/p>/);
+  // In the default language itself, nothing is marked.
+  expect((await render(shippedEmail({ ...project, ...post, note, language: "en", teamLanguage: "en" }).body)).match(/lang="en"/g)).toHaveLength(1);
 });

@@ -4,8 +4,8 @@ import { type JobInput, plansEnabled } from "@tuti/shared";
 import { statusMoveEmails } from "@tuti/shared/status-emails";
 
 import { portalPostUrl, postGeneration, whileUnmoved } from "./events";
-import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
-import { portalAddress } from "./portal-address";
+import { postAudience, readerEmailLanguage, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
+import { portalAddress, type PortalAddress } from "./portal-address";
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { emailBrand } from "./email-brand";
 import { projectEmailWaits, projectSender } from "./project-sender";
@@ -238,13 +238,19 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
-  const postUrl = portalPostUrl(origin, post);
+  // Each person's email in their language (readerEmailLanguage), its links at that language's address (a prefix on the
+  // portal's: still the portal's address).
+  const emailLanguage = await readerEmailLanguage(projectId);
+  const teamLanguage = emailLanguage(null).language;
   // A Team only board isn't on the portal: its post's page doesn't name it, nor does the email.
   const boardName = post.board.postVisibility === "TEAM" ? undefined : post.board.name;
   let emailed = 0;
   let failed = 0;
   let held = false;
-  for (const { id, address, unsubscribeToken } of people) {
+  for (const { id, address, unsubscribeToken, language: chosen } of people) {
+    const { language, prefix } = emailLanguage(chosen);
+    const base = `${origin}${prefix}` as PortalAddress;
+    const postUrl = portalPostUrl(base, post);
     // Claimed before sending, so a retry, a second run or the post moved there again doesn't email them twice.
     const claimedAt = await claim(postId, id, status, seenAs(post));
     if (!claimedAt) {
@@ -260,13 +266,13 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       break;
     }
     const token = encodeURIComponent(unsubscribeToken);
-    const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
+    const unsubscribeUrl = `${base}/unsubscribe?token=${token}`;
     const error = await whileClaimed({ postId, userId: id, status, claimedAt }, () =>
       sendEmail({
         to: address,
         ...(status === "COMPLETED"
-          ? shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note })
-          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, board: boardName, votes: post.voteCount, postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note })),
+          ? shippedEmail({ ...brand, postTitle: post.title, votes: post.voteCount, board: boardName, status: "COMPLETED", postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note, language, teamLanguage })
+          : statusEmail({ ...brand, status: status as ProgressStatus, postTitle: post.title, board: boardName, votes: post.voteCount, postUrl, unsubscribeUrl, note: gotNote.has(id) ? undefined : note, language, teamLanguage })),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {

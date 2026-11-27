@@ -393,7 +393,38 @@
     "confirmButton": "Abo bestätigen",
     "newOn": "Neu · {date}",
     "readUpdate": "Update lesen",
-    "subscribedFooter": "Du bekommst diese E-Mail, weil du den Changelog von {name} abonniert hast. <link>Abbestellen</link>"
+    "subscribedFooter": "Du bekommst diese E-Mail, weil du den Changelog von {name} abonniert hast. <link>Abbestellen</link>",
+    "voteWord": "{count, plural, one {Stimme} other {Stimmen}}",
+    "teamOf": "Team von {name}",
+    "followFooter": "Du bekommst diese E-Mail, weil du die Idee gepostet, für sie gestimmt, sie kommentiert oder abonniert hast. <link>E-Mails von {name} abbestellen</link>",
+    "statusSubject": "{status}: {title}",
+    "statusPreview": "Eine Idee, der du folgst, ist jetzt: {status}",
+    "statusEyebrow": "Neues zu einer Idee, die du dir gewünscht hast",
+    "isPlanned": "{title} ist geplant",
+    "isInProgress": "{title} ist in Arbeit",
+    "plannedNext": "Das Team plant, sie umzusetzen. Wir mailen dir wieder, wenn sie fertig ist.",
+    "inProgressNext": "Das Team hat mit der Umsetzung begonnen. Wir mailen dir wieder, wenn sie fertig ist.",
+    "seeIdea": "Idee ansehen",
+    "shippedSubject": "Erledigt: {title}",
+    "shippedPreview": "{title} ist fertig.",
+    "shippedEyebrow": "Eine Idee, der du folgst, ist live",
+    "shippedTitle": "{title} ist fertig",
+    "goodNews": "Gute Neuigkeiten von {name}.",
+    "seePost": "Beitrag ansehen",
+    "authorFooter": "Du bekommst diese E-Mail, weil du diese Idee gepostet hast. <link>E-Mails von {name} abbestellen</link>",
+    "commentSubject": "{count, plural, one {Neuer Kommentar zu „{title}“} other {Neue Kommentare zu „{title}“}}",
+    "commentEyebrow": "{count, plural, one {Neuer Kommentar zu deiner Idee} other {Neue Kommentare zu deiner Idee}}",
+    "commentedOne": "{a} hat deine Idee kommentiert",
+    "commentedTwo": "{a} und {b} haben deine Idee kommentiert",
+    "commentedMany": "{a} und {count, plural, one {# weitere Person haben} other {# weitere haben}} deine Idee kommentiert",
+    "moreComments": "{count, plural, one {# weiterer Kommentar} other {# weitere Kommentare}} im Beitrag.",
+    "reply": "Antworten",
+    "voterFooter": "Du bekommst diese E-Mail, weil du für die Idee gestimmt hast. <link>E-Mails von {name} abbestellen</link>",
+    "replySubject": "Re: {title}",
+    "replyPreview": "{author} hat auf {title} geantwortet",
+    "replyEyebrow": "Neue Antwort auf eine Idee, für die du gestimmt hast",
+    "replyTitle": "{author} von {name} hat geantwortet",
+    "replyOnPost": "Im Beitrag antworten"
   },
   "subscription": {
     "title": "Changelog-E-Mails",
@@ -427,6 +458,6 @@
     "useLatestUnsubscribe": "Nutze den Abmeldelink aus der neuesten E-Mail, die du bekommen hast.",
     "allOffText": "{name} mailt dir nicht mehr.",
     "stopTitle": "Keine E-Mails mehr von {name}?",
-    "stopText": "Du bekommst keine E-Mails von {name} mehr: keine Neuigkeiten und Antworten zu Beiträgen, denen du folgst, die du geschrieben, bewertet oder kommentiert hast, und keinen Changelog."
+    "stopText": "Du bekommst keine E-Mails von {name} mehr: keine Neuigkeiten und Antworten zu Beiträgen, denen du folgst, die du geschrieben oder kommentiert hast oder für die du gestimmt hast, und keinen Changelog."
   }
 }

@@ -894,3 +894,42 @@ test("searching the docs in German finds the articles translated there by their 
   await reader.goto("/de/docs?q=install");
   await expect(reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Setup" }).locator("[lang=en]")).toHaveText("Setup");
 });
+
+test("a post's news to a reader who chose German: its email in German, and its unsubscribe page and button at the German address, on a phone", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const post = await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // Signed in, they choose German in the header (saved on their account), and vote.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/feedback/feature-requests");
+  await reader.getByRole("button", { name: "Language: English" }).click();
+  await reader.getByRole("menuitemradio", { name: "Deutsch" }).click();
+  await expect(reader).toHaveURL(/\/de\/feedback\/feature-requests$/);
+  await reader.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
+  await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible();
+  await expect(async () => {
+    await reader.reload();
+    await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+
+  // The team starts it: the reader's email is German.
+  await api(`/posts/${post.number}`, { status: "in_progress" }, "PATCH");
+  const email = await latestEmailTo(reader.email, { subject: /Dark mode/ });
+  expect(email.subject).toBe("In Arbeit: Dark mode");
+  expect(email.text).toContain("Das Team hat mit der Umsetzung begonnen.");
+  // Its unsubscribe link opens the page at the German address, in German; its button stays there.
+  const unsubscribe = linkIn(email, `${portalUrl(slug)}/de/unsubscribe?token=`);
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto(unsubscribe);
+  await expect(reader.getByRole("heading", { name: "Keine E-Mails mehr von Acme?" })).toBeVisible();
+  await checkpoint(reader, "unsubscribe-in-german-phone", { fullPage: false });
+  await reader.getByRole("button", { name: "Abbestellen" }).click();
+  await expect(reader).toHaveURL(/\/de\/unsubscribe\?token=/);
+  await expect(reader.getByRole("heading", { name: "Du hast abbestellt" })).toBeVisible();
+});

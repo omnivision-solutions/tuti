@@ -372,3 +372,42 @@ test("a run the monthly limit holds leaves a newer move's due time as it was, no
   vi.restoreAllMocks();
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).toEqual(newer);
 });
+
+test("each person's email is in their language while the portal serves it, its links at that language's address; else the portal's default", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const [author, german, french] = [await verified("Author"), await verified("Greta"), await verified("Fleur")];
+  await prisma.user.update({ where: { id: german.id }, data: { language: "de" } });
+  // French isn't one of the portal's languages: the default's.
+  await prisma.user.update({ where: { id: french.id }, data: { language: "fr" } });
+  const post = await postVotedBy(author, [german, french]);
+
+  await setStatus(post.number, "in_progress");
+  expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export"]);
+  const email = mailbox.emails.find((e) => e.to.includes(german.email))!;
+  expect(email.html).toMatch(/<html[^>]* lang="de"/);
+  expect(email.text).toContain("Das Team hat mit der Umsetzung begonnen. Wir mailen dir wieder, wenn sie fertig ist.");
+  // The post's title is its people's words, in the default language: marked so in the heading and the card.
+  expect(email.html).toMatch(/<h1[^>]*><span lang="en">CSV export<\/span> ist in Arbeit<\/h1>/);
+  expect(email.html).toMatch(/<div lang="en"[^>]*>CSV export<\/div>/);
+  expect(email.text).toContain(`/de/feedback/feature-requests/csv-export-${post.number}`);
+  expect(email.text).toContain("/de/unsubscribe?token=");
+  for (const person of [author, french]) {
+    expect(subjectsTo(person.email)).toEqual(["In progress: CSV export"]);
+  }
+  expect(mailbox.emails.find((e) => e.to.includes(french.email))!.text).not.toContain("/de/");
+
+  // Shipped: German too, its title marked as the default language's in the heading.
+  await setStatus(post.number, "completed");
+  expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export", "Erledigt: CSV export"]);
+  const shipped = mailbox.emails.filter((e) => e.to.includes(german.email)).at(-1)!;
+  expect(shipped.html).toMatch(/<h1[^>]*><span lang="en">CSV export<\/span> ist fertig<\/h1>/);
+  expect(shipped.text).toContain(`/de/feedback/feature-requests/csv-export-${post.number}`);
+
+  // German taken offline: another post's news is the default language's, its links too.
+  await prisma.projectLanguage.updateMany({ where: { projectId: project.id, code: "de" }, data: { live: false } });
+  const other = await call(createPost, as(author.id), { board: "feature-requests", title: "PDF export" });
+  await call(setVote, as(german.id), { number: other.number, voted: true });
+  await setStatus(other.number, "planned");
+  expect(subjectsTo(german.email).at(-1)).toBe("Planned: PDF export");
+  expect(mailbox.emails.filter((e) => e.to.includes(german.email)).at(-1)!.text).not.toContain("/de/");
+});
