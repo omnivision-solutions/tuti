@@ -418,7 +418,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   started.settle = settle;
   const waits = async (why: string) => {
     const tries = row.tries + 1;
-    await settle({ error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) });
+    const failure = { error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) };
+    // A version the team writes: only while a section this run was asked for still waits (another run, overlapping, may have
+    // done them all meanwhile: a failure then would sit on a version with nothing left to translate).
+    await settle(kind.name === "article" && !row.automatic ? (now) => ((now.updateSections as string[]).some((key) => asked.includes(key)) ? failure : null) : failure);
     return { failed: why };
   };
 

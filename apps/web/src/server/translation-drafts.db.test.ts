@@ -814,3 +814,18 @@ test("a section whose heading is longer than 400 characters can be named in `kee
   const published = await call(publishTranslation, as(), { ...de, keep: [key!] });
   expect(text(published.content)).toContain("Unsere Abrechnung");
 });
+
+test("a run for sections another run finished meanwhile writes no failure on a version with nothing left to translate", async () => {
+  const articleId = await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  await languageTranslationsDone();
+  const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Billing asked for. While this run waits on its answer, an overlapping run finishes it (nothing left asked for); then this
+  // one's answer fails its checks (and so does the one asked to fix it).
+  model.reply(JSON.stringify({ segments: {} }), () => prisma.articleTranslation.updateMany({ where: { articleId }, data: { updateSections: [], error: null, tries: 0, retryAt: null } }));
+  model.reply(JSON.stringify({ segments: {} }));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ error: null, tries: 0, retryAt: null, updateSections: [] });
+});
