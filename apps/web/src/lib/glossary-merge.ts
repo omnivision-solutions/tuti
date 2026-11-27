@@ -25,6 +25,8 @@ export const glossaryKey = (list: GlossaryTermInput[]) =>
 
 const words = (term: GlossaryTermInput) => JSON.stringify(Object.entries(term.translations).filter(([, word]) => word).sort());
 const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep && words(a) === words(b);
+/** As it's saved: a Never translated term's words aren't. */
+const saved = <T extends GlossaryTermInput>(term: T): T => (term.keep ? { ...term, translations: {} } : term);
 
 /**
  * A save refused as a teammate saved meanwhile (docs/design.md: what was typed kept, the newest version beside it): the
@@ -37,11 +39,14 @@ const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep &
  */
 export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], theirs: GlossaryTermInput[], newKey: () => string): MergeRow[] {
   const byTerm = (list: GlossaryTermInput[]) => new Map(list.map((term) => [term.term.trim().toLowerCase(), term]));
-  const old = byTerm(before);
-  const now = byTerm(theirs);
-  const merged: MergeRow[] = rows.flatMap((row): MergeRow[] => {
-    const name = row.term.trim().toLowerCase();
+  const old = byTerm(before.map(saved));
+  const now = byTerm(theirs.map(saved));
+  const merged: MergeRow[] = rows.flatMap((onScreen): MergeRow[] => {
+    const name = onScreen.term.trim().toLowerCase();
     const was = old.get(name);
+    // Saved Never translated before this edit: the words it had before, still on screen in case it's turned off again, were
+    // never saved, so aren't edits made here.
+    const row = was?.keep ? saved(onScreen) : onScreen;
     const is = now.get(name);
     if (was && !is) return row.term.trim() === was.term && same(row, was) ? [] : [{ ...row, meanwhile: "Removed meanwhile" }];
     if (!was && is && !same(row, is)) {
@@ -70,7 +75,7 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
       const both = [...codes].filter((code) => theirsChanged(code) && (keep !== is.keep || (edited(code) && (is.translations[code] ?? "") !== (row.translations[code] ?? "").trim())));
       return [{ ...row, keep, translations, meanwhile: "Changed meanwhile", ...(both.length > 0 && { theirs: Object.fromEntries(both.map((code) => [code, is.keep && !keep ? NEVER : (is.translations[code] ?? "")])) }) }];
     }
-    return [row];
+    return [onScreen];
   });
   const here = new Set(rows.map((row) => row.term.trim().toLowerCase()));
   for (const [name, term] of now) {
