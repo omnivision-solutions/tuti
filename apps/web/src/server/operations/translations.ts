@@ -366,7 +366,8 @@ export async function readArticleVersion(projectId: string, slug: string, langua
         read,
         state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind),
         waiting: version.error,
-        behind: { sections, ask: sections.filter((key) => has.has(key)) },
+        // `gone`: those English took out (taking the new translation removes the team's text there).
+        behind: { sections, ask: sections.filter((key) => has.has(key)), gone: sections.filter((key) => has.has(key) && !source.parts.some((part) => part.key === key)) },
       };
     },
     { read: true },

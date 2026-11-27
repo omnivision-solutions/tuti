@@ -295,7 +295,8 @@ export function ChangelogVersionForm({
         {line && (
           <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
             <p className="mr-auto">{line}</p>
-            {behind && count > 0 && <BehindActions behind={behind} defaultName={defaultName} dirty={dirty} />}
+            {/* Can't translate (waiting): Show changes still, but no Update those sections, which would do nothing. */}
+            {behind && count > 0 && <BehindActions behind={view.state === "waiting" ? { ...behind, update: null } : behind} defaultName={defaultName} dirty={dirty} />}
           </div>
         )}
         <div className="flex flex-col gap-2">
@@ -514,7 +515,7 @@ function BehindActions({ behind, defaultName, dirty }: { behind: Behind; default
  * sections of the draft behind English (`behind`, keys), Publish asks first, for each, to take the new translation (ticked,
  * the default) or keep the edit: ticked ones are sent as `take`; any other section behind stays the team's.
  */
-export function ArticleVersionSave({ behind = [], defaultName }: { behind?: string[]; defaultName: string }) {
+export function ArticleVersionSave({ behind = [], gone = [], defaultName }: { behind?: string[]; gone?: string[]; defaultName: string }) {
   const saving = useContext(ChangelogSavingContext);
   const [asking, setAsking] = useState(false);
   const publish = (
@@ -552,10 +553,14 @@ export function ArticleVersionSave({ behind = [], defaultName }: { behind?: stri
               <fieldset className="flex flex-col gap-2">
                 <legend className="sr-only">Sections to translate again</legend>
                 {behind.map((key) => (
-                  <label key={key} className="flex items-center gap-2 text-sm">
-                    {/* In the version's form (`form`), though the dialog is outside it. */}
-                    <input type="checkbox" form={VERSION_FORM} name="take" value={key} defaultChecked className="size-4 accent-primary" />
-                    {sectionName(key)}
+                  <label key={key} className="flex items-start gap-2 text-sm">
+                    {/* In the version's form (`form`), though the dialog is outside it. One English took out is unticked:
+                        taking it removes the team's text there. */}
+                    <input type="checkbox" form={VERSION_FORM} name="take" value={key} defaultChecked={!gone.includes(key)} className="mt-0.5 size-4 shrink-0 accent-primary" />
+                    <span>
+                      {sectionName(key)}
+                      {gone.includes(key) && <span className="block text-muted-foreground">Taken out of {defaultName}: ticking removes it.</span>}
+                    </span>
                   </label>
                 ))}
               </fieldset>

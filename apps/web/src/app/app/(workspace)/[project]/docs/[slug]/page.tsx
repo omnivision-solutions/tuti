@@ -242,7 +242,8 @@ export default async function ArticlePage(
             filters={<ChangelogLanguagePill languages={languages!} current={version.code} />}
             actions={
               <div className="flex shrink-0 items-center gap-1.5">
-                <ArticleVersionSave behind={behind.ask} defaultName={defaultName} />
+                {/* With no AI set up nothing would translate: Publish doesn't ask, and keeps the team's edits. */}
+                <ArticleVersionSave behind={aiEnabled() ? behind.ask : []} gone={behind.gone} defaultName={defaultName} />
               </div>
             }
           />
