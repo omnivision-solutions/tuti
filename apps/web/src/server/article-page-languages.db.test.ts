@@ -319,3 +319,24 @@ test("an article's structured breadcrumb names the steps above it in the page's 
     ["Payments", `${portal}/es/docs/${collection.slug}`],
   ]);
 });
+
+test("the docs' tree toggle without JavaScript (its <noscript> summary) is in the page's language, from the layout itself, for every docs page", async () => {
+  const summary = async () => {
+    const found: string[] = [];
+    const walk = (node: ReactNode) => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!node || typeof node !== "object" || !("props" in node)) return;
+      const element = node as ReactElement<{ children?: ReactNode }>;
+      if (element.type === "summary") found.push(text(element.props.children));
+      walk(element.props.children);
+    };
+    // No caller passes it: an API reference's page, the tabs' overview and an article's all render the layout so.
+    walk((await DocsLayout({ tree: null, current: null, children: null })) as ReactElement);
+    return found;
+  };
+  at("de");
+  expect(await summary()).toEqual(["Dokumentation durchstöbern"]);
+  at(null);
+  expect(await summary()).toEqual(["Browse docs"]);
+});
+

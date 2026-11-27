@@ -831,7 +831,8 @@ paths:
     await expect(main.getByRole("heading", { level: 3, name: "Posts" })).toHaveAttribute("lang", "en");
     await expect(reader.getByRole("link", { name: "Übersicht" })).toBeVisible();
     // Without JavaScript, the tree's toggle is in German too.
-    expect(await reader.content()).toContain("Dokumentation durchstöbern");
+    // The summary itself, inside <noscript> (the messages sent to the browser have the words too).
+    expect(await reader.content()).toMatch(/<noscript>(?:(?!<\/noscript>)[\s\S])*>Dokumentation durchstöbern<\/summary>/);
 
     // An operation's page.
     await reader.goto("/de/docs/reference/get-a-post");
