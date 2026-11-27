@@ -158,11 +158,12 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
   const [status, setStatus] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const next = useRef(0);
-  // The editor going (a save that changes the title or text remounts the form) takes a version working or showing with it: said so.
+  // The editor going (a save that changes the title or text remounts the form; leaving the page) takes a version working or
+  // showing with it: said so, in words true of either.
   useEffect(
     () => () => {
       if (editor && ask(editor.state)) {
-        toast("The text reloaded, so the AI's edit was dropped. Select it again to ask again.");
+        toast("The AI's edit was dropped.");
       }
     },
     [editor],

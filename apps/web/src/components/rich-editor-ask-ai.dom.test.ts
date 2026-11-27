@@ -378,5 +378,5 @@ test("the version shows right after the list item it's for, and an editor that g
   expect(items[2]!.querySelector('[data-ask-ai="new"]')).toBeNull();
 
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
-  expect(toast).toHaveBeenCalledWith("The text reloaded, so the AI's edit was dropped. Select it again to ask again.");
+  expect(toast).toHaveBeenCalledWith("The AI's edit was dropped.");
 });
