@@ -96,6 +96,7 @@ export const APP_ROUTES = [
   "[project]/settings/integrations",
   "[project]/settings/integrations/github",
   "[project]/settings/languages",
+  "[project]/settings/languages/glossary",
   "[project]/settings/navigation",
   "[project]/settings/properties",
   "[project]/settings/screenshots",
