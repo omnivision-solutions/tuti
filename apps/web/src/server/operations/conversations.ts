@@ -16,6 +16,7 @@ import { portalAddress } from "../custom-domains";
 import { readerToSend, searchDocs } from "../docs-search";
 import { emitEvent } from "../events";
 import { conversationCompanies } from "../inbox-companies";
+import { handBackOffered, userWaits } from "../ai-turn";
 import { inboxPath } from "../inbox-path";
 import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
@@ -717,6 +718,12 @@ export const getConversation = defineOperation({
       ...conversationFields,
       ...inboxFields,
       onlineUntil: at("Till when they count as online: they have the widget's Messages open, or had in the last 2 minutes; null when they aren't").nullable(),
+      handBack: z
+        .boolean()
+        .describe(
+          "Whether Hand back to the AI is offered: the team has it, nobody waits on the team, and the AI would answer its user's next message (it can answer here, and its answer reaches them). Send conversations.update with `handledBy: ai` and `ifNobodyWaits: true`",
+        )
+        .meta({ examples: [false] }),
       posts: z.array(linkedPostOutput).describe("The posts it's linked to, the first linked first"),
       messages: z
         .array(
@@ -770,6 +777,7 @@ export const getConversation = defineOperation({
       ...view(conversation, await projectSlug(projectId)),
       ...(await inboxDetails(projectId, me, [conversation.id])).get(conversation.id)!,
       onlineUntil: online,
+      handBack: await handBackOffered(projectId, conversation),
       posts: await linkedPosts(conversation.id),
       messages: messages.map((message) => {
         const shown = messageView(message);
@@ -1574,6 +1582,13 @@ export const updateConversation = defineOperation({
         .optional()
         .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications, which answers its user's next message from the docs (or, where the AI is off or unavailable, hands it to the team unless an `about_to_hand_over` workflow keeps it). Closing and reopening leave it")
         .meta({ examples: ["team"] }),
+      ifNobodyWaits: z
+        .boolean()
+        .optional()
+        .describe(
+          "With `handledBy: ai`, on one the team has: refused (409 `waiting`) while its user waits on the team (their latest message unanswered, or handed to the team with no teammate's reply since), as the app's Hand back to the AI is, so their message isn't left unanswered; and (409 `spam`) in Spam, or while the spam filter holds it",
+        )
+        .meta({ examples: [true] }),
       priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso
         .datetime({ offset: true })
@@ -1591,6 +1606,7 @@ export const updateConversation = defineOperation({
     .refine((input) => !input.blockDomain || input.spam === true, "blockDomain goes with spam: true")
     .refine((input) => !input.blockSender || input.spam === true, "blockSender goes with spam: true")
     .refine((input) => !input.removeRule || input.spam === false, "removeRule goes with spam: false")
+    .refine((input) => !input.ifNobodyWaits || input.handledBy === "ai", "ifNobodyWaits goes with handledBy: ai")
     .meta({ anyOf: ["status", "assignee", "spam", "handledBy", "priority", "snoozedUntil"].map((field) => ({ required: [field] })) }),
   example: { status: "closed" },
   output: z
@@ -1630,6 +1646,17 @@ export const updateConversation = defineOperation({
       }
       if (input.snoozedUntil && (input.spam ?? held!.spam)) {
         throw new OperationError(409, "spam", "Spam isn't snoozed");
+      }
+      // Hand back to the AI only where nobody waits on the team: read after the hold, so a message being added (it holds the
+      // row first) is in, or waits for this and gets the AI's turn.
+      if (input.ifNobodyWaits && held!.handledBy === "TEAM") {
+        // Nor one in Spam or held by the spam filter, which the AI never answers (conversations.get doesn't offer it).
+        if ((input.spam ?? held!.spam) || held!.spamHeldAt) {
+          throw new OperationError(409, "spam", "Mark it not spam first.");
+        }
+        if (await userWaits(conversation.id, tx)) {
+          throw new OperationError(409, "waiting", "Reply first: they're waiting on your team.");
+        }
       }
       // Waiting on the user is the team having spoken last (a reply kept open, its follow-up answered, is set so by hand).
       // Read after the hold: a message being added holds the row first, so it's written by now, or waits for this.

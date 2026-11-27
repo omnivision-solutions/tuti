@@ -183,6 +183,7 @@ export function RichEditor({
   mediaUrls: shown,
   initial,
   editorRef: outerRef,
+  onMediaUrls,
   onChange,
   onCreate,
   onReadable,
@@ -212,6 +213,8 @@ export function RichEditor({
   initial?: Doc;
   /** Set to the editor once it's created, for tools outside it (e.g. the changelog's AI helpers). */
   editorRef?: React.RefObject<Editor | null>;
+  /** The addresses of media added here (uploads, made images), as each is added: before it's in the text. */
+  onMediaUrls?: (urls: MediaUrls) => void;
   /** Called on every change to the document. */
   onChange?: (editor: Editor) => void;
   /** Called once the editor is made (in the browser, after the page is ready). */
@@ -251,6 +254,11 @@ export function RichEditor({
   const canAttach = profile === "article" && !!uploads;
   // The image node reads these as it draws, so uploads add their URLs here first.
   const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? shown ?? {})));
+  /** Media added here: its addresses known to the editor, and told (onMediaUrls). */
+  const learn = (urls: MediaUrls) => {
+    Object.entries(urls).forEach(([key, url]) => mediaUrls.set(key, url));
+    onMediaUrls?.(urls);
+  };
 
   /** A new paste, drop or pick forgets the last one's error (once, so images' errors stay when files follow). */
   const startUploads = () => {
@@ -270,7 +278,7 @@ export function RichEditor({
       if ("error" in result) {
         setUploadError(result.error);
       } else {
-        Object.entries(result.urls).forEach(([key, url]) => mediaUrls.set(key, url));
+        learn(result.urls);
         editor.chain().focus().setImage(result).run();
       }
     }
@@ -289,7 +297,7 @@ export function RichEditor({
         setUploadError(result.error);
       } else if (result.src) {
         // A video: played where it's added.
-        mediaUrls.set(videoKey(result.mediaId), result.src);
+        learn({ [videoKey(result.mediaId)]: result.src });
         editor.chain().focus().setVideo({ provider: "upload", id: result.mediaId }).run();
       } else {
         editor.chain().focus().setFile(result).run();
@@ -365,7 +373,7 @@ export function RichEditor({
     if (!editor || !edited) {
       return;
     }
-    Object.entries(made.urls).forEach(([key, url]) => mediaUrls.set(key, url));
+    learn(made.urls);
     const { doc } = editor.state;
     const isEdited = (node: ProseMirrorNode | null | undefined) => node?.type.name === "image" && node.attrs.mediaId === edited.image.id;
     // Where it is now (followImage); lost (deleted, or cut and pasted back), nothing is guessed at, as another copy of it

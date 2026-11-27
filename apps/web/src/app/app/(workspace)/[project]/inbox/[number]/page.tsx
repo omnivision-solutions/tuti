@@ -18,6 +18,7 @@ import {
   AssignMenu,
   ConversationStatusMenu,
   CloseButton,
+  HandBackButton,
   MarkStatusButton,
   PriorityButton,
   SnoozeMenu,
@@ -52,6 +53,7 @@ import { spamWhy } from "@/lib/spam-reasons";
 import { conversationReads } from "@/server/conversation-reads";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
+import { handBackOffered } from "@/server/ai-turn";
 import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -298,6 +300,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const personName = person.name ?? person.email ?? "Unknown";
   // The AI has it (docs/plan.md, Inbox automation): said under the title, and Take over is where the reply box would be.
   const withAi = conversation.handledBy === "AI";
+  // Hand back to the AI: only on the team's, never while its user waits on the team (their message would go unanswered),
+  // and only where the AI would answer their next one.
+  const canHandBack = await handBackOffered(projectId, conversation);
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = said?.author === "TEAM";
   // The column beside the messages, hidden or not as this browser left it (DetailsToggle).
@@ -348,6 +353,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
                   {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
                   <PriorityButton projectSlug={slug} number={conversation.number} priority={conversation.priority} />
+                  {canHandBack && <HandBackButton projectSlug={slug} number={conversation.number} />}
                   {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
                   <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} {...marking} />
                 </ConversationMore>

@@ -12,6 +12,9 @@ import {
   removedChanged,
   standingIn,
   versionPublished,
+  glossaryChangedFor,
+  glossaryFor,
+  projectGlossary,
   type Section,
   sourceSections,
   translationSource,
@@ -104,6 +107,7 @@ const versionSelect = {
   behind: true,
   updateSections: true,
   tries: true,
+  glossaryHash: true,
 } as const;
 type Version = Prisma.ArticleTranslationGetPayload<{ select: typeof versionSelect }>;
 
@@ -117,7 +121,7 @@ async function sourceOf(db: Prisma.TransactionClient, articleId: string) {
     throw new OperationError(409, "not_published", "Publish the article first: its other languages are made from what's published");
   }
   const source = translationSource(article);
-  return { parts: sourceSections(source.text), sourceLanguage: article.project.language, titleHash: contentHash(article.title), sourceHash: source.hash };
+  return { parts: sourceSections(source.text), sourceLanguage: article.project.language, titleHash: contentHash(article.title), sourceHash: source.hash, plain: toPlainText(source.doc) };
 }
 
 /** A version's sections: published, and in the draft. The team's own on a version not kept up to date (for what's behind). */
@@ -159,13 +163,24 @@ const versionToken = (version: Version, sourceHash: string) => contentHash(JSON.
 function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts: ReturnType<typeof sourceSections>; sourceLanguage: string; sourceHash: string }): z.output<typeof translationOutput> {
   const { published, draft, drafted } = versionParts(version, parts);
   // Never published, a version the team writes is its draft: what's behind is the draft's.
-  const behind = behindNow(version, parts, sourceLanguage, published, !version.automatic && !version.publishedAt && drafted ? { list: drafted, removed: draft?.removed } : null);
+  const all = behindNow(version, parts, sourceLanguage, published, !version.automatic && !version.publishedAt && drafted ? { list: drafted, removed: draft?.removed } : null);
+  // Kept up to date, a section behind for another reason (a glossary save's) is so where it's still the team's: in the
+  // published text, or only in the draft.
+  const own = (list: Section[] | null | undefined) => new Set((list ?? []).filter(({ meta }) => meta.own).flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
+  const other = version.automatic ? otherReasons(version.behind, sourceLanguage) : {};
+  const [ownPublished, ownDrafted] = [own(published), own(drafted)];
+  const behind = Object.fromEntries(Object.entries(all).filter(([key]) => !(key in other) || ownPublished.has(key)));
   const draftBehind = drafted
-    ? Object.keys(
-        behindOf(sourceLanguage, parts, [
-          { list: drafted, teamWrites: !version.automatic, removed: draft?.removed, changed: version.automatic ? removedChanged(draft?.removed, draft?.removedHashes, parts) : [] },
+    ? [
+        ...new Set([
+          ...Object.keys(
+            behindOf(sourceLanguage, parts, [
+              { list: drafted, teamWrites: !version.automatic, removed: draft?.removed, changed: version.automatic ? removedChanged(draft?.removed, draft?.removedHashes, parts) : [] },
+            ]),
+          ),
+          ...Object.keys(other).filter((key) => ownDrafted.has(key) && !ownPublished.has(key)),
         ]),
-      )
+      ]
     : [];
   return {
     language: version.language,
@@ -306,6 +321,11 @@ export const publishTranslation = defineOperation({
     slug: articleSlug,
     language,
     keep: sectionList.optional().describe("Sections behind the source (the draft's `behind`) whose edit to keep; the rest take the new translation"),
+    take: sectionList
+      .optional()
+      .describe(
+        "Sections behind only for a glossary change whose text to replace with the new translation. Left out, such a section stays yours and behind; on a version kept up to date, a plain edit takes it anyway; one kept earlier, or standing for more than one source section, stays yours unless listed here",
+      ),
     version: z
       .string()
       .min(1)
@@ -337,8 +357,23 @@ export const publishTranslation = defineOperation({
         throw new OperationError(409, "no_title", "Give it a title first");
       }
       const keep = new Set(input.keep);
+      const take = new Set(input.take);
       const hashes = new Map(parts.map((part) => [part.key, part.hash]));
-      const fresh = new Map(published.filter(({ meta }) => meta.key !== null && !meta.own && meta.hash === hashes.get(meta.key)).map((part) => [part.meta.key!, part]));
+      // Behind for a glossary change: as behind English, its section takes the new translation unless kept. The published one
+      // is that only once it was made with the glossary as it is now.
+      const glossaryWord = glossaryChangedFor("").slice(0, -1);
+      const forGlossary = new Set(Object.entries(version.behind as Record<string, string>).filter(([, why]) => why.startsWith(glossaryWord)).map(([key]) => key));
+      // Only a version kept up to date records the glossary it was made with (a team-written one's is null, as is a glossary with
+      // no terms for its text): only there can a match say its published text is current.
+      const current = forGlossary.size > 0 && version.automatic ? glossaryFor(await projectGlossary(projectId, tx), input.language, source.plain).hash : null;
+      const glossaryNow = current !== null && current === version.glossaryHash;
+      const fresh = new Map(
+        published
+          .filter(({ meta }) => meta.key !== null && !meta.own && meta.hash === hashes.get(meta.key) && (!forGlossary.has(meta.key) || glossaryNow))
+          .map((part) => [part.meta.key!, part]),
+      );
+      // Those taking the new translation: no longer behind for the glossary.
+      const settled = new Set<string>();
       // Sections the team edited whose source changed since: the new translation (the published one, if it's current;
       // else translated again after this), or, kept, the team's, behind the source until it's updated.
       const update: string[] = [];
@@ -348,8 +383,15 @@ export const publishTranslation = defineOperation({
         // Kept: the team's, even where an update asked earlier had made it no longer theirs.
         const own = part.meta.own || !version.automatic || keep.has(key ?? "");
         if (!own || key === null) return part;
-        const stale = hashes.get(key) !== part.meta.hash;
-        if (stale && !keep.has(key)) {
+        // Behind English: the new translation, unless kept. Behind only for the glossary: the team's text stays unless asked for
+        // (`take`), or, on a version kept up to date, it's a plain edit (not kept, not standing for more than one source section,
+        // as the glossary's save leaves those the team's).
+        const english = hashes.get(key) !== part.meta.hash;
+        const glossary = forGlossary.has(key);
+        const plain = version.automatic && !part.meta.kept && (part.meta.also ?? []).length === 0;
+        const stale = english || glossary;
+        if (!keep.has(key) && (english || (glossary && (take.has(key) || plain)))) {
+          settled.add(key);
           const translated = fresh.get(key);
           // (The team's paragraph standing in for the source's intro stays after its translation: standingIn.)
           if (translated) return standingIn(part, translated.blocks, translated.meta as { key: string; hash: string | null });
@@ -358,7 +400,7 @@ export const publishTranslation = defineOperation({
         }
         // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
         // version kept up to date, publishing the source again replaces edits only in the sections it touches).
-        return stale ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
+        return stale && keep.has(key) ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
       });
       const content = docOfSections(out);
       const saved = await tx.articleTranslation.update({
@@ -383,7 +425,12 @@ export const publishTranslation = defineOperation({
           removedHashes: Object.fromEntries(
             Object.entries(draft.removedHashes ?? {}).map(([key, hash]) => [key, keep.has(key) ? (hashes.get(key) ?? hash) : hash]),
           ) as Prisma.InputJsonValue,
-          behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
+          behind: behindOf(
+            sourceLanguage,
+            parts,
+            [{ list: out, teamWrites: !version.automatic, removed: draft.removed }],
+            Object.fromEntries(Object.entries(otherReasons(version.behind, sourceLanguage)).filter(([key]) => !(forGlossary.has(key) && settled.has(key)))),
+          ),
           retryAt: marker,
           tries: Math.max(version.tries, 1),
           // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.

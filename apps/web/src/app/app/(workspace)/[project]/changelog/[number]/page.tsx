@@ -13,8 +13,8 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave } from "@/components/changelog-languages";
-import { NO_AI_WAITING } from "@/lib/changelog-versions";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionEditor, ChangelogVersionSave } from "@/components/changelog-languages";
+import { NO_AI_WAITING, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
 import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
@@ -190,6 +190,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         // Not written yet: the default language's title and text, to write over.
         title: read.title || entry.title,
         content: (read.content ?? displayDoc(entry)) as Doc,
+        own: read.content !== null,
       };
     })());
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
@@ -270,9 +271,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
             {version ? (
-              // Starts afresh when its text changes (a save, a translation), not when Keep up to date flips: unsaved edits stay.
-              <ChangelogVersionForm
-                key={createHash("sha256").update(JSON.stringify([version.code, version.title, version.content])).digest("base64url")}
+              // One per language, carrying what's typed; its form mounted afresh for each read with new text.
+              <ChangelogVersionEditor
+                key={versionFormKey(version)}
+                formKey={versionTextKey(version)}
                 projectSlug={slug}
                 number={entry.number}
                 defaultName={languages![0]!.name}
