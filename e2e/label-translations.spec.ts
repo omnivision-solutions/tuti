@@ -17,16 +17,21 @@ test("a collection's settings show its name in each language: German kept up to 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
-  // German kept up to date (Automatic for new pages), French written by the team.
-  await api("/languages", { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] }, "PATCH");
-  await nextModelReply(JSON.stringify({ segments: { "0.n": "Erste Schritte", "0.d": `Die Grundlagen ${token}.` } }), token);
   await api("/collections", { name: "Getting started", description: `The basics ${token}.` });
 
+  // With the project's language alone, nothing to translate it into: no Translations.
   await owner.setViewportSize({ width: 1280, height: 800 });
   await owner.goto(`/app/${slug}/docs/collections/getting-started/settings`);
+  await expect(owner.getByRole("textbox", { name: "Name" })).toHaveValue("Getting started");
+  await expect(owner.getByRole("heading", { name: "Translations" })).toHaveCount(0);
+  await expect(owner.getByRole("list", { name: "Translations" })).toHaveCount(0);
+
+  // German kept up to date (Automatic for new pages), French written by the team.
+  await nextModelReply(JSON.stringify({ segments: { "0.n": "Erste Schritte", "0.d": `Die Grundlagen ${token}.` } }), token);
+  await api("/languages", { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] }, "PATCH");
   const card = owner.getByRole("list", { name: "Translations" });
   const row = (code: string) => card.getByRole("listitem").filter({ has: owner.getByText(code, { exact: true }) });
-  // German, translated in the background as the collection was made.
+  // German, translated in the background as it was added.
   await expect(async () => {
     await owner.reload();
     await expect(row("de")).toContainText("Erste Schritte", { timeout: 1000 });
