@@ -977,3 +977,34 @@ test("publishing a version the team writes from its editor keeps their sections 
   expect(text(published.content)).toContain("Unsere Zahlung");
   expect(model.requests).toHaveLength(0);
 });
+
+test("a version the team writes marked behind only for the product setting says so, not that English changed", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]), version: blank.version });
+  await call(publishTranslation, as(), de);
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual", productAvailable: true }] });
+  await languageTranslationsDone();
+  expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("setting");
+});
+
+test("writing a version kept up to date before its first translation arrives turns Keep up to date off: the English it showed is never kept as translated", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  // Its translation fails (the provider asked, then asked again once): the version waits, with no text of its own.
+  model.fail(500);
+  model.fail(500);
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  await languageTranslationsDone();
+  const waiting = await call(getTranslation, as(), de);
+  expect(waiting).toMatchObject({ keepUpToDate: true, publishedAt: null, draft: null });
+  const form = new FormData();
+  form.set("title", "Getting paid");
+  form.set("content", JSON.stringify(V1));
+  form.set("version", waiting.version);
+  actAs(owner);
+  expect(await saveArticleVersion(project.slug, de.slug, "de", {}, form)).not.toHaveProperty("error");
+  expect(await call(getTranslation, as(), de)).toMatchObject({ keepUpToDate: false });
+});

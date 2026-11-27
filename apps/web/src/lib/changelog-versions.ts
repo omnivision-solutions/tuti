@@ -12,11 +12,13 @@ export const NO_AI_WAITING = "translating isn't set up on this server";
  * by the product setting changing since (`setting`); none yet: not written.
  */
 /**
- * An article version's, from its read (`behind`: sections behind the source, articles.getTranslation's): behind by its
+ * An article version's, from its read (`behind`: why sections are behind, articles.getTranslation's, if any): behind by its
  * sections, not by the whole text's hash, which writing it doesn't record and an edit kept on a version kept up to date
  * leaves old. Otherwise as an entry's.
  */
-export function articleVersionState(version: VersionRow | undefined, hash: string, aiOn: boolean, behind: boolean): VersionState {
+export function articleVersionState(version: VersionRow | undefined, hash: string, aiOn: boolean, behind: "source" | "setting" | null): VersionState {
+  // Every section behind for the product setting's reason alone: that, not the default language, changed.
+  const why = behind === "setting" ? "setting" : "behind";
   if (!version) {
     return "unwritten";
   }
@@ -25,12 +27,12 @@ export function articleVersionState(version: VersionRow | undefined, hash: strin
     if (version.error || version.retranslate !== version.retranslated) {
       return versionState(version, hash, aiOn);
     }
-    return version.publishedAt && behind ? "behind" : versionState(version, hash, aiOn);
+    return version.publishedAt && behind ? why : versionState(version, hash, aiOn);
   }
   if (!version.publishedAt) {
     return "unwritten";
   }
-  return behind ? "behind" : "written";
+  return behind ? why : "written";
 }
 
 export function versionState(version: VersionRow | undefined, hash: string, aiOn: boolean): VersionState {

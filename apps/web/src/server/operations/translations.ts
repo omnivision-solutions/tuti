@@ -9,6 +9,7 @@ import {
   ownedByTeam,
   lostAfterMs,
   otherReasons,
+  PRODUCT_SETTING_CHANGED,
   queueVersion,
   removedChanged,
   standingIn,
@@ -281,8 +282,10 @@ export async function readArticleVersion(projectId: string, slug: string, langua
     async (db, version, articleId) => {
       const source = await sourceOf(db, articleId);
       const read = output(version, source);
+      const reasons = read.behind.map(({ reason }) => reason);
+      const behind = reasons.length === 0 ? null : reasons.every((reason) => reason === PRODUCT_SETTING_CHANGED) ? "setting" : "source";
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
-      return { read, state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), read.behind.length > 0), waiting: version.error };
+      return { read, state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind), waiting: version.error };
     },
     { read: true },
   );
