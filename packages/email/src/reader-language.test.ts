@@ -1,6 +1,7 @@
 import { render } from "@react-email/render";
 import { expect, test } from "vitest";
 
+import { changelogEmail } from "./changelog-email";
 import { emailLanguage } from "./language";
 import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
 import { signInLinkEmail } from "./sign-in-link-email";
@@ -38,4 +39,17 @@ test("a language the app doesn't have is English", () => {
   expect(emailLanguage("xx")).toBe("en");
   expect(emailLanguage(null)).toBe("en");
   expect(emailLanguage("pt-BR")).toBe("pt-BR");
+});
+
+test("a changelog entry's email: its date in the subscriber's language", async () => {
+  const entry = {
+    ...project,
+    entryTitle: "Dark mode",
+    entryUrl: "https://acme.example/de/changelog/12",
+    doc: { type: "doc" as const, content: [] },
+    publishedAt: new Date("2026-11-27T12:00:00Z"),
+    unsubscribeUrl: "https://acme.example/de/changelog/subscription?token=t",
+  };
+  expect(await render(changelogEmail({ ...entry, language: "de" }).body, { plainText: true })).toContain("Neu · 27. November 2026");
+  expect(await render(changelogEmail(entry).body, { plainText: true })).toContain("New · 27 November 2026");
 });
