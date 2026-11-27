@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { DEFAULT_LANGUAGE, isLanguage, languageLimit } from "@tuti/shared";
+import { DEFAULT_LANGUAGE, isLanguage, languageLimit, log } from "@tuti/shared";
 import { MESSAGES, type Messages } from "@tuti/shared/messages";
 import { createTranslator } from "next-intl";
 import { cookies } from "next/headers";
@@ -90,8 +90,15 @@ export async function rememberPageLanguage(actor: { kind: string; userId?: strin
   // Outside a request (an operation a job runs): no page, nothing to remember.
   const page = await portalLanguage().catch(() => null);
   const { language, prefix } = page ?? { language: null, prefix: "" };
-  if (!prefix || !language || !(await portalLanguages(projectId)).live.includes(language)) {
+  if (!prefix || !language) {
     return;
   }
-  await prisma.user.updateMany({ where: { id: userId, language: null }, data: { language } });
+  // After what they did is saved: a failure here mustn't report it as failed (a retry would post or comment twice).
+  try {
+    if ((await portalLanguages(projectId)).live.includes(language)) {
+      await prisma.user.updateMany({ where: { id: userId, language: null }, data: { language } });
+    }
+  } catch (error) {
+    log.warn("Saving a reader's page language failed", { error, userId, projectId });
+  }
 }

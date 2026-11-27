@@ -489,3 +489,18 @@ test("a reader who never chose a language takes the page's when they post, comme
   await setStatus(post.number, "in_progress");
   expect(subjectsTo(follower.email)).toEqual(["In Arbeit: CSV export"]);
 });
+
+test("saving the page's language failing never fails what was saved: the post is created once, with no error", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const reader = await verified("Reader");
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  const update = vi.spyOn(prisma.user, "updateMany").mockRejectedValueOnce(new Error("connection reset"));
+  const post = await call(createPost, as(reader.id), { board: "feature-requests", title: "Offline mode" });
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(post).toMatchObject({ title: "Offline mode" });
+  expect(await prisma.post.count({ where: { projectId: project.id, title: "Offline mode" } })).toBe(1);
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: reader.id } })).language).toBeNull();
+});
