@@ -459,6 +459,24 @@ test("the inbox-due job runs only a few leftover turns a minute; the rest stay d
   expect(await (later.at(-2) as () => Promise<number>)()).toBe(3);
 });
 
+test("a backlog of older AI turns never delays releasing a spam hold that's due", async () => {
+  vi.stubEnv("TUTI_CONFIG", configFile({ spam: { decisions: { model: "acme/decider" } } }));
+  const { projectId, mail, state } = await setup();
+  // More turns left behind than a run reads, all older than the hold below (an outage's backlog).
+  const hourAgo = new Date(Date.now() - 60 * 60_000);
+  await prisma.conversation.createMany({
+    data: Array.from({ length: 100 }, (_, i) => ({ projectId, number: 1000 + i, subject: "Left behind", origin: "EMAIL" as const, handledBy: "AI" as const, pathDueAt: hourAgo, createdAt: hourAgo })),
+  });
+  await prisma.project.update({ where: { id: projectId }, data: { spamGuidance: "SEO pitches are spam" } });
+  await mail("A new one");
+  expect(await state(1)).toMatchObject({ due: true });
+  // Its 2 minutes are up, the models never answered.
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spamHeldAt: new Date(Date.now() - 3 * 60_000), pathDueAt: new Date(Date.now() - 1000) } });
+  // Three turns and the hold, in one run.
+  expect(await runDueInbox()).toEqual({ checked: 4 });
+  expect(await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } }, select: { spam: true, spamHeldAt: true } })).toEqual({ spam: false, spamHeldAt: null });
+});
+
 test("Straight to a person: a new conversation and a reply to one the AI has go to the team without the AI or “About to go to a person”", async () => {
   const { admin, mail, reply, turn, state, handovers } = await setup();
   await call(createWorkflow, admin, { name: "Billing to a person", trigger: "user_replied", conditions: [], actions: [{ kind: "straight_to_person" }] });

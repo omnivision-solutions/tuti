@@ -270,18 +270,24 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
   // a teammate marked as spam during the hold, which keeps `spamHeldAt` for a later Not spam: the second condition is the
   // partial index's own (conversation_spamHeldAt_idx), word for word, so it reads only holds left to settle.
   // The oldest first, so a flood can't keep any one waiting past a few minutes.
-  const due = await prisma.$queryRaw<{ id: string; aiTurn: boolean }[]>`
-    SELECT "id", "createdAt", "spamHeldAt" IS NULL AND "handledBy" = 'AI' AS "aiTurn" FROM "conversation" WHERE "pathDueAt" <= ${now}
-    UNION
-    SELECT "id", "createdAt", false AS "aiTurn" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
-    ORDER BY "createdAt" LIMIT 100`;
+  // The spam filter's work and the AI's turns apart, each with its own limit, so a backlog of either never keeps the
+  // other waiting: a hold must be released within minutes, whatever turns are left.
+  const [due, turns] = await Promise.all([
+    prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id", "createdAt" FROM "conversation" WHERE "pathDueAt" <= ${now} AND ("spamHeldAt" IS NOT NULL OR "handledBy" <> 'AI')
+      UNION
+      SELECT "id", "createdAt" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
+      ORDER BY "createdAt" LIMIT 100`,
+    // The AI's turns their requests didn't run (server/ai-turn.ts), the longest due first.
+    // ponytail: a few per run, the rest left due for the next minutes (a backlog past 10 minutes is handed over).
+    prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "conversation" WHERE "pathDueAt" <= ${now} AND "spamHeldAt" IS NULL AND "handledBy" = 'AI'
+      ORDER BY "pathDueAt" LIMIT ${AI_TURNS_AT_ONCE}`.then((rows) => rows.map((row) => row.id)),
+  ]);
   let checked = 0;
-  // The AI's turns their requests didn't run (server/ai-turn.ts): run once this request has answered, so their model
-  // calls never hold up the holds here or the worker's request (or now, outside a request), and only a few a minute, so a
-  // backlog after a deploy doesn't hit the provider all at once; each is handed over 10 minutes on.
-  // ponytail: a few per run, the rest left due for the next minutes (a backlog past 10 minutes is handed over). Those
-  // taken are due again a minute on as they're queued, so the next run leaves them to their turn, which still claims them.
-  const turns = due.filter((row) => row.aiTurn).map((row) => row.id).slice(0, AI_TURNS_AT_ONCE);
+  // Run once this request has answered, so their model calls never hold up the holds here or the worker's request (or
+  // now, outside a request). Those taken are due again a minute on as they're queued, so the next run leaves them to their
+  // turn, which still claims them.
   if (turns.length > 0) {
     await prisma.conversation.updateMany({ where: { id: { in: turns }, pathDueAt: { lte: now } }, data: { pathDueAt: new Date(now.getTime() + AI_TURN_DUE_MS) } });
     const runTurns = async () => (await Promise.all(turns.map(runAiTurn))).filter((outcome) => outcome !== "nothing").length;
@@ -292,10 +298,7 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
       checked += await runTurns();
     }
   }
-  for (const { id, aiTurn } of due) {
-    if (aiTurn) {
-      continue;
-    }
+  for (const { id } of due) {
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {
       checked++;
     }
