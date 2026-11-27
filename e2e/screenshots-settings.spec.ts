@@ -220,9 +220,20 @@ test("while the app is read again, the page keeps asking for as long as a read c
   const auth0 = { provider: "Auth0", hosts: ["acme.auth0.com"] };
   let done = false;
   let fail = false;
-  await owner.route("**/settings/screenshots/suggestions*", (route) =>
-    fail ? route.fulfill({ status: 502 }) : route.fulfill({ json: done ? { suggestions: [firebase, auth0], checking: false } : { suggestions: [firebase], checking: true } }),
-  );
+  // The page's looks again (start=false), counted.
+  let asks = 0;
+  await owner.route("**/settings/screenshots/suggestions*", (route) => {
+    asks += new URL(route.request().url()).searchParams.get("start") === "false" ? 1 : 0;
+    return fail ? route.fulfill({ status: 502 }) : route.fulfill({ json: done ? { suggestions: [firebase, auth0], checking: false } : { suggestions: [firebase], checking: true } });
+  });
+  // The clock moved a little at a time until the page asks again (it sets its next ask only once an answer is in).
+  const nextAsk = async () => {
+    const after = asks;
+    await expect(async () => {
+      await owner.clock.runFor(500);
+      expect(asks).toBeGreaterThan(after);
+    }).toPass();
+  };
   await owner.goto(`/app/${slug}/settings/screenshots`);
   await owner.getByLabel("App address").fill("https://app.example.com");
   await owner.getByRole("button", { name: "Save changes" }).click();
@@ -237,25 +248,19 @@ test("while the app is read again, the page keeps asking for as long as a read c
 
   // Each next ask, 2 seconds after the last answer: still checking, it doesn't bring it back while its hosts are in the
   // field; and the page keeps asking well past half a minute (a read may wait its turn on a busy worker).
-  for (let ask = 0; ask < 20; ask++) {
-    const asked = owner.waitForRequest((request) => new URL(request.url()).searchParams.get("start") === "false");
-    await owner.clock.runFor(2_000);
-    await asked;
+  while (asks < 20) {
+    await nextAsk();
     await expect(checking).toBeVisible();
     await expect(suggestion).toBeHidden();
   }
   // A look again that fails (the server restarting for a deploy, say) changes nothing, and the page asks again.
   fail = true;
-  const failed = owner.waitForResponse((response) => response.status() === 502);
-  await owner.clock.runFor(2_000);
-  await failed;
+  await nextAsk();
   await expect(checking).toBeVisible();
   fail = false;
   // Its answer then shows.
   done = true;
-  const again = owner.waitForRequest((request) => new URL(request.url()).searchParams.get("start") === "false");
-  await owner.clock.runFor(2_000);
-  await again;
+  await nextAsk();
   await expect(owner.getByText("Auth0 sign-in needs acme.auth0.com", { exact: true })).toBeVisible();
   await expect(checking).toBeHidden();
   await expect(suggestion).toBeHidden();
