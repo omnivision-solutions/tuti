@@ -97,7 +97,8 @@ test("editing an automatic version turns Keep up to date off, so the entry's nex
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: false, title: "Dunkler Modus", behind: true });
   // Keep up to date back on: translated from the entry as it is, nothing reused.
   model.reply(reply("de", TITLE, "Switch themes from the menu."));
-  expect(await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true })).toMatchObject({ keepUpToDate: true });
+  const before = await call(getChangelogTranslation, as(), { number, language: "de" });
+  expect(await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true, version: before.version })).toMatchObject({ keepUpToDate: true });
   await languageTranslationsDone();
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode", behind: false });
   expect(model.requests.at(-1)!.user).toContain("Dark mode");
@@ -146,7 +147,8 @@ test("an Automatic language added after an entry was published has no version: K
   await languageTranslationsDone();
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: false, publishedAt: null });
   model.reply(reply("de"));
-  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true });
+  const none = await call(getChangelogTranslation, as(), { number, language: "de" });
+  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true, version: none.version });
   await languageTranslationsDone();
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode" });
 });
@@ -168,6 +170,27 @@ test("an entry's languages in its editor: none for a draft or a sample entry, ea
 test("turning Keep up to date off doesn't refuse the save that follows: what the edit was made from didn't change", async () => {
   const number = await published("automatic");
   const read = await call(getChangelogTranslation, as(), { number, language: "de" });
-  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: false });
+  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: false, version: read.version });
   expect(await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: read.version })).toMatchObject({ title: "Dunkler Modus", keepUpToDate: false });
+});
+
+test("Keep up to date turned on over the team's text: translating until it's answered, waiting if it fails, and refused from a read older than their text", async () => {
+  const number = await published("automatic");
+  const translated = await call(getChangelogTranslation, as(), { number, language: "de" });
+  const saved = await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: translated.version });
+  // From the read before the team's text: refused, so it's never replaced unconfirmed.
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true, version: translated.version }))).code).toBe("changed");
+  const state = async () => (await entryLanguages(project.id, project.slug, await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } })))![1]!.state;
+  expect(await state()).toBe("written");
+  // On, its translation held: still made from the entry's text, but not up to date until it's answered.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  model.reply(JSON.stringify({ segments: {} }), () => held);
+  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true, version: saved.version });
+  expect(await state()).toBe("translating");
+  // The answer leaves its segments untranslated, and so does the one asked to fix them: it fails, and waits.
+  model.reply(JSON.stringify({ segments: {} }));
+  release();
+  await languageTranslationsDone();
+  expect(await state()).toBe("waiting");
 });

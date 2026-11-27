@@ -87,25 +87,32 @@ export async function saveChangelogEntry(
  * Saves an entry's version in another language from its editor (the language pill): its title and text, against the
  * `version` it was read at (the form's). Saving stops Keep up to date (changelog.saveTranslation).
  */
-export async function saveChangelogVersion(projectSlug: string, number: number, language: string, _state: FormState, formData: FormData): Promise<FormState> {
-  const result = await asTeam(projectSlug, DENIED, (context) =>
-    call(saveChangelogTranslation, context, {
-      number,
-      language: language as "de",
-      title: String(formData.get("title") ?? ""),
-      content: formData.get("content") || undefined,
-      version: String(formData.get("version") ?? ""),
-    }),
-  );
-  if (!result.error) {
-    refresh();
+export async function saveChangelogVersion(projectSlug: string, number: number, language: string, _state: FormState, formData: FormData): Promise<FormState & { version?: string }> {
+  let version: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    version = (
+      await call(saveChangelogTranslation, context, {
+        number,
+        language: language as "de",
+        title: String(formData.get("title") ?? ""),
+        content: formData.get("content") || undefined,
+        version: String(formData.get("version") ?? ""),
+      })
+    ).version;
+  });
+  if (result.error) {
+    return result;
   }
-  return result;
+  refresh();
+  // What it says now: the form's next save goes from it (its text may be unchanged, so it isn't loaded again).
+  return { version };
 }
 
-/** Keep up to date on an entry's version (it's translated again) or off. */
-export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean): Promise<FormState> {
-  const result = await asTeam(projectSlug, DENIED, (context) => call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true }));
+/** Keep up to date on an entry's version (it's translated again) or off, against the `version` the editor read. */
+export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState> {
+  const result = await asTeam(projectSlug, DENIED, (context) =>
+    call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) }),
+  );
   if (!result.error) {
     refresh();
   }

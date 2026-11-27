@@ -26,7 +26,7 @@ export async function entryLanguages(
   if (project.languages.length === 0) {
     return null;
   }
-  const versions = await prisma.changelogTranslation.findMany({ where: { entryId: entry.id }, select: { language: true, automatic: true, publishedAt: true, sourceHash: true, error: true, behind: true } });
+  const versions = await prisma.changelogTranslation.findMany({ where: { entryId: entry.id }, select: { language: true, automatic: true, publishedAt: true, sourceHash: true, error: true, behind: true, retranslate: true, retranslated: true } });
   const { hash } = translationSource({ ...entry, content: entry.content as Doc | null });
   const base = `/app/${slug}/changelog/${entry.number}`;
   const name = (code: string) => (isLanguage(code) ? LANGUAGES[code].native : code);

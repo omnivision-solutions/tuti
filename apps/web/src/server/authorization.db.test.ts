@@ -273,7 +273,10 @@ const matrix: Matrix = {
         return changelog.saveChangelogVersion(slug, 1, "de", {}, form);
       },
     },
-    keepChangelogVersionUpToDate: { allowed: "MEMBER", call: (slug) => changelog.keepChangelogVersionUpToDate(slug, 1, "de", false) },
+    keepChangelogVersionUpToDate: {
+      allowed: "MEMBER",
+      call: (slug) => changelog.keepChangelogVersionUpToDate(slug, 1, "de", false, contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash]))),
+    },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
     deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },
     reactToChangelogEntry: {

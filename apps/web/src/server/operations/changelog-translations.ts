@@ -76,7 +76,7 @@ async function entryAndLanguage(projectId: string, number: number, code: (typeof
 
 export const getChangelogTranslation = defineOperation({
   name: "changelog.getTranslation",
-  title: "Get a changelog entry's translation",
+  title: "Get an entry's translation",
   summary: "A changelog entry's version in one of the project's other languages: its title and text, whether it's kept up to date, and whether the entry changed since.",
   method: "GET",
   path: "/changelog/{number}/languages/{language}",
@@ -93,7 +93,7 @@ export const getChangelogTranslation = defineOperation({
 
 export const saveChangelogTranslation = defineOperation({
   name: "changelog.saveTranslation",
-  title: "Save a changelog entry's translation",
+  title: "Save an entry's translation",
   summary:
     "Write a published changelog entry's version in another language (it stops being kept up to date, so a translation never replaces it), or turn Keep up to date on (translated again from the entry as it is) or off.",
   method: "PATCH",
@@ -112,7 +112,7 @@ export const saveChangelogTranslation = defineOperation({
       .min(1)
       .max(200)
       .optional()
-      .describe("With `title` or `content`: the `version` of the read the edit was made from; refused (409 `changed`) if it changed since (translated, or saved by someone else)")
+      .describe("With `title`, `content` or `keepUpToDate`: the `version` of the read the change was made from; refused (409 `changed`) if it changed since (translated, or saved by someone else)")
       .meta({ examples: ["5f2c9a…"] }),
   }),
   output: translationOutput,
@@ -121,8 +121,8 @@ export const saveChangelogTranslation = defineOperation({
     if (writing && input.keepUpToDate !== undefined) {
       throw new OperationError(400, "invalid_input", "Send the text, or Keep up to date, not both: writing it turns Keep up to date off");
     }
-    if (writing && input.version === undefined) {
-      throw new OperationError(400, "invalid_input", "Send the `version` you read it at with the text");
+    if ((writing || input.keepUpToDate !== undefined) && input.version === undefined) {
+      throw new OperationError(400, "invalid_input", "Send the `version` you read it at");
     }
     const { entry } = await entryAndLanguage(projectId, input.number, input.language);
     if (!entry.publishedAt) {
@@ -146,10 +146,12 @@ export const saveChangelogTranslation = defineOperation({
       }
       const sourceHash = translationSource({ ...locked, content: locked.content as Doc | null }).hash;
       const version = await tx.changelogTranslation.findUnique({ where, select: versionSelect });
+      // Made from what was read: text written over a teammate's newer text, or Keep up to date turned on over text the team
+      // changed since (which it would replace, unconfirmed), is refused.
+      if (input.version !== undefined && versionToken(version, sourceHash) !== input.version) {
+        throw new OperationError(409, "changed", "It or the entry changed since you opened it (translated, or saved by someone else). Reload it to see the changes.");
+      }
       if (writing) {
-        if (versionToken(version, sourceHash) !== input.version) {
-          throw new OperationError(409, "changed", "It or the entry changed since you opened it (translated, or saved by someone else). Reload it to see the changes.");
-        }
         const title = input.title ?? version?.title ?? "";
         if (!title) {
           throw new OperationError(400, "invalid_input", "Give it a title first");

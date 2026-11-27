@@ -87,7 +87,7 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
   type(title(), "Noch nicht gespeichert");
   keep().focus();
   await act(async () => keep().click());
-  expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", false);
+  expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", false, "v1");
   // The page's next read: saved off, the same text.
   await render({ keepUpToDate: false, version: "v2" });
   expect(keep().checked).toBe(false);
@@ -112,5 +112,26 @@ test("turning Keep up to date on over the team's own text asks first", async () 
   expect(document.body.textContent).toContain("Translate it again?");
   const button = [...document.querySelectorAll("button")].find((each) => each.textContent === "Translate again")!;
   await act(async () => button.click());
-  expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", true);
+  expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", true, "v1");
+});
+
+test("a save that leaves the text as it was is what the next save goes from; the switch ignores changes while it saves, keeping focus", async () => {
+  saveChangelogVersion.mockResolvedValueOnce({ version: "v2" }).mockResolvedValueOnce({ version: "v3" });
+  await form({ state: "setting", keepUpToDate: false });
+  // Saved unchanged (to clear the product setting's mark), then again: the second goes with the first's new token.
+  await submit();
+  await submit();
+  expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v2");
+  let answer = (_: unknown) => {};
+  keepChangelogVersionUpToDate.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  await form({ code: "de", keepUpToDate: true });
+  const second = document.querySelectorAll<HTMLInputElement>('[role="switch"]')[1]!;
+  second.focus();
+  await act(async () => second.click());
+  expect(second.disabled).toBe(false);
+  expect(second.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => second.click());
+  expect(keepChangelogVersionUpToDate).toHaveBeenCalledTimes(1);
+  await act(async () => answer({}));
+  expect(document.activeElement).toBe(second);
 });

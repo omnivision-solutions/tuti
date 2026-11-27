@@ -149,9 +149,14 @@ export function ChangelogVersionForm({
   /** The sidebar's Languages. */
   languages: EntryLanguage[];
 }) {
+  // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say): a save made from this
+  // text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
+  const [loaded, setLoaded] = useState(view.version);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
+      // Its own save is what the next one goes from.
+      setLoaded(result.version!);
       toast.success("Saved");
     }
     return result;
@@ -159,9 +164,6 @@ export function ChangelogVersionForm({
   // The top bar's Save says when it's saving, and waits (ChangelogSaveButton).
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
-  // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say): a save made from this
-  // text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
-  const [loaded] = useState(view.version);
   const line = versionLine(view, defaultName);
   const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
@@ -191,6 +193,7 @@ export function ChangelogVersionForm({
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate
+          version={loaded}
           projectSlug={projectSlug}
           number={number}
           code={view.code}
@@ -208,7 +211,24 @@ export function ChangelogVersionForm({
  * Keep up to date: on, it's translated again (and whenever the default language's text changes); over a version the team
  * wrote (`teamWrote`), only once they confirm, as it replaces their text.
  */
-function KeepUpToDate({ projectSlug, number, code, on, defaultName, teamWrote }: { projectSlug: string; number: number; code: string; on: boolean; defaultName: string; teamWrote: boolean }) {
+function KeepUpToDate({
+  projectSlug,
+  number,
+  code,
+  on,
+  defaultName,
+  teamWrote,
+  version,
+}: {
+  projectSlug: string;
+  number: number;
+  code: string;
+  on: boolean;
+  defaultName: string;
+  teamWrote: boolean;
+  /** The token the form's text was loaded with: turning it on over text changed since is refused, not done unconfirmed. */
+  version: string;
+}) {
   const [checked, setChecked] = useState(on);
   // What's saved changing (a save turns it off) shows in place: the switch keeps focus, unsaved edits stay.
   const [saved, setSaved] = useState(on);
@@ -222,7 +242,7 @@ function KeepUpToDate({ projectSlug, number, code, on, defaultName, teamWrote }:
     setChecked(next);
     setConfirming(false);
     start(async () => {
-      const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next);
+      const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next, version);
       if (result.error) {
         setChecked(!next);
         toast.error(result.error);
@@ -236,7 +256,22 @@ function KeepUpToDate({ projectSlug, number, code, on, defaultName, teamWrote }:
           <span className="font-medium">Keep up to date</span>
           <span className="text-xs text-muted-foreground">Translated again whenever {defaultName} changes.</span>
         </span>
-        <Switch checked={checked} disabled={pending} onChange={(event) => (event.currentTarget.checked && teamWrote ? setConfirming(true) : save(event.currentTarget.checked))} />
+        {/* Not `disabled` while it saves (focus would leave it): changes are ignored meanwhile. */}
+        <Switch
+          checked={checked}
+          aria-disabled={pending || undefined}
+          onChange={(event) => {
+            if (pending) {
+              return;
+            }
+            const next = event.currentTarget.checked;
+            if (next && teamWrote) {
+              setConfirming(true);
+            } else {
+              save(next);
+            }
+          }}
+        />
       </label>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
