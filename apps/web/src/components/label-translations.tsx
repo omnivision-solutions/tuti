@@ -11,21 +11,25 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { saveCollectionTranslation } from "@/server/label-translations";
+import { saveCollectionTranslation, saveTabTranslation } from "@/server/label-translations";
 
-export type LabelTranslationRow = { language: string; native: string; name: string | null; description: string | null; keepUpToDate: boolean };
+export type LabelTranslationRow = { language: string; native: string; name: string | null; description?: string | null; keepUpToDate: boolean };
+/** What's translated: a collection (a name and description) or a tab (a name). */
+type Kind = "collection" | "tab";
 
 /**
- * A collection's settings → Translations (docs/plan.md, Languages, L13): a row per language with its name and description
- * there, Automatic or Edited, and Edit; not translated yet, "readers see the <default> name" and Add.
+ * A collection's or a tab's settings → Translations (docs/plan.md, Languages, L13): a row per language with its name (and a
+ * collection's description) there, Automatic or Edited, and Edit; not translated yet, "readers see the <default> name" and Add.
  */
-export function CollectionTranslations({
+export function LabelTranslations({
+  kind,
   projectSlug,
   slug,
   defaultName,
   translations,
   ai,
 }: {
+  kind: Kind;
   projectSlug: string;
   slug: string;
   /** The default language's own name ("English"). */
@@ -38,14 +42,14 @@ export function CollectionTranslations({
     <SettingsCard title="Translations">
       <ul aria-label="Translations" className="flex flex-col divide-y">
         {translations.map((row) => (
-          <TranslationRow key={row.language} projectSlug={projectSlug} slug={slug} defaultName={defaultName} row={row} ai={ai} />
+          <TranslationRow key={row.language} kind={kind} projectSlug={projectSlug} slug={slug} defaultName={defaultName} row={row} ai={ai} />
         ))}
       </ul>
     </SettingsCard>
   );
 }
 
-function TranslationRow({ projectSlug, slug, defaultName, row, ai }: { projectSlug: string; slug: string; defaultName: string; row: LabelTranslationRow; ai: boolean }) {
+function TranslationRow({ kind, projectSlug, slug, defaultName, row, ai }: { kind: Kind; projectSlug: string; slug: string; defaultName: string; row: LabelTranslationRow; ai: boolean }) {
   const [open, setOpen] = useState(false);
   const translated = row.name !== null;
   return (
@@ -86,13 +90,14 @@ function TranslationRow({ projectSlug, slug, defaultName, row, ai }: { projectSl
       <Button variant="outline" size="sm" aria-label={`${translated ? "Edit" : "Add"} ${row.native}`} onClick={() => setOpen(true)}>
         {translated ? "Edit" : "Add"}
       </Button>
-      <TranslationDialog projectSlug={projectSlug} slug={slug} row={row} ai={ai} open={open} onOpenChange={setOpen} />
+      <TranslationDialog kind={kind} projectSlug={projectSlug} slug={slug} row={row} ai={ai} open={open} onOpenChange={setOpen} />
     </li>
   );
 }
 
 /** A language's name and description, the team's own or kept up to date (typing turns that off, as on an article's version). */
 function TranslationDialog({
+  kind,
   projectSlug,
   slug,
   row,
@@ -100,6 +105,7 @@ function TranslationDialog({
   open,
   onOpenChange,
 }: {
+  kind: Kind;
   projectSlug: string;
   slug: string;
   row: LabelTranslationRow;
@@ -136,11 +142,11 @@ function TranslationDialog({
             event.preventDefault();
             const form = new FormData(event.currentTarget);
             startTransition(async () => {
-              const result = await saveCollectionTranslation(projectSlug, slug, row.language, {
-                keepUpToDate: keep,
-                name: String(form.get("name") ?? ""),
-                description: String(form.get("description") ?? ""),
-              });
+              const name = String(form.get("name") ?? "");
+              const result =
+                kind === "collection"
+                  ? await saveCollectionTranslation(projectSlug, slug, row.language, { keepUpToDate: keep, name, description: String(form.get("description") ?? "") })
+                  : await saveTabTranslation(projectSlug, slug, row.language, { keepUpToDate: keep, name });
               if (result.error) {
                 setError(result.error);
                 return;
@@ -162,19 +168,21 @@ function TranslationDialog({
               name="name"
               lang={row.language}
               defaultValue={row.name ?? ""}
-              maxLength={60}
+              maxLength={kind === "collection" ? 60 : 40}
               required={!keep}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? `${id}-error` : undefined}
               onChange={() => setKeep(false)}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <label htmlFor={`${id}-description`} className="text-sm font-medium">
-              Description
-            </label>
-            <Textarea id={`${id}-description`} name="description" lang={row.language} defaultValue={row.description ?? ""} maxLength={300} className="min-h-16" onChange={() => setKeep(false)} />
-          </div>
+          {kind === "collection" && (
+            <div className="flex flex-col gap-2">
+              <label htmlFor={`${id}-description`} className="text-sm font-medium">
+                Description
+              </label>
+              <Textarea id={`${id}-description`} name="description" lang={row.language} defaultValue={row.description ?? ""} maxLength={300} className="min-h-16" onChange={() => setKeep(false)} />
+            </div>
+          )}
           {ai && (
             <div className="flex items-start gap-3">
               <div className="flex min-w-0 flex-1 flex-col">

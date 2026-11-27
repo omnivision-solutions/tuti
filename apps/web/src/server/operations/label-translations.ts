@@ -6,28 +6,43 @@ import { z } from "zod";
 import { defineOperation, OperationError } from "./define";
 
 /**
- * Labels' translations (docs/plan.md, Languages, L13): a docs collection's name and description in each of the project's
- * languages, as its settings' Translations show them. Kept up to date (made by the translate-labels job, made again when
- * its text changes) or the team's own (never replaced).
+ * Labels' translations (docs/plan.md, Languages, L13): a docs collection's name and description, and a tab's name, in each
+ * of the project's languages, as their settings' Translations show them. Kept up to date (made by the translate-labels job,
+ * made again when its text changes) or the team's own (never replaced).
  */
 
-const language = z.enum(LANGUAGE_CODES).describe("The language's code (one of the project's languages)").meta({ examples: ["de"] });
-const collectionSlug = z.string().min(1).max(200).describe("The collection's slug").meta({ examples: ["basics"] });
+/** What differs between a collection's and a tab's: its table, its noun, and whether it has a description (and samples). */
+type Kind = { table: "collection" | "docs_tab"; noun: "collection" | "tab" };
+const COLLECTION: Kind = { table: "collection", noun: "collection" };
+const TAB: Kind = { table: "docs_tab", noun: "tab" };
 
-const translationOutput = z
+const language = z.enum(LANGUAGE_CODES).describe("The language's code (one of the project's languages)").meta({ examples: ["de"] });
+const keepUpToDateOutput = z.boolean().describe("Made and kept up to date by AI (else the team's own, never replaced)").meta({ examples: [true] });
+const nameOutput = z.string().nullable().describe("Its name there: the translation readers see (null: none yet, readers see the default language's)");
+
+const collectionTranslation = z
   .object({
     language: z.string().describe("The language's code").meta({ examples: ["de"] }),
-    name: z.string().nullable().describe("Its name there: the translation readers see (null: none yet, readers see the default language's)").meta({ examples: ["Erste Schritte"] }),
+    name: nameOutput.meta({ examples: ["Erste Schritte"] }),
     description: z.string().nullable().describe("Its description there (null as for name)").meta({ examples: ["Die Grundlagen in fünf Minuten."] }),
-    keepUpToDate: z.boolean().describe("Made and kept up to date by AI (else the team's own, never replaced)").meta({ examples: [true] }),
+    keepUpToDate: keepUpToDateOutput,
   })
   .describe("A collection's name and description in one of the project's languages");
+const tabTranslation = z
+  .object({
+    language: z.string().describe("The language's code").meta({ examples: ["de"] }),
+    name: nameOutput.meta({ examples: ["Anleitungen"] }),
+    keepUpToDate: keepUpToDateOutput,
+  })
+  .describe("A tab's name in one of the project's languages");
+
+type Label = { name: string; description: string; translations: unknown; sample: boolean };
 
 /**
  * What a label shows in a language: a translation only while it's current (labelIn), and whether it's kept up to date. One
  * with none yet is, where the job will make it: the language Automatic for new pages (`automatic`), AI on, not a sample.
  */
-function translationIn(label: { name: string; description: string; translations: unknown; sample: boolean }, code: string, automatic: boolean) {
+function translationIn(label: Label, code: string, automatic: boolean) {
   const translation = (label.translations as LabelTranslations | null)?.[code];
   const current = !!translation && (!translation.auto || translation.source === labelSource(label.name, label.description));
   return {
@@ -38,22 +53,84 @@ function translationIn(label: { name: string; description: string; translations:
   };
 }
 
-async function collectionFor(projectId: string, slug: string) {
-  const collection = await prisma.collection.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { name: true, description: true, translations: true, sample: true } });
-  if (!collection) {
-    throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
-  }
-  return collection;
+/** A label's text and translations (a tab's description empty, never a sample), as the labels job reads it. */
+async function labelFor(db: Prisma.TransactionClient | typeof prisma, kind: Kind, projectId: string, slug: string, lock = false): Promise<(Label & { id: string }) | null> {
+  const forUpdate = lock ? Prisma.sql`FOR UPDATE` : Prisma.empty;
+  const [row] =
+    kind === COLLECTION
+      ? await db.$queryRaw<(Label & { id: string })[]>`SELECT id, name, description, translations, sample FROM collection WHERE "projectId" = ${projectId} AND slug = ${slug} ${forUpdate}`
+      : await db.$queryRaw<(Label & { id: string })[]>`SELECT id, name, '' AS description, translations, false AS sample FROM docs_tab WHERE "projectId" = ${projectId} AND slug = ${slug} ${forUpdate}`;
+  return row ?? null;
 }
 
-/** A collection's translations in each of the project's languages (in the order they were added), as getCollectionTranslations answers. */
-export async function collectionTranslations(projectId: string, slug: string) {
-  const [collection, languages] = await Promise.all([
-    collectionFor(projectId, slug),
+/** A label's translations in each of the project's languages (in the order they were added), as get…Translations answers. */
+async function translationsOf(kind: Kind, projectId: string, slug: string) {
+  const [label, languages] = await Promise.all([
+    labelFor(prisma, kind, projectId, slug),
     prisma.projectLanguage.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { code: "asc" }], select: { code: true, automatic: true } }),
   ]);
-  return languages.map(({ code, automatic }) => translationIn(collection, code, automatic));
+  if (!label) {
+    throw new OperationError(404, "not_found", `There's no ${kind.noun} “${slug}”`);
+  }
+  return languages.map(({ code, automatic }) => translationIn(label, code, automatic));
 }
+
+/** A collection's translations, as collections.getTranslations answers. */
+export const collectionTranslations = (projectId: string, slug: string) => translationsOf(COLLECTION, projectId, slug);
+/** A tab's translation as its operations answer: no description. */
+const tabOnly = ({ language, name, keepUpToDate }: ReturnType<typeof translationIn>) => ({ language, name, keepUpToDate });
+/** A tab's translations, as tabs.getTranslations answers. */
+export const tabTranslations = async (projectId: string, slug: string) => (await translationsOf(TAB, projectId, slug)).map(tabOnly);
+
+/**
+ * A label's name (and a collection's description) in one language: the team's own, or kept up to date (made again in the
+ * background, readers seeing the default language's meanwhile).
+ */
+async function saveTranslation(kind: Kind, projectId: string, input: { slug: string; language: (typeof LANGUAGE_CODES)[number]; keepUpToDate: boolean; name?: string; description?: string }) {
+  if (input.keepUpToDate && !aiEnabled()) {
+    throw new OperationError(409, "ai_off", "Translating needs AI, and it's off on this server");
+  }
+  if (!input.keepUpToDate && !input.name) {
+    throw new OperationError(400, "invalid_input", "Give it a name");
+  }
+  const saved = await prisma.$transaction(async (tx) => {
+    // As the labels job's write locks them: the language's row (shared), then the label's.
+    const [found] = await tx.$queryRaw<{ automatic: boolean }[]>`SELECT automatic FROM project_language WHERE "projectId" = ${projectId} AND code = ${input.language} FOR SHARE`;
+    if (!found) {
+      throw new OperationError(400, "invalid_input", `${LANGUAGES[input.language].name} isn't one of your languages`);
+    }
+    const row = await labelFor(tx, kind, projectId, input.slug, true);
+    if (!row) {
+      throw new OperationError(404, "not_found", `There's no ${kind.noun} “${input.slug}”`);
+    }
+    // Sample content is never translated (as sample articles aren't): only the team's own there.
+    if (input.keepUpToDate && row.sample) {
+      throw new OperationError(409, "sample", "Sample collections aren't translated: write its name there instead");
+    }
+    const was = (row.translations as LabelTranslations)[input.language];
+    const source = labelSource(row.name, row.description);
+    // What's there now, as readers get it: the team's own, or one kept up to date made from its text as it is (labelIn). An
+    // old one (made from text since changed) is never kept as the team's: it would read as current, and never be made again.
+    const current = !!was && (!was.auto || was.source === source);
+    const description =
+      kind === COLLECTION ? { description: input.keepUpToDate ? (was?.description ?? "") : (input.description ?? (current ? (was.description ?? "") : "")) } : {};
+    // Kept up to date: made again (its source cleared, so the job finds it), unless it's already current. The team's own: a
+    // description left out stays as it was there.
+    const entry: LabelTranslation = input.keepUpToDate
+      ? { name: was?.name ?? "", ...description, auto: true, source: was?.auto && was.source === source ? was.source : null }
+      : { name: input.name!, ...description, auto: false, source };
+    const translations = { ...(row.translations as LabelTranslations), [input.language]: entry } as Prisma.InputJsonValue;
+    await (kind === COLLECTION ? tx.collection.update({ where: { id: row.id }, data: { translations } }) : tx.docsTab.update({ where: { id: row.id }, data: { translations } }));
+    return { label: { ...row, translations }, automatic: found.automatic };
+  });
+  if (input.keepUpToDate) {
+    await queueLabels(projectId, [input.language]);
+  }
+  return translationIn(saved.label, input.language, saved.automatic);
+}
+
+const collectionSlug = z.string().min(1).max(200).describe("The collection's slug").meta({ examples: ["basics"] });
+const tabSlug = z.string().min(1).max(200).describe("The tab's slug").meta({ examples: ["guides"] });
 
 export const getCollectionTranslations = defineOperation({
   name: "collections.getTranslations",
@@ -64,7 +141,7 @@ export const getCollectionTranslations = defineOperation({
   scope: "read",
   access: "team",
   input: z.object({ slug: collectionSlug }),
-  output: z.object({ translations: z.array(translationOutput).describe("One per language, in the project's order") }).describe("The collection's translations"),
+  output: z.object({ translations: z.array(collectionTranslation).describe("One per language, in the project's order") }).describe("The collection's translations"),
   run: async ({ projectId }, { slug }) => ({ translations: await collectionTranslations(projectId, slug) }),
 });
 
@@ -85,47 +162,41 @@ export const updateCollectionTranslation = defineOperation({
     name: collectionName.optional().describe("Its name there, up to 60 characters (required unless kept up to date)").meta({ examples: ["Erste Schritte"] }),
     description: z.string().trim().max(300).optional().describe("Its description there, up to 300 characters; left out, it stays as it was there").meta({ examples: ["Die Grundlagen in fünf Minuten."] }),
   }),
-  output: translationOutput,
+  output: collectionTranslation,
   example: { keepUpToDate: false, name: "Erste Schritte", description: "Die Grundlagen in fünf Minuten." },
-  run: async ({ projectId }, input) => {
-    if (input.keepUpToDate && !aiEnabled()) {
-      throw new OperationError(409, "ai_off", "Translating needs AI, and it's off on this server");
-    }
-    if (!input.keepUpToDate && !input.name) {
-      throw new OperationError(400, "invalid_input", "Give it a name");
-    }
-    const saved = await prisma.$transaction(async (tx) => {
-      // As the labels job's write locks them: the language's row (shared), then the collection's.
-      const [found] = await tx.$queryRaw<{ code: string }[]>`SELECT code FROM project_language WHERE "projectId" = ${projectId} AND code = ${input.language} FOR SHARE`;
-      if (!found) {
-        throw new OperationError(400, "invalid_input", `${LANGUAGES[input.language].name} isn't one of your languages`);
-      }
-      const [row] = await tx.$queryRaw<{ id: string; name: string; description: string; translations: LabelTranslations; sample: boolean }[]>`
-        SELECT id, name, description, translations, sample FROM collection WHERE "projectId" = ${projectId} AND slug = ${input.slug} FOR UPDATE`;
-      if (!row) {
-        throw new OperationError(404, "not_found", `There's no collection “${input.slug}”`);
-      }
-      // Sample content is never translated (as sample articles aren't): only the team's own there.
-      if (input.keepUpToDate && row.sample) {
-        throw new OperationError(409, "sample", "Sample collections aren't translated: write its name there instead");
-      }
-      const was = row.translations[input.language];
-      // What's there now, as readers get it: the team's own, or one kept up to date made from its text as it is (labelIn).
-      // An old one (made from text since changed) is never kept as the team's: it would read as current, and never be made again.
-      const current = !!was && (!was.auto || was.source === labelSource(row.name, row.description));
-      // Kept up to date: made again (its source cleared, so the job finds it), readers seeing the default language's meanwhile.
-      const entry: LabelTranslation = input.keepUpToDate
-        ? { name: was?.name ?? "", description: was?.description ?? "", auto: true, source: was?.auto && was.source === labelSource(row.name, row.description) ? was.source : null }
-        : // A description left out stays as it was there.
-          { name: input.name!, description: input.description ?? (current ? (was.description ?? "") : ""), auto: false, source: labelSource(row.name, row.description) };
-      const translations = { ...row.translations, [input.language]: entry };
-      await tx.collection.update({ where: { id: row.id }, data: { translations: translations as Prisma.InputJsonValue } });
-      const { automatic } = await tx.projectLanguage.findUniqueOrThrow({ where: { projectId_code: { projectId, code: input.language } }, select: { automatic: true } });
-      return { name: row.name, description: row.description, translations, sample: row.sample, automatic };
-    });
-    if (input.keepUpToDate) {
-      await queueLabels(projectId, [input.language]);
-    }
-    return translationIn(saved, input.language, saved.automatic);
-  },
+  run: ({ projectId }, input) => saveTranslation(COLLECTION, projectId, input),
+});
+
+export const getTabTranslations = defineOperation({
+  name: "tabs.getTranslations",
+  title: "Get tab translations",
+  summary: "A docs tab's name in each of the project's languages: the translation readers see, and whether it's kept up to date.",
+  method: "GET",
+  path: "/tabs/{slug}/translations",
+  scope: "read",
+  access: "team",
+  input: z.object({ slug: tabSlug }),
+  output: z.object({ translations: z.array(tabTranslation).describe("One per language, in the project's order") }).describe("The tab's translations"),
+  run: async ({ projectId }, { slug }) => ({ translations: await tabTranslations(projectId, slug) }),
+});
+
+export const updateTabTranslation = defineOperation({
+  name: "tabs.updateTranslation",
+  title: "Update tab translation",
+  summary:
+    "Set a docs tab's name in one of the project's languages: the team's own (never replaced), or kept up to date (`keepUpToDate`), translated again in the background from its name (costs credits where they're on).",
+  method: "PATCH",
+  path: "/tabs/{slug}/translations/{language}",
+  scope: "write",
+  access: "team",
+  errors: [409],
+  input: z.object({
+    slug: tabSlug,
+    language,
+    keepUpToDate: z.boolean().describe("Kept up to date by AI (not with AI off); the name sent is then left out").meta({ examples: [false] }),
+    name: z.string().trim().min(1, "Name is required").max(40).optional().describe("Its name there, up to 40 characters (required unless kept up to date)").meta({ examples: ["Anleitungen"] }),
+  }),
+  output: tabTranslation,
+  example: { keepUpToDate: false, name: "Anleitungen" },
+  run: async ({ projectId }, input) => tabOnly(await saveTranslation(TAB, projectId, input)),
 });
