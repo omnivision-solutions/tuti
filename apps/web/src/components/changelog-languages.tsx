@@ -497,7 +497,7 @@ function BehindActions({ behind, defaultName, dirty }: { behind: Behind; default
                       const result = await update();
                       // Translated in the background: the sections show once it's done (reading the page again).
                       if (result.error) toast.error(result.error);
-                      else toast.success("Translating those sections…");
+                      else toast.success("Sections sent for translation");
                     });
                   }}
                 >

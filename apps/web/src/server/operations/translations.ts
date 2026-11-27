@@ -291,6 +291,8 @@ const behindForEnglish = (read: z.output<typeof translationOutput>) =>
 
 /** How many revisions back Show changes looks for the English a section was edited against. */
 const CHANGES_LOOK_BACK = 200;
+/** How many of them it reads at a time. */
+const CHANGES_PAGE = 20;
 
 /**
  * Show changes (docs/plan.md L11): for each of a version's sections behind because English changed there (published or in
@@ -316,20 +318,25 @@ export async function behindChanges(projectId: string, slug: string, language: (
       const hashOf = (key: string) =>
         sectionHash(drafted, key) ?? draft?.removedHashes?.[key] ?? sectionHash(published, key) ?? (version.removedHashes as Record<string, string>)[key] ?? null;
       const before = new Map<string, Doc>();
-      // ponytail: reads up to CHANGES_LOOK_BACK revisions, newest first; an edit older than that shows English now only.
-      const revisions = await db.articleRevision.findMany({
-        where: { articleId },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: { body: true, content: true },
-        take: CHANGES_LOOK_BACK,
-      });
-      for (const revision of revisions) {
-        for (const part of sourceSections((revision.content as Doc | null) ?? fromPlainText(revision.body))) {
-          if (keys.includes(part.key) && !before.has(part.key) && hashOf(part.key) === part.hash) {
-            before.set(part.key, { type: "doc", content: part.blocks });
+      // ponytail: reads up to CHANGES_LOOK_BACK revisions, newest first, a page at a time, stopping once every section is
+      // found; an edit older than that shows English now only.
+      for (let skip = 0; skip < CHANGES_LOOK_BACK && before.size < keys.length; skip += CHANGES_PAGE) {
+        const revisions = await db.articleRevision.findMany({
+          where: { articleId },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { body: true, content: true },
+          skip,
+          take: CHANGES_PAGE,
+        });
+        for (const revision of revisions) {
+          for (const part of sourceSections((revision.content as Doc | null) ?? fromPlainText(revision.body))) {
+            if (keys.includes(part.key) && !before.has(part.key) && hashOf(part.key) === part.hash) {
+              before.set(part.key, { type: "doc", content: part.blocks });
+            }
           }
+          if (before.size === keys.length) break;
         }
-        if (before.size === keys.length) break;
+        if (revisions.length < CHANGES_PAGE) break;
       }
       const now = new Map(source.parts.map((part) => [part.key, part.blocks]));
       // `added`: English has it and the version never did (nothing to compare with).

@@ -422,7 +422,7 @@ test("an article's version behind English: the orange line says in how many sect
   expect(document.body.textContent).toContain("Translate those sections again?");
   await act(async () => button("Translate again").click());
   expect(update).toHaveBeenCalledTimes(1);
-  expect(toast.success).toHaveBeenCalledWith("Translating those sections…");
+  expect(toast.success).toHaveBeenCalledWith("Sections sent for translation");
 });
 
 test("Publish with sections of the draft behind English asks first: each ticked takes the new translation, sent with the version's form", async () => {
