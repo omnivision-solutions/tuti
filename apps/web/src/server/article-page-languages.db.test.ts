@@ -102,15 +102,23 @@ test("not translated: the default language's version, its `lang`, and a line in 
   expect(text(line?.props.children)).toContain("Cette page n'est pas encore disponible en français");
 });
 
-test("a version kept up to date whose source changed but wasn't retranslated yet reads as not translated, never its old text", async () => {
+test("a version kept up to date whose source changed but wasn't retranslated yet reads as not translated, never its old text, and hreflang and the sitemap leave it out", async () => {
   const article = await prisma.article.findUniqueOrThrow({ where: { id: articleId } });
   // Made from the text as it was: its hash is another one now.
   await prisma.articleTranslation.updateMany({ where: { articleId }, data: { automatic: true, sourceHash: "old" } });
   at("de");
   // Its German address now finds it by its German slug, but shows the English.
   expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "article", article: { title: "Billing", untranslated: true } });
-  // Made from the text as it is: shown again.
+  // Nor do hreflang and the sitemap point at it.
+  const sitemapXml = async () => (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+  at(null);
+  expect((await generateMetadata(params("billing"))).alternates?.languages?.de).toBeUndefined();
+  expect(await sitemapXml()).not.toContain(`${portal}/de/docs/abrechnung`);
+  // Made from the text as it is: shown again, and pointed at.
   await prisma.articleTranslation.updateMany({ where: { articleId }, data: { sourceHash: translationSource(article).hash } });
+  expect((await generateMetadata(params("billing"))).alternates?.languages).toMatchObject({ de: `${portal}/de/docs/abrechnung` });
+  expect(await sitemapXml()).toContain(`<loc>${portal}/de/docs/abrechnung</loc>`);
+  at("de");
   expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "article", article: { title: "Abrechnung" } });
 });
 
