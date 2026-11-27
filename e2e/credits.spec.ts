@@ -66,6 +66,14 @@ test("out of credits, each feature pauses its own way; with credits again, a pau
   const askAi = owner.getByRole("toolbar", { name: "Text selection" }).getByRole("button", { name: "Ask AI" });
   await expect(askAi).toHaveAttribute("aria-disabled", "true");
   await expect(askAi).toHaveAccessibleDescription("This project is out of credits");
+  // A new article's too, before its first save.
+  await owner.goto(`/app/${slug}/docs/new`);
+  const draft = owner.getByRole("textbox", { name: "Article" });
+  await draft.click();
+  await owner.keyboard.type("Invites expire after a week.");
+  await draft.getByText("Invites expire").selectText();
+  await expect(askAi).toHaveAttribute("aria-disabled", "true");
+  await expect(askAi).toHaveAccessibleDescription("This project is out of credits");
 
   // The inbox's Summarize says why it's off, in the menu itself (a disabled item shows no tooltip).
   await api("/conversations", { email: `e2e-kim-${id}@example.com`, subject: "Invoices", body: "Where's my invoice?" });
