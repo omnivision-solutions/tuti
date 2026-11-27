@@ -308,3 +308,18 @@ test("a translated article's English can't crowd an untranslated one out of an a
   expect(sent).not.toContain("Paying 1.");
 });
 
+test("at a language's address the query is embedded once per search, as the reader types, on the results page and for an answer", async () => {
+  withAi();
+  await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  at("de");
+  const embedded = async (run: () => Promise<unknown>) => {
+    const before = model.embeddings.received;
+    await run();
+    return model.embeddings.received - before;
+  };
+  expect(await embedded(() => searchDocsAsTyped(project.slug, "Karte"))).toBe(1);
+  expect(await embedded(() => search("Karte"))).toBe(1);
+  // (Nothing close enough: "I don't know", the model not asked.)
+  expect(await embedded(() => answerQuestion(project.id, "asker", "Wie zahle ich mit Karte?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } }))).toBe(1);
+});
+

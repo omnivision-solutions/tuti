@@ -1,7 +1,6 @@
 import { type ArticleListing, Prisma, prisma } from "@tuti/db";
 import { FAILED_SEARCHES_PER_DAY } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
-import { cache } from "react";
 
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { visibleArticleSql, visibleReferenceSql } from "@/lib/reader-groups";
@@ -29,14 +28,11 @@ const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
 export const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
-/**
- * A search's query as a vector, embedded once per request: at a language's address the default language's search and the
- * reader's language's (translated-search.ts) share it, so the provider is asked once (and both match by meaning, or neither).
- */
-export const queryVector = cache(async (query: string, timeoutMs: number): Promise<string> => {
+/** A search's query as a vector (SearchOptions's `vector` shares one between searches). */
+export async function queryVector(query: string, timeoutMs: number): Promise<string> {
   const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
   return toVectorLiteral(embedding!);
-});
+}
 
 /**
  * How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, whether it matches by
@@ -49,6 +45,11 @@ export type SearchOptions = {
   meaning?: boolean;
   unlisted?: boolean;
   operations?: boolean;
+  /**
+   * The query's vector, already being embedded (queryVector): at a language's address the default language's search and the
+   * reader's language's share one, so the provider is asked once and both match by meaning, or neither. A failed one: words.
+   */
+  vector?: Promise<string>;
   /**
    * At a language's address, how a translation is known to be current: by working it out from the English as it is (the
    * default), or, false as the reader types (no article's English read per keystroke), only one the team writes counts (it's
@@ -72,11 +73,11 @@ export async function searchDocs(
   query: string,
   limit: number,
   reader: Reader,
-  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true, unlisted = false, operations = false }: SearchOptions = {},
+  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true, unlisted = false, operations = false, vector }: SearchOptions = {},
 ): Promise<DocsSearchResult[]> {
   const listed = unlisted ? WITH_A_PAGE : Prisma.sql`a.listing = 'EVERYWHERE'`;
   const [byMeaning, byWords] = await Promise.all([
-    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs, listed, operations) : [],
+    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, vector ?? queryVector(query, embedTimeoutMs), listed, operations) : [],
     wordMatches(projectId, query, limit, reader, listed, operations),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
@@ -161,9 +162,12 @@ async function searchFor(projectId: string, query: string, limit: number, reader
   // times as many translations: versions made from an older English can't fill the window before a current one (past that,
   // a current one is found by its English where that matches, by meaning with embeddings).
   // ponytail: a bounded window; the English's hash stored on the article (L10's follow-up) filters them in the query.
+  // The query embedded once for both (a failure there leaves both matching words).
+  const vector = options.meaning !== false && embeddingsEnabled() ? queryVector(query, options.embedTimeoutMs ?? SEARCH_EMBED_TIMEOUT_MS) : undefined;
+  vector?.catch(() => {});
   const [translated, inDefault] = await Promise.all([
-    searchTranslatedDocs(projectId, language, query, limit * 4, reader, options),
-    searchDocs(projectId, query, limit * 2, reader, { ...options, log: false }),
+    searchTranslatedDocs(projectId, language, query, limit * 4, reader, { ...options, vector }),
+    searchDocs(projectId, query, limit * 2, reader, { ...options, log: false, vector }),
   ]);
   const slugs = [...new Set([...translated, ...inDefault].filter((result) => !result.method).map((result) => result.slug))];
   const articles = slugs.length > 0 ? await prisma.article.findMany({ where: { projectId, slug: { in: slugs }, deletedAt: null }, select: { id: true, slug: true } }) : [];
@@ -257,13 +261,13 @@ async function meaningMatches(
   query: string,
   limit: number,
   reader: Reader,
-  timeoutMs: number,
+  embedding: Promise<string>,
   listed: Prisma.Sql,
   operations: boolean,
 ): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
-    vector = await queryVector(query, timeoutMs);
+    vector = await embedding;
   } catch (error) {
     log.warn("Embedding a docs search failed; matching words only", { error });
     return [];
