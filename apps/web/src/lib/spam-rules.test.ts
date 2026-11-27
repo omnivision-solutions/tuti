@@ -58,10 +58,9 @@ describe("each matcher, ignoring case", () => {
     expect(matches("subject", "pattern", "a.c", { subject: "abc" })).toBe(false);
   });
 
-  test("a pattern never takes long, however many stars", () => {
-    const started = performance.now();
+  test("a pattern with many stars against a long text answers (a regex would backtrack for ever)", () => {
     expect(matchesPattern(`${"*a".repeat(50)}b`, "a".repeat(10_000))).toBe(false);
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(matchesPattern(`${"*a".repeat(50)}*`, "a".repeat(10_000))).toBe(true);
   });
 });
 

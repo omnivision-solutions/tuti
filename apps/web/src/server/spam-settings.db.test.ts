@@ -14,7 +14,7 @@ import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { upsertProjectUser } from "./project-users";
-import { SPAM_CHECKS } from "./spam";
+import { arrivalOf, SPAM_CHECKS, spamVerdict } from "./spam";
 import type { SpamRuleField, SpamRuleMatcher } from "@/lib/spam-rules";
 import { widgetStartConversation } from "./widget-inbox";
 
@@ -136,6 +136,18 @@ test("trust and Not spam spare the rules on what it says, never those on who sen
   expect((await call(updateConversation, admin, { number: 3, spam: false })).notice).toBe("Nothing is remembered about its sender: a message your rules match still goes to Spam.");
   expect(await widgetStartConversation(project.slug, {}, "Crypto again", "e2e-typed@strangers.example")).toMatchObject({ number: 7 });
   expect((await filed()).slice(5)).toEqual(["inbox", "rule"]);
+});
+
+test("a rule on the sender's name reads a signed-in account's name, skipping one of the project's users", async () => {
+  const { projectId, update } = await setup();
+  await update({ addRules: [rule("sender_name", "contains", "giveaway")] });
+  // A Tuti account nobody vouched for isn't trusted: its name is checked.
+  const stranger = await signUp("Big Giveaway");
+  actAs(null);
+  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, stranger.id))).toMatchObject({ spam: true, reason: "rule", phrase: "Sender name contains giveaway" });
+  // One of the project's own users with such a name is trusted, so spared.
+  const fan = await upsertProjectUser(projectId, "user-77", { name: "Giveaway Fan", email: "e2e-fan@example.com" });
+  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, fan))).toMatchObject({ spam: false, check: "trusted" });
 });
 
 test("rules through spam.update: added and removed by ID, the same rule once, block and allow as rules and the allowed list, and a removed rule's next mail arrives", async () => {
