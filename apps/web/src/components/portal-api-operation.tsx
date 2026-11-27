@@ -29,7 +29,11 @@ import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
 import { type ApiReferencePage, apiReferencePage, firstLine, markdownDoc } from "@/server/api-reference-queries";
 import { docsContents, type DocsTree, docsTree } from "@/server/docs-queries";
-import { portalLinks } from "@/server/portal-base";
+import { portalLinks, teamLanguage } from "@/server/portal-base";
+import { pageTranslator } from "@/server/portal-language";
+
+/** The page's own words (the spec's text is the team's). */
+type Translate = Awaited<ReturnType<typeof pageTranslator<"apiReference">>>["t"];
 
 type Reference = Extract<ApiReferencePage, { kind: "reference" }>;
 
@@ -38,7 +42,8 @@ async function Markdown({ text, className }: { text: string | undefined; classNa
   if (!text?.trim()) {
     return null;
   }
-  return <RichText doc={await markdownDoc(text)} className={cn("rich-text break-words", className)} />;
+  // The spec's words: the team's language.
+  return <RichText doc={await markdownDoc(text)} lang={await teamLanguage()} className={cn("rich-text break-words", className)} />;
 }
 
 /**
@@ -49,6 +54,9 @@ async function Markdown({ text, className }: { text: string | undefined; classNa
  */
 async function ReferenceTree({ page, references, current }: { page: Reference; references: DocsTree["references"]; current: string | null }) {
   const at = await portalLinks();
+  const { t } = await pageTranslator("apiReference");
+  // The spec's and the team's names: the team's language.
+  const team = await teamLanguage();
   const { reference, groups, operations } = page;
   const rest = "rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground";
   const byGroup = Map.groupBy(operations, (operation) => operation.group);
@@ -63,9 +71,9 @@ async function ReferenceTree({ page, references, current }: { page: Reference; r
               className={cn(rest, "flex items-center justify-between gap-2 aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground")}
             >
               <span className={cn("min-w-0 break-words", operation.deprecated && "line-through")}>
-                {operation.title}
+                <span lang={team}>{operation.title}</span>
                 {/* The line through it isn't read out. */}
-                {operation.deprecated && <span className="sr-only"> (deprecated)</span>}
+                {operation.deprecated && <span className="sr-only"> {t("deprecatedNote")}</span>}
               </span>
               <Method kind={operation.kind} short />
             </Link>
@@ -77,7 +85,9 @@ async function ReferenceTree({ page, references, current }: { page: Reference; r
   const folder = (key: string, name: string, isOpen: boolean, inside: ReactNode) => (
     <details key={key} open={isOpen} className="group/collection">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 font-medium hover:bg-muted [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0 break-words">{name}</span>
+        <span lang={team} className="min-w-0 break-words">
+          {name}
+        </span>
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open/collection:rotate-90" />
       </summary>
       <div className="my-1 ml-2.5">{inside}</div>
@@ -90,12 +100,14 @@ async function ReferenceTree({ page, references, current }: { page: Reference; r
       aria-current={current === null ? "page" : undefined}
       className={cn(rest, "aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground")}
     >
-      Overview
+      {t("overview")}
     </Link>
   );
   const headings = groups.map((group) => (
     <div key={group.key} role="group" aria-label={group.name} className="flex flex-col gap-0.5">
-      <p className="px-2.5 pt-2 pb-1 text-[0.8125rem] font-medium break-words">{group.name}</p>
+      <p lang={team} className="px-2.5 pt-2 pb-1 text-[0.8125rem] font-medium break-words">
+        {group.name}
+      </p>
       {inGroup(group.key)}
     </div>
   ));
@@ -119,7 +131,7 @@ async function ReferenceTree({ page, references, current }: { page: Reference; r
     other.slug === reference.slug ? (
       <Fragment key={other.slug}>{own}</Fragment>
     ) : (
-      <Link key={other.slug} href={at(`/docs/${other.slug}`)} title={other.name} className={cn(rest, "font-medium break-words text-foreground")}>
+      <Link key={other.slug} href={at(`/docs/${other.slug}`)} title={other.name} lang={team} className={cn(rest, "font-medium break-words text-foreground")}>
         {other.name}
       </Link>
     ),
@@ -127,23 +139,19 @@ async function ReferenceTree({ page, references, current }: { page: Reference; r
 }
 
 /** How one of the spec's ways of signing a request reads. */
-function authLabel(auth: ApiAuth): ReactNode {
-  const named = (what: string) => (
-    <>
-      API key in the <code className="font-mono text-[0.9em] text-foreground">{auth.name}</code> {what}
-    </>
-  );
+function authLabel(auth: ApiAuth, t: Translate): ReactNode {
+  const code = (name: ReactNode) => <code className="font-mono text-[0.9em] text-foreground">{name}</code>;
   switch (auth.kind) {
     case "bearer":
-      return "Bearer token";
+      return t("bearer");
     case "basic":
-      return "Basic authentication";
+      return t("basic");
     case "header":
-      return named("header");
+      return t.rich("apiKeyHeader", { name: auth.name, code });
     case "query":
-      return named("query parameter");
+      return t.rich("apiKeyQuery", { name: auth.name, code });
     case "cookie":
-      return named("cookie");
+      return t.rich("apiKeyCookie", { name: auth.name, code });
     case "oauth2":
       return "OAuth 2.0";
     case "openIdConnect":
@@ -157,7 +165,8 @@ function authLabel(auth: ApiAuth): ReactNode {
  * by the rest of its schemes, it would read as if they were enough. Nothing for an operation with no way left: it needs
  * none, or only ones that can't be described, and the shape doesn't say which, so the page never says "none needed".
  */
-function Signing({ operation, schemes }: { operation: ApiOperation; schemes: ApiAuth[] }) {
+async function Signing({ operation, schemes }: { operation: ApiOperation; schemes: ApiAuth[] }) {
+  const { t } = await pageTranslator("apiReference");
   const ways = operation.auth
     .filter((keys) => keys.length > 0)
     .map((keys) => keys.map((key) => schemes.find((scheme) => scheme.key === key)))
@@ -167,19 +176,19 @@ function Signing({ operation, schemes }: { operation: ApiOperation; schemes: Api
   }
   return (
     <p className="text-sm text-muted-foreground">
-      <span className="font-medium text-foreground">Authorization</span>{" "}
+      <span className="font-medium text-foreground">{t("authorization")}</span>{" "}
       {ways.map((way, i) => (
         <Fragment key={i}>
-          {i > 0 && " or "}
+          {i > 0 && ` ${t("or")} `}
           {way.map((scheme, j) => (
             <Fragment key={scheme.key}>
-              {j > 0 && " and "}
-              {authLabel(scheme)}
+              {j > 0 && ` ${t("and")} `}
+              {authLabel(scheme, t)}
             </Fragment>
           ))}
         </Fragment>
       ))}
-      {operation.auth.some((keys) => keys.length === 0) && ", or none"}
+      {operation.auth.some((keys) => keys.length === 0) && t("orNone")}
     </p>
   );
 }
@@ -229,27 +238,28 @@ function Allowed({ label, values }: { label: string; values: unknown[] | undefin
  * for an array of plain values what each item is held to. A field's, and a body's or response's own (one that's an
  * array of strings or a plain value has nothing else to show).
  */
-function Details({ schema, description }: { schema: ApiSchema; description?: string }) {
+async function Details({ schema, description }: { schema: ApiSchema; description?: string }) {
+  const { t } = await pageTranslator("apiReference");
   const item = plainItems(schema);
-  const limits = item && [item.format, item.nullable && "nullable", item.constraints].filter(Boolean).join(" · ");
+  const limits = item && [item.format, item.nullable && t("nullable"), item.constraints].filter(Boolean).join(" · ");
   return (
     <>
       <Markdown text={description || schema.description} className="gap-2 text-[0.9375rem] text-muted-foreground" />
       {schema.default !== undefined && (
         <p className="text-[0.8125rem] text-muted-foreground">
-          Default: <Value>{literal(schema.default)}</Value>
+          {t("defaultIs")} <Value>{literal(schema.default)}</Value>
         </p>
       )}
-      <Allowed label="One of" values={schema.enum} />
-      {limits && <p className="text-[0.8125rem] text-muted-foreground">Each item: {limits}</p>}
+      <Allowed label={t("oneOf")} values={schema.enum} />
+      {limits && <p className="text-[0.8125rem] text-muted-foreground">{t("eachItem", { limits })}</p>}
       <Markdown text={item?.description} className="gap-2 text-[0.9375rem] text-muted-foreground" />
-      <Allowed label="Each item one of" values={item?.enum} />
+      <Allowed label={t("eachItemOneOf")} values={item?.enum} />
     </>
   );
 }
 
 /** A schema's type in words, with its format and limits. */
-const typeLine = (schema: ApiSchema) => [schema.type, schema.format, schema.nullable && "nullable", schema.constraints];
+const typeLine = (schema: ApiSchema, t: Translate) => [schema.type, schema.format, schema.nullable && t("nullable"), schema.constraints];
 
 /** A body's or a response's schema: what it says of itself, then its fields. */
 function Root({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
@@ -262,7 +272,8 @@ function Root({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
 }
 
 /** A schema's fields, or its shapes each as a row. */
-function Fields({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
+async function Fields({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
+  const { t } = await pageTranslator("apiReference");
   const within = inside(schema);
   if (!within) {
     return null;
@@ -271,7 +282,7 @@ function Fields({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
     <ul className="flex flex-col">
       {"properties" in within
         ? within.properties.map((property) => <Field key={property.name} name={property.name} required={property.required} schema={property} graphql={graphql} />)
-        : within.oneOf.map((option, i) => <Field key={i} name={`Option ${i + 1}`} schema={option} graphql={graphql} />)}
+        : within.oneOf.map((option, i) => <Field key={i} name={t("option", { number: i + 1 })} schema={option} graphql={graphql} />)}
     </ul>
   );
 }
@@ -281,28 +292,28 @@ function Fields({ schema, graphql }: { schema: ApiSchema; graphql?: boolean }) {
  * allowed values, and what's in it behind "Show properties" (as deep as the spec was read: two levels).
  * A named type is only named: types have no pages yet. GraphQL's types have fields, not properties.
  */
-function Field({ name, required = false, description, schema, graphql }: { name: string; required?: boolean; description?: string; schema: ApiSchema; graphql?: boolean }) {
+async function Field({ name, required = false, description, schema, graphql }: { name: string; required?: boolean; description?: string; schema: ApiSchema; graphql?: boolean }) {
+  const { t } = await pageTranslator("apiReference");
   const within = inside(schema);
-  const count = within && ("properties" in within ? within.properties.length : within.oneOf.length);
-  const what =
-    within && ("properties" in within ? (graphql ? (count === 1 ? "field" : "fields") : count === 1 ? "property" : "properties") : count === 1 ? "option" : "options");
+  const count = within ? ("properties" in within ? within.properties.length : within.oneOf.length) : 0;
+  const what = within && ("properties" in within ? (graphql ? "Fields" : "Properties") : "Options");
   return (
     <li className="flex flex-col gap-1.5 border-t border-divider py-3">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <code className={cn("font-mono text-sm font-medium break-all", schema.deprecated && "line-through")}>{name}</code>
         <span className="text-[0.8125rem] break-words text-muted-foreground">
-          {typeLine(schema).filter(Boolean).join(" · ")}
+          {typeLine(schema, t).filter(Boolean).join(" · ")}
         </span>
-        {required && <span className="text-xs font-medium text-muted-foreground">required</span>}
-        {schema.deprecated && <span className="text-xs font-medium text-muted-foreground">deprecated</span>}
+        {required && <span className="text-xs font-medium text-muted-foreground">{t("required")}</span>}
+        {schema.deprecated && <span className="text-xs font-medium text-muted-foreground">{t("deprecated")}</span>}
       </div>
       <Details schema={schema} description={description} />
-      {within && (
+      {what && (
         // Its own toggle only ([open]>summary>): a named group would follow any open field it's in.
         <details>
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
-            <span className="[[open]>summary>&]:hidden">Show</span>
-            <span className="hidden [[open]>summary>&]:inline">Hide</span> {count} {what}
+            <span className="[[open]>summary>&]:hidden">{t(`show${what}`, { count })}</span>
+            <span className="hidden [[open]>summary>&]:inline">{t(`hide${what}`, { count })}</span>
             <ChevronRightIcon aria-hidden className="size-3.5 transition-transform [[open]>summary>&]:rotate-90" />
           </summary>
           <div className="mt-2 ml-1 border-l border-divider pl-4">
@@ -329,12 +340,12 @@ function Section({ title, note, children }: { title: string; note?: ReactNode; c
 }
 
 /** Where parameters go, in the order they're listed, and what each kind is called. */
-const PLACES: [ApiParam["in"], string][] = [
-  ["path", "Path parameters"],
-  ["query", "Query parameters"],
-  ["header", "Headers"],
-  ["cookie", "Cookies"],
-  ["argument", "Arguments"],
+const PLACES: [ApiParam["in"], "pathParameters" | "queryParameters" | "headers" | "cookies" | "arguments"][] = [
+  ["path", "pathParameters"],
+  ["query", "queryParameters"],
+  ["header", "headers"],
+  ["cookie", "cookies"],
+  ["argument", "arguments"],
 ];
 
 /** A status's dot: the Completed status's green for success, orange for the caller's mistakes, red for the server's. */
@@ -358,16 +369,17 @@ const exampleText = (example: unknown, contentType: string | null) =>
  * Beside the page: the request as cURL, JavaScript and Python, and each response's example by status. GraphQL's: the
  * query first among them, its variables, and what it answers under `data`.
  */
-function Examples({ page, operation }: { page: Reference; operation: ApiOperation }) {
+async function Examples({ page, operation }: { page: Reference; operation: ApiOperation }) {
+  const { t } = await pageTranslator("apiReference");
   const request = requestExamples(page.doc, operation, { base: page.reference.baseUrl ?? undefined });
   const requests = [
-    ...(operation.query ? [{ name: "Query", code: operation.query.text }] : []),
+    ...(operation.query ? [{ name: t("query"), code: operation.query.text }] : []),
     { name: "cURL", code: request.curl },
     { name: "JavaScript", code: request.javascript },
     { name: "Python", code: request.python },
   ];
   const responses = operation.query
-    ? [{ name: "Response", code: JSON.stringify(graphqlResponse(operation), null, 2) }]
+    ? [{ name: t("response"), code: JSON.stringify(graphqlResponse(operation), null, 2) }]
     : operation.responses
         .filter((response) => response.example !== undefined)
         // ponytail: the tabs' styles show eight (MAX_CODE_TABS); a ninth status's example is in no tab, its fields still under Responses.
@@ -377,16 +389,16 @@ function Examples({ page, operation }: { page: Reference; operation: ApiOperatio
   return (
     <>
       <div className="flex min-w-0 flex-col gap-4">
-        <section aria-label="Request example">
+        <section aria-label={t("requestExample")}>
           <RichText doc={codeDoc(requests)} className="rich-text article-text" />
         </section>
         {variables && (
-          <section aria-label="Variables">
-            <RichText doc={codeDoc([{ name: "Variables", code: variables }])} className="rich-text article-text" />
+          <section aria-label={t("variables")}>
+            <RichText doc={codeDoc([{ name: t("variables"), code: variables }])} className="rich-text article-text" />
           </section>
         )}
         {responses.length > 0 && (
-          <section aria-label="Response example">
+          <section aria-label={t("responseExample")}>
             <RichText doc={codeDoc(responses)} className="rich-text article-text" />
           </section>
         )}
@@ -402,6 +414,8 @@ function Examples({ page, operation }: { page: Reference; operation: ApiOperatio
  * itself), and whole, links and all, once it's open, when it has a link.
  */
 async function ResponseRow({ response }: { response: ApiResponse }) {
+  const team = await teamLanguage();
+  const { t } = await pageTranslator("apiReference");
   const description = response.description.trim() ? await markdownDoc(response.description) : null;
   const text = "gap-2 text-[0.9375rem]";
   const status = (
@@ -417,18 +431,22 @@ async function ResponseRow({ response }: { response: ApiResponse }) {
           <summary className="flex cursor-pointer list-none items-center gap-2.5 py-3 [&::-webkit-details-marker]:hidden">
             <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open/response:rotate-90" />
             {status}
-            {description && <span className="min-w-0 text-[0.9375rem] break-words">{toPlainText(description)}</span>}
+            {description && (
+              <span lang={team} className="min-w-0 text-[0.9375rem] break-words">
+                {toPlainText(description)}
+              </span>
+            )}
           </summary>
           <div className="flex flex-col gap-2 pb-3 pl-6.5">
-            {description && JSON.stringify(description).includes('"type":"link"') && <RichText doc={description} className={cn("rich-text break-words", text)} />}
-            <p className="text-[0.8125rem] text-muted-foreground">{[response.contentType, ...typeLine(response.schema)].filter(Boolean).join(" · ")}</p>
+            {description && JSON.stringify(description).includes('"type":"link"') && <RichText doc={description} lang={team} className={cn("rich-text break-words", text)} />}
+            <p className="text-[0.8125rem] text-muted-foreground">{[response.contentType, ...typeLine(response.schema, t)].filter(Boolean).join(" · ")}</p>
             <Root schema={response.schema} />
           </div>
         </details>
       ) : (
         <div className="flex items-baseline gap-2.5 py-3 pl-6.5">
           {status}
-          {description && <RichText doc={description} className={cn("rich-text min-w-0 break-words", text)} />}
+          {description && <RichText doc={description} lang={team} className={cn("rich-text min-w-0 break-words", text)} />}
         </div>
       )}
     </li>
@@ -466,6 +484,8 @@ async function tabTree(project: string, page: Reference) {
  */
 export async function ApiOperationPage({ project, page, operation }: { project: string; page: Reference; operation: ApiOperation }) {
   const at = await portalLinks();
+  const { t } = await pageTranslator("apiReference");
+  const team = await teamLanguage();
   const tree = await tabTree(project, page);
   const group = page.groups.find((g) => g.key === operation.group);
   const openapi = page.doc.format === "openapi";
@@ -486,23 +506,25 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             {/* The way up, and the page's actions at the row's end on wide screens, under the title on phones (as an article's). */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                <Link href={at(`/docs/${page.reference.slug}`)} className="truncate hover:text-foreground">
+                <Link href={at(`/docs/${page.reference.slug}`)} lang={team} className="truncate hover:text-foreground">
                   {page.reference.name}
                 </Link>
                 {group && (
                   <>
                     <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
-                    <span className="truncate font-medium text-foreground">{group.name}</span>
+                    <span lang={team} className="truncate font-medium text-foreground">
+                      {group.name}
+                    </span>
                   </>
                 )}
               </p>
               <div className="max-sm:hidden">{actions}</div>
             </div>
-            <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
+            <h1 id={ARTICLE_TITLE_ID} lang={team} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
               {operation.title}
             </h1>
             <div className="w-fit sm:hidden">{actions}</div>
-            {operation.deprecated && <span className="w-fit rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">Deprecated</span>}
+            {operation.deprecated && <span className="w-fit rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">{t("deprecatedBadge")}</span>}
             <Markdown text={operation.description} className="article-text gap-4 text-foreground" />
             <div className="mt-1 flex items-center gap-3 rounded-xl bg-card px-4 py-3 shadow-card ring-1 ring-card-edge">
               <Method kind={operation.kind} />
@@ -525,13 +547,13 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             </div>
             {openapi && <Signing operation={operation} schemes={page.doc.auth} />}
             {/* Only where its queries and mutations can be tried: elsewhere nothing is, and the note would single it out. */}
-            {operation.kind === "subscription" && page.reference.tryIt && tryServers(page.doc, operation, page.reference.baseUrl).length > 0 && <p className="text-[0.8125rem] text-muted-foreground">A subscription stays open over a websocket, so it can&apos;t be tried here.</p>}
+            {operation.kind === "subscription" && page.reference.tryIt && tryServers(page.doc, operation, page.reference.baseUrl).length > 0 && <p className="text-[0.8125rem] text-muted-foreground">{t("subscription")}</p>}
           </div>
           {PLACES.map(([place, title]) => {
             const params = operation.params.filter((param) => param.in === place);
             return (
               params.length > 0 && (
-                <Section key={place} title={title}>
+                <Section key={place} title={t(title)}>
                   <ul className="mt-2 flex flex-col">
                     {params.map((param) => (
                       <Field key={param.name} name={param.name} required={param.required} description={param.description} schema={param.schema} graphql={!openapi} />
@@ -542,12 +564,12 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             );
           })}
           {operation.body && (
-            <Section title="Body" note={[operation.body.contentType, ...typeLine(operation.body.schema), operation.body.required && "required"].filter(Boolean).join(" · ")}>
+            <Section title={t("body")} note={[operation.body.contentType, ...typeLine(operation.body.schema, t), operation.body.required && t("required")].filter(Boolean).join(" · ")}>
               <Root schema={operation.body.schema} />
             </Section>
           )}
           {!openapi && returned && (
-            <Section title="Returns">
+            <Section title={t("returns")}>
               <div className="mt-2 flex flex-col gap-1.5">
                 <code className="font-mono text-sm font-medium break-all">{returned.type}</code>
                 <Root schema={returned} graphql />
@@ -555,7 +577,7 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
             </Section>
           )}
           {openapi && operation.responses.length > 0 && (
-            <Section title="Responses">
+            <Section title={t("responses")}>
               <ul className="mt-2 flex flex-col">
                 {operation.responses.map((response) => (
                   <ResponseRow key={response.status} response={response} />
@@ -576,13 +598,21 @@ export async function ApiOperationPage({ project, page, operation }: { project: 
  * An operation (`title`), or without one the reference itself, in a tab this reader may not read but sees with a lock:
  * its title, and what to do, as a locked article's page.
  */
-export function LockedOperation({ page, title }: { page: Extract<ApiReferencePage, { kind: "locked" }>; title?: string }) {
+export async function LockedOperation({ page, title }: { page: Extract<ApiReferencePage, { kind: "locked" }>; title?: string }) {
+  const { t } = await pageTranslator("apiReference");
+  const team = await teamLanguage();
   return (
     <DocsLayout tree={null} current={null}>
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">{title === undefined ? "API reference" : page.reference.name}</p>
-          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
+          {title === undefined ? (
+            <p className="text-sm text-muted-foreground">{t("apiReference")}</p>
+          ) : (
+            <p lang={team} className="text-sm text-muted-foreground">
+              {page.reference.name}
+            </p>
+          )}
+          <h1 id={ARTICLE_TITLE_ID} lang={team} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {title ?? page.reference.name}
           </h1>
         </div>
@@ -613,6 +643,8 @@ function Box({ title, children }: { title: string; children: ReactNode }) {
  */
 export async function ApiReferenceOverview({ project, page }: { project: string; page: Reference }) {
   const at = await portalLinks();
+  const { t } = await pageTranslator("apiReference");
+  const team = await teamLanguage();
   const tree = await tabTree(project, page);
   const { doc, reference, groups, operations } = page;
   const openapi = doc.format === "openapi";
@@ -629,19 +661,19 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
       <article className="flex min-w-0 flex-col gap-8" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            API reference
+            {t("apiReference")}
             <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-              {[doc.version && `Version ${doc.version}`, openapi ? "OpenAPI" : "GraphQL"].filter(Boolean).join(" · ")}
+              {[doc.version && t("version", { version: doc.version }), openapi ? "OpenAPI" : "GraphQL"].filter(Boolean).join(" · ")}
             </span>
           </p>
-          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
+          <h1 id={ARTICLE_TITLE_ID} lang={team} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {reference.name}
           </h1>
           {/* An article's measure, as the page widens on big screens. */}
           <Markdown text={doc.description} className="article-text max-w-[46rem] gap-4 text-muted-foreground" />
         </div>
         <div className={cn("grid gap-4", schemes.length > 0 && "lg:grid-cols-2")}>
-          <Box title="Where requests go">
+          <Box title={t("whereRequestsGo")}>
             {servers.map((server, i) => {
               const address = serverAddress(server, reference.baseUrl ?? undefined);
               return (
@@ -652,29 +684,25 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
                     <div key={name} className="flex flex-col gap-1 text-[0.8125rem] text-muted-foreground">
                       <p className="flex flex-wrap items-center gap-1.5">
                         <Value>{`{${name}}`}</Value>
-                        Default <Value>{variable.default}</Value>
+                        {t("serverDefault")} <Value>{variable.default}</Value>
                       </p>
-                      <Allowed label="One of" values={variable.enum} />
+                      <Allowed label={t("oneOf")} values={variable.enum} />
                       <Markdown text={variable.description} className="gap-2" />
                     </div>
                   ))}
-                  {address.placeholder && <p className="text-[0.8125rem] text-muted-foreground">A placeholder: the spec doesn&apos;t say which host this is on.</p>}
+                  {address.placeholder && <p className="text-[0.8125rem] text-muted-foreground">{t("placeholder")}</p>}
                 </li>
               );
             })}
           </Box>
           {schemes.length > 0 && (
-            <Box title="How requests are signed">
+            <Box title={t("howSigned")}>
               {schemes.map((scheme) => (
                 <li key={scheme.key} className="flex min-w-0 flex-col gap-1.5">
                   <p className="text-sm text-foreground">
-                    {authLabel(scheme)}
-                    {scheme.kind !== "header" && scheme.kind !== "query" && scheme.kind !== "cookie" && (
-                      <>
-                        {" "}
-                        in the <code className="font-mono text-[0.9em]">{scheme.name}</code> header
-                      </>
-                    )}
+                    {scheme.kind !== "header" && scheme.kind !== "query" && scheme.kind !== "cookie"
+                      ? t.rich("inHeader", { what: String(authLabel(scheme, t)), name: scheme.name, code: (name) => <code className="font-mono text-[0.9em]">{name}</code> })
+                      : authLabel(scheme, t)}
                   </p>
                   <Markdown text={scheme.description} className="gap-2 text-sm text-muted-foreground" />
                 </li>
@@ -684,7 +712,7 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
         </div>
         <section aria-labelledby="reference-groups" className="flex flex-col gap-4">
           <h2 id="reference-groups" className="font-sans text-lg font-[650] tracking-[-0.01em]">
-            {openapi ? "Endpoints" : "Operations"}
+            {openapi ? t("endpoints") : t("operations")}
           </h2>
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {groups.map((group) => {
@@ -692,22 +720,24 @@ export async function ApiReferenceOverview({ project, page }: { project: string;
               const more = inGroup.length - CARD_OPERATIONS;
               return (
                 <li key={group.key} className="flex min-w-0 flex-col gap-1 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge">
-                  <h3 className="font-sans text-[1.0625rem] font-semibold break-words">{group.name}</h3>
-                  {descriptions.get(group.key) && <p className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{descriptions.get(group.key)}</p>}
+                  <h3 lang={team} className="font-sans text-[1.0625rem] font-semibold break-words">
+                    {group.name}
+                  </h3>
+                  {descriptions.get(group.key) && <p lang={team} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{descriptions.get(group.key)}</p>}
                   <ul className="mt-2 flex flex-col gap-1">
                     {inGroup.slice(0, CARD_OPERATIONS).map((operation) => (
                       <li key={operation.slug}>
                         <Link href={at(`/docs/${reference.slug}/${operation.slug}`)} className="flex min-w-0 items-baseline gap-2 text-[0.9375rem] hover:underline">
                           {openapi && <Method kind={operation.kind} />}
                           <span className={cn("min-w-0 break-words", operation.deprecated && "line-through")}>
-                            {operation.title}
-                            {operation.deprecated && <span className="sr-only"> (deprecated)</span>}
+                            <span lang={team}>{operation.title}</span>
+                            {operation.deprecated && <span className="sr-only"> {t("deprecatedNote")}</span>}
                           </span>
                         </Link>
                       </li>
                     ))}
                   </ul>
-                  {more > 0 && <p className="mt-1 text-sm text-muted-foreground">+ {more} more</p>}
+                  {more > 0 && <p className="mt-1 text-sm text-muted-foreground">{t("more", { count: more })}</p>}
                 </li>
               );
             })}
