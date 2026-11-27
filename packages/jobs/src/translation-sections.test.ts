@@ -300,3 +300,21 @@ test("Update those sections on a version kept up to date: the team's paragraph s
   const again = withTranslation(back, doc(["", "Neue Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), sourceSections(v3), { published: true });
   expect(texts(docOfSections(again))).toEqual(["Neue Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
 });
+
+test("a section of the team's with no heading, standing for a source section that has one, stays first when the source moves it later", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  // A version the team writes: its first section has no heading, so by position it stands for Setup.
+  const ours: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Unsere Einrichtung" }] }, ...doc(["Abrechnung", "Mit Karte zahlen"]).content!] };
+  const list = versionSections(ours, [], source);
+  expect(list[0]!.meta.key).toBe(source[0]!.key);
+  // English moves Billing ahead of Setup; the team updates only Billing.
+  const v2 = doc(["Billing", "Pay by card or invoice"], ["Setup", "Install it"]);
+  const source2 = sourceSections(v2);
+  const billing = source2.find((section) => section.key.startsWith("Billing"))!.key;
+  const out = withTranslation(list, doc(["Abrechnung", "Per Karte oder Rechnung"], ["Einrichtung", "Installieren"]), source2, { only: new Set([billing]) });
+  expect(texts(docOfSections(out))).toEqual(["Unsere Einrichtung", "Abrechnung", "Per Karte oder Rechnung"]);
+  // Read back as written: its sections and what each stands for kept.
+  const back = versionSections(docOfSections(out), metaOf(out), source2);
+  expect(back.map(({ meta }) => meta.key)).toEqual(out.map(({ meta }) => meta.key));
+});

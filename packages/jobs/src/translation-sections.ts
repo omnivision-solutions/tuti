@@ -108,15 +108,18 @@ export function withTranslation(
     }
     out.push(...(after.get(key) ?? []));
   }
-  // A source intro (no heading) goes first: after the team's sections at the top, it would read as part of the last of them
-  // (and the text would split into fewer sections than it says it has).
-  const intro = source[0] && source[0].blocks[0]?.type !== "heading" ? out.findIndex((section) => section.meta.key === source[0]!.key) : -1;
-  if (intro > 0) {
-    out.unshift(...out.splice(intro, 1));
-  }
-  // Only a text's first section has no heading: two in a row would read back as one. The team's, at the top, stands for the
-  // source's intro then: still theirs, and behind it (the source's intro is new to it).
+  // Only a text's first section has no heading: one after a heading would read back as part of the section before it (and the
+  // text would split into fewer sections than it says it has). So a section with none goes first: the source's intro, or a
+  // section of the team's that has none though its source section has a heading (one the source moved later, say), the
+  // source's intro ahead of the team's.
   const headless = (section: Section | undefined) => !!section && section.blocks[0]?.type !== "heading";
+  const introKey = source[0] && source[0].blocks[0]?.type !== "heading" ? source[0].key : null;
+  const tops = out.filter((section) => headless(section)).sort((a, b) => Number(b.meta.key === introKey) - Number(a.meta.key === introKey));
+  if (tops.length > 0 && tops.some((section, i) => out[i] !== section)) {
+    out.splice(0, out.length, ...tops, ...out.filter((section) => !headless(section)));
+  }
+  // Two in a row would read back as one. The team's, at the top, stands for the source's intro then: still theirs, and behind it
+  // (the source's intro is new to it).
   if (headless(out[0]) && headless(out[1])) {
     const introKey = source[0]!.key;
     const [first, second] = [out[0]!, out[1]!];
