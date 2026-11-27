@@ -59,7 +59,12 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   // An action is added once.
   await owner.getByRole("button", { name: "Add an action" }).click();
   await expect(owner.getByRole("menuitem", { name: "Mark priority" })).toBeDisabled();
-  await owner.keyboard.press("Escape");
+  // Closed before going on (else its items cover the row's buttons): an Escape pressed as it opens, before it has the
+  // focus, is pressed again.
+  await expect(async () => {
+    await owner.keyboard.press("Escape");
+    await expect(owner.getByRole("menu")).toBeHidden({ timeout: 1000 });
+  }).toPass();
   // Removed: the focus goes to Add an action, as its row is gone.
   await owner.getByRole("button", { name: "Remove Mark priority" }).click();
   await expect(owner.getByRole("button", { name: "Add an action" })).toBeFocused();

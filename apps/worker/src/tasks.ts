@@ -59,6 +59,14 @@ const SCREENSHOT_RUN_TIMEOUT = "40m" as const;
 const SCREENSHOT_RUNS = 3;
 const SCREENSHOT_QUEUE = "1h" as const;
 
+/**
+ * How long a read of an app's sign-in services may wait its turn: the screen stops waiting for it after 30 seconds, and
+ * a read not done within 3 minutes is taken for lost (a look starts another).
+ */
+const SIGN_IN_SCAN_QUEUE = "2m" as const;
+/** Reads of sign-in services at once on the whole server: each holds up to ~45 MB and 15 seconds of connections. */
+const SIGN_IN_SCANS = 4;
+
 /** A job's Hatchet task options, but its input and function. */
 export function taskOptions(key: JobKey, job: Job = jobs[key]) {
   // Queued behind the run with the same key, not cancelling it (Hatchet's default).
@@ -104,6 +112,10 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     // No read starts after 8 minutes (SYNC_BUDGET_MS), and each has 15 seconds.
     ...(key === "syncApiReferences" && { executionTimeout: "10m" as const }),
     ...(key === "apiReferenceChanged" && { executionTimeout: API_REFERENCE_INDEX_TIMEOUT }),
+    ...(key === "screenshotSignInScan" && {
+      scheduleTimeout: SIGN_IN_SCAN_QUEUE,
+      concurrency: [...(own ? [own] : []), { expression: `'${job.name}'`, maxRuns: SIGN_IN_SCANS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+    }),
     ...(key === "screenshotRun" && {
       executionTimeout: SCREENSHOT_RUN_TIMEOUT,
       scheduleTimeout: SCREENSHOT_QUEUE,

@@ -16,6 +16,7 @@ import { tellEmailPauses } from "./email-pause";
 import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
 import { screenshotRun } from "./screenshots";
+import { scanSignInServices } from "./sign-in-hosts";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 export { automatedRepliesEmailed, replyRecipient, type ReplyRecipient } from "./conversations";
 export { checkPushReceipts, PUSH_TEXT_MAX, RECEIPT_AFTER_MS } from "./push";
@@ -26,6 +27,7 @@ import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
 import { retryArticleTranslations, translateArticle, translateChangelogEntry } from "./article-translation";
 import { translateLabels } from "./label-translation";
+export { type Glossary, glossaryChangedFor, glossaryFor, glossaryIn, projectGlossary } from "./glossary";
 export { forgetLabels, labelIn, type LabelTranslation, type LabelTranslations, labelSource, queueLabels, retranslateLabels, translateLabels } from "./label-translation";
 export { behindKey, behindSections, docOfSections, editedSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, standingIn, versionSections, withTranslation } from "./translation-sections";
 import { checkPushReceipts, conversationPush } from "./push";
@@ -62,10 +64,11 @@ export { cappedProjects, claimProjectEmail, type EmailClaim, emailsThisMonth, mo
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { inboxDue, inboxDueToken } from "./inbox-due";
 export { aiFor, duplicatesMeter, imagesMeter, screenshotsMeter } from "./ai-usage";
-export { ANNOUNCEMENT_WAITS_MS, behindOf, type BehindList, type Draft, entryTranslationsPending, languageTranslationsDone, lostAfterMs, markProductSettingBehind, nameBatch, nameVersion, otherReasons, PRODUCT_SETTING_CHANGED, queueArticleTranslations, removedChanged, queueChangelogTranslations, queueEntryVersion, queueLanguageTranslations, queueVersion, retryBatch, retryDelay, sourceAdded, sourceChanged, translateArticle, translateChangelogEntry, TRANSLATION_WAITS, translationInstructions, translationSource, versionPublished } from "./article-translation";
+export { ANNOUNCEMENT_WAITS_MS, applyGlossaryChanges, behindOf, type GlossaryChanges, type GlossaryPlan, planGlossaryChanges, type BehindList, type Draft, entryTranslationsPending, languageTranslationsDone, lostAfterMs, markProductSettingBehind, nameBatch, nameVersion, otherReasons, PRODUCT_SETTING_CHANGED, queueArticleTranslations, removedChanged, queueChangelogTranslations, queueEntryVersion, queueLanguageTranslations, queueVersion, retryBatch, retryDelay, sourceAdded, sourceChanged, translateArticle, translateChangelogEntry, TRANSLATION_WAITS, translationInstructions, translationSource, versionPublished } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
+export { partlyScannedFor, scannedFor, scanSignInServices, type SignInService } from "./sign-in-hosts";
 export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
@@ -140,6 +143,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   verifyArticle,
   verifyAllArticle: verifyArticle,
   screenshotRun,
+  screenshotSignInScan: (input) => scanSignInServices(input),
   importStep,
   resumeImports: (_, log) => resumeImports(log),
   failStaleImports: () => failStaleImports(),

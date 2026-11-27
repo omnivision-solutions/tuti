@@ -44,7 +44,9 @@ import * as groups from "./groups";
 import * as images from "./images";
 import * as imports from "./imports";
 import * as inbox from "./inbox";
+import { getMembership } from "./membership";
 import * as invitations from "./invitations";
+import * as glossary from "./glossary";
 import * as languages from "./languages";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
@@ -106,6 +108,7 @@ const modules = {
   imports,
   inbox,
   invitations,
+  glossary,
   languages,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
@@ -554,6 +557,18 @@ const matrix: Matrix = {
     markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
     snoozeConversation: { allowed: "MEMBER", call: (slug) => inbox.snoozeConversation(slug, 1, new Date(Date.now() + 3_600_000).toISOString()) },
     takeOverConversation: { allowed: "MEMBER", call: (slug) => inbox.takeOverConversation(slug, 1) },
+    handBackConversation: {
+      allowed: "MEMBER",
+      // Its user waits on conversation #1, which refuses a hand back for everyone: answered first (as the AI's turn answers)
+      // for a teammate's call, so only who may call it is tested. Nobody else's call writes anything (the snapshot checks).
+      call: async (slug) => {
+        if (await getMembership(slug)) {
+          const conversation = await prisma.conversation.findFirstOrThrow({ where: { project: { slug }, number: 1 }, select: { id: true, projectId: true } });
+          await prisma.conversationMessage.create({ data: { projectId: conversation.projectId, conversationId: conversation.id, author: "AI", channel: "API", body: "An answer" } });
+        }
+        return inbox.handBackConversation(slug, 1);
+      },
+    },
     setConversationPriority: { allowed: "MEMBER", call: (slug) => inbox.setConversationPriority(slug, 1, true) },
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
     loadConversationActivity: { allowed: "MEMBER", call: (slug) => inbox.loadConversationActivity(slug, 1, "all") },
@@ -604,6 +619,9 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
+  },
+  glossary: {
+    saveGlossary: { allowed: "ADMIN", call: (slug) => glossary.saveGlossary(slug, [{ term: "Acme", keep: true, translations: {} }]) },
   },
   languages: {
     // The fixture has German besides English, so the default stays as it is.
@@ -785,6 +803,15 @@ const matrix: Matrix = {
       call: async (slug) => {
         const token = await inboxToken(slug);
         return widgetInbox.widgetSendMessage(slug, token, await startedNumber(slug, token), "More");
+      },
+    },
+    widgetAskPerson: {
+      allowed: "public",
+      // The conversation is the AI's (the matrix's project has articles): handing it over asks for a summary.
+      before: () => model.reply("They need help."),
+      call: async (slug) => {
+        const token = await inboxToken(slug);
+        return widgetInbox.widgetAskPerson(slug, token, await startedNumber(slug, token));
       },
     },
   },
