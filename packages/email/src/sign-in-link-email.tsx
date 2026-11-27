@@ -1,31 +1,35 @@
 import { Button } from "@react-email/components";
 
 import { Paragraph } from "./blocks";
+import { emailTranslator } from "./language";
 import { buttonStyle, type EmailBrand, Layout, Note, Title } from "./layout";
 
-type SignInLinkProps = EmailBrand & { url: string; minutes: number };
+/** `language`: the page's it was asked on (docs/plan.md, Languages), else English. */
+type SignInLinkProps = EmailBrand & { url: string; minutes: number; language?: string };
 
-export function SignInLinkEmail({ projectName, url, minutes, accent, poweredBy, logo, logoText }: SignInLinkProps) {
+export function SignInLinkEmail({ projectName, url, minutes, accent, poweredBy, logo, logoText, language }: SignInLinkProps) {
+  const t = emailTranslator(language, "emails");
   return (
     <Layout
-      preview={`Your sign-in link for ${projectName}.`}
+      preview={t("signInPreview", { name: projectName })}
       project={{ projectName, accent, poweredBy, logo, logoText }}
-      footer={<>If you didn&apos;t ask for this, ignore it.</>}
+      footer={t("ignoreIt")}
+      language={language}
     >
-      <Title>Sign in to {projectName}</Title>
-      <Paragraph>Here&apos;s your link to sign in to {projectName}.</Paragraph>
+      <Title>{t("signInTo", { name: projectName })}</Title>
+      <Paragraph>{t("signInText", { name: projectName })}</Paragraph>
       <Button
         href={url}
         style={buttonStyle(accent)}
       >
-        Sign in to {projectName}
+        {t("signInTo", { name: projectName })}
       </Button>
-      <Note>The link works once and expires in {minutes} minutes.</Note>
+      <Note>{t("linkExpires", { minutes })}</Note>
     </Layout>
   );
 }
 
 export const signInLinkEmail = (props: SignInLinkProps) => ({
-  subject: `Sign in to ${props.projectName}`,
+  subject: emailTranslator(props.language, "emails")("signInTo", { name: props.projectName }),
   body: <SignInLinkEmail {...props} />,
 });

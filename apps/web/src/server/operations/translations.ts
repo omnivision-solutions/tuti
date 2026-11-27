@@ -247,8 +247,11 @@ async function withVersion<T>(
     // nothing: an empty row would keep the language, once Automatic, from ever starting the article's version.
     let started: { automatic: boolean } | null = null;
     if (!found) {
-      started = await setting(tx);
-      await tx.articleTranslation.createMany({ data: [{ articleId: article.id, projectId, language: lang, automatic: started.automatic }], skipDuplicates: true });
+      const { automatic } = await setting(tx);
+      const { count } = await tx.articleTranslation.createMany({ data: [{ articleId: article.id, projectId, language: lang, automatic }], skipDuplicates: true });
+      // Started here only if this insert made it: one a translate job made meanwhile (it doesn't take the article's
+      // lock) is that job's, never cleaned up below.
+      if (count === 1) started = { automatic };
       found = await tx.articleTranslation.findUniqueOrThrow({ where, select: { id: true } });
     }
     await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${found.id} FOR UPDATE`;

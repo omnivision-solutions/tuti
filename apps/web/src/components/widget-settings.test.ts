@@ -42,7 +42,6 @@ async function page(icon: WidgetIcon, iconImage: { id: string; url: string } | n
           hidden: [],
           onPortal: false,
           popup: false,
-          aiFirst: null,
         }),
       ),
     );

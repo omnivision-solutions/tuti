@@ -6,9 +6,11 @@ test("every action says which triggers offer it, and each trigger offers one", (
   for (const trigger of TRIGGER_KEYS) {
     expect(actionsFor(trigger).length).toBeGreaterThan(0);
   }
-  expect(actionsFor("conversation_started")).toEqual(["mark_priority"]);
-  // A marking action: the next workflow still runs.
+  expect(actionsFor("conversation_started")).toEqual(["mark_priority", "straight_to_person"]);
+  expect(actionsFor("user_replied")).toEqual(["mark_priority", "straight_to_person"]);
+  // A marking action: the next workflow still runs; Straight to a person ends the list.
   expect(ACTIONS.mark_priority.deciding).toBe(false);
+  expect(ACTIONS.straight_to_person.deciding).toBe(true);
 });
 
 test("a stored workflow is read whole, or not at all", () => {

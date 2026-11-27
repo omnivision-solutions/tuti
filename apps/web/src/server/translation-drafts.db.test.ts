@@ -1202,4 +1202,41 @@ test("Show changes finds the English of a section the team took out of its draft
   expect((await readArticleVersion(project.id, de.slug, "de")).behind.ask).toEqual([billing.key]);
   expect(text(billing.before)).toContain("Pay by card");
   expect(text(billing.before)).not.toContain("invoice");
+test("a row made by someone else between the write's read and its insert isn't the write's to clean up: a no-op keeps it", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  const { id: articleId } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  // The write's transaction, its version read answered "none" and the row then made (as a translate job makes one).
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: unknown) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((fn: (tx: unknown) => Promise<unknown>, options?: unknown) =>
+    transaction(
+      async (tx) =>
+        fn(
+          new Proxy(tx as Record<string, unknown>, {
+            get(target, key) {
+              const table = target[key as string] as Record<string, (...args: unknown[]) => Promise<unknown>>;
+              if (key !== "articleTranslation") return table;
+              return new Proxy(table, {
+                get(rows, name) {
+                  if (name !== "findUnique") return rows[name as string];
+                  return async (args: unknown) => {
+                    const found = await rows.findUnique!(args);
+                    if (found === null) await rows.create!({ data: { articleId, projectId: project.id, language: "de", automatic: false } });
+                    return found;
+                  };
+                },
+              });
+            },
+          }),
+        ),
+      options,
+    )) as never);
+  try {
+    await call(keepTranslationUpToDate, as(), { ...de, keepUpToDate: false, version: blank.version });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(1);
 });
