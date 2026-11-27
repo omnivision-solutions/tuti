@@ -5,7 +5,7 @@ import { storedProperties } from "@tuti/shared/user-properties";
 
 import { ACTIONS, AUTOMATED_REPLIES_PER_HOUR, type HandoverReason, storedWorkflow, type WorkflowAction, type WorkflowTrigger } from "@/lib/workflows";
 
-import { aiAnswersFirst, newestFromUser, toAi } from "./ai-turn";
+import { aiAnswersFirst, newestFromUser, teamRepliedSince, toAi } from "./ai-turn";
 import { logEvents } from "./conversation-events";
 import { emitEvent } from "./events";
 import { notifyInbox } from "./live";
@@ -293,8 +293,18 @@ export async function handOver(
       if (!conversation) {
         return { handedOver: null, changed: {} };
       }
-      if (onlyIfLatest && (await newestFromUser(tx, conversationId))?.id !== messageId) {
-        return null;
+      if (onlyIfLatest) {
+        const newest = await newestFromUser(tx, conversationId);
+        if (newest?.id !== messageId) {
+          return null;
+        }
+        // A teammate answered it meanwhile (taken over, replied to, maybe handed back): the turn is over, with nothing due.
+        if (await teamRepliedSince(tx, conversationId, newest)) {
+          if (!conversation.spamHeldAt) {
+            await tx.conversation.update({ where: { id: conversationId }, data: { pathDueAt: null } });
+          }
+          return null;
+        }
       }
       // The AI's turn, if one was due, is settled by this handover (the spam filter's hold keeps its own).
       if (conversation.pathDueAt && !conversation.spamHeldAt) {
@@ -371,8 +381,11 @@ export async function handOver(
         if (!conversation || conversation.spam || (onlyFromAi && conversation.handledBy !== "AI")) {
           return { handedOver: null, changed: {} };
         }
-        if (onlyIfLatest && (await newestFromUser(tx, conversationId))?.id !== messageId) {
-          return null;
+        if (onlyIfLatest) {
+          const newest = await newestFromUser(tx, conversationId);
+          if (newest?.id !== messageId || (await teamRepliedSince(tx, conversationId, newest))) {
+            return null;
+          }
         }
         const { count } = await tx.conversationMessage.updateMany({
           where: { id: messageId, conversationId, author: "USER", note: false, handedOverAt: null },
