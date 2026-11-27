@@ -250,14 +250,6 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
   const started: Started = {};
   try {
     const result = await translateOne(kind, parentId, language, log, run, started);
-    if ((result.skipped === STALE || result.skipped === CHANGED) && kind.name === "entry") {
-      // The product setting (or the entry) changed while it was translating, so it wrote nothing: an article's are queued
-      // again by the setting's change itself (queueLanguageTranslations); an entry's, which that leaves to their next
-      // translation, is that next one: the one already under way, again, under the new setting. (Where the entry's text
-      // changed, its edit's job has translated it, or does: this one then finds it up to date and asks nothing.)
-      await queue(kind, parentId, language);
-      return result;
-    }
     if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED && result.skipped !== NO_AI && started.retryAt) {
       // Nothing left to do for it: the safety net's try goes, unless a newer publish or Retranslate set another since it read it.
       // Without AI it stays, so the retry job translates the page once AI is set up.
@@ -660,15 +652,15 @@ export async function languageTranslationsDone() {
 
 /**
  * A source was published or its published text changed: translates it into each language keeping it up to date, starting
- * a version in each language that's Automatic for new pages (`addedBy`: only those added by then).
+ * a version in each language that's Automatic for new pages.
  */
-async function queueTranslations(kind: Kind, parentId: string, addedBy?: Date) {
+async function queueTranslations(kind: Kind, parentId: string) {
   const source = await kind.languagesOf(parentId);
   if (!source) {
     return;
   }
   const missing = source.languages.filter(
-    ({ code, automatic, createdAt }) => automatic && (!addedBy || createdAt <= addedBy) && !source.translations.some((t) => t.language === code),
+    ({ code, automatic }) => automatic && !source.translations.some((t) => t.language === code),
   );
   const languages = [...source.translations.filter((t) => t.automatic).map((t) => t.language), ...missing.map(({ code }) => code)];
   // The new versions and every version's safety net in one transaction: none is left without its net, which the retry
@@ -699,18 +691,22 @@ const translatedByJob = {
 } satisfies Prisma.ArticleTranslationWhereInput;
 
 /**
- * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). Failing, the entry
- * is marked (translationsQueueFailedAt), for the retry job to queue it again; the error still goes to the caller.
+ * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). The entry is marked
+ * first (translationsQueueFailedAt) and the mark cleared once it's queued, so queuing that fails, or a restart partway,
+ * leaves it marked for the retry job to queue again; the error still goes to the caller. (Marked after a failure instead,
+ * the mark could be lost with it.)
  */
 export async function queueChangelogTranslations(entryId: string) {
-  try {
-    await queueTranslations(ENTRY, entryId);
-  } catch (error) {
-    // Its own time, not the entry's change (updatedAt, which @updatedAt would move).
-    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = now() WHERE id = ${entryId}`.catch((marking: unknown) =>
-      serverLog.error("Marking a changelog entry's failed translation queuing failed", { entryId, error: marking }),
-    );
-    throw error;
+  // Its own time, not the entry's change (updatedAt, which @updatedAt would move); in UTC, as Prisma writes the column (no
+  // time zone in it: the database session's own zone would put it hours off).
+  const [mark] = await prisma.$queryRaw<{ at: Date }[]>`
+    UPDATE changelog_entry SET "translationsQueueFailedAt" = now() AT TIME ZONE 'UTC' WHERE id = ${entryId} RETURNING "translationsQueueFailedAt" AS at`;
+  await queueTranslations(ENTRY, entryId);
+  if (mark) {
+    // Unless a newer queuing set its own meanwhile (that one clears it). Prisma binds the Date as UTC wall-clock time with no
+    // zone, as the column holds it: `::timestamp(3)` takes it as it is, whatever the session's time zone (`::timestamptz`
+    // would read it in that zone, hours off; the New York test checks it).
+    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${entryId} AND "translationsQueueFailedAt" = ${mark.at}::timestamp(3)`;
   }
 }
 
@@ -718,17 +714,23 @@ export async function queueChangelogTranslations(entryId: string) {
  * Queues a language's versions kept up to date (adding the language, Retranslate, the product setting changing), those
  * waiting for a first translation too; with Automatic for new pages, every published article gets a version first.
  * `fresh`: nothing reused (Retranslate). `waiting`: only those that couldn't be translated (Try again). How many it queued.
- * Articles only for now: changelog entries are translated as they're published and edited, and join these once Settings →
- * Languages counts them in what it confirms (docs/plan.md L16, a later part), so nothing is charged that wasn't confirmed.
+ * Published changelog entries too, as Settings → Languages counts them in what it confirms (docs/plan.md L16).
  */
-export async function queueLanguageTranslations(projectId: string, language: string, { fresh = false, waiting = false } = {}): Promise<number> {
+export async function queueLanguageTranslations(
+  projectId: string,
+  language: string,
+  { fresh = false, waiting = false, newEntries = true }: { fresh?: boolean; waiting?: boolean; newEntries?: boolean } = {},
+): Promise<number> {
   const setting = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { automatic: true } });
   if (!setting) {
     return 0;
   }
   const pages: Page[] = [];
-  for (const kind of [ARTICLE]) {
-    if (setting.automatic) {
+  for (const kind of KINDS) {
+    // `newEntries` false (the product switch): an entry's version is never started there, only its existing ones translated
+    // again; starting them is for what's confirmed with a count (adding the language, Retranslate). Try again (`waiting`)
+    // starts none either: it tries again those that failed, and a version it started wouldn't be one of them.
+    if (setting.automatic && !waiting && (kind !== ENTRY || newEntries)) {
       const sources = await kind.without(projectId, language);
       await kind.table().createMany({ data: sources.map(({ id }) => ({ [kind.parent]: id, projectId, language })), skipDuplicates: true });
     }
@@ -801,21 +803,26 @@ export async function retryArticleTranslations(): Promise<JobResult> {
 }
 
 /**
- * Changelog entries whose translations' queuing failed (queueChangelogTranslations marked them): queued again, for the
- * languages there when it failed (one added since isn't confirmed for entries yet), the mark cleared unless it failed
- * again meanwhile. How many it queued.
+ * Changelog entries whose translations' queuing failed, or didn't finish: queueChangelogTranslations marks an entry before
+ * queuing and clears it after. Queued again as a publish does, the mark cleared unless a newer queuing set its own. How many
+ * it queued. (Only marked ones: a version missing in an Automatic language is otherwise one nobody confirmed, an entry
+ * published while the language was Manual, say.)
  */
+/** How long a changelog entry's mark is left to the queuing that set it before the retry job takes it. */
+export const QUEUING_GRACE_MS = 60_000;
+
 async function entriesLeftBehind(): Promise<number> {
-  const entries = await prisma.changelogEntry.findMany({
-    where: { translationsQueueFailedAt: { not: null } },
-    orderBy: [{ translationsQueueFailedAt: "asc" }, { id: "asc" }],
-    take: retryBatch.size,
-    select: { id: true, translationsQueueFailedAt: true },
-  });
+  // Not one marked in the last minute: its queuing may still be under way (it clears the mark once it's done). Against the
+  // database's clock, the one the mark was written by (the app's may be off).
+  const entries = await prisma.$queryRaw<{ id: string; translationsQueueFailedAt: Date }[]>`
+    SELECT id, "translationsQueueFailedAt" FROM changelog_entry
+    WHERE "translationsQueueFailedAt" < (now() AT TIME ZONE 'UTC') - ${QUEUING_GRACE_MS} * interval '1 millisecond'
+    ORDER BY "translationsQueueFailedAt", id
+    LIMIT ${retryBatch.size}`;
   let queued = 0;
   for (const { id, translationsQueueFailedAt: failedAt } of entries) {
     try {
-      await queueTranslations(ENTRY, id, failedAt!);
+      await queueTranslations(ENTRY, id);
       await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${id} AND "translationsQueueFailedAt" = ${failedAt}::timestamp(3)`;
       queued++;
     } catch (error) {
