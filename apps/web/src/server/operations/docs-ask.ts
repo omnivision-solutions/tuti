@@ -263,11 +263,29 @@ export async function answerTurn(
   };
 
   // A topic the team put off-limits: a fixed reply, decided here rather than by the model (which isn't asked).
-  if (offLimitsTopic(question, settings.offLimits)) {
-    return finish("off_limits");
-  }
   // Nor does an earlier turn on one steer a follow-up: it's left out of what's searched and what the model gets.
   const context = earlier.filter((turn) => !offLimitsTopic(turn.question, settings.offLimits));
+  /**
+   * With `askPerson`, where nothing would ask the model (an off-limits topic, nothing in the docs close enough): it's still
+   * asked, with no sections, whether the user asks for a person, so "Can I talk to a human?" isn't taken for a gap in
+   * the docs. False where it can't be asked (out of credits, failing): the outcome stands.
+   */
+  const asksPerson = async () => {
+    if (!askPerson) {
+      return false;
+    }
+    try {
+      return asksForPerson(await complete({ ...answerPrompt(question, [], settings, context, { askPerson }), timeoutMs, ...(await aiFor(projectId, "answers")) }));
+    } catch (error) {
+      log.warn("Asking the answer model whether the user asks for a person failed", { projectId, error });
+      return false;
+    }
+  };
+  /** Asks for a person: logged as unanswered, out of Gaps. */
+  const person = async () => ({ ...(await finish("failed")), person: true });
+  if (offLimitsTopic(question, settings.offLimits)) {
+    return (await asksPerson()) ? person() : finish("off_limits");
+  }
   // A follow-up ("and on mobile?") says little alone: the docs are searched with the latest earlier questions too.
   const searched = [...context.slice(-SEARCHED_EARLIER_QUESTIONS).map((turn) => turn.question), question].join("\n");
   const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS);
@@ -276,7 +294,7 @@ export async function answerTurn(
   }
   // Nothing close enough: "I don't know", without asking the model.
   if (sections.length === 0) {
-    return finish("no_answer", { cause: "NO_RELEVANT_SECTION" });
+    return (await asksPerson()) ? person() : finish("no_answer", { cause: "NO_RELEVANT_SECTION" });
   }
   let ai: Ai;
   try {
@@ -299,8 +317,7 @@ export async function answerTurn(
     return finish("failed", { fallback: await stillUsable(projectId, sections, reader) });
   }
   if (askPerson && asksForPerson(reply)) {
-    // Not a gap in the docs: logged as unanswered, out of Gaps.
-    return { ...(await finish("failed")), person: true };
+    return person();
   }
   const answer = readAnswer(reply, sections);
   if (!answer) {

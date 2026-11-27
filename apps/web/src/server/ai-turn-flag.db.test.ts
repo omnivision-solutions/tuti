@@ -33,6 +33,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   model.done();
+  model.requests.length = 0;
 });
 
 test("the answer model's flag hands it over for the user asking; it's never logged as a gap in the docs", async () => {
@@ -57,6 +58,29 @@ test("the answer model's flag hands it over for the user asking; it's never logg
   // The answer model was told it may say so.
   expect(model.requests[0]!.messages[0]!.content).toContain('"person": true');
   expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).handledBy).toBe("TEAM");
+  expect(await prisma.conversationEvent.findMany({ where: { conversationId: conversation.id, kind: "handed_over" }, select: { details: true } })).toEqual([{ details: { reason: "user_asked" } }]);
+  expect(await prisma.docsQuestion.findMany({ where: { projectId: project.id }, select: { status: true, cause: true } })).toEqual([{ status: "FAILED", cause: null }]);
+});
+
+test("a request for a person that matches no article is still read by the answer model: handed over because they asked, never logged as a gap", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true, emailAiFirst: true } });
+  const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const text = "Settings → Export downloads everything as CSV.";
+  await call(publishArticle, admin, { slug: (await call(createArticle, admin, { title: "Exporting", body: text })).slug });
+  const to = supportAddress(await mailSubdomain(project.id), DOMAIN);
+  actAs(null);
+  // Nothing in the docs is close to it.
+  await postEmail(rawEmail({ from: "e2e-sender@example.com", to, body: "Can I talk to a human please?" }), { recipient: to });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+
+  model.reply(JSON.stringify({ answer: "", sources: [], person: true }), undefined, "Answer the question from these sections");
+  model.reply("They want to talk to a human.", undefined, "askedBefore");
+  expect(await runAiTurn(conversation.id)).toBe("handed_over");
+  // Asked with no sections, told it may say they ask for a person.
+  expect(model.requests[0]!.messages[0]!.content).toContain('"person": true');
+  expect(model.requests[0]!.messages.at(-1)!.content).toContain('"sections": []');
   expect(await prisma.conversationEvent.findMany({ where: { conversationId: conversation.id, kind: "handed_over" }, select: { details: true } })).toEqual([{ details: { reason: "user_asked" } }]);
   expect(await prisma.docsQuestion.findMany({ where: { projectId: project.id }, select: { status: true, cause: true } })).toEqual([{ status: "FAILED", cause: null }]);
 });
