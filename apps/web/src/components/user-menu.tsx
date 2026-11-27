@@ -41,13 +41,13 @@ function useSignOut(failed: React.ReactNode) {
 }
 
 /** Sign out on a page (the portal's Account, a quiet text button at the end of its Profile row), as the account menu's. */
-// Its text moves to the messages with the Account page's (L5).
 export function SignOutButton() {
-  const signOut = useSignOut("Couldn't sign you out. Try again.");
+  const t = useTranslations("header");
+  const signOut = useSignOut(t("signOutFailed"));
   const [pending, startTransition] = useTransition();
   return (
     <Button variant="ghost" className="shrink-0" disabled={pending} focusableWhenDisabled onClick={() => startTransition(signOut)}>
-      Sign out
+      {t("signOut")}
     </Button>
   );
 }
