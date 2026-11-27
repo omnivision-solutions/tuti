@@ -1210,6 +1210,9 @@ model Conversation {
   spamReason    String?
   /// With the reason "phrase": the team's phrase that matched, as it was written then.
   spamPhrase    String?
+  /// The block rule a teammate's report added with it ("Report spam and block …"), so Not spam can offer to remove it.
+  /// Cleared by any other mark; a removed rule's ID is left, and finds nothing.
+  reportedRuleId String?
   /// When a teammate last marked it Spam or Not spam (`spam` says which way).
   spamMarkedAt  DateTime?
   /// The path's work left to do once its request has answered (the spam filter's model checks, server/spam-models.ts):
