@@ -46,7 +46,15 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
     if (was && !is) return row.term.trim() === was.term && same(row, was) ? [] : [{ ...row, meanwhile: "Removed meanwhile" }];
     if (!was && is && !same(row, is)) {
       const empty = Object.entries(is.translations).filter(([code]) => !(row.translations[code] ?? "").trim());
-      const differ = Object.entries(is.translations).filter(([code, word]) => (row.translations[code] ?? "").trim() && row.translations[code]!.trim() !== word);
+      // Never translated set on one side only: their every word shown (or Never translated beside each word typed here), as for
+      // a term both changed; else the words that differ.
+      const typed = Object.keys(row.translations).filter((code) => row.translations[code]!.trim());
+      const differ =
+        row.keep !== is.keep
+          ? is.keep
+            ? typed.map((code) => [code, NEVER] as const)
+            : Object.entries(is.translations)
+          : Object.entries(is.translations).filter(([code, word]) => (row.translations[code] ?? "").trim() && row.translations[code]!.trim() !== word);
       return [{ ...row, translations: { ...row.translations, ...Object.fromEntries(empty) }, meanwhile: "Changed meanwhile", ...(differ.length > 0 && { theirs: Object.fromEntries(differ) }) }];
     }
     if (was && is && !same(was, is)) {
