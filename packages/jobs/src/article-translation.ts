@@ -852,27 +852,27 @@ type TouchedVersion = { kind: Kind; sourceId: string; id: string; language: stri
  * ponytail: reads every published source's text per save (a rare, deliberate act); a per-term index if glossaries get big.
  */
 /**
- * What a glossary plan was made from: the project's languages, each published source's text (its translation source's
- * hash) with its versions (which, in which language, kept up to date or not), and each label's name. Read before the plan
- * reads the texts, and again under the save's lock: a publish, a version added or switched, a label renamed in between makes
- * them differ, and the save plans again. Not the rows' updatedAt: a draft edit, or a label's translation written, changes
- * nothing the plan read.
+ * What a glossary plan was made from: the project's languages, each published source's text (what translationSource reads)
+ * with its versions (which, in which language, kept up to date or not), and each label's name. Read before the plan reads
+ * the texts, and again under the save's lock: a publish, an in-place edit of a published entry, an Undo, a version added or
+ * switched, a label renamed in between makes them differ, and the save plans again. Not the rows' updatedAt (a draft edit,
+ * or a label's translation written, changes nothing the plan read), nor publishedAt (an entry's edit and an Undo don't move
+ * it). Hashed in the database, a row per table back: under the lock nothing but a hash leaves it.
+ * The sources' filters are ARTICLE's and ENTRY's `translatable`, in SQL.
  */
 async function glossaryPlanState(db: Prisma.TransactionClient | typeof prisma, projectId: string): Promise<string> {
-  const versions = { select: { id: true, language: true, automatic: true }, orderBy: { id: "asc" as const } };
-  const [languages, articles, entries, collections, tabs] = await Promise.all([
-    db.projectLanguage.findMany({ where: { projectId }, select: { code: true }, orderBy: { code: "asc" } }),
-    db.article.findMany({
-      where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) },
-      select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions },
-      orderBy: { id: "asc" },
-    }),
-    db.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, title: true, body: true, content: true, translations: versions }, orderBy: { id: "asc" } }),
-    db.collection.findMany({ where: { projectId }, select: { id: true, name: true, description: true }, orderBy: { id: "asc" } }),
-    db.docsTab.findMany({ where: { projectId }, select: { id: true, name: true }, orderBy: { id: "asc" } }),
-  ]);
-  const sources = [...articles, ...entries].map((row) => [row.id, translationSource(row).hash, row.translations]);
-  return contentHash(JSON.stringify([languages, sources, collections, tabs]));
+  const [row] = await db.$queryRaw<Record<string, string | null>[]>`
+    SELECT
+      (SELECT md5(string_agg(code, ',' ORDER BY code)) FROM project_language WHERE "projectId" = ${projectId}) AS languages,
+      (SELECT md5(string_agg(a.id || ':' || md5(concat_ws(chr(31), a.title, a.description, array_to_string(a.keywords, chr(30)), a.body, a.content::text)) || ':' ||
+        coalesce((SELECT string_agg(t.id || t.language || t.automatic::text, ',' ORDER BY t.id) FROM article_translation t WHERE t."articleId" = a.id), ''), ',' ORDER BY a.id))
+        FROM article a WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND NOT a.sample) AS articles,
+      (SELECT md5(string_agg(e.id || ':' || md5(concat_ws(chr(31), e.title, e.body, e.content::text)) || ':' ||
+        coalesce((SELECT string_agg(t.id || t.language || t.automatic::text, ',' ORDER BY t.id) FROM changelog_translation t WHERE t."entryId" = e.id), ''), ',' ORDER BY e.id))
+        FROM changelog_entry e WHERE e."projectId" = ${projectId} AND e."publishedAt" IS NOT NULL AND NOT e.sample) AS entries,
+      (SELECT md5(string_agg(c.id || ':' || md5(concat_ws(chr(31), c.name, c.description)), ',' ORDER BY c.id)) FROM collection c WHERE c."projectId" = ${projectId}) AS collections,
+      (SELECT md5(string_agg(d.id || ':' || md5(d.name), ',' ORDER BY d.id)) FROM docs_tab d WHERE d."projectId" = ${projectId}) AS tabs`;
+  return JSON.stringify(row);
 }
 
 export async function planGlossaryChanges(projectId: string, before: Glossary, after: Glossary) {

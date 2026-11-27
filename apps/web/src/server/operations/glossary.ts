@@ -85,6 +85,11 @@ export const updateGlossary = defineOperation({
   }),
   output: glossaryOutput
     .extend({
+      terms: z.array(termOutput).describe("The terms, by term: as saved, or on a dry run as they would be"),
+      hash: z
+        .string()
+        .describe("The saved glossary's version: after saving, the new one; on a dry run, the one it would save over. Send it with the next glossary.update")
+        .meta({ examples: ["3f2a9c1e"] }),
       retranslating: z.number().int().describe("Versions kept up to date that use a changed term, translated again").meta({ examples: [3] }),
       behind: z.number().int().describe("Versions the team writes with sections marked behind for a changed term").meta({ examples: [1] }),
     })
@@ -108,6 +113,8 @@ export const updateGlossary = defineOperation({
     // and writes run in it. Planned against the glossary as it was read; saved under the project's lock only if it still is
     // (another save in between: planned again).
     let changes: GlossaryChanges | null = null;
+    // The saved glossary's version as the save found it (a dry run's answer: what saving over it takes).
+    let stored = "";
     for (let tries = 0; !changes; tries++) {
       const before = await projectGlossary(projectId);
       const plan = await planGlossaryChanges(projectId, before, after);
@@ -115,6 +122,7 @@ export const updateGlossary = defineOperation({
         async (tx) => {
           await lockProject(tx, projectId);
           const now = await projectGlossary(projectId, tx);
+          stored = withHash(now).hash;
           // Saved over a glossary the caller never saw (a teammate's save since it read it): refused, its terms kept.
           if (hash !== undefined && withHash(now).hash !== hash) {
             throw new OperationError(409, "changed", "The glossary changed since you opened it. Reload to see it, then save again");
@@ -141,6 +149,6 @@ export const updateGlossary = defineOperation({
     if (!dryRun) {
       await changes.queue();
     }
-    return { ...withHash(dryRun ? after.sort((a, b) => a.term.localeCompare(b.term)) : await projectGlossary(projectId)), retranslating: changes.retranslated, behind: changes.behind };
+    return { ...(dryRun ? { terms: after.sort((a, b) => a.term.localeCompare(b.term)), hash: stored } : withHash(await projectGlossary(projectId))), retranslating: changes.retranslated, behind: changes.behind };
   },
 });
