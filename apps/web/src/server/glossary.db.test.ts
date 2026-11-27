@@ -616,23 +616,34 @@ test("a term crossing a formatting tag in a remembered segment (Open the <b>bill
   expect(Object.keys((await version("guide")).memory as Record<string, string>)).not.toContain(tagged);
 });
 
-test("on a version kept up to date, a term's change replaces the team's edit in the section using it; an edit elsewhere stays", async () => {
-  await translated();
-  // The team edits German's Boards section (it uses Board) and its Billing section (it doesn't), and publishes.
+test("on a version kept up to date, a term's change replaces the team's edit in the section using it; an edit elsewhere, and a section taken out, stay", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
+  const source = doc("Intro", ["Boards", "Make a Board for ideas."], ["Billing", "Pay by card."], ["Old Boards", "An old Board view."]);
+  await call(createArticle, as(), { title: "Boards", content: source });
+  model.reply(reply("Boards", source, "de", "Tafel"));
+  await call(publishArticle, as(), { slug: "boards" });
+  await languageTranslationsDone();
+  // The team edits German's Boards section (it uses Board) and its Billing section (it doesn't), takes out Old boards (it
+  // uses Board), and publishes.
   const de = { slug: "boards", language: "de" as const };
   const read = await call(getTranslation, as(), de);
   const content = structuredClone(read.content) as Doc;
   content.content![2]!.content![0]!.text = "Unser eigener Text.";
   content.content![4]!.content![0]!.text = "Unsere eigene Zahlung.";
+  content.content = content.content!.slice(0, 5);
   await call(saveTranslation, as(), { ...de, content, version: read.version });
   await call(publishTranslation, as(), de);
   expect(String((await version("boards")).body)).toContain("Unser eigener Text.");
-  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  expect((await version("boards")).removedSections).toHaveLength(1);
+  model.reply(reply("Boards", source, "de2", "Brett"));
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
   await languageTranslationsDone();
   const body = String((await version("boards")).body);
   expect(body).toContain("[de2] Make a Brett for ideas.");
   expect(body).not.toContain("Unser eigener Text.");
   expect(body).toContain("Unsere eigene Zahlung.");
+  expect(body).not.toContain("old Brett view");
+  expect((await version("boards")).removedSections).toHaveLength(1);
   expect((await version("boards")).updateSections).toEqual([]);
 });
