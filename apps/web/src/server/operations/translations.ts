@@ -357,7 +357,10 @@ export const publishTranslation = defineOperation({
       // is that only once it was made with the glossary as it is now.
       const glossaryWord = glossaryChangedFor("").slice(0, -1);
       const forGlossary = new Set(Object.entries(version.behind as Record<string, string>).filter(([, why]) => why.startsWith(glossaryWord)).map(([key]) => key));
-      const glossaryNow = forGlossary.size > 0 && glossaryFor(await projectGlossary(projectId, tx), input.language, source.plain).hash === version.glossaryHash;
+      // Only a version kept up to date records the glossary it was made with (a team-written one's is null, as is a glossary with
+      // no terms for its text): only there can a match say its published text is current.
+      const current = forGlossary.size > 0 && version.automatic ? glossaryFor(await projectGlossary(projectId, tx), input.language, source.plain).hash : null;
+      const glossaryNow = current !== null && current === version.glossaryHash;
       const fresh = new Map(
         published
           .filter(({ meta }) => meta.key !== null && !meta.own && meta.hash === hashes.get(meta.key) && (!forGlossary.has(meta.key) || glossaryNow))

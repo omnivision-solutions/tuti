@@ -167,14 +167,26 @@ test("a translation under way as the glossary changes writes nothing; the one qu
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
   await call(createArticle, as(), { title: "Boards", content: BOARDS });
   model.reply(reply("Boards", BOARDS, "de", "Tafel"), () => call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] }));
-  // Held as the replacement asks the model, once the first has had its chance to write: what's stored then is never Tafel.
+  // Held as the replacement asks the model, until the first has settled: refused (it then reads its version's updatedAt, to
+  // see whether the save queued it), or written (Tafel stored, the bug). What's stored then is never Tafel.
+  const findMany = prisma.articleTranslation.findMany.bind(prisma.articleTranslation);
+  let refused = false;
+  const spy = vi.spyOn(prisma.articleTranslation, "findMany").mockImplementation(((args: Parameters<typeof findMany>[0]) => {
+    if ((args?.select as { updatedAt?: boolean } | undefined)?.updatedAt) refused = true;
+    return findMany(args);
+  }) as never);
   let before = "";
   model.reply(reply("Boards", BOARDS, "de2", "Brett"), async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    for (let i = 0; i < 500 && !refused && !before.includes("Tafel"); i++) {
+      before = String((await version("boards")).body);
+      if (!refused && !before.includes("Tafel")) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     before = String((await version("boards")).body);
   });
   await call(publishArticle, as(), { slug: "boards" });
   await languageTranslationsDone();
+  spy.mockRestore();
+  expect(refused).toBe(true);
   expect(before).not.toContain("Tafel");
   const written = await version("boards");
   expect(written.body).toContain("Brett");
@@ -185,10 +197,10 @@ test("a labels translation under way as the glossary changes writes nothing; the
   await call(updateLanguages, as(), { languages: [{ code: "de" }] });
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
   model.reply(JSON.stringify({ segments: { "0.n": "Tafeln" } }), () => call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] }));
-  // As above: what's stored as the replacement asks is never Tafeln.
+  // What's stored as the replacement asks is never Tafeln: inline, a project language's labels run one at a time, so the
+  // replacement starts only once the first has ended.
   let before: string | undefined;
   model.reply(JSON.stringify({ segments: { "0.n": "Bretter" } }), async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
     before = labelIn(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id } }), "de")?.name;
   });
   await call(createCollection, as(), { name: "Boards", description: "" });
@@ -790,5 +802,30 @@ test("publishing a draft whose section is behind for the glossary, its published
   expect(String(after.body)).toContain("[de2] Make a Brett for ideas.");
   expect(String(after.body)).not.toContain("Unser eigener Text.");
   expect(after.updateSections).toEqual([]);
+  expect(after.behind).toEqual({});
+});
+
+test("the only term removed: publishing a team-written version's draft doesn't take its old text as current for the glossary", async () => {
+  await translated(true);
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+  await prisma.articleTranslation.create({
+    data: { articleId: article.id, projectId: project.id, language: "de", automatic: false, title: "Tafeln", content: BOARDS, body: "Text.", publishedAt: new Date() },
+  });
+  const boards = sourceSections(translationSource(article).text).find((part) => part.key.startsWith("Boards"))!;
+  // Board, the glossary's only term, removed: its section is behind for it (the version's glossary hash and the new one both null).
+  await call(updateGlossary, as(), { terms: [] });
+  expect((await version("boards")).behind).toEqual({ [boards.key]: glossaryChangedFor("Board") });
+  // A draft editing another section, published without keeping Boards: Boards is asked for again, not taken as it is.
+  const de = { slug: "boards", language: "de" as const };
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content!.at(-1)!.content![0]!.text = "Unsere Zahlung.";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  const { segments } = segmentsOf({ type: "doc", content: boards.blocks });
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de2] ${text}`])) }));
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  const after = await version("boards");
+  expect(String(after.body)).toContain("[de2] Make a Board for ideas.");
   expect(after.behind).toEqual({});
 });
