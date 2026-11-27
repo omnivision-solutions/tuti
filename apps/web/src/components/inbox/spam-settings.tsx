@@ -370,7 +370,7 @@ function TryMessage({ projectSlug }: { projectSlug: string }) {
     {},
   );
   return (
-    <SettingsCard title="Try a message" description="As an email from this address. Nothing is sent or saved.">
+    <SettingsCard title="Try a message" description="Nothing is sent or saved.">
       <form {...keepingFields(action)} className="flex flex-col divide-y">
         <SettingRow label="From" htmlFor="spam-try-sender">
           <Input id="spam-try-sender" name="sender" type="email" required maxLength={320} placeholder="kim@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />

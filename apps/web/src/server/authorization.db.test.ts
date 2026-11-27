@@ -722,7 +722,7 @@ const matrix: Matrix = {
   },
   "spam-settings": {
     addSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.addSpamRule(slug, { field: "subject_or_body", matcher: "contains", value: "facebook admin" }) },
-    removeSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamRule(slug, "cm1norule") },
+    removeSpamRule: { allowed: "ADMIN", takesIds: true, call: (slug, f) => spamSettings.removeSpamRule(slug, f.spamRuleId) },
     allowSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.allowSpamSender(slug, "forms.example") },
     removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "forms.example") },
     setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
@@ -1090,6 +1090,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
   // A workflow, to move and delete.
+  const spamRule = await prisma.spamRule.create({ data: { projectId, field: "subject", matcher: "contains", value: "matrix" } });
   const workflow = await prisma.workflow.create({ data: { projectId, name: "Matrix workflow", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
   // Screenshots set up, for their Test.
   await prisma.screenshotSettings.create({ data: { projectId, appUrl: "https://app.example.com" } });
@@ -1227,6 +1228,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     specRepoId: 95_000 + githubRepoId,
     redirectId: redirect.id,
     workflowId: workflow.id,
+    spamRuleId: spamRule.id,
     linkId: link.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,

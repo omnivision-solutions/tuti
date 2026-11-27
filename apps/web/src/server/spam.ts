@@ -2,7 +2,7 @@ import type { ConversationOrigin, Prisma } from "@tuti/db";
 import { getDomain } from "tldts";
 
 import { NEW_BY_EMAIL_PER_HOUR, type SpamReason } from "@/lib/spam-reasons";
-import { describeSpamRule, isSenderRule, type SpamRule, spamRuleKey, spamRuleMatches } from "@/lib/spam-rules";
+import { describeSpamRule, isSenderRule, type SpamRule, spamRuleKey, spamRuleMatcher } from "@/lib/spam-rules";
 
 import { OperationError } from "./operations/define";
 import { spamModelsOn } from "./spam-models";
@@ -78,7 +78,8 @@ async function listed(db: Db, projectId: string, address: string) {
     db.spamSender.findMany({ where: { projectId, conversationId: null, blocked: false, sender: { in: [address, ...domainsOf(address)] } } }),
     rulesOf(db, projectId),
   ]);
-  const matching = rules.filter((rule) => isSenderRule(rule) && spamRuleMatches(rule, { address, domain }));
+  const matches = spamRuleMatcher({ address, domain });
+  const matching = rules.filter((rule) => isSenderRule(rule) && matches(rule));
   const exact = (rule: Rule) => rule.matcher === "is";
   const blockedAddress = matching.find((rule) => rule.field === "sender_address" && exact(rule)) ?? null;
   const entries = [
@@ -184,7 +185,8 @@ async function flood(db: Db, { projectId, email }: Arrival): Promise<Answer | nu
  * or the addresses an email was sent to. "Contains" on the subject or text is whole words ("sex" isn't in "Essex").
  */
 async function content(db: Db, { projectId, subject, text, name, sentTo }: Arrival): Promise<Answer | null> {
-  const rule = (await rulesOf(db, projectId)).find((rule) => !isSenderRule(rule) && spamRuleMatches(rule, { subject, text, name, sentTo }));
+  const matches = spamRuleMatcher({ subject, text, name, sentTo });
+  const rule = (await rulesOf(db, projectId)).find((rule) => !isSenderRule(rule) && matches(rule));
   return rule ? { spam: true, reason: "rule", phrase: describeSpamRule(rule) } : null;
 }
 
@@ -340,7 +342,8 @@ export async function recordMark(db: Db, conversation: Marked, spam: boolean, ad
     } else if (blocker) {
       const name = blocker.field === "sender_domain" && blocker.matcher === "is" ? blocker.value : `Your rule “${describeSpamRule(blocker)}”`;
       kept = admin;
-      notices.push(admin ? `${name} stays blocked. ${sender} is let through from now on.` : `${name} stays blocked: an owner or admin can let ${sender} through.`);
+      const stays = blocker.field === "sender_domain" && blocker.matcher === "is" ? "stays blocked" : "still applies";
+      notices.push(admin ? `${name} ${stays}. ${sender} is let through from now on.` : `${name} ${stays}: an owner or admin can let ${sender} through.`);
     }
     if (kept) {
       await db.spamSender.upsert({ where: { conversationId: conversation.id }, create: { ...mark, projectId: conversation.projectId, conversationId: conversation.id }, update: mark });
@@ -413,6 +416,7 @@ export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fro
  * per address or domain (the partial unique index; a blocked row there is from before the block rules, and read no more).
  */
 export async function allowSender(db: Db, projectId: string, sender: string) {
+  await lockSpamRules(db, projectId);
   await db.spamRule.deleteMany({ where: { projectId, field: { in: ["sender_address", "sender_domain"] }, matcher: "is", value: sender } });
   await db.$executeRaw`
     INSERT INTO spam_sender (id, "projectId", sender, blocked, "byAdmin", "decidedAt")

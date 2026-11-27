@@ -52,6 +52,8 @@ describe("each matcher, ignoring case", () => {
     expect(matches("sender_address", "pattern", "*@*.spam.example", { address: "kim@m2.spam.example" })).toBe(true);
     expect(matches("sender_address", "pattern", "*@*.spam.example", { address: "kim@spam.example" })).toBe(false);
     expect(matches("subject", "pattern", "you won ?? dollars*", { subject: "You WON 50 dollars today" })).toBe(true);
+    // A star in the text is no reason to take the pattern's as a literal.
+    expect(matches("subject", "pattern", "*offer*", { subject: "* special offer" })).toBe(true);
     expect(matches("subject", "pattern", "you won", { subject: "you won 50" })).toBe(false);
     // Regex characters are themselves.
     expect(matches("subject", "pattern", "a.c(d)+", { subject: "a.c(d)+" })).toBe(true);

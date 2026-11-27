@@ -85,7 +85,8 @@ const rule = z
   })
   .transform((input, ctx) => {
     const value = spamRuleValue(input.field, input.value);
-    const problem = ruleProblem(input.field, input.matcher, value);
+    // "@" alone is no domain once its "@" goes: a rule with nothing in it would match everyone.
+    const problem = value ? ruleProblem(input.field, input.matcher, value) : "Enter a value";
     if (problem) {
       ctx.addIssue({ code: "custom", message: problem, path: ["value"] });
       return z.NEVER;
@@ -142,10 +143,10 @@ export const updateSpamSettings = defineOperation({
   path: "/spam",
   scope: "write",
   access: "admin",
-  errors: [409],
+  errors: [404, 409],
   input: z.object({
     addRules: z.array(rule).max(100, "Send up to 100 at a time").optional().describe(`Block rules to add; the project holds ${MAX_SPAM_RULES}`),
-    removeRules: z.array(z.string()).max(100, "Send up to 100 at a time").optional().describe("The IDs of block rules to remove"),
+    removeRules: z.array(z.string()).max(100, "Send up to 100 at a time").optional().describe("The IDs of block rules to remove; one that isn't there is refused (404), removing none"),
     block: senders("Addresses and domains to block: each a rule that the sender address or domain is it (one on the allowed list comes off). A blocked address's rule decides before every mark on its sender's conversations; an entry for a domain is for its subdomains too. Not a domain anyone can get an address at, like gmail.com: block its addresses"),
     allow: senders("Addresses and domains to put on the allowed list (a rule that the sender address or domain is it is removed)"),
     remove: z
@@ -177,7 +178,11 @@ export const updateSpamSettings = defineOperation({
     const blocks = block.map((entry) => ({ field: entry.includes("@") ? ("sender_address" as const) : ("sender_domain" as const), matcher: "is" as const, value: entry }));
     await prisma.$transaction(async (tx) => {
       await lockSpamRules(tx, projectId);
-      await tx.spamRule.deleteMany({ where: { projectId, id: { in: removeRules } } });
+      // Only this project's: another's ID, or one already removed, is refused.
+      const { count } = await tx.spamRule.deleteMany({ where: { projectId, id: { in: removeRules } } });
+      if (count < new Set(removeRules).size) {
+        throw new OperationError(404, "not_found", "That rule was already removed");
+      }
       await tx.spamSender.deleteMany({ where: { projectId, conversationId: null, sender: { in: remove } } });
       await tx.spamRule.deleteMany({ where: { projectId, field: { in: ["sender_address", "sender_domain"] }, matcher: "is", value: { in: remove } } });
       for (const entry of allow) {

@@ -62,12 +62,13 @@ export function matchesPattern(pattern: string, text: string): boolean {
   let star = -1;
   let from = 0;
   while (j < t.length) {
-    if (i < p.length && (p[i] === "?" || p[i] === t[j])) {
-      i++;
-      j++;
-    } else if (i < p.length && p[i] === "*") {
+    // A star first: it's never a literal, even facing a "*" in the text.
+    if (i < p.length && p[i] === "*") {
       star = i++;
       from = j;
+    } else if (i < p.length && (p[i] === "?" || p[i] === t[j])) {
+      i++;
+      j++;
     } else if (star >= 0) {
       i = star + 1;
       j = ++from;
@@ -88,10 +89,16 @@ export const spamRuleKey = (rule: SpamRule) =>
 /** What a new conversation shows the rules: each field's text, null where it has none. */
 export type SpamRuleInput = { domain?: string | null; address?: string | null; name?: string | null; subject?: string | null; text?: string | null; sentTo?: string[] };
 
-function matchesOne(rule: SpamRule, text: string): boolean {
+/**
+ * How much of each text the rules read. ponytail: a body's end past it isn't seen ("ends with" on a very long message);
+ * read its last characters too if that matters.
+ */
+export const SPAM_RULE_TEXT_CHARS = 10_000;
+
+function matchesOne(rule: SpamRule, text: string, fold: (text: string) => string, words: (text: string) => string): boolean {
   if (rule.matcher === "contains" && WORDS.has(rule.field)) {
-    const words = matchText(rule.value);
-    return words !== "" && ` ${matchText(text)} `.includes(` ${words} `);
+    const value = words(rule.value);
+    return value !== "" && ` ${words(text)} `.includes(` ${value} `);
   }
   const value = fold(rule.value);
   const folded = fold(text);
@@ -110,16 +117,29 @@ function matchesOne(rule: SpamRule, text: string): boolean {
   }
 }
 
-/** Whether a rule matches a conversation's field (any of them, for "Subject or body" and "Sent to"). */
-export function spamRuleMatches(rule: SpamRule, input: SpamRuleInput): boolean {
-  const texts: (string | null | undefined)[] = {
-    sender_domain: [input.domain],
-    sender_address: [input.address],
-    sender_name: [input.name],
-    subject: [input.subject],
-    body: [input.text],
-    subject_or_body: [input.subject, input.text],
-    sent_to: input.sentTo ?? [],
-  }[rule.field];
-  return texts.some((text) => !!text && matchesOne(rule, text));
+/**
+ * A test of rules against a conversation's fields (any of them, for "Subject or body" and "Sent to"): each text is cut
+ * to `SPAM_RULE_TEXT_CHARS` and folded once, however many rules read it.
+ */
+export function spamRuleMatcher(input: SpamRuleInput): (rule: SpamRule) => boolean {
+  const cut = (text: string | null | undefined) => text?.slice(0, SPAM_RULE_TEXT_CHARS) || null;
+  const fields: Record<SpamRuleField, (string | null)[]> = {
+    sender_domain: [cut(input.domain)],
+    sender_address: [cut(input.address)],
+    sender_name: [cut(input.name)],
+    subject: [cut(input.subject)],
+    body: [cut(input.text)],
+    subject_or_body: [cut(input.subject), cut(input.text)],
+    sent_to: (input.sentTo ?? []).map(cut),
+  };
+  const once = (fn: (text: string) => string) => {
+    const done = new Map<string, string>();
+    return (text: string) => done.get(text) ?? done.set(text, fn(text)).get(text)!;
+  };
+  const folded = once(fold);
+  const words = once(matchText);
+  return (rule) => (fields[rule.field as SpamRuleField] ?? []).some((text) => !!text && matchesOne(rule, text, folded, words));
 }
+
+/** Whether a rule matches a conversation's fields. */
+export const spamRuleMatches = (rule: SpamRule, input: SpamRuleInput) => spamRuleMatcher(input)(rule);
