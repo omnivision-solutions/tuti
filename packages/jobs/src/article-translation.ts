@@ -973,13 +973,15 @@ export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: G
     // The sources before any of their versions, as the translate job's write locks them, so the two never cross (in one
     // order, so two saves never cross either).
     await tx.$queryRaw`SELECT 1 FROM ${sourceTable} WHERE id = ANY(${[...new Set(mine.map(({ sourceId }) => sourceId))]}::text[]) ORDER BY id FOR UPDATE`;
-    // Their memory (and an article version's sections asked for) read under those locks: a job's write before them isn't
-    // written over.
+    // Their memory (and an article version's sections asked for, and those the team took out, of its published text or its
+    // draft) read under those locks: a job's write before them isn't written over.
     const asks = kind.name === "article" ? Prisma.sql`"updateSections"` : Prisma.sql`'[]'::jsonb`;
+    const out = kind.name === "article" ? Prisma.sql`"removedSections" || coalesce(draft -> 'removed', '[]'::jsonb)` : Prisma.sql`'[]'::jsonb`;
     const read = new Map(
-      (await tx.$queryRaw<{ id: string; memory: Record<string, string>; asked: string[] }[]>`SELECT id, memory, ${asks} AS asked FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`).map(
-        (row) => [row.id, row],
-      ),
+      (
+        await tx.$queryRaw<{ id: string; memory: Record<string, string>; asked: string[]; removed: string[] }[]>`
+          SELECT id, memory, ${asks} AS asked, ${out} AS removed FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`
+      ).map((row) => [row.id, row]),
     );
     // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks would
     // make a run send it again), so its next translation of them, the job's or Update those sections', is anew; the sections
@@ -988,7 +990,9 @@ export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: G
     // change replaces your edits in the sections it touches"), its draft's too, as Update those sections does.
     const rows = mine.map(({ id, language, automatic, reasons }) => {
       const memory = Object.fromEntries(Object.entries(read.get(id)?.memory ?? {}).filter(([text]) => !matchTerms(text, language)));
-      const asked = automatic ? [...new Set([...(read.get(id)?.asked ?? []), ...Object.keys(reasons)])] : (read.get(id)?.asked ?? []);
+      // A section the team took out isn't asked for: asking would bring it back.
+      const removed = new Set(read.get(id)?.removed ?? []);
+      const asked = automatic ? [...new Set([...(read.get(id)?.asked ?? []), ...Object.keys(reasons).filter((key) => !removed.has(key))])] : (read.get(id)?.asked ?? []);
       return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(automatic ? {} : reasons)}, ${automatic}, ${JSON.stringify(asked)})`;
     });
     const asking = kind.name === "article" ? Prisma.sql`, "updateSections" = v.asked::jsonb` : Prisma.empty;
