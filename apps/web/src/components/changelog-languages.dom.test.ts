@@ -378,3 +378,17 @@ test("an image uploaded into a draft that's carried across a new read still show
   await render({ version: "v2", title: "Von jemand anderem" });
   expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
 });
+
+test("an image of the read a draft was made from still shows when a new read without it remounts the form", async () => {
+  const id = "originalimage00000001";
+  const withImage = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Siehe unten." }] }, { type: "image", attrs: { mediaId: id, width: "100", align: "center", alt: "", w: 1000, h: 500 } }] };
+  shownMedia = { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` };
+  const { render } = await form({ version: "v1", content: withImage });
+  expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
+  // The team edits the title; a new read (a teammate took the image out) has none of its address.
+  await act(async () => type(title(), "Bearbeitet"));
+  shownMedia = {};
+  await render({ version: "v2", title: "Ohne Bild" });
+  expect(title().value).toBe("Bearbeitet");
+  expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
+});

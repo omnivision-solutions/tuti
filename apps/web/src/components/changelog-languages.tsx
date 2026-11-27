@@ -208,7 +208,8 @@ export function ChangelogVersionForm({
   const edits = useRef(start ? 1 : 0);
   const titleField = useRef<HTMLInputElement>(null);
   const editor = useRef<Editor | null>(null);
-  // The addresses of media added in this form (and carried in): the page's next read has only its own text's.
+  // The addresses of media added in this form (and carried in): the page's next read has only its own text's, so the draft
+  // carries them, with this read's own (`mediaUrls`: an image in it the next read drops is still in the draft).
   const added = useRef<MediaUrls>(start?.mediaUrls ?? {});
   const markEdited = () => {
     dirty.current = true;
@@ -216,7 +217,7 @@ export function ChangelogVersionForm({
     setEdited(true);
     // Carried to the form the page's next read mounts, should it come before this is saved.
     if (current()) {
-      drafts.put({ title: titleField.current?.value ?? "", content: (editor.current?.getJSON() as Doc | undefined) ?? view.content, token: loaded, mediaUrls: added.current });
+      drafts.put({ title: titleField.current?.value ?? "", content: (editor.current?.getJSON() as Doc | undefined) ?? view.content, token: loaded, mediaUrls: { ...mediaUrls, ...added.current } });
     }
   };
   // The page read again with a new token but the same text (the form is remounted when its text changes: page.tsx keys it by
