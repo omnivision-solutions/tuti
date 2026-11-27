@@ -105,14 +105,21 @@ function TranslationDialog({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [keep, setKeep] = useState(row.keepUpToDate && ai);
+  // Opened again: from the row as it is now (saved elsewhere meanwhile, another tab's save), not as it was last time.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setKeep(row.keepUpToDate && ai);
+      setError(null);
+    }
+  }
   const id = `translation-${row.language}`;
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         if (next || !pending) {
-          setError(null);
-          setKeep(row.keepUpToDate && ai);
           onOpenChange(next);
         }
       }}

@@ -23,21 +23,23 @@ const translationOutput = z
   })
   .describe("A collection's name and description in one of the project's languages");
 
-/** What a label shows in a language: a translation only while it's current (labelIn), and whether it's kept up to date. */
-function translationIn(label: { name: string; description: string; translations: unknown }, code: string) {
+/**
+ * What a label shows in a language: a translation only while it's current (labelIn), and whether it's kept up to date. One
+ * with none yet is, where the job will make it: the language Automatic for new pages (`automatic`), AI on, not a sample.
+ */
+function translationIn(label: { name: string; description: string; translations: unknown; sample: boolean }, code: string, automatic: boolean) {
   const translation = (label.translations as LabelTranslations | null)?.[code];
   const current = !!translation && (!translation.auto || translation.source === labelSource(label.name, label.description));
   return {
     language: code,
     name: current ? translation.name : null,
     description: current ? (translation.description ?? "") : null,
-    // A language Automatic for new pages translates a new label by itself.
-    keepUpToDate: translation ? translation.auto : false,
+    keepUpToDate: translation ? translation.auto : automatic && aiEnabled() && !label.sample,
   };
 }
 
 async function collectionFor(projectId: string, slug: string) {
-  const collection = await prisma.collection.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { name: true, description: true, translations: true } });
+  const collection = await prisma.collection.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { name: true, description: true, translations: true, sample: true } });
   if (!collection) {
     throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
   }
@@ -48,9 +50,9 @@ async function collectionFor(projectId: string, slug: string) {
 export async function collectionTranslations(projectId: string, slug: string) {
   const [collection, languages] = await Promise.all([
     collectionFor(projectId, slug),
-    prisma.projectLanguage.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { code: "asc" }], select: { code: true } }),
+    prisma.projectLanguage.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { code: "asc" }], select: { code: true, automatic: true } }),
   ]);
-  return languages.map(({ code }) => translationIn(collection, code));
+  return languages.map(({ code, automatic }) => translationIn(collection, code, automatic));
 }
 
 export const getCollectionTranslations = defineOperation({
@@ -115,11 +117,12 @@ export const updateCollectionTranslation = defineOperation({
           { name: input.name!, description: input.description ?? was?.description ?? "", auto: false, source: labelSource(row.name, row.description) };
       const translations = { ...row.translations, [input.language]: entry };
       await tx.collection.update({ where: { id: row.id }, data: { translations: translations as Prisma.InputJsonValue } });
-      return { name: row.name, description: row.description, translations };
+      const { automatic } = await tx.projectLanguage.findUniqueOrThrow({ where: { projectId_code: { projectId, code: input.language } }, select: { automatic: true } });
+      return { name: row.name, description: row.description, translations, sample: row.sample, automatic };
     });
     if (input.keepUpToDate) {
       await queueLabels(projectId, [input.language]);
     }
-    return translationIn(saved, input.language);
+    return translationIn(saved, input.language, saved.automatic);
   },
 });

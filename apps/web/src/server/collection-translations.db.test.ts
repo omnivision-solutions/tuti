@@ -129,3 +129,21 @@ test("kept up to date is refused with AI off (it would never be made) and on a s
   expect(labelIn(await billing(), "fr")).toEqual({ name: "Facturation", description: "" });
 });
 
+test("a new collection in a language Automatic for new pages: kept up to date before its translation is made, not 'not translated'", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
+  let meanwhile: unknown;
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), async () => {
+    meanwhile = await translations();
+  });
+  await call(createCollection, as(), { name: "Billing" });
+  await languageTranslationsDone();
+  expect(meanwhile).toEqual([
+    { language: "de", name: null, description: null, keepUpToDate: true },
+    { language: "fr", name: null, description: null, keepUpToDate: false },
+  ]);
+  // With AI off, nothing would make it: not kept up to date.
+  vi.stubEnv("OPENAI_API_KEY", "");
+  await call(createCollection, as(), { name: "Setup" });
+  expect((await call(getCollectionTranslations, as(), { slug: "setup" })).translations[0]).toMatchObject({ name: null, keepUpToDate: false });
+});
+
