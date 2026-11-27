@@ -253,14 +253,6 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
   const started: Started = {};
   try {
     const result = await translateOne(kind, parentId, language, log, run, started);
-    if ((result.skipped === STALE || result.skipped === CHANGED) && kind.name === "entry") {
-      // The product setting (or the entry) changed while it was translating, so it wrote nothing: an article's are queued
-      // again by the setting's change itself (queueLanguageTranslations); an entry's, which that leaves to their next
-      // translation, is that next one: the one already under way, again, under the new setting. (Where the entry's text
-      // changed, its edit's job has translated it, or does: this one then finds it up to date and asks nothing.)
-      await queue(kind, parentId, language);
-      return result;
-    }
     if (result.skipped === CHANGED && started.glossaryChanged && kind.name === "article") {
       // An article's version the team writes, with sections asked for (Update those sections), whose write the glossary
       // refused (saved meanwhile, which queues only versions kept up to date): asked again now, not after the safety net. Other
@@ -302,13 +294,34 @@ type Locked = Prisma.ArticleTranslationGetPayload<{ select: typeof lockedSelect 
  * write is a new text, whose old search sections go with it (search by meaning never answers with them).
  */
 type Settle = (data: Data | ((now: Locked) => Data | null), newVersion?: boolean) => Promise<boolean>;
-const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
+const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, removedHashes: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
 
 /** A version's draft as stored (ArticleTranslation.draft). */
-export type Draft = { title: string; titleEdited: boolean; content: Doc; sections: SectionMeta[]; /** Source sections the team took out of it. */ removed?: string[] };
+export type Draft = {
+  title: string;
+  titleEdited: boolean;
+  content: Doc;
+  sections: SectionMeta[];
+  /** Source sections the team took out of it. */
+  removed?: string[];
+  /** Each of those's source section hash when it was taken out (see removedChanged). */
+  removedHashes?: Record<string, string>;
+};
+
+/**
+ * On a version kept up to date, the sections the team took out (`removed`) whose source section changed since (their hashes
+ * then, `hashes`): the team's edit gives way, as any of theirs does where its source changed. One with no hash recorded
+ * (taken out before they were), or whose source section is gone, stays out.
+ */
+export function removedChanged(removed: Iterable<string> | undefined, hashes: unknown, source: ReturnType<typeof sourceSections>): string[] {
+  const then = (hashes ?? {}) as Record<string, string>;
+  const now = new Map(source.map((section) => [section.key, section.hash]));
+  return [...(removed ?? [])].filter((key) => then[key] !== undefined && now.has(key) && now.get(key) !== then[key]);
+}
 
 /** A version's text (published or its draft) for working out what's behind: on a version the team writes, every section is theirs and one the source has that it doesn't is behind too, but those it took out. */
-export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Iterable<string> };
+/** `changed`: sections taken out whose source changed since (removedChanged), behind where they stay out (a draft). */
+export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Iterable<string>; changed?: string[] };
 
 /**
  * Why each section is behind (`behind`): the team's sections whose source section changed since they were translated or
@@ -317,11 +330,12 @@ export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Itera
 export function behindOf(sourceLanguage: string, source: ReturnType<typeof sourceSections>, lists: BehindList[], kept: Record<string, string> = {}) {
   const [changed, added] = [sourceChanged(sourceLanguage), sourceAdded(sourceLanguage)];
   const out: Record<string, string> = { ...kept };
-  for (const { list, teamWrites, removed } of lists) {
+  for (const { list, teamWrites, removed, changed: outButChanged } of lists) {
     const own = teamWrites ? ownedByTeam(list) : list;
     for (const key of behindSections(own, source)) out[key] = changed;
+    for (const key of outButChanged ?? []) out[key] = changed;
     if (teamWrites) {
-      const has = new Set(list.map(({ meta }) => meta.key));
+      const has = new Set(list.flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
       for (const key of behindSections(own, source, { missing: true, removed: new Set(removed) })) if (!has.has(key)) out[key] ??= added;
     }
   }
@@ -419,7 +433,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   started.settle = settle;
   const waits = async (why: string) => {
     const tries = row.tries + 1;
-    await settle({ error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) });
+    const failure = { error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) };
+    // A version the team writes: only while a section this run was asked for still waits (another run, overlapping, may have
+    // done them all meanwhile: a failure then would sit on a version with nothing left to translate).
+    await settle(kind.name === "article" && !row.automatic ? (now) => ((now.updateSections as string[]).some((key) => asked.includes(key)) ? failure : null) : failure);
     return { failed: why };
   };
 
@@ -518,7 +535,11 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     const still = new Set(asked.filter((key) => (now.updateSections as string[]).includes(key)));
     const only = now.automatic ? undefined : still;
     // The sections asked for take the new translation, whoever owns them (an edit made since included): that's what was asked.
-    const live = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: still, published: now.automatic, removed: new Set(now.removedSections as string[]) });
+    // Kept up to date: a section the team took out whose English changed since comes back in the published text (in the
+    // draft it stays out, behind: there the team's edits never give way).
+    const comesBack = now.automatic ? removedChanged(now.removedSections as string[], now.removedHashes, parts) : [];
+    const stillOut = (now.removedSections as string[]).filter((key) => !comesBack.includes(key));
+    const live = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: still, published: now.automatic, removed: new Set(stillOut) });
     const draft = now.draft as Draft | null;
     const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, asked: still, removed: new Set(draft.removed) });
     const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
@@ -539,6 +560,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
         glossaryHash: glossary.hash,
       }),
       ...(!draftOnly && { content: content as Prisma.InputJsonValue, body: toPlainText(content), sections: metaOf(live) as Prisma.InputJsonValue }),
+      ...(comesBack.length > 0 && {
+        removedSections: stillOut,
+        removedHashes: Object.fromEntries(Object.entries(now.removedHashes as Record<string, string>).filter(([key]) => !comesBack.includes(key))),
+      }),
       ...(draft &&
         drafted && {
           // Its title the team's while it's edited there, or while the published one is theirs.
@@ -549,7 +574,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
         parts,
         [
           ...(draftOnly ? [] : [{ list: live, teamWrites: !now.automatic, removed: now.removedSections as string[] }]),
-          ...(drafted ? [{ list: drafted, teamWrites: !now.automatic, removed: draft.removed }] : []),
+          ...(drafted ? [{ list: drafted, teamWrites: !now.automatic, removed: draft.removed, changed: now.automatic ? removedChanged(draft.removed, draft.removedHashes, parts) : [] }] : []),
         ],
         kept,
       ),
@@ -579,13 +604,23 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
  * A version the team published (articles.publishTranslation), after its own transaction: named, on its first publish, and
  * its new text made searchable (a failure is retried by the retry job, as the job's is). Never throws.
  */
-export async function versionPublished(projectId: string, versionId: string, first: boolean) {
+export async function versionPublished(projectId: string, versionId: string, first: boolean, marker?: Date, triesBefore?: number) {
   const log = { info: () => {}, warn: (message: string) => serverLog.warn(message) };
-  if (first) {
-    await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+  // Never failing the publish, which has committed: the marker it wrote with it (`marker`, a retry time with `tries`) is left
+  // for the retry job, which embeds it, wherever this doesn't get as far as clearing it.
+  try {
+    if (first) {
+      await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+    }
+    const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
+    // The failures in a row before the publish (its marker's try isn't one).
+    if ((await searchable(versionId, marker ? (triesBefore ?? 0) : tries, retryAt, log)) && marker) {
+      // Embedded: the publish's marker goes (unless something since set another).
+      await prisma.articleTranslation.updateMany({ where: { id: versionId, retryAt: marker, error: null }, data: { retryAt: null, tries: 0 } });
+    }
+  } catch (error) {
+    serverLog.error("Embedding an article's version failed", { versionId, error });
   }
-  const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
-  await searchable(versionId, tries, retryAt, log).catch((error: unknown) => serverLog.error("Embedding an article's version failed", { versionId, error }));
 }
 
 /** Why a version up to date is tried again: its sections couldn't be embedded for search. */
@@ -599,7 +634,12 @@ const SEARCH_WAITS = "its search data couldn't be written";
  */
 async function searchable(translationId: string, tries: number, read: Date | null, log: JobLogger) {
   try {
-    await embedTranslation(translationId, log);
+    const result = await embedTranslation(translationId, log);
+    // Its text changed while it was embedded: a newer write's state (its own failure's tries and time) is that run's to keep.
+    // Only an attempt done for the text as it is clears the count (embeddings turned off too: nothing would try again).
+    if (result.changed) {
+      return true;
+    }
     if (tries > 0) {
       await prisma.articleTranslation.updateMany({ where: { id: translationId, error: null }, data: { tries: 0 } });
     }
@@ -692,15 +732,15 @@ export async function languageTranslationsDone() {
 
 /**
  * A source was published or its published text changed: translates it into each language keeping it up to date, starting
- * a version in each language that's Automatic for new pages (`addedBy`: only those added by then).
+ * a version in each language that's Automatic for new pages.
  */
-async function queueTranslations(kind: Kind, parentId: string, addedBy?: Date) {
+async function queueTranslations(kind: Kind, parentId: string) {
   const source = await kind.languagesOf(parentId);
   if (!source) {
     return;
   }
   const missing = source.languages.filter(
-    ({ code, automatic, createdAt }) => automatic && (!addedBy || createdAt <= addedBy) && !source.translations.some((t) => t.language === code),
+    ({ code, automatic }) => automatic && !source.translations.some((t) => t.language === code),
   );
   const languages = [...source.translations.filter((t) => t.automatic).map((t) => t.language), ...missing.map(({ code }) => code)];
   // The new versions and every version's safety net in one transaction: none is left without its net, which the retry
@@ -731,18 +771,22 @@ const translatedByJob = {
 } satisfies Prisma.ArticleTranslationWhereInput;
 
 /**
- * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). Failing, the entry
- * is marked (translationsQueueFailedAt), for the retry job to queue it again; the error still goes to the caller.
+ * A changelog entry was published or its published text changed: queueTranslations (docs/plan.md L16). The entry is marked
+ * first (translationsQueueFailedAt) and the mark cleared once it's queued, so queuing that fails, or a restart partway,
+ * leaves it marked for the retry job to queue again; the error still goes to the caller. (Marked after a failure instead,
+ * the mark could be lost with it.)
  */
 export async function queueChangelogTranslations(entryId: string) {
-  try {
-    await queueTranslations(ENTRY, entryId);
-  } catch (error) {
-    // Its own time, not the entry's change (updatedAt, which @updatedAt would move).
-    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = now() WHERE id = ${entryId}`.catch((marking: unknown) =>
-      serverLog.error("Marking a changelog entry's failed translation queuing failed", { entryId, error: marking }),
-    );
-    throw error;
+  // Its own time, not the entry's change (updatedAt, which @updatedAt would move); in UTC, as Prisma writes the column (no
+  // time zone in it: the database session's own zone would put it hours off).
+  const [mark] = await prisma.$queryRaw<{ at: Date }[]>`
+    UPDATE changelog_entry SET "translationsQueueFailedAt" = now() AT TIME ZONE 'UTC' WHERE id = ${entryId} RETURNING "translationsQueueFailedAt" AS at`;
+  await queueTranslations(ENTRY, entryId);
+  if (mark) {
+    // Unless a newer queuing set its own meanwhile (that one clears it). Prisma binds the Date as UTC wall-clock time with no
+    // zone, as the column holds it: `::timestamp(3)` takes it as it is, whatever the session's time zone (`::timestamptz`
+    // would read it in that zone, hours off; the New York test checks it).
+    await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${entryId} AND "translationsQueueFailedAt" = ${mark.at}::timestamp(3)`;
   }
 }
 
@@ -750,17 +794,23 @@ export async function queueChangelogTranslations(entryId: string) {
  * Queues a language's versions kept up to date (adding the language, Retranslate, the product setting changing), those
  * waiting for a first translation too; with Automatic for new pages, every published article gets a version first.
  * `fresh`: nothing reused (Retranslate). `waiting`: only those that couldn't be translated (Try again). How many it queued.
- * Articles only for now: changelog entries are translated as they're published and edited, and join these once Settings →
- * Languages counts them in what it confirms (docs/plan.md L16, a later part), so nothing is charged that wasn't confirmed.
+ * Published changelog entries too, as Settings → Languages counts them in what it confirms (docs/plan.md L16).
  */
-export async function queueLanguageTranslations(projectId: string, language: string, { fresh = false, waiting = false } = {}): Promise<number> {
+export async function queueLanguageTranslations(
+  projectId: string,
+  language: string,
+  { fresh = false, waiting = false, newEntries = true }: { fresh?: boolean; waiting?: boolean; newEntries?: boolean } = {},
+): Promise<number> {
   const setting = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { automatic: true } });
   if (!setting) {
     return 0;
   }
   const pages: Page[] = [];
-  for (const kind of [ARTICLE]) {
-    if (setting.automatic) {
+  for (const kind of KINDS) {
+    // `newEntries` false (the product switch): an entry's version is never started there, only its existing ones translated
+    // again; starting them is for what's confirmed with a count (adding the language, Retranslate). Try again (`waiting`)
+    // starts none either: it tries again those that failed, and a version it started wouldn't be one of them.
+    if (setting.automatic && !waiting && (kind !== ENTRY || newEntries)) {
       const sources = await kind.without(projectId, language);
       await kind.table().createMany({ data: sources.map(({ id }) => ({ [kind.parent]: id, projectId, language })), skipDuplicates: true });
     }
@@ -1000,21 +1050,26 @@ export async function retryArticleTranslations(): Promise<JobResult> {
 }
 
 /**
- * Changelog entries whose translations' queuing failed (queueChangelogTranslations marked them): queued again, for the
- * languages there when it failed (one added since isn't confirmed for entries yet), the mark cleared unless it failed
- * again meanwhile. How many it queued.
+ * Changelog entries whose translations' queuing failed, or didn't finish: queueChangelogTranslations marks an entry before
+ * queuing and clears it after. Queued again as a publish does, the mark cleared unless a newer queuing set its own. How many
+ * it queued. (Only marked ones: a version missing in an Automatic language is otherwise one nobody confirmed, an entry
+ * published while the language was Manual, say.)
  */
+/** How long a changelog entry's mark is left to the queuing that set it before the retry job takes it. */
+export const QUEUING_GRACE_MS = 60_000;
+
 async function entriesLeftBehind(): Promise<number> {
-  const entries = await prisma.changelogEntry.findMany({
-    where: { translationsQueueFailedAt: { not: null } },
-    orderBy: [{ translationsQueueFailedAt: "asc" }, { id: "asc" }],
-    take: retryBatch.size,
-    select: { id: true, translationsQueueFailedAt: true },
-  });
+  // Not one marked in the last minute: its queuing may still be under way (it clears the mark once it's done). Against the
+  // database's clock, the one the mark was written by (the app's may be off).
+  const entries = await prisma.$queryRaw<{ id: string; translationsQueueFailedAt: Date }[]>`
+    SELECT id, "translationsQueueFailedAt" FROM changelog_entry
+    WHERE "translationsQueueFailedAt" < (now() AT TIME ZONE 'UTC') - ${QUEUING_GRACE_MS} * interval '1 millisecond'
+    ORDER BY "translationsQueueFailedAt", id
+    LIMIT ${retryBatch.size}`;
   let queued = 0;
   for (const { id, translationsQueueFailedAt: failedAt } of entries) {
     try {
-      await queueTranslations(ENTRY, id, failedAt!);
+      await queueTranslations(ENTRY, id);
       await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${id} AND "translationsQueueFailedAt" = ${failedAt}::timestamp(3)`;
       queued++;
     } catch (error) {
