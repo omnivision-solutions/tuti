@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { matchText } from "@/lib/match-text";
 import { SPAM_REASON_KEYS, spamPassedWhy, spamWhy } from "@/lib/spam-reasons";
-import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleAudience, type SpamRuleField, type SpamRuleMatcher, MAX_PATTERN, MAX_PATTERN_RULES, SPAM_RULE_AUDIENCE_KEYS, spamRuleValue } from "@/lib/spam-rules";
+import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleAudience, type SpamRuleField, type SpamRuleMatcher, MAX_PATTERN, MAX_PATTERN_RULES, MAX_SPAM_RULES, SPAM_RULE_AUDIENCE_KEYS, spamRuleValue } from "@/lib/spam-rules";
 
 import { userWithAddress } from "../inbound";
 import { addSpamRule, allowSender, blockableDomain, lockSpamRules, spamVerdict } from "../spam";
@@ -18,7 +18,7 @@ import { defineOperation, OperationError } from "./define";
  * W3), and trying a message against the filter.
  */
 
-export const MAX_SPAM_RULES = 500;
+export { MAX_SPAM_RULES };
 export const MAX_SPAM_RULE_VALUE = 200;
 /** The allowed list. */
 export const MAX_SPAM_SENDERS = 500;
