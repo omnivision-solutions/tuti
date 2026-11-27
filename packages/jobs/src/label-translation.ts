@@ -7,6 +7,7 @@ import { aiEnabled, complete, type JobInput, log as serverLog } from "@tuti/shar
 import { aiFor } from "./ai-usage";
 import { languageName, lostAfterMs, queueAll, retryDelay, translationInstructions } from "./article-translation";
 import { OutOfCredits } from "./credits";
+import { glossaryFor, projectGlossary } from "./glossary";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
 /**
@@ -122,6 +123,8 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
       from: languageName(setting.project.language),
       to: languageName(language),
       instructions: translationInstructions(languageName(language), setting.productAvailable, setting.instructions),
+      // The glossary's terms these labels use (docs/plan.md L12), checked after as an article's are.
+      glossary: glossaryFor(await projectGlossary(projectId), language, labels.flatMap((label) => [label.name, label.description]).join("\n")).terms,
       about: ABOUT,
       ask: async (system, user) => {
         if (!(await sameSetting(prisma, projectId, language, setting))) {
