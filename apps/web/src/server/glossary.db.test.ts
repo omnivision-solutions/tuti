@@ -1,6 +1,6 @@
-import { type Doc, segmentsOf } from "@tuti/content";
+import { type Doc, segmentsOf, termTests } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { type Glossary, glossaryChanges, glossaryChangedFor, labelIn, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
+import { applyGlossaryChanges, type Glossary, glossaryChangedFor, planGlossaryChanges, labelIn, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -315,7 +315,8 @@ test("a save's statements don't grow with the help center: as many for 50 source
           return value && typeof value === "object" && typeof key === "string" && !key.startsWith("$") ? counted(value) : value;
         },
       });
-    await prisma.$transaction((tx) => glossaryChanges(counted(tx), project.id, before, after), { timeout: 30_000 });
+    const plan = await planGlossaryChanges(project.id, before, after);
+    await prisma.$transaction((tx) => applyGlossaryChanges(counted(tx), plan), { timeout: 30_000 });
     return count;
   };
   await more(5);
@@ -350,3 +351,27 @@ test("a publish of the team's draft during Update those sections refuses its wri
   expect(String((await version("boards")).body)).toContain("[de2]");
 });
 
+test("a big first glossary is matched a text at a time, whatever the number of terms: 300 terms take no more tests than 10, and save well inside a transaction's time", async () => {
+  await call(updateLanguages, as(), { languages: (["de", "fr", "es"] as const).map((code) => ({ code, newPages: "manual" as const })) });
+  // Each article's text uses one of the first ten terms, in each of its five sections.
+  const terms = Array.from({ length: 300 }, (_, i) => `Term${i}`);
+  const content = (term: string) => doc("Intro", ...Array.from({ length: 5 }, (_, i) => [`Part ${i}`, `Use ${term} here.`] as [string, string]));
+  const articles = await prisma.article.createManyAndReturn({
+    data: Array.from({ length: 300 }, (_, i) => ({ projectId: project.id, slug: `a-${i}`, title: `A ${i}`, body: "x", content: content(terms[i % 10]!), publishedAt: new Date() })),
+    select: { id: true },
+  });
+  await prisma.articleTranslation.createMany({
+    data: articles.flatMap(({ id }) => ["de", "fr", "es"].map((language) => ({ articleId: id, projectId: project.id, language, automatic: false, title: "x", body: "x", publishedAt: new Date() }))),
+  });
+  const glossary = (count: number) => terms.slice(0, count).map((term) => ({ term, translations: { de: `${term}-de`, fr: `${term}-fr`, es: `${term}-es` } }));
+  /** The term tests a save's working out takes (a dry run: the same matching, nothing written). */
+  const tests = async (count: number) => {
+    const before = termTests.count;
+    expect(await call(updateGlossary, as(), { terms: glossary(count), dryRun: true })).toMatchObject({ behind: 900 });
+    return termTests.count - before;
+  };
+  expect(await tests(300)).toBe(await tests(10));
+  const started = Date.now();
+  expect(await call(updateGlossary, as(), { terms: glossary(300) })).toMatchObject({ retranslating: 0, behind: 900 });
+  expect(Date.now() - started).toBeLessThan(5_000);
+}, 60_000);

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { glossaryChanges, lockProject, projectGlossary } from "@tuti/jobs";
+import { applyGlossaryChanges, type GlossaryChanges, lockProject, planGlossaryChanges, projectGlossary } from "@tuti/jobs";
 import { LANGUAGE_CODES } from "@tuti/shared";
 import { z } from "zod";
 
@@ -56,6 +56,7 @@ export const updateGlossary = defineOperation({
   path: "/glossary",
   scope: "write",
   access: "admin",
+  errors: [409],
   input: z.object({
     terms: z.array(termInput).max(MAX_GLOSSARY_TERMS).describe(`Every term (up to ${MAX_GLOSSARY_TERMS}); one left out is removed`),
     dryRun: z.boolean().optional().describe("Save nothing: only count what saving would translate again and mark behind"),
@@ -81,16 +82,30 @@ export const updateGlossary = defineOperation({
       keep,
       translations: keep ? {} : (Object.fromEntries(Object.entries(translations).filter(([, word]) => word)) as Record<string, string>),
     }));
-    const { changes } = await prisma.$transaction(async (tx) => {
-      await lockProject(tx, projectId);
-      const before = await projectGlossary(projectId, tx);
-      const changes = await glossaryChanges(tx, projectId, before, after, { dryRun });
-      if (!dryRun) {
-        await tx.glossaryTerm.deleteMany({ where: { projectId } });
-        await tx.glossaryTerm.createMany({ data: after.map((term) => ({ projectId, ...term })) });
-      }
-      return { changes };
-    });
+    // What saving changes, worked out before the transaction (matching terms against every source's text): only locks, reads
+    // and writes run in it. Planned against the glossary as it was read; saved under the project's lock only if it still is
+    // (another save in between: planned again).
+    let changes: GlossaryChanges | null = null;
+    for (let tries = 0; !changes; tries++) {
+      const before = await projectGlossary(projectId);
+      const plan = await planGlossaryChanges(projectId, before, after);
+      changes = await prisma.$transaction(
+        async (tx) => {
+          await lockProject(tx, projectId);
+          if (JSON.stringify(await projectGlossary(projectId, tx)) !== JSON.stringify(before)) {
+            if (tries >= 2) throw new OperationError(409, "changed", "The glossary changed while saving. Try again");
+            return null;
+          }
+          const applied = await applyGlossaryChanges(tx, plan, { dryRun });
+          if (!dryRun) {
+            await tx.glossaryTerm.deleteMany({ where: { projectId } });
+            await tx.glossaryTerm.createMany({ data: after.map((term) => ({ projectId, ...term })) });
+          }
+          return applied;
+        },
+        { timeout: 30_000 },
+      );
+    }
     if (!dryRun) {
       await changes.queue();
     }
