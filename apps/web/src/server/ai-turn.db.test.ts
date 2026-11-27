@@ -309,7 +309,7 @@ test("a second message while the first turn writes: one answer, to both, and no 
  * While a turn is writing (its decision being asked), a teammate takes the conversation over, replies and hands it back to
  * the AI: the AI has it again, and the user's message is the newest of theirs, but the team answered it.
  */
-async function answeredByTeamMeanwhile(person: number) {
+async function answeredByTeamMeanwhile(person: number, afterwards?: () => void) {
   const { owner, admin, projectId, mail, turn, state, handovers } = await setup();
   await mail();
   const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
@@ -319,6 +319,7 @@ async function answeredByTeamMeanwhile(person: number) {
     await call(replyToConversation, admin, { number: 1, body: "Settings → Export, Sam." });
     expect(await handBackConversation(slug, 1)).toEqual({});
     actAs(null);
+    afterwards?.();
   });
   return { turn, state, handovers };
 }
@@ -336,6 +337,31 @@ test("a turn still writing when the team took over, replied and handed back does
   model.reply("They want a person.", undefined, "askedBefore");
   expect(await turn()).toBe("dropped");
   expect(await state()).toEqual({ handledBy: "AI", due: false, thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
+  expect(await handovers()).toEqual([]);
+});
+
+test("a turn still writing when the team took over, replied and handed back doesn't hand it over from the handover's fallback either", async () => {
+  // The handover's own transaction fails: the next one once the team's acts are done (the summary asks none).
+  let armed = false;
+  let failed = 0;
+  const real = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  const transactions = vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) => {
+    if (armed) {
+      armed = false;
+      failed++;
+      return Promise.reject(new Error("connection reset"));
+    }
+    return real(...args);
+  }) as never);
+  const { turn, state, handovers } = await answeredByTeamMeanwhile(0.95, () => {
+    armed = true;
+  });
+  model.reply("They want a person.", undefined, "askedBefore");
+  expect(await turn()).toBe("dropped");
+  transactions.mockRestore();
+  expect(failed).toBe(1);
+  // Nothing handed over or marked: the fallback found the team's reply.
+  expect(await state()).toMatchObject({ handledBy: "AI", thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
   expect(await handovers()).toEqual([]);
 });
 
