@@ -611,7 +611,12 @@ test("users.delete clears a sender rule's words from the conversations it erases
     ["rule", "Subject or body contains crypto"],
   ]);
   const activity = async () =>
-    (await prisma.conversationEvent.findMany({ where: { conversation: { projectId }, kind: "spam_filter" }, orderBy: { createdAt: "asc" }, select: { details: true } })).map(
+    (await prisma.conversationEvent.findMany({
+      where: { conversation: { projectId }, kind: "spam_filter" },
+      // By conversation first: the email's and the widget's rows can share a millisecond.
+      orderBy: [{ conversation: { number: "asc" } }, { createdAt: "asc" }, { id: "asc" }],
+      select: { details: true },
+    })).map(
       (row) => (row.details as { phrase?: string }).phrase ?? null,
     );
   expect(await activity()).toEqual(["Sender address starts with e2e-sam", "Subject or body contains crypto"]);
