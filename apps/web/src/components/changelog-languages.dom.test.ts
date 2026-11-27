@@ -301,6 +301,10 @@ test("typing while a save is on its way survives the page's next read, which sho
   // The page reads again after the save: the title and text it stored.
   await render({ version: "v-saved", title: "Gespeicherter Titel" });
   expect(title().value).toBe("Gespeicherter Titel, weiter getippt");
+  // The carried draft goes from the save's token (its own save, not someone else's change): the next Save isn't refused.
+  saveChangelogVersion.mockResolvedValueOnce({ version: "v-next" });
+  await submit();
+  expect((saveChangelogVersion.mock.calls.at(-1)![4] as FormData).get("version")).toBe("v-saved");
 });
 
 test("with nothing typed, a new read's title and text are set in place, and its token taken with them", async () => {
