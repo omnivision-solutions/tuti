@@ -15,6 +15,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("next/link", () => ({ default: ({ href, ...props }: { href: string }) => h("a", { href, ...props }) }));
 vi.mock("@/server/media", () => ({ uploadStatus: vi.fn() }));
 vi.mock("@/server/images", () => ({ generateImage: vi.fn() }));
+// The editor's Ask AI (its server action reads the app's addresses as it loads): unused here, and kept offline.
+vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
 const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
