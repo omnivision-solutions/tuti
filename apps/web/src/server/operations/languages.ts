@@ -94,6 +94,16 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
   };
 }
 
+/**
+ * A project's published pages: its articles and changelog entries, what a language translates (Settings → Languages' rows
+ * and Add language count against it). Not sample ones (never translated), drafts, or deleted articles.
+ */
+export async function publishedPages(projectId: string): Promise<number> {
+  const live = { projectId, publishedAt: { not: null }, sample: false };
+  const [articles, entries] = await Promise.all([prisma.article.count({ where: { ...live, deletedAt: null } }), prisma.changelogEntry.count({ where: live })]);
+  return articles + entries;
+}
+
 /** Said when a project on `plan` has as many languages as its plan's `limit` allows (also Settings' upgrade prompts: `then`, "make more live"). */
 export const languagesFull = (plan: PlanKey, limit: number, then = "add more") =>
   [

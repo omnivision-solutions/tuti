@@ -7,7 +7,7 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 import { addLanguage, removeLanguage, setDefaultLanguage, updateLanguage } from "./languages";
 import { languageLine } from "@/lib/language-line";
 
-import { projectLanguages } from "./operations/languages";
+import { projectLanguages, publishedPages } from "./operations/languages";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -77,4 +77,27 @@ test("a language's translated count is of its published pages only: a sample or 
   expect(german!.articles.translated).toBe(0);
   // Settings' one published page (the sample's and the draft's aren't counted).
   expect(languageLine(german!, 1)).toBe("Manual · 0 of 1 translated");
+});
+
+test("a project's published pages are its published articles and changelog entries: never sample ones, drafts or deleted articles", async () => {
+  const { projectId } = await setUp();
+  const published = new Date();
+  await prisma.article.createMany({
+    data: [
+      { projectId, slug: "billing", title: "Billing", publishedAt: published },
+      { projectId, slug: "sample", title: "Sample", publishedAt: published, sample: true },
+      { projectId, slug: "draft", title: "Draft" },
+      // Deleted (unpublished with it: the database refuses a deleted article that is still published).
+      { projectId, slug: "gone", title: "Gone", deletedAt: published },
+    ],
+  });
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId, number: 1, title: "Dark mode", publishedAt: published },
+      { projectId, number: 2, title: "Sample entry", publishedAt: published, sample: true },
+      { projectId, number: 3, title: "Draft entry" },
+    ],
+  });
+  // The published article and the published entry.
+  expect(await publishedPages(projectId)).toBe(2);
 });
