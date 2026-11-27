@@ -138,7 +138,7 @@ function versionLine(view: VersionView, defaultName: string) {
 }
 
 /** What a version form hands on to the one the page's next read mounts: its unsaved title and text, and the token they go from. */
-type Carried = { title: string; content: Doc; token: string };
+type Carried = { title: string; content: Doc; token: string; mediaUrls: MediaUrls };
 
 /**
  * A version's editor: one per language (the page keys it so), holding what's typed and not saved across the form it shows,
@@ -208,13 +208,15 @@ export function ChangelogVersionForm({
   const edits = useRef(start ? 1 : 0);
   const titleField = useRef<HTMLInputElement>(null);
   const editor = useRef<Editor | null>(null);
+  // The addresses of media added in this form (and carried in): the page's next read has only its own text's.
+  const added = useRef<MediaUrls>(start?.mediaUrls ?? {});
   const markEdited = () => {
     dirty.current = true;
     edits.current += 1;
     setEdited(true);
     // Carried to the form the page's next read mounts, should it come before this is saved.
     if (current()) {
-      drafts.put({ title: titleField.current?.value ?? "", content: (editor.current?.getJSON() as Doc | undefined) ?? view.content, token: loaded });
+      drafts.put({ title: titleField.current?.value ?? "", content: (editor.current?.getJSON() as Doc | undefined) ?? view.content, token: loaded, mediaUrls: added.current });
     }
   };
   // The page read again with a new token but the same text (the form is remounted when its text changes: page.tsx keys it by
@@ -288,7 +290,7 @@ export function ChangelogVersionForm({
           />
           {state.error && <FieldError id="version-error">{state.error}</FieldError>}
         </div>
-        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={start?.content ?? view.content} editorRef={editor} onChange={markEdited} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
+        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={start?.content ?? view.content} editorRef={editor} onChange={markEdited} onMediaUrls={(urls) => (added.current = { ...added.current, ...urls })} uploads={mediaUrls ? { projectSlug, mediaUrls: { ...mediaUrls, ...start?.mediaUrls } } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate

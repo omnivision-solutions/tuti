@@ -17,7 +17,8 @@ vi.mock("@/server/media", () => ({ uploadStatus: vi.fn() }));
 vi.mock("@/server/images", () => ({ generateImage: vi.fn() }));
 // The editor's Ask AI (its server action reads the app's addresses as it loads): unused here, and kept offline.
 vi.mock("@/server/rewrite", () => ({}));
-vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
+const uploadImage = vi.fn();
+vi.mock("@/lib/upload-image", () => ({ uploadImage, uploadFile: vi.fn() }));
 const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
 
@@ -360,4 +361,20 @@ test("a save's answer that comes after the same text's newer read was taken keep
   await act(async () => answer({ version: "v-late" }));
   await submit();
   expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v2");
+});
+
+test("an image uploaded into a draft that's carried across a new read still shows: its address goes with the draft", async () => {
+  // Uploads set up (the page has a media map), the first read with no images.
+  shownMedia = {};
+  const { render } = await form({ version: "v1" });
+  const id = "uploadedimage00000001";
+  uploadImage.mockResolvedValueOnce({ mediaId: id, src: `https://media.example/${id}.png`, urls: { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` }, w: 1000, h: 500 });
+  const input = document.querySelector<HTMLInputElement>('input[type="file"][accept^="image"]')!;
+  Object.defineProperty(input, "files", { value: [new File(["x"], "screen.png", { type: "image/png" })], configurable: true });
+  await act(async () => void input.dispatchEvent(new Event("change", { bubbles: true })));
+  await vi.waitFor(() => expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull());
+  // A new read with other text (a teammate's save): its media map has none of the upload's addresses.
+  shownMedia = {};
+  await render({ version: "v2", title: "Von jemand anderem" });
+  expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
 });
