@@ -87,6 +87,7 @@ type Version = {
   memory: unknown;
   error: string | null;
   retryAt: Date | null;
+  updatedAt: Date;
   tries: number;
   retranslate: number;
   retranslated: number;
@@ -149,6 +150,7 @@ const versionSelect = {
   memory: true,
   error: true,
   retryAt: true,
+  updatedAt: true,
   tries: true,
   retranslate: true,
   retranslated: true,
@@ -253,12 +255,16 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
   const started: Started = {};
   try {
     const result = await translateOne(kind, parentId, language, log, run, started);
-    if (result.skipped === CHANGED && started.glossaryChanged && kind.name === "article") {
-      // An article's version the team writes, with sections asked for (Update those sections), whose write the glossary
-      // refused (saved meanwhile, which queues only versions kept up to date): asked again now, not after the safety net. Other
-      // refusals (a publish, the source changing) queue their own run.
-      const version = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: parentId, language } }, select: { automatic: true, updateSections: true } });
-      if (version && !version.automatic && (version.updateSections as string[]).length > 0) {
+    if (result.skipped === CHANGED && started.glossaryChanged) {
+      // Its write refused by a glossary saved meanwhile: asked again now, not after the safety net, unless that save queued it
+      // (it writes a version kept up to date that it retranslates, so one written since was). A version the team writes, with
+      // sections asked for (Update those sections), the save only marks: always asked again. Other refusals (a publish, the
+      // source changing) queue their own run.
+      const [version] = (await kind.table().findMany({
+        where: { [kind.parent]: parentId, language },
+        select: { automatic: true, updatedAt: true, ...(kind.name === "article" && { updateSections: true }) },
+      })) as unknown as { automatic: boolean; updatedAt: Date; updateSections?: string[] }[];
+      if (version && (version.automatic ? version.updatedAt.getTime() === started.updatedAt?.getTime() : (version.updateSections ?? []).length > 0)) {
         await queue(kind, parentId, language);
       }
       return result;
@@ -352,11 +358,12 @@ export const sourceChanged = (sourceLanguage: string) => `${languageName(sourceL
 export const otherReasons = (behind: unknown, sourceLanguage: string) =>
   Object.fromEntries(Object.entries((behind ?? {}) as Record<string, string>).filter(([, why]) => why !== sourceChanged(sourceLanguage) && why !== sourceAdded(sourceLanguage)));
 /** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
-type Started = { settle?: Settle; retryAt?: Date | null; /** Its write was refused because the glossary changed since it read it. */ glossaryChanged?: true };
+type Started = { settle?: Settle; retryAt?: Date | null; updatedAt?: Date; /** Its write was refused because the glossary changed since it read it. */ glossaryChanged?: true };
 
 async function translateOne(kind: Kind, parentId: string, language: string, log: JobLogger, { lastTry }: JobRun, started: Started): Promise<JobResult> {
   const row = await kind.read(parentId, language);
   started.retryAt = row?.retryAt;
+  started.updatedAt = row?.updatedAt;
   // An article's version the team writes is translated only where it asked (Update those sections).
   const asked = (row?.updateSections ?? []) as string[];
   if (!row || (!row.automatic && asked.length === 0)) {
@@ -845,21 +852,27 @@ type TouchedVersion = { kind: Kind; sourceId: string; id: string; language: stri
  * ponytail: reads every published source's text per save (a rare, deliberate act); a per-term index if glossaries get big.
  */
 /**
- * What a glossary plan was made from, without any text: the project's languages, and each published source's and label's
- * last change with its versions (which, in which language, kept up to date or not). Read before the plan reads the texts, and
- * again under the save's lock: a publish, an edit, a version added or switched in between makes them differ, and the save
- * plans again.
+ * What a glossary plan was made from: the project's languages, each published source's text (its translation source's
+ * hash) with its versions (which, in which language, kept up to date or not), and each label's name. Read before the plan
+ * reads the texts, and again under the save's lock: a publish, a version added or switched, a label renamed in between makes
+ * them differ, and the save plans again. Not the rows' updatedAt: a draft edit, or a label's translation written, changes
+ * nothing the plan read.
  */
 async function glossaryPlanState(db: Prisma.TransactionClient | typeof prisma, projectId: string): Promise<string> {
   const versions = { select: { id: true, language: true, automatic: true }, orderBy: { id: "asc" as const } };
   const [languages, articles, entries, collections, tabs] = await Promise.all([
     db.projectLanguage.findMany({ where: { projectId }, select: { code: true }, orderBy: { code: "asc" } }),
-    db.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, updatedAt: true, translations: versions }, orderBy: { id: "asc" } }),
-    db.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, updatedAt: true, translations: versions }, orderBy: { id: "asc" } }),
-    db.collection.findMany({ where: { projectId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } }),
-    db.docsTab.findMany({ where: { projectId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } }),
+    db.article.findMany({
+      where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) },
+      select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions },
+      orderBy: { id: "asc" },
+    }),
+    db.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, title: true, body: true, content: true, translations: versions }, orderBy: { id: "asc" } }),
+    db.collection.findMany({ where: { projectId }, select: { id: true, name: true, description: true }, orderBy: { id: "asc" } }),
+    db.docsTab.findMany({ where: { projectId }, select: { id: true, name: true }, orderBy: { id: "asc" } }),
   ]);
-  return contentHash(JSON.stringify([languages, articles, entries, collections, tabs]));
+  const sources = [...articles, ...entries].map((row) => [row.id, translationSource(row).hash, row.translations]);
+  return contentHash(JSON.stringify([languages, sources, collections, tabs]));
 }
 
 export async function planGlossaryChanges(projectId: string, before: Glossary, after: Glossary) {
