@@ -57,7 +57,7 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
 
   // The guidance for the AI's checks: saved with the page's Save changes, and there again on the next visit.
   const guidance = card("Guidance for the AI");
-  await expect(guidance).toContainText("What is and isn't spam for your team. For now the AI only notes what it would file.");
+  await expect(guidance).toContainText("Describe your spam; the AI checks what the rules miss.");
   await guidance.getByLabel("Guidance for the AI").fill("Agencies offering SEO work are spam");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Guidance saved")).toBeVisible();
@@ -78,6 +78,11 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
   await checkpoint(owner, "spam-settings", { fullPage: false });
   await owner.setViewportSize({ width: 1440, height: 900 });
   await expect(attempt.getByLabel("Message")).toHaveValue("This is the facebook admin: your page will be disabled.");
+  // With the guidance written, a stranger's message nothing else decides is the AI check's to judge (not asked here).
+  await attempt.getByLabel("From").fill("e2e-kim@strangers.example");
+  await attempt.getByLabel("Message").fill("Can I export to CSV?");
+  await attempt.getByRole("button", { name: "Try it" }).click();
+  await expect(attempt.getByRole("status")).toHaveText("The AI spam check would decide this one.");
   // On a phone nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -90,8 +95,11 @@ test("an owner blocks a domain and adds a phrase in Settings → Spam, tries a m
   await receive(address, rawEmail("Lee Roe <e2e-lee@mail.spam-corp.example>", "Cheap followers", "Buy 10,000 followers today."));
   await receive(address, rawEmail("Kim Lee <e2e-kim@strangers.example>", "A notice", "This is the FACEBOOK ADMIN: your page will be disabled."));
   await receive(address, rawEmail("Acme forms <e2e-forms@relay.example>", "Contact form", "Someone wrote: how do I export my data?"));
-  await owner.goto(`/app/${slug}/inbox`);
-  await expectMoreView(owner, "Needs reply 1");
+  // The last is held while the AI check (the guidance is written) judges it, then released: a reload till it's in.
+  await expect(async () => {
+    await owner.goto(`/app/${slug}/inbox`);
+    await expectMoreView(owner, "Needs reply 1");
+  }).toPass({ timeout: 30_000 });
   await (await moreView(owner, "Spam 2")).click();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(2);

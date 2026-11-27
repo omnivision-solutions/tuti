@@ -28,14 +28,14 @@ export async function setSpamGuidance(projectSlug: string, guidance: string): Pr
   return asAdmin(projectSlug, DENIED, (context) => call(updateSpamSettings, context, { guidance: String(guidance ?? "") }));
 }
 
-export type SpamTry = { error?: string; spam?: boolean; why?: string };
+export type SpamTry = { error?: string; spam?: boolean; aiCheck?: boolean; why?: string };
 
 /** Tries a message against the filter (spam.try): what it would do with it, changing nothing. */
 export async function trySpam(projectSlug: string, message: { sender: string; subject: string; text: string }): Promise<SpamTry> {
   let result: SpamTry = {};
   const state = await asAdmin(projectSlug, "Only project owners and admins can try the spam filter", async (context) => {
-    const { spam, why } = await call(trySpamFilter, context, { sender: String(message?.sender ?? ""), subject: String(message?.subject ?? ""), text: String(message?.text ?? "") });
-    result = { spam, why };
+    const { spam, aiCheck, why } = await call(trySpamFilter, context, { sender: String(message?.sender ?? ""), subject: String(message?.subject ?? ""), text: String(message?.text ?? "") });
+    result = { spam, aiCheck, why };
   });
   return state.error ? state : result;
 }

@@ -236,7 +236,7 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   return (
     <SettingsCard
       title="Guidance for the AI"
-      description="What is and isn't spam for your team. For now the AI only notes what it would file."
+      description="Describe your spam; the AI checks what the rules miss."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">
@@ -287,7 +287,7 @@ function TryMessage({ projectSlug }: { projectSlug: string }) {
             {pending ? "Trying…" : "Try it"}
           </Button>
           <p role="status" className="min-w-0 text-sm wrap-anywhere">
-            {!pending && state.why && (state.spam ? `This would go to Spam: ${state.why}.` : `This would reach the Inbox: ${state.why}.`)}
+            {!pending && state.why && (state.aiCheck ? "The AI spam check would decide this one." : state.spam ? `This would go to Spam: ${state.why}.` : `This would reach the Inbox: ${state.why}.`)}
           </p>
           {!pending && state.error && <FieldError>{state.error}</FieldError>}
         </SettingBlock>

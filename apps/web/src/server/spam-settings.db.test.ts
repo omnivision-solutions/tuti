@@ -188,17 +188,18 @@ test("trying a message says what the free checks would do with it and why, and c
   const rows = () => Promise.all([prisma.conversation.count(), prisma.inboundEmail.count(), prisma.spamSender.count({ where: { projectId } })]);
   const before = await rows();
   const attempt = (sender: string, subject = "", text = "") => call(trySpamFilter, admin, { sender, subject, text });
-  expect(await attempt("E2E-Kim@spam.example")).toEqual({ spam: true, reason: "blocked_address", why: "you blocked this address" });
-  expect(await attempt("e2e-lee@m2.junk.example", "Hi")).toEqual({ spam: true, reason: "blocked_domain", why: "you blocked this address's domain" });
-  expect(await attempt("e2e-lee@strangers.example", "Hi", "This is the facebook admin.")).toEqual({ spam: true, reason: "phrase", why: "it has your phrase “Facebook Admin”" });
-  expect(await attempt("e2e-lee@strangers.example", "Hi", "Can I export to CSV?")).toEqual({ spam: false, reason: null, why: "no check filed it" });
+  expect(await attempt("E2E-Kim@spam.example")).toEqual({ spam: true, aiCheck: false, reason: "blocked_address", why: "you blocked this address" });
+  expect(await attempt("e2e-lee@m2.junk.example", "Hi")).toEqual({ spam: true, aiCheck: false, reason: "blocked_domain", why: "you blocked this address's domain" });
+  expect(await attempt("e2e-lee@strangers.example", "Hi", "This is the facebook admin.")).toEqual({ spam: true, aiCheck: false, reason: "phrase", why: "it has your phrase “Facebook Admin”" });
+  expect(await attempt("e2e-lee@strangers.example", "Hi", "Can I export to CSV?")).toEqual({ spam: false, aiCheck: false, reason: null, why: "no check filed it" });
   // A teammate is trusted, so the phrase is spared.
   expect(await attempt(owner.email, "facebook admin")).toEqual({
     spam: false,
+    aiCheck: false,
     reason: null,
     why: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
   });
   await update({ allow: ["e2e-lee@strangers.example"] });
-  expect(await attempt("e2e-lee@strangers.example", "facebook admin")).toEqual({ spam: false, reason: null, why: "your lists and marks let this sender through" });
+  expect(await attempt("e2e-lee@strangers.example", "facebook admin")).toEqual({ spam: false, aiCheck: false, reason: null, why: "your lists and marks let this sender through" });
   expect(await rows()).toEqual([before[0], before[1], before[2] + 1]);
 });

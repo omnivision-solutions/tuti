@@ -193,7 +193,8 @@ export const trySpamFilter = defineOperation({
     text: z.string().trim().max(10_000).default("").describe("Its text"),
   }),
   output: z.object({
-    spam: z.boolean().describe("Whether it would go to Spam").meta({ examples: [true] }),
+    spam: z.boolean().describe("Whether it would go to Spam; false when the AI spam check would decide (`aiCheck`)").meta({ examples: [true] }),
+    aiCheck: z.boolean().describe("No other check decides it: the AI spam check would, holding it for a few minutes. It isn't asked here").meta({ examples: [false] }),
     reason: z
       .enum(SPAM_REASON_KEYS)
       .nullable()
@@ -207,8 +208,9 @@ export const trySpamFilter = defineOperation({
     const verdict = await spamVerdict(prisma, { projectId, address, userId, proven: true, email: { sender: address, dmarc: "pass" }, subject, text });
     return {
       spam: verdict.spam,
+      aiCheck: !!verdict.askModels,
       reason: verdict.reason,
-      why: verdict.spam ? spamWhy(verdict.reason, verdict.phrase)! : spamPassedWhy(verdict.check),
+      why: verdict.spam ? spamWhy(verdict.reason, verdict.phrase)! : verdict.askModels ? "the AI spam check would decide it" : spamPassedWhy(verdict.check),
     };
   },
 });

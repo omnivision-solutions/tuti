@@ -1,21 +1,20 @@
 import { prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
-import { aiEnabled, complete, config, creditsEnabled, decide, decisionsAvailable, DEFAULT_AI_MODEL, log, type Meter } from "@tuti/shared";
+import { aiEnabled, config, creditsEnabled, decide, decisionsAvailable, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
-import { logEvents } from "./conversation-events";
-import { notifyInbox } from "./live";
+import { settleHold } from "./inbox-path";
 
 /**
- * The spam filter's model checks (docs/plan.md, Inbox automation, "The spam filter", checks 6 and 7), watching only: a
- * new conversation no free check decided (server/spam.ts) goes to the inbox as ever, and once the request has answered
- * the decision model is asked whether it's spam (at least 0.9 is, at most 0.3 isn't), then the chat model where it
- * wasn't sure. One that would have been filed gets a row in its Activity saying so, and why (`spam_would_file`);
- * nothing is held, filed or told.
+ * The spam filter's model checks (docs/plan.md, Inbox automation, "The spam filter", checks 6 and 7): a new conversation
+ * no free check decided (server/spam.ts) is held (`spamHeldAt`), and once the request has answered the decision model is
+ * asked whether it's spam (at least 0.97 is; anything less is released, the chat model never asked). Spam is filed
+ * with its reason; the rest is released to the inbox with the notices a new conversation gets (server/inbox-path.ts,
+ * settleHold).
  *
  * It fails open and costs the project nothing: a model down, the day's cap reached (`spam.requestsPerDay`, the config
- * file) or a server without the models leaves the conversation as it is. The requests are recorded (`spam`), never
- * charged.
+ * file) or a crash releases it, at the latest when the inbox-due job finds it held for 2 minutes. The requests are
+ * recorded (`spam`), never charged.
  */
 
 /** How much of the message the models read, and of each example. */
@@ -23,28 +22,24 @@ export const MESSAGE_CHARS = 2000;
 export const EXAMPLE_CHARS = 500;
 /** The latest conversations marked each way the models read as examples. */
 export const EXAMPLES = 10;
-/** The decision model's bands: at least SPAM_AT is spam, at most NOT_SPAM_AT isn't; between them the chat model decides. */
-export const SPAM_AT = 0.9;
-export const NOT_SPAM_AT = 0.3;
-/** When the inbox-due job picks up a conversation whose checks haven't run, from when it started (or was last picked up). */
-export const CHECKS_DUE_AFTER_MS = 2 * 60_000;
-/** How long after its conversation started a check still due is given up (see runDueInbox). */
-export const GIVE_UP_AFTER_MS = 60 * 60_000;
+/** The decision model's band: at least this is spam, anything under it is released (the private evaluation set showed it). */
+export const SPAM_AT = 0.97;
+/** The longest a conversation is held for the models: the inbox-due job releases it then, judged or not. */
+export const SPAM_HOLD_MS = 2 * 60_000;
 /** The team's guidance for the models (Settings → Spam). */
 export const MAX_SPAM_GUIDANCE = 500;
 
-/** The models this server asks: either may be null (none, `off`, or no Decisions API); both are with the cap at 0. */
-export function spamModels(): { decision: string | null; chat: string | null } {
-  const { spam, ai } = config();
-  if (spam.requestsPerDay === 0 || !aiEnabled()) {
-    return { decision: null, chat: null };
-  }
-  const chat = spam.chat.model ?? ai.model ?? DEFAULT_AI_MODEL;
-  return { decision: decisionsAvailable() && spam.decisions.model !== "off" ? spam.decisions.model : null, chat: chat === "off" ? null : chat };
+/**
+ * The decision model this server asks (check 6), or null: none (`off`, no Decisions API, no AI) or a cap of 0. The
+ * config's `spam.chat.model` is read by nothing now: the private evaluation set showed only the decision model fit to file.
+ */
+export function spamModel(): string | null {
+  const { spam } = config();
+  return spam.requestsPerDay > 0 && aiEnabled() && decisionsAvailable() && spam.decisions.model !== "off" ? spam.decisions.model : null;
 }
 
-/** Whether a new conversation no free check decided is asked of a model here (so has `pathDueAt`). */
-export const spamModelsOn = () => Object.values(spamModels()).some(Boolean);
+/** Whether a new conversation no free check decided is held for the model here (`spamHeldAt`, `pathDueAt`). */
+export const spamModelsOn = () => spamModel() !== null;
 
 /** A conversation the team marked, as the models read it. */
 type Example = { subject: string; text: string };
@@ -102,74 +97,32 @@ const DECISION = {
   },
 };
 
-const CHAT_SYSTEM = `${WHAT_SPAM_IS} The user message is that state, as JSON. Answer with JSON alone: {"verdict": "spam" | "not_spam" | "unsure", "why": "one short sentence"}. Say spam only when you're sure: losing a customer's mail costs more than reading one spam.`;
-
-/** One line, cut short: what a model said, as the note quotes it. */
-const oneLine = (text: string, max = 200) => {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
-};
-
-/**
- * A model's verdict: `spam`, and why in words (Tuti's own words, never the model's, which a sender could
- * steer); `reason`, what the chat model said, for the evaluation alone. `by` which check gave it. Null: no answer.
- */
-export type SpamJudgement = { spam: boolean; by: "decision" | "chat"; why: string; reason?: string; probability?: number } | null;
+/** The decision model's verdict: spam at SPAM_AT or more, and how sure it was. Null: no answer. */
+export type SpamJudgement = { spam: boolean; probability: number } | null;
 
 /** A model request taken out of the day's cap before it's sent: its meter records it, and one never answered is given back. */
 export type Reserved = { meter: Meter; release: () => Promise<void> };
 /** Takes a request of the day's cap for this model, or null where it's reached. */
-export type Reserve = (kind: "decision" | "chat", model: string) => Promise<Reserved | null>;
+export type Reserve = (model: string) => Promise<Reserved | null>;
 
 /**
- * Checks 6 and 7 on what a conversation says: the decision model first, the chat model between its bands (or alone,
- * without one). Each request is reserved first (`reserve`). Never throws: a model that fails, or the day's cap reached,
- * answers null. Unsure isn't spam.
+ * Check 6 on what a conversation says: the decision model, its request reserved first (`reserve`). Never throws: a
+ * model that fails, or the day's cap reached, answers null.
  */
-export async function judgeSpam(input: SpamInput, models: { decision: string | null; chat: string | null }, reserve: Reserve): Promise<SpamJudgement> {
-  const state = { ...input, text: input.text.slice(0, MESSAGE_CHARS) };
-  const taken: Reserved[] = [];
-  const take = async (kind: "decision" | "chat", model: string) => {
-    const reserved = await reserve(kind, model);
-    if (reserved) {
-      taken.push(reserved);
-    }
-    return reserved?.meter ?? null;
-  };
+export async function judgeSpam(input: SpamInput, model: string, reserve: Reserve): Promise<SpamJudgement> {
+  const reserved = await reserve(model);
+  if (!reserved) {
+    return null;
+  }
   try {
-    if (models.decision) {
-      const meter = await take("decision", models.decision);
-      if (!meter) {
-        return null;
-      }
-      const { noul } = (await decide(state, DECISION, { meter, model: models.decision })).spam as { noul: number };
-      if (noul >= SPAM_AT) {
-        return { spam: true, by: "decision", probability: noul, why: `the decision model was ${Math.floor(noul * 100)}% sure it's spam` };
-      }
-      if (noul <= NOT_SPAM_AT) {
-        return { spam: false, by: "decision", probability: noul, why: "the decision model judged it not spam" };
-      }
-    }
-    const meter = models.chat && (await take("chat", models.chat));
-    if (!models.chat || !meter) {
-      return null;
-    }
-    const reply = await complete({ system: CHAT_SYSTEM, user: JSON.stringify(state), maxTokens: 300, timeoutMs: 45_000, model: models.chat, meter });
-    const { verdict, why } = JSON.parse(reply.match(/\{[\s\S]*\}/)?.[0] ?? "") as { verdict?: unknown; why?: unknown };
-    if (verdict !== "spam" && verdict !== "not_spam" && verdict !== "unsure") {
-      throw new Error(`The chat model's verdict wasn't one of the three: ${oneLine(String(verdict), 50)}`);
-    }
-    return {
-      spam: verdict === "spam",
-      by: "chat",
-      why: verdict === "spam" ? "the chat model judged it spam" : `the chat model judged it ${verdict === "unsure" ? "unsure" : "not spam"}`,
-      ...(typeof why === "string" && { reason: oneLine(why) }),
-    };
+    const state = { ...input, text: input.text.slice(0, MESSAGE_CHARS) };
+    const { noul } = (await decide(state, DECISION, { meter: reserved.meter, model })).spam as { noul: number };
+    return { spam: noul >= SPAM_AT, probability: noul };
   } catch (error) {
-    log.warn("The spam filter's model check failed: the conversation stays in the inbox", { error });
+    log.warn("The spam filter's model check failed: the conversation is released", { error });
     return null;
   } finally {
-    await Promise.all(taken.map((reserved) => reserved.release()));
+    await reserved.release();
   }
 }
 
@@ -186,7 +139,7 @@ async function inputOf(conversationId: string) {
       email: true,
       name: true,
       pathDueAt: true,
-      spam: true,
+      spamHeldAt: true,
       spamMarkedAt: true,
       user: { select: { email: true, name: true } },
       project: { select: { spamGuidance: true } },
@@ -197,8 +150,8 @@ async function inputOf(conversationId: string) {
     return null;
   }
   const { projectId } = conversation;
-  if (conversation.spam || conversation.spamMarkedAt) {
-    // A teammate has decided (or it's in Spam): nothing to ask.
+  if (!conversation.spamHeldAt || conversation.spamMarkedAt) {
+    // A teammate has decided: nothing to ask.
     return { projectId, input: null };
   }
   const since = await historySince(projectId);
@@ -238,7 +191,7 @@ async function inputOf(conversationId: string) {
  */
 const reserveFor =
   (projectId: string): Reserve =>
-  async (kind, model) => {
+  async (model) => {
     const now = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const id = await prisma.$transaction(async (tx) => {
@@ -248,7 +201,7 @@ const reserveFor =
         return null;
       }
       const row = await tx.aiUsage.create({
-        data: { projectId, feature: "spam", kind, model, inputTokens: 0, outputTokens: 0, credits: creditsEnabled() ? 0 : null },
+        data: { projectId, feature: "spam", kind: "decision", model, inputTokens: 0, outputTokens: 0, credits: creditsEnabled() ? 0 : null },
         select: { id: true },
       });
       return row.id;
@@ -271,10 +224,9 @@ const reserveFor =
   };
 
 /**
- * Runs a conversation's model checks, if they're still due (`pathDueAt`): asks the models, then under the conversation's
- * lock, only if no other run finished first, records what they'd have done and clears `pathDueAt`, together. So a check
- * run twice records once. A conversation a teammate marked meanwhile has been decided: the answer is dropped. Returns
- * whether this run was the one that finished it. Never throws.
+ * Runs a held conversation's model checks, if they're still due (`pathDueAt`): asks the models, then settles the hold
+ * with their verdict (settleHold, under the conversation's lock, once). A conversation a teammate marked meanwhile has
+ * been decided: the answer is dropped. Returns whether this run was the one that settled it. Never throws.
  */
 export async function runSpamChecks(conversationId: string): Promise<boolean> {
   try {
@@ -282,28 +234,11 @@ export async function runSpamChecks(conversationId: string): Promise<boolean> {
     if (!read) {
       return false;
     }
-    const judgement = read.input && (await judgeSpam(read.input, spamModels(), reserveFor(read.projectId)));
-    return await prisma.$transaction(async (tx) => {
-      const [conversation] = await tx.$queryRaw<{ pathDueAt: Date | null; spam: boolean; spamMarkedAt: Date | null; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
-        SELECT "pathDueAt", "spam", "spamMarkedAt", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
-      if (!conversation?.pathDueAt) {
-        return false;
-      }
-      await tx.conversation.update({ where: { id: conversationId }, data: { pathDueAt: null } });
-      // Kept for the models alone (a sign): read, it goes, as it may be another of the sender's addresses.
-      await tx.inboundEmail.updateMany({ where: { conversationId, replyTo: { not: null } }, data: { replyTo: null } });
-      if (judgement?.spam && !conversation.spam && !conversation.spamMarkedAt) {
-        // In its Activity (W16), with the check's result: which model, and the decision model's probability. Nothing of
-        // the sender's, nor the model's own words, which a sender could steer.
-        await logEvents(tx, conversationId, [
-          { kind: "spam_would_file", actor: "spam_filter", details: { by: judgement.by, ...(judgement.probability !== undefined && { probability: judgement.probability }) } },
-        ]);
-        await notifyInbox(tx, { projectId: read.projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
-      }
-      return true;
-    });
+    const model = spamModel();
+    const judgement = read.input && model ? await judgeSpam(read.input, model, reserveFor(read.projectId)) : null;
+    return await settleHold(conversationId, judgement);
   } catch (error) {
-    // Left due: the inbox-due job tries it again.
+    // Left due: the inbox-due job releases it.
     log.error("Running a conversation's spam checks failed", { conversationId, error });
     return false;
   }
@@ -311,7 +246,7 @@ export async function runSpamChecks(conversationId: string): Promise<boolean> {
 
 /**
  * Runs the checks once the request that started the conversation has answered (`after`), never before it returns.
- * Outside a request (nothing to answer), the inbox-due job runs them when they're due.
+ * Outside a request (nothing to answer), the inbox-due job releases it when it's due.
  */
 export function spamChecksAfter(conversationId: string) {
   try {
@@ -322,40 +257,25 @@ export function spamChecksAfter(conversationId: string) {
 }
 
 /**
- * The inbox-due job's minute (POST /api/inbox/due): the conversations whose checks are due and haven't run (a deploy, a
- * crash). Each is claimed first (its `pathDueAt` moved on), so two minutes at once never both run it. Returns how many
- * this run finished.
+ * The inbox-due job's minute (POST /api/inbox/due): the conversations still held at `pathDueAt` (2 minutes on: a model
+ * slow or down, a deploy, a crash) are released, asking nothing (it fails open). settleHold claims each under its lock,
+ * so a release at once with the models' verdict, or two minutes at once, settle it once. Returns how many this run settled.
  */
 export async function runDueInbox(now = new Date()): Promise<{ checked: number }> {
-  // Checks still due an hour after their conversation started keep failing (a run that throws after the models answered):
-  // given up without asking again, so they can't spend the day's requests, the conversation left as it is (fails open).
-  const stale = await prisma.conversation.findMany({
-    where: { pathDueAt: { lte: now }, createdAt: { lt: new Date(now.getTime() - GIVE_UP_AFTER_MS) } },
-    take: 100,
-    select: { id: true },
-  });
-  for (const { id } of stale) {
-    const { count } = await prisma.conversation.updateMany({ where: { id, pathDueAt: { lte: now } }, data: { pathDueAt: null } });
-    await prisma.inboundEmail.updateMany({ where: { conversationId: id, replyTo: { not: null } }, data: { replyTo: null } });
-    if (count === 1) {
-      log.error("The spam filter's checks kept failing: given up, the conversation left as it is", { conversationId: id });
+  // Held for 2 minutes is due too, whatever `pathDueAt` says: a release from before may have cleared it alone. Not one
+  // a teammate marked as spam during the hold, which keeps `spamHeldAt` for a later Not spam: the second condition is the
+  // partial index's own (conversation_spamHeldAt_idx), word for word, so it reads only holds left to settle.
+  // The oldest first, so a flood can't keep any one waiting past a few minutes.
+  const due = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id", "createdAt" FROM "conversation" WHERE "pathDueAt" <= ${now}
+    UNION
+    SELECT "id", "createdAt" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
+    ORDER BY "createdAt" LIMIT 100`;
+  let checked = 0;
+  for (const { id } of due) {
+    if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {
+      checked++;
     }
   }
-  // Never one past the hour, however many the batch above left: those are given up, never asked about.
-  const due = await prisma.conversation.findMany({
-    where: { pathDueAt: { lte: now }, createdAt: { gte: new Date(now.getTime() - GIVE_UP_AFTER_MS) } },
-    orderBy: { pathDueAt: "asc" },
-    take: 20,
-    select: { id: true },
-  });
-  const done = await Promise.all(
-    due.map(async ({ id }) => {
-      const { count } = await prisma.conversation.updateMany({
-        where: { id, pathDueAt: { lte: now }, createdAt: { gte: new Date(now.getTime() - GIVE_UP_AFTER_MS) } },
-        data: { pathDueAt: new Date(now.getTime() + CHECKS_DUE_AFTER_MS) },
-      });
-      return count === 1 && (await runSpamChecks(id));
-    }),
-  );
-  return { checked: done.filter(Boolean).length };
+  return { checked };
 }
