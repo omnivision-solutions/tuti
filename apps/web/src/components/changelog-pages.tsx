@@ -19,7 +19,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { PortalMenuPart } from "@/components/portal-menu";
 import { dateLocale, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { changelogContents, changelogDates, publishedEntries } from "@/server/changelog-queries";
+import { changelogContents, changelogDates, entryLanguageAsked, publishedEntries } from "@/server/changelog-queries";
 import { reachSentence } from "@/server/changelog-subscription";
 import { accountEmails } from "@/server/operations/email-preferences";
 import { latestAnnouncement } from "@/server/operations/changelog-seen";
@@ -58,9 +58,11 @@ const monthOf = (date: Date, language = "en") => ({
  * each with its title, `current` (an entry's number, on its page) marked; then all of them.
  */
 export async function ChangelogMenu({ slug, current }: { slug: string; current?: number }) {
+  const asked = await entryLanguageAsked();
   const [at, entries, lang, project] = await Promise.all([
     portalLinks(),
-    slugReader(slug).then((reader) => changelogContents(slug, reader)),
+    // In the page's language where translated (docs/plan.md L17).
+    slugReader(slug).then((reader) => changelogContents(slug, reader, { language: asked })),
     teamLanguage(),
     prisma.project.findUnique({ where: { slug }, select: { id: true } }),
   ]);
@@ -87,7 +89,7 @@ export async function ChangelogMenu({ slug, current }: { slug: string; current?:
                 {formatDate(entry.publishedAt!, language)}
               </time>
               {/* The team's words (lang). */}
-              <span lang={lang} className="text-xs break-words text-muted-foreground">
+              <span lang={entry.lang ?? lang} className="text-xs break-words text-muted-foreground">
                 {entry.title}
               </span>
             </Link>
@@ -163,11 +165,12 @@ export async function changelogByEmail(
  */
 export async function changelogPage(slug: string, page: number, tag?: ChangelogTag) {
   const at = await portalLinks();
-  const [base, lang] = await Promise.all([portalLinkBase(), teamLanguage()]);
+  const [base, lang, asked] = await Promise.all([portalLinkBase(), teamLanguage(), entryLanguageAsked()]);
   // One more than a page, to know whether there are older ones.
   const [session, reader] = await Promise.all([getSession(), slugReader(slug)]);
   const [found, announced, dates, project] = await Promise.all([
-    publishedEntries(slug, reader, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
+    // Each in the page's language where it's translated there, else the default language's (docs/plan.md L17).
+    publishedEntries(slug, reader, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id, language: asked }),
     session ? latestAnnouncement({ slug }, reader) : null,
     changelogDates(slug, reader),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),

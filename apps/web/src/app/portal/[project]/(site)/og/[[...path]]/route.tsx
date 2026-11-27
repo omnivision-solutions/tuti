@@ -5,7 +5,7 @@ import { STATUS_LABELS } from "@/components/post-status-badge";
 import { formatDate } from "@/lib/format";
 import { DOCS_HEADING } from "@/lib/portal-look";
 import { postNumberFromParam } from "@/lib/post-urls";
-import { publishedEntries } from "@/server/changelog-queries";
+import { entryLanguageAsked, publishedEntries } from "@/server/changelog-queries";
 import { portalAddress } from "@/server/custom-domains";
 import { type ApiReferencePage, apiReferencePage } from "@/server/api-reference-queries";
 import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
@@ -198,7 +198,8 @@ async function changelogEntryCard(slug: string, rest: string[]): Promise<ShareCa
     return null;
   }
   // Whoever's asking: the card of an entry for some groups is only for them (and never kept in shared caches, as they're signed in).
-  const [entry] = await publishedEntries(slug, await slugReader(slug), { number: Number(rest[0]), take: 1 });
+  // At a language's address (/de/og/changelog/7), its title there where it's translated (docs/plan.md L17).
+  const [entry] = await publishedEntries(slug, await slugReader(slug), { number: Number(rest[0]), take: 1, language: await entryLanguageAsked() });
   return entry ? { eyebrow: "Changelog", title: entry.title, facts: entry.publishedAt ? [formatDate(entry.publishedAt)] : [], picture: "changelog" } : null;
 }
 

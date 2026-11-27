@@ -38,6 +38,10 @@ export type PublishedEntry = {
   reacted: Reaction[];
   /** Sample content (server/sample-content.ts): labelled Sample. */
   sample: boolean;
+  /** Its title's and text's language where they're its version's in the page's language (docs/plan.md L17). */
+  lang?: string;
+  /** Asked in another language and not translated into it: shown in the default language's. */
+  untranslated?: true;
 };
 
 /** A published changelog entry on the portal: date, tags, title (linking to its page), text and what it completes. */
@@ -78,6 +82,8 @@ export function ChangelogEntryView({
   eager?: boolean;
 }) {
   const Title = heading;
+  // Its title and text: its version's language where translated, else the team's; the ideas' titles stay the team's (lang).
+  const textLang = entry.lang ?? lang;
   const t = createTranslator({ locale: language, messages: MESSAGES[language] });
   // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and bigger (still grey)
   // tags; the widget's panel (an h1 too) keeps the base.
@@ -110,12 +116,12 @@ export function ChangelogEntryView({
       )}
       <div className={cn("flex min-w-0 flex-1 flex-col gap-3", excerpt && "relative")}>
         {back ? (
-          <PortalPageHeader back={back} title={<span lang={lang}>{entry.title}</span>} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
+          <PortalPageHeader back={back} title={<span lang={textLang}>{entry.title}</span>} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
         ) : (
           <>
             {meta}
             <Title
-              lang={lang}
+              lang={textLang}
               id={`entry-${entry.number}`}
               className={cn(
                 "font-heading font-semibold tracking-tight break-words",
@@ -145,11 +151,11 @@ export function ChangelogEntryView({
           />
         )}
         {excerpt ? (
-          <div lang={lang}>
+          <div lang={textLang}>
             <Excerpt doc={entry.doc} />
           </div>
         ) : (
-          <RichText lang={lang} doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+          <RichText lang={textLang} doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         )}
         {onPage && entry.posts.length > 0 ? (
           // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read
