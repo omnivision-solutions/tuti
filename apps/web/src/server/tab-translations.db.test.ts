@@ -87,3 +87,13 @@ test("refused: no name, a language the project doesn't have, a tab that isn't th
   await expect(call(updateTabTranslation, as(), { slug: "guides", language: "fr", keepUpToDate: true })).rejects.toMatchObject({ status: 409, code: "ai_off" });
   expect((await guides()).translations).not.toHaveProperty("fr");
 });
+
+test("a name longer than a tab's own may be (40 characters) is refused, and nothing is saved", async () => {
+  await setUp();
+  await expect(call(updateTabTranslation, as(), { slug: "guides", language: "fr", keepUpToDate: false, name: "x".repeat(41) })).rejects.toMatchObject({ status: 400 });
+  expect((await guides()).translations).not.toHaveProperty("fr");
+  // 40 is fine.
+  await call(updateTabTranslation, as(), { slug: "guides", language: "fr", keepUpToDate: false, name: "x".repeat(40) });
+  expect(labelIn(await guides(), "fr")).toEqual({ name: "x".repeat(40), description: "" });
+});
+
