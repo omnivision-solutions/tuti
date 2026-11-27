@@ -269,6 +269,27 @@ test("a handover that fails gives the conversation to the team, so its user's me
   expect(await told()).toEqual(["conversation.created"]);
 });
 
+test("a handover that fails on a new conversation still hands it to the team, with its Activity row", async () => {
+  const { projectId, conversation, start, activity } = await setup();
+  expect(await start("free-1")).toBe(1);
+  // The same conversation's first message handed over again, as if the first run had failed before it wrote anything.
+  const { id } = await conversation(1);
+  const second = await prisma.conversationMessage.create({ data: { projectId, conversationId: id, author: "USER", channel: "API", body: "Hello?" } });
+  failTransaction(new Error("connection reset"));
+  expect(await handOver(projectId, id, second.id, "ai_off")).toEqual({ handedOver: "ai_off", changed: { handledBy: "TEAM" } });
+  expect((await conversation(1)).handledBy).toBe("TEAM");
+  expect(await activity(1)).toEqual(["handed over: ai_off", "handed over: ai_off"]);
+});
+
+test("a new conversation whose handover fails is told to the webhooks as handed over", async () => {
+  const { project, projectId, told } = await setup();
+  const sam = await upsertProjectUser(projectId, "sam-2", { name: "Sam" });
+  // The widget's start: its conversation's transaction, then its workflows', then the handover's, which fails.
+  failTransaction(new Error("connection reset"), { skip: 2 });
+  expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, sam) }, "Hello")).toEqual({ number: 1 });
+  expect(await told()).toEqual(["conversation.created", "conversation.handed_over ai_off"]);
+});
+
 test("Not spam on what the filter filed answers with the conversation as its handover left it", async () => {
   const { projectId, admin, to, workflow, state } = await setup();
   await workflow("Keep", [{ kind: "dont_hand_over" }]);

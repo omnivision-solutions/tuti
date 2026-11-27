@@ -286,8 +286,18 @@ export async function handOver(projectId: string, conversationId: string, messag
   } catch (error) {
     log.error("Handing a conversation over failed", { projectId, conversationId, messageId, reason, error });
     // To the team all the same, so its user's message is never left with nobody told (nothing answers for the AI). A new
-    // conversation is the team's already.
-    const { count } = await prisma.conversation.updateMany({ where: { id: conversationId, handledBy: "AI", spam: false }, data: { handledBy: "TEAM" } }).catch(() => ({ count: 0 }));
-    return { handedOver: count > 0 ? reason : null, changed: count > 0 ? { handledBy: "TEAM" } : {} };
+    // conversation is the team's already: handed over too, with its row and webhook, unless it's in Spam.
+    const handed = await prisma
+      .$transaction(async (tx) => {
+        const { count } = await tx.conversation.updateMany({ where: { id: conversationId, handledBy: "AI", spam: false }, data: { handledBy: "TEAM" } });
+        const isNew = !onlyFromAi && (await tx.conversation.count({ where: { id: conversationId, spam: false } })) > 0;
+        if (count === 0 && !isNew) {
+          return false;
+        }
+        await logEvents(tx, conversationId, [{ kind: "handed_over", actor: "workflow", details: { reason } }]);
+        return true;
+      })
+      .catch(async () => !onlyFromAi && (await prisma.conversation.count({ where: { id: conversationId, spam: false } }).catch(() => 1)) > 0);
+    return handed ? { handedOver: reason, changed: { handledBy: "TEAM" } } : { handedOver: null, changed: {} };
   }
 }
