@@ -6,6 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
 import { apiFor, createProject, signUp } from "./helpers";
+import { nextModelReply } from "./model";
 
 test("an owner adds German in Settings → Languages, writes its instructions, makes it live, takes it offline and removes it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -143,6 +144,37 @@ test("on a plan with no room for another language, Add language and Go live offe
   await expect(german).toContainText("Offline");
 });
 
+test("adding a language counts the published changelog entries it takes on, translates them, and its row says so", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // One published entry, its title this journey's own (the model fake's reply is matched by it).
+  const title = `Dark mode ${slug}`;
+  await api("/changelog", { title, body: "Switch themes from your profile menu." });
+  await api("/changelog/1/publish", {});
+  await nextModelReply(JSON.stringify({ segments: { "1": `Dunkler Modus ${slug}`, "2": "Wechsle das Design im Profilmenü." } }), title);
+
+  await owner.goto(`/app/${slug}/settings/languages`);
+  const pane = owner.getByRole("region", { name: "Languages" });
+  await pane.getByRole("button", { name: "Add language" }).click();
+  const add = owner.getByRole("dialog", { name: "Add a language" });
+  await expect(add).toContainText("1 published page, shown in English until they're translated");
+  await add.getByRole("combobox", { name: "Language" }).click();
+  await owner.getByRole("option", { name: "Deutsch (German)" }).click();
+  await add.getByRole("button", { name: "Add Deutsch" }).click();
+  await expect(add).toBeHidden();
+  // Translated in the background: the row says so once it's done.
+  const german = pane.getByRole("list", { name: "Other languages" }).getByRole("listitem").filter({ hasText: "Deutsch" });
+  await expect(async () => {
+    await owner.reload();
+    await expect(german).toContainText("German · Automatic · 1 page translated", { timeout: 1000 });
+  }).toPass();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "settings-languages-entries-phone", { fullPage: false });
+});
+
 test("an owner edits the glossary: a term's word per language, one never translated, saved after saying which pages it updates; a card per term on phones", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -245,4 +277,3 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await expect(terms.getByText("Deutsch", { exact: true }).first()).toBeVisible();
   await checkpoint(owner, "glossary-phone");
 });
-
