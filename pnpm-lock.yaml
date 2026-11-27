@@ -676,6 +676,9 @@ importers:
       react-dom:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
+      use-intl:
+        specifier: ^4.15.1
+        version: 4.15.1(@types/react@19.3.0)(react@19.2.8)
     devDependencies:
       '@tuti/typescript-config':
         specifier: workspace:*

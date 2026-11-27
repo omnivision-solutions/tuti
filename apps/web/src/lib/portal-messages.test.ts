@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 /** Every argument and tag the portal's messages take, with a value. */
 const VALUES = {
   count: 2,
-  ...Object.fromEntries(["q", "board", "name", "status", "date", "month", "title", "label", "minutes", "votes", "tag", "emoji", "email", "likes", "sort", "language"].map((name) => [name, name])),
+  ...Object.fromEntries(["q", "board", "name", "status", "date", "month", "title", "label", "minutes", "forgot", "votes", "tag", "emoji", "email", "likes", "sort", "language"].map((name) => [name, name])),
   ...Object.fromEntries(["link", "who", "status", "entry", "posts", "b"].map((tag) => [tag, (chunks: unknown) => chunks])),
   logo: () => "tuti",
 };

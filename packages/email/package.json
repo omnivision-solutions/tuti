@@ -23,6 +23,7 @@
     "@tuti/shared": "workspace:*",
     "nodemailer": "^10.3.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "use-intl": "^4.15.1"
   }
 }

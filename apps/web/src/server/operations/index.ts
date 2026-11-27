@@ -1,4 +1,5 @@
 import type { Operation } from "./define";
+import { getAiFirst, updateAiFirst } from "./ai-first";
 import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
 import { analyseCodeChange, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, stopCodeChangeAction, undoCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChanges, listCodeChangeTargets, resumeCodeChanges } from "./code-changes";
@@ -142,6 +143,8 @@ const all = [
   summarizeConversation,
   getSpamSettings,
   updateSpamSettings,
+  getAiFirst,
+  updateAiFirst,
   trySpamFilter,
   getSupportSettings,
   updateSupportSettings,

@@ -109,9 +109,9 @@ function elements(node: unknown): React.ReactElement<{ children?: unknown; href?
 }
 
 /** The link in the latest reset email to `email`. */
-async function linkTo(email: string) {
+async function linkTo(email: string, subject = "Reset your password") {
   const message = await mailbox.latestTo(email);
-  expect(message.subject).toBe("Reset your password");
+  expect(message.subject).toBe(subject);
   return new URL(message.text.split(/\s+/).find((word) => word.includes("/reset-password?"))!);
 }
 
@@ -312,6 +312,48 @@ test("the notice for a reset asked on a portal is the portal's: its name, and Po
   await prisma.project.update({ where: { id: project.id }, data: { licenseKey, poweredBy: false } });
   await prisma.signInLink.deleteMany();
   expect((await changed()).text).not.toContain("Powered by");
+});
+
+test("asked at a portal's language address, the reset and its notice are in that language; the app's stay English", async () => {
+  // German, live (written by the team: nothing to translate).
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  // What proxy.ts sets on a German address's request.
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  await ask(user.email, portalHost());
+  const link = await linkTo(user.email, "Passwort zurücksetzen");
+  expect((await mailbox.latestTo(user.email)).text).toContain(`Jemand hat angefordert, das Passwort für dein Konto bei ${project.name} zurückzusetzen.`);
+  // The new password is set on the app (English), and the notice follows the reset's language.
+  request.headers = {};
+  await setPassword(link);
+  const notice = await mailbox.latestTo(user.email);
+  expect(notice.subject).toBe("Dein Passwort wurde geändert");
+  expect(notice.text).toContain("„Passwort vergessen?“");
+  // Taken offline between asking and setting the password: the notice falls back to the portal's default.
+  await prisma.signInLink.deleteMany();
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  await ask(user.email, portalHost());
+  const second = await linkTo(user.email, "Passwort zurücksetzen");
+  request.headers = {};
+  await prisma.projectLanguage.updateMany({ where: { projectId: project.id, code: "de" }, data: { live: false } });
+  await setPassword(second, `${NEW_PASSWORD}-again`);
+  expect((await mailbox.latestTo(user.email)).subject).toBe("Your password was changed");
+  // Asked on the app: English.
+  await prisma.signInLink.deleteMany();
+  await ask(user.email);
+  await linkTo(user.email);
+});
+
+test("on a portal whose default is German, a reset the request names no language for is German, as its notice; one asked on the app is English, as its notice", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { language: "de" } });
+  // Through the auth API (a sign-up with this address): no page language on the request.
+  await ask(user.email, portalHost());
+  await setPassword(await linkTo(user.email, "Passwort zurücksetzen"));
+  expect((await mailbox.latestTo(user.email)).subject).toBe("Dein Passwort wurde geändert");
+  // On the app, on the way back to the portal: English, the reset and its notice alike.
+  await prisma.signInLink.deleteMany();
+  await ask(user.email, APP_HOST, project.slug);
+  await setPassword(await linkTo(user.email), `${NEW_PASSWORD}-again`);
+  expect((await mailbox.latestTo(user.email)).subject).toBe("Your password was changed");
 });
 
 test("an account whose password was removed (opening a sign-in link before verifying) gets one back", async () => {

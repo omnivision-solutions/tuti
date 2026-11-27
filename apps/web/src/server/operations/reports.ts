@@ -298,7 +298,7 @@ export async function aiReport(projectId: string, range: ReportRange, show?: AiC
     conversations: listed.map((thread) => ({
       id: thread.id,
       lastAt: new Date(thread.lastAt).toISOString(),
-      source: thread.source.toLowerCase() as "portal" | "widget" | "api",
+      source: thread.source.toLowerCase() as "portal" | "widget" | "api" | "inbox",
       asker: nameOf.get(thread.askerId) ?? null,
       escalated: thread.escalated,
       answered: thread.answered,
@@ -511,7 +511,7 @@ const reportsOutput = z
             z.object({
               id: z.string().describe("The conversation's id: its first question's").meta({ examples: ["cm3question0001"] }),
               lastAt: z.string().describe("When its last question was asked (ISO 8601)").meta({ examples: ["2026-11-19T08:41:00.000Z"] }),
-              source: z.enum(["portal", "widget", "api"]).describe("Where it was asked: the portal, the widget or the API (docs.ask)").meta({ examples: ["widget"] }),
+              source: z.enum(["portal", "widget", "api", "inbox"]).describe("Where it was asked: the portal, the widget, the API (docs.ask), or the Inbox, where the AI answers a conversation it has").meta({ examples: ["widget"] }),
               asker: z.string().nullable().describe("Who asked, when a signed-in reader; null for an anonymous reader or an API key").meta({ examples: ["Riley Reader"] }),
               escalated: z.boolean().describe("Whether it was passed to the team").meta({ examples: [false] }),
               answered: n("Its questions answered from the docs", 2),
@@ -532,7 +532,7 @@ const reportsOutput = z
                       .number()
                       .int()
                       .nullable()
-                      .describe("The Inbox conversation it started (its number), when passed to the team")
+                      .describe("The Inbox conversation it started (its number), when passed to the team; for one the AI was asked in the Inbox (source `inbox`), the conversation it was asked in")
                       .meta({ examples: [null] }),
                   }),
                 )
