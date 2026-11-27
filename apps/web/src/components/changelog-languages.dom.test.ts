@@ -22,7 +22,7 @@ vi.mock("@/lib/upload-image", () => ({ uploadImage, uploadFile: vi.fn() }));
 const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
 
-const { ChangelogVersionEditor } = await import("./changelog-languages");
+const { ArticleVersionSave, ChangelogVersionEditor } = await import("./changelog-languages");
 const { versionFormKey, versionTextKey } = await import("@/lib/changelog-versions");
 type VersionView = import("./changelog-languages").VersionView;
 const { forgetPageTries } = await import("./rich-editor");
@@ -53,7 +53,7 @@ const languages = [
 ];
 const view: VersionView = { code: "de", name: "Deutsch", state: "current", keepUpToDate: true, version: "v1", waiting: null, title: "Dunkler Modus", content: doc, own: true };
 
-async function form(props: Partial<typeof view> = {}) {
+async function form(props: Partial<typeof view> = {}, extra: Record<string, unknown> = {}) {
   const box = document.createElement("div");
   document.body.append(box);
   const root = createRoot(box);
@@ -77,6 +77,7 @@ async function form(props: Partial<typeof view> = {}) {
             view: { ...view, ...changes },
             mediaUrls: shownMedia,
             languages,
+            ...extra,
           }),
         )),
       ),
@@ -405,4 +406,38 @@ test("an image of the read a draft was made from still shows when a new read wit
   await render({ version: "v2", title: "Ohne Bild" });
   expect(title().value).toBe("Bearbeitet");
   expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
+});
+
+test("an article's version behind English: the orange line says in how many sections, with Show changes and Update those sections", async () => {
+  const update = vi.fn().mockResolvedValue({});
+  await form({ state: "behind", keepUpToDate: false }, { kind: "article", behind: { count: 2, changes: h("p", null, "Billing: Pay by card or invoice"), update } });
+  expect(document.body.textContent).toContain("English changed in 2 sections since this was edited.");
+  const button = (name: string) => [...document.querySelectorAll("button")].find((each) => each.textContent === name)!;
+  await act(async () => button("Show changes").click());
+  expect(document.body.textContent).toContain("What changed in English");
+  expect(document.body.textContent).toContain("Billing: Pay by card or invoice");
+  await act(async () => button("Update those sections").click());
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(toast.success).toHaveBeenCalledWith("Translating those sections…");
+});
+
+test("Publish with sections of the draft behind English asks first: each ticked takes the new translation, sent with the version's form", async () => {
+  const box = document.createElement("div");
+  document.body.append(box);
+  const root = createRoot(box);
+  roots.push(root);
+  await act(async () => root.render(h(ChangelogSavingContext, { value: { setPending } }, h(ArticleVersionSave, { behind: ["Billing\u001f0", "\u001f0"], defaultName: "English" }))));
+  const publish = [...document.querySelectorAll("button")].find((each) => each.textContent === "Publish")!;
+  expect(publish.type).toBe("button");
+  await act(async () => publish.click());
+  expect(document.body.textContent).toContain("English changed in 2 sections");
+  const choices = [...document.querySelectorAll<HTMLInputElement>('input[name="take"]')];
+  expect(choices.map((each) => [each.value, each.checked, each.getAttribute("form")])).toEqual([
+    ["Billing\u001f0", true, "changelog-version"],
+    ["\u001f0", true, "changelog-version"],
+  ]);
+  expect(document.body.textContent).toContain("Introduction");
+  // The dialog's Publish submits the version's form.
+  const send = [...document.querySelectorAll<HTMLButtonElement>("button")].filter((each) => each.textContent === "Publish").at(-1)!;
+  expect([send.type, send.getAttribute("form"), send.value]).toEqual(["submit", "changelog-version", "publish"]);
 });

@@ -11,7 +11,7 @@ import { articleLanguages } from "./changelog-languages";
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
-import { getTranslation, keepTranslationUpToDate, publishTranslation, readArticleVersion, saveTranslation, updateTranslationSections } from "./operations/translations";
+import { behindChanges, getTranslation, keepTranslationUpToDate, publishTranslation, readArticleVersion, saveTranslation, updateTranslationSections } from "./operations/translations";
 
 /** Retranslating and unpublished changes (docs/plan.md, Languages, L6 part three). */
 
@@ -1045,4 +1045,89 @@ test("a write that stores nothing on a Manual language's version not started lea
   await languageTranslationsDone();
   expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(0);
   expect(model.requests).toHaveLength(0);
+});
+
+/** The editor's form for German: its title and text, the read it was made from, and Publish's choices. */
+function editorForm(title: string, content: Doc, version: string, publish?: { take: string[] }) {
+  const form = new FormData();
+  if (title) form.set("title", title);
+  form.set("content", JSON.stringify(content));
+  form.set("version", version);
+  if (publish) {
+    form.set("intent", "publish");
+    for (const key of publish.take) form.append("take", key);
+  }
+  return form;
+}
+
+test("the editor's Save and Publish is one write: a refused publish leaves nothing saved", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  actAs(owner);
+  // No title: publishing is refused, and the draft before it isn't kept either (nor the version started).
+  const refused = await saveArticleVersion(project.slug, de.slug, "de", {}, editorForm("", doc("Hallo"), blank.version, { take: [] }));
+  expect(refused).toMatchObject({ error: "Give it a title first" });
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("publishing from the editor: sections behind English take the new translation where the team chose it, the rest stay theirs", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const ours = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]);
+  const blank = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: ours, version: blank.version });
+  await call(publishTranslation, as(), de);
+  // English changes Setup and Billing: both behind in the team's version.
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it today"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const read = await call(getTranslation, as(), de);
+  const [setup, billing] = read.behind.map(({ section }) => section);
+  expect(billing).toBeDefined();
+
+  // Billing taken; Setup not asked about, so it stays the team's.
+  model.reply(sectionsReply("de", ["Billing", "Pay by card or invoice"]));
+  actAs(owner);
+  expect(await saveArticleVersion(project.slug, de.slug, "de", {}, editorForm("Bezahlt werden", ours, read.version, { take: [billing!] }))).not.toHaveProperty("error");
+  await languageTranslationsDone();
+  const published = await call(getTranslation, as(), de);
+  expect(text(published.content)).toContain("Unsere Installation");
+  expect(text(published.content)).toContain("[de] Pay by card or invoice");
+  expect(published.behind.map(({ section }) => section)).toEqual([setup]);
+});
+
+test("Show changes: each section behind, with its English as the team's edit was made against and as it is now", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]), version: blank.version });
+  await call(publishTranslation, as(), de);
+  expect(await behindChanges(project.id, de.slug, "de")).toEqual([]);
+  // English changes Billing, then its intro (Billing's English then is a revision back).
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Welcome", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const changes = await behindChanges(project.id, de.slug, "de");
+  const billing = changes.find(({ key }) => key.startsWith("Billing"))!;
+  expect(text(billing.before)).toContain("Pay by card");
+  expect(text(billing.before)).not.toContain("invoice");
+  expect(text(billing.after)).toContain("Pay by card or invoice");
+  expect(changes.map(({ key }) => key.split("\u001f")[0])).toEqual(["", "Billing"]);
+});
+
+test("a section taken out of the draft whose English changed since, published without keep, comes back translated", async () => {
+  await translated();
+  await takeOutBilling();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await republish(V2, "de2");
+  expect((await call(getTranslation, as(), de)).draft!.behind.some((key) => key.startsWith("Billing"))).toBe(true);
+  model.otherwise(reply(V2, "de3"), "Pay by card or invoice");
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  const published = await call(getTranslation, as(), de);
+  expect(text(published.content)).toContain("Pay by card or invoice");
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { language: "de", article: { slug: "getting-paid" } } })).removedSections).toEqual([]);
 });

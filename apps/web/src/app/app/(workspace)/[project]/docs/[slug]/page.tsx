@@ -49,10 +49,10 @@ import { markedRun } from "@/lib/docs-review";
 import { pageTitle } from "@/lib/page-title";
 import { ChangelogSaving } from "@/components/changelog";
 import { ArticleVersionSave, ChangelogLanguagePill, ChangelogVersionEditor } from "@/components/changelog-languages";
-import { NO_AI_WAITING, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
-import { keepArticleVersionUpToDate, saveArticleVersion } from "@/server/article-versions";
+import { NO_AI_WAITING, sectionName, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
+import { keepArticleVersionUpToDate, saveArticleVersion, updateArticleVersionSections } from "@/server/article-versions";
 import { articleLanguages } from "@/server/changelog-languages";
-import { readArticleVersion } from "@/server/operations/translations";
+import { behindChanges, readArticleVersion } from "@/server/operations/translations";
 
 /** The tab: the article's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/docs/[slug]">): Promise<Metadata> {
@@ -205,6 +205,31 @@ export default async function ArticlePage(
       content: (text?.content ?? displayDoc(article)) as Doc,
       own: text !== null,
     };
+    const defaultName = languages![0]!.name;
+    // Its sections behind (published, and in its draft): the orange line's count, and Show changes' English then and now.
+    const behind = [...new Set([...read.behind.map(({ section }) => section), ...(read.draft?.behind ?? [])])];
+    const changes = state === "behind" ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];
+    const none = { type: "doc" as const, content: [] };
+    const shown = (content: Doc) => ({ title: "", body: "", content, collection: null });
+    const changesShown =
+      changes.length > 0 ? (
+        <div className="flex flex-col gap-5">
+          {changes.map((change) => (
+            <section key={change.key} className="flex flex-col gap-2">
+              {/* Its heading is in its text; the introduction has none, so it's named. */}
+              {change.key.startsWith("\u001f") && <h3 className="group-label">{sectionName(change.key)}</h3>}
+              {change.after === null ? (
+                <p className="text-sm text-muted-foreground">Taken out of {defaultName}.</p>
+              ) : (
+                <>
+                  {change.before === null && <p className="text-sm text-muted-foreground">Its earlier {defaultName} isn&apos;t kept any more. As it is now:</p>}
+                  <ArticleDiff before={shown(change.before ?? none)} after={shown(change.after)} same="Nothing changed in its text." />
+                </>
+              )}
+            </section>
+          ))}
+        </div>
+      ) : null;
     return (
       <ChangelogSaving>
         <section className="docs-editor-page @container/editor flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border [--docs-pad:0px]">
@@ -215,7 +240,7 @@ export default async function ArticlePage(
             filters={<ChangelogLanguagePill languages={languages!} current={version.code} />}
             actions={
               <div className="flex shrink-0 items-center gap-1.5">
-                <ArticleVersionSave />
+                <ArticleVersionSave behind={read.draft?.behind} defaultName={defaultName} />
               </div>
             }
           />
@@ -232,6 +257,7 @@ export default async function ArticlePage(
               view={version}
               mediaUrls={await mediaUrls(version.content)}
               languages={languages!}
+              behind={{ count: behind.length, changes: changesShown, update: updateArticleVersionSections.bind(null, slug, article.slug, version.code) }}
             />
           </div>
         </section>

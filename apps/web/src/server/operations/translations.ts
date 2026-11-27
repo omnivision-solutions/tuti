@@ -1,4 +1,4 @@
-import { type Doc, toPlainText } from "@tuti/content";
+import { type Doc, fromPlainText, toPlainText } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import {
   behindOf,
@@ -279,6 +279,51 @@ export const getTranslation = defineOperation({
   run: async ({ projectId }, input) => (await readArticleVersion(projectId, input.slug, input.language)).read,
 });
 
+/** How many revisions back Show changes looks for the English a section was edited against. */
+const CHANGES_LOOK_BACK = 200;
+
+/**
+ * Show changes (docs/plan.md L11): for each of a version's sections behind because English changed there (published or in
+ * its draft), its English as the team's edit was made against (`before`: found in the article's revisions by the hash
+ * the edit recorded; null once that revision isn't kept) and as it is now (`after`: null where English took it out).
+ */
+export async function behindChanges(projectId: string, slug: string, language: (typeof LANGUAGE_CODES)[number]) {
+  return withVersion(
+    projectId,
+    slug,
+    language,
+    async (db, version, articleId) => {
+      const source = await sourceOf(db, articleId);
+      const read = output(version, source);
+      const keys = [...new Set([...read.behind.filter(({ reason }) => reason !== PRODUCT_SETTING_CHANGED).map(({ section }) => section), ...(read.draft?.behind ?? [])])];
+      if (keys.length === 0) {
+        return [];
+      }
+      const { published, drafted } = versionParts(version, source.parts);
+      const hashOf = (key: string) => [...(drafted ?? []), ...published].find(({ meta }) => meta.key === key)?.meta.hash ?? null;
+      const before = new Map<string, Doc>();
+      // ponytail: reads up to CHANGES_LOOK_BACK revisions, newest first; an edit older than that shows English now only.
+      const revisions = await db.articleRevision.findMany({
+        where: { articleId },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { body: true, content: true },
+        take: CHANGES_LOOK_BACK,
+      });
+      for (const revision of revisions) {
+        for (const part of sourceSections((revision.content as Doc | null) ?? fromPlainText(revision.body))) {
+          if (keys.includes(part.key) && !before.has(part.key) && hashOf(part.key) === part.hash) {
+            before.set(part.key, { type: "doc", content: part.blocks });
+          }
+        }
+        if (before.size === keys.length) break;
+      }
+      const now = new Map(source.parts.map((part) => [part.key, part.blocks]));
+      return keys.map((key) => ({ key, before: before.get(key) ?? null, after: now.has(key) ? ({ type: "doc", content: now.get(key) } as Doc) : null }));
+    },
+    { read: true },
+  );
+}
+
 /**
  * articles.getTranslation's read, and where the version stands from the same row (the editor's pill and its confirm
  * before Keep up to date replaces the team's text), so state, text and token never come from two reads.
@@ -391,6 +436,9 @@ async function publishIn(tx: Prisma.TransactionClient, version: Version, article
     // version kept up to date, publishing the source again replaces edits only in the sections it touches).
     return stale ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
   });
+  // Taken out of the draft, but English changed there since (a version kept up to date): unless kept out, it comes back
+  // translated (asked for, as Update those sections asks), not left out unseen until English changes again.
+  const comeBack = version.automatic ? removedChanged(draft.removed, draft.removedHashes, parts).filter((key) => !keep.has(key)) : [];
   const content = docOfSections(out);
   const saved = await tx.articleTranslation.update({
     where: { id: version.id },
@@ -409,16 +457,18 @@ async function publishIn(tx: Prisma.TransactionClient, version: Version, article
       retranslate: { increment: 1 },
       retranslated: { increment: 1 },
       // The sections the team took out of the draft, out of the published text now too.
-      removedSections: draft.removed ?? [],
+      removedSections: (draft.removed ?? []).filter((key) => !comeBack.includes(key)),
       // Kept out (in `keep`) though English changed since: kept out against English as it is now, so the job leaves it out.
       removedHashes: Object.fromEntries(
-        Object.entries(draft.removedHashes ?? {}).map(([key, hash]) => [key, keep.has(key) ? (hashes.get(key) ?? hash) : hash]),
+        Object.entries(draft.removedHashes ?? {})
+          .filter(([key]) => !comeBack.includes(key))
+          .map(([key, hash]) => [key, keep.has(key) ? (hashes.get(key) ?? hash) : hash]),
       ) as Prisma.InputJsonValue,
       behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
       retryAt: marker,
       tries: Math.max(version.tries, 1),
       // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.
-      updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update])],
+      updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update, ...comeBack])],
     },
     select: versionSelect,
   });

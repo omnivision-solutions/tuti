@@ -6,7 +6,7 @@ import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type RefObject, useActionState, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
+import { type ReactNode, type RefObject, useActionState, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ChangelogSaveButton, ChangelogSavingContext } from "@/components/changelog";
@@ -16,8 +16,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { FieldError } from "@/components/ui/field";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import type { VersionState } from "@/lib/changelog-versions";
+import { sectionName, type VersionState } from "@/lib/changelog-versions";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
 
@@ -189,6 +190,7 @@ export function ChangelogVersionForm({
   mediaUrls,
   languages,
   drafts,
+  behind,
 }: VersionActions & {
   projectSlug: string;
   kind?: VersionKind;
@@ -199,6 +201,8 @@ export function ChangelogVersionForm({
   languages: EntryLanguage[];
   /** The editor's unsaved draft, carried across the forms it mounts (ChangelogVersionEditor). */
   drafts: Drafts;
+  /** An article version's sections behind (docs/plan.md L11): how many, Show changes' content, and Update those sections. */
+  behind?: Behind;
 }) {
   // A draft carried from the form before this one (typed after its last save was sent, the page having read again since):
   // this form starts from it, and from the token that typing goes from, so its Save is checked against that.
@@ -270,7 +274,9 @@ export function ChangelogVersionForm({
   // The top bar's Save says when it's saving, and waits (ChangelogSaveButton).
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
-  const line = versionLine(view, defaultName, kind);
+  // An article's version behind English: in how many sections (the orange line, with Show changes and Update those sections).
+  const count = behind?.count ?? 0;
+  const line = view.state === "behind" && count > 0 ? `${defaultName} changed in ${count} ${count === 1 ? "section" : "sections"} since this was edited.` : versionLine(view, defaultName, kind);
   // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
   // its, whatever the state (not written, or a first translation on its way or failing).
   const textLang = view.own ? view.code : languages[0]!.code;
@@ -285,9 +291,10 @@ export function ChangelogVersionForm({
       <input type="hidden" name="version" value={loaded} />
       <div className="flex min-w-0 flex-col gap-4">
         {line && (
-          <p className={cn("rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
-            {line}
-          </p>
+          <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
+            <p className="mr-auto">{line}</p>
+            {behind && count > 0 && <BehindActions behind={behind} defaultName={defaultName} />}
+          </div>
         )}
         <div className="flex flex-col gap-2">
           <input
@@ -433,15 +440,103 @@ function KeepUpToDate({
 /** The top bar's Save for a version (its form is below it). */
 export const ChangelogVersionSave = () => <ChangelogSaveButton form={VERSION_FORM} primary />;
 
-/** An article version's Save draft and Publish in the top bar: both submit its form, Publish saving the draft first. */
-export function ArticleVersionSave() {
+export type Behind = { count: number; changes: ReactNode | null; update: () => Promise<FormState> };
+
+/** The orange line's Show changes (what English changed in those sections) and Update those sections. */
+function BehindActions({ behind, defaultName }: { behind: Behind; defaultName: string }) {
+  const [updating, startUpdate] = useTransition();
+  return (
+    <span className="flex items-center gap-1">
+      {behind.changes && (
+        <Dialog>
+          <DialogTrigger render={<Button type="button" variant="ghost" size="sm" />}>Show changes</DialogTrigger>
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>What changed in {defaultName}</DialogTitle>
+            </DialogHeader>
+            {behind.changes}
+          </DialogContent>
+        </Dialog>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={updating}
+        focusableWhenDisabled
+        onClick={() =>
+          startUpdate(async () => {
+            const result = await behind.update();
+            // Translated in the background: the sections show once it's done (reading the page again).
+            if (result.error) toast.error(result.error);
+            else toast.success("Translating those sections…");
+          })
+        }
+      >
+        {updating ? "Updating…" : "Update those sections"}
+      </Button>
+    </span>
+  );
+}
+
+/**
+ * An article version's Save draft and Publish in the top bar: both submit its form, Publish saving the draft first. With
+ * sections of the draft behind English (`behind`, keys), Publish asks first, for each, to take the new translation (ticked,
+ * the default) or keep the edit: ticked ones are sent as `take`; any other section behind stays the team's.
+ */
+export function ArticleVersionSave({ behind = [], defaultName }: { behind?: string[]; defaultName: string }) {
   const saving = useContext(ChangelogSavingContext);
+  const [asking, setAsking] = useState(false);
+  const publish = (
+    <Button
+      type="submit"
+      form={VERSION_FORM}
+      name="intent"
+      value="publish"
+      disabled={saving?.pending}
+      focusableWhenDisabled
+      // In the dialog: closed once the form is sent, its choices read with it (the submit follows the click).
+      onClick={asking ? () => setTimeout(() => setAsking(false)) : undefined}
+    >
+      Publish
+    </Button>
+  );
   return (
     <>
       <ChangelogSaveButton form={VERSION_FORM} isNew primary={false} />
-      <Button type="submit" form={VERSION_FORM} name="intent" value="publish" disabled={saving?.pending} focusableWhenDisabled>
-        Publish
-      </Button>
+      {behind.length === 0 ? (
+        publish
+      ) : (
+        <>
+          <Button type="button" disabled={saving?.pending} focusableWhenDisabled onClick={() => setAsking(true)}>
+            Publish
+          </Button>
+          <AlertDialog open={asking} onOpenChange={setAsking}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {defaultName} changed in {behind.length} {behind.length === 1 ? "section" : "sections"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>Ticked sections take the new translation. Unticked ones keep your edit.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <fieldset className="flex flex-col gap-2">
+                <legend className="sr-only">Sections to translate again</legend>
+                {behind.map((key) => (
+                  <label key={key} className="flex items-center gap-2 text-sm">
+                    {/* In the version's form (`form`), though the dialog is outside it. */}
+                    <input type="checkbox" form={VERSION_FORM} name="take" value={key} defaultChecked className="size-4 accent-primary" />
+                    {sectionName(key)}
+                  </label>
+                ))}
+              </fieldset>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                {publish}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </>
   );
 }

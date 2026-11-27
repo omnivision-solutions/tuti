@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 
 import type { FormState } from "./form-state";
 import { asTeam, call } from "./operations/run";
-import { keepTranslationUpToDate, saveArticleVersionText, VERSION_CHANGED } from "./operations/translations";
+import { keepTranslationUpToDate, saveArticleVersionText, updateTranslationSections, VERSION_CHANGED } from "./operations/translations";
 
 /** An article's versions in other languages, from its editor's language pill (docs/plan.md L11; the articles.*Translation operations). */
 
@@ -53,4 +53,14 @@ export async function keepArticleVersionUpToDate(projectSlug: string, articleSlu
   }
   refresh();
   return { version: saved };
+}
+
+/** Update those sections: every section behind English translated again (in the background), the team's edits there replaced. */
+export async function updateArticleVersionSections(projectSlug: string, articleSlug: string, language: string): Promise<FormState> {
+  const result = await asTeam(projectSlug, DENIED, (context) => call(updateTranslationSections, context, { slug: articleSlug, language: language as "de" }));
+  if (result.error) {
+    return result;
+  }
+  refresh();
+  return {};
 }
