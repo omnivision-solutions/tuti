@@ -242,8 +242,13 @@ export async function changeLanguages(projectId: string, change: (current: Langu
   // The proxy's copy catches up within its few seconds (server/language-addresses.ts).
   const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
   forgetLanguages(slug);
-  for (const code of [...added, ...switched]) {
+  for (const code of added) {
     await queueLanguageTranslations(projectId, code);
+  }
+  // The switch translates again what's kept up to date; it starts no entry's version (nothing confirmed them: a language
+  // that was Manual has none), as adding the language and Retranslate do with their counts.
+  for (const code of switched.filter((code) => !added.includes(code))) {
+    await queueLanguageTranslations(projectId, code, { newEntries: false });
   }
   return projectLanguages(projectId);
 }

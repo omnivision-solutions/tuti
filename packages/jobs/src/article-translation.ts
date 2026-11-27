@@ -716,14 +716,20 @@ export async function queueChangelogTranslations(entryId: string) {
  * `fresh`: nothing reused (Retranslate). `waiting`: only those that couldn't be translated (Try again). How many it queued.
  * Published changelog entries too, as Settings → Languages counts them in what it confirms (docs/plan.md L16).
  */
-export async function queueLanguageTranslations(projectId: string, language: string, { fresh = false, waiting = false } = {}): Promise<number> {
+export async function queueLanguageTranslations(
+  projectId: string,
+  language: string,
+  { fresh = false, waiting = false, newEntries = true }: { fresh?: boolean; waiting?: boolean; newEntries?: boolean } = {},
+): Promise<number> {
   const setting = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { automatic: true } });
   if (!setting) {
     return 0;
   }
   const pages: Page[] = [];
   for (const kind of KINDS) {
-    if (setting.automatic) {
+    // `newEntries` false (the product switch): an entry's version is never started there, only its existing ones translated
+    // again; starting them is for what's confirmed with a count (adding the language, Retranslate).
+    if (setting.automatic && (kind !== ENTRY || newEntries)) {
       const sources = await kind.without(projectId, language);
       await kind.table().createMany({ data: sources.map(({ id }) => ({ [kind.parent]: id, projectId, language })), skipDuplicates: true });
     }

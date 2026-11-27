@@ -764,3 +764,15 @@ test("an entry is marked before its translations are queued: one still queuing i
   release(null);
   await publishing;
 });
+
+test("the product switch translates again only the entry versions there are: a language that was Manual gets none started, nothing asked", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
+  const { entry } = await draft();
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  // German made Automatic (that starts nothing), then "Our product is available in German" switched on.
+  await languages({ languages: [{ code: "de", newPages: "automatic" }] });
+  await languages({ languages: [{ code: "de", productAvailable: true }] });
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
+  expect(model.requests).toHaveLength(0);
+});
