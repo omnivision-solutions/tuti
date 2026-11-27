@@ -36,7 +36,8 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     const endpoint = dialog.getByRole("textbox", { name: "Endpoint URL" });
     await expect(endpoint).toBeFocused();
     await endpoint.fill(url);
-    await expect(dialog.getByRole("checkbox")).toHaveCount(8);
+    await expect(dialog.getByRole("checkbox")).toHaveCount(9);
+    await expect(dialog.getByRole("checkbox", { name: /Conversation handed to the team/ })).toBeChecked();
     await dialog.getByRole("checkbox", { name: /Status changed/ }).uncheck();
     // While the webhook is added nothing closes the dialog: its secret couldn't be shown.
     let release!: () => void;
