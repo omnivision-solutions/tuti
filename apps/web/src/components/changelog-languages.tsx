@@ -124,7 +124,8 @@ function versionLine(view: VersionView, defaultName: string, kind: VersionKind) 
   switch (view.state) {
     case "current":
       return kind === "article"
-        ? `Translated automatically from ${defaultName}. Publishing ${defaultName} again replaces your edits in the sections it touches.`
+        ? // Published edits give way where English changes; a draft's never do, so it says published.
+          `Translated automatically from ${defaultName}. Publishing ${defaultName} again replaces your published edits in the sections it touches.`
         : `Translated automatically from ${defaultName}. Saving your edits turns off Keep up to date.`;
     case "translating":
       return `Translating from ${defaultName}…`;

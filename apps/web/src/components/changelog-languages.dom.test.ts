@@ -53,7 +53,7 @@ const languages = [
 ];
 const view: VersionView = { code: "de", name: "Deutsch", state: "current", keepUpToDate: true, version: "v1", waiting: null, title: "Dunkler Modus", content: doc, own: true };
 
-async function form(props: Partial<typeof view> = {}) {
+async function form(props: Partial<typeof view> = {}, extra: Record<string, unknown> = {}) {
   const box = document.createElement("div");
   document.body.append(box);
   const root = createRoot(box);
@@ -77,6 +77,7 @@ async function form(props: Partial<typeof view> = {}) {
             view: { ...view, ...changes },
             mediaUrls: shownMedia,
             languages,
+            ...extra,
           }),
         )),
       ),
@@ -405,4 +406,9 @@ test("an image of the read a draft was made from still shows when a new read wit
   await render({ version: "v2", title: "Ohne Bild" });
   expect(title().value).toBe("Bearbeitet");
   expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
+});
+
+test("an article's version kept up to date says publishing English replaces the team's published edits, not a draft's", async () => {
+  await form({ state: "current", keepUpToDate: true }, { kind: "article" });
+  expect(document.body.textContent).toContain("Translated automatically from English. Publishing English again replaces your published edits in the sections it touches.");
 });
