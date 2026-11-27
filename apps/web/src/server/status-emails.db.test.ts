@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { handlers } from "@tuti/jobs";
 import { billingFile } from "@tuti/testkit";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
@@ -12,6 +12,7 @@ import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 /** A post's people hear when the team moves it to Planned or In progress, once per status, as they hear when it ships. */
 
@@ -410,4 +411,59 @@ test("each person's email is in their language while the portal serves it, its l
   await setStatus(other.number, "planned");
   expect(subjectsTo(german.email).at(-1)).toBe("Planned: PDF export");
   expect(mailbox.emails.filter((e) => e.to.includes(german.email)).at(-1)!.text).not.toContain("/de/");
+});
+
+test("a reader who never chose a language takes the page's when they vote at a language's address: its news is in it; one they chose stays", async () => {
+  for (const code of ["de", "fr"]) {
+    await prisma.projectLanguage.create({ data: { projectId: project.id, code, live: true, automatic: false } });
+  }
+  const [author, german, french] = [await verified("Author"), await verified("Greta"), await verified("Fleur")];
+  await prisma.user.update({ where: { id: french.id }, data: { language: "fr" } });
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  // Both vote on the German address (what proxy.ts sets on its requests).
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  for (const voter of [german, french]) {
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+  }
+  request.headers = {};
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: german.id } })).language).toBe("de");
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: french.id } })).language).toBe("fr");
+
+  await setStatus(post.number, "in_progress");
+  expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export"]);
+  expect(subjectsTo(french.email)).toEqual(["En cours : CSV export"]);
+});
+
+test("a vote saves no language at the default language's address, at an offline one's (the team's preview), or by an API key on someone's behalf", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", live: false, automatic: false } });
+  const author = await verified("Author");
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  const languageOf = async (id: string) => (await prisma.user.findUniqueOrThrow({ where: { id } })).language;
+
+  const atDefault = await verified("At default");
+  request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
+  await call(setVote, as(atDefault.id), { number: post.number, voted: true });
+  expect(await languageOf(atDefault.id)).toBeNull();
+
+  // French isn't live: only the team's preview shows it at /fr.
+  const previewing = await verified("Previewing");
+  request.headers = { "x-tuti-language": "fr", "x-tuti-language-prefix": "/fr" };
+  await call(setVote, as(previewing.id), { number: post.number, voted: true });
+  expect(await languageOf(previewing.id)).toBeNull();
+
+  // An API key voting for someone from the team's app, sending a live language's headers: not theirs to set.
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  const key = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "write" as const, createdById: owner.id };
+  await call(setVote, { actor: key, projectId: project.id }, { number: post.number, voted: true, author: { id: "app-user-1", email: "e2e-behalf@example.com", name: "Behalf" } });
+  const voters = await prisma.vote.findMany({ where: { post: { projectId: project.id, number: post.number } }, select: { userId: true } });
+  const behalf = voters.map(({ userId }) => userId).filter((id) => ![author.id, atDefault.id, previewing.id].includes(id));
+  expect(behalf).toHaveLength(1);
+  expect(await languageOf(behalf[0]!)).toBeNull();
 });

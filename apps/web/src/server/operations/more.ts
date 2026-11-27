@@ -8,6 +8,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { authorId, describedAuthor, noSuchComment, orNoSuchComment } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { findVisiblePost, postNumber, postRef } from "./read";
+import { rememberPageLanguage } from "@/server/portal-language";
 
 /** The project, its team, votes and duplicate suggestions. */
 
@@ -291,6 +292,10 @@ export const setVote = defineOperation({
       });
       return updated.voteCount;
     });
+    // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
+    if (input.voted) {
+      await rememberPageLanguage(context.actor, userId, context.projectId);
+    }
     return { number: post.number, voted: input.voted, votes };
   },
 });

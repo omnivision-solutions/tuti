@@ -421,14 +421,20 @@ describe("when a post ships", () => {
     const fromPage = await unsubscribe(new Request(url(await tokenOf(author.id)), { method: "POST" }), { params });
     expect(fromPage.status).toBe(303);
     expect(fromPage.headers.get("location")).toBe(`/unsubscribe?token=${await tokenOf(author.id)}`);
-    // Pressed at a language's address (the page its email linked, in the reader's language): back to the page there.
-    request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
-    try {
-      const fromGerman = await unsubscribe(new Request(url(await tokenOf(author.id)), { method: "POST" }), { params });
-      expect(fromGerman.headers.get("location")).toBe(`/de/unsubscribe?token=${await tokenOf(author.id)}`);
-    } finally {
-      request.headers = {};
-    }
+    // Pressed at a language's address (the page its email linked, in the reader's language), under a site's path (a portal
+    // mounted at its team's site's /portal, as proxy.ts says), or both: back to the page there.
+    const from = async (headers: Record<string, string>) => {
+      request.headers = headers;
+      try {
+        return (await unsubscribe(new Request(url(await tokenOf(author.id)), { method: "POST" }), { params })).headers.get("location");
+      } finally {
+        request.headers = {};
+      }
+    };
+    const german = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+    expect(await from(german)).toBe(`/de/unsubscribe?token=${await tokenOf(author.id)}`);
+    expect(await from({ "x-tuti-base": "/portal" })).toBe(`/portal/unsubscribe?token=${await tokenOf(author.id)}`);
+    expect(await from({ ...german, "x-tuti-base": "/portal" })).toBe(`/portal/de/unsubscribe?token=${await tokenOf(author.id)}`);
 
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Export to CSV" });
     await call(setVote, as(voter.id), { number: post.number, voted: true });

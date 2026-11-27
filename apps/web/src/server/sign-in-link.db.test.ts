@@ -112,6 +112,22 @@ test("asked at a language's address, the email is in that language and its link 
   const link = await linkTo(email, `Bei ${project.name} anmelden`);
   expect((await mailbox.latestTo(email)).text).toContain(`Hier ist dein Link, um dich bei ${project.name} anzumelden.`);
   expect(link.origin + link.pathname).toBe(`http://${portalHost()}/de/sign-in/link`);
+  // Confirmed there (the page at /de, German live): a new account takes German for its emails.
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const { user } = await confirm(link);
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: user!.id } })).language).toBe("de");
+});
+
+test("signing in with a link at a language's address keeps the language an account chose", async () => {
+  const email = newAddress();
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  await ask(email);
+  const { user } = await confirm(await linkTo(email, `Bei ${project.name} anmelden`));
+  await prisma.user.update({ where: { id: user!.id }, data: { language: "fr" } });
+  await ask(email);
+  await confirm(await linkTo(email, `Bei ${project.name} anmelden`));
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: user!.id } })).language).toBe("fr");
 });
 
 test("from a portal's sign-up, a new account gets the name typed, trimmed; an existing account keeps its own", async () => {
