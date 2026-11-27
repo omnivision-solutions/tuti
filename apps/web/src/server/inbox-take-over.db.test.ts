@@ -123,3 +123,36 @@ test("Hand back to the AI is offered only where the AI would answer: AI on the s
   expect(await would({ spam: true })).toBe(false);
   expect(await would({ spamHeldAt: new Date() })).toBe(false);
 });
+
+/**
+ * A conversation the team has, its user's message written while Hand back checked (the check reads nobody waiting): the
+ * timing a lock-free check leaves open, made by answering the check's read as if before the message.
+ */
+async function slipsIn() {
+  const { owner, project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
+  await call(replyToConversation, { actor: key, projectId: project.id }, { number: 1, body: "Any news?", author: { id: sam.id } });
+  vi.spyOn(prisma.conversation, "findUnique").mockResolvedValueOnce({ waitingSince: null } as never);
+  return { project, row };
+}
+
+test("a message that slips in while handing back gets the AI's turn where it can answer", async () => {
+  const { project, row } = await slipsIn();
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-test-key");
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
+  await prisma.article.create({ data: { projectId: project.id, slug: "exporting", title: "Exporting", publishedAt: new Date() } });
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  expect(await row()).toMatchObject({ handledBy: "AI", pathDueAt: expect.any(Date) });
+});
+
+test("a message that slips in while handing back goes to the team where the AI can't answer: never left with the AI", async () => {
+  const { project, row } = await slipsIn();
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  const after = await row();
+  expect(after).toMatchObject({ handledBy: "TEAM", pathDueAt: null });
+  // Handed over for it: a second row after the one from when the conversation started.
+  const handovers = await prisma.conversationEvent.findMany({ where: { conversationId: after.id, kind: "handed_over" }, orderBy: { createdAt: "asc" }, select: { details: true } });
+  expect(handovers).toEqual([{ details: { reason: "ai_off" } }, { details: { reason: "ai_off" } }]);
+});

@@ -8,6 +8,8 @@ import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
 
 import type { FormState } from "./form-state";
+import { newestFromUser, toAi } from "./ai-turn";
+import { handOverAndTell } from "./inbox-path";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import {
@@ -211,8 +213,29 @@ export async function handBackConversation(projectSlug: string, conversation: nu
     if (found?.waitingSince) {
       throw new OperationError(409, "waiting", "Reply first: they're waiting on your team.");
     }
-    return call(updateConversation, context, { number, handledBy: "ai" });
+    await call(updateConversation, context, { number, handledBy: "ai" });
+    await turnForSlippedMessage(context.projectId, number);
   });
+}
+
+/**
+ * A message from the user that came between Hand back's check and its update (written while the team had it, so its path
+ * gave the AI no turn and handed nothing over): its turn now, or, where the AI can't answer, the team, told. Never left
+ * with the AI unanswered. A message after the update has its own path, which gives the AI the turn; a turn given twice is
+ * claimed once.
+ */
+async function turnForSlippedMessage(projectId: string, number: number) {
+  const conversation = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, handledBy: true, waitingSince: true } });
+  if (conversation?.handledBy !== "AI" || !conversation.waitingSince) {
+    return;
+  }
+  const latest = await newestFromUser(prisma, conversation.id);
+  if (!latest || latest.handedOverAt) {
+    return;
+  }
+  if (!(await toAi(projectId, conversation.id, latest.id))) {
+    await handOverAndTell(projectId, { id: conversation.id, number }, latest.id, "ai_off", { onlyFromAi: true });
+  }
 }
 
 /** Mark priority, or Remove priority. */
