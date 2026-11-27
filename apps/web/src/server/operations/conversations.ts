@@ -8,7 +8,6 @@ import { rowLine, subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 import { isAdminRole } from "@/lib/roles";
 import { SPAM_REASON_KEYS, type SpamReason } from "@/lib/spam-reasons";
-import { describeSpamRule } from "@/lib/spam-rules";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload } from "../attachments";
 import { logEvents, teamActor } from "../conversation-events";
@@ -1619,9 +1618,9 @@ export const updateConversation = defineOperation({
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
       const [held] = await tx.$queryRaw<
-        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; spamMarkedAt: Date | null; spamHeldAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
+        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; reportedRuleId: string | null; spamMarkedAt: Date | null; spamHeldAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
       >`
-        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "spamMarkedAt", "spamHeldAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "reportedRuleId", "spamMarkedAt", "spamHeldAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1647,14 +1646,14 @@ export const updateConversation = defineOperation({
         throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
       }
       let markedAt = new Date();
-      // The rule a report added ("Report spam and block …"), in words, kept as a filed one's are: Not spam can remove it.
+      // The rule a report added ("Report spam and block …"), kept apart from the filter's: Not spam can remove it.
       let reported: string | null = null;
       if (marked || input.blockDomain || input.blockSender) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
         const admin = !!member && isAdminRole(member.role);
         const sent = { ...conversation, projectId };
         if (marked) {
-          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason, { phrase: held!.spamPhrase, removeRule: input.removeRule });
+          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason, { phrase: held!.spamPhrase, reportedRuleId: held!.reportedRuleId, removeRule: input.removeRule });
           released = !input.spam && (!!held!.spamReason || !!held!.spamHeldAt);
           // Read while it's held: a message waits for this, sees it unmarked and tells of itself. Since the filter filed it
           // (all of it), or since its mark; one marked before marks had a time has none to count from, and nothing is told.
@@ -1676,10 +1675,10 @@ export const updateConversation = defineOperation({
           }
         }
         if (input.blockSender) {
-          reported = describeSpamRule({ field: "sender_address", matcher: "is", value: await blockSenderOf(tx, sent, admin) });
+          reported = (await blockSenderOf(tx, sent, admin)).ruleId;
         }
         if (input.blockDomain) {
-          reported = describeSpamRule({ field: "sender_domain", matcher: "is", value: await blockDomainOf(tx, sent, admin) });
+          reported = (await blockDomainOf(tx, sent, admin)).ruleId;
         }
         if (marked && held!.spamHeldAt) {
           // The mark ends the hold: the Reply-To kept for the model (a sign, maybe another of the sender's addresses) goes.
@@ -1700,9 +1699,9 @@ export const updateConversation = defineOperation({
           // Assigned or unassigned by the team: no longer the imported holder's to take over (handOverPlaceholders).
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
-          // A teammate's mark replaces the filter's reason, and its words with the report's rule's, or none.
-          ...(marked && { spamMarkedAt: markedAt, spamReason: null, spamPhrase: null }),
-          ...(reported && { spamPhrase: reported }),
+          // A teammate's mark replaces the filter's reason, and the rule an earlier report added with this one's, or none.
+          ...(marked && { spamMarkedAt: markedAt, spamReason: null, reportedRuleId: null }),
+          ...(reported && { reportedRuleId: reported }),
           // Held: decided now, so the models' checks have nothing left to do (W4). Mark as spam keeps `spamHeldAt`, as
           // nobody was ever told of it: a later Not spam then tells of it as a new conversation.
           ...(marked && held!.spamHeldAt && { pathDueAt: null, ...(!input.spam && { spamHeldAt: null }) }),

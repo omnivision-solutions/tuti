@@ -273,6 +273,25 @@ test("Not spam undoes a report's block: the rule it added is offered for removal
   expect(await choices(2)).toMatchObject({ removesRule: null });
 });
 
+test("a report's rule is kept apart from the filter's: reporting a filed conversation leaves its reason and words, and an older mark's leftover words name no rule", async () => {
+  const { projectId, mail, admin } = await setup();
+  await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto" } });
+  const row = (number: number) => prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });
+  // Filed by the filter, then reported and the sender blocked: the page still quotes the filter's rule, and Not spam
+  // offers that one.
+  await mail("e2e-kim@spam.example"); // #1: no crypto, inbox
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spam: true, spamReason: "rule", spamPhrase: "Subject or body contains crypto" } });
+  await call(updateConversation, admin, { number: 1, spam: true, blockSender: true });
+  expect(await row(1)).toMatchObject({ spamReason: "rule", spamPhrase: "Subject or body contains crypto" });
+  expect(await spamChoices(prisma, await row(1), true)).toMatchObject({ removesRule: "Subject or body contains crypto", unblocks: "e2e-kim@spam.example" });
+  // Marked before the reports' rules were kept apart: words with no reason are no rule's, and nothing is offered.
+  await mail("e2e-lee@other.example"); // #2
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 2 } }, data: { spam: true, spamReason: null, spamMarkedAt: new Date(), spamPhrase: "Subject or body contains crypto" } });
+  expect(await spamChoices(prisma, await row(2), true)).toMatchObject({ removesRule: null });
+  await expect(call(updateConversation, admin, { number: 2, spam: false, removeRule: true })).rejects.toThrow(new OperationError(409, "no_rule", "That rule was already removed"));
+  expect(await prisma.spamRule.count({ where: { projectId, value: "crypto" } })).toBe(1);
+});
+
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
   const { projectId, mail, filed, admin } = await setup();
   await prisma.spamRule.createMany({ data: Array.from({ length: 500 }, (_, i) => ({ projectId, field: "subject", matcher: "is", value: `pitch ${i}` })) });

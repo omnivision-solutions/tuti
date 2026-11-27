@@ -256,7 +256,7 @@ export async function arrivalOf(db: Db, projectId: string, userId: string | null
   return { projectId, userId, proven: true, address, name: user?.name ?? null };
 }
 
-type Marked = { id: string; projectId: string; origin: ConversationOrigin; userId: string | null; visitorHash: string | null; spam?: boolean; spamReason?: string | null; spamPhrase?: string | null };
+type Marked = { id: string; projectId: string; origin: ConversationOrigin; userId: string | null; visitorHash: string | null; spam?: boolean; spamReason?: string | null; spamPhrase?: string | null; reportedRuleId?: string | null };
 
 /**
  * The address a mark on this conversation is a decision about: the one check 1 looked its sender up by. Null where that
@@ -305,15 +305,21 @@ export function blockableDomain(address: string): string | null {
 const RULE_REASONS = new Set(["rule", "blocked_address", "blocked_domain", "phrase"]);
 
 /**
- * The rule that filed a conversation, while it's still there: the filter's (its reason still on the conversation), or
- * the one a teammate's report added ("Report spam and block …": no reason, a mark keeps that rule's words or none).
+ * The rule that filed a conversation, while it's still there: the filter's, while its reason is still on the
+ * conversation (a teammate's mark clears it, and words left from before are no rule's doing); else the one a teammate's
+ * report added with it ("Report spam and block …", `reportedRuleId`).
  */
-async function ruleThatFiled(db: Db, projectId: string, reason: string | null | undefined, phrase: string | null | undefined): Promise<Rule | null> {
-  if (!phrase || (reason && !RULE_REASONS.has(reason))) {
-    return null;
+async function ruleThatFiled(
+  db: Db,
+  projectId: string,
+  { spamReason: reason, spamPhrase: phrase, reportedRuleId }: { spamReason?: string | null; spamPhrase?: string | null; reportedRuleId?: string | null },
+): Promise<Rule | null> {
+  const rules = await rulesOf(db, projectId);
+  if (phrase && RULE_REASONS.has(reason ?? "")) {
+    const words = reason === "phrase" ? `Subject or body contains ${phrase}` : phrase;
+    return rules.find((rule) => describeSpamRule(rule) === words) ?? null;
   }
-  const words = reason === "phrase" ? `Subject or body contains ${phrase}` : phrase;
-  return (await rulesOf(db, projectId)).find((rule) => describeSpamRule(rule) === words) ?? null;
+  return (reportedRuleId && rules.find((rule) => rule.id === reportedRuleId)) || null;
 }
 
 /**
@@ -330,7 +336,7 @@ export async function spamChoices(
 ): Promise<{ blockSender: string | null; blockDomain: string | null; unblocks: string | null; removesRule: string | null }> {
   const sender = admin ? await conversationSender(db, conversation) : null;
   const on = sender ? await listed(db, conversation.projectId, sender) : null;
-  const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation.spamReason, conversation.spamPhrase) : null;
+  const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation) : null;
   // A full filter takes no more rules: a report then is a report alone.
   const room = !!sender && (await db.spamRule.count({ where: { projectId: conversation.projectId } })) < MAX_SPAM_RULES;
   return {
@@ -357,7 +363,7 @@ export async function recordMark(
   spam: boolean,
   admin: boolean,
   reason: string | null,
-  { phrase = null, removeRule = false }: { phrase?: string | null; removeRule?: boolean } = {},
+  { phrase = null, reportedRuleId = null, removeRule = false }: { phrase?: string | null; reportedRuleId?: string | null; removeRule?: boolean } = {},
 ): Promise<string | undefined> {
   const notices: string[] = [];
   if (removeRule || (!spam && admin)) {
@@ -365,7 +371,7 @@ export async function recordMark(
     // under the lock, as every writer of the rules, so a change in Settings waits for it.
     await lockSpamRules(db, conversation.projectId);
   }
-  const filedBy = spam ? null : await ruleThatFiled(db, conversation.projectId, reason, phrase);
+  const filedBy = spam ? null : await ruleThatFiled(db, conversation.projectId, { spamReason: reason, spamPhrase: phrase, reportedRuleId });
   if (removeRule) {
     if (!admin) {
       throw new OperationError(403, "forbidden", "Only project owners and admins can remove a rule");
@@ -422,11 +428,12 @@ export async function recordMark(
 }
 
 /** A rule from a report, under the filter's limit, as Settings' are: past it, refused (the report with it). */
-async function addReportedRule(db: Db, projectId: string, rule: SpamRule) {
-  await addSpamRule(db, projectId, rule, true);
+async function addReportedRule(db: Db, projectId: string, rule: SpamRule): Promise<string> {
+  const id = await addSpamRule(db, projectId, rule, true);
   if ((await db.spamRule.count({ where: { projectId } })) > MAX_SPAM_RULES) {
     throw new OperationError(409, "too_many", `The filter holds up to ${MAX_SPAM_RULES} rules: remove some first`);
   }
+  return id;
 }
 
 /**
@@ -435,7 +442,7 @@ async function addReportedRule(db: Db, projectId: string, rule: SpamRule) {
  * never for a sender check 1 doesn't apply to (an address a signed-out visitor typed, mail that failed DMARC). Returns
  * the address.
  */
-export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean): Promise<string> {
+export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean): Promise<{ value: string; ruleId: string }> {
   if (!admin) {
     throw new OperationError(403, "forbidden", "Only project owners and admins can block a sender");
   }
@@ -443,8 +450,7 @@ export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean
   if (!sender) {
     throw new OperationError(409, "no_sender", "This conversation's sender isn't proven, so there's no address to block");
   }
-  await addReportedRule(db, conversation.projectId, { field: "sender_address", matcher: "is", value: sender });
-  return sender;
+  return { value: sender, ruleId: await addReportedRule(db, conversation.projectId, { field: "sender_address", matcher: "is", value: sender }) };
 }
 
 /**
@@ -452,7 +458,7 @@ export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean
  * it, from a report. Owners and admins only, as the rules are theirs; never a free-mail domain, nor for a sender check 1
  * doesn't apply to. Returns the domain.
  */
-export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean): Promise<string> {
+export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean): Promise<{ value: string; ruleId: string }> {
   if (!admin) {
     throw new OperationError(403, "forbidden", "Only project owners and admins can block a domain");
   }
@@ -465,8 +471,7 @@ export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean
       sender ? "Anyone can get an address at this domain, so it isn't blocked: marking as spam blocks this address" : "This conversation's sender isn't proven, so there's no domain to block",
     );
   }
-  await addReportedRule(db, conversation.projectId, { field: "sender_domain", matcher: "is", value: domain });
-  return domain;
+  return { value: domain, ruleId: await addReportedRule(db, conversation.projectId, { field: "sender_domain", matcher: "is", value: domain }) };
 }
 
 /**
@@ -480,18 +485,19 @@ export const lockSpamRules = (db: Db, projectId: string) => db.$executeRaw`SELEC
  * there already (`spamRuleKey`) isn't added again. A "Sender address is" or "Sender domain is" rule takes the address or
  * domain off the allowed list: on one list at a time. Returns whether it was added.
  */
-export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fromReport = false): Promise<boolean> {
+export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fromReport = false): Promise<string> {
   await lockSpamRules(db, projectId);
   const key = spamRuleKey(rule);
-  const same = await db.spamRule.findMany({ where: { projectId, field: rule.field, matcher: rule.matcher }, select: { field: true, matcher: true, value: true, appliesTo: true } });
-  if (same.some((other) => spamRuleKey(other as SpamRule) === key)) {
-    return false;
+  const same = await db.spamRule.findMany({ where: { projectId, field: rule.field, matcher: rule.matcher }, select: { id: true, field: true, matcher: true, value: true, appliesTo: true } });
+  const there = same.find((other) => spamRuleKey(other as SpamRule) === key);
+  if (there) {
+    return there.id;
   }
-  await db.spamRule.create({ data: { projectId, ...rule, fromReport } });
+  const { id } = await db.spamRule.create({ data: { projectId, ...rule, fromReport }, select: { id: true } });
   if (isSenderRule(rule) && rule.matcher === "is") {
     await db.spamSender.deleteMany({ where: { projectId, conversationId: null, sender: rule.value } });
   }
-  return true;
+  return id;
 }
 
 /**
