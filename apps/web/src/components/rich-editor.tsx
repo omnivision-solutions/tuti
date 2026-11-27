@@ -587,6 +587,11 @@ export function RichEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, canAsk]);
 
+  // A header's Ask AI opens it on the whole text.
+  useEffect(() => {
+    askAi?.opener?.(askAi.paused ? null : () => asking.open(true));
+  });
+
   // Checked sentences are decorations, independent of the document being saved.
   useEffect(() => {
     if (!editor || !findings?.length) return;
@@ -673,7 +678,7 @@ export function RichEditor({
               editor={editor}
               onPrompt={setPrompt}
               editImage={editImage}
-              askAi={askAi ? { paused: askAi.paused, run: asking.open } : undefined}
+              askAi={askAi ? { paused: askAi.paused, run: () => asking.open() } : undefined}
               host={menusHost}
               label={toolbarId ? "Text selection" : "Formatting"}
             />

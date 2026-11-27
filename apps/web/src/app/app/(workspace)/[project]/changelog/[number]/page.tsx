@@ -321,7 +321,6 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               }
               mediaUrls={await mediaUrls(displayDoc(entry))}
               covers={covers}
-              canEditWithAi={aiEnabled() && !unwritten}
               canAskAi={aiEnabled() && !unwritten}
               aiPaused={paused}
               imageGenerator={imageGenerator && { ...imageGenerator, credits: creditsEnabled(), paused }}
