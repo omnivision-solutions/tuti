@@ -659,10 +659,10 @@ export function ChangelogForm({
   const askWhole = useRef<(() => void) | null>(null);
   const askPausedId = useId();
   const shipsId = useId();
-  const shipsPosts = (entry?.published ? entry.posts : linked).length > 0 && !entry?.sample && !entry?.importedOn;
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
+  const shipsPosts = (entry?.published ? entry.posts : linked).length > 0 && !entry?.sample && !entry?.importedOn;
   // Saves so far: Who sees it and Published in start afresh after each (from the saved groups), its picks sent again only once changed.
   const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
