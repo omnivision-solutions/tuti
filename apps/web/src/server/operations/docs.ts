@@ -30,6 +30,7 @@ import {
   revisionsPast,
   settleWaitingEdits,
   editName,
+  queueLabels,
 } from "@tuti/jobs";
 import { articleVersionsKept, collectionName, LANGUAGE_CODES, LANGUAGES, log, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
@@ -1930,13 +1931,17 @@ export const createCollection = defineOperation({
   input: collectionInput,
   output: collectionOutput.describe("The collection"),
   example: { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" },
-  run: async ({ projectId }, input) =>
-    prisma.$transaction(async (tx) => {
+  run: async ({ projectId }, input) => {
+    const saved = await prisma.$transaction(async (tx) => {
       checkIcon(input.icon);
       await lockProject(tx, projectId);
       const { id } = await insertCollection(tx, projectId, input);
       return collectionIn(tx, projectId, id);
-    }),
+    });
+    // Its name and description in the project's other languages (docs/plan.md L13).
+    await queueLabels(projectId);
+    return saved;
+  },
 });
 
 /**
@@ -1986,8 +1991,8 @@ export const updateCollection = defineOperation({
   }),
   output: collectionOutput.describe("The collection, changed"),
   example: { name: "Basics", parent: null },
-  run: async ({ projectId }, input) =>
-    prisma.$transaction(async (tx) => {
+  run: async ({ projectId }, input) => {
+    const saved = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const collection = await lockedCollection(tx, projectId, input.slug);
       const { id } = collection;
@@ -2010,7 +2015,12 @@ export const updateCollection = defineOperation({
         },
       });
       return collectionIn(tx, projectId, id);
-    }),
+    });
+    if (input.name !== undefined || input.description !== undefined) {
+      await queueLabels(projectId);
+    }
+    return saved;
+  },
 });
 
 export const reorderCollection = defineOperation({
@@ -2193,8 +2203,8 @@ export const createTab = defineOperation({
   input: z.object({ name: tabName, ...accessFields }),
   output: tabOutput.describe("The tab"),
   example: { name: "Guides" },
-  run: async ({ projectId }, input) =>
-    tabView(
+  run: async ({ projectId }, input) => {
+    const saved = tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const last = await tx.docsTab.aggregate({ where: { projectId }, _max: { order: true } });
@@ -2216,7 +2226,10 @@ export const createTab = defineOperation({
         }
         return tx.docsTab.findUniqueOrThrow({ where: { id: tab.id }, select: tabSelect });
       }),
-    ),
+    );
+    await queueLabels(projectId);
+    return saved;
+  },
 });
 
 export const updateTab = defineOperation({
@@ -2252,7 +2265,7 @@ export const updateTab = defineOperation({
     if ((input.landing === "page") !== (input.landingPage !== undefined)) {
       throw new OperationError(400, "invalid_input", input.landingPage === undefined ? "Pick the page it shows" : "landingPage goes with landing “page”");
     }
-    return tabView(
+    const saved = tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const { id, name } = await lockedTab(tx, projectId, input.slug);
@@ -2274,6 +2287,10 @@ export const updateTab = defineOperation({
         });
       }),
     );
+    if (input.name !== undefined) {
+      await queueLabels(projectId);
+    }
+    return saved;
   },
 });
 

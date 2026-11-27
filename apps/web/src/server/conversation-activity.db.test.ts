@@ -29,9 +29,13 @@ async function setup() {
   const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId };
   const key = await prisma.apiKey.create({ data: { projectId, name: "Zapier", scope: "WRITE", keyHash: `hash-${projectId}`, prefix: "tuti_ab", createdById: owner.id } });
   const viaKey = { actor: { kind: "apiKey" as const, keyId: key.id, projectId, scope: "write" as const, createdById: owner.id }, projectId };
-  /** The Activity as the API tells it, newest first: "<who> <text>[ · <detail>]", and each workflow a run checked. */
+  /**
+   * The Activity as the API tells it, newest first: "<who> <text>[ · <detail>]", and each workflow a run checked. Without
+   * the handover every new conversation gets while nothing answers for the AI ("Handed to the team · the AI is off"):
+   * handover.db.test.ts has those.
+   */
   const activity = async (number: number, filter: "all" | "workflows" | "people" = "all") =>
-    (await call(getConversationActivity, admin, { number, filter, limit: 100 })).events.map((event) =>
+    (await call(getConversationActivity, admin, { number, filter, limit: 100 })).events.filter((event) => event.kind !== "handed_over").map((event) =>
       [[event.who, event.text].filter(Boolean).join(" ") + (event.detail ? ` · ${event.detail}` : ""), ...event.workflows.map((w) => `  ${w.name} · ${w.what}`)].join("\n"),
     );
   return { owner, project, projectId, admin, key, viaKey, activity };
@@ -70,7 +74,7 @@ test("a trigger's run is one row with every workflow it checked, a run that matc
 
 test("the spam filter's verdict is written where the conversation starts, and never without it", async () => {
   const { projectId, activity } = await setup();
-  await prisma.spamSender.create({ data: { projectId, sender: "spam.example", blocked: true, byAdmin: true } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_domain", matcher: "is", value: "spam.example" } });
   const start = (email: string) =>
     startConversation(projectId, {
       userId: null,
@@ -132,7 +136,8 @@ test("a teammate's changes, in the app and by the API, each with who did it; an 
   await prisma.teamMember.create({ data: { projectId, userId: other.id, role: "OWNER" } });
   await prisma.user.delete({ where: { id: owner.id } });
   const asOther = { actor: { kind: "user" as const, userId: other.id }, projectId };
-  expect((await call(getConversationActivity, asOther, { number })).events.at(-1)).toMatchObject({ actor: "teammate", who: "A former teammate", text: "closed it" });
+  // The oldest but one: the oldest is the handover it got as it started.
+  expect((await call(getConversationActivity, asOther, { number })).events.at(-2)).toMatchObject({ actor: "teammate", who: "A former teammate", text: "closed it" });
 }, 20_000);
 
 test("a teammate's reply takes it over and sets it waiting in its Activity, with the reply; a note doesn't, and a failed change writes nothing", async () => {
@@ -214,12 +219,18 @@ test("a reply that leaves it open (the person wrote after what the teammate saw)
   await upsertProjectUser(projectId, "user-1", { name: "Sam Smith" });
   const { number } = await call(createConversation, admin, { user: { id: "user-1" }, body: "Hello" });
   await call(updateConversation, admin, { number, handledBy: "ai" });
+  // Kept with the AI as the person writes, rather than handed over (nothing answers for the AI yet).
+  await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", actions: [{ kind: "dont_hand_over" }] });
   // The teammate's page shows the conversation as it is; then the person writes again.
   const { lastMessageAt: seen } = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });
   await call(replyToConversation, viaKey, { number, body: "Hello?", author: { id: "user-1" } });
   expect(await call(replyToConversation, admin, { number, body: "On it", seen: seen.toISOString() })).toMatchObject({ keptOpen: true });
   expect(await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } })).toMatchObject({ status: "OPEN", handledBy: "TEAM" });
-  expect(await activity(number)).toEqual(["Olive Owner took it over from the AI · by replying", "Olive Owner handed it back to the AI"]);
+  expect(await activity(number)).toEqual([
+    "Olive Owner took it over from the AI · by replying",
+    "A conversation is about to go to a person ran · 1 workflow checked · the AI is off\n  Keep · kept it with the AI",
+    "Olive Owner handed it back to the AI",
+  ]);
 });
 
 test("newest first, a page at a time, the team's only; deleted with its conversation", async () => {
@@ -232,8 +243,9 @@ test("newest first, a page at a time, the team's only; deleted with its conversa
   expect(first.events.map((e) => e.text)).toEqual(["marked it priority", "took its priority off"]);
   const second = await call(getConversationActivity, admin, { number, limit: 2, before: first.next! });
   const third = await call(getConversationActivity, admin, { number, limit: 2, before: second.next! });
-  expect([second.events.length, third.events.length, third.next]).toEqual([2, 1, null]);
-  expect(new Set([...first.events, ...second.events, ...third.events].map((e) => e.id)).size).toBe(5);
+  // The fifth and sixth: the first change, and the handover it got as it started.
+  expect([second.events.length, third.events.length, third.next]).toEqual([2, 2, null]);
+  expect(new Set([...first.events, ...second.events, ...third.events].map((e) => e.id)).size).toBe(6);
 
   // Someone outside the team gets nothing.
   actAs(await signUp("Stranger"));

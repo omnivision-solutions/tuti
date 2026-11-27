@@ -24,7 +24,7 @@ import { mailSubdomain, supportAddress } from "./inbound";
 import { listConversations, listInboxViews, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
-import { createWorkflow } from "./operations/workflows";
+import { createWorkflow, deleteWorkflow } from "./operations/workflows";
 import { runDueInbox, runSpamChecks, SPAM_HOLD_MS, spamSignals } from "./spam-models";
 
 /**
@@ -288,9 +288,9 @@ test("past 100 due at once, the job settles the oldest first", { timeout: 60_000
 test("only a conversation no free check decided is held: not one filed, nor one a decision or trust let through", { timeout: 30_000 }, async () => {
   const { projectId, admin, mail, state } = await setup();
   const inInbox = { spam: false, spamReason: null, held: false, due: false };
-  await call(updateSpamSettings, admin, { addPhrases: ["facebook admin"], allow: ["e2e-friend@example.com"] });
-  // A phrase files it (check 5).
-  expect(await state(await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" }))).toEqual({ spam: true, spamReason: "phrase", held: false, due: false });
+  await call(updateSpamSettings, admin, { addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }], allow: ["e2e-friend@example.com"] });
+  // A rule files it (check 1).
+  expect(await state(await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" }))).toEqual({ spam: true, spamReason: "rule", held: false, due: false });
   // The allowed list lets it through (check 1).
   expect(await state(await mail("e2e-friend@example.com"))).toEqual(inInbox);
   // Someone the team has replied to is trusted (check 2).
@@ -400,6 +400,50 @@ test("a user's reply during the hold is told with the first message on release, 
   await check(number);
   await runDueInbox(new Date(Date.now() + SPAM_HOLD_MS + 1000));
   expect(await told()).toEqual({ webhooks: ["conversation.created", "conversation.message_created"], emails: 1 });
+});
+
+test("a held conversation isn't handed over till it's released: then \"A conversation starts\", then the handover, once; one filed never is", { timeout: 30_000 }, async () => {
+  const { projectId, admin, mail, check, told, conversation } = await setup();
+  await prisma.webhook.updateMany({ where: { projectId }, data: { events: ["conversation.created", "conversation.message_created", "conversation.handed_over"] } });
+  await call(createWorkflow, admin, { name: "Starts", trigger: "conversation_started", conditions: [], actions: [{ kind: "mark_priority" }] });
+  const keep = await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "reply_text", text: "Thanks!" }, { kind: "dont_hand_over" }] });
+  /** Its Activity's runs and handovers, oldest first; its owner; the set replies. */
+  const path = async (number: number) => {
+    const { id, handledBy } = await conversation(number);
+    const rows = await prisma.conversationEvent.findMany({ where: { conversationId: id, kind: { in: ["workflows_ran", "handed_over"] } }, orderBy: { createdAt: "asc" }, select: { kind: true, details: true } });
+    const replies = await prisma.conversationMessage.count({ where: { conversationId: id, author: "AI", requestId: { not: null } } });
+    return { rows: rows.map((row) => (row.kind === "handed_over" ? "handed over" : (row.details as { trigger: string }).trigger)), handledBy, replies };
+  };
+
+  // Held: nothing has run, nothing is handed over or told.
+  const kept = await mail();
+  expect(await path(kept)).toEqual({ rows: [], handledBy: "TEAM", replies: 0 });
+  expect(await told()).toEqual(nobodyTold);
+  // Released: "A conversation starts", then "About to go to a person", which keeps it with the AI and replies once.
+  model.decide({ spam: 0.2 });
+  await check(kept);
+  expect(await path(kept)).toEqual({ rows: ["conversation_started", "about_to_hand_over"], handledBy: "AI", replies: 1 });
+  // Told as the handover left it: the AI's, so the team isn't emailed and the webhook says who has it.
+  expect(await told()).toEqual({ webhooks: ["conversation.created"], emails: 0 });
+  const created = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId }, event: "conversation.created" }, select: { payload: true } });
+  expect((created.payload as { data: { handledBy: string } }).data.handledBy).toBe("ai");
+  await check(kept);
+  expect(await path(kept)).toEqual({ rows: ["conversation_started", "about_to_hand_over"], handledBy: "AI", replies: 1 });
+
+  // With nothing to keep it: handed to the team after its workflows, its webhook after the conversation's own.
+  await call(deleteWorkflow, admin, { id: keep.id });
+  const handed = await mail("e2e-other@example.com");
+  model.decide({ spam: 0.2 });
+  await check(handed);
+  expect(await path(handed)).toEqual({ rows: ["conversation_started", "handed over"], handledBy: "TEAM", replies: 0 });
+  expect(await told()).toEqual({ webhooks: ["conversation.created", "conversation.created", "conversation.handed_over"], emails: 1 });
+
+  // Filed by the model: never handed over.
+  const filed = await mail("e2e-third@example.com");
+  model.decide({ spam: 0.99 });
+  await check(filed);
+  expect(await path(filed)).toEqual({ rows: [], handledBy: "TEAM", replies: 0 });
+  expect((await told()).webhooks).toHaveLength(3);
 });
 
 test("one filed by the model runs no workflow; Not spam then runs \"A conversation starts\" and tells of both messages, once", { timeout: 30_000 }, async () => {

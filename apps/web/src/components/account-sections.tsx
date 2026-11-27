@@ -4,6 +4,7 @@ import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 import { cn } from "cn";
 import { ChevronUpIcon, LightbulbIcon, MailIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 
 import { pillClass } from "@/components/filter-pills";
@@ -18,6 +19,7 @@ type Section = { id: keyof typeof ICONS; title: string; count?: number };
  * short last section can't reach the top).
  */
 export function AccountSections({ sections }: { sections: Section[] }) {
+  const t = useTranslations("account");
   const [current, setCurrent] = useState(sections[0]!.id);
   // The list has read the page (the server's HTML marks the first section, whatever the page shows), committed with its mark.
   const [settled, setSettled] = useState(false);
@@ -117,7 +119,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
 
   return (
     <>
-      <nav ref={pills} data-settled={settled || undefined} aria-label="Account sections" className={cn("-mx-4 flex min-w-0 gap-1.5 px-4 md:hidden", SCROLLING_ROW)}>
+      <nav ref={pills} data-settled={settled || undefined} aria-label={t("sections")} className={cn("-mx-4 flex min-w-0 gap-1.5 px-4 md:hidden", SCROLLING_ROW)}>
         {sections.map((section) => (
           <Link
             key={section.id}
@@ -133,7 +135,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
           </Link>
         ))}
       </nav>
-      <nav ref={rail} data-settled={settled || undefined} aria-label="Account sections" className="sticky top-[calc(var(--portal-header-height,4rem)+1.5rem)] hidden flex-col gap-0.5 self-start md:flex">
+      <nav ref={rail} data-settled={settled || undefined} aria-label={t("sections")} className="sticky top-[calc(var(--portal-header-height,4rem)+1.5rem)] hidden flex-col gap-0.5 self-start md:flex">
         {sections.map((section) => {
           const Icon = ICONS[section.id];
           return (
