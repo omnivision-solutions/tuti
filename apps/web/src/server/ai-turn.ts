@@ -88,6 +88,21 @@ export async function aiAvailable(projectId: string): Promise<boolean> {
 }
 
 /**
+ * Whether the AI would answer this conversation's user if it had the conversation: it can answer here now (aiAvailable),
+ * and its answer can reach them (in the widget, a signed-out visitor's; by email only where the address is proven, as
+ * toAi requires of an email). Where "Hand back to the AI" is offered. Not in Spam, nor held.
+ */
+export async function aiWouldAnswer(
+  projectId: string,
+  conversation: { spam: boolean; spamHeldAt: Date | null; userId: string | null; emailVerified: boolean; visitorHash: string | null },
+): Promise<boolean> {
+  if (conversation.spam || conversation.spamHeldAt || !(automatedRepliesEmailed(conversation) || conversation.visitorHash)) {
+    return false;
+  }
+  return aiAvailable(projectId);
+}
+
+/**
  * Gives the AI its turn for the user's message `messageId`, where it can answer now: a new conversation's (`start`, made
  * the AI's) or one the AI has. Under the conversation's lock: never one in Spam or held by the spam filter, nor a message
  * handed over already (a rerun). Returns whether the AI has the turn; false leaves the caller to hand over.

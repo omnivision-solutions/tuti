@@ -1,16 +1,19 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
-import { setConversationPriority, takeOverConversation } from "./inbox";
+import { aiWouldAnswer } from "./ai-turn";
+import { handBackConversation, setConversationPriority, takeOverConversation } from "./inbox";
 import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import type { Actor } from "./operations/define";
 import { call } from "./operations/run";
 
 const sam = { id: "user-42", name: "Sam", email: "e2e-sam@example.com" };
 
-/** A conversation the team answered, assigned and snoozed, then handed to the AI (over the API: nothing in the app does). */
+afterEach(() => vi.unstubAllEnvs());
+
+/** A conversation the team answered, assigned and snoozed, then handed to the AI over the API. */
 async function handedToAi() {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
@@ -59,4 +62,47 @@ test("someone not on the project's team takes nothing over and marks nothing", a
   expect(await setConversationPriority(project.slug, 1, true)).toEqual({ error: "Only the project's team can mark conversations priority" });
   expect(await takeOverConversation(project.slug, 99)).toEqual({ error: "Only the project's team can take over conversations" });
   expect(await row()).toMatchObject({ handledBy: "AI", priority: false });
+});
+
+test("Hand back to the AI makes a conversation the team has the AI's, for any teammate, and moves nothing else about it", async () => {
+  const { project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  const before = await row();
+
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  expect(await row()).toEqual({ ...before, handledBy: "AI", updatedAt: expect.any(Date) });
+  expect(await prisma.conversationMessage.count({ where: { conversationId: before.id } })).toBe(2);
+  // Its Activity says who handed it back.
+  expect(await prisma.conversationEvent.findFirst({ where: { conversationId: before.id, kind: "handled_by" }, orderBy: { createdAt: "desc" }, select: { details: true, actorId: true } })).toEqual({
+    details: { handledBy: "ai" },
+    actorId: tess.id,
+  });
+
+  actAs(await signUp("Sid Stranger"));
+  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Only the project's team can hand conversations back to the AI" });
+});
+
+test("Hand back to the AI is offered only where the AI would answer: AI on the server, the project's own published article, and a user its answer can reach", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  type Conversation = Parameters<typeof aiWouldAnswer>[1];
+  const conversation: Conversation = { spam: false, spamHeldAt: null, userId: "a-user", emailVerified: false, visitorHash: null };
+  const would = (more: Partial<Conversation> = {}) => aiWouldAnswer(project.id, { ...conversation, ...more });
+  // No AI on the server.
+  expect(await would()).toBe(false);
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-test-key");
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
+  // No published article of the project's own: a sample one isn't.
+  await prisma.article.create({ data: { projectId: project.id, slug: "sample", title: "Sample", publishedAt: new Date(), sample: true } });
+  expect(await would()).toBe(false);
+  await prisma.article.create({ data: { projectId: project.id, slug: "exporting", title: "Exporting", publishedAt: new Date() } });
+  expect(await would()).toBe(true);
+  // A signed-out visitor sees it in the widget; an address that isn't proven would never get it by email.
+  expect(await would({ userId: null, visitorHash: "visitor" })).toBe(true);
+  expect(await would({ userId: null, emailVerified: true })).toBe(true);
+  expect(await would({ userId: null })).toBe(false);
+  // Never one in Spam, or held by the spam filter.
+  expect(await would({ spam: true })).toBe(false);
+  expect(await would({ spamHeldAt: new Date() })).toBe(false);
 });

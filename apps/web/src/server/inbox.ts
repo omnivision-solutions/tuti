@@ -190,11 +190,22 @@ export async function snoozeConversation(projectSlug: string, conversation: numb
 
 /**
  * Take over: a conversation the AI has becomes the team's, with nothing else about it moved (conversations.update's
- * `handledBy`). The app never hands one back: nothing answers for the AI yet (docs/plan.md W6, W12).
+ * `handledBy`).
  */
 export async function takeOverConversation(projectSlug: string, conversation: number): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can take over conversations", async (context) =>
     call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "team" }),
+  );
+}
+
+/**
+ * Hand back to the AI (docs/plan.md, Inbox automation, W12): a conversation the team has becomes the AI's, out of the
+ * team's views, with nothing else about it moved; the AI answers its user's next message. The page offers it only where
+ * the AI would answer (aiWouldAnswer).
+ */
+export async function handBackConversation(projectSlug: string, conversation: number): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can hand conversations back to the AI", async (context) =>
+    call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "ai" }),
   );
 }
 

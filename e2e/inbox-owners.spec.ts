@@ -71,7 +71,7 @@ test("a conversation the AI has is in With AI and out of the team's views and co
   await checkpoint(owner, "with-ai-empty");
 });
 
-test("a conversation the AI has says so and offers Take over where the reply box would be; taken over, it's replied to; Mark priority shows on its page and its row", async ({ browser }, testInfo) => {
+test("a conversation the AI has says so and offers Take over where the reply box would be; taken over, it's replied to; Mark priority shows on its page and its row; handed back to the AI once it can answer", async ({ browser }, testInfo) => {
   // Signing up, a project, an API key and a dozen pages, each captured, on a shared runner.
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
@@ -81,7 +81,7 @@ test("a conversation the AI has says so and offers Take over where the reply box
 
   const api = await apiFor(owner, slug);
   await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "The export button does nothing on the reports page." });
-  // Over the API: nothing in the app hands a conversation to the AI (docs/plan.md W6: W12 adds "Hand back to the AI").
+  // Over the API, as an integration would: the app offers Hand back to the AI only once the AI can answer (below).
   await api("/conversations/1", { handledBy: "ai" }, "PATCH");
 
   await owner.goto(`/app/${slug}/inbox/1?view=ai`);
@@ -161,6 +161,26 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await expect(row.getByText("Priority", { exact: true })).toHaveCount(0);
   await more.click();
   await expect(owner.getByRole("menuitem", { name: "Mark priority" })).toBeVisible();
+  // The AI has nothing to answer from yet (no published article): it isn't offered the conversation.
+  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toHaveCount(0);
+  await owner.keyboard.press("Escape");
+
+  // Once it does, Hand back to the AI returns it: With AI again, out of the team's views, Take over where the reply box was.
+  const article = await api("/articles", { title: "Exporting", body: "Reports → Export downloads a CSV." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await owner.reload();
+  await more.click();
+  await owner.getByRole("menuitem", { name: "Hand back to the AI" }).click();
+  await expect(owner.getByText("Handed back to the AI")).toBeVisible();
+  await expect(meta.getByText("With AI", { exact: true })).toBeVisible();
+  await expect(takeOver).toBeVisible();
+  await expect(reply).toHaveCount(0);
+  await expectMoreView(owner, "With AI 1");
+  await expectMoreView(owner, "Waiting on user 0");
+  await checkpoint(owner, "handed-back");
+  // The AI's now: nothing more to hand back.
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toHaveCount(0);
 });
 
 test("a closed conversation the AI has says both: With AI and Closed beside it, Take over in its reply box's place, and Open, not Needs reply, in its Status", async ({ browser }) => {
