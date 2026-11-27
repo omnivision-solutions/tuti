@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { lockProject, markProductSettingBehind, queueLabels, queueLanguageTranslations, retranslateLabels } from "@tuti/jobs";
+import { forgetLabels, lockProject, markProductSettingBehind, queueLabels, queueLanguageTranslations, retranslateLabels } from "@tuti/jobs";
 import { aiEnabled, isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
@@ -196,6 +196,8 @@ export async function changeLanguages(projectId: string, change: (current: Langu
     // article (and sends it to the default language's page, as for an offline language).
     const kept = await tx.articleTranslation.findMany({ where: { projectId, language: removed.code, slug: { not: null }, article: { deletedAt: null } }, select: { language: true, slug: true, articleId: true } });
     await tx.articleOldSlug.createMany({ data: kept.map(({ language, slug, articleId }) => ({ projectId, language, slug: slug!, articleId })), skipDuplicates: true });
+    const gone = await tx.projectLanguage.findMany({ where: removed, select: { code: true } });
+    await forgetLabels(tx, projectId, gone.map(({ code }) => code));
     await tx.projectLanguage.deleteMany({ where: removed });
     // Those added together keep the list's order: a millisecond apart.
     // After every language already there, even one added a moment ago (a millisecond per language, maybe ahead of the clock).

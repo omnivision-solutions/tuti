@@ -135,3 +135,22 @@ test("renaming a tab translates it again", async () => {
   await call(updateTab, as(), { slug: "guides", name: "Help" });
   expect(labelIn(await tab("help"), "de")?.name).toBe("Hilfe");
 });
+
+test("Retranslate while a labels job translates: that job writes nothing, the label is made again", async () => {
+  await german();
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), () => call(retranslateLanguage, as(), { code: "de" }));
+  model.reply(labelsReply({ "0.n": "Abrechnung (neu)" }));
+  await call(createCollection, as(), { name: "Billing", description: "" });
+  expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung (neu)");
+});
+
+test("a removed language's label translations go with it: added again, its labels are translated anew", async () => {
+  await german();
+  model.reply(labelsReply({ "0.n": "Abrechnung" }));
+  await call(createCollection, as(), { name: "Billing", description: "" });
+  await call(updateLanguages, as(), { languages: [] });
+  expect((await collection("billing")).translations).toEqual({});
+  model.reply(labelsReply({ "0.n": "Zahlungen" }));
+  await german();
+  expect(labelIn(await collection("billing"), "de")?.name).toBe("Zahlungen");
+});

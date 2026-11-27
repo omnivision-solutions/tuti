@@ -79,7 +79,7 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
   }
   const setting = await prisma.projectLanguage.findUnique({
     where: { projectId_code: { projectId, code: language } },
-    select: { automatic: true, productAvailable: true, productVersion: true, instructions: true, labelsTries: true, project: { select: { language: true } } },
+    select: { automatic: true, productAvailable: true, productVersion: true, labelsVersion: true, instructions: true, labelsTries: true, project: { select: { language: true } } },
   });
   if (!setting) {
     return { skipped: "not a language of the project" };
@@ -124,10 +124,9 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
       instructions: translationInstructions(languageName(language), setting.productAvailable, setting.instructions),
       about: ABOUT,
       ask: async (system, user) => {
-        const now = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { productVersion: true } });
-        if (now?.productVersion !== setting.productVersion) {
+        if (!(await sameSetting(prisma, projectId, language, setting))) {
           stale = true;
-          throw new Error("The product's language setting changed");
+          throw new Error("The product's language setting changed, or Retranslate was asked for");
         }
         return complete({ system, user, timeoutMs: 60_000, ...ai });
       },
@@ -136,7 +135,7 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
   );
   if (stale) {
     // Its own change queued the labels again.
-    return { skipped: "the product's language setting changed" };
+    return { skipped: "the product's language setting changed, or Retranslate was asked for" };
   }
   const translated = (id: string) => {
     const text = result.translations[id];
@@ -154,7 +153,7 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
       continue;
     }
     const entry: LabelTranslation = { name, ...(label.table === "collection" && { description }), auto: true, source: labelSource(label.name, label.description) };
-    written += await writeLabel(label, projectId, language, setting.productVersion, entry);
+    written += await writeLabel(label, projectId, language, setting, entry);
   }
   if (failed > 0) {
     log.warn(`Translating project ${projectId}'s labels into ${language}: ${failed} of ${labels.length} waiting (${(result.providerError ?? result.problems[0]?.reason ?? "").slice(0, 200)})`);
@@ -164,11 +163,20 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
   return { translated: written };
 }
 
+type Versions = { productVersion: number; labelsVersion: number };
+
+/** Whether the language's product setting is still the one a job started under, and no Retranslate was asked for since. */
+async function sameSetting(db: Prisma.TransactionClient | typeof prisma, projectId: string, language: string, started: Versions) {
+  const now = await db.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { productVersion: true, labelsVersion: true } });
+  return now?.productVersion === started.productVersion && now.labelsVersion === started.labelsVersion;
+}
+
 /**
  * One label's translation, written under its row's lock only while it still has the text translated, it's still new or
- * kept up to date there (the team's own is never replaced), and the language's product setting is the one it started under.
+ * kept up to date there (the team's own is never replaced), and the language's product setting and Retranslates are the
+ * ones it started under (sameSetting).
  */
-async function writeLabel(label: Label, projectId: string, language: string, productVersion: number, entry: LabelTranslation): Promise<number> {
+async function writeLabel(label: Label, projectId: string, language: string, started: Versions, entry: LabelTranslation): Promise<number> {
   return prisma.$transaction(async (tx) => {
     const rows =
       label.table === "collection"
@@ -176,8 +184,7 @@ async function writeLabel(label: Label, projectId: string, language: string, pro
         : await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, '' AS description, translations FROM docs_tab WHERE id = ${label.id} FOR UPDATE`;
     const now = rows[0];
     const current = now?.translations[language];
-    const setting = await tx.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: language } }, select: { productVersion: true } });
-    if (!now || labelSource(now.name, now.description) !== entry.source || (current && !current.auto) || setting?.productVersion !== productVersion) {
+    if (!now || labelSource(now.name, now.description) !== entry.source || (current && !current.auto) || !(await sameSetting(tx, projectId, language, started))) {
       return 0;
     }
     const translations = { ...now.translations, [language]: entry } as Prisma.InputJsonValue;
@@ -199,13 +206,23 @@ export async function queueLabels(projectId: string, languages?: string[]) {
 
 /**
  * Retranslate, or "Our product is available in" changing: the labels kept up to date in a language are made again (their
- * `source` cleared, so they're found stale; read meanwhile, readers see the default language's). Run in the change's transaction.
+ * `source` cleared, so they're found stale; read meanwhile, readers see the default language's), and a labels job already
+ * running writes nothing (`labelsVersion`). Run in the change's transaction.
  */
 export async function retranslateLabels(tx: Prisma.TransactionClient | typeof prisma, projectId: string, language: string) {
+  await tx.projectLanguage.updateMany({ where: { projectId, code: language }, data: { labelsVersion: { increment: 1 } } });
   for (const table of [Prisma.raw("collection"), Prisma.raw("docs_tab")]) {
     await tx.$executeRaw`
       UPDATE ${table} SET translations = jsonb_set(translations, ${[language, "source"]}::text[], 'null'::jsonb)
       WHERE "projectId" = ${projectId} AND (translations -> ${language} ->> 'auto')::boolean`;
+  }
+}
+
+/** Languages removed from a project: their label translations go with them (as their articles' versions do), so adding one again translates its labels anew. */
+export async function forgetLabels(tx: Prisma.TransactionClient, projectId: string, languages: string[]) {
+  if (languages.length === 0) return;
+  for (const table of [Prisma.raw("collection"), Prisma.raw("docs_tab")]) {
+    await tx.$executeRaw`UPDATE ${table} SET translations = translations - ${languages}::text[] WHERE "projectId" = ${projectId} AND translations ?| ${languages}::text[]`;
   }
 }
 

@@ -1997,6 +1997,8 @@ model ProjectLanguage {
   /// job tries again (null: not waiting).
   labelsTries      Int       @default(0)
   labelsRetryAt    DateTime?
+  /// Counts Retranslates of its labels: a labels job writes only while it's still the one it started under.
+  labelsVersion    Int       @default(0)
   createdAt        DateTime  @default(now())
 
   project               Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
