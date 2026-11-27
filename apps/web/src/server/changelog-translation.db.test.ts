@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
+import { createChangelogEntry, editChangelogSection, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -284,6 +284,46 @@ test("a published entry's other changes (its tags) never bring a language added 
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
   await languageTranslationsDone();
   expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id, language: "fr" } })).toBe(0);
+});
+
+test("a published entry's text changed (one section, or all of it as Markdown) brings its German up to date, only the changed paragraph asked", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, markdown: "Switch themes from your profile menu.\n\nExports finish in seconds." });
+  const entryId = await idOf(created.number);
+  const entry = () => prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId } });
+  /** Scripts, before the edit (an unscripted request fails), the answer for the segment holding `text` once the entry's text is `body`. */
+  const answer = (body: string, text: string) => {
+    const { segments } = segmentsOf(translationSource({ title: TITLE, body, content: null }).doc);
+    const segment = segments.find((one) => one.text === text)!;
+    model.reply(JSON.stringify({ segments: { [segment.id]: `[de] ${text}` } }));
+  };
+  const { segments } = segmentsOf(translationSource(await entry()).doc);
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }));
+  await call(publishChangelogEntry, as(), { number: created.number });
+  await languageTranslationsDone();
+  expect((await translation()).body).toContain("[de] Exports finish in seconds.");
+
+  // One section (the text before any heading), its second paragraph changed.
+  model.requests.length = 0;
+  answer("Switch themes from your profile menu.\n\nExports finish in two seconds.", "Exports finish in two seconds.");
+  await call(editChangelogSection, as(), { number: created.number, section: 0, markdown: "Switch themes from your profile menu.\n\nExports finish in two seconds." });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(1);
+  expect(model.requests[0]!.user).toContain("Exports finish in two seconds.");
+  expect(model.requests[0]!.user).not.toContain("Switch themes from your profile menu.");
+  expect((await translation()).body).toContain("[de] Exports finish in two seconds.");
+  expect((await translation()).body).toContain("[de] Switch themes from your profile menu.");
+
+  // All of it as Markdown, its first paragraph changed.
+  model.requests.length = 0;
+  answer("Switch themes from the profile menu.\n\nExports finish in two seconds.", "Switch themes from the profile menu.");
+  await call(updateChangelogEntry, as(), { number: created.number, markdown: "Switch themes from the profile menu.\n\nExports finish in two seconds." });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(1);
+  expect(model.requests[0]!.user).toContain("Switch themes from the profile menu.");
+  expect(model.requests[0]!.user).not.toContain("Exports finish in two seconds.");
+  expect((await translation()).body).toContain("[de] Switch themes from the profile menu.");
+  expect((await translation()).sourceHash).toBe(translationSource(await entry()).hash);
 });
 
 test("an announcement whose translation ends after the wait is sent by the email safety net (every 10 minutes, inline too)", async () => {
