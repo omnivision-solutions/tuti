@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { lockProject, markProductSettingBehind, queueLanguageTranslations } from "@tuti/jobs";
+import { lockProject, markProductSettingBehind, queueLabels, queueLanguageTranslations, retranslateLabels } from "@tuti/jobs";
 import { aiEnabled, isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
@@ -211,6 +211,8 @@ export async function changeLanguages(projectId: string, change: (current: Langu
       if (flipped) {
         // Versions kept up to date are retranslated once it's saved (below); jobs already running write nothing.
         await markProductSettingBehind(tx, projectId, code);
+        // Labels kept up to date (collection and tab names) are made again too.
+        await retranslateLabels(tx, projectId, code);
         switched.push(code);
       }
     }
@@ -221,6 +223,7 @@ export async function changeLanguages(projectId: string, change: (current: Langu
   for (const code of [...added, ...switched]) {
     await queueLanguageTranslations(projectId, code);
   }
+  await queueLabels(projectId, [...added, ...switched]);
   return projectLanguages(projectId);
 }
 
@@ -244,6 +247,9 @@ export const retranslateLanguage = defineOperation({
     if (!language) {
       throw new OperationError(404, "not_found", "The project doesn't have that language");
     }
+    // Its labels too (collection and tab names): all of them anew, or what's left to translate.
+    if (!waiting) await retranslateLabels(prisma, projectId, code);
+    await queueLabels(projectId, [code]);
     return { queued: await queueLanguageTranslations(projectId, code, { fresh: !waiting, waiting }) };
   },
 });

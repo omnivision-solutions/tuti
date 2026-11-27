@@ -721,6 +721,10 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   if (operation.name === "articles.updateTranslation") {
     model.reply(JSON.stringify({ segments: { "1": "Matrix-Artikel", "2": "Matrix-Text." } }));
   }
+  if (operation.name === "languages.update" || operation.name === "languages.retranslate") {
+    // The fixture's collection and tab names, translated into the language (docs/plan.md L13).
+    model.otherwise(JSON.stringify({ segments: { "0.n": "Abrechnung", "1.n": "Schnittstelle" } }), '"0.n":"Billing"');
+  }
   const result = await call(operation, input(), keys.write);
   // Its result is checked against its output as it runs (defineOperation).
   expect(result).toMatchObject({ status: 200 });

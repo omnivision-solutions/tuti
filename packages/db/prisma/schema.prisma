@@ -1984,16 +1984,20 @@ model ProjectLanguage {
   /// A code from @tuti/shared's LANGUAGES.
   code             String
   /// New pages are translated automatically (else the team writes them).
-  automatic        Boolean  @default(true)
+  automatic        Boolean   @default(true)
   /// For translating into it: "Use du".
-  instructions     String   @default("")
+  instructions     String    @default("")
   /// "Our product is available in <language>": the team's own product has its words in this language.
-  productAvailable Boolean  @default(false)
+  productAvailable Boolean   @default(false)
   /// Readers get it; until then only the team can open its pages.
-  live             Boolean  @default(false)
+  live             Boolean   @default(false)
   /// Counts changes to `productAvailable`: a translate job writes only while it's still the one it started under.
-  productVersion   Int      @default(0)
-  createdAt        DateTime @default(now())
+  productVersion   Int       @default(0)
+  /// Its labels' translating (collection and tab names, @tuti/jobs translateLabels): failures in a row, and when the retry
+  /// job tries again (null: not waiting).
+  labelsTries      Int       @default(0)
+  labelsRetryAt    DateTime?
+  createdAt        DateTime  @default(now())
 
   project               Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
   translations          ArticleTranslation[]
@@ -2136,32 +2140,35 @@ model ChangelogDecision {
 
 /// A docs collection: a group of articles on the portal's /docs.
 model Collection {
-  id          String     @id @default(cuid())
-  projectId   String
+  id           String     @id @default(cuid())
+  projectId    String
   /// From the name; no other collection, tab or (live) article in the project has it, so /docs/<slug> is one page.
-  slug        String
-  name        String
-  description String     @default("")
+  slug         String
+  name         String
+  description  String     @default("")
   /// Among its siblings (same parent), collections are listed by this, then by name; new ones go last.
-  order       Int        @default(0)
+  order        Int        @default(0)
   /// The collection it's in, in the same project. At most 2 levels: a collection with a parent has
   /// no children (checked under the project's lock). Deleting the parent moves its children up a level.
-  parentId    String?
+  parentId     String?
   /// The docs tab a top-level collection is in; null inside another collection (it's in its
   /// parent's). Once a project has tabs, every top-level collection is in one (kept under the
   /// project's lock); without any, all are null.
-  tabId       String?
+  tabId        String?
   /// A Lucide icon by name (kebab-case, e.g. "credit-card"), checked against the installed Lucide
   /// when set. One Lucide later drops draws nothing.
-  icon        String?
+  icon         String?
   /// Who may read it (and what's in it), on top of its tab and the collections it's in.
-  access      ReadAccess @default(INHERIT)
+  access       ReadAccess @default(INHERIT)
   /// What people it isn't for see of it (see NoAccess).
-  noAccess    NoAccess   @default(INHERIT)
+  noAccess     NoAccess   @default(INHERIT)
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
-  sample      Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  sample       Boolean    @default(false)
+  /// Its name and description in the project's other languages (docs/plan.md L13; @tuti/jobs LabelTranslations):
+  /// `{ de: { name, description, auto, source } }`.
+  translations Json       @default("{}")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent    Collection?       @relation("CollectionParent", fields: [parentId], references: [id], onDelete: SetNull)
@@ -2317,6 +2324,8 @@ model DocsTab {
   /// unpublished, restricted or in another tab, it's the overview, for that reader.
   landingArticleId    String?
   landingCollectionId String?
+  /// Its name in the project's other languages (docs/plan.md L13; @tuti/jobs LabelTranslations): `{ de: { name, auto, source } }`.
+  translations        Json        @default("{}")
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 

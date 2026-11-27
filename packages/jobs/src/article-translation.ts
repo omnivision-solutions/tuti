@@ -73,7 +73,7 @@ export function translationInstructions(language: string, productAvailable: bool
   return [product, instructions.trim()].filter(Boolean).join("\n\n");
 }
 
-const languageName = (code: string) => (isLanguage(code) ? LANGUAGES[code].name : code);
+export const languageName = (code: string) => (isLanguage(code) ? LANGUAGES[code].name : code);
 
 /** What the translate job reads of a version: the row, its language's setting, and its source. */
 type Version = {
@@ -794,7 +794,10 @@ export async function retryArticleTranslations(): Promise<JobResult> {
     queued += await retryKind(kind);
   }
   queued += await entriesLeftBehind();
-  return { queued, ...(named > 0 && { named }) };
+  // Docs labels (collection and tab names) still to translate, whatever wrote them.
+  const { queueStaleLabels } = await import("./label-translation");
+  const labels = await queueStaleLabels();
+  return { queued, ...(labels > 0 && { labels }), ...(named > 0 && { named }) };
 }
 
 /**
