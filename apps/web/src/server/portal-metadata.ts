@@ -157,15 +157,29 @@ export async function portalArticleJsonLd(
   ];
   // A trail with steps before the page (one with the page alone says nothing).
   if (page.breadcrumb && page.breadcrumb.length > 1) {
-    data.push({
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      itemListElement: page.breadcrumb.map((crumb, i) => ({ "@type": "ListItem", position: i + 1, name: crumb.name, item: `${address}${crumb.path}` })),
-    });
+    data.push(breadcrumbList(address, page.breadcrumb));
   }
-  // `<` as \u003c (still the same JSON): no title can close the script tag.
-  return createElement("script", {
-    type: "application/ld+json",
-    dangerouslySetInnerHTML: { __html: JSON.stringify(data.length === 1 ? data[0] : data).replace(/</g, "\\u003c") },
-  });
+  return jsonLd(data.length === 1 ? data[0]! : data);
 }
+
+/**
+ * A page's breadcrumb alone, as schema.org data (a collection's page: docs/plan.md L9): `breadcrumb` portal paths, the page
+ * last, at the portal's real address. None on a private portal, nor for a trail with the page alone.
+ */
+export async function portalBreadcrumbJsonLd(slug: string, breadcrumb: { name: string; path: string }[]) {
+  const [address, site] = await Promise.all([portalAddress(slug), portalSite(slug)]);
+  if (!site || site.project.portalAccess !== "PUBLIC" || breadcrumb.length < 2) {
+    return null;
+  }
+  return jsonLd(breadcrumbList(address, breadcrumb));
+}
+
+const breadcrumbList = (address: string, breadcrumb: { name: string; path: string }[]) => ({
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: breadcrumb.map((crumb, i) => ({ "@type": "ListItem", position: i + 1, name: crumb.name, item: `${address}${crumb.path}` })),
+});
+
+/** schema.org data as a `<script type="application/ld+json">`; `<` as \u003c (still the same JSON), so no name can close the tag. */
+const jsonLd = (data: object) =>
+  createElement("script", { type: "application/ld+json", dangerouslySetInnerHTML: { __html: JSON.stringify(data).replace(/</g, "\\u003c") } });

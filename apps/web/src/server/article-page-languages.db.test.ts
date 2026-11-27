@@ -12,7 +12,7 @@ import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/rou
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { OnThisPage } from "@/components/on-this-page";
-import { DocsArticle, DocsLayout } from "@/components/portal-docs";
+import { DocsArticle, DocsCollectionPage, DocsLayout } from "@/components/portal-docs";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -338,5 +338,54 @@ test("the docs' tree toggle without JavaScript (its <noscript> summary) is in th
   expect(await summary()).toEqual(["Dokumentation durchstöbern"]);
   at(null);
   expect(await summary()).toEqual(["Browse docs"]);
+});
+
+test("a collection's page at a language's address: its structured breadcrumb in that language, at its addresses there", async () => {
+  const collection = await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: collection.slug });
+  at("de");
+  const element = (await DocsSlugPage(params(collection.slug))) as ReactElement<Parameters<typeof DocsCollectionPage>[0]>;
+  const found: string[] = [];
+  const walk = (node: ReactNode) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === "object" && "props" in node) {
+      const { props } = node as ReactElement<Record<string, unknown>>;
+      const html = (props.dangerouslySetInnerHTML as { __html?: string } | undefined)?.__html;
+      if (typeof html === "string") found.push(html);
+      walk(props.children as ReactNode);
+    }
+  };
+  walk(await DocsCollectionPage(element.props));
+  expect(JSON.parse(found[0]!)).toMatchObject({
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { position: 1, name: "Dokumentation", item: `${portal}/de/docs` },
+      { position: 2, name: "Payments", item: `${portal}/de/docs/${collection.slug}` },
+    ],
+  });
+});
+
+test("the docs pages' titles (and the home's default description) are in the page's language", async () => {
+  const collection = await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: collection.slug });
+  const home = (q?: string) => docsHomeMetadata({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve(q ? { q } : {}) } as never);
+  at("de");
+  expect((await generateMetadata(params(collection.slug))).title).toBe("Payments · Dokumentation");
+  expect(await home()).toMatchObject({ title: "Dokumentation", description: "Anleitungen und Antworten auf häufige Fragen." });
+  expect((await home("karte")).title).toBe("Ergebnisse für „karte“ · Dokumentation");
+  // A tab's page too.
+  await call(createTab, as(), { name: "Guides" });
+  await call(createTab, as(), { name: "API" });
+  await call(createCollection, as(), { name: "Endpoints", tab: "api" });
+  await call(createArticle, as(), { title: "Keys", body: "Use a key.", collection: "endpoints" });
+  await call(publishArticle, as(), { slug: "keys" });
+  expect((await generateMetadata(params("api"))).title).toBe("API · Dokumentation");
+  // A locked article's (for signed-in readers only, shown locked to the rest).
+  await prisma.article.update({ where: { id: articleId }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
+  expect((await generateMetadata(params("abrechnung"))).title).toBe("Abrechnung · Dokumentation");
+  await prisma.article.update({ where: { id: articleId }, data: { access: "INHERIT", noAccess: "INHERIT" } });
+  // The default language's address: English.
+  at(null);
+  expect((await generateMetadata(params(collection.slug))).title).toBe("Payments · Documentation");
 });
 

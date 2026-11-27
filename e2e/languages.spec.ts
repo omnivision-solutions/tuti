@@ -549,6 +549,8 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await reader.setViewportSize({ width: 1280, height: 800 });
   await reader.goto("/de/docs");
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  // Its title (what a search result or a tab shows) in German too.
+  await expect(reader).toHaveTitle(/^Dokumentation/);
   await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
   await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).toBeVisible();
   // The default heading is the portal's words: the page's language, no lang of its own.
@@ -577,12 +579,20 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   // The results' page.
   await reader.goto("/de/docs?q=zebra");
   await expect(reader.getByRole("heading", { level: 1, name: "Ergebnisse für „zebra“" })).toBeVisible();
+  await expect(reader).toHaveTitle(/^Ergebnisse für „zebra“ · Dokumentation/);
   await expect(reader.getByText("Keine Artikel zu „zebra“", { exact: true })).toBeVisible();
   await expect(reader.getByRole("link", { name: "Alle Artikel" })).toBeVisible();
 
   // A collection: its articles' list.
   await reader.goto("/de/docs/basics");
   await expect(reader.getByRole("main").getByRole("list", { name: "Artikel" }).getByRole("link")).toHaveCount(2);
+  await expect(reader).toHaveTitle(/^Basics · Dokumentation/);
+  // Its breadcrumb for search engines: German words, German addresses.
+  const breadcrumb = JSON.parse((await reader.locator('script[type="application/ld+json"]').textContent())!) as { itemListElement: { name: string; item: string }[] };
+  expect(breadcrumb.itemListElement.map(({ name, item }) => [name, new URL(item).pathname])).toEqual([
+    ["Dokumentation", "/de/docs"],
+    ["Basics", "/de/docs/basics"],
+  ]);
   // The tree beside it, named in German.
   await expect(reader.getByRole("navigation", { name: "Dokumentation", exact: true }).getByRole("link", { name: /Getting started/ })).toBeVisible();
 
