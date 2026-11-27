@@ -1,6 +1,7 @@
 import { Button, Section, Text } from "@react-email/components";
 
-import { Message, PostCard, type PostStatus } from "./blocks";
+import { Message, peopleLanguage, PostCard, type PostStatus } from "./blocks";
+import { emailTranslator } from "./language";
 import { buttonStyle, colors, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 
 /** How much of each comment the email quotes; the rest is on the post. */
@@ -18,52 +19,54 @@ type CommentProps = EmailBrand & {
   comments: { authorId: string; authorName: string; team?: boolean; text: string }[];
   postUrl: string;
   unsubscribeUrl: string;
+  /** The post's author's (readerEmailLanguage), else English; `teamLanguage`: the project's default, the board's name's. */
+  language?: string;
+  teamLanguage?: string;
 };
+
+type Translate = ReturnType<typeof emailTranslator<"emails">>;
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-/** Who commented (each person once), by first name: "Sam", "Sam and Ada", "Sam and 2 others". */
-function who(comments: CommentProps["comments"]) {
+/** Who commented (each person once), by first name: "Sam commented…", "Sam and Ada…", "Sam and 2 others…". */
+function commented(comments: CommentProps["comments"], t: Translate) {
   const names = [...new Map(comments.map((comment) => [comment.authorId, comment.authorName])).values()].map(firstName);
-  if (names.length <= 2) {
-    return names.join(" and ");
-  }
-  return `${names[0]} and ${names.length - 1} others`;
+  return names.length === 1
+    ? t("commentedOne", { a: names[0]! })
+    : names.length === 2
+      ? t("commentedTwo", { a: names[0]!, b: names[1]! })
+      : t("commentedMany", { a: names[0]!, count: names.length - 1 });
 }
 
-const plural = (comments: CommentProps["comments"]) => (comments.length > 1 ? "New comments" : "New comment");
-
 /** Someone else's comments on a post, sent to its author (those that came close together in one email). */
-export function CommentEmail({ projectName, accent, poweredBy, logo, logoText, postTitle, voteCount, status, board, comments, postUrl, unsubscribeUrl }: CommentProps) {
-  const heading = `${who(comments)} commented on your idea`;
+export function CommentEmail({ projectName, accent, poweredBy, logo, logoText, postTitle, voteCount, status, board, comments, postUrl, unsubscribeUrl, language, teamLanguage }: CommentProps) {
+  const t = emailTranslator(language, "emails");
+  const heading = commented(comments, t);
   const hidden = comments.length - SHOWN;
   return (
     <Layout
       preview={heading}
       project={{ projectName, accent, poweredBy, logo, logoText }}
-      footer={
-        <>
-          You get this because you posted this idea. <FooterLink href={unsubscribeUrl}>Unsubscribe from {projectName}</FooterLink>
-        </>
-      }
+      footer={t.rich("authorFooter", { name: projectName, link: (chunks) => <FooterLink href={unsubscribeUrl}>{chunks}</FooterLink> })}
+      language={language}
     >
-      <Eyebrow accent={accent}>{plural(comments)} on your idea</Eyebrow>
+      <Eyebrow accent={accent}>{t("commentEyebrow", { count: comments.length })}</Eyebrow>
       <Title>{heading}</Title>
-      <PostCard title={postTitle} votes={voteCount} board={board} status={status} />
+      <PostCard title={postTitle} votes={voteCount} board={board} status={status} language={language} teamLanguage={teamLanguage} />
       {comments.slice(0, SHOWN).map((comment, index) => (
         // An image alone: its writer, no empty quote.
-        <Message key={index} name={comment.authorName} team={comment.team ? `${projectName} team` : undefined} accent={accent}>
+        <Message key={index} name={comment.authorName} team={comment.team ? t("teamOf", { name: projectName }) : undefined} accent={accent} lang={peopleLanguage(language, teamLanguage)}>
           {comment.text.length > QUOTED ? `${comment.text.slice(0, QUOTED).trimEnd()}…` : comment.text || undefined}
         </Message>
       ))}
       {hidden > 0 && (
         <Text style={{ fontSize: 15, color: colors.muted, margin: "12px 0 0" }}>
-          {hidden === 1 ? "1 more comment" : `${hidden} more comments`} on the post.
+          {t("moreComments", { count: hidden })}
         </Text>
       )}
       <Section style={{ marginTop: 20 }}>
         <Button href={postUrl} style={buttonStyle(accent)}>
-          Reply
+          {t("reply")}
         </Button>
       </Section>
     </Layout>
@@ -71,6 +74,6 @@ export function CommentEmail({ projectName, accent, poweredBy, logo, logoText, p
 }
 
 export const commentEmail = (props: CommentProps) => ({
-  subject: `${plural(props.comments)} on “${props.postTitle}”`,
+  subject: emailTranslator(props.language, "emails")("commentSubject", { count: props.comments.length, title: props.postTitle }),
   body: <CommentEmail {...props} />,
 });
