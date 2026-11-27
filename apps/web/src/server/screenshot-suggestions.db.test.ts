@@ -47,6 +47,8 @@ beforeAll(async () => {
     } else if (request.url === "/assets/main.js" && scriptFailures > 0) {
       scriptFailures--;
       response.writeHead(500).end();
+    } else if (request.url === "/partial") {
+      response.writeHead(200, { "content-type": "text/html" }).end('<script src="/assets/main.js"></script><script src="/assets/gone.js"></script>');
     } else if (request.url === "/slow") {
       response.writeHead(200, { "content-type": "text/html" }).end('<script src="/assets/slow.js"></script>');
     } else if (request.url === "/assets/slow.js") {
@@ -188,19 +190,19 @@ test("a page with many scripts reads the first 100, 8 at a time and each in full
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/many`));
 });
 
-test("a page whose scripts pass 40 MB together reads no more of them, and the answer isn't kept", async () => {
+test("a page whose scripts pass 40 MB together reads no more of them, and the answer is only shown, read again next time", async () => {
   await settle({ appUrl: `${base}/heavy` });
   expect(await suggestions()).toEqual([]);
   // 14 fill the budget; up to 7 more were already on their way.
   expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+  expect(await saved()).toMatchObject({ signInServicesFor: scannedFor(`${base}/heavy`), signInServicesAt: null });
 });
 
-test("the last script cut short by the budget, with none left to read, isn't kept either", async () => {
+test("the last script cut short by the budget, with none left to read, isn't kept as the answer either", async () => {
   await settle({ appUrl: `${base}/heavy?scripts=14` });
   await suggestions();
   expect(requests.filter((path) => path.startsWith("/assets/h"))).toHaveLength(14);
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+  expect(await saved()).toMatchObject({ signInServicesAt: null });
 });
 
 test("scripts under the budget together are read in full, the last as much as the first, and the answer is kept", async () => {
@@ -290,12 +292,12 @@ test("one read per project at a time: a look while one runs for the same address
   expect(requests.filter((path) => path === "/slow")).toHaveLength(2);
 });
 
-test("a read that isn't complete ends the checking without keeping its answer; a poll starts no other, the next look does", async () => {
+test("a read that isn't complete ends the checking without keeping it as the answer; a poll starts no other, the next look does", async () => {
   scriptFailures = 1;
   await settle({ appUrl: `${base}/` });
   expect(await look()).toEqual({ suggestions: [], checking: true });
   expect(await look({ start: false })).toEqual({ suggestions: [], checking: false });
-  expect(await saved()).toMatchObject({ signInServicesFor: null, signInScanFor: null });
+  expect(await saved()).toMatchObject({ signInServicesAt: null, signInScanFor: null });
   expect(requests).toEqual(["/", "/app", "/assets/main.js"]);
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
@@ -331,4 +333,21 @@ test("a read of an address since changed keeps nothing and leaves the new addres
   await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(`${base}/many`), signInScanAt: now } });
   await scanSignInServices({ projectId: project.id, appUrl: `${base}/` });
   expect(await saved()).toMatchObject({ signInServicesFor: null, signInServices: null, signInScanFor: scannedFor(`${base}/many`), signInScanAt: now });
+});
+
+test("what a read that isn't complete found is shown, and the next look reads the app again; it never replaces a full answer", async () => {
+  const appUrl = `${base}/partial`;
+  const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
+  await settle({ appUrl });
+  expect(await suggestions()).toEqual(firebase);
+  expect(await saved()).toMatchObject({ signInServicesFor: scannedFor(appUrl), signInServicesAt: null });
+  // Read again (and shown meanwhile).
+  expect(await look()).toEqual({ suggestions: firebase, checking: true });
+  expect(requests.filter((path) => path === "/partial")).toHaveLength(2);
+
+  // A full answer, expired, isn't replaced by a partial read.
+  const full = [{ provider: "Auth0", hosts: ["acme.auth0.com"] }];
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: full, signInServicesAt: new Date(0) } });
+  expect(await suggestions()).toEqual(full);
+  expect(await saved()).toMatchObject({ signInServices: full, signInServicesAt: new Date(0) });
 });

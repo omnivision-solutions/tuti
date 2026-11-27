@@ -254,9 +254,10 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
 }
 
 /**
- * The screenshot-sign-in-scan job: reads the app and keeps a full answer, only while the address is still the one read
- * (one changed meanwhile is read again). One that isn't full (a script that didn't load may hold the service) isn't
- * kept, but the read ends all the same, so the screen stops waiting and its next look may start another.
+ * The screenshot-sign-in-scan job: reads the app and keeps its answer, only while the address is still the one read
+ * (one changed meanwhile is read again). One that isn't full (a script that didn't load may hold the service) is kept
+ * without a time, so it's shown but read again on the next look, and never in place of a full one; either way the read
+ * ends, so the screen stops waiting.
  */
 export async function scanSignInServices({ projectId, appUrl }: JobInput<"screenshotSignInScan">) {
   const key = scannedFor(appUrl);
@@ -264,6 +265,11 @@ export async function scanSignInServices({ projectId, appUrl }: JobInput<"screen
     const found = await detectSignInServices(appUrl);
     if (found?.complete) {
       await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl }, data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: new Date() } });
+    } else if (found) {
+      await prisma.screenshotSettings.updateMany({
+        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }] },
+        data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: null },
+      });
     }
     return { read: !!found, complete: !!found?.complete, services: found?.services.length ?? 0 };
   } finally {
