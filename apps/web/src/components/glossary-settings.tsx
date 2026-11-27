@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { enterSaves } from "@/lib/forms";
 import { type GlossaryTermInput, saveGlossary } from "@/server/glossary";
 
 type Language = { code: string; native: string };
@@ -118,6 +119,15 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
     <form
       id={formId}
       className="flex flex-col gap-7"
+      // Enter in a field saves, as "Save changes" would (a form with several fields and no button of its own doesn't by itself).
+      onKeyDown={(event) => {
+        const field = event.target instanceof HTMLElement ? { tagName: event.target.tagName, type: event.target.getAttribute("type") ?? (event.target as HTMLInputElement).type } : null;
+        if (!dirty || pending || !enterSaves({ key: event.key, defaultPrevented: event.defaultPrevented, isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode }, field)) {
+          return;
+        }
+        event.preventDefault();
+        event.currentTarget.requestSubmit();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         if (dirty && !pending) save();

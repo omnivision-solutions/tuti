@@ -191,9 +191,9 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await expect(confirm).toBeHidden();
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
 
-  // A change no page uses (French's word for Board: no French page) saves without asking.
+  // A change no page uses (French's word for Board: no French page) saves without asking; Enter in a field saves, as Save changes does.
   await terms.getByRole("textbox", { name: "Board in Français" }).fill("Tableau");
-  await pane.getByRole("button", { name: "Save changes" }).click();
+  await terms.getByRole("textbox", { name: "Board in Français" }).press("Enter");
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
 
