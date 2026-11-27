@@ -50,6 +50,7 @@ import {
   markersIn,
   releaseNotesPrompt,
   REWRITE_MODES,
+  REWRITE_TASKS,
   rewritePrompt,
   sectionRange,
 } from "../release-notes";
@@ -285,7 +286,7 @@ export async function mayReadEntry(actor: Actor, projectId: string, entry: { ema
   return reader === null || (!entry.emailOnly && groups.some((group) => reader.groups.includes(group)));
 }
 
-async function teamEntry(projectId: string, number: number) {
+export async function teamEntry(projectId: string, number: number) {
   const entry = await findEntry(projectId, number);
   if (!entry) {
     throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
@@ -1179,9 +1180,9 @@ export const rewriteChangelogEntry = defineOperation({
     try {
       reply = await complete({
         ...rewritePrompt({
-          mode: input.mode,
+          task: REWRITE_TASKS[input.mode],
           text,
-          entry: target.length < blocks.length ? toMarkdown(doc) : undefined,
+          whole: target.length < blocks.length ? toMarkdown(doc) : undefined,
           instruction: input.instruction || undefined,
           style: await writingStyle(projectId, entry.id),
         }),
@@ -1230,8 +1231,8 @@ export const rewriteChangelogEntry = defineOperation({
   },
 });
 
-/** Counts an AI edit against the project's hourly cap, or refuses it (429). */
-async function countAiEdit(projectId: string) {
+/** Counts an AI edit (the changelog's and the help center's together) against the project's hourly cap, or refuses it (429). */
+export async function countAiEdit(projectId: string) {
   // ponytail: a fixed clock hour, so up to twice the cap fits across an hour's edge; a sliding window if that matters.
   const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
   // Atomic: concurrent edits each get their own count.
@@ -1555,7 +1556,7 @@ async function changelogStyle(projectId: string) {
  * headings and lists show as the reply's own do (without their images). With none picked, the project's latest
  * published entries: its own, so not Home's samples, and not the entry being written.
  */
-async function writingStyle(projectId: string, entryId: string) {
+export async function writingStyle(projectId: string, entryId: string) {
   const { tone, examples, screenshotMarkers } = await changelogStyle(projectId);
   const entries =
     examples.length > 0
