@@ -1,0 +1,115 @@
+import { segmentsOf } from "@tuti/content";
+import { prisma } from "@tuti/db";
+import { languageTranslationsDone, translationSource } from "@tuti/jobs";
+import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+
+import { createProject, signUp, type TestUser } from "@/test/helpers";
+
+import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
+import { getChangelogTranslation, saveChangelogTranslation } from "./operations/changelog-translations";
+import { OperationError } from "./operations/define";
+import { updateLanguages } from "./operations/languages";
+import { call } from "./operations/run";
+
+/** An entry's versions in other languages from its editor's language pill (docs/plan.md L16): changelog.getTranslation and .saveTranslation. */
+
+let model: ModelFake;
+beforeAll(async () => {
+  model = await startModelFake();
+});
+afterAll(() => model.close());
+
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+beforeEach(async () => {
+  for (const [name, value] of Object.entries(model.env)) {
+    vi.stubEnv(name, value);
+  }
+  vi.stubEnv("TUTI_CONFIG", "");
+  owner = await signUp("Owner");
+  project = await createProject(owner);
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  model.requests.length = 0;
+  model.done();
+});
+
+const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+const TITLE = "Dark mode";
+const BODY = "Switch themes from your profile menu.";
+const paragraph = (text: string) => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+
+/** A reply translating every segment of the entry (`title`, `body`) with `[tag] ` before each one's text. */
+function reply(tag: string, title = TITLE, body = BODY) {
+  const { segments } = segmentsOf(translationSource({ title, body, content: null }).doc);
+  return JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[${tag}] ${text}`])) });
+}
+
+/** A published entry, with German `newPages` (automatic ones translated as it's published). */
+async function published(newPages: "automatic" | "manual") {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages }] });
+  const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  if (newPages === "automatic") {
+    model.reply(reply("de"));
+  }
+  await call(publishChangelogEntry, as(), { number });
+  await languageTranslationsDone();
+  return number;
+}
+
+const refused = async (run: Promise<unknown>) => {
+  const error = await run.then(
+    () => null,
+    (thrown: unknown) => thrown,
+  );
+  expect(error).toBeInstanceOf(OperationError);
+  return error as OperationError;
+};
+
+test("a Manual language's version is written by the team: readers get it at once, and a save from an older read is refused", async () => {
+  const number = await published("manual");
+  const empty = await call(getChangelogTranslation, as(), { number, language: "de" });
+  expect(empty).toMatchObject({ keepUpToDate: false, title: "", content: null, publishedAt: null, behind: false });
+  const saved = await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Wechsle das Design im Profilmenü."), version: empty.version });
+  expect(saved).toMatchObject({ keepUpToDate: false, title: "Dunkler Modus", behind: false });
+  expect(saved.publishedAt).not.toBeNull();
+  expect(await prisma.changelogTranslation.findFirstOrThrow({ where: { projectId: project.id, language: "de" } })).toMatchObject({ body: "Wechsle das Design im Profilmenü.", automatic: false });
+  // The first read's version is out of date now.
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", title: "Alt", content: paragraph("Alt."), version: empty.version }))).code).toBe("changed");
+  // The entry changed since: it's behind, and stays the team's.
+  await call(updateChangelogEntry, as(), { number, title: "Dark mode is here" });
+  await languageTranslationsDone();
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ title: "Dunkler Modus", behind: true });
+});
+
+test("editing an automatic version turns Keep up to date off, so the entry's next change never replaces it; turned back on, it's translated anew", async () => {
+  const number = await published("automatic");
+  const translated = await call(getChangelogTranslation, as(), { number, language: "de" });
+  expect(translated).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode", behind: false });
+  await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: translated.version });
+  // The entry changes: nothing asked, the team's title stays.
+  await call(updateChangelogEntry, as(), { number, body: "Switch themes from the menu." });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(1);
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: false, title: "Dunkler Modus", behind: true });
+  // Keep up to date back on: translated from the entry as it is, nothing reused.
+  model.reply(reply("de", TITLE, "Switch themes from the menu."));
+  expect(await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true })).toMatchObject({ keepUpToDate: true });
+  await languageTranslationsDone();
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode", behind: false });
+  expect(model.requests.at(-1)!.user).toContain("Dark mode");
+});
+
+test("a draft's versions wait for its publish, a first version needs its text, and text and Keep up to date don't go together", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const read = await call(getChangelogTranslation, as(), { number, language: "de" });
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Text."), version: read.version }))).code).toBe("not_published");
+  await call(publishChangelogEntry, as(), { number });
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: read.version }))).message).toBe("Write its text first");
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", content: paragraph("Text."), keepUpToDate: false, version: read.version }))).status).toBe(400);
+  // Not one of the project's languages.
+  expect((await refused(call(getChangelogTranslation, as(), { number, language: "fr" }))).status).toBe(404);
+});

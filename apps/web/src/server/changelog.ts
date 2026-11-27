@@ -30,6 +30,7 @@ import {
   updateChangelogStyle,
 } from "./operations/changelog";
 import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { saveChangelogTranslation } from "./operations/changelog-translations";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -78,6 +79,35 @@ export async function saveChangelogEntry(
   });
   if (created !== undefined) {
     redirect(`/app/${projectSlug}/changelog/${created}`);
+  }
+  return result;
+}
+
+/**
+ * Saves an entry's version in another language from its editor (the language pill): its title and text, against the
+ * `version` it was opened at. Saving stops Keep up to date (changelog.saveTranslation).
+ */
+export async function saveChangelogVersion(projectSlug: string, number: number, language: string, version: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const result = await asTeam(projectSlug, DENIED, (context) =>
+    call(saveChangelogTranslation, context, {
+      number,
+      language: language as "de",
+      title: String(formData.get("title") ?? ""),
+      content: formData.get("content") || undefined,
+      version,
+    }),
+  );
+  if (!result.error) {
+    refresh();
+  }
+  return result;
+}
+
+/** Keep up to date on an entry's version (it's translated again) or off. */
+export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean): Promise<FormState> {
+  const result = await asTeam(projectSlug, DENIED, (context) => call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true }));
+  if (!result.error) {
+    refresh();
   }
   return result;
 }

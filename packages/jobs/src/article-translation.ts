@@ -692,6 +692,12 @@ export async function queueVersion(articleId: string, language: string) {
   queueAll(() => queueEach([{ kind: ARTICLE, parentId: articleId, language }]));
 }
 
+/** A changelog entry's version in `language` translated again (Keep up to date turned on in its editor), as queueVersion. */
+export async function queueEntryVersion(entryId: string, language: string) {
+  await safetyNet(ENTRY, { entryId, language });
+  queueAll(() => queueEach([{ kind: ENTRY, parentId: entryId, language }]));
+}
+
 /** An article's versions the translate job writes: those kept up to date, and others where the team asked for sections (Update those sections). */
 const translatedByJob = {
   // (And a published one the team writes whose search data couldn't be written: the job embeds it.)

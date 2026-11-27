@@ -4,15 +4,16 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
-import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft, translationSource } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
-import { aiEnabled, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
+import { aiEnabled, creditsEnabled, imagesEnabled, isLanguage, LANGUAGES, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cn } from "cn";
 import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage, type VersionState } from "@/components/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
@@ -25,6 +26,8 @@ import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold, generatorSources } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { getChangelogTranslation } from "@/server/operations/changelog-translations";
+import { call } from "@/server/operations/run";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
@@ -165,6 +168,27 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }
       : null;
   const readerUrl = entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null;
+  // Its languages (docs/plan.md L16), once it's published (its versions are made from what's published): the pill and
+  // the sidebar's Languages, and the version `?language=` opens.
+  const languages = entry.publishedAt ? await entryLanguages(membership.project.id, slug, entry) : null;
+  const { language: asked } = await props.searchParams;
+  const opened = languages?.slice(1).find((language) => language.code === asked) ?? null;
+  const version =
+    opened &&
+    (await (async () => {
+      const read = await call(getChangelogTranslation, { actor: { kind: "user", userId: membership.userId }, projectId: membership.project.id }, { number: entry.number, language: opened.code as "de" });
+      return {
+        code: opened.code,
+        name: opened.name,
+        state: opened.state,
+        keepUpToDate: read.keepUpToDate,
+        version: read.version,
+        waiting: read.waiting,
+        // Not written yet: the default language's title and text, to write over.
+        title: read.title || entry.title,
+        content: (read.content ?? displayDoc(entry)) as Doc,
+      };
+    })());
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
 
   return (
@@ -177,7 +201,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             back={{ href: `/app/${slug}/changelog`, label: "All entries" }}
             titleInForm
             title={entry.title}
+            filters={languages && <ChangelogLanguagePill languages={languages} current={version?.code ?? languages[0]!.code} />}
             actions={
+              version ? (
+                <PageActions pinned>
+                  <ChangelogVersionSave />
+                </PageActions>
+              ) : (
               <PageActions
                 pinned
                 more={
@@ -227,6 +257,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   part="publish"
                 />
               </PageActions>
+              )
             }
           />
           <PaneBody className="lg:[container-type:size] flex flex-col gap-4 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
@@ -235,6 +266,17 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               afresh; publishing or unpublishing keeps unsaved edits, and so does a new saved cover (one composed in
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
+            {version ? (
+              <ChangelogVersionForm
+                key={version.version}
+                projectSlug={slug}
+                number={entry.number}
+                defaultName={languages![0]!.name}
+                view={version}
+                mediaUrls={await mediaUrls(version.content)}
+                languages={languages!}
+              />
+            ) : (
             <ChangelogForm
               key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
               projectSlug={slug}
@@ -281,7 +323,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               pullRequests={pullRequests}
               screenshots={await entryScreenshots(membership.project.id, entry)}
               canTakeScreenshots={isAdminRole(membership.role)}
+              languages={languages && <ChangelogLanguageList languages={languages} current={languages[0]!.code} />}
             />
+            )}
             {/* Always there, so focus has its heading to go to once the last is deleted. */}
             <section className="flex max-w-3xl flex-col gap-4 border-t pt-6" aria-label="Comments">
               <h2 id={COMMENTS_HEADING} tabIndex={-1} className="text-sm font-semibold outline-none">
@@ -324,3 +368,38 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   );
 }
 
+/**
+ * A published entry's languages for its editor: the project's default, then its others in the order added, each with where
+ * its version stands and its address (`?language=`). Null with no other languages.
+ */
+async function entryLanguages(projectId: string, slug: string, entry: { id: string; number: number; title: string; body: string; content: unknown }): Promise<EntryLanguage[] | null> {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { language: true, languages: { select: { code: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+  });
+  if (project.languages.length === 0) {
+    return null;
+  }
+  const versions = await prisma.changelogTranslation.findMany({ where: { entryId: entry.id }, select: { language: true, automatic: true, publishedAt: true, sourceHash: true, error: true } });
+  const { hash } = translationSource({ ...entry, content: entry.content as Doc | null });
+  const base = `/app/${slug}/changelog/${entry.number}`;
+  const name = (code: string) => (isLanguage(code) ? LANGUAGES[code].native : code);
+  return [
+    { code: project.language, name: name(project.language), state: "default", href: base },
+    ...project.languages.map(({ code }) => ({ code, name: name(code), state: versionState(versions.find((version) => version.language === code), hash), href: `${base}?language=${code}` })),
+  ];
+}
+
+/** Where a version stands: made from the entry as it is (translated, or the team's), on its way, or behind; none yet: not written. */
+function versionState(version: { automatic: boolean; publishedAt: Date | null; sourceHash: string | null; error: string | null } | undefined, hash: string): VersionState {
+  if (!version) {
+    return "unwritten";
+  }
+  if (version.publishedAt && version.sourceHash === hash) {
+    return version.automatic ? "current" : "written";
+  }
+  if (version.automatic) {
+    return version.error ? "waiting" : "translating";
+  }
+  return version.publishedAt ? "behind" : "unwritten";
+}

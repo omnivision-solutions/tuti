@@ -618,9 +618,12 @@ export function ChangelogForm({
   groupsUpgrade = null,
   screenshots = null,
   canTakeScreenshots = false,
+  languages = null,
 }: {
   projectSlug: string;
   entry: Entry | null;
+  /** Its languages (a published entry's, with other languages): the sidebar's Languages, after its status. */
+  languages?: ReactNode;
   /** Its "[Screenshot: …]" lines and their runs (a saved entry's). */
   screenshots?: LineScreenshots | null;
   /** An owner or admin: they take screenshots (changelog.takeScreenshots). */
@@ -760,6 +763,7 @@ export function ChangelogForm({
             <p className="flex flex-wrap items-center gap-1">{standing}</p>
           </section>
         )}
+        {languages}
         {/* When the text shown was saved: a save refuses to put back lines screenshots replaced since (saveChangelogEntry). */}
         {screenshots && <input type="hidden" name="screenshotsSeenAt" value={screenshots.savedAt} />}
         {entry && screenshots && (

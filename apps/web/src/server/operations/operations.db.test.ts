@@ -56,6 +56,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.seen": () => ({ at: "2026-10-20T09:00:00Z", author: { id: "matrix-reader" } }),
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
+  // The published entry's German (Manual in the fixture): read it, then turn Keep up to date off (a write that needs no `version`).
+  "changelog.getTranslation": () => ({ number: 1, language: "de" }),
+  "changelog.saveTranslation": () => ({ number: 1, language: "de", keepUpToDate: false }),
   "changelog.editSection": () => ({ number: 1, append: true, markdown: "Added by the matrix." }),
   "changelog.composeCover": () => ({ number: 1 }),
   "images.generate": () => ({ prompt: "A lighthouse", width: 320, height: 200 }),
