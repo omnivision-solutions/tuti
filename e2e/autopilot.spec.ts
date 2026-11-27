@@ -533,13 +533,13 @@ test("a merged pull request becomes a code change; the team completes the post i
   const primary = /(^|\s)bg-primary(\s|$)/;
   await expect(owner.getByRole("button", { name: "Draft with AI", exact: true })).toHaveClass(primary);
   await expect(owner.getByRole("button", { name: "Publish", exact: true })).not.toHaveClass(primary);
-  await expect(owner.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Ask AI", exact: true })).toHaveCount(0);
   await checkpoint(owner, "changelog-autopilot-lines", { fullPage: false });
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const asTheyAre = owner.getByRole("alertdialog", { name: "Publish “Next release”?" });
   await expect(asTheyAre).toContainText("Its text is still Autopilot's lines, one per pull request.");
   await asTheyAre.getByRole("button", { name: "Cancel" }).click();
-  // Edited by hand, it's written: Publish is the main action, and Draft with AI is in Edit with AI's menu.
+  // Edited by hand, it's written: Publish is the main action, and Draft with AI is in the header's Ask AI.
   await owner.getByRole("textbox", { name: "What changed" }).getByText("Dark theme", { exact: true }).click();
   await owner.keyboard.press("End");
   await owner.keyboard.type(", in Settings");
@@ -548,7 +548,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.reload();
   await expect(owner.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
   await expect(owner.getByRole("button", { name: "Draft with AI", exact: true })).toHaveCount(0);
-  await expect(owner.getByRole("button", { name: "Edit with AI" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
   await checkpoint(owner, "changelog-edited", { fullPage: false });
 
   // On a phone: the list first, right under the page's title; a page opens in its place, with the way back.

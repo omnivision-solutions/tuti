@@ -99,10 +99,10 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
                 <Method kind={result.method as ApiOperation["kind"]} />{" "}
               </>
             )}
-            <span lang={lang}>{result.title}</span>
+            <span lang={result.lang ?? lang}>{result.title}</span>
             {result.locked && <LockedMark />}
           </Link>
-          {result.snippet && <p lang={lang} className="text-[0.9375rem] break-words text-muted-foreground">{result.snippet}</p>}
+          {result.snippet && <p lang={result.lang ?? lang} className="text-[0.9375rem] break-words text-muted-foreground">{result.snippet}</p>}
         </li>
       ))}
     </ul>

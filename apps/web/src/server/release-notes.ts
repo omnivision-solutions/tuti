@@ -96,20 +96,10 @@ const writingStyle = (style: ReleaseNotesInput["style"]) =>
   };
 
 /*
- * Editor helpers (changelog.rewrite, and the editors' Ask AI: rewriteText): the model edits part of an entry or an
+ * The editors' Ask AI (rewriteText): the model edits part of an entry or an
  * article, and Tuti builds the result with the same reader as drafts. Images and videos go to the model as {{media N}}
  * lines and come back as the original nodes; nothing else can add them.
  */
-
-export const REWRITE_MODES = ["shorten", "plain", "section"] as const;
-export type RewriteMode = (typeof REWRITE_MODES)[number];
-
-export const REWRITE_TASKS: Record<RewriteMode, string> = {
-  shorten: "Make this text shorter: cut repetition, filler and detail readers don't need, but keep every change it mentions.",
-  plain:
-    "Explain this text for people who aren't developers: replace jargon and technical terms with plain words, and say what changed for them.",
-  section: "Rewrite this text so it reads better: clearer and more direct.",
-};
 
 /** What's edited: a changelog entry, or a help center article. */
 export type RewriteKind = "changelog" | "article";

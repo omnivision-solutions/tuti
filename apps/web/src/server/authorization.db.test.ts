@@ -246,19 +246,6 @@ const matrix: Matrix = {
       before: () => model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." })),
       call: (slug) => changelog.draftChangelogEntry(slug, 2),
     },
-    rewriteChangelogEntry: {
-      allowed: "MEMBER",
-      before: () => model.reply(JSON.stringify({ notes: "Shipped." })),
-      call: (slug) => changelog.rewriteChangelogEntry(slug, 2, { mode: "shorten" }),
-    },
-    acceptChangelogRewrite: {
-      allowed: "MEMBER",
-      call: async (slug) => {
-        const { updatedAt } = await prisma.changelogEntry.findFirstOrThrow({ where: { project: { slug }, number: 2 } });
-        const doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Shipped." }] }] };
-        return changelog.acceptChangelogRewrite(slug, 2, doc, updatedAt.toISOString());
-      },
-    },
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     composeChangelogCover: { allowed: "MEMBER", call: (slug) => changelog.composeChangelogCover(slug, 1, "title") },
     // Owners and admins, as screenshots.take: what's asked for goes into the agent's task beside the sign-in. Inline, by Browser Use's fake.
