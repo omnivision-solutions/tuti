@@ -3,7 +3,7 @@ import { historySince, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, config, creditsEnabled, decide, decisionsAvailable, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
-import { runAiTurn } from "./ai-turn";
+import { AI_TURN_DUE_MS, runAiTurn } from "./ai-turn";
 import { settleHold } from "./inbox-path";
 
 /**
@@ -27,7 +27,7 @@ export const EXAMPLES = 10;
 export const SPAM_AT = 0.97;
 /** The longest a conversation is held for the models: the inbox-due job releases it then, judged or not. */
 export const SPAM_HOLD_MS = 2 * 60_000;
-/** The AI's turns the inbox-due job runs at once. */
+/** The AI's turns the inbox-due job runs in a minute. */
 const AI_TURNS_AT_ONCE = 3;
 /** The team's guidance for the models (Settings → Spam). */
 export const MAX_SPAM_GUIDANCE = 500;
@@ -277,17 +277,14 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
     ORDER BY "createdAt" LIMIT 100`;
   let checked = 0;
   // The AI's turns their requests didn't run (server/ai-turn.ts): run once this request has answered, so their model
-  // calls never hold up the holds here or the worker's request (or now, outside a request), a few at a time, so a backlog
-  // after a deploy doesn't hit the provider all at once; each is handed over 10 minutes on.
-  const turns = due.filter((row) => row.aiTurn).map((row) => row.id);
+  // calls never hold up the holds here or the worker's request (or now, outside a request), and only a few a minute, so a
+  // backlog after a deploy doesn't hit the provider all at once; each is handed over 10 minutes on.
+  // ponytail: a few per run, the rest left due for the next minutes (a backlog past 10 minutes is handed over). Those
+  // taken are due again a minute on as they're queued, so the next run leaves them to their turn, which still claims them.
+  const turns = due.filter((row) => row.aiTurn).map((row) => row.id).slice(0, AI_TURNS_AT_ONCE);
   if (turns.length > 0) {
-    const runTurns = async () => {
-      let ran = 0;
-      for (let i = 0; i < turns.length; i += AI_TURNS_AT_ONCE) {
-        ran += (await Promise.all(turns.slice(i, i + AI_TURNS_AT_ONCE).map(runAiTurn))).filter((outcome) => outcome !== "nothing").length;
-      }
-      return ran;
-    };
+    await prisma.conversation.updateMany({ where: { id: { in: turns }, pathDueAt: { lte: now } }, data: { pathDueAt: new Date(now.getTime() + AI_TURN_DUE_MS) } });
+    const runTurns = async () => (await Promise.all(turns.map(runAiTurn))).filter((outcome) => outcome !== "nothing").length;
     try {
       after(runTurns);
       checked += turns.length;

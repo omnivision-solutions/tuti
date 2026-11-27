@@ -38,10 +38,19 @@ export const AI_TURN_DUE_MS = 60_000;
 const AI_TURN_LEASE_MS = 5 * 60_000;
 /** A user's message the AI still hasn't answered this long after it's written is handed over. */
 export const AI_TURN_GIVE_UP_MS = 10 * 60_000;
-/** Characters of the user's messages a turn asks about: the newest, as the latest says most ("a person please" after a long email). */
+/** Characters of the user's messages a turn asks about. */
 const QUESTION_CHARS = 2000;
-/** The newest QUESTION_CHARS of `text`. */
-const newest = (text: string) => text.slice(-QUESTION_CHARS);
+/**
+ * `text` in QUESTION_CHARS: both ends where it's longer, as the question often comes first (then a pasted log) and the
+ * latest words say most ("a person please" after a long email).
+ */
+const newest = (text: string) => {
+  if (text.length <= QUESTION_CHARS) {
+    return text;
+  }
+  const half = (QUESTION_CHARS - 3) / 2;
+  return `${text.slice(0, Math.floor(half))}\n…\n${text.slice(-Math.ceil(half))}`;
+};
 /** The conversation's latest messages a turn reads. */
 const MESSAGES_READ = 50;
 /** At least this sure the user asks for a person, the decision model hands over. */

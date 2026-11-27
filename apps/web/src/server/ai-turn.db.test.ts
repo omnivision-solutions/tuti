@@ -246,8 +246,9 @@ test("a request for a person after a long message is still read: the newest text
   model.reply("They want a person about a failing export.", undefined, "askedBefore");
   expect(await turn()).toBe("handed_over");
   expect(await handovers()).toEqual(["user_asked"]);
-  // What the model read ends with their latest words, and is no longer than the limit.
+  // What the model read keeps both ends: the question before the pasted log, and their latest words; no longer than the limit.
   const { message } = model.decisions.at(-1)!.state as { message: string };
+  expect(message.startsWith("My export fails.")).toBe(true);
   expect(message.endsWith("A person please")).toBe(true);
   expect(message.length).toBe(2000);
 });
@@ -440,6 +441,22 @@ test("a turn its request never ran is run by the inbox-due job, and handed over 
   expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
   expect(await handovers()).toEqual(["ai_off"]);
   expect(await runDueInbox()).toEqual({ checked: 0 });
+});
+
+test("the inbox-due job runs only a few leftover turns a minute; the rest stay due for the next", async () => {
+  const { projectId, mail } = await setup({ aiFirst: true });
+  for (const body of ["One", "Two", "Three", "Four"]) {
+    await mail(body);
+  }
+  await prisma.conversation.updateMany({ where: { projectId }, data: { pathDueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueInbox()).toEqual({ checked: 3 });
+  // The rest are still due; the three taken are left to their queued turn by the next run.
+  expect(await runDueInbox()).toEqual({ checked: 1 });
+  expect(await runDueInbox()).toEqual({ checked: 0 });
+  // Each queued turn still runs (and claims) its conversations.
+  model.otherwiseDecide({ person: 0.05, reply: 0.9 }, '"message"');
+  model.otherwise("They ask something.", "askedBefore");
+  expect(await (later.at(-2) as () => Promise<number>)()).toBe(3);
 });
 
 test("Straight to a person: a new conversation and a reply to one the AI has go to the team without the AI or “About to go to a person”", async () => {
