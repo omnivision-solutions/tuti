@@ -98,7 +98,7 @@ Reply with JSON only, no other text: {"answer": "...", "sources": ["s1"]}`;
 /** For a conversation in the Inbox on a server without a decision model: the answer model says whether the user asks for a person. */
 const ASKS_FOR_A_PERSON = `
 
-If the latest question asks to talk to a person (a human, someone on the team, support staff) rather than for an answer, reply {"answer": "", "sources": [], "person": true} instead.`;
+If the latest question asks to talk to a person (a human, someone on the team, support staff) rather than for an answer, or accepts an earlier answer's offer to connect them with someone ("yes", "sure", "please do"), reply {"answer": "", "sources": [], "person": true} instead.`;
 
 export function answerPrompt(question: string, sections: AnswerSection[], settings: AssistantSettings, earlier: Turn[], { askPerson = false } = {}) {
   const teamSettings = {

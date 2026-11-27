@@ -227,6 +227,26 @@ test("each reason to hand over: no answer in the docs, an off-limits topic, a mo
   expect(await prisma.conversationMessage.count({ where: { conversation: { projectId, number: 3 }, note: true } })).toBe(0);
 });
 
+test("the decision model hands over when it's even a little sure they want a person, and answers whatever may need a reply", async () => {
+  const { mail, turn, handovers, state } = await setup();
+  // 30% sure they ask for a person: handed over.
+  await mail("Can somebody look at this?");
+  model.decide({ person: 0.3, reply: 0.9 }, "somebody look");
+  model.reply("They want someone to look at it.", undefined, "askedBefore");
+  expect(await turn(1)).toBe("handed_over");
+  expect(await handovers()).toEqual(["user_asked"]);
+  // The question it was asked, with accepting an offer to connect them counted as asking for a person.
+  const { criteria } = model.decisions.at(-1)!.questions.person!;
+  expect((criteria as { true: string }).true).toContain(`accept an earlier answer's offer to connect them with someone ("yes", "sure", "please do")`);
+
+  // 40% sure it needs a reply: answered, never left silent.
+  await mail();
+  model.decide({ person: 0.05, reply: 0.4 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  expect(await turn(2)).toBe("answered");
+  expect((await state(2)).thread).toEqual([`USER: ${QUESTION}`, "AI: Go to Settings → Export."]);
+});
+
 test("thanks after an answer needs no reply: the AI keeps it, with no handover and no gap logged; their next question gets its turn", async () => {
   const { projectId, mail, reply, turn, state, handovers } = await setup();
   await mail();

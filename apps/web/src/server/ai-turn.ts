@@ -53,10 +53,16 @@ const newest = (text: string) => {
 };
 /** The conversation's latest messages a turn reads. */
 const MESSAGES_READ = 50;
-/** At least this sure the user asks for a person, the decision model hands over. */
-export const PERSON_AT = 0.5;
-/** Under this sure the latest message needs a reply ("thanks", "ok", a lone "hi"), the turn ends without one. */
-export const REPLY_AT = 0.5;
+/**
+ * At least this sure the user asks for a person, the decision model hands over: low, as the private evaluation set showed
+ * that missing a request for a person costs far more than handing over a question early.
+ */
+export const PERSON_AT = 0.2;
+/**
+ * Under this sure the latest message needs a reply ("thanks", "ok", a lone "hi"), the turn ends without one: low, so
+ * nothing that needs an answer is left silent (the private evaluation set showed it).
+ */
+export const REPLY_AT = 0.3;
 
 /**
  * Whether a new conversation from `origin` starts with the AI ("AI answers first", by channel): email's switch
@@ -145,7 +151,7 @@ const PERSON = {
     instructions:
       "A user is writing to a software product's support, where an AI answers from the product's docs first. The state has their latest message and, if any, the conversation's earlier turns. Does the latest message ask to talk to a person (a human, someone on the team, support staff) rather than only for an answer?",
     criteria: {
-      true: "They ask for a person: a human, the team, a call, someone real, or say they don't want the AI",
+      true: 'They ask for a person: a human, the team, a call, someone real, or say they don\'t want the AI, or accept an earlier answer\'s offer to connect them with someone ("yes", "sure", "please do")',
       false: "They ask a question, report a problem or reply to an answer, however frustrated, without asking for a person",
     },
   },

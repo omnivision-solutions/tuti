@@ -25,6 +25,12 @@ const MADE_UP: Case[] = [
   { name: "asks for a human", person: true, message: "Can I talk to a human please?" },
   { name: "asks for a call", person: true, message: "This isn't helping. Could someone from your team call me?" },
   { name: "after an answer", person: true, message: "a person please", earlier: [{ question: "How do I export?", answer: "Go to Settings → Export." }] },
+  {
+    name: "accepts an offer",
+    person: true,
+    message: "yes please",
+    earlier: [{ question: "Can you refund my last invoice?", answer: "Our team handles refunds. Would you like me to connect you with someone?" }],
+  },
   { name: "a question", person: false, message: "How do I invite my team?" },
   { name: "frustrated, no person", person: false, message: "Export is broken AGAIN, the file is empty. What now?" },
   { name: "thanks", person: false, reply: false, message: "Thanks, that worked!", earlier: [{ question: "How do I export?", answer: "Go to Settings → Export." }] },
