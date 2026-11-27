@@ -759,3 +759,132 @@ test("kept, then edited and published: up to date now, and still the team's when
   expect(after.behind.map(({ section }) => section)).toEqual([billing]);
 });
 
+
+test("publishing a draft whose paragraph at the top stands in for an intro English added since: the intro's translation, and the team's paragraph after it", async () => {
+  // English without an intro, translated into German (kept up to date).
+  const noIntro: Doc = { type: "doc", content: doc("x", ["Setup", "Install it"], ["Billing", "Pay by card"]).content!.slice(1) };
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: noIntro });
+  model.reply(reply(noIntro, "de"));
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  await languageTranslationsDone();
+  // The team's own paragraph at the top of the German draft.
+  const version = await call(getTranslation, as(), de);
+  const content = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...(version.content as Doc).content!] } as Doc;
+  await call(saveTranslation, as(), { ...de, content, version: version.version });
+  // English adds an intro; the team publishes its draft as it is.
+  await republish(V1, "de2");
+  const published = await call(publishTranslation, as(), de);
+  expect(text(published.content)).toContain("[de2] Intro");
+  expect(text(published.content)).toContain("Willkommen");
+  expect(text(published.content).indexOf("[de2] Intro")).toBeLessThan(text(published.content).indexOf("Willkommen"));
+});
+
+test("on a version kept up to date, a section the team took out stays out until its English changes, then comes back", async () => {
+  await translated();
+  // The team takes Billing out of the German and publishes.
+  const version = await call(getTranslation, as(), de);
+  const content = structuredClone(version.content) as Doc;
+  content.content = content.content!.slice(0, -2);
+  await call(saveTranslation, as(), { ...de, content, version: version.version });
+  await call(publishTranslation, as(), de);
+  // English changes Setup only: Billing stays out.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card"]), "de2");
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+  // English rewrites Billing: the team's taking it out gives way, as their edits do where English changed.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de3");
+  const back = await call(getTranslation, as(), de);
+  expect(text(back.content)).toContain("[de3] Pay by card or invoice");
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { language: "de", article: { slug: "getting-paid" } } })).removedSections).toEqual([]);
+});
+
+test("a section whose heading is longer than 400 characters can be named in `keep` (and `sections`) as `behind` names it", async () => {
+  const long = `Billing ${"x".repeat(420)}`;
+  const v1 = doc("Intro", ["Setup", "Install it"], [long, "Pay by card"]);
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: v1 });
+  model.reply(reply(v1, "de"));
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  await languageTranslationsDone();
+  await editBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], [long, "Pay by card or invoice"]), "de2");
+  const read = await call(getTranslation, as(), de);
+  const [key] = read.draft!.behind;
+  expect(key!.length).toBeGreaterThan(400);
+  const published = await call(publishTranslation, as(), { ...de, keep: [key!] });
+  expect(text(published.content)).toContain("Unsere Abrechnung");
+});
+
+test("a run for sections another run finished meanwhile writes no failure on a version with nothing left to translate", async () => {
+  const articleId = await manualVersion();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await call(updateArticle, as(), { slug: "getting-paid", content: V2, publish: true });
+  await languageTranslationsDone();
+  const [billing] = (await call(getTranslation, as(), de)).behind.map(({ section }) => section);
+  // Billing asked for. While this run waits on its answer, an overlapping run finishes it (nothing left asked for); then this
+  // one's answer fails its checks (and so does the one asked to fix it).
+  model.reply(JSON.stringify({ segments: {} }), () => prisma.articleTranslation.updateMany({ where: { articleId }, data: { updateSections: [], error: null, tries: 0, retryAt: null } }));
+  model.reply(JSON.stringify({ segments: {} }));
+  await call(updateTranslationSections, as(), { ...de, sections: [billing!] });
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ error: null, tries: 0, retryAt: null, updateSections: [] });
+});
+
+/** The team takes Billing out of the German draft (saved, not published). */
+async function takeOutBilling() {
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.draft?.content ?? read.content) as Doc;
+  content.content = content.content!.slice(0, -2);
+  return call(saveTranslation, as(), { ...de, content, version: read.version });
+}
+
+test("a section taken out of the draft, kept out on publishing though its English changed, stays out after the job runs", async () => {
+  await translated();
+  await takeOutBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  const read = await call(getTranslation, as(), de);
+  const billing = read.draft!.behind.find((key) => key.startsWith("Billing"))!;
+  // Kept out: whatever the job translates after the publish, Billing isn't put back.
+  model.otherwise(reply(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de3"), "Install it");
+  await call(publishTranslation, as(), { ...de, keep: [billing] });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+  // English then changes only Setup: Billing, kept out against its English as it is, stays out.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de4");
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+});
+
+test("a section updated back into the draft, then taken out again, is out against English as it is then: the job leaves it out", async () => {
+  await translated();
+  await takeOutBilling();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await republish(V2, "de2");
+  const billing = (await call(getTranslation, as(), de)).draft!.behind.find((key) => key.startsWith("Billing"))!;
+  // Update those sections brings Billing back into the draft; the team then takes it out again, and publishes.
+  model.otherwise(reply(V2, "de3"), "Install it");
+  await call(updateTranslationSections, as(), { ...de, sections: [billing] });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).draft!.content)).toContain("Pay by card or invoice");
+  await takeOutBilling();
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+  // English then changes only Setup: Billing, taken out against its English as it is now, stays out.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de4");
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+});
+
+test("sections named in `keep` or `sections` are no longer together than an article can be", async () => {
+  await translated();
+  const huge = "x".repeat(40_000);
+  for (const [op, input] of [
+    [publishTranslation, { ...de, keep: [`${huge}a`, `${huge}b`] }],
+    [updateTranslationSections, { ...de, sections: [`${huge}a`, `${huge}b`] }],
+  ] as const) {
+    const error = await call(op as typeof publishTranslation, as(), input as never).then(
+      () => null,
+      (thrown: unknown) => thrown as { status: number },
+    );
+    expect(error?.status).toBe(400);
+  }
+});

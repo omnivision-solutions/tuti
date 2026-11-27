@@ -281,13 +281,34 @@ type Locked = Prisma.ArticleTranslationGetPayload<{ select: typeof lockedSelect 
  * write is a new text, whose old search sections go with it (search by meaning never answers with them).
  */
 type Settle = (data: Data | ((now: Locked) => Data | null), newVersion?: boolean) => Promise<boolean>;
-const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
+const lockedSelect = { automatic: true, title: true, titleSource: true, content: true, sections: true, removedSections: true, removedHashes: true, draft: true, behind: true, updateSections: true, publishedAt: true } as const;
 
 /** A version's draft as stored (ArticleTranslation.draft). */
-export type Draft = { title: string; titleEdited: boolean; content: Doc; sections: SectionMeta[]; /** Source sections the team took out of it. */ removed?: string[] };
+export type Draft = {
+  title: string;
+  titleEdited: boolean;
+  content: Doc;
+  sections: SectionMeta[];
+  /** Source sections the team took out of it. */
+  removed?: string[];
+  /** Each of those's source section hash when it was taken out (see removedChanged). */
+  removedHashes?: Record<string, string>;
+};
+
+/**
+ * On a version kept up to date, the sections the team took out (`removed`) whose source section changed since (their hashes
+ * then, `hashes`): the team's edit gives way, as any of theirs does where its source changed. One with no hash recorded
+ * (taken out before they were), or whose source section is gone, stays out.
+ */
+export function removedChanged(removed: Iterable<string> | undefined, hashes: unknown, source: ReturnType<typeof sourceSections>): string[] {
+  const then = (hashes ?? {}) as Record<string, string>;
+  const now = new Map(source.map((section) => [section.key, section.hash]));
+  return [...(removed ?? [])].filter((key) => then[key] !== undefined && now.has(key) && now.get(key) !== then[key]);
+}
 
 /** A version's text (published or its draft) for working out what's behind: on a version the team writes, every section is theirs and one the source has that it doesn't is behind too, but those it took out. */
-export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Iterable<string> };
+/** `changed`: sections taken out whose source changed since (removedChanged), behind where they stay out (a draft). */
+export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Iterable<string>; changed?: string[] };
 
 /**
  * Why each section is behind (`behind`): the team's sections whose source section changed since they were translated or
@@ -296,11 +317,12 @@ export type BehindList = { list: Section[]; teamWrites: boolean; removed?: Itera
 export function behindOf(sourceLanguage: string, source: ReturnType<typeof sourceSections>, lists: BehindList[], kept: Record<string, string> = {}) {
   const [changed, added] = [sourceChanged(sourceLanguage), sourceAdded(sourceLanguage)];
   const out: Record<string, string> = { ...kept };
-  for (const { list, teamWrites, removed } of lists) {
+  for (const { list, teamWrites, removed, changed: outButChanged } of lists) {
     const own = teamWrites ? ownedByTeam(list) : list;
     for (const key of behindSections(own, source)) out[key] = changed;
+    for (const key of outButChanged ?? []) out[key] = changed;
     if (teamWrites) {
-      const has = new Set(list.map(({ meta }) => meta.key));
+      const has = new Set(list.flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
       for (const key of behindSections(own, source, { missing: true, removed: new Set(removed) })) if (!has.has(key)) out[key] ??= added;
     }
   }
@@ -388,7 +410,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   started.settle = settle;
   const waits = async (why: string) => {
     const tries = row.tries + 1;
-    await settle({ error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) });
+    const failure = { error: why.slice(0, 500), tries, retryAt: new Date(Date.now() + retryDelay(tries)) };
+    // A version the team writes: only while a section this run was asked for still waits (another run, overlapping, may have
+    // done them all meanwhile: a failure then would sit on a version with nothing left to translate).
+    await settle(kind.name === "article" && !row.automatic ? (now) => ((now.updateSections as string[]).some((key) => asked.includes(key)) ? failure : null) : failure);
     return { failed: why };
   };
 
@@ -479,7 +504,11 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     const still = new Set(asked.filter((key) => (now.updateSections as string[]).includes(key)));
     const only = now.automatic ? undefined : still;
     // The sections asked for take the new translation, whoever owns them (an edit made since included): that's what was asked.
-    const live = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: still, published: now.automatic, removed: new Set(now.removedSections as string[]) });
+    // Kept up to date: a section the team took out whose English changed since comes back in the published text (in the
+    // draft it stays out, behind: there the team's edits never give way).
+    const comesBack = now.automatic ? removedChanged(now.removedSections as string[], now.removedHashes, parts) : [];
+    const stillOut = (now.removedSections as string[]).filter((key) => !comesBack.includes(key));
+    const live = withTranslation(versionSections(now.content as Doc | null, now.sections, parts), translated, parts, { only, asked: still, published: now.automatic, removed: new Set(stillOut) });
     const draft = now.draft as Draft | null;
     const drafted = draft && withTranslation(versionSections(draft.content, draft.sections, parts), translated, parts, { only, asked: still, removed: new Set(draft.removed) });
     const waiting = (now.updateSections as string[]).filter((key) => !asked.includes(key));
@@ -499,6 +528,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
         sourceHash: source.hash,
       }),
       ...(!draftOnly && { content: content as Prisma.InputJsonValue, body: toPlainText(content), sections: metaOf(live) as Prisma.InputJsonValue }),
+      ...(comesBack.length > 0 && {
+        removedSections: stillOut,
+        removedHashes: Object.fromEntries(Object.entries(now.removedHashes as Record<string, string>).filter(([key]) => !comesBack.includes(key))),
+      }),
       ...(draft &&
         drafted && {
           // Its title the team's while it's edited there, or while the published one is theirs.
@@ -509,7 +542,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
         parts,
         [
           ...(draftOnly ? [] : [{ list: live, teamWrites: !now.automatic, removed: now.removedSections as string[] }]),
-          ...(drafted ? [{ list: drafted, teamWrites: !now.automatic, removed: draft.removed }] : []),
+          ...(drafted ? [{ list: drafted, teamWrites: !now.automatic, removed: draft.removed, changed: now.automatic ? removedChanged(draft.removed, draft.removedHashes, parts) : [] }] : []),
         ],
         kept,
       ),
@@ -539,13 +572,23 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
  * A version the team published (articles.publishTranslation), after its own transaction: named, on its first publish, and
  * its new text made searchable (a failure is retried by the retry job, as the job's is). Never throws.
  */
-export async function versionPublished(projectId: string, versionId: string, first: boolean) {
+export async function versionPublished(projectId: string, versionId: string, first: boolean, marker?: Date, triesBefore?: number) {
   const log = { info: () => {}, warn: (message: string) => serverLog.warn(message) };
-  if (first) {
-    await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+  // Never failing the publish, which has committed: the marker it wrote with it (`marker`, a retry time with `tries`) is left
+  // for the retry job, which embeds it, wherever this doesn't get as far as clearing it.
+  try {
+    if (first) {
+      await nameVersion(projectId, versionId).catch((error: unknown) => serverLog.error("Naming an article's version failed", { versionId, error }));
+    }
+    const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
+    // The failures in a row before the publish (its marker's try isn't one).
+    if ((await searchable(versionId, marker ? (triesBefore ?? 0) : tries, retryAt, log)) && marker) {
+      // Embedded: the publish's marker goes (unless something since set another).
+      await prisma.articleTranslation.updateMany({ where: { id: versionId, retryAt: marker, error: null }, data: { retryAt: null, tries: 0 } });
+    }
+  } catch (error) {
+    serverLog.error("Embedding an article's version failed", { versionId, error });
   }
-  const { tries, retryAt } = (await prisma.articleTranslation.findUnique({ where: { id: versionId }, select: { tries: true, retryAt: true } })) ?? { tries: 0, retryAt: null };
-  await searchable(versionId, tries, retryAt, log).catch((error: unknown) => serverLog.error("Embedding an article's version failed", { versionId, error }));
 }
 
 /** Why a version up to date is tried again: its sections couldn't be embedded for search. */
@@ -559,7 +602,12 @@ const SEARCH_WAITS = "its search data couldn't be written";
  */
 async function searchable(translationId: string, tries: number, read: Date | null, log: JobLogger) {
   try {
-    await embedTranslation(translationId, log);
+    const result = await embedTranslation(translationId, log);
+    // Its text changed while it was embedded: a newer write's state (its own failure's tries and time) is that run's to keep.
+    // Only an attempt done for the text as it is clears the count (embeddings turned off too: nothing would try again).
+    if (result.changed) {
+      return true;
+    }
     if (tries > 0) {
       await prisma.articleTranslation.updateMany({ where: { id: translationId, error: null }, data: { tries: 0 } });
     }
