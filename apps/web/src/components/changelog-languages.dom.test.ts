@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createContext, createElement as h } from "react";
+import { act, createContext, createElement as h, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -60,7 +60,8 @@ async function form(props: Partial<typeof view> = {}) {
   const render = (changes: Partial<typeof view>) =>
     act(async () =>
       root.render(
-        h(
+        // In Strict Mode, as Next renders the app in development: state initializers and effects run twice.
+        h(StrictMode, null, h(
           ChangelogSavingContext,
           { value: { setPending } },
           // Keyed as the page keys it (versionFormKey, versionTextKey), so a re-render here remounts the form exactly where the page would.
@@ -74,7 +75,7 @@ async function form(props: Partial<typeof view> = {}) {
             mediaUrls: shownMedia,
             languages,
           }),
-        ),
+        )),
       ),
     );
   await render(props);

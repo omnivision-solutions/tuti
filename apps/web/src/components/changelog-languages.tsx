@@ -6,7 +6,7 @@ import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type RefObject, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { type RefObject, useActionState, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ChangelogSaveButton, ChangelogSavingContext } from "@/components/changelog";
@@ -153,14 +153,17 @@ export function ChangelogVersionEditor({ formKey, ...props }: Omit<Parameters<ty
 /** The editor's unsaved draft, across the forms it mounts, and which of them is the one shown (the last mounted). */
 function draftStore() {
   let draft: Carried | null = null;
-  let mounts = 0;
+  let shownForm: string | null = null;
   return {
     take: () => draft,
     put: (next: Carried | null) => {
       draft = next;
     },
-    mount: () => ++mounts,
-    shown: (mount: number) => mount === mounts,
+    /** A form mounted (its effect: run twice in Strict Mode, to the same effect). */
+    show: (form: string) => {
+      shownForm = form;
+    },
+    shown: (form: string) => form === shownForm,
   };
 }
 type Drafts = ReturnType<typeof draftStore>;
@@ -187,8 +190,10 @@ export function ChangelogVersionForm({
   // A draft carried from the form before this one (typed after its last save was sent, the page having read again since):
   // this form starts from it, and from the token that typing goes from, so its Save is checked against that.
   const [start] = useState(drafts.take);
-  // This form's mount: only the one shown writes the carried draft (a late answer to an unmounted form's save leaves it).
-  const [mount] = useState(drafts.mount);
+  // This form's mount: only the one shown writes the carried draft (a late answer to an unmounted form's save leaves it). Its
+  // id stable across renders (Strict Mode calls state initializers twice: a counter there would skip past it).
+  const mount = useId();
+  useEffect(() => drafts.show(mount), [drafts, mount]);
   const current = () => drafts.shown(mount);
   // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say), for Save only: a save
   // made from this text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
