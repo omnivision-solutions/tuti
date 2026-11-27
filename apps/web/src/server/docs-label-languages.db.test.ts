@@ -3,6 +3,7 @@ import { labelSource } from "@tuti/jobs";
 import { beforeEach, expect, test } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { request } from "@/test/next-headers";
 
 import { docsContents, docsTree } from "./docs-queries";
@@ -65,4 +66,12 @@ test("a translation kept up to date made from the name as it was is never shown:
   const [collection] = (await docsContents(project.slug)).collections;
   expect(collection).toMatchObject({ name: "Billing", description: "Paying and invoices." });
   expect(collection).not.toHaveProperty("lang");
+});
+
+test("locked for this reader, a tab and its collections still show their names in the page's language, marked as in it", async () => {
+  await prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
+  at("de");
+  const docs = await docsContents(project.slug, { reader: SIGNED_OUT });
+  expect(docs.tabs[0]).toMatchObject({ name: "Anleitungen", lang: "de", locked: true });
+  expect(docs.collections[0]).toMatchObject({ name: "Abrechnung", lang: "de", locked: true });
 });
