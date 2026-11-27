@@ -277,15 +277,24 @@ export async function forgetLabels(tx: Prisma.TransactionClient, projectId: stri
 export async function queueStaleLabels(): Promise<number> {
   // Claimed in one update, its time moved to the safety net's (as articles' retries are): a run overlapping this one, or the
   // next while its job is still on its way, doesn't queue it again; a job lost in a restart is found once that time comes.
-  // The job's end clears it, or sets the next try's.
+  // The job's end clears it, or sets the next try's. Its rows locked in the order a languages save takes them (by project,
+  // then code), skipping one a save or a label's write holds (the next run takes it): never the other way round, which could
+  // deadlock.
   const due = await prisma.$queryRaw<{ projectId: string; code: string }[]>`
-    UPDATE project_language l SET "labelsRetryAt" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000})
-    WHERE (l."labelsRetryAt" IS NULL OR l."labelsRetryAt" <= now() AT TIME ZONE 'UTC')
-      AND (
-        EXISTS (SELECT 1 FROM collection c WHERE c."projectId" = l."projectId" AND NOT c.sample AND ${staleIn(COLLECTION_SOURCE)})
-        OR EXISTS (SELECT 1 FROM docs_tab t WHERE t."projectId" = l."projectId" AND ${staleIn(TAB_SOURCE)})
-      )
-    RETURNING l."projectId", l.code`;
+    WITH due AS (
+      SELECT l."projectId", l.code FROM project_language l
+      WHERE (l."labelsRetryAt" IS NULL OR l."labelsRetryAt" <= now() AT TIME ZONE 'UTC')
+        AND (
+          EXISTS (SELECT 1 FROM collection c WHERE c."projectId" = l."projectId" AND NOT c.sample AND ${staleIn(COLLECTION_SOURCE)})
+          OR EXISTS (SELECT 1 FROM docs_tab t WHERE t."projectId" = l."projectId" AND ${staleIn(TAB_SOURCE)})
+        )
+      ORDER BY l."projectId", l.code
+      -- NO KEY: as the update it was takes, so a translation being written in that language (its row pointing here) isn't skipped.
+      FOR NO KEY UPDATE OF l SKIP LOCKED
+    )
+    UPDATE project_language p SET "labelsRetryAt" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000})
+    FROM due WHERE p."projectId" = due."projectId" AND p.code = due.code
+    RETURNING p."projectId", p.code`;
   for (const { projectId, code } of due) {
     await queueLabels(projectId, [code]);
   }

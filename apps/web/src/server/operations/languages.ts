@@ -253,8 +253,15 @@ export const retranslateLanguage = defineOperation({
     if (!language) {
       throw new OperationError(404, "not_found", "The project doesn't have that language");
     }
-    // Its labels too (collection and tab names): all of them anew, or what's left to translate.
-    if (!waiting) await retranslateLabels(prisma, projectId, code);
+    // Its labels too (collection and tab names): all of them anew, or what's left to translate. Locked as a languages save
+    // locks (the project, then the language, then labels), so it never deadlocks with one, or with a collection's move.
+    if (!waiting) {
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} AND code = ${code} FOR UPDATE`;
+        await retranslateLabels(tx, projectId, code);
+      });
+    }
     await queueLabels(projectId, [code]);
     return { queued: await queueLanguageTranslations(projectId, code, { fresh: !waiting, waiting }) };
   },
