@@ -32,7 +32,7 @@ const tokensIn = (text: string) => [...text].reduce((sum, char) => sum + (char.c
 
 export type RewriteInput = {
   kind: RewriteKind;
-  /** A changelog entry's number: its writing style (Settings → Changelog) is the style. */
+  /** The changelog entry's number, once saved: its own text isn't one of the style's examples (Settings → Changelog). */
   entry?: number;
   /** The part to edit, as rich content (a document of its blocks). */
   text: unknown;
@@ -73,10 +73,12 @@ async function rewrite(projectId: string, input: RewriteInput): Promise<Doc> {
   };
   const blocks = (await read(input.text)).content ?? [];
   const whole = input.whole === undefined || input.whole === null ? undefined : toMarkdown(await read(input.whole));
-  if (kind === "changelog" && !Number.isSafeInteger(input.entry)) {
-    throw new OperationError(400, "invalid_input", "Say which changelog entry it's in");
+  if (input.entry !== undefined && !Number.isSafeInteger(input.entry)) {
+    throw new OperationError(400, "invalid_input", "There's no such changelog entry");
   }
-  const style = kind === "changelog" ? await writingStyle(projectId, (await teamEntry(projectId, input.entry!)).id) : undefined;
+  // A new entry, not saved yet, has no number: the style's examples then needn't leave it out.
+  const style =
+    kind === "changelog" ? await writingStyle(projectId, input.entry === undefined ? "" : (await teamEntry(projectId, input.entry)).id) : undefined;
 
   // What the reader can't write back (a table, code, italics; an image or a video) goes as a {{media N}} line, and must
   // come back as it was: in the same order, each once.

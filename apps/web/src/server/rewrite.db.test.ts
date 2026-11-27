@@ -120,7 +120,6 @@ test("refused without asking the AI: no instruction, nothing it can edit, anothe
   const tooLong = { error: "That's too much text to edit with AI at once: select a shorter part" };
   expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("Exports are quick. ".repeat(900)))), instruction: "Shorter" })).toEqual(tooLong);
   expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("書き出しはすぐに終わります。".repeat(300)))), instruction: "Shorter" })).toEqual(tooLong);
-  expect(await rewriteText(project.slug, { kind: "changelog", text: plain, instruction: "Shorter" })).toEqual({ error: "Say which changelog entry it's in" });
   expect(await rewriteText(project.slug, { kind: "changelog", entry: 99, text: plain, instruction: "Shorter" })).toEqual({ error: "There's no changelog entry #99" });
 
   const other = await signUp("Other");
@@ -167,4 +166,14 @@ test("a numbered list stays numbered, from its own first number", async () => {
   expect(model.requests[0]!.system).toContain('"1. " numbered items');
   expect(data(model.requests[0]!.user)).toMatchObject({ textToEdit: "3. Open the Reports page\n4. Press the Export button" });
   expect(result).toEqual({ content: doc({ type: "orderedList", attrs: { start: 3, type: null }, content: [item("Open Reports"), item("Press Export")] }) });
+});
+
+test("a new changelog entry, not saved yet, is edited in the changelog's style too", async () => {
+  await call(updateChangelogStyle, team(), { tone: "Friendly. Address the reader as you." });
+  model.reply(reply("You can export reports now."));
+
+  const result = await rewriteText(project.slug, { kind: "changelog", text: doc(paragraph(text("Reports can now be exported by users."))), instruction: "Friendlier" });
+
+  expect(data(model.requests[0]!.user)).toMatchObject({ writingStyle: { toneNotes: "Friendly. Address the reader as you." } });
+  expect(result).toEqual({ content: doc(paragraph(text("You can export reports now."))) });
 });
