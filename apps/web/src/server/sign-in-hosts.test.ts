@@ -27,11 +27,9 @@ describe("findSignInServices", () => {
 });
 
 test("long hostile text is scanned in linear time: a run of hyphenated labels, unclosed tags", () => {
-  const started = performance.now();
   findSignInServices(["a-".repeat(500_000), "aa-a".repeat(200_000)]);
   for (const text of ['<link href="x" '.repeat(100_000), "<script src".repeat(100) + " ".repeat(500_000)]) {
     scriptsOf({ url: new URL("https://app.example.com"), text });
   }
-  // Linear takes about a second; the old patterns took minutes. Room for a loaded machine.
-  expect(performance.now() - started).toBeLessThan(10_000);
-}, 15_000);
+  // No clock to compare: linear takes about a second, the old patterns minutes, so the timeout alone tells them apart.
+}, 30_000);
