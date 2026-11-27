@@ -13,6 +13,12 @@ import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
 
+// planGlossaryChanges as it is, but a test may run something while a save's plan is being made (a second save landing then).
+vi.mock("@tuti/jobs", async (original) => {
+  const actual = await original<typeof import("@tuti/jobs")>();
+  return { ...actual, planGlossaryChanges: vi.fn(actual.planGlossaryChanges) };
+});
+
 /** The glossary (docs/plan.md, Languages, L12): terms never translated, or translated one way per language. */
 
 let model: ModelFake;
@@ -400,5 +406,27 @@ test("a publish between a save's plan and its write: the plan is refused (null) 
   expect(await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan))).toBeNull();
   // Through the operation, planned again: the German version is found.
   expect(await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }], dryRun: true })).toMatchObject({ behind: 1 });
+});
+
+test("a second save landing while the first plans: the first, finding the glossary changed under its lock, plans again from it", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
+  // A page using Acme (and not Board), with its German written by the team.
+  await call(createArticle, as(), { title: "About", content: doc("Acme is our name.") });
+  await call(publishArticle, as(), { slug: "about" });
+  const { id: articleId } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "about" } });
+  await prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language: "de", automatic: false, title: "x", body: "x", publishedAt: new Date() } });
+  // As the first save plans, a second one adds Acme (never translated).
+  const plan = vi.mocked(planGlossaryChanges);
+  const actual = plan.getMockImplementation()!;
+  plan.mockImplementationOnce(async (...args) => {
+    const made = await actual(...args);
+    await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }, { term: "Acme", keep: true }] });
+    return made;
+  });
+  // The first's list has no Acme: planned again from the glossary as the second left it, Acme is removed, and About's German is
+  // marked for it (its plan from before the second save knew nothing of Acme).
+  expect(await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] })).toMatchObject({ behind: 1 });
+  expect((await call(getGlossary, as(), {})).terms).toEqual([{ term: "Board", keep: false, translations: { de: "Brett" } }]);
 });
 
