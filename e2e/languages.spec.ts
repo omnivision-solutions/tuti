@@ -413,10 +413,25 @@ test("the changelog in German: its list, tags, months, pages, an entry's page, t
   // The email box, in Subscribe's popover.
   await reader.getByRole("button", { name: "Abonnieren" }).click();
   const box = reader.getByRole("region", { name: "Updates per E-Mail erhalten" });
-  await box.getByRole("textbox", { name: "E-Mail" }).fill(`e2e-${randomUUID()}@example.com`);
+  const subscriber = `e2e-${randomUUID()}@example.com`;
+  await box.getByRole("textbox", { name: "E-Mail" }).fill(subscriber);
   await box.getByRole("button", { name: "Abonnieren" }).click();
   await expect(box.getByRole("status")).toContainText("Sieh in dein Postfach: Wir haben einen Bestätigungslink an");
   await reader.keyboard.press("Escape");
+  // Its email is German, and its link opens the subscription's page at the German address, in German (on a phone).
+  const confirmation = await latestEmailTo(subscriber);
+  expect(confirmation.subject).toBe("Updates von Acme per E-Mail bestätigen");
+  const confirmLink = linkIn(confirmation, portalUrl(slug));
+  expect(new URL(confirmLink).pathname).toBe("/de/changelog/subscription");
+  const inbox = await newPerson(browser, portalUrl(slug));
+  await inbox.setViewportSize({ width: 390, height: 844 });
+  await inbox.goto(confirmLink);
+  await expect(inbox).toHaveTitle(/^Changelog-E-Mails/);
+  await expect(inbox.getByRole("heading", { name: "Updates von Acme per E-Mail bekommen?" })).toBeVisible();
+  await checkpoint(inbox, "changelog-subscription-in-german-phone", { fullPage: false });
+  await inbox.getByRole("button", { name: "Abo bestätigen" }).click();
+  await expect(inbox).toHaveURL(/\/de\/changelog\/subscription\?token=/);
+  await expect(inbox.getByRole("heading", { name: "Du bekommst die Updates von Acme per E-Mail" })).toBeVisible();
 
   // An entry's page: the way back, its reactions and comments.
   await darkMode.getByRole("link", { name: "Dark mode is here" }).click();

@@ -8,9 +8,12 @@ import { portalLinks } from "@/server/portal-base";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { BellIcon } from "lucide-react";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
+import { pageTranslator } from "@/server/portal-language";
 
-/** For the reader alone: not for search engines. */
-export const metadata: Metadata = { title: "Changelog emails", ...PRIVATE_PAGE };
+/** For the reader alone: not for search engines. In the address's language, as the page (its emails link there). */
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await pageTranslator("subscription")).t("title"), ...PRIVATE_PAGE };
+}
 
 const heading = MESSAGE_TITLE;
 const text = MESSAGE_TEXT;
@@ -23,9 +26,11 @@ const text = MESSAGE_TEXT;
 export default async function ChangelogSubscriptionPage(props: PageProps<"/portal/[project]/changelog/subscription">) {
   const [{ project: slug }, { token, confirm, sent }] = await Promise.all([props.params, props.searchParams]);
   const at = await portalLinks();
-  const changelogLink = (
+  // In the address's language: the emails link to their reader's.
+  const { t, language } = await pageTranslator("subscription");
+  const link = (chunks: React.ReactNode) => (
     <a href={at("/changelog")} className="underline">
-      changelog
+      {chunks}
     </a>
   );
 
@@ -35,11 +40,11 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
       const project = await prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } });
       return (
         <Message>
-          <h1 className={heading}>This link doesn&apos;t work any more</h1>
+          <h1 className={heading}>{t("deadTitle")}</h1>
           <p className={text}>
-            A confirmation link works once, for {CONFIRM_LINK_HOURS} hours, and only the latest one you were sent.
+            {t("deadText", { hours: CONFIRM_LINK_HOURS })}
             {/* A private portal's box is its readers': the link has them sign in first. */}
-            {project && <> To get updates by email, ask again on the {changelogLink}.</>}
+            {project && <> {t.rich("askAgain", { link })}</>}
           </p>
         </Message>
       );
@@ -49,43 +54,37 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     if (request.used) {
       return (
         <Message>
-          <h1 className={heading}>Already confirmed</h1>
+          <h1 className={heading}>{t("alreadyTitle")}</h1>
           <p className={text}>
-            {reachSentence(request.reach, name, request.email)} The emails {name} sends you have their own links to unsubscribe.
+            {reachSentence(request.reach, name, request.email, language)} {t("ownLinks", { name })}
           </p>
         </Message>
       );
     }
     if (request.reach === "private") {
-      return <PrivatePortal name={name} />;
+      return <PrivatePortal name={name} t={t} />;
     }
     const action = at(`/changelog/subscription/confirm?confirm=${encodeURIComponent(confirm)}`);
     // Turned all of the project's emails off: that wins, so it says so first, and its one button turns them back on.
     if (request.reach === "opted-out") {
       return (
         <Message>
-          <h1 className={heading}>You&apos;ve turned off all of {name}&apos;s emails</h1>
-          <p className={text}>
-            Nothing is emailed to {request.email}, the changelog included, until you turn them back on. Then the changelog
-            entries {name} emails to subscribers come to you, and you&apos;ll hear when posts you asked for are done.
-          </p>
+          <h1 className={heading}>{t("offTitle", { name })}</h1>
+          <p className={text}>{t("offText", { name, email: request.email })}</p>
           <form method="post" action={action}>
             <input type="hidden" name="emails-on" value="1" />
-            <Button type="submit">Turn {name}&apos;s emails back on</Button>
+            <Button type="submit">{t("turnOn", { name })}</Button>
           </form>
         </Message>
       );
     }
     return (
       <Message>
-        <h1 className={heading}>Get {name}&apos;s updates by email?</h1>
+        <h1 className={heading}>{t("confirmTitle", { name })}</h1>
         {/* Not confirmed yet (reach is where confirming leaves them: gets, or paused): what happens once they are. */}
-        <p className={text}>
-          Once you confirm, the changelog entries {name} emails to subscribers will go to {request.email}
-          {request.reach === "paused" && <> when {name}&apos;s emails, paused for now, are resumed</>}.
-        </p>
+        <p className={text}>{t(request.reach === "paused" ? "confirmTextPaused" : "confirmText", { name, email: request.email })}</p>
         <form method="post" action={action}>
-          <Button type="submit">Confirm subscription</Button>
+          <Button type="submit">{t("confirmButton")}</Button>
         </form>
       </Message>
     );
@@ -96,8 +95,8 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
   if (!found) {
     return (
       <Message>
-        <h1 className={heading}>This link doesn&apos;t work</h1>
-        <p className={text}>Use the link from the latest email you got.</p>
+        <h1 className={heading}>{t("brokenTitle")}</h1>
+        <p className={text}>{t("brokenText")}</p>
       </Message>
     );
   }
@@ -106,7 +105,7 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
   const unsubscribe = (
     <form method="post" action={at(`/changelog/subscription/unsubscribe?token=${encodeURIComponent(value)}`)}>
       <Button type="submit" variant="outline">
-        Unsubscribe
+        {t("unsubscribe")}
       </Button>
     </form>
   );
@@ -117,34 +116,30 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
       // Unsubscribed (this link only unsubscribes): asking again on the changelog signs them up again.
       return (
         <Message>
-          <h1 className={heading}>You&apos;re unsubscribed</h1>
+          <h1 className={heading}>{t("unsubscribedTitle")}</h1>
           <p className={text}>
-            {name}&apos;s changelog won&apos;t be emailed to {found.email} anymore.
-            {canReturn && <> To get it again, subscribe on the {changelogLink}.</>}
+            {t("unsubscribedText", { name, email: found.email })}
+            {canReturn && <> {t.rich("subscribeAgain", { link })}</>}
           </p>
         </Message>
       );
     }
     case "private":
-      return <PrivatePortal name={name} email={found.email} unsubscribe={unsubscribe} />;
+      return <PrivatePortal name={name} email={found.email} unsubscribe={unsubscribe} t={t} />;
     case "opted-out":
       // That wins. This long-lived link can't turn them back on (a forwarded email has it): it emails the address a link that can.
       return (
         <Message>
-          <h1 className={heading}>{name}&apos;s changelog isn&apos;t emailed to you</h1>
+          <h1 className={heading}>{t("notEmailedTitle", { name })}</h1>
           <p className={text}>
-            {reachSentence(found.reach, name, found.email)}{" "}
-            {found.paused
-              ? `${name}'s emails are paused for now: come back here once they're resumed, and we'll email ${found.email} a link to turn them back on.`
-              : sent
-                ? `We sent ${found.email} a link to turn them back on.`
-                : `To turn them back on, we'll email ${found.email} a link.`}
+            {reachSentence(found.reach, name, found.email, language)}{" "}
+            {t(found.paused ? "pausedComeBack" : sent ? "sentLink" : "willEmailLink", { name, email: found.email })}
           </p>
           <div className="flex flex-wrap gap-2">
             {/* Not while paused: nothing could be sent (emails-on refuses). */}
             {!sent && !found.paused && (
               <form method="post" action={at(`/changelog/subscription/emails-on?token=${encodeURIComponent(value)}`)}>
-                <Button type="submit">Email me a link</Button>
+                <Button type="submit">{t("emailMeLink")}</Button>
               </form>
             )}
             {unsubscribe}
@@ -155,25 +150,25 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     case "paused":
       return (
         <Message>
-          <h1 className={heading}>You get {name}&apos;s updates by email</h1>
-          <p className={text}>{reachSentence(found.reach, name, found.email)}</p>
+          <h1 className={heading}>{t("getsTitle", { name })}</h1>
+          <p className={text}>{reachSentence(found.reach, name, found.email, language)}</p>
           {unsubscribe}
         </Message>
       );
   }
 }
 
+type Translate = Awaited<ReturnType<typeof pageTranslator<"subscription">>>["t"];
+
 /** A subscription page's card, with the bell. */
 const Message = ({ children }: { children: React.ReactNode }) => <PortalMessage icon={BellIcon}>{children}</PortalMessage>;
 
 /** Nothing is emailed from a private portal (changelogReach): nothing to confirm, and Unsubscribe still works. */
-function PrivatePortal({ name, email, unsubscribe }: { name: string; email?: string; unsubscribe?: React.ReactNode }) {
+function PrivatePortal({ name, email, unsubscribe, t }: { name: string; email?: string; unsubscribe?: React.ReactNode; t: Translate }) {
   return (
     <Message>
-      <h1 className={heading}>Updates by email aren&apos;t available here</h1>
-      <p className={text}>
-        {name}&apos;s portal is private, and its changelog is emailed only to its readers{email ? `: ${email} isn't one of them` : ""}.
-      </p>
+      <h1 className={heading}>{t("privateTitle")}</h1>
+      <p className={text}>{email ? t("privateTextEmail", { name, email }) : t("privateText", { name })}</p>
       {unsubscribe}
     </Message>
   );

@@ -242,9 +242,20 @@ test("each subscriber gets an entry in their language where its version there is
   const links = (address: string) => to(address).html.match(/https?:\/\/[^"'\s<>]*\/changelog\/[^"'\s<>]*/g) ?? [];
   expect(links(german).length).toBeGreaterThan(1);
   expect(links(german).filter((link) => !link.includes("/de/changelog/"))).toEqual([]);
+  // The email's own words in each one's language (L5), French too, though its entry falls back: so French's Unsubscribe
+  // opens the subscription's page in French, its entry the default language's.
+  expect(to(german).text).toContain("Neu ·");
+  expect(to(german).text).toContain("Abbestellen");
+  expect(to(french).text).toContain("Nouveau ·");
+  // Its entry, not in French, marked as the default language's inside the French email.
+  expect(to(french).html).toMatch(/<html[^>]* lang="fr"/);
+  expect(to(french).html).toMatch(/<div lang="en"><h1[^>]*>Dark mode<\/h1>/);
+  expect(to(french).html).toMatch(/\/fr\/changelog\/subscription\?token=/);
+  expect(to(french).html).not.toContain(`/fr${page}`);
+  expect(to(english).text).toContain("New ·");
   for (const address of [english, french]) {
     expect(to(address).html).toContain(page);
-    expect(to(address).html).not.toMatch(/\/(de|fr)\/changelog/);
+    expect(to(address).html).not.toMatch(address === french ? /\/de\/changelog/ : /\/(de|fr)\/changelog/);
   }
 });
 
@@ -798,4 +809,21 @@ test("Try again tries again the versions that failed, and starts none: a publish
   // Nothing left waiting, so nothing waiting without a reason.
   expect((await call(getLanguages, as(), {})).languages[0]!.entries).toEqual({ translated: 1, waiting: 0, why: null });
   expect(model.requests).toHaveLength(1);
+});
+
+test("a subscriber whose saved language the portal no longer serves gets the entry email in the default language, its Unsubscribe unprefixed", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const german = `e2e-offline-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  // German taken offline after they subscribed in it.
+  await languages({ languages: [{ code: "de", live: false, newPages: "manual" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(entryEmails(german)).toHaveLength(1));
+  const [email] = entryEmails(german);
+  expect(email!.html).toMatch(/<html[^>]* lang="en"/);
+  expect(email!.text).toContain("New ·");
+  expect(email!.text).toContain("Unsubscribe");
+  expect(email!.html).toMatch(/\/changelog\/subscription\?token=/);
+  expect(email!.html).not.toMatch(/\/de\/changelog/);
 });
