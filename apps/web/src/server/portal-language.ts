@@ -51,6 +51,17 @@ export async function portalTranslator<N extends keyof Messages>(projectId: stri
 }
 
 /**
+ * The portal's messages under `namespace` in this request's address's language (portalLanguage: the project's default on
+ * its own addresses), for server components that don't have the project to hand (the docs' tree, tabs and pages);
+ * English off the portal.
+ */
+export async function pageTranslator<N extends keyof Messages>(namespace: N) {
+  const { language: address } = await portalLanguage();
+  const language = address && isLanguage(address) ? address : DEFAULT_LANGUAGE;
+  return { language, t: createTranslator({ locale: language, messages: MESSAGES[language], namespace }) };
+}
+
+/**
  * A reader's changelog language (docs/plan.md L16): their saved one where it's one of the portal's live languages; null
  * where it's the default. Undefined when this portal has none of theirs: none saved, or one it doesn't serve (saved on
  * another portal, taken offline, past the plan's limit), which isn't a choice made here.

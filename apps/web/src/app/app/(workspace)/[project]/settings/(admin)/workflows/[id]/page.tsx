@@ -37,6 +37,7 @@ export default async function WorkflowPage(props: PageProps<"/app/[project]/sett
           trigger: row.trigger as WorkflowTrigger,
           group: stored.conditions[0]?.group ?? null,
           actions: stored.actions.map((action) => action.kind),
+          reply: stored.actions.find((action) => action.kind === "reply_text")?.text ?? "",
           enabled: row.enabled,
         }}
         groups={Object.fromEntries(groups.map((group) => [group.key, group.name]))}

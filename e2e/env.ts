@@ -49,7 +49,7 @@ const e2eConfig = {
   // Credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
   credits: { enabled: true, free: 1000 },
   // The spam filter's decision model on, which the model fake answers "not spam" for every new conversation (global
-  // setup), so Settings → Spam shows its guidance; the chat model off, as nothing ever gets that far.
+  // setup), so Settings → Spam shows its guidance; it checks only a project that wrote it. The chat model off.
   spam: { chat: { model: "off" } },
 };
 
@@ -65,6 +65,7 @@ export const serverEnv = {
   WEBHOOK_ALLOW_PRIVATE_URLS: "true",
   // Try it through Tuti may send to a fake API on this machine (honoured only while APP_URL is on localhost).
   TRY_IT_ALLOW_LOCALHOST: "true",
+  SCREENSHOTS_ALLOW_LOCALHOST: "true",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
   // (The global setup points OPENAI_* at the model fake; ai.model stays the default.)
   OPENAI_API_KEY: "",

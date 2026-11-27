@@ -75,6 +75,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
+import { ASK_AI, type AskAiSetup, useAskAi } from "@/components/ask-ai";
 import { type GeneratedImage, ImageGenerator, type ImageEditing, type KeptTries, type Try } from "@/components/image-generator";
 import { toast } from "sonner";
 import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
@@ -190,6 +191,7 @@ export function RichEditor({
   toolbarEnd,
   findings,
   imageEditing,
+  askAi,
 }: {
   profile: Profile;
   name: string;
@@ -226,6 +228,8 @@ export function RichEditor({
   findings?: VerificationFinding[];
   /** "Edit with AI" on its images (AI images, the team's); null where the server can't make them. `title`: what it's in. */
   imageEditing?: (ImageEditing & { title?: string }) | null;
+  /** Ask AI on selected text (the team's), where the server has AI; null or left out, there's none. */
+  askAi?: AskAiSetup | null;
 }) {
   const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -570,6 +574,19 @@ export function RichEditor({
     },
   });
 
+  // Ask AI: its plugin shows the text being edited and the AI's version, never part of the document.
+  const asking = useAskAi(editor, askAi);
+  const canAsk = !!askAi;
+  useEffect(() => {
+    if (!editor || !canAsk) return;
+    editor.registerPlugin(asking.plugin());
+    return () => {
+      if (!editor.isDestroyed) editor.unregisterPlugin(ASK_AI);
+    };
+    // Once per editor: the plugin reads the hook's current actions when its buttons are pressed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, canAsk]);
+
   // Checked sentences are decorations, independent of the document being saved.
   useEffect(() => {
     if (!editor || !findings?.length) return;
@@ -652,7 +669,14 @@ export function RichEditor({
         {editor && bare && !unreadable && (
           <>
             <div ref={menus} />
-            <SelectionBar editor={editor} onPrompt={setPrompt} editImage={editImage} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
+            <SelectionBar
+              editor={editor}
+              onPrompt={setPrompt}
+              editImage={editImage}
+              askAi={askAi ? { paused: askAi.paused, run: asking.open } : undefined}
+              host={menusHost}
+              label={toolbarId ? "Text selection" : "Formatting"}
+            />
             <SlashMenu
               editor={editor}
               host={menusHost}
@@ -695,6 +719,7 @@ export function RichEditor({
         )}
         <input type="hidden" name={name} value={value} />
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
+        {asking.dialog}
         {editor && uploads && imageEditing && edited && (
           <ImageGenerator
             key={edited.image.id}
@@ -999,7 +1024,21 @@ function SlashMenu({
 }
 
 /** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
-function SelectionBar({ editor, onPrompt, editImage, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; editImage?: EditImage; host: () => HTMLElement }) {
+function SelectionBar({
+  editor,
+  onPrompt,
+  editImage,
+  askAi,
+  host,
+  label,
+}: {
+  label: string;
+  editor: Editor;
+  onPrompt: (kind: Prompt) => void;
+  editImage?: EditImage;
+  askAi?: AskAi;
+  host: () => HTMLElement;
+}) {
   // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
@@ -1031,7 +1070,14 @@ function SelectionBar({ editor, onPrompt, editImage, host, label }: { label: str
       className="z-50"
       ref={bar}
     >
-      <Toolbar label={label} editor={editor} onPrompt={onPrompt} editImage={editImage} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
+      <Toolbar
+        label={label}
+        editor={editor}
+        onPrompt={onPrompt}
+        editImage={editImage}
+        askAi={askAi}
+        className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+      />
     </BubbleMenu>
   );
 }
@@ -1039,8 +1085,29 @@ function SelectionBar({ editor, onPrompt, editImage, host, label }: { label: str
 /** "Edit with AI" on a picked image: whether it can be (one of the project's finished uploads), and opening its dialog. */
 type EditImage = { paused: boolean; can: (attrs: Record<string, unknown>) => boolean; run: () => void };
 
-/** `onImage`: picks images to upload (with uploads set up). */
-function Toolbar({ editor, onPrompt, onImage, editImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; editImage?: EditImage; className?: string; expanded?: boolean }) {
+/** Ask AI on the selected text: whether the project is out of credits, and opening its dialog. */
+type AskAi = { paused: boolean; run: () => void };
+
+/** `onImage`: picks images to upload (with uploads set up). `askAi`: on selected text (the selection bar). */
+function Toolbar({
+  editor,
+  onPrompt,
+  onImage,
+  editImage,
+  askAi,
+  className,
+  expanded = false,
+  label = "Formatting",
+}: {
+  label?: string;
+  editor: Editor;
+  onPrompt: (kind: Prompt) => void;
+  onImage?: () => void;
+  editImage?: EditImage;
+  askAi?: AskAi;
+  className?: string;
+  expanded?: boolean;
+}) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -1055,6 +1122,8 @@ function Toolbar({ editor, onPrompt, onImage, editImage, className, expanded = f
       image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string; mediaId: unknown; w: unknown; h: unknown }) : null,
       table: editor.isActive("table"),
       codeBlock: namedCode(editor) ? { tabs: codeTab(editor)?.node(-1).childCount ?? 0 } : null,
+      // Some text selected, not only a block picked (an image, a divider).
+      text: !editor.state.selection.empty && editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to).trim() !== "",
     }),
   });
   const chain = () => editor.chain().focus();
@@ -1091,6 +1160,16 @@ function Toolbar({ editor, onPrompt, onImage, editImage, className, expanded = f
             <Tool icon={QuoteIcon} label="Quote" active={active.blockquote} onClick={() => chain().toggleBlockquote().run()} />
             <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
           </>}
+          {askAi && active.text && (
+            <Tool
+              icon={SparklesIcon}
+              label="Ask AI"
+              active={false}
+              disabled={askAi.paused}
+              reason={askAi.paused ? "This project is out of credits" : undefined}
+              onClick={askAi.run}
+            />
+          )}
           {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
           {expanded && <>
             <Tool icon={TableIcon} label="Table" active={active.table} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />

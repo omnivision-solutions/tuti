@@ -61,7 +61,10 @@ test("a reader opens the portal's German addresses while German is live; an offl
   await expect(reader.locator('input[type="hidden"][name="next"]').first()).toHaveValue("/de/feedback/feature-requests");
   await reader.goto("/de/docs");
   expect(await langOf(reader.getByRole("main").getByRole("link", { name: "Invite your team" }).first().locator("span[lang], [lang]").first())).toBe("en");
-  expect(await langOf(reader.locator("[data-docs-hero]").locator("[aria-label*=\"search\" i]").first())).toBe("de");
+  // The docs' search box (its name German now: "Suchen oder KI fragen").
+  const search = reader.locator("[data-docs-hero] [role=search]").first();
+  await expect(search.getByRole("button", { name: /^(Dokumentation durchsuchen|Suchen oder KI fragen)$/ })).toBeVisible();
+  expect(await langOf(search)).toBe("de");
   await reader.goto("/de/account");
   await expect(reader).toHaveURL(`${portalUrl(slug)}/de/sign-in?next=${encodeURIComponent("/de/account")}`);
 

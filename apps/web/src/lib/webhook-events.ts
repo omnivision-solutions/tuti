@@ -10,6 +10,7 @@ export const WEBHOOK_EVENTS = {
   "code_change.ready": "Autopilot found updates",
   "conversation.created": "New conversation",
   "conversation.message_created": "New message from a user",
+  "conversation.handed_over": "Conversation handed to the team",
 } as const;
 
 export type WebhookEvent = keyof typeof WEBHOOK_EVENTS;

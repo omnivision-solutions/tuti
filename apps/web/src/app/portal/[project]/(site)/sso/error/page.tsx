@@ -8,9 +8,12 @@ import { portalLinks } from "@/server/portal-base";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { cn } from "@/lib/utils";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
+import { pageTranslator } from "@/server/portal-language";
 
 /** For the reader alone: not for search engines. */
-export const metadata: Metadata = { title: "Couldn't sign you in", ...PRIVATE_PAGE };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await pageTranslator("auth")).t("ssoTitle"), ...PRIVATE_PAGE };
+}
 
 const MESSAGES: Record<SsoErrorCode, string> = {
   sso_not_enabled: "Single sign-on isn't enabled for this project.",
@@ -26,13 +29,15 @@ export default async function SsoErrorPage(props: PageProps<"/portal/[project]/s
   const known = SSO_ERROR_CODES.find((c) => c === code);
 
   const at = await portalLinks();
+  // The portal's words in the page's language; what went wrong, for whoever set it up, stays in English with its code.
+  const { t } = await pageTranslator("auth");
   return (
     <PortalMessage data-auth-page className="my-0 sm:my-0 sm:mt-12">
       <h1 className={cn(MESSAGE_TITLE, "flex items-center gap-2")}>
         <CircleAlertIcon aria-hidden className="size-5 shrink-0 text-destructive" />
-        Couldn&apos;t sign you in
+        {t("ssoTitle")}
       </h1>
-      <p className={MESSAGE_TEXT}>Signing in from your account didn&apos;t work. Try again, or tell the team if it keeps happening.</p>
+      <p className={MESSAGE_TEXT}>{t("ssoText")}</p>
       {/* For whoever set it up: what went wrong, out of the way. */}
       <p className="text-sm break-words text-muted-foreground">
         {known ? MESSAGES[known] : "Single sign-on failed."}
@@ -45,10 +50,10 @@ export default async function SsoErrorPage(props: PageProps<"/portal/[project]/s
       </p>
       <div className="mt-2 flex w-full flex-col gap-2">
         <Link href={at("/sign-in")} className={buttonVariants({ className: "w-full" })}>
-          Try again
+          {t("tryAgain")}
         </Link>
         <Link href={at("/")} className={buttonVariants({ variant: "outline", className: "w-full" })}>
-          Continue to the board
+          {t("continueToBoard")}
         </Link>
       </div>
     </PortalMessage>

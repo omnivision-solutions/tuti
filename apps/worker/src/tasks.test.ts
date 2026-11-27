@@ -116,3 +116,16 @@ test("a changelog entry's translation is an article's: the same limits, its grou
   });
   return expect(taskFn("translateChangelogEntry", 3, () => false)({ entryId: "e", language: "de" }, { retryCount: () => 3, cancelled: false })).resolves.toEqual({ lastTry: true });
 });
+
+test("a project's labels' translation gets two quick retries (the retry job backs off after), may take ten minutes and wait a day, one run per project and language and one on the whole server", () => {
+  expect(taskOptions("translateLabels")).toMatchObject({
+    name: "translate-labels",
+    retries: 2,
+    executionTimeout: "10m",
+    scheduleTimeout: "24h",
+    concurrency: [
+      { expression: "input.projectId + ':' + input.language", maxRuns: 1 },
+      { expression: "'translate-labels'", maxRuns: 1 },
+    ],
+  });
+});

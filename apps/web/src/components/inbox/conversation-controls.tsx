@@ -264,10 +264,10 @@ const moreActions = () => [...document.querySelectorAll<HTMLButtonElement>('butt
 /** Marks it as spam or not, saying what Not spam left in place (the server's `notice`); `done` once it has. */
 function useSpamMark(projectSlug: string, number: number) {
   const [pending, startTransition] = useTransition();
-  const mark = (spam: boolean, blockDomain?: string, done?: () => void) =>
+  const mark = (spam: boolean, blockDomain?: string, done?: () => void, removeRule = false) =>
     startTransition(async () => {
       const moved = actOn(number, spam);
-      const result = await markConversationSpam(projectSlug, number, spam, !!blockDomain).catch(() => ({ error: "Couldn't reach Tuti. Try again.", notice: undefined }));
+      const result = await markConversationSpam(projectSlug, number, spam, !!blockDomain, removeRule).catch(() => ({ error: "Couldn't reach Tuti. Try again.", notice: undefined }));
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -282,11 +282,23 @@ function useSpamMark(projectSlug: string, number: number) {
 /** Not spam, as its button says it: an owner or admin taking a blocked address off the list with it (`unblocks`). */
 const notSpamLabel = (unblocks: string | null) => (unblocks ? `Not spam, and unblock ${unblocks}` : "Not spam");
 
+/** Not spam that also removes the block rule that filed it (`removesRule`, its words): owners and admins. */
+const REMOVE_RULE = "Not spam, and remove the rule";
+
 /**
  * More actions' Mark as spam (or Not spam). For an owner or admin, where the sender's domain can be blocked
- * (`blockDomain`), a second choice blocks it too, asking first: it files everyone's at the domain from then on.
+ * (`blockDomain`), a second choice blocks it too, asking first: it files everyone's at the domain from then on; on one
+ * a rule filed, a second choice removes the rule too.
  */
-export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }: Props & { spam: boolean; blockDomain: string | null; unblocks: string | null }) {
+
+export function SpamButton({
+  projectSlug,
+  number,
+  spam,
+  blockDomain,
+  unblocks,
+  removesRule,
+}: Props & { spam: boolean; blockDomain: string | null; unblocks: string | null; removesRule: string | null }) {
   const { pending, mark } = useSpamMark(projectSlug, number);
   const [asking, setAsking] = useState(false);
   return (
@@ -295,6 +307,11 @@ export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }:
         {/* A long address to unblock wraps, as the domain under it does. */}
         <span className="min-w-0 wrap-anywhere">{spam ? notSpamLabel(unblocks) : "Mark as spam"}</span>
       </DropdownMenuItem>
+      {spam && removesRule && (
+        <DropdownMenuItem disabled={pending} onClick={() => mark(false, undefined, undefined, true)}>
+          {REMOVE_RULE}
+        </DropdownMenuItem>
+      )}
       {!spam && blockDomain && (
         <>
           <DropdownMenuItem disabled={pending} onClick={() => setAsking(true)}>
@@ -325,7 +342,7 @@ export function SpamButton({ projectSlug, number, spam, blockDomain, unblocks }:
 }
 
 /** Over a conversation in Spam: why it's there (`why`, the filter's reason or a teammate's mark), with Not spam beside it. */
-export function SpamNotice({ projectSlug, number, why, unblocks }: Props & { why: string | null; unblocks: string | null }) {
+export function SpamNotice({ projectSlug, number, why, unblocks, removesRule }: Props & { why: string | null; unblocks: string | null; removesRule: string | null }) {
   const { pending, mark } = useSpamMark(projectSlug, number);
   return (
     // The reason takes the room and wraps; its button stays beside it, going under only where a long one (an address to unblock) leaves the reason no room.
@@ -347,6 +364,18 @@ export function SpamNotice({ projectSlug, number, why, unblocks }: Props & { why
       >
         {notSpamLabel(unblocks)}
       </Button>
+      {removesRule && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-auto min-h-8 max-w-full whitespace-normal"
+          disabled={pending}
+          focusableWhenDisabled
+          onClick={() => mark(false, undefined, () => moreActions()?.focus(), true)}
+        >
+          {REMOVE_RULE}
+        </Button>
+      )}
     </div>
   );
 }

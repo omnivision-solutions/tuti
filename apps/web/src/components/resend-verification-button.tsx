@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +12,8 @@ import { Button } from "@/components/ui/button";
  */
 export function ResendVerificationButton({ email, callbackURL = "/app" }: { email: string; callbackURL?: string }) {
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  // In the page's language on a portal.
+  const t = useTranslations("account");
   // On a portal under a path of its team's site, its auth API is there too.
   const client = usePortalAuthClient();
 
@@ -19,7 +22,7 @@ export function ResendVerificationButton({ email, callbackURL = "/app" }: { emai
     const { error } = await client.sendVerificationEmail({ email, callbackURL });
     if (error) {
       setState("idle");
-      toast.error(error.message ?? "Couldn't send the email. Try again in a minute.");
+      toast.error(error.message ?? t("resendFailed"));
       return;
     }
     setState("sent");
@@ -27,7 +30,7 @@ export function ResendVerificationButton({ email, callbackURL = "/app" }: { emai
 
   return (
     <Button size="xs" variant="ghost" onClick={resend} disabled={state !== "idle"} focusableWhenDisabled>
-      {state === "sent" ? "Sent" : state === "sending" ? "Sending…" : "Resend email"}
+      {state === "sent" ? t("sent") : state === "sending" ? t("sending") : t("resend")}
     </Button>
   );
 }

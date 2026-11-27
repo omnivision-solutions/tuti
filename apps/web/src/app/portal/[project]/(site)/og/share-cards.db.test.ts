@@ -6,7 +6,7 @@ import { generateMetadata as changelogEntryMetadata } from "@/app/portal/[projec
 import { generateMetadata as postMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
 import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import { generateMetadata as layoutMetadata } from "@/app/portal/[project]/(site)/layout";
-import { metadata as signInMetadata } from "@/app/portal/[project]/(site)/sign-in/page";
+import { generateMetadata as signInMetadata } from "@/app/portal/[project]/(site)/sign-in/page";
 import { portalUrl } from "@/lib/hosts";
 import { PREVIEW } from "@/lib/portal-base";
 import { request } from "@/test/next-headers";
@@ -280,8 +280,8 @@ test("a private portal without a share image of the team's names no card: a link
   expect(metadata.openGraph).not.toHaveProperty("images");
 });
 
-test("a page for the reader alone (signing in) isn't for search engines", () => {
-  expect(signInMetadata).toMatchObject({ title: "Sign in", robots: { index: false, follow: false } });
+test("a page for the reader alone (signing in) isn't for search engines", async () => {
+  expect(await signInMetadata()).toMatchObject({ title: "Sign in", robots: { index: false, follow: false } });
 });
 
 test("each kind of page has its own drawing: a page for the docs, ideas for feedback, columns for the roadmap, a timeline for the changelog, a post's votes", async () => {

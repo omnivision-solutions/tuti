@@ -56,6 +56,7 @@ import * as posts from "./posts";
 import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
 import * as readerLanguage from "./reader-language";
+import * as rewrite from "./rewrite";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
 import * as spamSettings from "./spam-settings";
@@ -115,6 +116,7 @@ const modules = {
   "project-settings": projectSettings,
   projects,
   "reader-language": readerLanguage,
+  rewrite,
   screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
@@ -621,6 +623,8 @@ const matrix: Matrix = {
       before: () => {
         model.otherwise(JSON.stringify({ segments: { "1": "Article de la matrice" } }), "Matrix article");
         model.otherwise(JSON.stringify({ segments: { "1": "Entrée de la matrice" } }), "Matrix entry");
+        // Its collection and tab names too (docs/plan.md L13).
+        model.otherwise(JSON.stringify({ segments: { "0.n": "Bases", "1.n": "Guides pratiques", "2.n": "Documentation" } }), '"0.n":"Basics"');
       },
       call: async (slug) => {
         const result = await languages.addLanguage(slug, "fr");
@@ -743,11 +747,12 @@ const matrix: Matrix = {
     },
   },
   "spam-settings": {
-    listSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.listSpamSender(slug, true, "spam.example") },
-    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "spam.example") },
-    setSpamPhrase: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamPhrase(slug, "facebook admin", true) },
+    addSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.addSpamRule(slug, { field: "subject_or_body", matcher: "contains", value: "facebook admin" }) },
+    removeSpamRule: { allowed: "ADMIN", takesIds: true, call: (slug, f) => spamSettings.removeSpamRule(slug, f.spamRuleId) },
+    allowSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.allowSpamSender(slug, "forms.example") },
+    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "forms.example") },
     setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
-    trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
+    trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { from: "Kim <e2e-matrix-kim@example.com>", subject: "Hi", text: "Hello" }) },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
@@ -887,6 +892,19 @@ const matrix: Matrix = {
     },
     // Browser Use (the fake) signs in and takes the screen it lands on, inline; the fixture's project is set up for it.
     testScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => screenshots.testScreenshots(slug)) },
+  },
+  rewrite: {
+    // An article's selection (the model fake answers); nothing is saved.
+    rewriteText: {
+      allowed: "MEMBER",
+      before: () => model.reply(JSON.stringify({ notes: "Shipped." })),
+      call: (slug) =>
+        rewrite.rewriteText(slug, {
+          kind: "article",
+          text: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "We shipped it today." }] }] },
+          instruction: "Shorter",
+        }),
+    },
   },
   images: {
     // The model fake makes it; uploads keep it.
@@ -1111,6 +1129,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
   // A workflow, to move and delete.
+  const spamRule = await prisma.spamRule.create({ data: { projectId, field: "subject", matcher: "contains", value: "matrix" } });
   const workflow = await prisma.workflow.create({ data: { projectId, name: "Matrix workflow", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
   // Screenshots set up, for their Test.
   await prisma.screenshotSettings.create({ data: { projectId, appUrl: "https://app.example.com" } });
@@ -1248,6 +1267,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     specRepoId: 95_000 + githubRepoId,
     redirectId: redirect.id,
     workflowId: workflow.id,
+    spamRuleId: spamRule.id,
     linkId: link.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,

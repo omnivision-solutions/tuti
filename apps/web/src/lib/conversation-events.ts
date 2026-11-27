@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { spamPassedWhy, spamWhy } from "./spam-reasons";
-import { ACTIONS, TRIGGERS, type WorkflowAction } from "./workflows";
+import { ACTIONS, HANDOVER_REASONS, TRIGGERS, type WorkflowAction } from "./workflows";
 
 /**
  * A conversation's Activity (docs/plan.md, Inbox automation, W16): what happened to it, one row per event
@@ -24,6 +24,8 @@ export const EVENTS = {
   /** A trigger's list ran: every workflow it checked, what each did or why it didn't match. */
   workflows_ran: z.object({
     trigger: z.string(),
+    /** "About to go to a person": why (HANDOVER_REASONS). */
+    reason: z.string().optional(),
     workflows: z.array(
       z.object({
         name: z.string(),
@@ -35,10 +37,20 @@ export const EVENTS = {
       }),
     ),
   }),
-  /** The spam filter's verdict where the conversation started. */
-  spam_filter: z.object({ spam: z.boolean(), reason: z.string().nullable(), check: z.string().nullable(), phrase: z.string().optional() }),
   /**
-   * The spam filter's model checks (W3), watching only, would have filed it: the model that said so, and the decision
+   * The spam filter's verdict where the conversation started, or the models' once they've judged one it held (W4: `by`,
+   * the model that answered, and its probability; the check "model_unanswered" where it didn't).
+   */
+  spam_filter: z.object({
+    spam: z.boolean(),
+    reason: z.string().nullable(),
+    check: z.string().nullable(),
+    phrase: z.string().optional(),
+    by: z.enum(["decision", "chat"]).optional(),
+    probability: z.number().min(0).max(1).optional(),
+  }),
+  /**
+   * The spam filter's model checks (W3), watching only (rows from before W4, which no longer writes them), would have filed it: the model that said so, and the decision
    * model's probability. Nothing of the sender's, nor the model's words (a sender could steer those).
    */
   spam_would_file: z.object({ by: z.enum(["decision", "chat"]), probability: z.number().min(0).max(1).optional() }),
@@ -58,6 +70,8 @@ export const EVENTS = {
   spam: z.object({ spam: z.boolean() }),
   /** Take over (`team`; `byReply` when a teammate's reply did it) or Hand back to the AI (`ai`). */
   handled_by: z.object({ handledBy: z.enum(["ai", "team"]), byReply: z.boolean().optional() }),
+  /** Handed to the team (the path's built-in step), and why (HANDOVER_REASONS). */
+  handed_over: z.object({ reason: z.string() }),
 };
 export type EventKind = keyof typeof EVENTS;
 export type EventDetails<Kind extends EventKind> = z.input<(typeof EVENTS)[Kind]>;
@@ -71,6 +85,9 @@ export type NewEvent = { [Kind in EventKind]: { kind: Kind; details: EventDetail
 
 /** An event as told: who (bold in the panel), what they did, a short detail, and for a run each workflow it checked. */
 export type ToldEvent = { who: string | null; text: string; detail: string | null; lines: { name: string; what: string }[] };
+
+/** Why the spam filter's AI check filed or let through a conversation it held (W4), by how sure the model was it's spam. */
+const modelWhy = (probability = 0) => `the AI check was ${Math.floor(probability * 100)}% sure it's spam`;
 
 const STATUS_TEXT = { open: "reopened it", waiting: "set it waiting on the user", closed: "closed it" } as const;
 
@@ -107,11 +124,12 @@ export function tellEvent(
   const by = row.actor === "user" ? "by writing" : "by replying";
   switch (row.kind as EventKind) {
     case "workflows_ran": {
-      const { trigger, workflows } = details as z.output<typeof EVENTS.workflows_ran>;
+      const { trigger, reason, workflows } = details as z.output<typeof EVENTS.workflows_ran>;
+      const why = reason && ((HANDOVER_REASONS as Record<string, string>)[reason] ?? reason);
       return {
         who: (TRIGGERS as Record<string, string>)[trigger] ?? trigger,
         text: "ran",
-        detail: `${workflows.length} ${workflows.length === 1 ? "workflow" : "workflows"} checked`,
+        detail: `${workflows.length} ${workflows.length === 1 ? "workflow" : "workflows"} checked${why ? ` · ${why}` : ""}`,
         lines: workflows.map((workflow) => ({
           name: workflow.name,
           what: !workflow.matched
@@ -129,11 +147,12 @@ export function tellEvent(
       return {
         who: "Spam filter",
         text: verdict.spam ? "filed it as spam" : "let it through",
-        detail: verdict.spam ? spamWhy(verdict.reason, verdict.phrase) : spamPassedWhy(verdict.check),
+        detail: verdict.by ? modelWhy(verdict.probability) : verdict.spam ? spamWhy(verdict.reason, verdict.phrase) : spamPassedWhy(verdict.check),
         lines: [],
       };
     }
     case "spam_would_file": {
+      // ponytail: kept for W3's rows; drop once none is left (the plan's history).
       const { by, probability } = details as z.output<typeof EVENTS.spam_would_file>;
       return {
         who: "Spam filter",
@@ -168,6 +187,10 @@ export function tellEvent(
     case "handled_by": {
       const { handledBy, byReply } = details as z.output<typeof EVENTS.handled_by>;
       return handledBy === "team" ? told("took it over from the AI", byReply ? by : "Take over") : told("handed it back to the AI");
+    }
+    case "handed_over": {
+      const { reason } = details as z.output<typeof EVENTS.handed_over>;
+      return { who: null, text: "Handed to the team", detail: (HANDOVER_REASONS as Record<string, string>)[reason] ?? reason, lines: [] };
     }
   }
 }
