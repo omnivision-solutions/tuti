@@ -11,6 +11,7 @@ import { mailbox } from "@/test/mailbox";
 import { subscribeToChangelog } from "./changelog-subscribe";
 import { createChangelogEntry, editChangelogSection, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
+import { setEmailPreference } from "./email-preferences";
 import { updateEmailPreferences } from "./operations/email-preferences";
 import { call } from "./operations/run";
 import { chooseLanguage } from "./reader-language";
@@ -510,6 +511,21 @@ test("turning the changelog on from Account keeps an unconfirmed subscription's 
   actAs(reader);
   expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
   expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
+});
+
+test("a reader with no language saved turning the changelog on from Account on a German page gets it in German, as the subscribe form would", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // On /de (a link, or the browser's language), nothing saved.
+  await onPortal(reader, project);
+  actAs(reader);
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  try {
+    expect(await setEmailPreference(project.slug, "changelog", true)).not.toHaveProperty("error");
+  } finally {
+    request.headers = {};
+  }
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de", confirmedAt: expect.any(Date) });
 });
 
 test("on an SSO portal, the switch moves the subscription at the sign-on's address, not the account's", async () => {

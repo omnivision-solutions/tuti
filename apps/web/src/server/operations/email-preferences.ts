@@ -1,10 +1,11 @@
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { reached } from "@tuti/jobs";
+import { LANGUAGE_CODES } from "@tuti/shared";
 import { z } from "zod";
 
 import { changelogAt, findSubscription, optOut, optOutsAt } from "@/server/changelog-subscription";
-import { subscriberLanguage } from "@/server/portal-language";
+import { portalLanguages, subscriberLanguage } from "@/server/portal-language";
 
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
@@ -68,6 +69,11 @@ export const updateEmailPreferences = defineOperation({
       .describe(
         "The changelog entries emailed to subscribers, at the address the project's emails go to: on confirms it at once, off is the unsubscribe link in every changelog email; a private portal emails only its readers (refused for anyone else). `true` is refused while emails to that address are turned off (`unsubscribed`, or another account's at the same address; `unsubscribed: false` in the same update counts)",
       ),
+    language: z
+      .enum(LANGUAGE_CODES)
+      .optional()
+      .describe("With `changelog`: the language of the page it's turned on from, its emails' language where they have none of the portal's saved; ignored unless the portal is in it")
+      .meta({ examples: ["de"] }),
     author: author.describe("Someone from your app to act for (API keys only): their `id` in your app; without it, the key's creator"),
   }),
   output: z
@@ -123,11 +129,13 @@ export const updateEmailPreferences = defineOperation({
     if (input.changelog && changelog?.email) {
       // Signed in with the address proven: confirmed at once, no link to email. Already confirmed, it stays as it was.
       const at = { projectId: context.projectId, email: changelog.email };
-      // In the reader's language (docs/plan.md L16): their saved one where it's one of the portal's others (the default's is null).
-      const language = await subscriberLanguage(context.projectId, userId);
+      // In the reader's language (docs/plan.md L16): their saved one where it's one of the portal's others (the default's is
+      // null); with none of the portal's saved, the page's they turned it on from (`language`), as the subscribe form does.
+      const saved = await subscriberLanguage(context.projectId, userId);
+      const language = saved !== undefined ? saved : await pageLanguage(context.projectId, input.language);
       await prisma.changelogSubscriber.createMany({ data: { ...at, language: language ?? null }, skipDuplicates: true });
-      // One not confirmed yet (asked before, an address not proven then) takes their saved language as it's confirmed here,
-      // the default's too; with none saved, the one it was asked for in stays (undefined leaves it).
+      // One not confirmed yet (asked before, an address not proven then) takes that language as it's confirmed here, the
+      // default's too; with neither, the one it was asked for in stays (undefined leaves it).
       await prisma.changelogSubscriber.updateMany({ where: { ...at, confirmedAt: null }, data: { confirmedAt: new Date(), unsubscribedAt: null, language } });
     } else if (input.changelog === false && changelog?.subscriber) {
       // The unsubscribe link's own way.
@@ -138,3 +146,12 @@ export const updateEmailPreferences = defineOperation({
   },
 });
 
+
+/** A page's language (`language`) as a subscription's: null for the portal's default, the code for one it's live in; undefined otherwise. */
+async function pageLanguage(projectId: string, language: string | undefined): Promise<string | null | undefined> {
+  if (!language) {
+    return undefined;
+  }
+  const languages = await portalLanguages(projectId);
+  return language === languages.default ? null : (languages.live as string[]).includes(language) ? language : undefined;
+}
