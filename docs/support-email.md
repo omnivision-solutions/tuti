@@ -30,6 +30,31 @@ A reply from someone comes back into its conversation when it's sent to the conv
 address (replies by email set it as Reply-To) by its person, and their mail passed DMARC; anything
 else starts a new conversation. Mail that failed DMARC goes to Spam.
 
+## Automated replies
+
+The AI's answers in a conversation and a workflow's **Reply with set text** are automated replies. They're
+emailed like the team's replies (a minute after they're written, unless the person saw them in the widget
+first), with these limits, so two machines never answer each other and nobody gets mail they didn't send:
+
+- **Only to a proven address**: one of the project's users (their app gave the address), or a
+  conversation whose email passed DMARC (`automatedRepliesEmailed` in `@tuti/jobs`). An address a
+  signed-out visitor typed in the widget, or mail with `dmarc=none` or `fail`, gets none by email; the AI
+  doesn't take an email conversation it couldn't answer by email, and hands it to the team.
+- **Never to Spam**: nothing is emailed in a conversation in Spam, whether a block rule, a report or the
+  filter put it there.
+- **Marked as automatic**: the email carries `Auto-Submitted: auto-replied` when every message in it is the
+  AI's.
+- **Automatic mail is never answered**: mail with `Auto-Submitted` (other than `no`), `Precedence: bulk`,
+  `junk`, `list` or `auto_reply`, `X-Autoreply` or `X-Autorespond`, an out-of-office subject, a bounce,
+  or Tuti's own mail coming back is dropped before a conversation exists.
+- **5 an hour per conversation** (`AUTOMATED_REPLIES_PER_HOUR` in `apps/web/src/lib/workflows.ts`, not a
+  setting): the AI's messages and set replies together. Past it nothing replies, a workflow's **Don't hand
+  over** can't keep it, and the conversation goes to the team for the reason "too many automated replies",
+  so an auto-responder that gets past the checks above is answered a few times at most.
+- **One set reply per conversation**: a workflow's set reply is sent once, whatever triggers it again.
+- The answer **Ask a person** copies into a new conversation is the reader's own, already seen, and is
+  never emailed.
+
 ## For servers
 
 Email is on with both of these set (see `apps/web/.env.example`):
