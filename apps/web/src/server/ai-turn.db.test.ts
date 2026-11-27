@@ -17,9 +17,11 @@ import { mailbox } from "@/test/mailbox";
 import { reportRange } from "@/lib/report-range";
 
 import { AI_TURN_GIVE_UP_MS, runAiTurn } from "./ai-turn";
+import { handBackConversation, takeOverConversation } from "./inbox";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation, updateConversation } from "./operations/conversations";
+import { updateAiFirst } from "./operations/ai-first";
 import { aiReport } from "./operations/reports";
 import { call } from "./operations/run";
 import { createWorkflow } from "./operations/workflows";
@@ -145,11 +147,30 @@ test("a new email conversation starts with the AI, which answers from the docs o
   expect(sent[0]!.text).toContain("Go to Settings → Export.");
   expect(sent[0]!.text).toContain("Sources: Exporting (");
   expect(sent[0]!.headers["auto-submitted"]).toBe("auto-replied");
+  // From the project's name, with no name of the AI's set (W14).
+  const { name } = await prisma.project.findFirstOrThrow({ where: { conversations: { some: { id } } }, select: { name: true } });
+  expect(sent[0]!.from).toMatch(new RegExp(`^"${name}" <`));
   expect(teamEmails(owner.email)).toBe(0);
 
   // Run again: nothing more.
   expect(await turn()).toBe("nothing");
   expect((await state()).thread).toHaveLength(2);
+});
+
+test("the AI's emailed answer comes from the name the team gave it, at the project (W14)", async () => {
+  const { admin, mail, turn, conversation, projectId } = await setup();
+  expect(await call(updateAiFirst, admin, { name: "  Ada  " })).toMatchObject({ name: "Ada", email: true });
+  await mail();
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  expect(await turn()).toBe("answered");
+  const { id } = await conversation();
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "conversationId" = ${id}`;
+  await handlers.sendConversationReplies({}, log);
+  const { name } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } });
+  const sent = mailbox.emails.filter((email) => email.to.includes(SENDER) && email.from.startsWith(`"Ada at ${name}" <`));
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.text).toContain("Ada");
 });
 
 test("asking for a person hands it over with a summary for the team, told by email and conversation.handed_over; the team's reply is the team's", async () => {
@@ -302,6 +323,66 @@ test("a second message while the first turn writes: one answer, to both, and no 
   expect(await turn()).toBe("answered");
   expect(await state()).toEqual({ handledBy: "AI", due: false, thread: ["USER: hi", `USER: ${QUESTION}`, "AI: Go to Settings → Export."] });
   expect(model.requests.at(-1)!.messages.at(-1)!.content).toContain(`hi\\n\\n${QUESTION}`);
+});
+
+/**
+ * While a turn is writing (its decision being asked), a teammate takes the conversation over, replies and hands it back to
+ * the AI: the AI has it again, and the user's message is the newest of theirs, but the team answered it.
+ */
+async function answeredByTeamMeanwhile(person: number, afterwards?: () => void) {
+  const { owner, admin, projectId, mail, turn, state, handovers } = await setup();
+  await mail();
+  const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
+  model.decide({ person, reply: 0.9 }, QUESTION, async () => {
+    actAs(owner);
+    expect(await takeOverConversation(slug, 1)).toEqual({});
+    await call(replyToConversation, admin, { number: 1, body: "Settings → Export, Sam." });
+    expect(await handBackConversation(slug, 1)).toEqual({});
+    actAs(null);
+    afterwards?.();
+  });
+  return { turn, state, handovers };
+}
+
+test("a turn still writing when the team took over, replied and handed back posts no answer of its own", async () => {
+  const { turn, state, handovers } = await answeredByTeamMeanwhile(0.05);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  expect(await turn()).toBe("dropped");
+  expect(await state()).toEqual({ handledBy: "AI", due: false, thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
+  expect(await handovers()).toEqual([]);
+});
+
+test("a turn still writing when the team took over, replied and handed back doesn't hand it over again", async () => {
+  const { turn, state, handovers } = await answeredByTeamMeanwhile(0.95);
+  model.reply("They want a person.", undefined, "askedBefore");
+  expect(await turn()).toBe("dropped");
+  expect(await state()).toEqual({ handledBy: "AI", due: false, thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
+  expect(await handovers()).toEqual([]);
+});
+
+test("a turn still writing when the team took over, replied and handed back doesn't hand it over from the handover's fallback either", async () => {
+  // The handover's own transaction fails: the next one once the team's acts are done (the summary asks none).
+  let armed = false;
+  let failed = 0;
+  const real = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  const transactions = vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) => {
+    if (armed) {
+      armed = false;
+      failed++;
+      return Promise.reject(new Error("connection reset"));
+    }
+    return real(...args);
+  }) as never);
+  const { turn, state, handovers } = await answeredByTeamMeanwhile(0.95, () => {
+    armed = true;
+  });
+  model.reply("They want a person.", undefined, "askedBefore");
+  expect(await turn()).toBe("dropped");
+  transactions.mockRestore();
+  expect(failed).toBe(1);
+  // Nothing handed over or marked: the fallback found the team's reply.
+  expect(await state()).toMatchObject({ handledBy: "AI", thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
+  expect(await handovers()).toEqual([]);
 });
 
 test("two turns at once: one runs, one answer", async () => {
