@@ -260,6 +260,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "languages.update": () => ({ languages: [{ code: "de", instructions: "Use du." }] }),
   // German, which the fixture adds (Manual for new pages, so nothing is asked of the model).
   "languages.retranslate": () => ({ code: "de", waiting: true }),
+  "glossary.get": () => ({}),
+  "glossary.update": () => ({ terms: [{ term: "Acme", keep: true }, { term: "Board", translations: { de: "Tafel" } }] }),
   // Like the rest of Settings: admins only in the app. The agent is Browser Use's fake; the secret never comes back.
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
