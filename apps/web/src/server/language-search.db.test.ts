@@ -250,3 +250,29 @@ test("the search box as the reader types at a language's address: the team's tra
   expect(await searchDocsAsTyped(project.slug, "refund")).toEqual([{ slug: "refunds", title: "Refunds", snippet: "Ask us for a refund." }]);
 });
 
+/** `count` articles whose German, kept up to date, was made from an older English and says "Preise". */
+async function outdated(count: number) {
+  for (let i = 1; i <= count; i++) {
+    await article(`Old ${i}`, `Old ${i}.`, { title: `Alt ${i}`, slug: `alt-${i}`, body: `Alte Preise ${i}.`, stale: true });
+  }
+}
+
+test("outdated translations matching a search can't fill the translations looked at before a current one: it's still found", async () => {
+  // More than twice the page's 10: the window was that.
+  await outdated(21);
+  await article("Payments", "How to pay.", { title: "Zahlung", slug: "zahlung", body: "Unsere Preise." });
+  at("de");
+  expect(await search("Preise")).toEqual([{ slug: "zahlung", title: "Zahlung", snippet: "Unsere Preise.", lang: "de" }]);
+});
+
+test("more outdated translations matching a search than are looked at: a current one is still found by its English (by meaning), at its page there", async () => {
+  withAi();
+  model.embeddings.setVector("Preise", along(1));
+  model.embeddings.setVector(articleChunkText("Payments", { heading: "", text: "How to pay." }, []), along(0.9));
+  // More than four times the page's 10.
+  await outdated(41);
+  await article("Payments", "How to pay.", { title: "Zahlung", slug: "zahlung", body: "Unsere Preise." });
+  at("de");
+  expect(await search("Preise")).toEqual([{ slug: "zahlung", title: "Payments", snippet: "How to pay." }]);
+});
+

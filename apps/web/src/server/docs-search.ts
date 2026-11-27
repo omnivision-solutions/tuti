@@ -157,9 +157,12 @@ async function searchFor(projectId: string, query: string, limit: number, reader
   if (!language || !prefix) {
     return searchDocs(projectId, query, limit, reader, options);
   }
-  // Twice as many from each: those dropped (a version not current; an article found by its translation) leave room.
+  // More from each than shown: those dropped (a version not current; an article found by its translation) leave room. Four
+  // times as many translations: versions made from an older English can't fill the window before a current one (past that,
+  // a current one is found by its English where that matches, by meaning with embeddings).
+  // ponytail: a bounded window; the English's hash stored on the article (L10's follow-up) filters them in the query.
   const [translated, inDefault] = await Promise.all([
-    searchTranslatedDocs(projectId, language, query, limit * 2, reader, options),
+    searchTranslatedDocs(projectId, language, query, limit * 4, reader, options),
     searchDocs(projectId, query, limit * 2, reader, { ...options, log: false }),
   ]);
   const slugs = [...new Set([...translated, ...inDefault].filter((result) => !result.method).map((result) => result.slug))];
@@ -400,7 +403,9 @@ async function translatedSections(projectId: string, language: string, vector: s
     AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
     AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}`;
   // Closest first, checked a window at a time until there are as many current articles as sections asked for (more can't
-  // be used), so a big translated help center never has every article's English read for one question.
+  // be used), and no more than four windows: one question never has more than that many articles' English read.
+  // ponytail: past four windows of outdated versions a current one answers from its English; the English's hash stored on
+  // the article (L10's follow-up) makes this a comparison in the query.
   const candidates = await prisma.$queryRaw<{ id: string; slug: string }[]>`
     SELECT a.id, a.slug
     FROM article_translation_chunk c
@@ -408,7 +413,8 @@ async function translatedSections(projectId: string, language: string, vector: s
     JOIN article a ON a.id = t."articleId"
     WHERE ${close}
     GROUP BY a.id, a.slug
-    ORDER BY min(c.embedding <=> ${vector}::vector), a.id`;
+    ORDER BY min(c.embedding <=> ${vector}::vector), a.id
+    LIMIT ${limit * 4}`;
   const current: string[] = [];
   for (let i = 0; i < candidates.length && current.length < limit; i += limit) {
     const window = candidates.slice(i, i + limit);
