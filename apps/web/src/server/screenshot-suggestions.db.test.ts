@@ -151,7 +151,7 @@ test("a sign-in link that no longer opens (another server secret) still gets sug
   expect(await suggestions()).toEqual([{ provider: "Auth0", hosts: ["acme.auth0.com"] }]);
 });
 
-test("reads of the app count against the fetch limits: past them, 429 and nothing fetched; a kept answer counts nothing", async () => {
+test("reads of the app count against the fetch limits: past them, 429 and nothing fetched", async () => {
   await settle({ appUrl: `${base}/missing` });
   for (let i = 0; i < FETCHES_PER_MEMBER_PER_MINUTE; i++) {
     expect(await suggestions()).toEqual([]);
@@ -159,4 +159,11 @@ test("reads of the app count against the fetch limits: past them, 429 and nothin
   const fetched = requests.length;
   await expect(suggestions()).rejects.toMatchObject({ status: 429 });
   expect(requests).toHaveLength(fetched);
+});
+
+test("a kept answer counts against no limit: looked at again and again, never refused", async () => {
+  await settle({ appUrl: `${base}/` });
+  for (let i = 0; i <= FETCHES_PER_MEMBER_PER_MINUTE + 1; i++) {
+    expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+  }
 });

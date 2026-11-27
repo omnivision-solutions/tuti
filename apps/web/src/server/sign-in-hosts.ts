@@ -15,31 +15,32 @@ export type SignInService = { provider: string; hosts: string[] };
 const REGION = String.raw`[a-z]{2}(?:-[a-z]{1,15}){1,3}-\d`;
 
 /**
- * Every repeat is bounded (a DNS label is at most 63 characters, a tag 2,000): the text is the admin's, so an
- * unbounded one could take quadratic time on it and hold the server.
+ * The text is the admin's, so nothing scans all of it: a service's patterns run only on windows around where its
+ * names are (`near`, at most MAX_HITS of each), and every repeat in them is bounded (a DNS label is at most 63
+ * characters, a tag 2,000). The work grows with the names found, not with the text.
  *
  * The services, and how each shows in an app's code: a host it always calls (`hosts`, seen as `marker`), or the
  * team's own host of it (`found`, each match's first group, or the whole match).
  */
-const SERVICES: { provider: string; hint: string[]; marker?: RegExp; hosts?: string[]; found?: RegExp[]; derived?: (text: string) => string[]; not?: RegExp }[] = [
+const SERVICES: { provider: string; hint: string[]; near?: string[]; marker?: RegExp; hosts?: string[]; found?: RegExp[]; derived?: (text: string) => string[]; not?: RegExp }[] = [
   { provider: "Firebase", hint: ["identitytoolkit"], marker: /identitytoolkit\.googleapis\.com/, hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] },
   // acme.auth0.com, acme.eu.auth0.com; not Auth0's own site and CDN.
-  { provider: "Auth0", hint: ["auth0.com"], found: [/\b[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z]{2})?\.auth0\.com\b/g], not: /^(?:[a-z]{2}\.auth0\.com$|(?:www|cdn|manage)\.)/ },
-  { provider: "Supabase", hint: ["supabase.co"], found: [/\b[a-z0-9]{20}\.supabase\.co\b/g] },
+  { provider: "Auth0", hint: ["auth0.com"], near: [".auth0.com"], found: [/\b[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z]{2})?\.auth0\.com\b/g], not: /^(?:[a-z]{2}\.auth0\.com$|(?:www|cdn|manage)\.)/ },
+  { provider: "Supabase", hint: ["supabase.co"], near: [".supabase.co"], found: [/\b[a-z0-9]{20}\.supabase\.co\b/g] },
   // Never Okta's own sign-in and sites.
-  { provider: "Okta", hint: ["okta"], found: [/\b[a-z0-9][a-z0-9-]{0,62}\.(?:okta|oktapreview|okta-emea)\.com\b/g], not: /^(?:www|login|developer|help|support|status)\./ },
+  { provider: "Okta", hint: ["okta"], near: [".okta.com", ".oktapreview.com", ".okta-emea.com"], found: [/\b[a-z0-9][a-z0-9-]{0,62}\.(?:okta|oktapreview|okta-emea)\.com\b/g], not: /^(?:www|login|developer|help|support|status)\./ },
   {
-    provider: "Amazon Cognito", hint: ["cognito"],
+    provider: "Amazon Cognito", hint: ["cognito"], near: ["cognito-idp.", ".amazoncognito.com", "userpoolid", "user_pools_id"],
     found: [
       new RegExp(String.raw`\bcognito-idp\.${REGION}\.amazonaws\.com\b`, "g"),
       new RegExp(String.raw`\b[a-z0-9-]{1,63}\.auth\.${REGION}\.amazoncognito\.com\b`, "g"),
     ],
     // The SDK makes its host from the user pool's region: us-east-1_AbC123xyz.
     derived: (text) =>
-      /cognito/i.test(text) ? [...text.matchAll(new RegExp(String.raw`\b(${REGION})_[a-z0-9]{9}\b`, "gi"))].map(([, region]) => `cognito-idp.${region!.toLowerCase()}.amazonaws.com`) : [],
+      [...text.matchAll(new RegExp(String.raw`\b(${REGION})_[a-z0-9]{9}\b`, "gi"))].map(([, region]) => `cognito-idp.${region!.toLowerCase()}.amazonaws.com`),
   },
   // https://clerk.acme.com (in a URL: window.Clerk.session.id is code), or acme-12.clerk.accounts.dev (a development instance).
-  { provider: "Clerk", hint: ["clerk", "pk_live_", "pk_test_"], found: [/(?<=\/\/)clerk\.(?:[a-z0-9-]{1,63}\.){1,8}[a-z]{2,63}\b/g, /\b[a-z0-9-]{1,63}\.clerk\.accounts\.dev\b/g], not: /^clerk\.(?:accounts\.dev|com)$/,
+  { provider: "Clerk", hint: ["clerk", "pk_live_", "pk_test_"], near: ["//clerk.", ".clerk.accounts.dev", "pk_live_", "pk_test_"], found: [/(?<=\/\/)clerk\.(?:[a-z0-9-]{1,63}\.){1,8}[a-z]{2,63}\b/g, /\b[a-z0-9-]{1,63}\.clerk\.accounts\.dev\b/g], not: /^clerk\.(?:accounts\.dev|com)$/,
     // Or in its publishable key, which is its host in base64 followed by "$".
     derived: (text) => [...text.matchAll(/\bpk_(?:live|test)_([A-Za-z0-9+/]{8,400}={0,2})/g)].map(([, key]) => Buffer.from(key!, "base64").toString("latin1").replace(/\$$/, "").toLowerCase()),
   },
@@ -56,6 +57,23 @@ const realHost = (host: string) => {
   return !!parsed.domain && (parsed.isIcann === true || parsed.isPrivate === true);
 };
 
+const MAX_HITS = 100;
+/** Before a name, room for a host's labels; after it, for a publishable key or a Clerk host's labels. */
+const BEFORE = 200;
+const AFTER = 600;
+
+/** The text around each of `names` in `text` (lower case), from `original` (its case) where they line up, apart. */
+function windows(text: string, original: string, names: string[]): string {
+  const source = original.length === text.length ? original : text;
+  const parts: string[] = [];
+  for (const name of names) {
+    for (let at = text.indexOf(name), hits = 0; at !== -1 && hits < MAX_HITS; at = text.indexOf(name, at + name.length), hits++) {
+      parts.push(source.slice(Math.max(0, at - BEFORE), at + name.length + AFTER));
+    }
+  }
+  return parts.join("\n");
+}
+
 /** The sign-in services named in `texts` (a page and its scripts), each with the hosts found, in SERVICES' order. */
 export function findSignInServices(texts: string[]): SignInService[] {
   const original = texts.join("\n");
@@ -70,7 +88,9 @@ export function findSignInServices(texts: string[]): SignInService[] {
     if (service.marker?.test(text)) {
       service.hosts!.forEach((host) => hosts.add(host));
     }
-    const candidates = [...(service.found ?? []).flatMap((pattern) => [...text.matchAll(pattern)].map(([host]) => host)), ...(service.derived?.(original) ?? [])];
+    const near = windows(text, original, service.near ?? []);
+    const lower = near.toLowerCase();
+    const candidates = [...(service.found ?? []).flatMap((pattern) => [...lower.matchAll(pattern)].map(([host]) => host)), ...(service.derived?.(near) ?? [])];
     for (const host of candidates) {
       if (/^[a-z0-9.-]+$/.test(host) && !service.not?.test(host) && realHost(host) && !NEVER.test(host)) {
         hosts.add(host);
