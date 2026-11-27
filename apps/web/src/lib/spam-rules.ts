@@ -55,42 +55,46 @@ export function spamRuleValue(field: SpamRuleField, value: string) {
 /** Lowercase, look-alikes folded, runs of space as one. */
 const fold = (text: string) => text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 
+/** The longest pattern a rule may have, and how many pattern rules a project may: with the texts' cap, what bounds their work. */
+export const MAX_PATTERN = 100;
+export const MAX_PATTERN_RULES = 100;
+
 /**
  * Whether `text` is all of `pattern`, where `*` is any run of characters and `?` any one: never a regex, which a team's
- * pattern could make take forever. Greedy with one step back to the last `*`, so at most the two lengths multiplied,
- * and never more than `budget` steps, when it says no.
+ * pattern could make take forever, and no backtracking. The pattern is its literal segments between stars: the first
+ * at the start (unless it starts with a star), the last at the end (unless it ends with one), and each in between at
+ * its earliest place after the one before; the leftmost place is always right, as anything later only leaves less room.
+ * So never more than the text's length times the pattern's, whatever the text.
  */
-export function matchesPattern(pattern: string, text: string | string[], budget = { left: PATTERN_STEPS }): boolean {
-  // Its own budget, unless a caller counts the steps.
-  const p = [...pattern];
+export function matchesPattern(pattern: string, text: string | string[]): boolean {
   const t = typeof text === "string" ? [...text] : text;
-  let i = 0;
-  let j = 0;
-  let star = -1;
-  let from = 0;
-  while (j < t.length) {
-    if (budget.left <= 0) {
+  const segments = pattern.split("*").map((segment) => [...segment]);
+  const at = (segment: string[], from: number) => from >= 0 && from + segment.length <= t.length && segment.every((char, k) => char === "?" || char === t[from + k]);
+  const first = segments[0]!;
+  if (segments.length === 1) {
+    return first.length === t.length && at(first, 0);
+  }
+  const last = segments.at(-1)!;
+  // Where the last segment starts: the middle ones end before it.
+  const end = t.length - last.length;
+  if (end < first.length || !at(first, 0) || !at(last, end)) {
+    return false;
+  }
+  let from = first.length;
+  for (const segment of segments.slice(1, -1)) {
+    let found = -1;
+    for (let i = from; i + segment.length <= end; i++) {
+      if (at(segment, i)) {
+        found = i;
+        break;
+      }
+    }
+    if (found < 0) {
       return false;
     }
-    budget.left--;
-    // A star first: it's never a literal, even facing a "*" in the text.
-    if (i < p.length && p[i] === "*") {
-      star = i++;
-      from = j;
-    } else if (i < p.length && (p[i] === "?" || p[i] === t[j])) {
-      i++;
-      j++;
-    } else if (star >= 0) {
-      i = star + 1;
-      j = ++from;
-    } else {
-      return false;
-    }
+    from = found + segment.length;
   }
-  while (p[i] === "*") {
-    i++;
-  }
-  return i === p.length;
+  return true;
 }
 
 /** The value a rule compares, as it's compared: two rules with the same key are the same rule. */
@@ -105,14 +109,6 @@ export type SpamRuleInput = { domain?: string | null; address?: string | null; n
  * read its last characters too if that matters.
  */
 export const SPAM_RULE_TEXT_CHARS = 10_000;
-
-/**
- * How many steps one pattern may take on one text: 30 times the longest text the rules read, so an ordinary pattern
- * (a few segments of up to 30 characters, however the text is padded) always finishes its scan. Only a pathological
- * one (long segments against text built to almost match them) reaches it, and that rule alone doesn't match: the
- * filter fails open for it, as the AI check does. Each rule has its own, so no text can use up another's.
- */
-export const PATTERN_STEPS = 30 * SPAM_RULE_TEXT_CHARS;
 
 type Folds = { fold: (text: string) => string; words: (text: string) => string; chars: (text: string) => string[] };
 

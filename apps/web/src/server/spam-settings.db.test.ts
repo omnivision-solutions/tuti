@@ -243,6 +243,7 @@ test("spam.update refuses a rule whose value can't match as asked, a free-mail d
   await refused({ addRules: [rule("subject", "contains", "!!!")] }, "Add a word");
   await refused({ addRules: [rule("body", "pattern", "*?*")] }, "Add something besides * and ?");
   await refused({ addRules: [rule("subject", "pattern", "＊")] }, "Add something besides * and ?");
+  await refused({ addRules: [rule("subject", "pattern", `*${"a".repeat(100)}`)] }, "Keep a pattern under 100 characters");
   await refused({ addRules: [rule("subject", "is", "   ")] }, "Enter a value");
   // "@" alone is nothing once a domain's "@" goes, and would match every sender.
   await refused({ addRules: [rule("sender_domain", "contains", "@")] }, "Enter a value");
@@ -257,6 +258,16 @@ test("spam.update refuses a rule whose value can't match as asked, a free-mail d
   }
   await update({ addRules: Array.from({ length: 98 }, (_, i) => rule("body", "is", `pitch ${i}`)) });
   await expect(update({ addRules: [rule("body", "is", "one too many")] })).rejects.toThrow(new OperationError(409, "too_many", "The filter holds up to 500 rules: remove some first"));
+});
+
+test("a project holds 100 pattern rules: the 101st is refused, other matchers aren't", { timeout: 60_000 }, async () => {
+  const { update, rules } = await setup();
+  await update({ addRules: Array.from({ length: 100 }, (_, i) => rule("subject", "pattern", `*offer ${i}*`)) });
+  await expect(update({ addRules: [rule("subject", "pattern", "*one too many*")] })).rejects.toThrow(
+    new OperationError(409, "too_many", "The filter holds up to 100 pattern rules: remove some first"),
+  );
+  await update({ addRules: [rule("subject", "contains", "still fine")] });
+  expect(await rules()).toHaveLength(101);
 });
 
 test("two admins adding a rule at the same moment both keep theirs, and the same rule sent at once is one", async () => {

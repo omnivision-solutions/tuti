@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { matchText } from "@/lib/match-text";
 import { SPAM_REASON_KEYS, spamPassedWhy, spamWhy } from "@/lib/spam-reasons";
-import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleAudience, type SpamRuleField, type SpamRuleMatcher, SPAM_RULE_AUDIENCE_KEYS, spamRuleValue } from "@/lib/spam-rules";
+import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleAudience, type SpamRuleField, type SpamRuleMatcher, MAX_PATTERN, MAX_PATTERN_RULES, SPAM_RULE_AUDIENCE_KEYS, spamRuleValue } from "@/lib/spam-rules";
 
 import { userWithAddress } from "../inbound";
 import { addSpamRule, allowSender, blockableDomain, lockSpamRules, spamVerdict } from "../spam";
@@ -67,6 +67,9 @@ function ruleProblem(field: SpamRuleField, matcher: SpamRuleMatcher, value: stri
     return emailAddress.safeParse(value).success ? null : "Enter an address, like kim@acme.example";
   }
   if (matcher === "pattern") {
+    if ([...value].length > MAX_PATTERN) {
+      return `Keep a pattern under ${MAX_PATTERN} characters`;
+    }
     // As it's matched: a fullwidth "＊" is a star there too.
     return /[^*?\s]/.test(value.normalize("NFKC")) ? null : "Add something besides * and ?";
   }
@@ -81,7 +84,7 @@ const rule = z
     field: z.enum(SPAM_RULE_FIELD_KEYS).describe(`What it looks at: ${SPAM_RULE_FIELD_KEYS.map((key) => `${key} (${SPAM_RULE_FIELDS[key].toLowerCase()})`).join(", ")}. sender_domain and sender_address go by a proven sender (never an address a signed-out visitor typed). sent_to is the To and Cc of an email`),
     matcher: z
       .enum(SPAM_RULE_MATCHER_KEYS)
-      .describe(`How, ignoring case: ${SPAM_RULE_MATCHER_KEYS.map((key) => `${key} (${SPAM_RULE_MATCHERS[key]})`).join(", ")}. A sender_domain that "is" a domain is its subdomains too; "contains" on the subject or body matches whole words; a pattern has * (any characters) and ? (any one), never a regex`),
+      .describe(`How, ignoring case: ${SPAM_RULE_MATCHER_KEYS.map((key) => `${key} (${SPAM_RULE_MATCHERS[key]})`).join(", ")}. A sender_domain that "is" a domain is its subdomains too; "contains" on the subject or body matches whole words; a pattern has * (any characters) and ? (any one), never a regex, up to ${MAX_PATTERN} characters, and a project holds ${MAX_PATTERN_RULES} pattern rules`),
     appliesTo: z
       .enum(SPAM_RULE_AUDIENCE_KEYS)
       .default("everyone")
@@ -200,6 +203,9 @@ export const updateSpamSettings = defineOperation({
       // Only adding is refused past a limit: one that's over it (Mark as spam's "Also block" adds too) can still be cut.
       if (blocks.length + addRules.length > 0 && (await tx.spamRule.count({ where: { projectId } })) > MAX_SPAM_RULES) {
         throw new OperationError(409, "too_many", `The filter holds up to ${MAX_SPAM_RULES} rules: remove some first`);
+      }
+      if (addRules.some((added) => added.matcher === "pattern") && (await tx.spamRule.count({ where: { projectId, matcher: "pattern" } })) > MAX_PATTERN_RULES) {
+        throw new OperationError(409, "too_many", `The filter holds up to ${MAX_PATTERN_RULES} pattern rules: remove some first`);
       }
       if (allow.length > 0 && (await tx.spamSender.count({ where: { projectId, conversationId: null, blocked: false } })) > MAX_SPAM_SENDERS) {
         throw new OperationError(409, "too_many", `The allowed list holds up to ${MAX_SPAM_SENDERS} addresses and domains: remove some first`);
