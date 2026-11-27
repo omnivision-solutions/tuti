@@ -245,7 +245,7 @@ model Project {
   changelogCoverDesign           String       @default("")
   /// The team's own image for the "Your background" cover design.
   changelogCoverBackgroundId     String?
-  /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
+  /// AI edits (Ask AI in the changelog and help center editors) in the hour that started at
   /// changelogAiHour, for the per-project hourly cap.
   changelogAiHour                DateTime     @default(now())
   changelogAiCount               Int          @default(0)
@@ -2674,6 +2674,9 @@ model ArticleTranslation {
   updateSections   Json      @default("[]")
   /// Source sections the team took out of the published text: the job doesn't put them back, nor count them as missing.
   removedSections  Json      @default("[]")
+  /// Each of those's source section hash when it was taken out: on a version kept up to date, one whose source section
+  /// changed since comes back (the team's edit giving way, as any of theirs does).
+  removedHashes    Json      @default("{}")
   /// The team published its own title: the hash of the source's title then. A version kept up to date keeps it until the
   /// source's title changes.
   titleSource      String?

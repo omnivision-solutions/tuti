@@ -10,7 +10,7 @@ import { mailbox } from "@/test/mailbox";
 
 import { subscribeToChangelog } from "./changelog-subscribe";
 import { createChangelogEntry, editChangelogSection, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
-import { retranslateLanguage, updateLanguages } from "./operations/languages";
+import { getLanguages, retranslateLanguage, updateLanguages } from "./operations/languages";
 import { setEmailPreference } from "./email-preferences";
 import { updateEmailPreferences } from "./operations/email-preferences";
 import { call } from "./operations/run";
@@ -131,7 +131,7 @@ test("past its wait, the announcement goes untranslated; a translation that fail
   expect((await prisma.changelogTranslation.findFirstOrThrow({ where: { entryId: second.id } })).error).not.toBeNull();
 });
 
-test("the product setting changing marks the team's own entries behind; an entry kept up to date takes the new setting on its next translation; the retry job takes entries too", async () => {
+test("the product setting changing retranslates the entries kept up to date and marks the team's own behind; Retranslate and the retry job take entries too", async () => {
   await languages({ languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
   const { entry } = await draft();
   model.reply(reply("de"));
@@ -139,24 +139,25 @@ test("the product setting changing marks the team's own entries behind; an entry
   await languageTranslationsDone();
   await prisma.changelogTranslation.create({ data: { entryId: entry.id, projectId: project.id, language: "fr", automatic: false, title: "Mode sombre", publishedAt: new Date() } });
 
-  // Not retranslated in bulk (Settings doesn't count entries in what it confirms yet): the team's own are marked behind.
+  // The switch: German's entry, kept up to date, is translated again under it (nothing reused); the team's French is marked behind.
+  model.reply(reply("on"));
   await languages({ languages: [{ code: "de", productAvailable: true }, { code: "fr", productAvailable: true }] });
-  expect(model.requests).toHaveLength(1);
-  expect(Object.values((await translation("fr")).behind as Record<string, string>)).toContain(PRODUCT_SETTING_CHANGED);
-  expect(await call(retranslateLanguage, as(), { code: "de" })).toEqual({ queued: 0 });
-  // Edited, it's translated under the new setting, nothing reused from the old one.
-  model.reply(reply("on", "Dark mode is here"));
-  await call(updateChangelogEntry, as(), { number: entry.number, title: "Dark mode is here" });
-  await languageTranslationsDone();
-  expect(await translation()).toMatchObject({ title: "[on] Dark mode is here", body: "[on] Switch themes from your profile menu.", productAvailable: true });
+  expect(model.requests).toHaveLength(2);
+  expect(await translation()).toMatchObject({ title: "[on] Dark mode", productAvailable: true });
   expect(model.requests.at(-1)!.system).toContain("The product is available in German");
+  expect(Object.values((await translation("fr")).behind as Record<string, string>)).toContain(PRODUCT_SETTING_CHANGED);
+  // Retranslate: German's entries too, anew.
+  model.reply(reply("again"));
+  expect(await call(retranslateLanguage, as(), { code: "de" })).toEqual({ queued: 1 });
+  await languageTranslationsDone();
+  expect(await translation()).toMatchObject({ title: "[again] Dark mode" });
 
   // A version that couldn't be translated, its wait over: the retry job translates it.
   await prisma.changelogTranslation.updateMany({ where: { entryId: entry.id, language: "de" }, data: { error: "Out of credits", retryAt: new Date(Date.now() - 1000), retranslate: { increment: 1 } } });
-  model.reply(reply("retried", "Dark mode is here"));
+  model.reply(reply("retried"));
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   await languageTranslationsDone();
-  expect(await translation()).toMatchObject({ title: "[retried] Dark mode is here", error: null, retryAt: null });
+  expect(await translation()).toMatchObject({ title: "[retried] Dark mode", error: null, retryAt: null });
 });
 
 test("a translation ending long after an announcement was due doesn't send it: that's the email safety net's, which gives up after two days", async () => {
@@ -434,6 +435,9 @@ async function placedWithFailedQueuing() {
   // The placement stands; the entry is marked for the retry job.
   expect((placed.content as { content: { type: string }[] }).content.map((block) => block.type)).toEqual(["image"]);
   expect(placed.translationsQueueFailedAt).not.toBeNull();
+  // Fresh, it's left to the queuing that set it (that may still be under way): the retry job takes it once that's past.
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { translationsQueueFailedAt: new Date(Date.now() - 2 * 60_000) } });
   const { segments } = segmentsOf(translationSource(placed).doc);
   return { entry, placed, reply: JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text}`])) }) };
 }
@@ -573,31 +577,62 @@ test("on an SSO portal, the switch moves the subscription at the sign-on's addre
 });
 
 
-test("the retry job queues a failed entry only in the languages there when it failed, never one added since (not confirmed for entries)", async () => {
+test("a failed entry is queued again by the retry job; a language added since gets it in its own bulk translating", async () => {
   await languages({ languages: [{ code: "de" }] });
   const { entry, reply: translated } = await placedWithFailedQueuing();
-  await prisma.changelogEntry.update({ where: { id: entry.id }, data: { translationsQueueFailedAt: new Date(Date.now() - 60_000) } });
+  // French added: Settings counts entries, so it's translated as the language is added.
+  model.reply(translated);
   await languages({ languages: [{ code: "de" }, { code: "fr" }] });
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id, language: "fr", publishedAt: { not: null } } })).toBe(1);
   model.reply(translated);
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   await languageTranslationsDone();
   expect(JSON.stringify((await translation()).content)).toContain("[de] The theme menu");
-  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id, language: "fr" } })).toBe(0);
+  expect(model.requests).toHaveLength(3);
 });
 
-test("a published entry's other changes (its tags) never bring a language added since into it, the retry job's run neither", async () => {
+test("adding a language translates the published entries; their other changes (tags) and the retry job's run ask nothing more", async () => {
   await languages({ languages: [{ code: "de" }] });
   const { entry } = await draft();
   model.reply(reply("de"));
   await call(publishChangelogEntry, as(), { number: entry.number });
   await languageTranslationsDone();
+  model.reply(reply("fr"));
   await languages({ languages: [{ code: "de" }, { code: "fr" }] });
-  // Its change time moves; its text, and what's confirmed for it, don't.
+  expect(await translation("fr")).toMatchObject({ title: "[fr] Dark mode" });
   await call(updateChangelogEntry, as(), { number: entry.number, tags: ["improved"] });
   await languageTranslationsDone();
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  expect(model.requests).toHaveLength(2);
+});
+
+test("an entry is marked while its translations are queued, cleared once they are; the retry job never translates versions nobody confirmed", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
+  const { entry } = await draft();
+  await call(publishChangelogEntry, as(), { number: entry.number });
   await languageTranslationsDone();
-  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id, language: "fr" } })).toBe(0);
+  expect((await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).translationsQueueFailedAt).toBeNull();
+  // Published while German was Manual, then German turned Automatic: nothing queues the entry (nobody confirmed it).
+  await languages({ languages: [{ code: "de", newPages: "automatic" }] });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  // A gap from before entries joined a language's bulk translating: left as it is too.
+  model.reply(reply("de"));
+  await call(retranslateLanguage, as(), { code: "de" });
+  await languageTranslationsDone();
+  await prisma.changelogTranslation.deleteMany({ where: { entryId: entry.id } });
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
+});
+
+test("languages.get counts a language's published entries with a version, and those waiting and why", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  expect((await call(getLanguages, as(), {})).languages[0]!.entries).toEqual({ translated: 1, waiting: 0, why: null });
+  await prisma.changelogTranslation.updateMany({ where: { entryId: entry.id }, data: { error: "Out of credits" } });
+  expect((await call(getLanguages, as(), {})).languages[0]!.entries).toEqual({ translated: 1, waiting: 1, why: "Out of credits" });
 });
 
 test("a published entry's text changed (one section, or all of it as Markdown) brings its German up to date, only the changed paragraph asked", async () => {
@@ -694,4 +729,73 @@ test("an email in a subscriber's language marks its translated title and text wi
   expect(body.slice(at)).toContain("[de] Dark mode");
   expect(body.slice(at)).toContain("[de] Switch themes from your profile menu.");
   expect(body.slice(0, at)).not.toContain("[de]");
+});
+
+test("an entry is marked before its translations are queued: one still queuing is left alone (on the database's clock, in any time zone), one left past the grace period is taken", async () => {
+  // The database's sessions in New York's time zone, hours behind UTC (a self-hoster's Postgres, say).
+  const [{ db }] = await prisma.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
+  await prisma.$executeRawUnsafe(`ALTER DATABASE "${db}" SET timezone TO 'America/New_York'`);
+  await prisma.$disconnect();
+  onTestFinished(async () => {
+    await prisma.$executeRawUnsafe(`ALTER DATABASE "${db}" RESET timezone`);
+    await prisma.$disconnect();
+  });
+  expect((await prisma.$queryRaw<{ zone: string }[]>`SELECT current_setting('TimeZone') AS zone`)[0]!.zone).toBe("America/New_York");
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  // Its queuing held partway (a slow read, or a restart before it's done).
+  let release = (_: null) => {};
+  const reading = vi.spyOn(prisma.changelogEntry, "findFirst").mockReturnValueOnce(new Promise((resolve) => (release = resolve)) as never);
+  const publishing = call(publishChangelogEntry, as(), { number: entry.number });
+  const mark = async () => (await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).translationsQueueFailedAt;
+  // Marked before anything's queued.
+  await vi.waitFor(async () => expect(await mark()).not.toBeNull());
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  // Its queuing never finishes (released with nothing read, it ends without clearing a mark moved meanwhile); past the minute, the retry job takes it.
+  await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = "translationsQueueFailedAt" - interval '2 minutes' WHERE id = ${entry.id}`;
+  reading.mockRestore();
+  model.reply(reply("de"));
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  await languageTranslationsDone();
+  expect(await translation()).toMatchObject({ title: "[de] Dark mode" });
+  // Cleared in New York's time zone too: the next run takes nothing (and pays for nothing).
+  expect(await mark()).toBeNull();
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  release(null);
+  await publishing;
+});
+
+test("the product switch translates again only the entry versions there are: a language that was Manual gets none started, nothing asked", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
+  const { entry } = await draft();
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  // German made Automatic (that starts nothing), then "Our product is available in German" switched on.
+  await languages({ languages: [{ code: "de", newPages: "automatic" }] });
+  await languages({ languages: [{ code: "de", productAvailable: true }] });
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
+  expect(model.requests).toHaveLength(0);
+});
+
+test("Try again tries again the versions that failed, and starts none: a published entry with no version in the language gets none", async () => {
+  await languages({ languages: [{ code: "de", newPages: "manual" }] });
+  // Two entries published while German is Manual: neither has a German version.
+  const first = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const second = await call(createChangelogEntry, as(), { title: "Faster exports", body: "Exports finish in seconds." });
+  await call(publishChangelogEntry, as(), { number: first.number });
+  await call(publishChangelogEntry, as(), { number: second.number });
+  await languageTranslationsDone();
+  // German made Automatic (that starts nothing); the first entry's German then fails (its version waits, with why).
+  await languages({ languages: [{ code: "de", newPages: "automatic" }] });
+  const failed = await idOf(first.number);
+  await prisma.changelogTranslation.create({ data: { entryId: failed, projectId: project.id, language: "de", error: "Out of credits", tries: 1 } });
+  // Try again: the one that failed is translated; the other entry gets no version.
+  model.reply(reply("de"));
+  expect(await call(retranslateLanguage, as(), { code: "de", waiting: true })).toEqual({ queued: 1 });
+  await languageTranslationsDone();
+  expect(await prisma.changelogTranslation.count({ where: { entryId: await idOf(second.number) } })).toBe(0);
+  expect(await translation()).toMatchObject({ title: "[de] Dark mode", error: null });
+  // Nothing left waiting, so nothing waiting without a reason.
+  expect((await call(getLanguages, as(), {})).languages[0]!.entries).toEqual({ translated: 1, waiting: 0, why: null });
+  expect(model.requests).toHaveLength(1);
 });

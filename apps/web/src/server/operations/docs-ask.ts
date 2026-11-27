@@ -147,7 +147,7 @@ export function asksForPerson(reply: string): boolean {
   }
 }
 
-/** Each article once, in order. */
+/** Each article once, in order; `portal`, the address its pages are under (the reader's language's prefix too). */
 function sourcesOf(sections: AnswerSection[], portal: string): DocsAnswer["sources"] {
   const seen = new Set<string>();
   return sections
@@ -213,14 +213,18 @@ export async function answerQuestion(
   source: DocsQuestionSource,
   /** The asker: answers only come from articles they may read (null: the team). */
   reader: Reader,
-  /** `followUpTo`: the question this follows up on (see earlierTurns). */
-  { followUpTo, timeoutMs = ANSWER_TIMEOUT_MS }: { followUpTo?: string; timeoutMs?: number } = {},
+  /**
+   * `followUpTo`: the question this follows up on (see earlierTurns). `language`: the reader's, where it isn't the default
+   * one (the page they asked on, docs/plan.md L10): articles translated there answer from their translation, and every source
+   * links to its page there (`prefix`).
+   */
+  { followUpTo, timeoutMs = ANSWER_TIMEOUT_MS, language }: { followUpTo?: string; timeoutMs?: number; language?: { code: string; prefix: string } | null } = {},
 ): Promise<DocsAnswer> {
   if (!answersEnabled()) {
     throw new OperationError(503, "ai_unavailable", "AI answers aren't set up on this server");
   }
   const earlier = followUpTo ? await earlierTurns(projectId, askerId, followUpTo) : [];
-  return answerTurn(projectId, { askerId, question, source, reader, earlier, followsId: earlier.at(-1)?.id ?? null, timeoutMs });
+  return answerTurn(projectId, { askerId, question, source, reader, earlier, followsId: earlier.at(-1)?.id ?? null, timeoutMs, language });
 }
 
 /**
@@ -228,6 +232,7 @@ export async function answerQuestion(
  * the AI's turn in an Inbox conversation (from the conversation's messages, server/ai-turn.ts, which links the row to
  * it with `conversationId`). Logged in `docs_question` (and refused, 429, past the hourly limits) whatever comes of it.
  * `askPerson`: the model also says whether the user asks for a person (`person`; a server without a decision model).
+ * `language`: the reader's (answerQuestion's); the Inbox's turn answers in the default one.
  */
 export async function answerTurn(
   projectId: string,
@@ -241,7 +246,19 @@ export async function answerTurn(
     conversationId = null,
     askPerson = false,
     timeoutMs = ANSWER_TIMEOUT_MS,
-  }: { askerId: string; question: string; source: DocsQuestionSource; reader: Reader; earlier: Turn[]; followsId: string | null; conversationId?: string | null; askPerson?: boolean; timeoutMs?: number },
+    language = null,
+  }: {
+    askerId: string;
+    question: string;
+    source: DocsQuestionSource;
+    reader: Reader;
+    earlier: Turn[];
+    followsId: string | null;
+    conversationId?: string | null;
+    askPerson?: boolean;
+    timeoutMs?: number;
+    language?: { code: string; prefix: string } | null;
+  },
 ): Promise<DocsAnswer & { person?: boolean }> {
   const { id } = await logQuestion(projectId, askerId, question, source, followsId, conversationId);
   const [settings, slug] = await Promise.all([assistantSettings(projectId), projectSlug(projectId)]);
@@ -261,11 +278,12 @@ export async function answerTurn(
         operationIds: [...new Set(answer?.cited.filter((section) => section.operation).map((section) => section.articleId))],
       },
     });
-    return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, await portalAddress(slug)) };
+    return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, `${await portalAddress(slug)}${language?.prefix ?? ""}`) };
   };
 
   // A topic the team put off-limits: a fixed reply, decided here rather than by the model, which isn't asked for an answer
-  // (with `askPerson`, only whether the user asks for a person; see asksPerson). Nor does an earlier turn on one steer a follow-up: it's left out of what's searched and what the model gets.
+  // (with `askPerson`, only whether the user asks for a person; see asksPerson). Nor does an earlier turn on one steer a
+  // follow-up: it's left out of what's searched and what the model gets.
   const context = earlier.filter((turn) => !offLimitsTopic(turn.question, settings.offLimits));
   /**
    * With `askPerson`, where nothing would ask the model (an off-limits topic, nothing in the docs close enough): it's still
@@ -291,7 +309,7 @@ export async function answerTurn(
   }
   // A follow-up ("and on mobile?") says little alone: the docs are searched with the latest earlier questions too.
   const searched = [...context.slice(-SEARCHED_EARLIER_QUESTIONS).map((turn) => turn.question), question].join("\n");
-  const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS);
+  const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS, language?.code);
   if (!sections) {
     return finish("failed");
   }
