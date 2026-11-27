@@ -106,6 +106,57 @@ export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
 const PLACEHOLDER_NOW = new PluginKey<null>("placeholderNow");
 
 /** The images a try is being made for, and each one's last error, kept by the image (its root) it was made for. */
+/**
+ * Where the image at `pos` (an upload, `mediaId`) is after `transaction`, or -1 once it's gone. Followed through its own
+ * node being replaced by one the same size (its alt text, size or alignment changed) and through a move within the
+ * transaction (a drag: taken out, and a copy of its upload put in that wasn't there before).
+ */
+function followImage(transaction: Transaction, pos: number, mediaId: string): number {
+  if (pos < 0) {
+    return pos;
+  }
+  let at = pos;
+  for (const step of transaction.steps) {
+    const map = step.getMap();
+    const mapped = map.mapResult(at);
+    if (!mapped.deleted) {
+      at = mapped.pos;
+      continue;
+    }
+    let kept = -1;
+    map.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      if (oldStart <= at && at < oldEnd && newEnd - newStart === oldEnd - oldStart) {
+        kept = newStart + (at - oldStart);
+      }
+    });
+    at = kept;
+    if (at < 0) {
+      break;
+    }
+  }
+  if (at >= 0) {
+    return at;
+  }
+  // Moved: the one copy of its upload this transaction put in (each copy there before, mapped, is accounted for).
+  const isIt = (node: ProseMirrorNode) => node.type.name === "image" && node.attrs.mediaId === mediaId;
+  const before = new Set<number>();
+  transaction.before.descendants((node, place) => {
+    if (isIt(node) && place !== pos) {
+      const mapped = transaction.mapping.mapResult(place);
+      if (!mapped.deleted) {
+        before.add(mapped.pos);
+      }
+    }
+  });
+  const added: number[] = [];
+  transaction.doc.descendants((node, place) => {
+    if (isIt(node) && !before.has(place)) {
+      added.push(place);
+    }
+  });
+  return added.length === 1 ? added[0]! : -1;
+}
+
 type PageTries = { tries: Try[]; generating: string[]; errors: Record<string, string> };
 /**
  * The AI tries made in each project's editors since the page loaded, and which are being made: outside the editor, so
@@ -291,6 +342,7 @@ export function RichEditor({
             const image = editor && editable(editor.getAttributes("image"));
             if (editor && image) {
               editedPos.current = editor.state.selection.from;
+              editedId.current = image.id;
               setEdited({ pos: editor.state.selection.from, image });
               setEditingImage(true);
             }
@@ -300,6 +352,7 @@ export function RichEditor({
   // Where the edited image is now: moved with every change to the text (none once it's deleted), so a copy of it that
   // slid into its old place is never taken for it.
   const editedPos = useRef(-1);
+  const editedId = useRef("");
   /** The made image in the edited one's place (its alt text, size and alignment kept), or after it: one step to undo. */
   const placeImage = (made: GeneratedImage, replace: boolean) => {
     if (!editor || !edited) {
@@ -308,16 +361,10 @@ export function RichEditor({
     Object.entries(made.urls).forEach(([key, url]) => mediaUrls.set(key, url));
     const { doc } = editor.state;
     const isEdited = (node: ProseMirrorNode | null | undefined) => node?.type.name === "image" && node.attrs.mediaId === edited.image.id;
-    // Where it is now; lost track of (moved by a drag, a cut and paste, an undo), its only copy; else nothing is guessed
-    // at (gone, or one of several copies): the dialog stays, its tries kept.
-    const copies: number[] = [];
-    doc.descendants((node, at) => {
-      if (isEdited(node)) {
-        copies.push(at);
-      }
-    });
-    const tracked = editedPos.current >= 0 && editedPos.current <= doc.content.size && isEdited(doc.nodeAt(editedPos.current));
-    const pos = tracked ? editedPos.current : copies.length === 1 ? copies[0]! : -1;
+    // Where it is now (followImage); lost (deleted, or cut and pasted back), nothing is guessed at, as another copy of it
+    // may be there: the dialog stays, its tries kept, to pick the image again.
+    const tracked = editedPos.current >= 0 && editedPos.current < doc.content.size && isEdited(doc.nodeAt(editedPos.current));
+    const pos = tracked ? editedPos.current : -1;
     if (pos < 0) {
       toast.error("The image isn't in the text any more: pick an image to use this one.");
       return;
@@ -500,9 +547,7 @@ export function RichEditor({
     },
     onTransaction: ({ transaction }) => {
       if (editedPos.current >= 0) {
-        // Lost when its node is replaced (deleted, moved, or its alt text or size changed): then its only copy stands in (below).
-        const mapped = transaction.mapping.mapResult(editedPos.current);
-        editedPos.current = mapped.deleted ? -1 : mapped.pos;
+        editedPos.current = followImage(transaction, editedPos.current, editedId.current);
       }
     },
     onUpdate: ({ editor, transaction }) => {
