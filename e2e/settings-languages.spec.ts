@@ -5,7 +5,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
-import { createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp } from "./helpers";
 
 test("an owner adds German in Settings → Languages, writes its instructions, makes it live, takes it offline and removes it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -142,3 +142,61 @@ test("on a plan with no room for another language, Add language and Go live offe
   await expect(goLivePrompt).toBeHidden();
   await expect(german).toContainText("Offline");
 });
+
+test("an owner edits the glossary: a term's word per language, one never translated, saved after saying which pages it updates; a card per term on phones", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // German and French written by the team: nothing asks the model. A page using Board, with its German.
+  await api("/languages", { languages: [{ code: "de", newPages: "manual" }, { code: "fr", newPages: "manual" }] }, "PATCH");
+  await api("/glossary", { terms: [{ term: "Board", translations: { de: "Tafel" } }] }, "PATCH");
+  const article = await api("/articles", { title: "Boards", body: "Make a Board for ideas." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await query(
+    `INSERT INTO article_translation (id, "articleId", "projectId", language, title, body, automatic, "publishedAt", "updatedAt")
+     SELECT gen_random_uuid()::text, a.id, a."projectId", 'de', 'Tafeln', 'Eine Tafel für Ideen.', false, now(), now()
+     FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, article.slug],
+  );
+
+  await owner.setViewportSize({ width: 1280, height: 800 });
+  await owner.goto(`/app/${slug}/settings/languages/glossary`);
+  const pane = owner.getByRole("region", { name: "Glossary" });
+  await expect(pane.getByRole("link", { name: "Languages" })).toHaveAttribute("href", `/app/${slug}/settings/languages`);
+  const terms = pane.getByRole("list", { name: "Terms" });
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true })).toHaveValue("Board");
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Tafel");
+  await expect(terms.getByRole("textbox", { name: "Board in Français" })).toHaveAttribute("placeholder", "Model decides");
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+  // Board's German changes; Acme is added, never translated.
+  await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Brett");
+  await pane.getByRole("button", { name: "Add term" }).click();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
+  await terms.getByRole("textbox", { name: "Term", exact: true }).last().fill("Acme");
+  await terms.getByRole("switch", { name: "Never translate Acme" }).check();
+  // Never translated: no word per language for it.
+  await expect(terms.getByRole("textbox", { name: "Acme in Deutsch" })).toHaveCount(0);
+  await checkpoint(owner, "glossary", { fullPage: false });
+
+  // Saving asks first: the German page using Board is the team's, so it gets its sections to update.
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  const confirm = owner.getByRole("alertdialog", { name: "Save the glossary?" });
+  await expect(confirm).toContainText("To update1 page your team writes");
+  await checkpoint(owner, "glossary-confirm", { fullPage: false });
+  await confirm.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Saved the glossary")).toBeVisible();
+  await expect(confirm).toBeHidden();
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+  // Saved: there after a reload, and as a card per term on a phone.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Brett");
+  await expect(terms.getByRole("listitem").filter({ has: owner.getByRole("switch", { checked: true }) }).getByRole("textbox", { name: "Term", exact: true })).toHaveValue("Acme");
+  await expect(terms.getByText("Deutsch", { exact: true }).first()).toBeVisible();
+  await checkpoint(owner, "glossary-phone");
+});
+
