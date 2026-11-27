@@ -204,8 +204,8 @@ test("Keep up to date from the editor after the English changed: the page's new 
   // The English edited (by a teammate, say) while the version stays open.
   await call(updateChangelogEntry, as(), { number, body: "Switch themes from the menu." });
   actAs(owner);
-  expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, opened.version)).toEqual({ error: "It changed meanwhile: shown as it is now. Try again." });
-  // The page's next read (the action refreshed it): on, and translated.
+  expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, opened.version)).toMatchObject({ changed: true });
+  // The page's next read (the editor reads it again): on, and translated.
   const now = await call(getChangelogTranslation, as(), { number, language: "de" });
   model.reply(reply("de", TITLE, "Switch themes from the menu."));
   expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, now.version)).toEqual({ version: expect.any(String) });

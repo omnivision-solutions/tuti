@@ -110,16 +110,16 @@ export async function saveChangelogVersion(projectSlug: string, number: number, 
 
 /**
  * Keep up to date on an entry's version (it's translated again) or off, against the `version` the page last read. Refused
- * as changed meanwhile, the page reads it again (as it is now) and says so, so the switch isn't stuck until a reload.
+ * as changed meanwhile, `changed` says so: the editor reads the page again, or, with edits typed, keeps them on screen.
  */
-export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState & { version?: string }> {
+export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState & { version?: string; changed?: boolean }> {
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     saved = (await call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) })).version;
   });
+  // Changed meanwhile: the editor reads the page again where nothing's typed (it'd remount the form, losing it), else says so.
   if (result.error === VERSION_CHANGED) {
-    refresh();
-    return { error: "It changed meanwhile: shown as it is now. Try again." };
+    return { error: VERSION_CHANGED, changed: true };
   }
   if (result.error) {
     return result;

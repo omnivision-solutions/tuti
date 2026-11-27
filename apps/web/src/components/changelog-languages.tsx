@@ -4,6 +4,7 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState, useContext, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -153,11 +154,14 @@ export function ChangelogVersionForm({
   // made from this text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
   // The switch goes from the page's latest read, as it changes nothing typed here.
   const [loaded, setLoaded] = useState(view.version);
+  // Typed and not saved yet: a refused toggle doesn't read the page again over it.
+  const [dirty, setDirty] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
       // Its own save is what the next one goes from.
       setLoaded(result.version!);
+      setDirty(false);
       toast.success("Saved");
     }
     return result;
@@ -168,7 +172,7 @@ export function ChangelogVersionForm({
   const line = versionLine(view, defaultName);
   const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
-    <form id={VERSION_FORM} {...keepingFields(action)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+    <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => (event.target as HTMLElement).getAttribute("role") !== "switch" && setDirty(true)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
       <input type="hidden" name="version" value={loaded} />
       <div lang={view.code} className="flex min-w-0 flex-col gap-4">
@@ -198,6 +202,7 @@ export function ChangelogVersionForm({
           // Only where the form's text goes from the read the toggle acted on: text loaded from an older read keeps its
           // token, so its save is still refused.
           onSaved={(actedOn, next) => setLoaded((current) => (current === actedOn ? next : current))}
+          dirty={dirty}
           projectSlug={projectSlug}
           number={number}
           code={view.code}
@@ -224,6 +229,7 @@ function KeepUpToDate({
   teamWrote,
   version,
   onSaved,
+  dirty,
 }: {
   projectSlug: string;
   number: number;
@@ -235,6 +241,8 @@ function KeepUpToDate({
   version: string;
   /** Done: the read it acted on (`version`) and what the version says now, for the form's next save. */
   onSaved: (actedOn: string, version: string) => void;
+  /** The form has edits not saved yet: refused as changed, the page isn't read again over them. */
+  dirty: boolean;
 }) {
   const [checked, setChecked] = useState(on);
   // What's saved changing (a save turns it off) shows in place: the switch keeps focus, unsaved edits stay.
@@ -244,13 +252,23 @@ function KeepUpToDate({
     setChecked(on);
   }
   const [confirming, setConfirming] = useState(false);
+  const router = useRouter();
   const [pending, start] = useTransition();
   const save = (next: boolean) => {
     setChecked(next);
     setConfirming(false);
     start(async () => {
       const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next, version);
-      if (result.error) {
+      if (result.changed) {
+        setChecked(!next);
+        if (dirty) {
+          // Reading the page again would put its text in place of theirs.
+          toast.error("It changed meanwhile. Save or copy your edits, then reload.");
+        } else {
+          router.refresh();
+          toast.error("It changed meanwhile: shown as it is now. Try again.");
+        }
+      } else if (result.error) {
         setChecked(!next);
         toast.error(result.error);
       } else {

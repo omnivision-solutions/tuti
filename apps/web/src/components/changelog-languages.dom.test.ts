@@ -10,6 +10,8 @@ vi.mock("@/server/changelog", () => ({ saveChangelogVersion, keepChangelogVersio
 const setPending = vi.fn();
 const ChangelogSavingContext = createContext<{ setPending: (pending: boolean) => void } | null>(null);
 vi.mock("@/components/changelog", () => ({ ChangelogSavingContext, ChangelogSaveButton: () => null }));
+const router = { refresh: vi.fn() };
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("next/link", () => ({ default: ({ href, ...props }: { href: string }) => h("a", { href, ...props }) }));
 vi.mock("@/server/media", () => ({ uploadStatus: vi.fn() }));
 vi.mock("@/server/images", () => ({ generateImage: vi.fn() }));
@@ -28,6 +30,8 @@ beforeEach(() => {
   saveChangelogVersion.mockReset();
   keepChangelogVersionUpToDate.mockReset();
   setPending.mockReset();
+  router.refresh.mockReset();
+  toast.error.mockReset();
 });
 afterEach(async () => {
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
@@ -137,12 +141,14 @@ test("a save that leaves the text as it was is what the next save goes from; the
 });
 
 test("the switch goes from the page's latest read, not the token the text was loaded with; refused as changed, it says so and goes back", async () => {
-  keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "It changed meanwhile: shown as it is now. Try again." }).mockResolvedValueOnce({ version: "v-on" });
+  keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "changed", changed: true }).mockResolvedValueOnce({ version: "v-on" });
   const { render } = await form({ keepUpToDate: false, state: "current" });
   // The English edited since, the page read again: a new token, the same text.
   await render({ keepUpToDate: false, state: "translating", version: "v2" });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v2");
+  // Nothing typed (the switch's own click isn't an edit): the page is read again.
+  expect(router.refresh).toHaveBeenCalledTimes(1);
   expect(toast.error).toHaveBeenCalledWith("It changed meanwhile: shown as it is now. Try again.");
   expect(keep().checked).toBe(false);
   // The page read again (the action refreshed it): the next try goes from that read.
@@ -175,4 +181,15 @@ test("a toggle's token is taken for Save only where the form's text goes from th
   await submit();
   // Still v1's: the server refuses an edit made before the English changed.
   expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v1");
+});
+
+test("a toggle refused as changed with edits typed keeps them: the page isn't read again over them", async () => {
+  keepChangelogVersionUpToDate.mockResolvedValue({ error: "changed", changed: true });
+  await form({ keepUpToDate: true });
+  await act(async () => type(title(), "Korrigiert, nicht gespeichert"));
+  await act(async () => keep().click());
+  expect(router.refresh).not.toHaveBeenCalled();
+  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile. Save or copy your edits, then reload.");
+  expect(title().value).toBe("Korrigiert, nicht gespeichert");
+  expect(keep().checked).toBe(true);
 });
