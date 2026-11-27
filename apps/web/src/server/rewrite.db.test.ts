@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { createChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
+import { AI_EDITS_PER_HOUR, createChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { rewriteText } from "@/server/rewrite";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -26,6 +26,7 @@ beforeEach(async () => {
   actAs(owner);
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   model.requests.length = 0;
   // Every scripted reply was used, and nothing asked the model unscripted.
@@ -126,4 +127,28 @@ test("refused without asking the AI: no instruction, nothing it can edit, anothe
   expect(await usage()).toEqual([]);
   // Nothing counted against the hour's AI edits either.
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogAiCount: true } })).toEqual({ changelogAiCount: 0 });
+});
+
+test(`an article's AI edits count against the project's ${AI_EDITS_PER_HOUR} an hour, which the changelog's share`, async () => {
+  // Mid-hour, so the test can't straddle two.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-20T10:30:00Z"));
+  await prisma.project.update({ where: { id: project.id }, data: { changelogAiHour: new Date("2026-10-20T10:00:00Z"), changelogAiCount: AI_EDITS_PER_HOUR - 1 } });
+  const plain = doc(paragraph(text("Exports are quick.")));
+  model.reply(reply("Exports are fast."));
+  expect(await rewriteText(project.slug, { kind: "article", text: plain, instruction: "Clearer" })).toEqual({ content: doc(paragraph(text("Exports are fast."))) });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogAiCount: true } })).toEqual({ changelogAiCount: AI_EDITS_PER_HOUR });
+
+  expect(await rewriteText(project.slug, { kind: "article", text: plain, instruction: "Clearer" })).toEqual({
+    error: `Your team has made ${AI_EDITS_PER_HOUR} AI edits this hour. Try again later.`,
+  });
+  expect(model.requests).toHaveLength(1);
+});
+
+test("a version that drops a line the team still has to fill in isn't offered", async () => {
+  const withMarker = doc(paragraph(text("Exports are quick.")), paragraph(text("[Check: does it include archived reports?]")));
+  model.reply(reply("Exports are fast."));
+  expect(await rewriteText(project.slug, { kind: "article", text: withMarker, instruction: "Shorter" })).toEqual({
+    error: "The AI's version left out a line still to fill in, so it wasn't used. Try again.",
+  });
 });
