@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { usePortalHref } from "@/components/portal-base";
-import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
+import { StatusDot } from "@/components/post-status-badge";
 import { pillClass } from "@/components/filter-pills";
 import { Skeleton } from "@/components/ui/skeleton";
 import { VoteButton } from "@/components/vote-button";
@@ -16,11 +16,16 @@ import { WIDGET_LABEL } from "@/lib/portal-look";
 import { postPath } from "@/lib/post-urls";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut, widgetVote } from "@/server/widget";
+import { useTranslations } from "next-intl";
+import { useTeamLanguage } from "@/components/portal-look";
 
 type SignedIn = { id: string; token: string; name: string; named: boolean; email: string | null };
 
 type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true } | { pending: true } | { signingOut: true };
 
+
+/** A sign-in exchange that failed (the network, the server): said in the panel's language where it's shown. */
+const SIGN_IN_FAILED = "sign-in-failed";
 /** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
 const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
 
@@ -55,7 +60,7 @@ function onIdentify(event: MessageEvent) {
   const token = data.token;
   exchange(
     // A failed exchange (the network, the server) signs nobody in, not whoever was before.
-    () => widgetSignIn(projectSlug, token).catch(() => ({ error: "Couldn't sign you in" })),
+    () => widgetSignIn(projectSlug, token).catch(() => ({ error: SIGN_IN_FAILED })),
     (result) => tell("error" in result ? { error: result.error } : { signedIn: result }),
   );
 }
@@ -68,6 +73,7 @@ function onIdentify(event: MessageEvent) {
 export function useWidgetSignIn(projectSlug: string, enabled = true) {
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
   const [error, setError] = useState<string>();
+  const t = useTranslations("widget");
   // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
   // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
   const [known, setKnown] = useState(false);
@@ -137,7 +143,15 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     };
   }, [projectSlug, enabled]);
 
-  return { signedIn, error, known: !enabled || known, pending: enabled && pending, signingOut: enabled && signingOut, nobody: enabled && nobody };
+  return {
+    signedIn,
+    // A failed exchange, in the panel's language; the server's own answers as it gives them.
+    error: error === SIGN_IN_FAILED ? t("couldntSignIn") : error,
+    known: !enabled || known,
+    pending: enabled && pending,
+    signingOut: enabled && signingOut,
+    nobody: enabled && nobody,
+  };
 }
 
 /** Signing in on the portal in a new tab, coming back to `path` there (the panel's own sign-in is the customer's page's). */
@@ -171,6 +185,10 @@ export function WidgetFeedback({
   titlePlaceholder?: string;
   detailsPlaceholder?: string;
 }) {
+  const t = useTranslations("widget");
+  const status = useTranslations("feedback");
+  // Ideas' titles: their people's words, in the default language (L3).
+  const team = useTeamLanguage();
   const { signedIn, error, known, pending } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const link = usePortalHref();
   const token = signedIn?.token ?? null;
@@ -250,9 +268,9 @@ export function WidgetFeedback({
       {/* On the panel, not a card: its title box, Post (the tab's primary), and the details once it's opened. */}
       <section aria-labelledby="suggest-idea" className="flex flex-col gap-2">
         <h2 id="suggest-idea" className={WIDGET_LABEL}>
-          Suggest an idea
+          {t("suggestIdea")}
         </h2>
-        {signedIn && <p className="text-sm text-muted-foreground">Posting as {signedIn.name}</p>}
+        {signedIn && <p className="text-sm text-muted-foreground">{t("postingAs", { name: signedIn.name })}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         <NewPostForm
           projectSlug={projectSlug}
@@ -271,14 +289,14 @@ export function WidgetFeedback({
         />
       </section>
 
-      <section aria-label="Ideas" aria-busy={loading} className="flex flex-col gap-3">
-        {!viewer && <h2 className={WIDGET_LABEL}>Trending</h2>}
+      <section aria-label={t("ideas")} aria-busy={loading} className="flex flex-col gap-3">
+        {!viewer && <h2 className={WIDGET_LABEL}>{t("trending")}</h2>}
         {viewer && (
-          <div role="group" aria-label="Show" className="flex gap-1.5">
+          <div role="group" aria-label={t("show")} className="flex gap-1.5">
             {(
               [
-                ["Trending", false],
-                ["Mine", true],
+                [t("trending"), false],
+                [t("mine"), true],
               ] as const
             ).map(([name, value]) => (
               <button key={name} type="button" className={pillClass(mine === value)} aria-pressed={mine === value} onClick={() => setMineAsked(value)}>
@@ -302,14 +320,14 @@ export function WidgetFeedback({
               <li key={idea.id} className="flex items-center gap-3 py-3">
                 {voteFor(idea)}
                 <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                  <a href={link(postPath(idea))} target="_blank" rel="noreferrer" className="font-medium break-words hover:underline">
+                  <a href={link(postPath(idea))} target="_blank" rel="noreferrer" lang={team} className="font-medium break-words hover:underline">
                     {idea.title}
                   </a>
                   {/* Where it stands, once that says something: Trending's open ideas leave it out (most are). */}
                   {(mine || idea.status !== "OPEN") && (
                     <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <StatusDot status={idea.status} />
-                      {STATUS_LABELS[idea.status]}
+                      {status(`status.${idea.status}`)}
                     </span>
                   )}
                 </div>
@@ -318,8 +336,8 @@ export function WidgetFeedback({
           </ul>
         ) : (
           <EmptyState
-            title={list.failed ? "Couldn't load the ideas" : mine ? "Nothing of yours yet" : "No ideas yet"}
-            description={list.failed ? "Try again in a moment." : mine ? "Ideas you suggest or vote for show up here." : "Be the first to suggest one."}
+            title={list.failed ? t("couldntLoad") : mine ? t("nothingMine") : t("noIdeas")}
+            description={list.failed ? t("tryAgain") : mine ? t("nothingMineLine") : t("noIdeasLine")}
           />
         )}
       </section>

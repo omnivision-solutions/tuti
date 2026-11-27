@@ -150,7 +150,8 @@ export async function apiFor(team: Page, slug: string) {
       body: JSON.stringify(body),
     });
     expect(response.ok).toBe(true);
-    return (await response.json()) as { id: string; slug: string };
+    // What the API's answers that tests read carry: an id and slug (articles, collections), a number (posts, changelog entries).
+    return (await response.json()) as { id: string; slug: string; number: number };
   };
 }
 

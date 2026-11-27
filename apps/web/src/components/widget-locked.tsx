@@ -7,6 +7,7 @@ import { usePortalHref } from "@/components/portal-base";
 import { buttonVariants } from "@/components/ui/button";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { widgetSignIn } from "@/server/widget";
+import { useTranslations } from "next-intl";
 
 /**
  * The widget's panel for a private portal, to someone who may not read it. When the customer's
@@ -15,6 +16,7 @@ import { widgetSignIn } from "@/server/widget";
  * the portal in a new tab.
  */
 export function WidgetLocked({ projectSlug }: { projectSlug: string }) {
+  const t = useTranslations("widget");
   const router = useRouter();
   const at = usePortalHref();
 
@@ -35,9 +37,9 @@ export function WidgetLocked({ projectSlug }: { projectSlug: string }) {
 
   return (
     <div className="flex flex-col items-start gap-3">
-      <p className="text-sm text-muted-foreground">Sign in to see this. It opens in a new tab.</p>
+      <p className="text-sm text-muted-foreground">{t("lockedLine")}</p>
       <a href={at("/sign-in")} target="_blank" rel="noreferrer" className={buttonVariants()}>
-        Sign in
+        {t("signIn")}
       </a>
     </div>
   );

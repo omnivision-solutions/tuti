@@ -48,13 +48,19 @@ import { widgetIdeas } from "@/server/widget";
 import { canActIn } from "@/server/membership";
 import { currentReader, mayRead } from "@/server/portal-access";
 import { visibleEntry } from "@/lib/reader-groups";
-import { portalBase, portalHref, portalLinks } from "@/server/portal-base";
+import { portalBase, portalHref, portalLanguage, portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
+import { pageLanguages } from "@/server/language-addresses";
+import { pageTranslator } from "@/server/portal-language";
+import { PortalIntl } from "@/components/portal-language";
+import { withLanguage } from "@/lib/language-addresses";
+import { DEFAULT_LANGUAGE } from "@tuti/shared";
+import { MESSAGES } from "@tuti/shared/messages";
 import { getSession } from "@/server/session";
 import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
 import { mediaUrls } from "@/server/media-urls";
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
 import { boardTexts } from "@/lib/board-texts";
-import { formatDate, initial, replyTime, timeAgo } from "@/lib/format";
+import { formatDate, initial, replyTimeUnit, timeAgo } from "@/lib/format";
 import { RichText } from "@tuti/content/react";
 import { toPlainText } from "@tuti/content";
 import { PORTAL_BOARDS } from "@/server/post-visibility";
@@ -66,10 +72,10 @@ export const metadata: Metadata = { robots: { index: false } };
  * people look for help); the portal's part stays Docs.
  */
 const TABS = [
-  { tab: "home", href: "/widget", name: "Home", Icon: HouseIcon },
-  { tab: "feedback", href: "/widget?tab=feedback", name: "Feedback", Icon: LightbulbIcon },
-  { tab: "docs", href: "/widget?tab=docs", name: "Help center", Icon: BookOpenIcon },
-  { tab: "messages", href: "/widget?tab=messages", name: "Messages", Icon: MessageCircleIcon },
+  { tab: "home", href: "/widget", name: "home", Icon: HouseIcon },
+  { tab: "feedback", href: "/widget?tab=feedback", name: "feedback", Icon: LightbulbIcon },
+  { tab: "docs", href: "/widget?tab=docs", name: "helpCenter", Icon: BookOpenIcon },
+  { tab: "messages", href: "/widget?tab=messages", name: "messages", Icon: MessageCircleIcon },
 ] as const;
 
 /**
@@ -82,7 +88,7 @@ const TABS = [
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
   const [{ project: slug }, { tab: tabParam, q, article, docsTab, collection, title, display, entry }] = await Promise.all([props.params, props.searchParams]);
-  const [project, settings, brand, base] = await Promise.all([
+  const [project, settings, brand, base, languages, { language: addressLanguage, prefix }] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
       select: {
@@ -98,10 +104,21 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     widgetSettings({ slug }),
     branding({ slug }),
     portalBase(),
+    pageLanguages(slug),
+    portalLanguage(),
   ]);
   if (!project || !settings || !brand) {
     notFound();
   }
+  // The panel's language (docs/plan.md, Languages): its address's (/de/widget; L20's locale picks the address), else the
+  // default's, as the portal's pages. Its own words follow it; the team's keep their own (L3).
+  const language = addressLanguage ?? languages?.default ?? DEFAULT_LANGUAGE;
+  const { t } = await pageTranslator("widget");
+  const intl = (children: React.ReactNode) => (
+    <PortalIntl language={language} teamLanguage={languages?.default ?? DEFAULT_LANGUAGE} messages={MESSAGES[language]}>
+      {children}
+    </PortalIntl>
+  );
   // The portal's accent colour; the logo and links are the portal header's, which the panel doesn't have.
   const css = brandCss(brand.color);
   // The portal's tokens (globals.css: lines, greys, cards, controls' `portal:` look) and its fonts (else Inter), on the panel.
@@ -110,7 +127,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   // A private portal shows nothing until whoever's here may read it (see portal-access.ts).
   if (!(await mayRead(project.id))) {
     return (
-      <PortalBaseProvider base={base} slug={slug}>
+      <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
+        {intl(
         <main {...look} className={cn("flex min-h-dvh flex-col gap-4 bg-card p-4", PORTAL_FONT_CLASSES)}>
           <WidgetThemeScript scheme={brand.colorScheme} />
           <WidgetBodyFonts style={fonts} />
@@ -119,7 +137,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             <WidgetClose inline={display === "inline"} />
           </div>
           <WidgetLocked projectSlug={slug} />
-        </main>
+        </main>,
+        )}
       </PortalBaseProvider>
     );
   }
@@ -146,7 +165,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   const aiFirst = tab === "messages" && project.widgetAiFirst && (await aiAvailable(project.id));
 
   return (
-    <PortalBaseProvider base={base} slug={slug}>
+    <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
+      {intl(
       <WithAssistant assistant={assistant}>
       <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew} portalReader={tab === "home" && !whatsNew ? await portalReaderHome(project.id) : null}>
       <WidgetLookProvider saved={{ links: settings.links, title: settings.title, greeting: settings.greeting, hidden: settings.hidden }} appOrigin={appUrl().origin}>
@@ -158,7 +178,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
         <div className="flex items-center justify-between gap-2">
           {/* Not a heading: an article in Docs has the page's. */}
-          <p className="truncate font-heading text-base font-semibold">{whatsNew ? "What's new" : tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
+          <p className="truncate font-heading text-base font-semibold">{whatsNew ? t("whatsNew") : tab === "home" ? project.name : t(TABS.find(({ tab: key }) => key === tab)!.name)}</p>
           {/* In the header's text colour: the page's focus ring is the project's colour, the header's too. */}
           <WidgetClose
             inline={display === "inline"}
@@ -215,13 +235,13 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         )}
       </div>
       <footer className="flex flex-col gap-1 border-t pb-2">
-        <nav aria-label="Widget" className="flex">
+        <nav aria-label={t("nav")} className="flex">
           {tabs.map(({ tab: key, href, name, Icon }) => {
             const active = key === tab;
             const link = (
               <Link
                 key={key}
-                href={withBase(base, href)}
+                href={withBase(base, withLanguage(prefix, href))}
                 // In What's new, Home is lit as its section, not the page they're on.
                 aria-current={active ? (whatsNew ? "true" : "page") : undefined}
                 className={cn(
@@ -233,7 +253,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
                 <span className={cn("grid h-7 w-11 place-items-center rounded-full transition-colors", active ? "bg-accent" : "group-hover:bg-muted")}>
                   <Icon aria-hidden className="size-5" />
                 </span>
-                <span className="max-w-full truncate">{name}</span>
+                <span className="max-w-full truncate">{t(name)}</span>
               </Link>
             );
             // Home is always there; the others unless the team turned them off.
@@ -249,7 +269,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     </main>
       </WidgetLookProvider>
       </WidgetHomeVisitor>
-      </WithAssistant>
+      </WithAssistant>,
+      )}
     </PortalBaseProvider>
   );
 }
@@ -291,6 +312,7 @@ async function Home({
     getSession().then((session) => whatsNewSeen(projectId, session?.user.id ?? null, reader)),
     portalLinks(),
   ]);
+  const [{ t, language }, team] = await Promise.all([pageTranslator("widget"), teamLanguage()]);
   return (
     <div className="flex flex-col gap-3">
       {docs && (
@@ -300,29 +322,31 @@ async function Home({
             <form
               action={at("/widget")}
               role="search"
-              aria-label="Help center"
+              aria-label={t("helpCenter")}
               className="flex items-center gap-2 rounded-lg border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
             >
               <input type="hidden" name="tab" value="docs" />
               <input
                 type="search"
                 name="q"
-                aria-label="Search for help"
-                placeholder="Search for help"
+                aria-label={t("searchForHelp")}
+                placeholder={t("searchForHelp")}
                 maxLength={200}
                 className="min-w-0 flex-1 bg-transparent py-2.5 outline-none placeholder:text-muted-foreground"
               />
-              <button type="submit" aria-label="Search" className="shrink-0 text-muted-foreground hover:text-foreground">
+              <button type="submit" aria-label={t("search")} className="shrink-0 text-muted-foreground hover:text-foreground">
                 <SearchIcon aria-hidden className="size-4" />
               </button>
             </form>
             {suggested.length > 0 && (
-              <ul aria-label="Suggested articles" className="flex flex-col divide-y">
+              <ul aria-label={t("suggestedArticles")} className="flex flex-col divide-y">
                 {suggested.map((article) => (
                   <li key={article.slug}>
                     <Link href={at(docsHref({ article: article.slug }))} className={cn(WIDGET_ROW, "break-words")}>
                       <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">{article.title}</span>
+                      <span lang={team} className="min-w-0 flex-1">
+                        {article.title}
+                      </span>
                       <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                     </Link>
                   </li>
@@ -343,8 +367,8 @@ async function Home({
               </span>
             )}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="font-medium">Send us a message</span>
-              {replyMs !== null && <span className="text-sm text-muted-foreground">Usually replies in {replyTime(replyMs)}</span>}
+              <span className="font-medium">{t("sendMessage")}</span>
+              {replyMs !== null && <span className="text-sm text-muted-foreground">{t("usuallyReplies", replyTimeUnit(replyMs))}</span>}
             </span>
             <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           </Link>
@@ -364,8 +388,8 @@ async function Home({
                   <LightbulbIcon aria-hidden />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">Share an idea</span>
-                  <span className="text-sm text-muted-foreground">Suggest a feature or report a problem</span>
+                  <span className="font-medium">{t("shareIdea")}</span>
+                  <span className="text-sm text-muted-foreground">{t("shareIdeaLine")}</span>
                 </span>
                 <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               </Link>
@@ -383,11 +407,11 @@ async function Home({
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex items-center gap-2">
-                      <span className="font-medium">What&apos;s new</span>
+                      <span className="font-medium">{t("whatsNew")}</span>
                       <UnreadCount />
                     </span>
                     <span className="text-sm break-words text-muted-foreground">
-                      {latest.title} · {timeAgo(latest.publishedAt!)}
+                      <span lang={team}>{latest.title}</span> · {timeAgo(latest.publishedAt!, new Date(), language)}
                     </span>
                   </span>
                   <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -434,12 +458,15 @@ async function Feedback({
   title?: string;
 }) {
   if (!board) {
-    return <EmptyState title="No boards yet" description="Feedback opens once the team adds a board." />;
+    const { t } = await pageTranslator("widget");
+    return <EmptyState title={t("noBoards")} description={t("noBoardsLine")} />;
   }
   // Portal sessions are per host and their cookies aren't sent to an iframe on another site:
   // there, the customer's page signs people in (Tuti.identify), or they sign in in a new tab.
   const session = await getSession();
   const portalSignedIn = !!session && (await canActIn(session.user.id, projectId));
+  // The board's own words where the team set them, else the page's language's (as the portal's board page).
+  const { t } = await pageTranslator("feedback");
   return (
     <WidgetFeedback
       projectSlug={slug}
@@ -449,7 +476,7 @@ async function Feedback({
       ideas={await widgetIdeas(slug, null)}
       defaultTitle={title}
       // The board's own words, as on the portal's box.
-      {...boardTexts(board)}
+      {...boardTexts(board, { postButton: t("submitPost"), titlePlaceholder: t("titlePlaceholder"), detailsPlaceholder: t("detailsPlaceholder") })}
     />
   );
 }
@@ -459,14 +486,14 @@ async function Feedback({
  * Above them, who they're writing to: the team's faces and when they usually reply, as on Home.
  */
 async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: string; projectName: string; slug: string; aiFirst: boolean }) {
-  const [session, faces, replyMs] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId)]);
+  const [session, faces, replyMs, { t }] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId), pageTranslator("widget")]);
   const team = (
     // Centred atop the tab (WidgetMessages' TeamCard), with what to do next (New message) under it.
-    <section aria-label="The team" className="flex flex-col items-center gap-2 text-center">
+    <section aria-label={t("theTeam")} className="flex flex-col items-center gap-2 text-center">
       <TeamFaces faces={faces} />
       <span className="flex max-w-full flex-col">
-        <span className="font-medium break-words">The {projectName} team</span>
-        {replyMs !== null && <span className="text-sm text-muted-foreground">Usually replies in {replyTime(replyMs)}</span>}
+        <span className="font-medium break-words">{t("teamOf", { name: projectName })}</span>
+        {replyMs !== null && <span className="text-sm text-muted-foreground">{t("usuallyReplies", replyTimeUnit(replyMs))}</span>}
       </span>
     </section>
   );
@@ -481,7 +508,7 @@ async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: 
 async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }) {
   // Only on the portal's own site: elsewhere its cookies aren't sent, and the page's script
   // records it for people it signs in (Tuti.identify).
-  const [session, link, reader] = await Promise.all([getSession(), portalLinks(), currentReader(projectId)]);
+  const [session, link, reader, { t, language }, team] = await Promise.all([getSession(), portalLinks(), currentReader(projectId), pageTranslator("widget"), teamLanguage()]);
   const [recent, announced, seen] = await Promise.all([
     publishedEntries(slug, reader, { take: 10 }),
     prisma.changelogEntry.findFirst({
@@ -499,12 +526,12 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
   // Older than the ten newest, so after them; newest first too.
   const entries = [...recent, ...older];
   const at = announced?.publishedAt?.toISOString() ?? null;
-  const back = <BackLink href={link("/widget")}>Home</BackLink>;
+  const back = <BackLink href={link("/widget")}>{t("home")}</BackLink>;
   if (entries.length === 0) {
     return (
       <>
         {back}
-        <EmptyState title="Nothing new yet" description="Updates from the team show up here." />
+        <EmptyState title={t("nothingNew")} description={t("nothingNewLine")} />
       </>
     );
   }
@@ -523,18 +550,20 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <UnreadDot number={entry.number} />
-                <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>
+                <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt, language)}</time>
                 {entry.tags.map((tag) => (
                   <TagBadge key={tag} tag={tag} />
                 ))}
                 {entry.sample && <SampleBadge />}
               </div>
-              <h2 id={`entry-${entry.number}`} className="font-heading font-semibold break-words">
+              <h2 id={`entry-${entry.number}`} lang={team} className="font-heading font-semibold break-words">
                 {entry.title}
               </h2>
-              <p className="line-clamp-2 text-sm break-words text-muted-foreground">{toPlainText(entry.doc).slice(0, 400)}</p>
+              <p lang={team} className="line-clamp-2 text-sm break-words text-muted-foreground">
+                {toPlainText(entry.doc).slice(0, 400)}
+              </p>
               <Link href={link(`/widget?tab=whats-new&entry=${entry.number}`)} className="self-start text-sm font-medium text-primary hover:underline">
-                Read more<span className="sr-only"> about {entry.title}</span>
+                {t.rich("readMore", { title: (<span lang={team}>{entry.title}</span>) as never, hidden: (chunks) => <span className="sr-only">{chunks}</span> })}
               </Link>
             </div>
           </article>
@@ -550,12 +579,13 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
   const session = await getSession();
   const portalSignedIn = !!session && (await canActIn(session.user.id, projectId));
   const [entry] = await publishedEntries(slug, await currentReader(projectId), { number, take: 1, userId: portalSignedIn ? session.user.id : undefined });
-  const back = <BackLink href={await portalHref("/widget?tab=whats-new")}>What&apos;s new</BackLink>;
+  const [{ t, language }, teamLang] = await Promise.all([pageTranslator("widget"), teamLanguage()]);
+  const back = <BackLink href={await portalHref("/widget?tab=whats-new")}>{t("whatsNew")}</BackLink>;
   if (!entry) {
     return (
       <>
         {back}
-        <EmptyState title="This update isn't here" description="It may have been taken down." />
+        <EmptyState title={t("updateGone")} description={t("updateGoneLine")} />
       </>
     );
   }
@@ -572,11 +602,21 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
   return (
     <div className="flex flex-col gap-4">
       {back}
-      <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" base={await portalBase()} />
+      <ChangelogEntryView
+        entry={entry}
+        heading="h1"
+        mediaUrls={await mediaUrls(entry.doc, entry.cover)}
+        linkTarget="_blank"
+        // Its ideas' links at the panel's language's address too (/de/feedback/…), as its portal page's.
+        base={await portalLinkBase()}
+        // The portal's words in the panel's language; the entry's the team's (their `lang`), as its portal page.
+        language={language}
+        lang={teamLang}
+      />
       <WidgetReactions projectSlug={slug} number={entry.number} counts={entry.reactions} reacted={entry.reacted} portalSignedIn={portalSignedIn} />
-      <section className="flex flex-col gap-3 border-t pt-5" aria-label="Comments">
+      <section className="flex flex-col gap-3 border-t pt-5" aria-label={t("comments")}>
         <h2 id={COMMENTS_HEADING} tabIndex={-1} className="font-heading font-semibold outline-none">
-          {comments.length} {comments.length === 1 ? "comment" : "comments"}
+          {t("commentCount", { count: comments.length })}
         </h2>
         <WidgetComments
           projectSlug={slug}
@@ -591,6 +631,8 @@ async function WhatsNewEntry({ projectId, slug, number }: { projectId: string; s
           <div className="pt-2">
             <CommentList
               portal
+              language={language}
+              lang={teamLang}
               comments={comments}
               teamUserIds={new Set(team.map((m) => m.userId))}
               mediaUrls={commentMedia}
