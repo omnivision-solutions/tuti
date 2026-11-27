@@ -4,6 +4,7 @@ import pg from "pg";
 
 import { expect, test } from "./fixtures";
 
+import { linkPullRequest } from "./changelog-dates";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
@@ -102,6 +103,17 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   // Who it reaches, in a few words: the list, the widget and the email all leave out everyone else.
   await expect(audience).toContainText("Only users in selected groups");
   await checkpoint(owner, "editor-audience");
+  // On a phone the sidebar fits the screen, a long pull request title cut to its line.
+  await linkPullRequest(slug, 1, { repo: "acme/app", number: 41, title: "Replace the theme picker with a menu that follows the system setting on every platform" });
+  await owner.reload();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  for (const name of ["Changelog list", "Widget", "Email"]) {
+    const box = (await owner.getByRole("group", { name: "Published in" }).getByRole("switch", { name }).boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
+  await owner.getByRole("heading", { name: "Pull requests" }).scrollIntoViewIfNeeded();
+  await checkpoint(owner, "editor-sidebar-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await owner.reload();

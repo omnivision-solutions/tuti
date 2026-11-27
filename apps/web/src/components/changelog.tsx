@@ -696,7 +696,8 @@ export function ChangelogForm({
       id={CHANGELOG_FORM}
       {...keepingFields(action)}
       onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}
-      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]"
+      // One column on phones, no wider than the screen (a long pull request title is cut to its line, not run off it).
+      className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]"
     >
       {/* Written as it's published: the title, then the text, no boxes. */}
       <FieldGroup className="min-w-0">
