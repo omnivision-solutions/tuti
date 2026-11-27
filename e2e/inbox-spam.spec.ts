@@ -4,6 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, SUPPORT_EMAIL_DOMAIN } from "./env";
+import { query as db } from "./db";
 import { apiFor, createProject, expectMoreView, moreView, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { nextDecision } from "./model";
@@ -11,9 +12,9 @@ import { nextDecision } from "./model";
 // Wide enough for the Inbox's four panes: its views, the list, the conversation and its details.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("a sender marked as spam is filed next time, with the reason on the conversation; a blocked domain files its other senders, and Not spam says what stays", async ({ browser }, testInfo) => {
-  // Ten emails and as many page loads.
-  test.setTimeout(90_000);
+test("Report spam, and block the sender or the domain, files their next emails, with the reason on the conversation; a member is offered Report spam alone, nobody a free-mail domain; Not spam says what stays", async ({ browser }, testInfo) => {
+  // Eleven emails, two people and as many page loads.
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -37,40 +38,64 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await owner.goto(`/app/${slug}/inbox`);
   await expectMoreView(owner, "Needs reply 2");
 
-  // A free-mail domain is never offered for blocking: marking as spam blocks the address.
+  // A free-mail domain is never offered for blocking; its address is, shown under the item.
   await open("More followers");
   await more.click();
-  await expect(owner.getByRole("menuitem", { name: "Mark as spam", exact: true })).toBeVisible();
-  await expect(owner.getByRole("menuitem", { name: /also block/ })).toHaveCount(0);
+  await expect(owner.getByRole("menuitem", { name: "Report spam", exact: true })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: /^Report spam and block sender/ })).toContainText("e2e-pat@gmail.com");
+  await expect(owner.getByRole("menuitem", { name: /block domain/ })).toHaveCount(0);
   await owner.keyboard.press("Escape");
 
-  // The company's: Mark as spam offers its organisational domain too, and asks first.
+  // A member is offered Report spam alone: block rules are the owners' and admins'.
+  const member = await signUp(browser, APP_URL, "Mo Member");
+  await db(
+    `INSERT INTO team_member (id, "projectId", "userId", role) SELECT gen_random_uuid()::text, p.id, u.id, 'MEMBER' FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
+    [slug, member.email],
+  );
+  await member.goto(`/app/${slug}/inbox/1`);
+  await member.getByRole("button", { name: "More actions" }).click();
+  await expect(member.getByRole("menuitem", { name: /^Report spam/ })).toHaveText(["Report spam"]);
+  await member.close();
+
+  // The company's: the owner sees all three, the organisational domain under the last, and blocking it asks nothing.
   await open("Cheap followers");
   await more.click();
-  await owner.getByRole("menuitem", { name: "Mark as spam, also block spam-corp.example…" }).click();
-  const dialog = owner.getByRole("alertdialog", { name: "Also block spam-corp.example?" });
-  await expect(dialog).toContainText(
-    "new conversations from addresses at spam-corp.example go straight to Spam, where nobody is told about them. Senders an owner or admin marked Not spam still get through.",
-  );
-  await checkpoint(owner, "also-block-domain", { fullPage: false });
-  await dialog.getByRole("button", { name: "Mark as spam and block" }).click();
+  const items = owner.getByRole("menuitem", { name: /^Report spam/ });
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toHaveText("Report spam");
+  await expect(items.nth(1)).toContainText("e2e-kim@mail.spam-corp.example");
+  await expect(items.nth(2)).toContainText("spam-corp.example");
+  await checkpoint(owner, "report-spam-menu", { fullPage: false });
+  await owner.getByRole("menuitem", { name: /^Report spam and block domain/ }).click();
   await expect(owner.getByText("Marked as spam, and blocked spam-corp.example")).toBeVisible();
-  await expect(dialog).toHaveCount(0);
   await expectMoreView(owner, "Spam 1");
 
-  // Their next email, and a colleague's from the domain itself, never reach the inbox.
+  // Report spam and block sender, on the free-mail one: the address as a rule from a report.
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await more.click();
+  await owner.getByRole("menuitem", { name: /^Report spam and block sender/ }).click();
+  await expect(owner.getByText("Marked as spam, and blocked e2e-pat@gmail.com")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/spam`);
+  await expect(owner.getByRole("list", { name: "Block rules" }).getByRole("listitem")).toHaveText([
+    "Sender address · is · e2e-pat@gmail.com · from a report",
+    "Sender domain · is · spam-corp.example · from a report",
+  ]);
+
+  // Their next emails, and a colleague's from the domain itself, never reach the inbox.
   await receive(address, rawEmail("Kim Lee <e2e-kim@mail.spam-corp.example>", "Followers, again", "Last chance."));
   await receive(address, rawEmail("Lee Roe <e2e-lee@spam-corp.example>", "Followers from Lee", "Ask me about followers."));
+  await receive(address, rawEmail("Pat Day <e2e-pat@gmail.com>", "Followers from Pat", "Still selling."));
   await owner.goto(`/app/${slug}/inbox`);
-  await expectMoreView(owner, "Needs reply 1");
-  await (await moreView(owner, "Spam 3")).click();
-  await expect(rows).toHaveCount(3);
+  await (await moreView(owner, "Spam 5")).click();
+  await expect(rows).toHaveCount(5);
 
   // Each says why it's there, with Not spam beside it.
   await open("Followers, again");
   await expect(notice).toContainText("Marked as spam: you marked an earlier conversation from this sender as spam");
   await open("Cheap followers");
   await expect(notice).toContainText("Marked as spam: a teammate marked it");
+  // The domain its report blocked can go with Not spam.
+  await expect(notice.getByRole("button", { name: "Not spam, and remove the rule" })).toBeVisible();
   await open("Followers from Lee");
   await expect(notice).toContainText("Marked as spam: you blocked this address's domain");
   // The button is beside the reason, not under it.
@@ -98,13 +123,31 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await expect(owner.getByText("spam-corp.example stays blocked. e2e-lee@spam-corp.example is let through from now on.")).toBeVisible();
   await expect(notice).toHaveCount(0);
   await expect(more).toBeFocused();
-  await expectMoreView(owner, "Needs reply 2");
-  await expectMoreView(owner, "Spam 2");
+  await expectMoreView(owner, "Needs reply 1");
+  await expectMoreView(owner, "Spam 4");
   await receive(address, rawEmail("Lee Roe <e2e-lee@spam-corp.example>", "Sorry about the followers", "That wasn't me."));
   await receive(address, rawEmail("Max Poe <e2e-max@spam-corp.example>", "Followers from Max", "Ask me instead."));
   await owner.goto(`/app/${slug}/inbox`);
-  await expectMoreView(owner, "Needs reply 3");
-  await expectMoreView(owner, "Spam 3");
+  await expectMoreView(owner, "Needs reply 2");
+  await expectMoreView(owner, "Spam 5");
+
+  // Report spam alone: no rule, and the sender's next email is filed by the report.
+  await receive(address, rawEmail("Ana Lu <e2e-ana@other.example>", "Guest post", "Can I write for your blog?"));
+  await owner.goto(`/app/${slug}/inbox/8`);
+  await more.click();
+  await owner.getByRole("menuitem", { name: "Report spam", exact: true }).click();
+  await expect(owner.getByText("Marked as spam", { exact: true })).toBeVisible();
+  await receive(address, rawEmail("Ana Lu <e2e-ana@other.example>", "Guest post, again", "Still keen."));
+  await owner.goto(`/app/${slug}/inbox`);
+  await expectMoreView(owner, "Needs reply 2");
+  await expectMoreView(owner, "Spam 7");
+
+  // An allowed address is never offered for blocking: the allowed list is changed in Settings.
+  const api = await apiFor(owner, slug);
+  await api("/spam", { allow: ["e2e-lee@spam-corp.example"] }, "PATCH");
+  await owner.goto(`/app/${slug}/inbox/6`);
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: /^Report spam/ })).toHaveText(["Report spam"]);
 });
 
 test("Not spam on a conversation from a blocked address says it unblocks it, a long address wrapping inside More actions and on the Spam line", async ({ browser }, testInfo) => {

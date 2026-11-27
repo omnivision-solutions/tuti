@@ -137,6 +137,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         spam: true,
         spamReason: true,
         spamPhrase: true,
+        reportedRuleId: true,
         spamMarkedAt: true,
         spamHeldAt: true,
         handledBy: true,
