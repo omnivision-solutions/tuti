@@ -70,7 +70,9 @@ async function form(props: Partial<typeof view> = {}) {
             key: versionFormKey({ ...view, ...changes }),
             formKey: versionTextKey({ ...view, ...changes }),
             projectSlug: "acme",
-            number: 1,
+            // The page passes them bound to the entry and the language.
+            save: (state: object, formData: FormData) => saveChangelogVersion("acme", 1, "de", state, formData),
+            keep: (on: boolean, version: string) => keepChangelogVersionUpToDate("acme", 1, "de", on, version),
             defaultName: "English",
             view: { ...view, ...changes },
             mediaUrls: shownMedia,

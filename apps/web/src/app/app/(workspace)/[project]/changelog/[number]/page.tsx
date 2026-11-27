@@ -28,6 +28,7 @@ import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold, generatorSources } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { keepChangelogVersionUpToDate, saveChangelogVersion } from "@/server/changelog";
 import { getChangelogTranslation } from "@/server/operations/changelog-translations";
 import { call } from "@/server/operations/run";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
@@ -275,7 +276,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                 key={versionFormKey(version)}
                 formKey={versionTextKey(version)}
                 projectSlug={slug}
-                number={entry.number}
+                save={saveChangelogVersion.bind(null, slug, entry.number, version.code)}
+                keep={keepChangelogVersionUpToDate.bind(null, slug, entry.number, version.code)}
                 defaultName={languages![0]!.name}
                 view={version}
                 mediaUrls={await mediaUrls(version.content)}

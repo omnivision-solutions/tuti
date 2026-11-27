@@ -31,6 +31,9 @@ import { MAX_ARTICLE_TITLE, teamArticle } from "./docs";
  * source changed since the team edited them, or keeping the edit), and Update those sections.
  */
 
+/** A change made from an older read of a version is refused with this (409 `changed`). */
+export const VERSION_CHANGED = "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.";
+
 const articleSlug = z.string().trim().min(1).max(80).describe("The article's slug: the end of its address, /docs/<slug>").meta({ examples: ["billing"] });
 const language = z.enum(LANGUAGE_CODES).describe("The language's code").meta({ examples: ["de"] });
 /**
@@ -262,7 +265,7 @@ export const saveTranslation = defineOperation({
       const { parts, sourceLanguage } = source;
       // Compared with what it was made from, not with what's there now: an older copy would undo a newer translation.
       if (versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+        throw new OperationError(409, "changed", VERSION_CHANGED);
       }
       const { published, draft, drafted } = versionParts(version, parts);
       const { sections: edited, removed } = editedSections(drafted ?? published, text.doc, parts, { automatic: version.automatic });
@@ -327,7 +330,7 @@ export const publishTranslation = defineOperation({
       const { parts, sourceLanguage, titleHash } = source;
       // Only the draft that was reviewed: one saved or retranslated since would go live unseen, `keep` meant for other sections.
       if (input.version !== undefined && versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+        throw new OperationError(409, "changed", VERSION_CHANGED);
       }
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
@@ -505,7 +508,7 @@ export const keepTranslationUpToDate = defineOperation({
       const source = await sourceOf(tx, articleId);
       const { parts, sourceLanguage } = source;
       if (versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+        throw new OperationError(409, "changed", VERSION_CHANGED);
       }
       if (version.automatic === input.keepUpToDate) {
         return output(version, source);
