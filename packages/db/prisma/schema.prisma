@@ -485,6 +485,7 @@ model Project {
   changelogEntries         ChangelogEntry[]
   changelogSubscribers     ChangelogSubscriber[]
   languages                ProjectLanguage[]
+  glossary                 GlossaryTerm[]
   articleOldSlugs          ArticleOldSlug[]
   articles                 Article[]
   articleChunks            ArticleChunk[]
@@ -1624,6 +1625,9 @@ model ConversationMessage {
   /// A user's message the conversation was about to go to a person for: when that handover ran (its workflows, then the
   /// team or not), so it never runs for the message twice. Null until then, and where nothing handed it over.
   handedOverAt       DateTime?
+  /// The AI's answer in a conversation (server/ai-turn.ts): `{ questionId, text, sources: [{ slug, title, url }] }`, its
+  /// `docs_question` (the thumbs) and what the widget shows of it (the body carries the sources as text, for email).
+  aiAnswer           Json?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -2051,6 +2055,25 @@ model ProjectLanguage {
 
   @@id([projectId, code])
   @@map("project_language")
+}
+
+/// A glossary term (docs/plan.md, Languages, L12): a word the translations keep as it is, or translate one way per language.
+model GlossaryTerm {
+  id           String   @id @default(cuid())
+  projectId    String
+  /// As the team writes it in the default language (one per project, whatever the case).
+  term         String
+  /// Never translated, in any language.
+  keep         Boolean  @default(false)
+  /// Its word in each language, by code; a language without one: the model decides.
+  translations Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, term])
+  @@map("glossary_term")
 }
 
 /// Emailing a published changelog entry to a subscriber: claimed, then sent (once per entry and subscriber).
@@ -2662,6 +2685,9 @@ model ArticleTranslation {
   publishedAt      DateTime?
   /// The hash of the published source it was made from (translationSourceHash): another one means the source changed since.
   sourceHash       String?
+  /// The glossary it was made with (@tuti/jobs glossaryHash: the terms its source uses, as set for its language); another
+  /// one means a term it uses changed since. Null: made before the glossary, as with no terms.
+  glossaryHash     String?
   /// The "Our product is available in" setting it was made under; `memory` is reused only under the same one.
   productAvailable Boolean?
   /// Its segments' translations by their source text (@tuti/content translateDoc), so a publish sends only what changed.
@@ -2732,6 +2758,9 @@ model ChangelogTranslation {
   publishedAt      DateTime?
   /// The hash of the published source it was made from (translationSource): another one means the source changed since.
   sourceHash       String?
+  /// The glossary it was made with (@tuti/jobs glossaryHash: the terms its source uses, as set for its language); another
+  /// one means a term it uses changed since. Null: made before the glossary, as with no terms.
+  glossaryHash     String?
   /// The "Our product is available in" setting it was made under; `memory` is reused only under the same one.
   productAvailable Boolean?
   /// Its segments' translations by their source text, so a publish sends only what changed.

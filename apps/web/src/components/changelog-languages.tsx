@@ -1,11 +1,12 @@
 "use client";
 
 import type { Doc, MediaUrls } from "@tuti/content";
+import type { Editor } from "@tiptap/react";
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type RefObject, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { type RefObject, useActionState, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ChangelogSaveButton, ChangelogSavingContext } from "@/components/changelog";
@@ -110,8 +111,10 @@ export type VersionView = {
   /** Why it can't be translated yet, if it can't. */
   waiting: string | null;
   title: string;
-  /** Its text; the default language's while it isn't written, to write over. */
+  /** Its text; the default language's while it has none yet (not written, or its first translation still to come), to write over. */
   content: Doc;
+  /** `title` and `content` are its own (false: the default language's, shown in their place). */
+  own: boolean;
 };
 
 /** The one line over a version's text: where it stands, and what saving does. */
@@ -134,6 +137,37 @@ function versionLine(view: VersionView, defaultName: string) {
   }
 }
 
+/** What a version form hands on to the one the page's next read mounts: its unsaved title and text, and the token they go from. */
+type Carried = { title: string; content: Doc; token: string; mediaUrls: MediaUrls };
+
+/**
+ * A version's editor: one per language (the page keys it so), holding what's typed and not saved across the form it shows,
+ * which is mounted afresh for each read with new text (`formKey`): every read goes through the editor's own checks (text it
+ * can't read stays read-only, images from their addresses), and typing survives it.
+ */
+export function ChangelogVersionEditor({ formKey, ...props }: Omit<Parameters<typeof ChangelogVersionForm>[0], "drafts"> & { formKey: string }) {
+  const [drafts] = useState(draftStore);
+  return <ChangelogVersionForm key={formKey} {...props} drafts={drafts} />;
+}
+
+/** The editor's unsaved draft, across the forms it mounts, and which of them is the one shown (the last mounted). */
+function draftStore() {
+  let draft: Carried | null = null;
+  let shownForm: string | null = null;
+  return {
+    take: () => draft,
+    put: (next: Carried | null) => {
+      draft = next;
+    },
+    /** A form mounted (its effect: run twice in Strict Mode, to the same effect). */
+    show: (form: string) => {
+      shownForm = form;
+    },
+    shown: (form: string) => form === shownForm,
+  };
+}
+type Drafts = ReturnType<typeof draftStore>;
+
 export function ChangelogVersionForm({
   projectSlug,
   number,
@@ -141,6 +175,7 @@ export function ChangelogVersionForm({
   view,
   mediaUrls,
   languages,
+  drafts,
 }: {
   projectSlug: string;
   number: number;
@@ -149,21 +184,73 @@ export function ChangelogVersionForm({
   mediaUrls: MediaUrls | null;
   /** The sidebar's Languages. */
   languages: EntryLanguage[];
+  /** The editor's unsaved draft, carried across the forms it mounts (ChangelogVersionEditor). */
+  drafts: Drafts;
 }) {
+  // A draft carried from the form before this one (typed after its last save was sent, the page having read again since):
+  // this form starts from it, and from the token that typing goes from, so its Save is checked against that.
+  const [start] = useState(drafts.take);
+  // This form's mount: only the one shown writes the carried draft (a late answer to an unmounted form's save leaves it). Its
+  // id stable across renders (Strict Mode calls state initializers twice: a counter there would skip past it).
+  const mount = useId();
+  useEffect(() => drafts.show(mount), [drafts, mount]);
+  const current = () => drafts.shown(mount);
   // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say), for Save only: a save
   // made from this text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
   // The switch goes from the page's latest read, as it changes nothing typed here.
-  const [loaded, setLoaded] = useState(view.version);
+  const [loaded, setLoaded] = useState(start?.token ?? view.version);
   // Typed and not saved yet (the title, or any edit in the text: Enter, paste and drop fire no input event there): a refused
-  // toggle doesn't read the page again over it. A ref, read when the toggle's answer comes (typing goes on meanwhile).
-  const dirty = useRef(false);
+  // toggle doesn't read the page again over it. A ref, read when the toggle's answer comes (typing goes on meanwhile), and
+  // state, for the page's new reads below.
+  const dirty = useRef(!!start);
+  const [edited, setEdited] = useState(!!start);
+  // Edits so far: a save clears the marks only where none came after it was sent (typing goes on while it saves).
+  const edits = useRef(start ? 1 : 0);
+  const titleField = useRef<HTMLInputElement>(null);
+  const editor = useRef<Editor | null>(null);
+  // The addresses of media added in this form (and carried in): the page's next read has only its own text's, so the draft
+  // carries them, with this read's own (`mediaUrls`: an image in it the next read drops is still in the draft).
+  const added = useRef<MediaUrls>(start?.mediaUrls ?? {});
+  const markEdited = () => {
+    dirty.current = true;
+    edits.current += 1;
+    setEdited(true);
+    // Carried to the form the page's next read mounts, should it come before this is saved.
+    if (current()) {
+      drafts.put({ title: titleField.current?.value ?? "", content: (editor.current?.getJSON() as Doc | undefined) ?? view.content, token: loaded, mediaUrls: { ...mediaUrls, ...added.current } });
+    }
+  };
+  // The page read again with a new token but the same text (the form is remounted when its text changes: page.tsx keys it by
+  // it): a form with nothing typed goes from that read; one with edits keeps its own, so their save is refused rather than
+  // marked up to date with a change they never saw.
+  const [seen, setSeen] = useState(view.version);
+  if (seen !== view.version) {
+    setSeen(view.version);
+    if (!edited) {
+      setLoaded(view.version);
+    }
+  }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const sent = edits.current;
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
-      // Its own save is what the next one goes from.
-      setLoaded(result.version!);
-      dirty.current = false;
       toast.success("Saved");
+      // An answer for a form the page has since replaced: the one now shown goes from its own read (or its carried draft).
+      if (!current()) {
+        return result;
+      }
+      // Its own save is what the next one goes from, unless a newer read was taken meanwhile (its token, not this answer's).
+      const sentToken = String(formData.get("version") ?? "");
+      setLoaded((now) => (now === sentToken ? result.version! : now));
+      if (edits.current === sent) {
+        dirty.current = false;
+        setEdited(false);
+        drafts.put(null);
+      } else {
+        // Typed after it was sent: still unsaved, carried on from what it saved (never a later read's token).
+        const draft = drafts.take();
+        if (draft) drafts.put({ ...draft, token: result.version! });
+      }
     }
     return result;
   }, {});
@@ -171,13 +258,14 @@ export function ChangelogVersionForm({
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   const line = versionLine(view, defaultName);
-  // On the text alone (the labels, line and errors are the app's English): the default language's while it's still its text.
-  const textLang = view.state === "unwritten" ? languages[0]!.code : view.code;
+  // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
+  // its, whatever the state (not written, or a first translation on its way or failing).
+  const textLang = view.own ? view.code : languages[0]!.code;
   const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
     <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => {
         if ((event.target as HTMLElement).getAttribute("role") !== "switch") {
-          dirty.current = true;
+          markEdited();
         }
       }} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
@@ -190,10 +278,11 @@ export function ChangelogVersionForm({
         )}
         <div className="flex flex-col gap-2">
           <input
+            ref={titleField}
             name="title"
             aria-label="Title"
             lang={textLang}
-            defaultValue={view.title}
+            defaultValue={start?.title ?? view.title}
             required
             autoComplete="off"
             aria-invalid={state.error ? true : undefined}
@@ -202,7 +291,7 @@ export function ChangelogVersionForm({
           />
           {state.error && <FieldError id="version-error">{state.error}</FieldError>}
         </div>
-        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={view.content} onChange={() => (dirty.current = true)} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
+        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={start?.content ?? view.content} editorRef={editor} onChange={markEdited} onMediaUrls={(urls) => (added.current = { ...added.current, ...urls })} uploads={mediaUrls ? { projectSlug, mediaUrls: { ...mediaUrls, ...start?.mediaUrls } } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate
@@ -215,7 +304,6 @@ export function ChangelogVersionForm({
           number={number}
           code={view.code}
           on={view.keepUpToDate}
-          defaultName={defaultName}
           teamWrote={view.state === "written" || view.state === "behind" || view.state === "setting"}
         />
         <ChangelogLanguageList languages={languages} current={view.code} />
@@ -233,7 +321,6 @@ function KeepUpToDate({
   number,
   code,
   on,
-  defaultName,
   teamWrote,
   version,
   onSaved,
@@ -243,7 +330,6 @@ function KeepUpToDate({
   number: number;
   code: string;
   on: boolean;
-  defaultName: string;
   teamWrote: boolean;
   /** The page's latest read of the version (`teamWrote` is that read's too): turning it on over text changed since is refused, not done unconfirmed. */
   version: string;
@@ -286,11 +372,13 @@ function KeepUpToDate({
   };
   return (
     <>
-      <label className="flex items-start justify-between gap-3">
-        <span className="flex flex-col gap-0.5">
-          <span className="font-medium">Keep up to date</span>
-          <span className="text-xs text-muted-foreground">Translated again whenever {defaultName} changes.</span>
-        </span>
+      {/* Under its group label, as the entry editor's sidebar groups are (docs/design.md): no hint sentence. */}
+      <section aria-labelledby="version-translation" className="flex flex-col gap-2">
+      <h2 id="version-translation" className="group-label">
+        Translation
+      </h2>
+      <label className="flex items-center justify-between gap-3">
+        <span className="font-medium">Keep up to date</span>
         {/* Not `disabled` while it saves (focus would leave it): changes are ignored meanwhile. */}
         <Switch
           checked={checked}
@@ -308,6 +396,7 @@ function KeepUpToDate({
           }}
         />
       </label>
+      </section>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
