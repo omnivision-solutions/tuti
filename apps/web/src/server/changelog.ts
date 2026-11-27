@@ -30,7 +30,7 @@ import {
   updateChangelogStyle,
 } from "./operations/changelog";
 import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
-import { saveChangelogTranslation } from "./operations/changelog-translations";
+import { saveChangelogTranslation, VERSION_CHANGED } from "./operations/changelog-translations";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -108,11 +108,18 @@ export async function saveChangelogVersion(projectSlug: string, number: number, 
   return { version };
 }
 
-/** Keep up to date on an entry's version (it's translated again) or off, against the `version` the editor read. */
+/**
+ * Keep up to date on an entry's version (it's translated again) or off, against the `version` the page last read. Refused
+ * as changed meanwhile, the page reads it again (as it is now) and says so, so the switch isn't stuck until a reload.
+ */
 export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState> {
   const result = await asTeam(projectSlug, DENIED, (context) =>
     call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) }),
   );
+  if (result.error === VERSION_CHANGED) {
+    refresh();
+    return { error: "It changed meanwhile: shown as it is now. Try again." };
+  }
   if (!result.error) {
     refresh();
   }

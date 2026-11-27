@@ -4,8 +4,9 @@ import { languageTranslationsDone, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { keepChangelogVersionUpToDate } from "./changelog";
 import { entryLanguages } from "./changelog-languages";
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { getChangelogTranslation, saveChangelogTranslation } from "./operations/changelog-translations";
@@ -193,4 +194,21 @@ test("Keep up to date turned on over the team's text: translating until it's ans
   release();
   await languageTranslationsDone();
   expect(await state()).toBe("waiting");
+});
+
+test("Keep up to date from the editor after the English changed: the page's new read works; an old one is refused with a short line, not stuck", async () => {
+  const number = await published("manual");
+  const empty = await call(getChangelogTranslation, as(), { number, language: "de" });
+  await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Wechsle das Design im Profilmenü."), version: empty.version });
+  const opened = await call(getChangelogTranslation, as(), { number, language: "de" });
+  // The English edited (by a teammate, say) while the version stays open.
+  await call(updateChangelogEntry, as(), { number, body: "Switch themes from the menu." });
+  actAs(owner);
+  expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, opened.version)).toEqual({ error: "It changed meanwhile: shown as it is now. Try again." });
+  // The page's next read (the action refreshed it): on, and translated.
+  const now = await call(getChangelogTranslation, as(), { number, language: "de" });
+  model.reply(reply("de", TITLE, "Switch themes from the menu."));
+  expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, now.version)).toEqual({});
+  await languageTranslationsDone();
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode", behind: false });
 });

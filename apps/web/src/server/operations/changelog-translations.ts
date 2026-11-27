@@ -14,6 +14,9 @@ import { defineOperation, OperationError } from "./define";
  * article's version.
  */
 
+/** A change made from an older read of a version (or of the entry beside it) is refused with this (409 `changed`). */
+export const VERSION_CHANGED = "It or the entry changed since you opened it (translated, or saved by someone else). Reload it to see the changes.";
+
 const entryNumber = z.coerce.number().int().positive().describe("The entry's number in the project").meta({ examples: [7] });
 const language = z.enum(LANGUAGE_CODES).describe("The language's code: one of the project's other languages").meta({ examples: ["de"] });
 const docExample = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Wechsle das Design im Profilmenü." }] }] };
@@ -149,7 +152,7 @@ export const saveChangelogTranslation = defineOperation({
       // Made from what was read: text written over a teammate's newer text, or Keep up to date turned on over text the team
       // changed since (which it would replace, unconfirmed), is refused.
       if (input.version !== undefined && versionToken(version, sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", "It or the entry changed since you opened it (translated, or saved by someone else). Reload it to see the changes.");
+        throw new OperationError(409, "changed", VERSION_CHANGED);
       }
       if (writing) {
         const title = input.title ?? version?.title ?? "";

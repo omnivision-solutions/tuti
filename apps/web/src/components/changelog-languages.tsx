@@ -149,8 +149,9 @@ export function ChangelogVersionForm({
   /** The sidebar's Languages. */
   languages: EntryLanguage[];
 }) {
-  // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say): a save made from this
-  // text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
+  // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say), for Save only: a save
+  // made from this text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
+  // The switch goes from the page's latest read, as it changes nothing typed here.
   const [loaded, setLoaded] = useState(view.version);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
@@ -193,7 +194,7 @@ export function ChangelogVersionForm({
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate
-          version={loaded}
+          version={view.version}
           projectSlug={projectSlug}
           number={number}
           code={view.code}
@@ -226,7 +227,7 @@ function KeepUpToDate({
   on: boolean;
   defaultName: string;
   teamWrote: boolean;
-  /** The token the form's text was loaded with: turning it on over text changed since is refused, not done unconfirmed. */
+  /** The page's latest read of the version (`teamWrote` is that read's too): turning it on over text changed since is refused, not done unconfirmed. */
   version: string;
 }) {
   const [checked, setChecked] = useState(on);

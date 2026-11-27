@@ -135,3 +135,21 @@ test("a save that leaves the text as it was is what the next save goes from; the
   await act(async () => answer({}));
   expect(document.activeElement).toBe(second);
 });
+
+test("the switch goes from the page's latest read, not the token the text was loaded with; refused as changed, it says so and goes back", async () => {
+  keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "It changed meanwhile: shown as it is now. Try again." }).mockResolvedValueOnce({});
+  const { render } = await form({ keepUpToDate: false, state: "current" });
+  // The English edited since, the page read again: a new token, the same text.
+  await render({ keepUpToDate: false, state: "translating", version: "v2" });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v2");
+  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile: shown as it is now. Try again.");
+  expect(keep().checked).toBe(false);
+  // The page read again (the action refreshed it): the next try goes from that read.
+  await render({ keepUpToDate: false, state: "translating", version: "v3" });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v3");
+  expect(keep().checked).toBe(true);
+  // Save still goes with the token its text was loaded with.
+  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v1");
+});
