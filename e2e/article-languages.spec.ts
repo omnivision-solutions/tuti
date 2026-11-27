@@ -173,6 +173,7 @@ test("English changes a section of the team's German: the orange line shows what
   // Only that section is asked for: its heading and its paragraph.
   await nextModelReply(JSON.stringify({ segments: { 1: "Gebühren", 2: "Gebühren sind ein Jahr lang kostenlos." } }), "Fees are free for a year.");
   await team.getByRole("button", { name: "Update those sections" }).click();
+  await team.getByRole("alertdialog", { name: "Translate those sections again?" }).getByRole("button", { name: "Translate again" }).click();
   await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Translating those sections…")).toBeVisible();
   // Translated in the background: there once the page is read again.
   await expect(async () => {

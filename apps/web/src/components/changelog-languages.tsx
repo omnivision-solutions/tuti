@@ -277,7 +277,8 @@ export function ChangelogVersionForm({
   // An article's version behind English: in how many sections (the orange line, with Show changes and Update those sections).
   const count = behind?.count ?? 0;
   // Whenever sections are behind (a draft never published, or one kept up to date, too), not only in the "behind" state.
-  const line = count > 0 ? `${defaultName} changed in ${count} ${count === 1 ? "section" : "sections"} since this was edited.` : versionLine(view, defaultName, kind);
+  // (Unless it can't be translated: that says why, and nothing would update them.)
+  const line = count > 0 && view.state !== "waiting" ? `${defaultName} changed in ${count} ${count === 1 ? "section" : "sections"} since this was edited.` : versionLine(view, defaultName, kind);
   // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
   // its, whatever the state (not written, or a first translation on its way or failing).
   const textLang = view.own ? view.code : languages[0]!.code;
@@ -294,7 +295,7 @@ export function ChangelogVersionForm({
         {line && (
           <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
             <p className="mr-auto">{line}</p>
-            {behind && count > 0 && <BehindActions behind={behind} defaultName={defaultName} />}
+            {behind && count > 0 && <BehindActions behind={behind} defaultName={defaultName} dirty={dirty} />}
           </div>
         )}
         <div className="flex flex-col gap-2">
@@ -441,11 +442,14 @@ function KeepUpToDate({
 /** The top bar's Save for a version (its form is below it). */
 export const ChangelogVersionSave = () => <ChangelogSaveButton form={VERSION_FORM} primary />;
 
-export type Behind = { count: number; changes: ReactNode | null; update: () => Promise<FormState> };
+/** `update`: Update those sections (null where nothing translates, no AI set up). */
+export type Behind = { count: number; changes: ReactNode | null; update: (() => Promise<FormState>) | null };
 
 /** The orange line's Show changes (what English changed in those sections) and Update those sections. */
-function BehindActions({ behind, defaultName }: { behind: Behind; defaultName: string }) {
+function BehindActions({ behind, defaultName, dirty }: { behind: Behind; defaultName: string; dirty: RefObject<boolean> }) {
   const [updating, startUpdate] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  const update = behind.update;
   return (
     <span className="flex items-center gap-1">
       {behind.changes && (
@@ -459,23 +463,48 @@ function BehindActions({ behind, defaultName }: { behind: Behind; defaultName: s
           </DialogContent>
         </Dialog>
       )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        disabled={updating}
-        focusableWhenDisabled
-        onClick={() =>
-          startUpdate(async () => {
-            const result = await behind.update();
-            // Translated in the background: the sections show once it's done (reading the page again).
-            if (result.error) toast.error(result.error);
-            else toast.success("Translating those sections…");
-          })
-        }
-      >
-        {updating ? "Updating…" : "Update those sections"}
-      </Button>
+      {update && (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={updating}
+            focusableWhenDisabled
+            onClick={() => {
+              // Updating reads the page again: typing not saved couldn't be saved over it after.
+              if (dirty.current) toast.error("Save your edits first.");
+              else setConfirming(true);
+            }}
+          >
+            {updating ? "Updating…" : "Update those sections"}
+          </Button>
+          <AlertDialog open={confirming} onOpenChange={setConfirming}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Translate those sections again?</AlertDialogTitle>
+                <AlertDialogDescription>Your edits in them are replaced.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <Button
+                  onClick={() => {
+                    setConfirming(false);
+                    startUpdate(async () => {
+                      const result = await update();
+                      // Translated in the background: the sections show once it's done (reading the page again).
+                      if (result.error) toast.error(result.error);
+                      else toast.success("Translating those sections…");
+                    });
+                  }}
+                >
+                  Translate again
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </span>
   );
 }

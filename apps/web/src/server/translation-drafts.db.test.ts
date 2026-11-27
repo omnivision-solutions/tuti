@@ -1198,6 +1198,8 @@ test("Show changes finds the English of a section the team took out of its draft
   await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
   const billing = (await behindChanges(project.id, de.slug, "de")).find(({ key }) => key.startsWith("Billing"))!;
   expect(billing.added).toBe(false);
+  // Publish asks about it: ticked, it comes back translated; unticked, it stays out.
+  expect((await readArticleVersion(project.id, de.slug, "de")).behind.ask).toEqual([billing.key]);
   expect(text(billing.before)).toContain("Pay by card");
   expect(text(billing.before)).not.toContain("invoice");
 });

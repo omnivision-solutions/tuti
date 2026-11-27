@@ -416,7 +416,11 @@ test("an article's version behind English: the orange line says in how many sect
   await act(async () => button("Show changes").click());
   expect(document.body.textContent).toContain("What changed in English");
   expect(document.body.textContent).toContain("Billing: Pay by card or invoice");
+  // It replaces the team's edits there: it asks first.
   await act(async () => button("Update those sections").click());
+  expect(update).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Translate those sections again?");
+  await act(async () => button("Translate again").click());
   expect(update).toHaveBeenCalledTimes(1);
   expect(toast.success).toHaveBeenCalledWith("Translating those sections…");
 });
@@ -446,4 +450,19 @@ test("an article's draft never published, with sections behind English, has the 
   await form({ state: "unwritten", keepUpToDate: false, own: true }, { kind: "article", behind: { count: 1, changes: null, update: vi.fn() } });
   expect(document.body.textContent).toContain("English changed in 1 section since this was edited.");
   expect(document.body.textContent).not.toContain("Not published yet");
+});
+
+test("Update those sections with typing not saved asks to save first; with no AI it isn't offered, and a version that can't translate says so", async () => {
+  const update = vi.fn().mockResolvedValue({});
+  await form({ state: "behind", keepUpToDate: false }, { kind: "article", behind: { count: 1, changes: null, update } });
+  type(title(), "Bezahlt werden, jede Woche");
+  await act(async () => [...document.querySelectorAll("button")].find((each) => each.textContent === "Update those sections")!.click());
+  expect(toast.error).toHaveBeenCalledWith("Save your edits first.");
+  expect(document.body.textContent).not.toContain("Translate those sections again?");
+  expect(update).not.toHaveBeenCalled();
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  await form({ state: "waiting", keepUpToDate: true, waiting: "Out of credits" }, { kind: "article", behind: { count: 1, changes: null, update: null } });
+  expect(document.body.textContent).toContain("Can't translate it yet: Out of credits.");
+  expect([...document.querySelectorAll("button")].some((each) => each.textContent === "Update those sections")).toBe(false);
 });

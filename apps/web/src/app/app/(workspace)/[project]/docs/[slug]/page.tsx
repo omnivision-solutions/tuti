@@ -259,7 +259,7 @@ export default async function ArticlePage(
               view={version}
               mediaUrls={await mediaUrls(version.content)}
               languages={languages!}
-              behind={{ count: behind.sections.length, changes: changesShown, update: updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections, read.version) }}
+              behind={{ count: behind.sections.length, changes: changesShown, update: aiEnabled() ? updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections, read.version) : null }}
             />
           </div>
         </section>

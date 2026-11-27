@@ -354,9 +354,10 @@ export async function readArticleVersion(projectId: string, slug: string, langua
       const behind = reasons.length === 0 ? null : reasons.every((reason) => reason === PRODUCT_SETTING_CHANGED) ? "setting" : "source";
       // The orange line's sections: behind for English (not only the product setting), published or in the draft. Publish
       // asks about those the text it publishes has (an edit to keep or not; a section English added has none).
-      const { published, drafted } = versionParts(version, source.parts);
+      const { published, draft, drafted } = versionParts(version, source.parts);
       const sections = behindForEnglish(read);
-      const has = new Set((drafted ?? published).map(({ meta }) => meta.key));
+      // (A section the draft took out is asked about too: ticked, it comes back translated; unticked, it stays out.)
+      const has = new Set([...(drafted ?? published).map(({ meta }) => meta.key), ...(draft?.removed ?? [])]);
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
       return {
         read,
