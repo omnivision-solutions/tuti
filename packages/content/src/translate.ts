@@ -294,10 +294,15 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
   };
 }
 
+/**
+ * A segment's text as a glossary term is looked for in it (still escaped): formatting tags go without a trace ("<b1>billing</b1>
+ * guide" is "billing guide"); placeholders and breaks split words.
+ */
+export const untagged = (text: string) => text.replace(/<\/?[a-z]\d{1,4}>/g, "").replace(MARKUP, " ");
+
 /** Where a glossary term must come out in a translated segment: as its translation, or unchanged when it has none. */
 export function glossaryProblems(source: string, translated: string, glossary: GlossaryTerm[]): string[] {
-  // Formatting tags go without a trace ("<b1>billing</b1> guide" is "billing guide"); placeholders and breaks split words.
-  const plain = (text: string) => unescape(text.replace(/<\/?[a-z]\d{1,4}>/g, "").replace(MARKUP, " ")).toLowerCase();
+  const plain = (text: string) => unescape(untagged(text)).toLowerCase();
   const [from, to] = [plain(source), plain(translated)];
   return glossary
     .filter(({ term }) => uses(from, term.toLowerCase()))

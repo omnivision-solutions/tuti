@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, keyed, sections, segmentsOf, termMatcher, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, segmentsOf, termMatcher, toPlainText, translateDoc, untagged } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
@@ -929,8 +929,8 @@ export async function planGlossaryChanges(projectId: string, before: Glossary, a
       if (inLanguages.length > 0) labels.push({ table, id: label.id, languages: inLanguages });
     }
   }
-  /** Whether `text` (a remembered segment's source) uses a term changed in `language`. */
-  const matchTerms = (text: string, language: string) => keys(text).some((term) => changed.get(language)?.has(term));
+  /** Whether `text` (a remembered segment's source, its formatting tags in it) uses a term changed in `language`. */
+  const matchTerms = (text: string, language: string) => keys(untagged(text)).some((term) => changed.get(language)?.has(term));
   return { projectId, state, codes: [...changed.keys()], touched, labels, matchTerms };
 }
 
