@@ -13,6 +13,14 @@ export const MAX_LANGUAGE_INSTRUCTIONS = 2000;
 
 const code = z.enum(LANGUAGE_CODES);
 
+/** How many of a kind of page (`pages`) have a version in a language, and wait for one. */
+const translations = (pages: string) =>
+  z.object({
+    translated: z.number().int().describe(`${pages} with a version in it`).meta({ examples: [42] }),
+    waiting: z.number().int().describe(`${pages} kept up to date in it that wait for a translation (being translated, or couldn't be)`).meta({ examples: [0] }),
+    why: z.string().nullable().describe("Why some wait, when they couldn't be translated (tried again on their own)").meta({ examples: ["Out of credits"] }),
+  });
+
 const languageOutput = z
   .object({
     code: code.describe("Its code").meta({ examples: ["de"] }),
@@ -21,13 +29,8 @@ const languageOutput = z
     instructions: z.string().describe("The team's instructions for translating into it").meta({ examples: ["Use du, not Sie."] }),
     productAvailable: z.boolean().describe("“Our product is available in <language>”: the team's own product has its words in this language").meta({ examples: [false] }),
     live: z.boolean().describe("Whether readers get it; until then only the team can open its pages").meta({ examples: [false] }),
-    articles: z
-      .object({
-        translated: z.number().int().describe("Articles with a version in it").meta({ examples: [42] }),
-        waiting: z.number().int().describe("Articles kept up to date in it that wait for a translation (being translated, or couldn't be)").meta({ examples: [0] }),
-        why: z.string().nullable().describe("Why some wait, when they couldn't be translated (tried again on their own)").meta({ examples: ["Out of credits"] }),
-      })
-      .describe("Its articles' translations"),
+    articles: translations("Articles").describe("Its articles' translations"),
+    entries: translations("Published changelog entries").describe("Its changelog entries' translations"),
   })
   .meta({ id: "Language", description: "A language the portal is in besides its default one" });
 
@@ -49,16 +52,27 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
     where: { id: projectId },
     select: { plan: true, language: true, sendToLanguage: true, languages: { select: languageSelect, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
   });
-  const [translated, waiting, reasons] = await Promise.all([
-    prisma.articleTranslation.groupBy({ by: ["language"], where: { projectId, publishedAt: { not: null }, article: { deletedAt: null } }, _count: true }),
+  // Counted against the published pages (Settings' `pages`): a sample, unpublished or deleted article's version isn't one.
+  const live = { publishedAt: { not: null }, sample: false };
+  const [translated, waiting, reasons, entriesTranslated, entriesWaiting, entryReasons] = await Promise.all([
+    prisma.articleTranslation.groupBy({ by: ["language"], where: { projectId, publishedAt: { not: null }, article: { ...live, deletedAt: null } }, _count: true }),
     prisma.articleTranslation.groupBy({
       by: ["language"],
-      where: { projectId, automatic: true, article: { publishedAt: { not: null }, sample: false }, OR: [{ publishedAt: null }, { error: { not: null } }] },
+      where: { projectId, automatic: true, article: live, OR: [{ publishedAt: null }, { error: { not: null } }] },
       _count: true,
     }),
-    prisma.articleTranslation.groupBy({ by: ["language", "error"], where: { projectId, automatic: true, error: { not: null }, article: { publishedAt: { not: null }, sample: false } }, _count: true, orderBy: { _count: { id: "desc" } } }),
+    prisma.articleTranslation.groupBy({ by: ["language", "error"], where: { projectId, automatic: true, error: { not: null }, article: live }, _count: true, orderBy: { _count: { id: "desc" } } }),
+    prisma.changelogTranslation.groupBy({ by: ["language"], where: { projectId, publishedAt: { not: null }, entry: live }, _count: true }),
+    prisma.changelogTranslation.groupBy({ by: ["language"], where: { projectId, automatic: true, entry: live, OR: [{ publishedAt: null }, { error: { not: null } }] }, _count: true }),
+    prisma.changelogTranslation.groupBy({ by: ["language", "error"], where: { projectId, automatic: true, error: { not: null }, entry: live }, _count: true, orderBy: { _count: { id: "desc" } } }),
   ]);
   const count = (rows: { language: string; _count: number }[], code: string) => rows.find((row) => row.language === code)?._count ?? 0;
+  // The most common reason first.
+  const counts = (done: typeof translated, left: typeof waiting, why: typeof reasons, code: string) => ({
+    translated: count(done, code),
+    waiting: count(left, code),
+    why: why.find((row) => row.language === code)?.error ?? (count(left, code) > 0 && !aiEnabled() ? NO_AI : null),
+  });
   // Past the plan's limit (after a downgrade) only the oldest within it are live; the rest are kept, offline until an upgrade.
   const limit = languageLimit(project.plan);
   const named = (code: string) => (isLanguage(code) ? { code, name: LANGUAGES[code].name } : null);
@@ -70,14 +84,24 @@ export async function projectLanguages(projectId: string): Promise<z.output<type
       return language ? [{ ...rest, ...language }] : [];
     }).map(({ automatic, live, ...rest }, index) => ({
       ...rest,
-      // The most common reason first.
-      articles: { translated: count(translated, rest.code), waiting: count(waiting, rest.code), why: reasons.find((row) => row.language === rest.code)?.error ?? (count(waiting, rest.code) > 0 && !aiEnabled() ? NO_AI : null) },
+      articles: counts(translated, waiting, reasons, rest.code),
+      entries: counts(entriesTranslated, entriesWaiting, entryReasons, rest.code),
       newPages: automatic ? ("automatic" as const) : ("manual" as const),
       // Counted among those offered only.
       live: live && (limit === null || index < limit - 1),
     })),
     sendVisitors: project.sendToLanguage,
   };
+}
+
+/**
+ * A project's published pages: its articles and changelog entries, what a language translates (Settings → Languages' rows
+ * and Add language count against it). Not sample ones (never translated), drafts, or deleted articles.
+ */
+export async function publishedPages(projectId: string): Promise<number> {
+  const live = { projectId, publishedAt: { not: null }, sample: false };
+  const [articles, entries] = await Promise.all([prisma.article.count({ where: { ...live, deletedAt: null } }), prisma.changelogEntry.count({ where: live })]);
+  return articles + entries;
 }
 
 /** Said when a project on `plan` has as many languages as its plan's `limit` allows (also Settings' upgrade prompts: `then`, "make more live"). */
@@ -226,8 +250,13 @@ export async function changeLanguages(projectId: string, change: (current: Langu
   // The proxy's copy catches up within its few seconds (server/language-addresses.ts).
   const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
   forgetLanguages(slug);
-  for (const code of [...added, ...switched]) {
+  for (const code of added) {
     await queueLanguageTranslations(projectId, code);
+  }
+  // The switch translates again what's kept up to date; it starts no entry's version (nothing confirmed them: a language
+  // that was Manual has none), as adding the language and Retranslate do with their counts.
+  for (const code of switched.filter((code) => !added.includes(code))) {
+    await queueLanguageTranslations(projectId, code, { newEntries: false });
   }
   await queueLabels(projectId, [...added, ...switched]);
   return projectLanguages(projectId);
@@ -237,7 +266,7 @@ export const retranslateLanguage = defineOperation({
   name: "languages.retranslate",
   title: "Retranslate a language",
   summary:
-    "Translate a language's articles kept up to date again, in the background: all of them anew (Retranslate), or with `waiting`, only those that couldn't be translated yet (Try again). Costs credits where they're on.",
+    "Translate a language's articles and changelog entries kept up to date again, in the background: all of them anew (Retranslate), or with `waiting`, only those that couldn't be translated yet (Try again). Costs credits where they're on.",
   method: "POST",
   path: "/languages/{code}/retranslate",
   scope: "write",
@@ -245,9 +274,9 @@ export const retranslateLanguage = defineOperation({
   errors: [404],
   input: z.object({
     code: code.describe("The language's code").meta({ examples: ["de"] }),
-    waiting: z.boolean().optional().describe("Only the articles waiting for a translation (Try again)"),
+    waiting: z.boolean().optional().describe("Only the articles and entries waiting for a translation (Try again)"),
   }),
-  output: z.object({ queued: z.number().int().describe("How many articles are being translated").meta({ examples: [42] }) }).describe("What was queued"),
+  output: z.object({ queued: z.number().int().describe("How many articles and entries are being translated").meta({ examples: [42] }) }).describe("What was queued"),
   run: async ({ projectId }, { code, waiting = false }) => {
     const language = await prisma.projectLanguage.findUnique({ where: { projectId_code: { projectId, code } }, select: { code: true } });
     if (!language) {

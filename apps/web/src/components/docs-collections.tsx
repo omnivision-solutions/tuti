@@ -87,7 +87,7 @@ function Rows({
           href={collectionHref(child.slug)}
           icon={<span className="text-muted-foreground">{child.icon ? <CollectionIcon name={child.icon} /> : <FolderIcon aria-hidden className="size-[1.25em]" />}</span>}
         >
-          <span lang={lang}>{child.name}</span>
+          <span lang={child.lang ?? lang}>{child.name}</span>
           {child.locked && <LockedMark />}
         </Row>
       ))}
@@ -126,11 +126,11 @@ export function CollectionContents({
           <div className="flex flex-col gap-0.5 border-b px-4.5 py-3">
             <h2 id={`collection-${child.slug}`} className="flex items-center gap-2 font-medium break-words">
               <Link href={collectionHref(child.slug)} className="min-w-0 hover:underline">
-                <span lang={lang}>{child.name}</span>
+                <span lang={child.lang ?? lang}>{child.name}</span>
                 {child.locked && <LockedMark />}
               </Link>
             </h2>
-            {child.description && <p lang={lang} className="text-sm text-muted-foreground">{child.description}</p>}
+            {child.description && <p lang={child.lang ?? lang} className="text-sm text-muted-foreground">{child.description}</p>}
           </div>
           {child.articles.length + child.collections.length > 0 && (
             <Rows articles={child.articles} collections={child.collections} href={href} collectionHref={collectionHref} lang={lang} />

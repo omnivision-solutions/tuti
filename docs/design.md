@@ -249,8 +249,10 @@ the list picks none to approve at once.
   phrase “facebook admin”"), "a teammate marked it" for a mark.
   Not spam's toast says what stays in the way (a blocked address or domain and who can change it, the hourly limit);
   where an owner's or admin's takes a blocked address off the list, the button says so first ("Not spam, and unblock
-  <address>"). For owners and admins More actions has "Mark as spam, also block <domain>…" under Mark as spam, where
-  the sender's domain can be blocked; it asks first.
+  <address>"). More actions has "Report spam"; for owners and admins, "Report spam and block sender" (the address
+  under it, muted) and "Report spam and block domain" (the organisational domain under it), where the sender's address is
+  proven and, for the domain, it isn't free mail. None asks first: for an owner or admin, Not spam undoes each ("Not spam,
+  and unblock <address>", "Not spam, and remove the rule").
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,
@@ -819,7 +821,9 @@ Use these instead of hand-rolling layout:
   borderless `BARE_TITLE` input set like the published heading. Docs articles
   keep a pinned formatting row; changelog entries and posts have no toolbar.
   All keep the selection bar, Ctrl/⌘+K for a link, and the block menu that typing
-  / at the start of a line opens (the empty line being written says so).
+  / at the start of a line opens (the empty line being written says so). Articles'
+  and changelog entries' selection bars have Ask AI on selected text, where the
+  server has AI (`askAi`, `AskAi` in `components/ask-ai.tsx`).
   Comments keep the boxed editor with its toolbar.
 - **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
   in a muted box with "Copy", never bare code.

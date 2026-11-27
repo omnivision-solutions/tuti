@@ -178,7 +178,8 @@ export function PartRow({
   links,
 }: {
   label: string;
-  links: { href: string; name: string; active: boolean; locked?: boolean }[];
+  /** `lang`: a name in another language than the page's (the team's words). */
+  links: { href: string; name: string; active: boolean; locked?: boolean; lang?: string }[];
 }) {
   const nav = useScrollingRow(links.find((link) => link.active)?.href, links);
   const t = useTranslations("header");
@@ -189,7 +190,7 @@ export function PartRow({
     // Over the header's line (-mt-px, the paper's colour), so that line is under the row; where the row is hidden, the header keeps it.
     <div data-part-row className="relative -mt-px border-b bg-background [:root:has([data-portal-not-found])_&]:hidden">
       <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-[82rem] gap-1 2xl:max-w-[100rem] px-4 sm:px-6", SCROLLING_ROW)} aria-label={label}>
-        {links.map(({ href, name, active, locked }) => (
+        {links.map(({ href, name, active, locked, lang }) => (
           <Link
             key={href}
             href={href}
@@ -201,7 +202,7 @@ export function PartRow({
               active ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            {name}
+            {lang ? <span lang={lang}>{name}</span> : name}
             {locked && (
               <>
                 <LockIcon aria-hidden className="ml-1.5 inline-block size-3.5 align-[-0.1em]" />

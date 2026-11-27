@@ -1,18 +1,9 @@
 "use client";
 
 import { AlarmClockIcon, CheckIcon, ChevronDownIcon, ShieldAlertIcon, SparklesIcon, UserPlusIcon } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { type ReactNode, useEffect, useId, useRef, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -261,17 +252,26 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
 /** The top bar's "More actions" that shows: where the focus goes back to from a dialog its menu opened. */
 const moreActions = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="More actions"]')].find((button) => button.checkVisibility());
 
-/** Marks it as spam or not, saying what Not spam left in place (the server's `notice`); `done` once it has. */
+type SpamOptions = { blockSender?: string; blockDomain?: string; removeRule?: boolean };
+
+/**
+ * Reports it as spam (blocking its sender's address or domain too, where asked) or marks it not spam, saying what Not
+ * spam left in place (the server's `notice`); `done` once it has.
+ */
 function useSpamMark(projectSlug: string, number: number) {
   const [pending, startTransition] = useTransition();
-  const mark = (spam: boolean, blockDomain?: string, done?: () => void, removeRule = false) =>
+  const mark = (spam: boolean, { blockSender, blockDomain, removeRule }: SpamOptions = {}, done?: () => void) =>
     startTransition(async () => {
       const moved = actOn(number, spam);
-      const result = await markConversationSpam(projectSlug, number, spam, !!blockDomain, removeRule).catch(() => ({ error: "Couldn't reach Tuti. Try again.", notice: undefined }));
+      const result = await markConversationSpam(projectSlug, number, spam, { blockSender: !!blockSender, blockDomain: !!blockDomain, removeRule }).catch(() => ({
+        error: "Couldn't reach Tuti. Try again.",
+        notice: undefined,
+      }));
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success(spam ? (blockDomain ? `Marked as spam, and blocked ${blockDomain}` : "Marked as spam") : "Moved back to the inbox", { description: result.notice });
+        const blocked = blockSender ?? blockDomain;
+        toast.success(spam ? (blocked ? `Marked as spam, and blocked ${blocked}` : "Marked as spam") : "Moved back to the inbox", { description: result.notice });
         moved();
         done?.();
       }
@@ -285,58 +285,54 @@ const notSpamLabel = (unblocks: string | null) => (unblocks ? `Not spam, and unb
 /** Not spam that also removes the block rule that filed it (`removesRule`, its words): owners and admins. */
 const REMOVE_RULE = "Not spam, and remove the rule";
 
-/**
- * More actions' Mark as spam (or Not spam). For an owner or admin, where the sender's domain can be blocked
- * (`blockDomain`), a second choice blocks it too, asking first: it files everyone's at the domain from then on; on one
- * a rule filed, a second choice removes the rule too.
- */
+/** A Report spam item that blocks too: its label, and what it blocks under it, muted (a long address wraps). */
+function ReportItem({ label, blocks, disabled, onClick }: { label: string; blocks: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <DropdownMenuItem disabled={disabled} onClick={onClick} className="flex-col items-start gap-0">
+      {/* The label on one line, setting the menu's width; a long address wraps under it. */}
+      <span className="whitespace-nowrap">{label}</span>
+      <span className="max-w-full text-xs text-muted-foreground wrap-anywhere">{blocks}</span>
+    </DropdownMenuItem>
+  );
+}
 
+/**
+ * More actions' Report spam (or Not spam). Report spam and block sender, where the sender's address is proven
+ * (`blockSender`); Report spam and block domain, for an owner or admin where the domain can be blocked (`blockDomain`):
+ * each a block rule from a report, at once. On one a rule filed, Not spam's second choice removes the rule too.
+ */
 export function SpamButton({
   projectSlug,
   number,
   spam,
+  blockSender,
   blockDomain,
   unblocks,
   removesRule,
-}: Props & { spam: boolean; blockDomain: string | null; unblocks: string | null; removesRule: string | null }) {
+}: Props & { spam: boolean; blockSender: string | null; blockDomain: string | null; unblocks: string | null; removesRule: string | null }) {
   const { pending, mark } = useSpamMark(projectSlug, number);
-  const [asking, setAsking] = useState(false);
+  if (spam) {
+    return (
+      <>
+        <DropdownMenuItem disabled={pending} onClick={() => mark(false)}>
+          {/* A long address to unblock wraps. */}
+          <span className="min-w-0 wrap-anywhere">{notSpamLabel(unblocks)}</span>
+        </DropdownMenuItem>
+        {removesRule && (
+          <DropdownMenuItem disabled={pending} onClick={() => mark(false, { removeRule: true })}>
+            {REMOVE_RULE}
+          </DropdownMenuItem>
+        )}
+      </>
+    );
+  }
   return (
     <>
-      <DropdownMenuItem disabled={pending} onClick={() => mark(!spam)}>
-        {/* A long address to unblock wraps, as the domain under it does. */}
-        <span className="min-w-0 wrap-anywhere">{spam ? notSpamLabel(unblocks) : "Mark as spam"}</span>
+      <DropdownMenuItem disabled={pending} onClick={() => mark(true)}>
+        Report spam
       </DropdownMenuItem>
-      {spam && removesRule && (
-        <DropdownMenuItem disabled={pending} onClick={() => mark(false, undefined, undefined, true)}>
-          {REMOVE_RULE}
-        </DropdownMenuItem>
-      )}
-      {!spam && blockDomain && (
-        <>
-          <DropdownMenuItem disabled={pending} onClick={() => setAsking(true)}>
-            <span className="min-w-0 wrap-anywhere">Mark as spam, also block {blockDomain}…</span>
-          </DropdownMenuItem>
-          {/* Opened from "More actions", which closes as it opens: the focus goes back to that button. */}
-          <AlertDialog open={asking} onOpenChange={(next) => (next || !pending) && setAsking(next)}>
-            <AlertDialogContent closeDisabled={pending} finalFocus={() => moreActions() ?? true}>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="wrap-anywhere">Also block {blockDomain}?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This conversation is marked as spam, and new conversations from addresses at {blockDomain} go straight to Spam, where nobody is told
-                  about them. Senders an owner or admin marked Not spam still get through.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-                <Button disabled={pending} focusableWhenDisabled onClick={() => mark(true, blockDomain, () => setAsking(false))}>
-                  Mark as spam and block
-                </Button>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      )}
+      {blockSender && <ReportItem label="Report spam and block sender" blocks={blockSender} disabled={pending} onClick={() => mark(true, { blockSender })} />}
+      {blockDomain && <ReportItem label="Report spam and block domain" blocks={blockDomain} disabled={pending} onClick={() => mark(true, { blockDomain })} />}
     </>
   );
 }
@@ -360,7 +356,7 @@ export function SpamNotice({ projectSlug, number, why, unblocks, removesRule }: 
         disabled={pending}
         focusableWhenDisabled
         // The line goes with the mark, and this button with it: the focus moves to one that stays.
-        onClick={() => mark(false, undefined, () => moreActions()?.focus())}
+        onClick={() => mark(false, {}, () => moreActions()?.focus())}
       >
         {notSpamLabel(unblocks)}
       </Button>
@@ -371,7 +367,7 @@ export function SpamNotice({ projectSlug, number, why, unblocks, removesRule }: 
           className="h-auto min-h-8 max-w-full whitespace-normal"
           disabled={pending}
           focusableWhenDisabled
-          onClick={() => mark(false, undefined, () => moreActions()?.focus(), true)}
+          onClick={() => mark(false, { removeRule: true }, () => moreActions()?.focus())}
         >
           {REMOVE_RULE}
         </Button>

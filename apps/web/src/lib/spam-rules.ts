@@ -55,6 +55,9 @@ export function spamRuleValue(field: SpamRuleField, value: string) {
 /** Lowercase, look-alikes folded, runs of space as one. */
 const fold = (text: string) => text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 
+/** How many block rules a project holds, whoever adds them (Settings, the API, a report). */
+export const MAX_SPAM_RULES = 500;
+
 /** The longest pattern a rule may have, and how many pattern rules a project may: with the texts' cap, what bounds their work. */
 export const MAX_PATTERN = 100;
 export const MAX_PATTERN_RULES = 100;
