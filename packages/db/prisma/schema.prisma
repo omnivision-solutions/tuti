@@ -1611,6 +1611,9 @@ model ConversationMessage {
   /// A user's message: when its trigger's workflows ran for it (server/inbox-path.ts), written with what they changed, so
   /// they never run for it twice. Null until then, and on every message from before workflows.
   workflowsRanAt     DateTime?
+  /// A user's message the conversation was about to go to a person for: when that handover ran (its workflows, then the
+  /// team or not), so it never runs for the message twice. Null until then, and where nothing handed it over.
+  handedOverAt       DateTime?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -3695,6 +3698,10 @@ model ScreenshotSettings {
   /// it was made for: deleted when that changes.
   profileId            String?
   profileSignIn        String           @default("")
+  /// The sign-in services found in the app's page and scripts (screenshotSettings.suggestions: [{ provider, hosts }]),
+  /// and the app address they were found at: found again once the address changes.
+  signInServices       Json?
+  signInServicesFor    String?
   updatedAt            DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

@@ -13,6 +13,7 @@ import { z } from "zod";
 export const TRIGGERS = {
   conversation_started: "A conversation starts",
   user_replied: "A user replies",
+  about_to_hand_over: "A conversation is about to go to a person",
 } as const;
 export type WorkflowTrigger = keyof typeof TRIGGERS;
 
@@ -20,7 +21,27 @@ export type WorkflowTrigger = keyof typeof TRIGGERS;
 export const TRIGGER_HINTS: Record<WorkflowTrigger, string> = {
   conversation_started: "On a user's first message, once per conversation, after the spam filter lets it through.",
   user_replied: "On every later message from the user, one that reopens a closed conversation too.",
+  about_to_hand_over: "Each time a conversation would go to your team, with the reason.",
 };
+
+/**
+ * Why a conversation is about to go to a person, as its Activity says it. "The AI is off" is every conversation the AI
+ * doesn't answer (nothing answers for it yet); "too many automated replies" is the cap (AUTOMATED_REPLIES_PER_HOUR),
+ * where nothing can keep it from the team.
+ */
+export const HANDOVER_REASONS = {
+  user_asked: "the user asked for a person",
+  ai_off: "the AI is off",
+  too_many_replies: "too many automated replies",
+} as const;
+export type HandoverReason = keyof typeof HANDOVER_REASONS;
+
+/**
+ * Automated replies (the AI's and the workflows' set replies, together) a conversation gets in an hour: past them it gets
+ * none, and goes to the team, so two machines never answer each other for long.
+ */
+export const AUTOMATED_REPLIES_PER_HOUR = 5;
+export const MAX_WORKFLOW_REPLY = 1000;
 export const TRIGGER_KEYS = Object.keys(TRIGGERS) as [WorkflowTrigger, ...WorkflowTrigger[]];
 
 /** How many workflows a trigger's list holds: each of the project's messages runs it. */
@@ -45,9 +66,22 @@ export const workflowConditions = z.array(workflowCondition).max(1, "A workflow 
 /** The actions, each kind with its own schema: the list grows. */
 const ACTION_SCHEMAS = {
   mark_priority: z.object({ kind: z.literal("mark_priority").describe("`mark_priority`: marks the conversation priority").meta({ examples: ["mark_priority"] }) }),
+  reply_text: z.object({
+    kind: z.literal("reply_text").describe("`reply_text` (about_to_hand_over): replies with set text as the AI, once per conversation").meta({ examples: ["reply_text"] }),
+    text: z
+      .string()
+      .trim()
+      .min(1, "Write the reply")
+      .max(MAX_WORKFLOW_REPLY, `Keep the reply under ${MAX_WORKFLOW_REPLY.toLocaleString("en")} characters`)
+      .describe("The reply, as plain text")
+      .meta({ examples: ["Thanks! Our team answers Enterprise questions within the hour."] }),
+  }),
+  dont_hand_over: z.object({
+    kind: z.literal("dont_hand_over").describe("`dont_hand_over` (about_to_hand_over): keeps the conversation with the AI").meta({ examples: ["dont_hand_over"] }),
+  }),
 };
 
-export const workflowAction = z.discriminatedUnion("kind", [ACTION_SCHEMAS.mark_priority]);
+export const workflowAction = z.discriminatedUnion("kind", [ACTION_SCHEMAS.mark_priority, ACTION_SCHEMAS.reply_text, ACTION_SCHEMAS.dont_hand_over]);
 export type WorkflowAction = z.output<typeof workflowAction>;
 
 /**
@@ -62,6 +96,20 @@ export const ACTIONS: Record<WorkflowAction["kind"], { label: string; hint: stri
     triggers: ["conversation_started", "user_replied"],
     deciding: false,
     did: "marked this priority",
+  },
+  reply_text: {
+    label: "Reply with set text",
+    hint: "Sent as the AI, at most once per conversation.",
+    triggers: ["about_to_hand_over"],
+    deciding: false,
+    did: "replied",
+  },
+  dont_hand_over: {
+    label: "Don't hand over",
+    hint: "Keeps the conversation with the AI. Ends the list.",
+    triggers: ["about_to_hand_over"],
+    deciding: true,
+    did: "kept it with the AI",
   },
 };
 
@@ -93,7 +141,7 @@ export function workflowSummary(workflow: { conditions: WorkflowCondition[]; act
  * A workflow read back as a sentence, as its editor shows it: "When a conversation starts, if the person is in
  * Enterprise: mark priority." `groupNames`: the groups' names by key.
  */
-export function workflowSentence(workflow: { trigger: WorkflowTrigger; conditions: WorkflowCondition[]; actions: WorkflowAction[] }, groupNames: Record<string, string>) {
+export function workflowSentence(workflow: { trigger: WorkflowTrigger; conditions: WorkflowCondition[]; actions: Pick<WorkflowAction, "kind">[] }, groupNames: Record<string, string>) {
   const when = `When ${TRIGGERS[workflow.trigger].charAt(0).toLowerCase()}${TRIGGERS[workflow.trigger].slice(1)}`;
   const who = workflow.conditions.map((condition) => `if the person is in ${groupNames[condition.group] ?? condition.group}`).join(", ") || "for everyone";
   const what = workflow.actions.map((action) => ACTIONS[action.kind].label.toLowerCase());

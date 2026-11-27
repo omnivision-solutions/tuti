@@ -41,7 +41,7 @@ const fields = {
   trigger: z
     .enum(TRIGGER_KEYS)
     .describe(
-      "When it runs: `conversation_started` (a user's first message, once per conversation, after the spam filter passed it) or `user_replied` (every later message from the user, one that reopens a closed conversation included; never one written while the conversation is in Spam)",
+      "When it runs: `conversation_started` (a user's first message, once per conversation, after the spam filter passed it) `user_replied` (every later message from the user, one that reopens a closed conversation included; never one written while the conversation is in Spam), or `about_to_hand_over` (each time the conversation would go to the team: the user asked for a person, the AI is off, or too many automated replies)",
     )
     .meta({ examples: ["conversation_started"] }),
   conditions: workflowConditions
@@ -51,7 +51,7 @@ const fields = {
     .meta({ examples: [[{ kind: "in_group", group: "enterprise" }]] }),
   actions: workflowActions
     .describe(
-      "What it does, in order, at least one, from those its trigger offers. `mark_priority` (both triggers) marks the conversation priority, and the next workflow in the list still runs",
+      "What it does, in order, at least one, from those its trigger offers. `mark_priority` (the two message triggers) marks the conversation priority, and the next workflow in the list still runs. For `about_to_hand_over`: `reply_text` replies with its `text` as the AI, once per conversation (emailed only where the address is proven), and `dont_hand_over` keeps the conversation with the AI and ends the list; past the automated replies' hourly cap neither does anything",
     )
     .meta({ examples: [[{ kind: "mark_priority" }]] }),
   enabled: z.boolean().describe("Whether it's on: one that's off never runs").meta({ examples: [true] }),
@@ -61,7 +61,7 @@ const workflowOutput = z
   .object({
     id: workflowId,
     name: z.string().describe("Its name, as the conversation's Activity names it").meta({ examples: ["Enterprise first"] }),
-    trigger: z.enum(TRIGGER_KEYS).describe("When it runs: `conversation_started` (a user's first message) or `user_replied` (every later one)").meta({ examples: ["conversation_started"] }),
+    trigger: z.enum(TRIGGER_KEYS).describe("When it runs: `conversation_started` (a user's first message), `user_replied` (every later one) or `about_to_hand_over` (each time it would go to the team)").meta({ examples: ["conversation_started"] }),
     position: z.number().int().describe("Its place in its trigger's list, 0 first: the list runs top to bottom").meta({ examples: [0] }),
     enabled: fields.enabled,
     conditions: z

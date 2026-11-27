@@ -19,5 +19,8 @@ export const SIGN_IN_LINKS_PER_CLIENT_PER_HOUR = 10;
 // ponytail: fixed for every portal; a per-project setting if a big portal ever needs more.
 export const SIGN_IN_LINKS_PER_PORTAL_PER_HOUR = 200;
 
-/** What `emailSignInLink` hands the plugin, for the email. */
-export type SignInLinkMetadata = { linkId: string; slug: string; projectName: string; next: string };
+/**
+ * What `emailSignInLink` hands the plugin, for the email. `prefix`: the language address it was asked at ("/de", or ""
+ * for the default language's), so the link opens in that language.
+ */
+export type SignInLinkMetadata = { linkId: string; slug: string; projectName: string; next: string; prefix?: string };

@@ -916,6 +916,8 @@ test("a teammate's reply takes it over from the AI; a note, the user's message, 
   await call(createConversation, context, { user: sam, body: "Help" });
   await call(updateConversation, context, { number: 1, handledBy: "ai" });
   const has = async () => (await owned(context.projectId)).handledBy;
+  // Kept with the AI as its user writes, rather than handed over: nothing answers for the AI yet (W11).
+  await prisma.workflow.create({ data: { projectId: context.projectId, name: "Keep", trigger: "about_to_hand_over", position: 0, actions: [{ kind: "dont_hand_over" }] } });
 
   // The team's note to itself is no reply, and the user writing is the AI's to answer.
   await call(replyToConversation, context, { number: 1, body: "Leave this one to the AI", note: true });

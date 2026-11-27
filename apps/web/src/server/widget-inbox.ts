@@ -164,7 +164,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
   }
   if (markSeen !== false) {
     await prisma.conversationMessage.updateMany({
-      where: { conversationId: conversation.id, author: "TEAM", note: false, seenAt: null },
+      // The team's replies, and the AI's (a workflow's set reply): seen here, they aren't emailed.
+      where: { conversationId: conversation.id, author: { in: ["TEAM", "AI"] }, note: false, seenAt: null },
       data: { seenAt: new Date() },
     });
   }

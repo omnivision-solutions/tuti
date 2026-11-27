@@ -15,5 +15,7 @@ url.pathname = `/${name}`;
 process.env.DATABASE_URL = url.href;
 process.env.JOBS_DRIVER = "inline";
 process.env.APP_URL = "http://tuti.localhost:3100";
+// Sign-in suggestions read only a fake app on this machine, never a real one (sign-in-hosts.ts).
+process.env.SCREENSHOTS_ALLOW_LOCALHOST = "true";
 process.env.PORTAL_URL_TEMPLATE = "http://{project}.localhost:3100";
 process.env.BETTER_AUTH_SECRET = "test-secret-at-least-32-characters-long";

@@ -22,7 +22,7 @@ export default async function NewWorkflowPage(props: PageProps<"/app/[project]/s
       <WorkflowEditor
         projectSlug={project.slug}
         id={null}
-        workflow={{ name: "", trigger: TRIGGER_KEYS.find((key) => key === trigger) ?? TRIGGER_KEYS[0], group: null, actions: [], enabled: true }}
+        workflow={{ name: "", trigger: TRIGGER_KEYS.find((key) => key === trigger) ?? TRIGGER_KEYS[0], group: null, actions: [], reply: "", enabled: true }}
         groups={Object.fromEntries(groups.map((group) => [group.key, group.name]))}
       />
     </SettingsPane>

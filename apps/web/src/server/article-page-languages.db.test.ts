@@ -78,6 +78,9 @@ async function page(slug: string) {
 const text = (node: unknown): string => (typeof node === "string" ? node : Array.isArray(node) ? node.map(text).join("") : node && typeof node === "object" && "props" in node ? text((node as ReactElement<{ children?: unknown }>).props.children) : "");
 
 test("at a language's address an article translated there reads in its version, in that language", async () => {
+  // In a collection, for its breadcrumb's step.
+  await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: "payments" });
   at("de");
   expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "article", article: { title: "Abrechnung", language: "de", untranslated: false } });
   const elements = await page("abrechnung");
@@ -91,9 +94,21 @@ test("at a language's address an article translated there reads in its version, 
   const jsonLd = elements.find(({ props }) => typeof (props.dangerouslySetInnerHTML as { __html?: string } | undefined)?.__html === "string");
   const data = JSON.parse((jsonLd!.props.dangerouslySetInnerHTML as { __html: string }).__html) as { headline?: string; url?: string }[];
   expect(data[0]).toMatchObject({ headline: "Abrechnung", url: `${portal}/de/docs/abrechnung` });
+  // Its breadcrumb: every step at its German address.
+  expect(data[1]).toMatchObject({
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { position: 1, name: "Documentation", item: `${portal}/de/docs` },
+      { position: 2, name: "Payments", item: `${portal}/de/docs/payments` },
+      { position: 3, name: "Abrechnung", item: `${portal}/de/docs/abrechnung` },
+    ],
+  });
 });
 
 test("not translated: the default language's version, its `lang`, and a line in the page's language saying so", async () => {
+  // In a collection, for its breadcrumb's step.
+  await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: "payments" });
   at("fr");
   expect(await docsPage(project.slug, "billing")).toMatchObject({ kind: "article", article: { title: "Billing", language: "en", untranslated: true } });
   const elements = await page("billing");
@@ -102,6 +117,18 @@ test("not translated: the default language's version, its `lang`, and a line in 
   expect(elements.find(({ props }) => "headingsLang" in props)?.props.headingsLang).toBe("en");
   const line = elements.find(({ type, props }) => type === "p" && props.lang === "fr");
   expect(text(line?.props.children)).toContain("Cette page n'est pas encore disponible en français");
+  // Its breadcrumb: the docs' and the collection's pages at their French addresses (there whether it's translated or not),
+  // the article's own at the default language's, where it's canonical.
+  const jsonLd = elements.find(({ props }) => typeof (props.dangerouslySetInnerHTML as { __html?: string } | undefined)?.__html === "string");
+  const data = JSON.parse((jsonLd!.props.dangerouslySetInnerHTML as { __html: string }).__html) as unknown[];
+  expect(data[1]).toMatchObject({
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { position: 1, item: `${portal}/fr/docs` },
+      { position: 2, name: "Payments", item: `${portal}/fr/docs/payments` },
+      { position: 3, name: "Billing", item: `${portal}/docs/billing` },
+    ],
+  });
 });
 
 test("a version kept up to date whose source changed but wasn't retranslated yet reads as not translated, never its old text, and hreflang and the sitemap leave it out", async () => {

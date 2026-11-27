@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { cn } from "cn";
+import { aiPaused } from "@tuti/jobs";
+import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { ArticleSettings } from "@/components/article-settings";
@@ -89,6 +91,7 @@ export default async function NewArticlePage(
             projectSlug={slug}
             article={null}
             mediaUrls={await mediaUrls()}
+            askAi={aiEnabled() ? { paused: await aiPaused(membership.project.id) } : null}
             defaultTitle={
               typeof title === "string"
                 ? title.trim().slice(0, MAX_ARTICLE_TITLE)

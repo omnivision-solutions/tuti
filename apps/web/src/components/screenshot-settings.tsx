@@ -2,7 +2,7 @@
 
 import { LoaderCircleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
@@ -19,6 +19,11 @@ import { saveScreenshotSettings, testScreenshots } from "@/server/screenshots";
 
 type Settings = Awaited<ReturnType<typeof settingsView>>;
 type SignIn = Settings["signIn"];
+type Suggestion = { provider: string; hosts: string[] };
+
+/** How a run that couldn't sign in starts its error (@tuti/jobs SCREENSHOT_ERRORS.signIn). */
+const SIGN_IN_FAILED = "The agent couldn't sign in";
+const list = (items: string[]) => new Intl.ListFormat("en", { type: "conjunction" }).format(items);
 
 const SIGN_INS = [
   { value: "password", label: "Password" },
@@ -40,7 +45,23 @@ const REFRESH_MS = 5_000;
 export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projectSlug: string; settings: Settings; aboutMax: number }) {
   const id = useId();
   const [signIn, setSignIn] = useState<SignIn>(settings.signIn);
+  const otherDomains = useRef<HTMLTextAreaElement>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  /** Adds the service's hosts to Other domains, for "Save changes" (which asks for the password again). */
+  const add = (suggestion: Suggestion) => {
+    const field = otherDomains.current!;
+    const listed = field.value.split(/[\s,]+/).filter(Boolean);
+    field.value = [...listed, ...suggestion.hosts.filter((host) => !listed.includes(host))].join("\n");
+    // As if typed: the form sees a change to save.
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    setSuggestions((all) => all.filter((other) => other !== suggestion));
+    // Its button goes: focus where the hosts went.
+    field.focus();
+  };
+  // Saves that went through: a new sign-in link isn't sent back to the page, so each one reads the suggestions again.
+  const [saves, setSaves] = useState(0);
   const { state, pending, form } = useCustomizeForm({
+    onSaved: () => setSaves((count) => count + 1),
     // Saved, they're never shown again, nor sent again: an address changed next to another site must get new ones.
     clearOnSave: ["password", "signInLink"],
     save: async (prev, formData) => {
@@ -51,10 +72,35 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
       return result;
     },
   });
+  // What the suggestions shown were read for: busy until the answer for the settings as they are now.
+  const [readFor, setReadFor] = useState<[string, number] | null>(null);
+  // Found by the server from the app's page (once per address, kept): read again with every save, as what the browser
+  // opens already (the domains, the sign-in link's host) may have changed.
+  // Keyed on what decides them and the saves that went through (a refused one changes nothing), not the settings
+  // object: a Test's refresh every few seconds makes a new one.
+  const looked = JSON.stringify([settings.appUrl, settings.signIn, settings.otherDomains]);
+  const loading = Boolean(settings.appUrl) && (readFor?.[0] !== looked || readFor[1] !== saves);
+  useEffect(() => {
+    if (!settings.appUrl) {
+      return;
+    }
+    let current = true;
+    fetch(`/app/${projectSlug}/settings/screenshots/suggestions`)
+      .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[] }>) : { suggestions: [] }))
+      .then(
+        (result) => current && setSuggestions(result.suggestions),
+        () => current && setSuggestions([]),
+      )
+      .finally(() => current && setReadFor([looked, saves]));
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `looked` stands for the settings it reads
+  }, [projectSlug, looked, saves]);
 
   return (
     <>
-      <SettingsCard title="Your app" description="Use a demo account: the agent is told only to look around and never to change anything.">
+      <SettingsCard title="Your app" description="Use a demo account.">
         {/* Locked while saving (see AssistantSettings). The sign-in's fields stay in the form when hidden, so "Save changes" compares them all. */}
         {/* noValidate: a hidden sign-in's field the browser finds invalid would block Save without a word; the server says what's wrong. */}
         <form {...form} inert={pending} noValidate className="flex flex-col divide-y">
@@ -69,14 +115,14 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               className="@min-[34rem]/settings:w-72"
             />
           </SettingRow>
-          <SettingRow label={<span id={`${id}-sign-in`}>Sign in</span>} description="How the agent signs in, when it isn't already.">
+          <SettingRow label={<span id={`${id}-sign-in`}>Sign in</span>} description="How the agent signs in.">
             <Segmented name="signIn" options={SIGN_INS} value={signIn} onValueChange={setSignIn} aria-labelledby={`${id}-sign-in`} />
           </SettingRow>
           <div hidden={signIn !== "password"} className="divide-y">
             <SettingRow label="Username" htmlFor="screenshots-username">
               <Input id="screenshots-username" name="username" autoComplete="off" defaultValue={settings.username} className="@min-[34rem]/settings:w-72" />
             </SettingRow>
-            <SettingRow label="Password" description={settings.passwordSet ? "Saved. Enter a new one to replace it." : "Kept encrypted, and never shown again."} htmlFor="screenshots-password">
+            <SettingRow label="Password" description={settings.passwordSet ? "Saved. Enter a new one to replace it." : "Stored encrypted."} htmlFor="screenshots-password">
               <Input
                 id="screenshots-password"
                 name="password"
@@ -91,7 +137,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
           <div hidden={signIn !== "link"}>
             <SettingRow
               label="Sign-in link"
-              description={settings.signInLinkSet ? "Saved. Enter a new one to replace it." : "A link that signs in by itself, like a magic link."}
+              description={settings.signInLinkSet ? "Saved. Enter a new one to replace it." : "Like a magic link."}
               info="Kept encrypted and never shown again. The agent is given it to open, so use one that only signs in to a demo account."
               htmlFor="screenshots-sign-in-link"
             >
@@ -111,7 +157,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
           </SettingRow>
           <SettingRow
             label="Use a residential proxy"
-            description="Only if your app blocks visits from cloud servers. Runs cost more."
+            description="Only if your app blocks cloud servers. Costs more."
             htmlFor="screenshots-residential-proxy"
             inline
           >
@@ -136,12 +182,13 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
           </SettingBlock>
           <SettingBlock className="gap-2">
             <label htmlFor="screenshots-other-domains" className="font-medium">
-              Other domains your app loads from
+              Other domains
             </label>
             <p id="screenshots-other-domains-description" className="-mt-1.5 text-sm text-muted-foreground">
-              The browser only opens your app&apos;s own address and its sign-in link&apos;s (with their subdomains). List every other host your app needs, one per line: its API (api.example.com), a sign-in page (login.example.com, acme.auth0.com) or a CDN. The password can be entered on any host listed, so list only hosts you trust with it.
+              One per line. The password may be typed on these.
             </p>
             <Textarea
+              ref={otherDomains}
               id="screenshots-other-domains"
               name="otherDomains"
               defaultValue={settings.otherDomains.join("\n")}
@@ -149,17 +196,32 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               aria-describedby="screenshots-other-domains-description"
               placeholder="acme.auth0.com"
             />
+            <div className="contents" aria-busy={loading} data-suggestions>
+              {/* Only the answer for the settings as they are: never another address's while it's read again. */}
+              {!loading &&
+                Boolean(settings.appUrl) &&
+                suggestions.map((suggestion, index) => (
+                  <div key={suggestion.provider} className="flex items-center gap-3 rounded-lg bg-muted px-3 py-2 text-sm">
+                    <p id={`${id}-suggestion-${index}`} className="min-w-0 flex-1 break-words">
+                      {suggestion.provider} sign-in needs {list(suggestion.hosts)}
+                    </p>
+                    <Button type="button" variant="outline" size="sm" className="shrink-0" aria-describedby={`${id}-suggestion-${index}`} onClick={() => add(suggestion)}>
+                      Add
+                    </Button>
+                  </div>
+                ))}
+            </div>
             {state.error && <FieldError>{state.error}</FieldError>}
           </SettingBlock>
         </form>
       </SettingsCard>
-      <TestCard projectSlug={projectSlug} settings={settings} />
+      <TestCard projectSlug={projectSlug} settings={settings} suggested={!loading && suggestions.length > 0} />
     </>
   );
 }
 
 /** The Test: the agent signs in with the saved settings and shows where it lands; read again while it runs. */
-function TestCard({ projectSlug, settings }: { projectSlug: string; settings: Settings }) {
+function TestCard({ projectSlug, settings, suggested }: { projectSlug: string; settings: Settings; suggested: boolean }) {
   const router = useRouter();
   const [starting, startTransition] = useTransition();
   // Only a Test started here is announced: a refused one (no run) mustn't read out the last one's result.
@@ -184,7 +246,7 @@ function TestCard({ projectSlug, settings }: { projectSlug: string; settings: Se
 
   return (
     <SettingsCard>
-      <SettingRow label="Test" description="The agent signs in with what's saved and shows the screen it lands on. It takes a few minutes." inline>
+      <SettingRow label="Test" description="Signs in and shows where it lands. Takes a few minutes." inline>
         <Button
           variant="outline"
           disabled={!settings.appUrl || busy}
@@ -230,7 +292,10 @@ function TestCard({ projectSlug, settings }: { projectSlug: string; settings: Se
             </figure>
           ) : (
             <Alert variant="destructive">
-              <AlertDescription>{test.error ?? shot?.failed ?? "The test didn't finish."}</AlertDescription>
+              <AlertDescription>
+                {test.error ?? shot?.failed ?? "The test didn't finish."}
+                {suggested && test.error?.startsWith(SIGN_IN_FAILED) && <span className="block">Try the suggested domains.</span>}
+              </AlertDescription>
             </Alert>
           )}
         </SettingBlock>
