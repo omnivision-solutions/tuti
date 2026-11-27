@@ -1303,6 +1303,8 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   };
   const first = await api("/articles", { title: "Setup", content, collection: "basics" });
   await api(`/articles/${first.slug}/publish`, {});
+  // Changed since it was published: readers see when.
+  await query(`UPDATE article SET "publishedAt" = '2026-01-05', "revisedAt" = '2026-03-10' WHERE slug = $1 AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [first.slug, slug]);
   const second = await api("/articles", { title: "Billing", body: "Pay by card.", collection: "basics" });
   await api(`/articles/${second.slug}/publish`, {});
 
@@ -1313,6 +1315,8 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   // The team's English, said so; around it the page's own words in German.
   await expect(main.getByRole("heading", { level: 1, name: "Setup" })).toHaveAttribute("lang", "en");
   await expect(main.getByText("1 Min. Lesezeit")).toBeVisible();
+  await expect(main.getByText("Aktualisiert am 10. März 2026")).toBeVisible();
+  await expect(main.locator("time", { hasText: "10. März 2026" })).toHaveAttribute("datetime", "2026-03-10T00:00:00.000Z");
   await expect(main.getByRole("button", { name: "Seite kopieren" })).toBeVisible();
   await main.getByRole("button", { name: "Weitere Seitenaktionen" }).click();
   await expect(reader.getByRole("menuitem", { name: "In ChatGPT öffnen" })).toHaveAttribute("href", /Lies%20/);
