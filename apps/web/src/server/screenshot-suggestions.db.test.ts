@@ -345,6 +345,37 @@ test("a read taken for lost (never run) still says checking to the page's last p
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
+test("looks at once: the read is claimed in one statement, so a look that finds it claimed since it looked starts no other", async () => {
+  const appUrl = `${base}/`;
+  await settle({ appUrl });
+  // Another look claims it between this look's reading the settings and its claim.
+  const before = await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
+  const claimed = new Date();
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(appUrl), signInScanAt: claimed } });
+  const read = vi.spyOn(prisma.screenshotSettings, "findUnique").mockResolvedValueOnce(before as never);
+  try {
+    expect(await look()).toEqual({ suggestions: [], checking: true });
+  } finally {
+    read.mockRestore();
+  }
+  expect(requests).toEqual([]);
+  expect(await saved()).toMatchObject({ signInScanFor: scannedFor(appUrl), signInScanAt: claimed });
+});
+
+test("a look whose address was changed since it looked claims no read of the old one", async () => {
+  await settle({ appUrl: `${base}/` });
+  const before = await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { appUrl: `${base}/many` } });
+  const read = vi.spyOn(prisma.screenshotSettings, "findUnique").mockResolvedValueOnce(before as never);
+  try {
+    await look();
+  } finally {
+    read.mockRestore();
+  }
+  expect(requests).toEqual([]);
+  expect(await saved()).toMatchObject({ signInScanFor: null, signInScanAt: null });
+});
+
 test("a read ending clears only its own claim, not a later one for the same address", async () => {
   const appUrl = `${base}/`;
   await settle({ appUrl });
