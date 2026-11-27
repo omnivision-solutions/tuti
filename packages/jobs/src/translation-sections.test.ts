@@ -264,3 +264,12 @@ test("a section asked for, then taken out by the team while the job translated i
   const next = withTranslation(edited, doc(["", "Einleitung 2"], ["Einrichtung", "Installieren 2"], ["Abrechnung", "Per Rechnung"]), source, { only: new Set([billing]), asked: new Set(), removed: new Set(removed) });
   expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren"]);
 });
+
+test("kept up to date (no `only`): a section the team took out and then asked to update comes back with its new translation", () => {
+  const source = sourceSections(v1);
+  const setup = source[1]!.key;
+  const { sections: edited, removed } = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Abrechnung", "Mit Karte zahlen"]), source);
+  expect(removed).toEqual([setup]);
+  const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), source, { asked: new Set([setup]), removed: new Set(removed) });
+  expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+});
