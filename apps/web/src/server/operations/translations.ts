@@ -10,6 +10,8 @@ import {
   lostAfterMs,
   otherReasons,
   PRODUCT_SETTING_CHANGED,
+  sourceAdded,
+  sourceChanged,
   queueVersion,
   removedChanged,
   standingIn,
@@ -299,11 +301,19 @@ export const getTranslation = defineOperation({
 });
 
 /**
- * A version's sections behind for English (not only the product setting): its draft's where it has one (what Publish
- * publishes: a section the draft brought up to date is no longer behind), else its published text's.
+ * A version's sections behind because English changed there (or has one it lacks): its draft's where it has one (what
+ * Publish publishes: a section the draft brought up to date is no longer behind), else its published text's. Not those
+ * marked for another reason only (the product setting, the glossary): English never changed there, and publishing keeps
+ * the team's text in them.
  */
-const behindForEnglish = (read: z.output<typeof translationOutput>) =>
-  read.draft ? read.draft.behind : read.behind.filter(({ reason }) => reason !== PRODUCT_SETTING_CHANGED).map(({ section }) => section);
+function behindForEnglish(read: z.output<typeof translationOutput>, version: Version, sourceLanguage: string) {
+  if (read.draft) {
+    const other = otherReasons(version.behind, sourceLanguage);
+    return read.draft.behind.filter((key) => !(key in other));
+  }
+  const english = new Set([sourceChanged(sourceLanguage), sourceAdded(sourceLanguage)]);
+  return read.behind.filter(({ reason }) => english.has(reason)).map(({ section }) => section);
+}
 
 /** How many revisions back Show changes looks for the English a section was edited against. */
 const CHANGES_LOOK_BACK = 200;
@@ -323,7 +333,7 @@ export async function behindChanges(projectId: string, slug: string, language: (
     async (db, version, articleId) => {
       const source = await sourceOf(db, articleId);
       const read = output(version, source);
-      const keys = behindForEnglish(read);
+      const keys = behindForEnglish(read, version, source.sourceLanguage);
       if (keys.length === 0) {
         return [];
       }
@@ -383,7 +393,7 @@ export async function readArticleVersion(projectId: string, slug: string, langua
       // The orange line's sections: behind for English (not only the product setting), published or in the draft. Publish
       // asks about those the text it publishes has (an edit to keep or not; a section English added has none).
       const { published, draft, drafted } = versionParts(version, source.parts);
-      const sections = behindForEnglish(read);
+      const sections = behindForEnglish(read, version, source.sourceLanguage);
       // (A section the draft took out is asked about too: ticked, it comes back translated; unticked, it stays out.)
       const has = new Set([...(drafted ?? published).map(({ meta }) => meta.key), ...(draft?.removed ?? [])]);
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.

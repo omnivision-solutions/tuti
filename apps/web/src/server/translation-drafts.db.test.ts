@@ -1,6 +1,6 @@
 import { type Doc, segmentsOf, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { handlers, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
+import { glossaryChangedFor, handlers, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -1264,4 +1264,22 @@ test("a version the team writes: a section it took out isn't asked about on publ
   await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
   await languageTranslationsDone();
   expect((await readArticleVersion(project.id, de.slug, "de")).behind.ask).toEqual([]);
+});
+
+test("a section behind only for the glossary isn't counted as English changing nor asked about, and publishing keeps the team's text there", async () => {
+  await translated();
+  await editBilling();
+  // A glossary save marks the team's Billing behind; English never changed.
+  const billing = sourceSections(V1).at(-1)!.key;
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id, language: "de" }, data: { behind: { [billing]: glossaryChangedFor("card") } } });
+  const page = await readArticleVersion(project.id, de.slug, "de");
+  expect(page.read.draft!.behind).toContain(billing);
+  expect(page.behind).toEqual({ sections: [], ask: [], gone: [] });
+  expect(await behindChanges(project.id, de.slug, "de")).toEqual([]);
+  // Published from the editor, nothing ticked (nothing was asked): the team's Billing stays.
+  const read = await call(getTranslation, as(), de);
+  actAs(owner);
+  expect(await saveArticleVersion(project.slug, de.slug, "de", {}, editorForm("", read.draft!.content as Doc, read.version, { take: [] }))).not.toHaveProperty("error");
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("Unsere Abrechnung");
 });
