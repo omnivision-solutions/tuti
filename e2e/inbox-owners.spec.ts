@@ -71,7 +71,7 @@ test("a conversation the AI has is in With AI and out of the team's views and co
   await checkpoint(owner, "with-ai-empty");
 });
 
-test("a conversation the AI has says so and offers Take over where the reply box would be; taken over, it's replied to; Mark priority shows on its page and its row; handed back to the AI once it can answer", async ({ browser }, testInfo) => {
+test("a conversation the AI has says so and offers Take over where the reply box would be; taken over, it's replied to; Mark priority shows on its page and its row; handed back to the AI once Sam's answered", async ({ browser }, testInfo) => {
   // Signing up, a project, an API key and a dozen pages, each captured, on a shared runner.
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
@@ -81,8 +81,11 @@ test("a conversation the AI has says so and offers Take over where the reply box
 
   const api = await apiFor(owner, slug);
   await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "The export button does nothing on the reports page." });
-  // Over the API, as an integration would: the app offers Hand back to the AI only once the AI can answer (below).
+  // Over the API, as an integration would.
   await api("/conversations/1", { handledBy: "ai" }, "PATCH");
+  // Something for the AI to answer from, so the app can offer Hand back to the AI (below).
+  const article = await api("/articles", { title: "Exporting", body: "Reports → Export downloads a CSV." });
+  await api(`/articles/${article.slug}/publish`, {});
 
   await owner.goto(`/app/${slug}/inbox/1?view=ai`);
   const meta = owner.locator(".inbox-conversation-meta");
@@ -140,6 +143,11 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await expectMoreView(owner, "Needs reply 1");
   await expect(owner).toHaveURL(new RegExp(`/inbox/1\\?view=ai$`));
   await checkpoint(owner, "taken-over");
+  // Sam's message is unanswered: it can't go back to the AI till someone replies.
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: "Remove priority" })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toHaveCount(0);
+  await owner.keyboard.press("Escape");
 
   // Replied to, as any of the team's.
   await reply.fill("I'm on it, Sam.");
@@ -148,6 +156,10 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await expect(owner.getByRole("list", { name: "Messages" })).toContainText("I'm on it, Sam.");
   await expect(meta.locator(".inbox-conversation-state")).toHaveText("Waiting on user");
   await expectMoreView(owner, "Waiting on user 1");
+  // Answered: now it's offered.
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toBeVisible();
+  await owner.keyboard.press("Escape");
 
   // The mark shows on its row in the team's views too, till it's removed.
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
@@ -161,15 +173,8 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await expect(row.getByText("Priority", { exact: true })).toHaveCount(0);
   await more.click();
   await expect(owner.getByRole("menuitem", { name: "Mark priority" })).toBeVisible();
-  // The AI has nothing to answer from yet (no published article): it isn't offered the conversation.
-  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toHaveCount(0);
-  await owner.keyboard.press("Escape");
 
-  // Once it does, Hand back to the AI returns it: With AI again, out of the team's views, Take over where the reply box was.
-  const article = await api("/articles", { title: "Exporting", body: "Reports → Export downloads a CSV." });
-  await api(`/articles/${article.slug}/publish`, {});
-  await owner.reload();
-  await more.click();
+  // Hand back to the AI returns it: With AI again, out of the team's views, Take over where the reply box was.
   await owner.getByRole("menuitem", { name: "Hand back to the AI" }).click();
   await expect(owner.getByText("Handed back to the AI")).toBeVisible();
   await expect(meta.getByText("With AI", { exact: true })).toBeVisible();
