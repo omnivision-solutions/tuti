@@ -24,13 +24,15 @@ import {
  * address with no account: counted against the address all the same, so the answer can't
  * tell, but not against the site, so requests that send nothing can't use it up), or the
  * team (a conversation started with the address, never verified: counted against the address
- * on this site only, so it can't use up the address's own links elsewhere).
+ * on this site only, so it can't use up the address's own links elsewhere). `language`: the page's it was asked on, for
+ * an email sent later from the row (a password reset's).
  */
 export async function countEmailedLink(
   projectId: string | null,
   email: string,
   requestHeaders: Headers,
   emails: "address" | "nobody" | "team" = "address",
+  language: string | null = null,
 ): Promise<{ error: string } | { id: string | null }> {
   const emailHash = hashSecret(emails === "team" ? `${projectId}:${email}` : email);
   const client = await clientHash(requestHeaders);
@@ -65,7 +67,7 @@ export async function countEmailedLink(
     if (bySite >= SIGN_IN_LINKS_PER_PORTAL_PER_HOUR) {
       return emails === "team" ? { error: "This site has sent a lot of emails in the last hour. Try again later." } : { id: null };
     }
-    return tx.signInLink.create({ data: { projectId, emailHash, clientHash: client, sent: emails !== "nobody" }, select: { id: true } });
+    return tx.signInLink.create({ data: { projectId, emailHash, clientHash: client, sent: emails !== "nobody", language }, select: { id: true } });
   });
 }
 

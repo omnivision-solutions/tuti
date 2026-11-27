@@ -3,6 +3,7 @@ import { historySince, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, config, creditsEnabled, decide, decisionsAvailable, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
+import { AI_TURN_DUE_MS, runAiTurn } from "./ai-turn";
 import { settleHold } from "./inbox-path";
 
 /**
@@ -26,6 +27,8 @@ export const EXAMPLES = 10;
 export const SPAM_AT = 0.97;
 /** The longest a conversation is held for the models: the inbox-due job releases it then, judged or not. */
 export const SPAM_HOLD_MS = 2 * 60_000;
+/** The AI's turns the inbox-due job runs in a minute. */
+const AI_TURNS_AT_ONCE = 3;
 /** The team's guidance for the models (Settings → Spam). */
 export const MAX_SPAM_GUIDANCE = 500;
 
@@ -257,7 +260,8 @@ export function spamChecksAfter(conversationId: string) {
 }
 
 /**
- * The inbox-due job's minute (POST /api/inbox/due): the conversations still held at `pathDueAt` (2 minutes on: a model
+ * The inbox-due job's minute (POST /api/inbox/due): the AI's turns left behind (`pathDueAt` on one the AI has, not held;
+ * server/ai-turn.ts), and the conversations still held at `pathDueAt` (2 minutes on: a model
  * slow or down, a deploy, a crash) are released, asking nothing (it fails open). settleHold claims each under its lock,
  * so a release at once with the models' verdict, or two minutes at once, settle it once. Returns how many this run settled.
  */
@@ -266,12 +270,34 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
   // a teammate marked as spam during the hold, which keeps `spamHeldAt` for a later Not spam: the second condition is the
   // partial index's own (conversation_spamHeldAt_idx), word for word, so it reads only holds left to settle.
   // The oldest first, so a flood can't keep any one waiting past a few minutes.
-  const due = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id", "createdAt" FROM "conversation" WHERE "pathDueAt" <= ${now}
-    UNION
-    SELECT "id", "createdAt" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
-    ORDER BY "createdAt" LIMIT 100`;
+  // The spam filter's work and the AI's turns apart, each with its own limit, so a backlog of either never keeps the
+  // other waiting: a hold must be released within minutes, whatever turns are left.
+  const [due, turns] = await Promise.all([
+    prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id", "createdAt" FROM "conversation" WHERE "pathDueAt" <= ${now} AND ("spamHeldAt" IS NOT NULL OR "handledBy" <> 'AI')
+      UNION
+      SELECT "id", "createdAt" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
+      ORDER BY "createdAt" LIMIT 100`,
+    // The AI's turns their requests didn't run (server/ai-turn.ts), the longest due first.
+    // ponytail: a few per run, the rest left due for the next minutes (a backlog past 10 minutes is handed over).
+    prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "conversation" WHERE "pathDueAt" <= ${now} AND "spamHeldAt" IS NULL AND "handledBy" = 'AI'
+      ORDER BY "pathDueAt" LIMIT ${AI_TURNS_AT_ONCE}`.then((rows) => rows.map((row) => row.id)),
+  ]);
   let checked = 0;
+  // Run once this request has answered, so their model calls never hold up the holds here or the worker's request (or
+  // now, outside a request). Those taken are due again a minute on as they're queued, so the next run leaves them to their
+  // turn, which still claims them.
+  if (turns.length > 0) {
+    await prisma.conversation.updateMany({ where: { id: { in: turns }, pathDueAt: { lte: now } }, data: { pathDueAt: new Date(now.getTime() + AI_TURN_DUE_MS) } });
+    const runTurns = async () => (await Promise.all(turns.map(runAiTurn))).filter((outcome) => outcome !== "nothing").length;
+    try {
+      after(runTurns);
+      checked += turns.length;
+    } catch {
+      checked += await runTurns();
+    }
+  }
   for (const { id } of due) {
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {
       checked++;
