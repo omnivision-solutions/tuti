@@ -168,8 +168,9 @@ test("a job queued under the old setting stops before asking anything", async ()
   // As a job would see it partway: the setting counted a change since it read it (its first read, mocked to the old one).
   const findUnique = prisma.articleTranslation.findUnique.bind(prisma.articleTranslation);
   const spy = vi.spyOn(prisma.articleTranslation, "findUnique").mockImplementation((async (args: Parameters<typeof findUnique>[0]) => {
-    const row = (await findUnique(args)) as { projectLanguage: { productVersion: number } } | null;
-    return row && { ...row, projectLanguage: { ...row.projectLanguage, productVersion: row.projectLanguage.productVersion - 1 } };
+    const row = (await findUnique(args)) as { projectLanguage?: { productVersion: number } } | null;
+    // (Reads of other fields, its memory say, as they are.)
+    return row?.projectLanguage ? { ...row, projectLanguage: { ...row.projectLanguage, productVersion: row.projectLanguage.productVersion - 1 } } : row;
   }) as never);
   try {
     expect(await translateArticle({ articleId, language: "de" }, log)).toEqual({ skipped: "the product's language setting changed" });

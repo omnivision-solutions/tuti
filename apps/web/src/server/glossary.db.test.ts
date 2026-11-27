@@ -11,7 +11,7 @@ import { createArticle, createCollection, publishArticle } from "./operations/do
 import { getGlossary, updateGlossary } from "./operations/glossary";
 import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
-import { updateTranslationSections } from "./operations/translations";
+import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
 
 /** The glossary (docs/plan.md, Languages, L12): terms never translated, or translated one way per language. */
 
@@ -322,5 +322,31 @@ test("a save's statements don't grow with the help center: as many for 50 source
   const few = await statements();
   await more(45);
   expect(await statements()).toBe(few);
+});
+
+test("a publish of the team's draft during Update those sections refuses its write and queues one run again, not two", async () => {
+  await translated(true);
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+  await prisma.articleTranslation.create({
+    data: { articleId: article.id, projectId: project.id, language: "de", automatic: false, title: "Tafeln", content: BOARDS, body: "Text.", publishedAt: new Date() },
+  });
+  const boards = sourceSections(translationSource(article).text).find((part) => part.key.startsWith("Boards"))!;
+  const { segments } = segmentsOf({ type: "doc", content: boards.blocks });
+  const answer = (tag: string) => JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[${tag}] ${text.replaceAll("Board", "Tafel")}`])) });
+  const de = { slug: "boards", language: "de" as const };
+  model.reply(answer("de"), async () => {
+    // The team edits its intro and publishes, while the run translates Boards.
+    const read = await call(getTranslation, as(), de);
+    const content = structuredClone(read.content) as Doc;
+    content.content![0]!.content![0]!.text = "Unsere Einleitung";
+    await call(saveTranslation, as(), { ...de, content, version: (await call(getTranslation, as(), de)).version });
+    await call(publishTranslation, as(), de);
+  });
+  model.reply(answer("de2"));
+  await call(updateTranslationSections, as(), { ...de, sections: [boards.key] });
+  await languageTranslationsDone();
+  // The first run's write refused; the publish's own run translated Boards: two requests, never three.
+  expect(model.requests).toHaveLength(2);
+  expect(String((await version("boards")).body)).toContain("[de2]");
 });
 
