@@ -151,6 +151,21 @@ test(`an article's AI edits count against the project's ${AI_EDITS_PER_HOUR} an 
     error: `Your team has made ${AI_EDITS_PER_HOUR} AI edits this hour. Try again later.`,
   });
   expect(model.requests).toHaveLength(1);
+
+  // Another project has its own.
+  const other = await createProject(owner);
+  model.reply(reply("Exports are fast."));
+  expect(await rewriteText(other.slug, { kind: "article", text: plain, instruction: "Clearer" })).toEqual({ content: doc(paragraph(text("Exports are fast."))) });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: other.id }, select: { changelogAiCount: true } })).toEqual({ changelogAiCount: 1 });
+
+  // The next hour, the count starts over.
+  vi.setSystemTime(new Date("2026-10-20T11:30:00Z"));
+  model.reply(reply("Exports are fast."));
+  expect(await rewriteText(project.slug, { kind: "article", text: plain, instruction: "Clearer" })).toEqual({ content: doc(paragraph(text("Exports are fast."))) });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogAiHour: true, changelogAiCount: true } })).toEqual({
+    changelogAiHour: new Date("2026-10-20T11:00:00Z"),
+    changelogAiCount: 1,
+  });
 });
 
 test("a version that drops a line the team still has to fill in isn't offered", async () => {
