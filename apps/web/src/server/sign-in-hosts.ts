@@ -21,15 +21,15 @@ const REGION = String.raw`[a-z]{2}(?:-[a-z]{1,15}){1,3}-\d`;
  * The services, and how each shows in an app's code: a host it always calls (`hosts`, seen as `marker`), or the
  * team's own host of it (`found`, each match's first group, or the whole match).
  */
-const SERVICES: { provider: string; marker?: RegExp; hosts?: string[]; found?: RegExp[]; derived?: (text: string) => string[]; not?: RegExp }[] = [
-  { provider: "Firebase", marker: /identitytoolkit\.googleapis\.com/, hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] },
+const SERVICES: { provider: string; hint: string[]; marker?: RegExp; hosts?: string[]; found?: RegExp[]; derived?: (text: string) => string[]; not?: RegExp }[] = [
+  { provider: "Firebase", hint: ["identitytoolkit"], marker: /identitytoolkit\.googleapis\.com/, hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] },
   // acme.auth0.com, acme.eu.auth0.com; not Auth0's own site and CDN.
-  { provider: "Auth0", found: [/\b[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z]{2})?\.auth0\.com\b/g], not: /^(?:[a-z]{2}\.auth0\.com$|(?:www|cdn|manage)\.)/ },
-  { provider: "Supabase", found: [/\b[a-z0-9]{20}\.supabase\.co\b/g] },
+  { provider: "Auth0", hint: ["auth0.com"], found: [/\b[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z]{2})?\.auth0\.com\b/g], not: /^(?:[a-z]{2}\.auth0\.com$|(?:www|cdn|manage)\.)/ },
+  { provider: "Supabase", hint: ["supabase.co"], found: [/\b[a-z0-9]{20}\.supabase\.co\b/g] },
   // Never Okta's own sign-in and sites.
-  { provider: "Okta", found: [/\b[a-z0-9][a-z0-9-]{0,62}\.(?:okta|oktapreview|okta-emea)\.com\b/g], not: /^(?:www|login|developer|help|support|status)\./ },
+  { provider: "Okta", hint: ["okta"], found: [/\b[a-z0-9][a-z0-9-]{0,62}\.(?:okta|oktapreview|okta-emea)\.com\b/g], not: /^(?:www|login|developer|help|support|status)\./ },
   {
-    provider: "Amazon Cognito",
+    provider: "Amazon Cognito", hint: ["cognito"],
     found: [
       new RegExp(String.raw`\bcognito-idp\.${REGION}\.amazonaws\.com\b`, "g"),
       new RegExp(String.raw`\b[a-z0-9-]{1,63}\.auth\.${REGION}\.amazoncognito\.com\b`, "g"),
@@ -39,12 +39,12 @@ const SERVICES: { provider: string; marker?: RegExp; hosts?: string[]; found?: R
       /cognito/i.test(text) ? [...text.matchAll(new RegExp(String.raw`\b(${REGION})_[a-z0-9]{9}\b`, "gi"))].map(([, region]) => `cognito-idp.${region!.toLowerCase()}.amazonaws.com`) : [],
   },
   // https://clerk.acme.com (in a URL: window.Clerk.session.id is code), or acme-12.clerk.accounts.dev (a development instance).
-  { provider: "Clerk", found: [/(?<=\/\/)clerk\.(?:[a-z0-9-]{1,63}\.){1,8}[a-z]{2,63}\b/g, /\b[a-z0-9-]{1,63}\.clerk\.accounts\.dev\b/g], not: /^clerk\.(?:accounts\.dev|com)$/,
+  { provider: "Clerk", hint: ["clerk", "pk_live_", "pk_test_"], found: [/(?<=\/\/)clerk\.(?:[a-z0-9-]{1,63}\.){1,8}[a-z]{2,63}\b/g, /\b[a-z0-9-]{1,63}\.clerk\.accounts\.dev\b/g], not: /^clerk\.(?:accounts\.dev|com)$/,
     // Or in its publishable key, which is its host in base64 followed by "$".
     derived: (text) => [...text.matchAll(/\bpk_(?:live|test)_([A-Za-z0-9+/]{8,400}={0,2})/g)].map(([, key]) => Buffer.from(key!, "base64").toString("latin1").replace(/\$$/, "").toLowerCase()),
   },
-  { provider: "Stytch", marker: /api\.stytch\.com/, hosts: ["api.stytch.com"] },
-  { provider: "WorkOS", marker: /api\.workos\.com/, hosts: ["api.workos.com"] },
+  { provider: "Stytch", hint: ["stytch"], marker: /api\.stytch\.com/, hosts: ["api.stytch.com"] },
+  { provider: "WorkOS", hint: ["workos"], marker: /api\.workos\.com/, hosts: ["api.workos.com"] },
 ];
 
 /** General sign-in pages, which would open every account's: never suggested, whatever an app's code names. */
@@ -62,6 +62,10 @@ export function findSignInServices(texts: string[]): SignInService[] {
   const text = original.toLowerCase();
   const found: SignInService[] = [];
   for (const service of SERVICES) {
+    // Its patterns only where its name is: most text names none, and is skipped without a scan.
+    if (!service.hint.some((word) => text.includes(word))) {
+      continue;
+    }
     const hosts = new Set<string>();
     if (service.marker?.test(text)) {
       service.hosts!.forEach((host) => hosts.add(host));
@@ -81,6 +85,8 @@ export function findSignInServices(texts: string[]): SignInService[] {
 
 const PAGE_BYTES = 2_000_000;
 const SCRIPT_BYTES = 5_000_000;
+/** All the scripts together: one read never holds more than PAGE_BYTES + this in memory, or scans more. */
+const SCRIPTS_BYTES = 8_000_000;
 const MAX_SCRIPTS = 15;
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 6_000;
@@ -163,7 +169,9 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
       return null;
     }
     // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
-    const scripts = await Promise.all(scriptsOf(page).slice(0, MAX_SCRIPTS).map((script) => get(script, SCRIPT_BYTES, signal).catch(() => null)));
+    const own = scriptsOf(page).slice(0, MAX_SCRIPTS);
+    const each = Math.min(SCRIPT_BYTES, Math.floor(SCRIPTS_BYTES / Math.max(own.length, 1)));
+    const scripts = await Promise.all(own.map((script) => get(script, each, signal).catch(() => null)));
     return { services: findSignInServices([page.text, ...scripts.map((script) => script?.text ?? "")]), complete: scripts.every(Boolean) };
   } catch {
     return null;

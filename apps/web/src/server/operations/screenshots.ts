@@ -12,6 +12,7 @@ import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters"
 
 import { displayDoc } from "../content";
 import { detectSignInServices, type SignInService } from "../sign-in-hosts";
+import { countSpecFetch } from "./api-references";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 
@@ -305,13 +306,16 @@ const suggestionsOutput = z
  * found once per app address (kept on the settings), as reading its page and scripts takes seconds. A page or script
  * that couldn't be read isn't kept, so the next look tries again.
  */
-async function domainSuggestions(projectId: string): Promise<SignInService[]> {
+async function domainSuggestions(context: { actor: Actor; projectId: string }): Promise<SignInService[]> {
+  const { projectId } = context;
   const settings = await prisma.screenshotSettings.findUnique({ where: { projectId }, select: { appUrl: true, signIn: true, signInLink: true, otherDomains: true, signInServices: true, signInServicesFor: true } });
   if (!settings?.appUrl) {
     return [];
   }
   let services = settings.signInServicesFor === settings.appUrl ? (settings.signInServices as SignInService[] | null) : null;
   if (!services) {
+    // Each read makes our server fetch and scan an address the team picks: limited as fetching an API reference is.
+    await countSpecFetch(context);
     const found = await detectSignInServices(settings.appUrl);
     if (!found) {
       return [];
@@ -339,14 +343,15 @@ export const suggestScreenshotDomains = defineOperation({
   name: "screenshotSettings.suggestions",
   title: "Suggest screenshot domains",
   summary:
-    "The hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), with their hosts that aren't among the other domains yet: the agent can't sign in until they are",
+    "The hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), with their hosts that aren't among the other domains yet: the agent can't sign in until they are.",
   method: "GET",
   path: "/screenshots/settings/suggestions",
   scope: "read",
   access: "admin",
   input: z.object({}),
   output: suggestionsOutput.describe("The suggested domains"),
-  run: async ({ projectId }) => ({ suggestions: await domainSuggestions(projectId) }),
+  errors: [429],
+  run: async (context) => ({ suggestions: await domainSuggestions(context) }),
 });
 
 /** Refuses a run that can't go: no key or uploads here (503), no settings (409), no credits (402). */
