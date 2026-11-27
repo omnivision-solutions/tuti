@@ -1,8 +1,10 @@
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { queueEntryVersion, translationSource } from "@tuti/jobs";
-import { contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ENTRY_LENGTH } from "@tuti/shared";
+import { aiEnabled, contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
+
+import { versionState } from "@/lib/changelog-versions";
 
 import { attachMedia, displayDoc, readContent } from "../content";
 import { defineOperation, OperationError } from "./define";
@@ -89,11 +91,20 @@ export const getChangelogTranslation = defineOperation({
   input: z.object({ number: entryNumber, language }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
-    const { entry, sourceHash } = await entryAndLanguage(projectId, input.number, input.language);
-    const version = await prisma.changelogTranslation.findUnique({ where: { entryId_language: { entryId: entry.id, language: input.language } }, select: versionSelect });
-    return output(input.language, version, sourceHash);
+    return (await readChangelogVersion(projectId, input.number, input.language)).read;
   },
 });
+
+/**
+ * changelog.getTranslation's read, and the version's state from the same row: the editor's page decides from it (the
+ * confirm before Keep up to date replaces the team's text) beside the text and token it shows, so the three never come
+ * from two reads a save landed between.
+ */
+export async function readChangelogVersion(projectId: string, number: number, code: (typeof LANGUAGE_CODES)[number]) {
+  const { entry, sourceHash } = await entryAndLanguage(projectId, number, code);
+  const version = await prisma.changelogTranslation.findUnique({ where: { entryId_language: { entryId: entry.id, language: code } }, select: { ...versionSelect, retranslate: true, retranslated: true } });
+  return { read: output(code, version, sourceHash), state: versionState(version ?? undefined, sourceHash, aiEnabled()) };
+}
 
 export const saveChangelogTranslation = defineOperation({
   name: "changelog.saveTranslation",

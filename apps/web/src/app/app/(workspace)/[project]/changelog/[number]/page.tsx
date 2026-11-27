@@ -13,7 +13,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionEditor, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionEditor, ChangelogVersionSave } from "@/components/changelog-languages";
 import { NO_AI_WAITING, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
 import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
@@ -29,8 +29,7 @@ import { entryPosts, entryTold, generatorSources } from "@/server/changelog-quer
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { keepChangelogVersionUpToDate, saveChangelogVersion } from "@/server/changelog";
-import { getChangelogTranslation } from "@/server/operations/changelog-translations";
-import { call } from "@/server/operations/run";
+import { readChangelogVersion } from "@/server/operations/changelog-translations";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
@@ -179,14 +178,16 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const version =
     opened &&
     (await (async () => {
-      const read = await call(getChangelogTranslation, { actor: { kind: "user", userId: membership.userId }, projectId: membership.project.id }, { number: entry.number, language: opened.code as "de" });
+      // Its state from the read its text and token come from (not the pill's, read before it): a save landing between
+      // the two never leaves the team's text under "Not written yet", turned off unconfirmed.
+      const { read, state } = await readChangelogVersion(membership.project.id, entry.number, opened.code as "de");
       return {
         code: opened.code,
         name: opened.name,
-        state: opened.state,
+        state,
         keepUpToDate: read.keepUpToDate,
         version: read.version,
-        waiting: read.waiting ?? (opened.state === "waiting" ? NO_AI_WAITING : null),
+        waiting: read.waiting ?? (state === "waiting" ? NO_AI_WAITING : null),
         // Not written yet: the default language's title and text, to write over.
         title: read.title || entry.title,
         content: (read.content ?? displayDoc(entry)) as Doc,
@@ -324,7 +325,6 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               }
               mediaUrls={await mediaUrls(displayDoc(entry))}
               covers={covers}
-              canEditWithAi={aiEnabled() && !unwritten}
               canAskAi={aiEnabled() && !unwritten}
               aiPaused={paused}
               imageGenerator={imageGenerator && { ...imageGenerator, credits: creditsEnabled(), paused }}

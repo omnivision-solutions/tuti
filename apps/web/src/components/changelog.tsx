@@ -1,7 +1,7 @@
 "use client";
 
 import type { Editor } from "@tiptap/react";
-import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
+import { type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
@@ -13,7 +13,6 @@ import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import {
   createContext,
   type ReactNode,
-  type RefObject,
   useActionState,
   useContext,
   useEffect,
@@ -31,7 +30,6 @@ import { useImageUpload } from "@/components/branding-settings";
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS } from "@/components/changelog-tag";
 import { useCustomizeForm, useFieldChanged } from "@/components/customize-shell";
 import { ImageGenerator, type PickedImage } from "@/components/image-generator";
-import { DiffLines } from "@/components/line-diff";
 import { type PickablePost, PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { PullRequestChip } from "@/components/pull-request-chip";
@@ -52,7 +50,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -64,10 +61,8 @@ import { untickedByDefault } from "@/lib/added-pull-requests";
 import { formatDate } from "@/lib/format";
 import { credits } from "@/lib/usage-format";
 import {
-  acceptChangelogRewrite,
   composeChangelogCover,
   addChangelogPullRequests,
-  type ChangelogRewrite,
   deleteChangelogEntry,
   draftChangelogEntry,
   findMissingChanges,
@@ -75,7 +70,6 @@ import {
   type MissingChanges,
   publishChangelogEntry,
   removeChangelogPullRequest,
-  rewriteChangelogEntry,
   saveChangelogEntry,
   saveChangelogStyle,
   takeChangelogScreenshots,
@@ -84,7 +78,6 @@ import {
 import type { CoverDesign } from "@/server/cover-card";
 import type { LineScreenshots } from "@/server/operations/screenshots";
 import type { FormState } from "@/server/form-state";
-import type { RewriteMode } from "@/server/release-notes";
 
 export type TagName = Lowercase<ChangelogTag>;
 
@@ -128,7 +121,8 @@ type PostOption = PickablePost & { status: PostStatus };
 
 const CHANGELOG_FORM = "changelog-form";
 /** AiHelpers' menu button: Draft with AI's dialog gives the keyboard's focus back to it once the text is written. */
-const EDIT_WITH_AI = "edit-with-ai";
+/** The header's Ask AI: focus goes back to it from Draft with AI's dialog, opened from its own. */
+const ASK_AI_BUTTON = "ask-ai";
 export const ChangelogSavingContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
@@ -141,7 +135,7 @@ export const ChangelogSavingContext = createContext<{
   /** How publishing announces it, picked in the sidebar's Goes to (WhoSeesIt): the email announcement, the widget popup. */
   announce: Announce;
   setAnnounce: (announce: Announce) => void;
-  /** Draft with AI's dialog is open: from the top bar's button, Publish's dialog or the Edit with AI menu (AiHelpers). */
+  /** Draft with AI's dialog is open: from the top bar's button, Publish's dialog or Ask AI's dialog (on the whole text). */
   drafting: boolean;
   setDrafting: (drafting: boolean) => void;
   /** The text has something this release's editor can't show (RichEditor's onUnreadable): AI must not rewrite it either. */
@@ -610,7 +604,6 @@ export function ChangelogForm({
   standing,
   mediaUrls,
   covers = null,
-  canEditWithAi = false,
   canAskAi = false,
   aiPaused = false,
   imageGenerator = null,
@@ -645,8 +638,6 @@ export function ChangelogForm({
   /** Where it stands ("Draft", "Published 25 November"), first in the sidebar, as a post's status is; none for a new one. */
   standing?: ReactNode;
   mediaUrls: MediaUrls | null;
-  /** AI is set up on this server and the text is written (not still pull-request titles): the editor gets its helpers (for saved entries). */
-  canEditWithAi?: boolean;
   /** Ask AI on selected text (the server has AI). */
   canAskAi?: boolean;
   /** The project is out of credits: the helpers show, disabled. */
@@ -655,6 +646,9 @@ export function ChangelogForm({
   imageGenerator?: ImageGeneratorProps | null;
 }) {
   const editor = useRef<Editor | null>(null);
+  /** The editor's Ask AI on the whole text, for the header's button. */
+  const askWhole = useRef<(() => void) | null>(null);
+  const askPausedId = useId();
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
@@ -725,16 +719,28 @@ export function ChangelogForm({
           />
         )}
         <div className="flex flex-col gap-2">
-          {entry && canEditWithAi && !saving?.locked && (
+          {canAskAi && !saving?.locked && (
             <div className="flex justify-end">
-              <AiHelpers
-                projectSlug={projectSlug}
-                number={entry.number}
-                editor={editor}
-                dirty={dirty}
-                paused={aiPaused}
-                canDraft={!entry.published}
-              />
+              {/* Off, it still takes focus and says why: read with it (and its title on hover). */}
+              <Button
+                id={ASK_AI_BUTTON}
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={aiPaused}
+                focusableWhenDisabled
+                title={aiPaused ? "This project is out of credits" : undefined}
+                aria-describedby={aiPaused ? askPausedId : undefined}
+                onClick={() => askWhole.current?.()}
+              >
+                <SparklesIcon />
+                Ask AI
+              </Button>
+              {aiPaused && (
+                <span id={askPausedId} className="sr-only">
+                  This project is out of credits
+                </span>
+              )}
             </div>
           )}
           <RichEditor
@@ -747,7 +753,21 @@ export function ChangelogForm({
             uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
             editorRef={editor}
             imageEditing={imageGenerator && { ...imageGenerator, title: entry?.title }}
-            askAi={canAskAi ? { projectSlug, kind: "changelog", entry: entry?.number, paused: aiPaused } : null}
+            askAi={
+              canAskAi
+                ? {
+                    projectSlug,
+                    kind: "changelog",
+                    entry: entry?.number,
+                    paused: aiPaused,
+                    opener: (open) => {
+                      askWhole.current = open;
+                    },
+                    // A draft's Draft with AI is beside it: its own dialog (ChangelogEntryActions') says what it replaces.
+                    draft: entry && !entry.published ? () => saving?.setDrafting(true) : null,
+                  }
+                : null
+            }
             onChange={() => setDirty(true)}
             // Its AI helpers (here and Draft with AI in the top bar) would rewrite it without what it can't show; told on
             // every editor made, so text that's readable again (the form remounted with it) unlocks them.
@@ -1539,194 +1559,6 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
   );
 }
 
-const PREVIEW_TITLES: Record<RewriteMode, string> = {
-  shorten: "Shorter version",
-  plain: "Explained for non-developers",
-  section: "Rewritten section",
-};
-
-type Section = { index: number; heading: string | null };
-
-/**
- * AI helpers for a saved entry's text: shorten it (or the section with the cursor), explain it
- * for non-developers, or rewrite the section with the cursor. Each shows what would change, and
- * only Accept saves it (refused if the entry changed meanwhile). A draft's Draft with AI is here too (its
- * dialog is ChangelogEntryActions'): the one way into AI once the text is written.
- */
-function AiHelpers({
-  projectSlug,
-  number,
-  editor,
-  dirty,
-  paused,
-  canDraft,
-}: {
-  projectSlug: string;
-  number: number;
-  editor: RefObject<Editor | null>;
-  /** The form has changes that aren't saved. */
-  dirty: boolean;
-  /** Out of credits. */
-  paused: boolean;
-  /** A draft: Draft with AI is in the menu. */
-  canDraft: boolean;
-}) {
-  const saving = useContext(ChangelogSavingContext);
-  const [pending, startTransition] = useTransition();
-  const [asking, setAsking] = useState<Section | null>(null);
-  const [rewrite, setRewrite] = useState<ChangelogRewrite | null>(null);
-  const inputId = useId();
-
-  /** The section with the cursor, numbered like changelog.rewrite: its heading's, or 0 before the first heading. */
-  const cursorSection = (): Section => {
-    const state = editor.current?.state;
-    const section: Section = { index: 0, heading: null };
-    if (state) {
-      const at = state.selection.$from.index(0);
-      state.doc.forEach((node, _offset, index) => {
-        if (index <= at && node.type.name === "heading") {
-          section.index++;
-          section.heading = node.textContent;
-        }
-      });
-    }
-    return section;
-  };
-
-  // They edit the saved text: changes not saved yet would be lost on Accept.
-  const saved = () => {
-    if (dirty) {
-      toast.error("Save your changes first: AI edits the saved text.");
-    }
-    return !dirty;
-  };
-
-  const run = (input: { mode: RewriteMode; section?: number; instruction?: string }) =>
-    startTransition(async () => {
-      const result = await rewriteChangelogEntry(projectSlug, number, input);
-      if (result.rewrite) {
-        setRewrite(result.rewrite);
-      } else {
-        toast.error(result.error);
-      }
-    });
-
-  const accept = (proposal: ChangelogRewrite) =>
-    // Checked again: the form stays editable while the model writes. The preview stays open.
-    saved() &&
-    startTransition(async () => {
-      const result = await acceptChangelogRewrite(projectSlug, number, proposal.proposed.content, proposal.expectedUpdatedAt);
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        setRewrite(null);
-        toast.success("Saved");
-      }
-    });
-
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              id={EDIT_WITH_AI}
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending || paused}
-              focusableWhenDisabled
-              title={paused ? "This project is out of credits" : undefined}
-            />
-          }
-        >
-          <SparklesIcon />
-          {pending && !rewrite ? "Writing…" : "Edit with AI"}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-60">
-          {/* It says itself what it replaces, unsaved changes included. */}
-          {canDraft && <DropdownMenuItem onClick={() => saving?.setDrafting(true)}>Draft with AI…</DropdownMenuItem>}
-          <DropdownMenuItem onClick={() => saved() && run({ mode: "shorten" })}>Shorten</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => saved() && run({ mode: "shorten", section: cursorSection().index })}>
-            Shorten this section
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => saved() && run({ mode: "plain" })}>Explain for non-developers</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => saved() && setAsking(cursorSection())}>Rewrite this section…</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <Dialog open={asking !== null} onOpenChange={(open) => !open && setAsking(null)}>
-        <DialogContent>
-          {asking && (
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(event) => {
-                // The dialog sits inside the entry's form in React's tree: don't submit that.
-                event.preventDefault();
-                event.stopPropagation();
-                const instruction = String(new FormData(event.currentTarget).get("instruction") ?? "");
-                setAsking(null);
-                run({ mode: "section", section: asking.index, instruction });
-              }}
-            >
-              <DialogHeader>
-                <DialogTitle>Rewrite this section</DialogTitle>
-                <DialogDescription>
-                  {asking.heading ? `“${asking.heading}”, where your cursor is.` : "The text before the first heading, where your cursor is."}{" "}
-                  You&apos;ll see the new version before anything changes.
-                </DialogDescription>
-              </DialogHeader>
-              <Field>
-                <FieldLabel htmlFor={inputId}>Instruction (optional)</FieldLabel>
-                <Input
-                  id={inputId}
-                  name="instruction"
-                  maxLength={200}
-                  autoComplete="off"
-                  placeholder="e.g. Mention that it works on phones too"
-                  autoFocus
-                />
-              </Field>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setAsking(null)}>
-                  Cancel
-                </Button>
-                <Button type="submit">Rewrite</Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={rewrite !== null} onOpenChange={(open) => !open && setRewrite(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          {rewrite && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{PREVIEW_TITLES[rewrite.mode]}</DialogTitle>
-                <DialogDescription>
-                  Paragraphs taken out are struck through; new ones are highlighted. Nothing changes until you accept.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto text-sm break-words">
-                <DiffLines lines={diffLines(rewrite.body, rewrite.proposed.body)} />
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" disabled={pending} onClick={() => setRewrite(null)}>
-                  Discard
-                </Button>
-                <Button type="button" disabled={pending} onClick={() => accept(rewrite)}>
-                  {pending ? "Saving…" : "Accept"}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
 /**
  * What's saved, as Settings → Changelog's form holds it, in its fields' order (useCustomizeForm's `saved`): without AI
  * (`drafting` false) the form has the cover's fields only, and a field listed that it doesn't have would make the page
@@ -2173,7 +2005,7 @@ export function ChangelogEntryActions({
   sample?: boolean;
   /** Imported as a draft though it was published there: that date, kept by publishing, which doesn't announce it. */
   importedOn?: string | null;
-  /** AI is set up on this server and the entry is a draft: Draft with AI's dialog (its button here only while `unwritten`, in Edit with AI's menu otherwise). */
+  /** AI is set up on this server and the entry is a draft: Draft with AI's dialog (its button here only while `unwritten`, in Ask AI's dialog otherwise). */
   canDraftWithAi: boolean;
   /** The project is out of credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
@@ -2266,14 +2098,14 @@ export function ChangelogEntryActions({
   const draftWithAi = canDraftWithAi && (
     // Open while the model writes (a few seconds), closed once the new text is in.
     <AlertDialog key="draft" open={drafting} onOpenChange={setDrafting}>
-      {/* Its button while the text isn't written; once it is, Edit with AI's menu over the text opens it. */}
+      {/* Its button while the text isn't written; once it is, the header's Ask AI offers it in its dialog. */}
       {unwritten && (
         <AlertDialogTrigger render={<Button variant={aiFirst ? "default" : "outline"} disabled={busy || aiPaused || locked} focusableWhenDisabled />}>
           Draft with AI
         </AlertDialogTrigger>
       )}
-      {/* Written now (its button gone), or opened from Edit with AI's menu: focus goes back to that menu's button. */}
-      <AlertDialogContent finalFocus={() => document.getElementById(EDIT_WITH_AI) ?? true}>
+      {/* Written now (its button gone), or opened from Ask AI's dialog: focus goes back to Ask AI's button. */}
+      <AlertDialogContent finalFocus={() => document.getElementById(ASK_AI_BUTTON) ?? true}>
         <AlertDialogHeader>
           <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
           <AlertDialogDescription>
