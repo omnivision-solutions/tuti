@@ -25,11 +25,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
+import { languageLine, type Translations } from "@/lib/language-line";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import { addLanguage, type LanguageChanges, removeLanguage, setDefaultLanguage, updateLanguage } from "@/server/languages";
 
 type Offered = { code: string; name: string; native: string };
-type Language = { code: string; name: string; newPages: "automatic" | "manual"; instructions: string; productAvailable: boolean; live: boolean };
+type Language = {
+  code: string;
+  name: string;
+  newPages: "automatic" | "manual";
+  instructions: string;
+  productAvailable: boolean;
+  live: boolean;
+  articles: Translations;
+  entries: Translations;
+};
 
 const MAX_INSTRUCTIONS = 2000;
 const ADD = "add-language";
@@ -39,8 +49,8 @@ const label = ({ name, native }: Offered) => (name === native ? name : `${native
 
 /**
  * Settings → Languages (docs/plan.md, Languages): the default language, then the others, each with its code, mode, Live
- * or Offline and a ⋯ menu. Before article translations (L6) nothing is translated yet, so a row says only its mode, and
- * there's no Retranslate or Try again.
+ * or Offline and a ⋯ menu. A row says its mode and how many of the published pages (articles and changelog entries) have a
+ * version in it, and how many wait and why.
  */
 export function LanguageSettings({
   projectSlug,
@@ -56,7 +66,7 @@ export function LanguageSettings({
   defaultLanguage: string;
   languages: Language[];
   offered: Offered[];
-  /** Published articles: what a new language has to translate. */
+  /** Published articles and changelog entries: what a new language has to translate. */
   pages: number;
   /** The plan has no room for another language: Add language opens this. */
   upgrade: UpgradePrompt | null;
@@ -98,6 +108,7 @@ export function LanguageSettings({
                 language={language}
                 native={byCode(language.code).native}
                 upgrade={pastLimit.includes(language.code) ? goLiveUpgrade : null}
+                pages={pages}
               />
             ))}
           </ul>
@@ -240,7 +251,7 @@ function AddLanguage({ projectSlug, defaultName, addable, pages, upgrade }: { pr
 }
 
 /** A language: its code, names and mode, Live or Offline, and its ⋯ menu. */
-function LanguageRow({ projectSlug, language, native, upgrade }: { projectSlug: string; language: Language; native: string; upgrade: UpgradePrompt | null }) {
+function LanguageRow({ projectSlug, language, native, upgrade, pages }: { projectSlug: string; language: Language; native: string; upgrade: UpgradePrompt | null; pages: number }) {
   const [pending, startTransition] = useTransition();
   const [upgrading, setUpgrading] = useState(false);
   const planId = useId();
@@ -268,7 +279,7 @@ function LanguageRow({ projectSlug, language, native, upgrade }: { projectSlug: 
         </span>
         <span className="text-sm text-muted-foreground">
           {language.name !== native && <>{language.name} · </>}
-          {language.newPages === "automatic" ? "Automatic" : "Manual"}
+          {languageLine(language, pages)}
         </span>
       </div>
       <Badge variant={language.live ? "soft" : "outline"} className={language.live ? undefined : "text-muted-foreground"}>

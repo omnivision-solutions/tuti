@@ -17,10 +17,14 @@ export default async function LanguagesPage(props: PageProps<"/app/[project]/set
   if (!project) {
     notFound();
   }
-  const [saved, pages] = await Promise.all([
+  // Its published pages: articles and changelog entries, what a language translates (sample ones never are).
+  const live = { projectId: project.id, publishedAt: { not: null }, sample: false };
+  const [saved, articles, entries] = await Promise.all([
     projectLanguages(project.id),
-    prisma.article.count({ where: { projectId: project.id, publishedAt: { not: null } } }),
+    prisma.article.count({ where: { ...live, deletedAt: null } }),
+    prisma.changelogEntry.count({ where: live }),
   ]);
+  const pages = articles + entries;
   const limit = languageLimit(project.plan);
   const full = limit !== null && 1 + saved.languages.length >= limit;
   const billingHref = roomierPlan(project.plan, languageLimit) ? `/app/${slug}/settings/billing` : null;
