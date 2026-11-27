@@ -119,12 +119,27 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     const passwordField = owner.getByLabel("Password", { exact: true }).and(owner.locator('input[type="password"]'));
     await passwordField.fill(password);
     await owner.getByLabel("About your app").fill(FAKE_CANT_SIGN_IN);
+    // The page's next ask, held while the checking line is looked at (inline jobs have the answer by then).
+    const isPoll = (url: URL) => url.pathname.endsWith("/settings/screenshots/suggestions") && url.searchParams.get("start") === "false";
+    let poll: Route | undefined;
+    await owner.route(isPoll, (route) => {
+      poll = route;
+    });
     await save.click();
     await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
-    // The app's sign-in service, found in its script.
+    // The app's sign-in service, found in its script: read in the background while the page says so, then suggested.
+    const checking = owner.getByText("Checking how your app signs in…", { exact: true });
+    await expect(checking).toBeVisible();
+    await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
+    await checking.scrollIntoViewIfNeeded();
+    await checkpoint(owner, "team-settings-screenshots-checking");
+    await expect.poll(() => poll).toBeDefined();
+    await poll!.continue();
+    await owner.unroute(isPoll);
     const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
     await expect(suggestion).toBeVisible();
+    await expect(checking).toBeHidden();
     // A Test that can't sign in points to it.
     await owner.getByRole("button", { name: "Test", exact: true }).click();
     const failed = owner.getByRole("alert").filter({ hasText: `The agent couldn't sign in: ${FAKE_SIGN_IN_REFUSED}` });
@@ -135,37 +150,37 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     // Another address on the same site: while it's read, the last one's suggestion (and the Test's pointer to it) is gone.
     const appAddress = owner.getByLabel("App address");
     const base = await appAddress.inputValue();
-    let held: Route | undefined;
-    // Held while the test looks; once it fails one, every read fails (one the save's refresh starts later too).
+    // Every read held (a save may ask twice: the settings and the save each change), then all of them fail.
+    const held: Route[] = [];
     let failing = false;
-    await owner.route("**/settings/screenshots/suggestions", (route) => {
-      if (failing) return route.abort();
-      held = route;
-    });
-    const plain = new URL("plain", base).href;
-    await appAddress.fill(plain);
+    await owner.route("**/settings/screenshots/suggestions*", (route) => (failing ? route.abort() : void held.push(route)));
+    await appAddress.fill(new URL("plain", base).href);
     await save.click();
-    // Its save landed, not just a toast shown (the first save's may still be): the page has the saved address (the field's
-    // default). Typed into before that, the field would be reset to it as the save lands.
-    await expect(appAddress).toHaveAttribute("value", plain);
     await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
     await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
     await expect(suggestion).toBeHidden();
     await expect(failed).not.toContainText("Try the suggested domains.");
     // A read that fails shows none either.
-    await expect.poll(() => held).toBeDefined();
+    await expect.poll(() => held.length).toBeGreaterThan(0);
     failing = true;
-    await held!.abort();
+    await Promise.all(held.map((route) => route.abort()));
     await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
     await expect(suggestion).toBeHidden();
     // Back to the app's own address: suggested again.
-    await owner.unroute("**/settings/screenshots/suggestions");
-    await appAddress.fill(base);
+    await owner.unroute("**/settings/screenshots/suggestions*");
+    // Typed again if the saved settings, arriving late, reset the field under it.
+    await expect(async () => {
+      await appAddress.fill(base);
+      await expect(save).toBeEnabled({ timeout: 1_000 });
+    }).toPass();
     await save.click();
     await expect(suggestion).toBeVisible();
     // A save that changes only a secret (a new sign-in link may open another host) reads them again too.
     const readAgain = owner.waitForRequest("**/settings/screenshots/suggestions");
-    await passwordField.fill(`${password}-new`);
+    await expect(async () => {
+      await passwordField.fill(`${password}-new`);
+      await expect(save).toBeEnabled({ timeout: 1_000 });
+    }).toPass();
     await save.click();
     await readAgain;
     await expect(suggestion).toBeVisible();
@@ -194,4 +209,61 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }
+});
+
+test("while the app is read again, the page keeps asking for as long as a read can take, and doesn't bring back a suggestion just added", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Rhea Recheck");
+  await createProject(owner, "Acme", slug);
+  // An answer read again (over a week old, say), on a busy worker: the server's answers, faked, so nothing is read.
+  const firebase = { provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] };
+  const auth0 = { provider: "Auth0", hosts: ["acme.auth0.com"] };
+  let done = false;
+  let fail = false;
+  // The page's looks again (start=false), counted.
+  let asks = 0;
+  await owner.route("**/settings/screenshots/suggestions*", (route) => {
+    asks += new URL(route.request().url()).searchParams.get("start") === "false" ? 1 : 0;
+    return fail ? route.fulfill({ status: 502 }) : route.fulfill({ json: done ? { suggestions: [firebase, auth0], checking: false } : { suggestions: [firebase], checking: true } });
+  });
+  // The clock moved a little at a time until the page asks again (it sets its next ask only once an answer is in).
+  const nextAsk = async () => {
+    const after = asks;
+    await expect(async () => {
+      await owner.clock.runFor(500);
+      expect(asks).toBeGreaterThan(after);
+    }).toPass();
+  };
+  await owner.goto(`/app/${slug}/settings/screenshots`);
+  await owner.getByLabel("App address").fill("https://app.example.com");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
+  await owner.clock.install();
+  await owner.reload();
+  const checking = owner.getByText("Checking how your app signs in…", { exact: true });
+  await expect(checking).toBeVisible();
+  const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
+  await owner.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(suggestion).toBeHidden();
+
+  // Each next ask, 2 seconds after the last answer: still checking, it doesn't bring it back while its hosts are in the
+  // field; and the page keeps asking well past half a minute (a read may wait its turn on a busy worker).
+  while (asks < 20) {
+    await nextAsk();
+    await expect(checking).toBeVisible();
+    await expect(suggestion).toBeHidden();
+  }
+  // A look again that fails (the server restarting for a deploy, say) changes nothing, and the page asks again.
+  fail = true;
+  const failed = owner.waitForResponse((response) => response.status() === 502);
+  await nextAsk();
+  await failed;
+  await expect(checking).toBeVisible();
+  fail = false;
+  // Its answer then shows.
+  done = true;
+  await nextAsk();
+  await expect(owner.getByText("Auth0 sign-in needs acme.auth0.com", { exact: true })).toBeVisible();
+  await expect(checking).toBeHidden();
+  await expect(suggestion).toBeHidden();
 });

@@ -174,3 +174,135 @@ test("adding a language counts the published changelog entries it takes on, tran
   await owner.setViewportSize({ width: 390, height: 844 });
   await checkpoint(owner, "settings-languages-entries-phone", { fullPage: false });
 });
+
+test("an owner edits the glossary: a term's word per language, one never translated, saved after saying which pages it updates; a card per term on phones", async ({ browser }, testInfo) => {
+  // A long journey (the screen's every case, a reload, a phone): past the default on a loaded runner.
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // German and French written by the team: nothing asks the model. A page using Board, with its German.
+  await api("/languages", { languages: [{ code: "de", newPages: "manual" }, { code: "fr", newPages: "manual" }] }, "PATCH");
+  await api("/glossary", { terms: [{ term: "Board", translations: { de: "Tafel" } }] }, "PATCH");
+  const article = await api("/articles", { title: "Boards", body: "Make a Board for ideas." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await query(
+    `INSERT INTO article_translation (id, "articleId", "projectId", language, title, body, automatic, "publishedAt", "updatedAt")
+     SELECT gen_random_uuid()::text, a.id, a."projectId", 'de', 'Tafeln', 'Eine Tafel für Ideen.', false, now(), now()
+     FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, article.slug],
+  );
+
+  await owner.setViewportSize({ width: 1280, height: 800 });
+  await owner.goto(`/app/${slug}/settings/languages/glossary`);
+  const pane = owner.getByRole("region", { name: "Glossary" });
+  await expect(pane.getByRole("link", { name: "Languages" })).toHaveAttribute("href", `/app/${slug}/settings/languages`);
+  const terms = pane.getByRole("list", { name: "Terms" });
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true })).toHaveValue("Board");
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Tafel");
+  await expect(terms.getByRole("textbox", { name: "Board in Français" })).toHaveAttribute("placeholder", "Model decides");
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+  // Board's German changes; Acme is added, never translated.
+  await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Brett");
+  await pane.getByRole("button", { name: "Add term" }).click();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
+  await terms.getByRole("textbox", { name: "Term", exact: true }).last().fill("Acme");
+  await terms.getByRole("switch", { name: "Never translated: Acme" }).check();
+  // Never translated: no word per language for it.
+  await expect(terms.getByRole("textbox", { name: "Acme in Deutsch" })).toHaveCount(0);
+  await checkpoint(owner, "glossary", { fullPage: false });
+
+  // Saving asks first: the German page using Board is the team's, so it gets its sections to update. What it asks about is
+  // the terms as Save found them: an edit made while it works that out (its request held here) isn't saved with them.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let posts = 0;
+  await owner.route(`**/app/${slug}/settings/languages/glossary`, async (route) => {
+    if (route.request().method() === "POST" && posts++ === 0) await held;
+    await route.continue();
+  });
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await terms.getByRole("textbox", { name: "Board in Français" }).fill("Planche");
+  release();
+  const confirm = owner.getByRole("alertdialog", { name: "Save the glossary?" });
+  await expect(confirm).toContainText("To update1 page your team writes");
+  await checkpoint(owner, "glossary-confirm", { fullPage: false });
+  await confirm.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Saved the glossary")).toBeVisible();
+  await expect(confirm).toBeHidden();
+  await owner.unroute(`**/app/${slug}/settings/languages/glossary`);
+  // Saved as Save found it: French's "Planche" (typed after) isn't, and is still there to save.
+  const saved = (await api("/glossary", undefined, "GET")) as unknown as { terms: { term: string; translations: Record<string, string> }[] };
+  expect(saved.terms.find(({ term }) => term === "Board")?.translations).toEqual({ de: "Brett" });
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeEnabled();
+
+  // A change no page uses (French's word for Board: no French page) saves without asking; Enter in a field saves, as Save changes does.
+  await terms.getByRole("textbox", { name: "Board in Français" }).fill("Tableau");
+  await terms.getByRole("textbox", { name: "Board in Français" }).press("Enter");
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+
+  // The same term twice is refused, and what's on screen stays.
+  await pane.getByRole("button", { name: "Add term" }).click();
+  await terms.getByRole("textbox", { name: "Term", exact: true }).last().fill("board");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("“board” is in the glossary twice")).toBeVisible();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveValue("board");
+  // Removed: focus goes to the term before it, and there's nothing left to save.
+  await terms.getByRole("button", { name: "Remove board", exact: true }).click();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveValue("Acme");
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+  // A row with a word but no term isn't dropped quietly: saving it says so.
+  await pane.getByRole("button", { name: "Add term" }).click();
+  await terms.getByRole("textbox", { name: "this term in Deutsch" }).fill("Tafel");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Write the term first")).toBeVisible();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
+  // Leaving with changes not saved asks first.
+  await pane.getByRole("link", { name: "Languages" }).click();
+  const leave = owner.getByRole("alertdialog", { name: "Leave without saving?" });
+  await leave.getByRole("button", { name: "Keep editing" }).click();
+  await expect(leave).toBeHidden();
+  await terms.getByRole("button", { name: "Remove this term", exact: true }).click();
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+  // A teammate saves meanwhile: Zeta added, Board's French changed. A save from the list shown here is refused, what was
+  // typed kept and the teammate's changes merged in, marked; saved again, it goes on top of them, with both.
+  const theirs = (await api("/glossary", undefined, "GET")) as unknown as { terms: { term: string; keep: boolean; translations: Record<string, string> }[] };
+  const board = (list: typeof theirs.terms) => list.find(({ term }) => term === "Board")!;
+  board(theirs.terms).translations.fr = "Planche";
+  // German too, as the owner changes it here: theirs is shown under the owner's word, to choose from.
+  board(theirs.terms).translations.de = "Pinnwand";
+  await api("/glossary", { terms: [...theirs.terms, { term: "Zeta", translations: { fr: "Zêta" } }] }, "PATCH");
+  await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Planke");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Changed meanwhile: check the marked terms, then save")).toBeVisible();
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Planke");
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveAccessibleDescription("Theirs: Pinnwand");
+  await expect(terms.getByRole("textbox", { name: "Board in Français" })).toHaveValue("Planche");
+  await expect(terms.getByRole("textbox", { name: "Zeta in Français" })).toHaveValue("Zêta");
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveAccessibleDescription("Added meanwhile");
+  await expect(terms.getByRole("listitem").filter({ has: owner.getByRole("textbox", { name: "Board in Deutsch" }) }).getByRole("textbox", { name: "Term", exact: true })).toHaveAccessibleDescription("Changed meanwhile");
+  await checkpoint(owner, "glossary-meanwhile", { fullPage: false });
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await confirm.getByRole("button", { name: "Save" }).click();
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect(terms.getByText("Added meanwhile")).toHaveCount(0);
+  await expect(terms.getByText("Theirs: Pinnwand")).toHaveCount(0);
+  const both = (await api("/glossary", undefined, "GET")) as unknown as typeof theirs;
+  expect(board(both.terms).translations).toEqual({ de: "Planke", fr: "Planche" });
+  expect(both.terms.map(({ term }) => term)).toEqual(["Acme", "Board", "Zeta"]);
+
+  // Saved: there after a reload, and as a card per term on a phone.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Planke");
+  await expect(terms.getByRole("listitem").filter({ has: owner.getByRole("switch", { checked: true }) }).getByRole("textbox", { name: "Term", exact: true })).toHaveValue("Acme");
+  await expect(terms.getByText("Deutsch", { exact: true }).first()).toBeVisible();
+  await checkpoint(owner, "glossary-phone");
+});

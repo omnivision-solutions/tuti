@@ -43,11 +43,12 @@ async function signedIn(projectId: string, userId: string): Promise<WidgetPerson
 const shownIn = async (projectId: string) => visibleConversations(await historySince(projectId));
 
 /**
- * The team's replies they haven't seen: never its notes (the team's alone), nor a reply on a conversation by email
+ * The team's replies they haven't seen, and the AI's (its answers come a few seconds on, maybe once the panel's closed):
+ * never the team's notes (the team's alone), nor a reply on a conversation by email
  * (with nobody Tuti knows) that reached them by email, where they've read it.
  */
 export const unseenReplies = {
-  author: "TEAM",
+  author: { in: ["TEAM", "AI"] },
   note: false,
   seenAt: null,
   // Imported from another tool: nobody gets a dot for history (docs/plan.md, Switching from Featurebase).
