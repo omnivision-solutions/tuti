@@ -104,7 +104,7 @@ const supportSettingsFields = {
     .meta({ examples: ["en"] }),
   translate: z
     .boolean()
-    .describe("Translate conversations: the user's messages in another language are translated into the team's, and the team's replies into the user's (AI credits, as the translation role)")
+    .describe("Translate conversations: the user's messages in another language are translated into the team's, and the team's replies into the user's (credits, as the translation role)")
     .meta({ examples: [false] }),
   email: supportEmailOutput.nullable().describe("Email; null where the server doesn't receive email"),
 };
