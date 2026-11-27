@@ -32,5 +32,11 @@ export function versionState(version: VersionRow | undefined, hash: string, aiOn
   return version.sourceHash === hash ? "setting" : "behind";
 }
 
-/** The changelog version form's key: its language alone, so a new read (its own save's included) never remounts it over typing. */
+/** A changelog version editor's key (ChangelogVersionEditor): its language, so what's typed in it is kept across reads. */
 export const versionFormKey = (view: { code: string }) => `version:${view.code}`;
+
+/**
+ * Its form's key: the language and the text shown, so each read with new text mounts the form afresh, through the editor's
+ * own checks (text it can't read stays read-only, its images' addresses); the editor carries what's typed across it.
+ */
+export const versionTextKey = (view: { code: string; title: string; content: unknown }) => JSON.stringify([view.code, view.title, view.content]);

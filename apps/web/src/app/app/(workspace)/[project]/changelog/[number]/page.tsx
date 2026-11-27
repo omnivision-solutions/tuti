@@ -13,8 +13,8 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
-import { NO_AI_WAITING, versionFormKey } from "@/lib/changelog-versions";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionEditor, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
+import { NO_AI_WAITING, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
 import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
@@ -270,9 +270,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
             {version ? (
-              // One per language: a new read sets its fields in place where nothing's typed (never a remount over typing).
-              <ChangelogVersionForm
+              // One per language, carrying what's typed; its form mounted afresh for each read with new text.
+              <ChangelogVersionEditor
                 key={versionFormKey(version)}
+                formKey={versionTextKey(version)}
                 projectSlug={slug}
                 number={entry.number}
                 defaultName={languages![0]!.name}

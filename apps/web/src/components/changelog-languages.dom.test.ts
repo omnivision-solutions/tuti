@@ -21,18 +21,21 @@ vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn()
 const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
 
-const { ChangelogVersionForm } = await import("./changelog-languages");
-const { versionFormKey } = await import("@/lib/changelog-versions");
+const { ChangelogVersionEditor } = await import("./changelog-languages");
+const { versionFormKey, versionTextKey } = await import("@/lib/changelog-versions");
 type VersionView = import("./changelog-languages").VersionView;
 const { forgetPageTries } = await import("./rich-editor");
 
 /** A changelog entry's version form (the language pill's other languages): saving, Keep up to date, and what they keep. */
 
 const roots: Root[] = [];
+/** The images' addresses the page passes (its media map), for the next render. */
+let shownMedia: Record<string, string> | null = null;
 beforeEach(() => {
   saveChangelogVersion.mockReset();
   keepChangelogVersionUpToDate.mockReset();
   setPending.mockReset();
+  shownMedia = null;
   router.refresh.mockReset();
   toast.error.mockReset();
 });
@@ -60,8 +63,17 @@ async function form(props: Partial<typeof view> = {}) {
         h(
           ChangelogSavingContext,
           { value: { setPending } },
-          // Keyed as the page keys it (versionFormKey), so a re-render here remounts it exactly where the page would.
-          h(ChangelogVersionForm, { key: versionFormKey({ ...view, ...changes }), projectSlug: "acme", number: 1, defaultName: "English", view: { ...view, ...changes }, mediaUrls: null, languages }),
+          // Keyed as the page keys it (versionFormKey, versionTextKey), so a re-render here remounts the form exactly where the page would.
+          h(ChangelogVersionEditor, {
+            key: versionFormKey({ ...view, ...changes }),
+            formKey: versionTextKey({ ...view, ...changes }),
+            projectSlug: "acme",
+            number: 1,
+            defaultName: "English",
+            view: { ...view, ...changes },
+            mediaUrls: shownMedia,
+            languages,
+          }),
         ),
       ),
     );
@@ -301,4 +313,38 @@ test("with nothing typed, a new read's title and text are set in place, and its 
   // Set in place, not typed: Save goes from that read.
   await submit();
   expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v2");
+});
+
+test("a new read with an image mounts the form afresh, its image shown from the page's addresses", async () => {
+  const { render } = await form({ version: "v1" });
+  const id = "newimage0000000000001";
+  shownMedia = { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` };
+  const content = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Siehe unten." }] }, { type: "image", attrs: { mediaId: id, width: "100", align: "center", alt: "", w: 1000, h: 500 } }] };
+  await render({ version: "v2", content });
+  expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
+});
+
+test("text in a new read this editor can't read stays read-only, as on a first read", async () => {
+  const { render } = await form({ version: "v1" });
+  expect(document.querySelector('[role="textbox"][aria-label="What changed"]')!.getAttribute("contenteditable")).toBe("true");
+  const content = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Neu." }] }, { type: "futureBlock" }] };
+  await render({ version: "v2", content: content as never });
+  expect(document.querySelector('[role="textbox"][aria-label="What changed"]')!.getAttribute("contenteditable")).toBe("false");
+});
+
+test("a save's answer that comes after a newer read leaves the newer read's token", async () => {
+  let answer = (_: unknown) => {};
+  saveChangelogVersion.mockReturnValueOnce(new Promise((resolve) => (answer = resolve))).mockResolvedValue({ version: "v-next" });
+  const { render } = await form({ version: "v1" });
+  await submit();
+  // A newer read lands first (a teammate's save, a translation): the form is mounted afresh with it.
+  await render({ version: "v2", title: "Von jemand anderem" });
+  // Typed in the newer form before the late answer comes: the answer, for a form no longer shown, touches neither.
+  await act(async () => type(title(), "Von jemand anderem, ergänzt"));
+  await act(async () => answer({ version: "v-late" }));
+  // Another read with new text: the typing is carried on, from the newer read's token.
+  await render({ version: "v3", title: "Noch neuer" });
+  expect(title().value).toBe("Von jemand anderem, ergänzt");
+  await submit();
+  expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v2");
 });
