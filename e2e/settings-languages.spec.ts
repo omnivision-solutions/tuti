@@ -176,7 +176,7 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await pane.getByRole("button", { name: "Add term" }).click();
   await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
   await terms.getByRole("textbox", { name: "Term", exact: true }).last().fill("Acme");
-  await terms.getByRole("switch", { name: "Never translate Acme" }).check();
+  await terms.getByRole("switch", { name: "Never translated: Acme" }).check();
   // Never translated: no word per language for it.
   await expect(terms.getByRole("textbox", { name: "Acme in Deutsch" })).toHaveCount(0);
   await checkpoint(owner, "glossary", { fullPage: false });
@@ -189,6 +189,24 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await confirm.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Saved the glossary")).toBeVisible();
   await expect(confirm).toBeHidden();
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+  // A change no page uses (French's word for Board: no French page) saves without asking.
+  await terms.getByRole("textbox", { name: "Board in Français" }).fill("Tableau");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+
+  // The same term twice is refused, and what's on screen stays.
+  await pane.getByRole("button", { name: "Add term" }).click();
+  await terms.getByRole("textbox", { name: "Term", exact: true }).last().fill("board");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("“board” is in the glossary twice")).toBeVisible();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveValue("board");
+  // Removed: focus goes to the term before it, and there's nothing left to save.
+  await terms.getByRole("button", { name: "Remove board", exact: true }).click();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveValue("Acme");
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
 
   // Saved: there after a reload, and as a card per term on a phone.

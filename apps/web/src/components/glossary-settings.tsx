@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
@@ -35,6 +35,15 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
   const added = useRef(0);
   // The term just added: its field takes focus as it appears.
   const [fresh, setFresh] = useState<string | null>(null);
+  // One removed: its Remove button goes with it, so focus goes to the next term's field (else the one before, else Add term).
+  const focusAfterRemove = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusAfterRemove.current) {
+      document.getElementById(focusAfterRemove.current)?.focus();
+      focusAfterRemove.current = null;
+    }
+  }, [rows]);
+  const addId = `${id}-add`;
   // What's saved: terms written, translations only where one is, none on a kept term.
   const toSave = (): GlossaryTermInput[] =>
     rows
@@ -45,7 +54,8 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
         translations: keep ? {} : Object.fromEntries(Object.entries(translations).filter(([, word]) => word.trim()).map(([code, word]) => [code, word.trim()])),
       }));
   const dirty = JSON.stringify(toSave()) !== saved;
-  const columns = languages.length <= MAX_COLUMNS;
+  // Side by side with one to MAX_COLUMNS languages (with none there are no columns to line up).
+  const columns = languages.length > 0 && languages.length <= MAX_COLUMNS;
   const update = (key: string, change: Partial<GlossaryTermInput>) => setRows((list) => list.map((row) => (row.key === key ? { ...row, ...change } : row)));
   const add = () => {
     const key = `${id}-new-${added.current++}`;
@@ -93,7 +103,7 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
         title="Terms"
         count={rows.filter((row) => row.term.trim()).length}
         action={
-          <Button variant="outline" size="sm" onClick={add}>
+          <Button id={addId} variant="outline" size="sm" onClick={add}>
             <PlusIcon aria-hidden /> Add term
           </Button>
         }
@@ -130,7 +140,12 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
                   columns={columns}
                   fresh={row.key === fresh}
                   onChange={(change) => update(row.key, change)}
-                  onRemove={() => setRows((list) => list.filter((other) => other.key !== row.key))}
+                  onRemove={() => {
+                    const at = rows.indexOf(row);
+                    const next = rows[at + 1] ?? rows[at - 1];
+                    focusAfterRemove.current = next ? `${next.key}-term` : addId;
+                    setRows((list) => list.filter((other) => other.key !== row.key));
+                  }}
                 />
               ))}
             </ul>
@@ -224,7 +239,6 @@ function TermRow({
             </label>
             <Input
               id={`${row.key}-${language.code}`}
-              lang={language.code}
               value={row.translations[language.code] ?? ""}
               maxLength={100}
               placeholder="Model decides"
@@ -235,7 +249,8 @@ function TermRow({
         ))
       )}
       <label className={cn("flex items-center gap-2 text-sm", columns && "@min-[40rem]/settings:justify-center")}>
-        <Switch checked={row.keep} onChange={(event) => onChange({ keep: event.target.checked })} aria-label={columns ? `Never translate ${name}` : undefined} />
+        {/* Its name says the words shown ("Never translated") and whose they are. */}
+        <Switch checked={row.keep} onChange={(event) => onChange({ keep: event.target.checked })} aria-label={`Never translated: ${name}`} />
         <span className={cn(columns && "@min-[40rem]/settings:sr-only")}>Never translated</span>
       </label>
       <Button variant="ghost" size="icon-sm" className="justify-self-end" aria-label={`Remove ${name}`} onClick={onRemove}>
