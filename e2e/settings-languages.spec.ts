@@ -274,11 +274,14 @@ test("an owner edits the glossary: a term's word per language, one never transla
   const theirs = (await api("/glossary", undefined, "GET")) as unknown as { terms: { term: string; keep: boolean; translations: Record<string, string> }[] };
   const board = (list: typeof theirs.terms) => list.find(({ term }) => term === "Board")!;
   board(theirs.terms).translations.fr = "Planche";
+  // German too, as the owner changes it here: theirs is shown under the owner's word, to choose from.
+  board(theirs.terms).translations.de = "Pinnwand";
   await api("/glossary", { terms: [...theirs.terms, { term: "Zeta", translations: { fr: "Zêta" } }] }, "PATCH");
   await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Planke");
   await pane.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Changed meanwhile: check the marked terms, then save")).toBeVisible();
   await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Planke");
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveAccessibleDescription("Theirs: Pinnwand");
   await expect(terms.getByRole("textbox", { name: "Board in Français" })).toHaveValue("Planche");
   await expect(terms.getByRole("textbox", { name: "Zeta in Français" })).toHaveValue("Zêta");
   await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveAccessibleDescription("Added meanwhile");
@@ -288,6 +291,7 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await confirm.getByRole("button", { name: "Save" }).click();
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await expect(terms.getByText("Added meanwhile")).toHaveCount(0);
+  await expect(terms.getByText("Theirs: Pinnwand")).toHaveCount(0);
   const both = (await api("/glossary", undefined, "GET")) as unknown as typeof theirs;
   expect(board(both.terms).translations).toEqual({ de: "Planke", fr: "Planche" });
   expect(both.terms.map(({ term }) => term)).toEqual(["Acme", "Board", "Zeta"]);

@@ -1,8 +1,16 @@
 import type { GlossaryTermInput } from "@/server/glossary";
 
 /** A term as the Glossary editor holds it. */
-export type MergeRow = GlossaryTermInput & { key: string; /** Changed by a teammate while this was edited (a refused save merged it in). */ meanwhile?: Meanwhile };
+export type MergeRow = GlossaryTermInput & {
+  key: string;
+  /** Changed by a teammate while this was edited (a refused save merged it in). */
+  meanwhile?: Meanwhile;
+  /** Their word, by language, where both changed it ("" where they left it to the model, NEVER where they made the term Never translated): shown under the word typed here. */
+  theirs?: Record<string, string>;
+};
 type Meanwhile = "Added meanwhile" | "Changed meanwhile" | "Removed meanwhile";
+/** In `theirs`: they made the term Never translated. */
+export const NEVER = "Never translated";
 
 /**
  * A list of terms as one string, whatever order its terms and their languages are in (the server's, or the page's after a
@@ -37,7 +45,8 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
     if (was && !is) return { ...row, meanwhile: "Removed meanwhile" };
     if (!was && is && !same(row, is)) {
       const empty = Object.entries(is.translations).filter(([code]) => !(row.translations[code] ?? "").trim());
-      return { ...row, translations: { ...row.translations, ...Object.fromEntries(empty) }, meanwhile: "Changed meanwhile" };
+      const differ = Object.entries(is.translations).filter(([code, word]) => (row.translations[code] ?? "").trim() && row.translations[code]!.trim() !== word);
+      return { ...row, translations: { ...row.translations, ...Object.fromEntries(empty) }, meanwhile: "Changed meanwhile", ...(differ.length > 0 && { theirs: Object.fromEntries(differ) }) };
     }
     if (was && is && !same(was, is)) {
       const codes = new Set([...Object.keys(was.translations), ...Object.keys(is.translations), ...Object.keys(row.translations)]);
@@ -45,7 +54,9 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
       const word = (code: string) => (edited(code) ? row.translations[code] : is.translations[code]) ?? "";
       const translations = Object.fromEntries([...codes].map((code) => [code, word(code)]).filter(([, text]) => text));
       const keep = row.keep === was.keep && ![...codes].some(edited) ? is.keep : row.keep;
-      return { ...row, keep, translations, meanwhile: "Changed meanwhile" };
+      // Changed on both sides, differently: what was typed stays, theirs shown beside it, for the team to choose.
+      const both = [...codes].filter((code) => edited(code) && (is.translations[code] ?? "") !== (was.translations[code] ?? "") && (is.translations[code] ?? "") !== (row.translations[code] ?? "").trim());
+      return { ...row, keep, translations, meanwhile: "Changed meanwhile", ...(both.length > 0 && { theirs: Object.fromEntries(both.map((code) => [code, is.keep && !row.keep ? NEVER : (is.translations[code] ?? "")])) }) };
     }
     return row;
   });
