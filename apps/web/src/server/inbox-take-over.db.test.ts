@@ -239,3 +239,18 @@ test("Hand back to the AI is allowed where a Don't hand over kept the conversati
   expect(await handBackConversation(project.slug, 1)).toEqual({});
   expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).handledBy).toBe("AI");
 });
+
+test("Hand back to the AI is refused after a handover whatever the clocks say: a message timed after its handover's Activity row still waits", async () => {
+  const { owner, project, start } = await startedAndHandedOver();
+  await call(createWorkflow, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { name: "Set reply", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "reply_text", text: "Thanks, a person will be in touch." }] });
+  await start();
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  const event = await prisma.conversationEvent.findFirstOrThrow({ where: { conversationId: conversation.id, kind: "handed_over" } });
+  // The user's message timed just after the row (messages are timed after the conversation's latest, a millisecond on).
+  const question = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: conversation.id, author: "USER" } });
+  await prisma.conversationMessage.update({ where: { id: question.id }, data: { createdAt: new Date(event.createdAt.getTime() + 5) } });
+  // The set reply still after it: the latest message is the AI's, so only the handover says they wait.
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id, author: "AI" }, data: { createdAt: new Date(event.createdAt.getTime() + 10) } });
+  actAs(owner);
+  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Reply first: they're waiting on your team." });
+});

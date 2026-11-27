@@ -111,9 +111,11 @@ export async function userWaits(conversationId: string): Promise<boolean> {
   if (!asked?.handedOverAt) {
     return false;
   }
-  // Handed to the team, not kept with the AI by a Don't hand over (which marks the message all the same): its Activity row.
+  // Handed to the team, not kept with the AI by a Don't hand over (which marks the message all the same): its Activity row,
+  // matched by the handover's own time. handOver writes `handedOverAt` and then the row in one transaction, from one clock,
+  // so the row is never earlier; the message's `createdAt` may be (it's timed after the conversation's latest message).
   const [toTeam, replied] = await Promise.all([
-    prisma.conversationEvent.count({ where: { conversationId, kind: "handed_over", createdAt: { gte: asked.createdAt } } }),
+    prisma.conversationEvent.count({ where: { conversationId, kind: "handed_over", createdAt: { gte: asked.handedOverAt } } }),
     prisma.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } }),
   ]);
   return toTeam > 0 && replied === 0;
