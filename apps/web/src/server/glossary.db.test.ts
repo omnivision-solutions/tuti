@@ -471,19 +471,34 @@ test("a page published as a glossary save plans: its translation, refused by the
   const edited = doc("Intro", ["Setup", "Install it on a Board."]);
   let saved!: () => void;
   const save = new Promise<void>((resolve) => (saved = resolve));
+  // The publish's job has read the glossary (it's asking the model): only then does the save go on.
+  let asked!: () => void;
+  const reading = new Promise<void>((resolve) => (asked = resolve));
   const plan = vi.mocked(planGlossaryChanges);
   const actual = plan.getMockImplementation()!;
   plan.mockImplementationOnce(async (...args) => {
     const made = await actual(...args);
     await call(updateArticle, as(), { slug: "setup", content: edited, publish: true });
+    await reading;
     return made;
   });
-  model.reply(reply("Setup", edited, "de", "Tafel"), () => save, "Install it on a Board.");
+  model.reply(
+    reply("Setup", edited, "de", "Tafel"),
+    () => {
+      asked();
+      return save;
+    },
+    "Install it on a Board.",
+  );
   model.reply(reply("Setup", edited, "de2", "Brett"), undefined, "Install it on a Board.");
   // Boards, using Board too, is translated again by the save.
   model.reply(reply("Boards", BOARDS, "de2", "Brett"), undefined, "Make a Board for ideas.");
-  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
-  saved();
+  try {
+    await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  } finally {
+    // A failed save never leaves the job waiting.
+    saved();
+  }
   await languageTranslationsDone();
   expect((await version("setup")).body).toContain("[de2] Install it on a Brett.");
   // Two runs (the publish's, refused; the save's): no third one paying again.
