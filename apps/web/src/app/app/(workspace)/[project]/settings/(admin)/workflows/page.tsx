@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { Workflows } from "@/components/inbox/workflows";
 import { SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
-import { answersEnabled } from "@/server/operations/docs-ask";
+import { aiFirstSettings } from "@/server/operations/ai-first";
 import { workflowsOf } from "@/server/operations/workflows";
 
 export const metadata: Metadata = { title: "Workflows · Settings" };
@@ -17,10 +17,10 @@ export default async function WorkflowsPage(props: PageProps<"/app/[project]/set
   if (!project) {
     notFound();
   }
-  const [workflows, groups, { widgetAiFirst }] = await Promise.all([
+  const [workflows, groups, aiFirst] = await Promise.all([
     workflowsOf(project.id),
     prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, name: true } }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetAiFirst: true } }),
+    aiFirstSettings(project.id),
   ]);
   return (
     <SettingsPane title="Workflows" description="What happens to each message, in this order">
@@ -28,7 +28,7 @@ export default async function WorkflowsPage(props: PageProps<"/app/[project]/set
         projectSlug={project.slug}
         workflows={workflows}
         groupNames={Object.fromEntries(groups.map((group) => [group.key, group.name]))}
-        aiFirst={answersEnabled() ? widgetAiFirst : null}
+        aiFirst={aiFirst.offFor.includes("no_ai_answers") ? null : aiFirst}
       />
     </SettingsPane>
   );

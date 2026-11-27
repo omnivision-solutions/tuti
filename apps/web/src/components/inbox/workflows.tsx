@@ -2,9 +2,10 @@
 
 import { GripVerticalIcon, MoreHorizontalIcon } from "lucide-react";
 import Link from "next/link";
-import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
+import { type DragEvent, Fragment, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { OFF_FOR } from "@/components/inbox/ai-first-settings";
 import { SettingsCard } from "@/components/settings-card";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { TRIGGER_KEYS, type WorkflowAction, type WorkflowCondition, type WorkflowTrigger, workflowSummary } from "@/lib/workflows";
+import type { AiFirstSettings } from "@/server/operations/ai-first";
 import { deleteWorkflow, moveWorkflow, saveWorkflow } from "@/server/workflows";
 
 export type WorkflowRow = { id: string; name: string; trigger: WorkflowTrigger; position: number; enabled: boolean; conditions: WorkflowCondition[]; actions: WorkflowAction[] };
@@ -23,31 +25,48 @@ const GROUPS: Record<WorkflowTrigger, { title: string; empty: string }> = {
   about_to_hand_over: { title: "When a conversation is about to go to a person", empty: "No workflows. Conversations go to your team." },
 };
 
+/** The AI answers first row's line: where it's on, or what keeps it off. */
+function aiFirstLine(aiFirst: AiFirstSettings | null) {
+  if (!aiFirst) {
+    return OFF_FOR.no_ai_answers;
+  }
+  const on = [aiFirst.widget && "the widget", aiFirst.email && "email"].filter(Boolean).join(" and ");
+  if (!on) {
+    return "Off";
+  }
+  return aiFirst.offFor.length > 0 ? `Off for now: ${aiFirst.offFor.map((reason) => OFF_FOR[reason]).join(" · ")}` : `On for ${on}`;
+}
+
 /**
  * Settings → Workflows (docs/plan.md, Inbox automation, W9): the path a user's message takes, top to bottom, the
  * built-in steps fixed and each trigger's workflows between them, each group's Add workflow and each row's name opening the
- * editor (W10). `aiFirst`:
- * the widget's "Answer with AI first" as set (its own settings are W14's), null where the server has no AI answers.
+ * editor (W10). `aiFirst`: AI answers first's settings (W14, its own page), null where the server has no AI answers.
  */
-export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { projectSlug: string; workflows: WorkflowRow[]; groupNames: Record<string, string>; aiFirst: boolean | null }) {
+export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { projectSlug: string; workflows: WorkflowRow[]; groupNames: Record<string, string>; aiFirst: AiFirstSettings | null }) {
   const settings = (page: string) => `/app/${projectSlug}/settings/${page}`;
   return (
     <ol className="flex flex-col gap-6">
-      {/* First for now: it answers in the widget before there is a conversation. Once the AI answers in conversations (W12), it moves after the triggers. */}
-      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, where it answers before a conversation starts, once you've published articles" : "Off in the widget"}>
-        <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
-          Widget
-        </Link>
-      </BuiltIn>
       <BuiltIn name="Spam filter" description="Stops spam before your workflows run">
         <Link href={settings("spam")} aria-label="Spam filter settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Settings
         </Link>
       </BuiltIn>
       {TRIGGER_KEYS.map((trigger) => (
-        <li key={trigger}>
-          <Group projectSlug={projectSlug} trigger={trigger} workflows={workflows.filter((workflow) => workflow.trigger === trigger)} groupNames={groupNames} />
-        </li>
+        <Fragment key={trigger}>
+          {/* After the message triggers, as the AI answers once they've run, and before the handover's. */}
+          {trigger === "about_to_hand_over" && (
+            <BuiltIn name="AI answers first" description={aiFirstLine(aiFirst)}>
+              {aiFirst && (
+                <Link href={settings("workflows/ai-first")} aria-label="AI answers first settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  Settings
+                </Link>
+              )}
+            </BuiltIn>
+          )}
+          <li>
+            <Group projectSlug={projectSlug} trigger={trigger} workflows={workflows.filter((workflow) => workflow.trigger === trigger)} groupNames={groupNames} />
+          </li>
+        </Fragment>
       ))}
       <BuiltIn name="Hand to the team" description="Moves the conversation to your inbox and notifies you" />
     </ol>

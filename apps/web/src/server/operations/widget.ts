@@ -89,8 +89,6 @@ export type WidgetSettings = {
   hidden: WidgetPart[];
   /** The launcher on the project's own portal too. */
   onPortal: boolean;
-  /** A new message in Messages goes to the docs' AI first, with "Ask a person" to pass it to the team. */
-  aiFirst: boolean;
   /** A new announcement pops up as a card by the launcher. */
   popup: boolean;
 };
@@ -110,7 +108,6 @@ export async function widgetSettings(where: { id: string } | { slug: string }): 
       widgetGreeting: true,
       widgetHidden: true,
       widgetOnPortal: true,
-      widgetAiFirst: true,
       widgetPopup: true,
     },
   });
@@ -129,7 +126,6 @@ export async function widgetSettings(where: { id: string } | { slug: string }): 
     greeting: project.widgetGreeting,
     hidden: WIDGET_PARTS.filter((part) => project.widgetHidden.includes(part)),
     onPortal: project.widgetOnPortal,
-    aiFirst: project.widgetAiFirst,
     popup: project.widgetPopup,
   };
 }
@@ -152,9 +148,6 @@ const HOME_LINE = "The panel's Home: its heading, empty for “How can we help?�
 const GREETING_LINE = "The greeting above Home's heading, empty for “Hi there 👋”, with the visitor's first name once their site signs them in";
 const HIDDEN_LINE = "The parts turned off, gone from Home and the tabs";
 const ON_PORTAL_LINE = "Whether the launcher shows on every page of the project's own portal too (true for new projects)";
-const AI_FIRST_LINE =
-  "Whether a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with “Ask a person” to pass it to the team; one with files goes to the team (true for new projects)";
-
 const POPUP_LINE =
   "Whether a new announcement pops up as a small card by the launcher (its cover, title and Read more), once per browser, for visitors who haven't seen it and were last on the site before it was published (not on a first visit); public portals only (false for new projects)";
 
@@ -173,7 +166,6 @@ const widgetOutput = z
     greeting: z.string().describe(GREETING_LINE).meta({ examples: [""] }),
     hidden: z.array(z.enum(WIDGET_PARTS)).describe(HIDDEN_LINE).meta({ examples: [["whatsNew"]] }),
     onPortal: z.boolean().describe(ON_PORTAL_LINE).meta({ examples: [true] }),
-    aiFirst: z.boolean().describe(AI_FIRST_LINE).meta({ examples: [true] }),
     popup: z.boolean().describe(POPUP_LINE).meta({ examples: [false] }),
   })
   .meta({ id: "WidgetSettings", description: "The widget's launcher and its panel's Home" });
@@ -250,7 +242,6 @@ export const updateWidgetSettings = defineOperation({
       .describe(`${HIDDEN_LINE} (replaces the list)`)
       .meta({ examples: [["whatsNew"]] }),
     onPortal: z.boolean().optional().describe(ON_PORTAL_LINE).meta({ examples: [true] }),
-    aiFirst: z.boolean().optional().describe(AI_FIRST_LINE).meta({ examples: [true] }),
     popup: z.boolean().optional().describe(POPUP_LINE).meta({ examples: [true] }),
   }),
   output: widgetOutput.describe("The widget's settings, as changed"),
@@ -301,7 +292,6 @@ export const updateWidgetSettings = defineOperation({
             ...(input.greeting !== undefined && { widgetGreeting: input.greeting }),
             ...(input.hidden !== undefined && { widgetHidden: WIDGET_PARTS.filter((part) => input.hidden!.includes(part)) }),
             ...(input.onPortal !== undefined && { widgetOnPortal: input.onPortal }),
-            ...(input.aiFirst !== undefined && { widgetAiFirst: input.aiFirst }),
             ...(input.popup !== undefined && { widgetPopup: input.popup }),
             ...((input.icon !== undefined || input.iconImage !== undefined) && { widgetIcon: icon, widgetIconImageId: image }),
           },
