@@ -15,7 +15,7 @@ import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { upsertProjectUser } from "./project-users";
-import { arrivalOf, SPAM_CHECKS, spamVerdict } from "./spam";
+import { arrivalOf, SPAM_CHECKS, spamChoices, spamVerdict } from "./spam";
 import { trySpam } from "./spam-settings";
 import type { SpamRuleField, SpamRuleMatcher } from "@/lib/spam-rules";
 import { widgetStartConversation } from "./widget-inbox";
@@ -136,6 +136,27 @@ test("an Everyone rule files anyone, trusted, allowed or marked Not spam; a Stra
   expect((await filed())[6]).toBe("inbox");
   await expect(call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).resolves.toMatchObject({ notice: "Filed by your rule: Subject or body contains crypto. It's removed." });
   await expect(call(updateConversation, admin, { number: 3, spam: false, removeRule: true })).rejects.toThrow(new OperationError(409, "no_rule", "That rule was already removed"));
+});
+
+test("a member's Not spam names the rule and can't remove it; once a teammate's mark replaces the filter's reason, no rule is named or offered", async () => {
+  const { projectId, admin, update, mail, filed } = await setup();
+  const member = await addMember(projectId, "MEMBER");
+  actAs(null);
+  const asMember = { actor: { kind: "user" as const, userId: member.id }, projectId };
+  await update({ addRules: [rule("subject", "contains", "crypto")] });
+  await mail("e2e-lee@strangers.example", { subject: "Crypto" }); // #1
+  await expect(call(updateConversation, asMember, { number: 1, spam: false, removeRule: true })).rejects.toMatchObject({ status: 403 });
+  expect(await filed()).toEqual(["rule"]);
+  expect((await call(updateConversation, asMember, { number: 1, spam: false })).notice).toBe("Filed by your rule: Subject contains crypto. It still applies: an owner or admin can remove it.");
+  // Marked as spam by hand afterwards: the rule's words left on it are no reason any more.
+  await call(updateConversation, admin, { number: 1, spam: true });
+  const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } });
+  expect(await spamChoices(prisma, conversation, true)).toMatchObject({ removesRule: null });
+  expect((await call(updateConversation, admin, { number: 1, spam: false })).notice).toBeUndefined();
+  await expect(call(updateConversation, admin, { number: 1, spam: true }).then(() => call(updateConversation, admin, { number: 1, spam: false, removeRule: true }))).rejects.toThrow(
+    new OperationError(409, "no_rule", "That rule was already removed"),
+  );
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(1);
 });
 
 test("a rule on the sender's name reads a signed-in account's name; Strangers only skips one of the project's users", async () => {

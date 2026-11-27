@@ -252,7 +252,7 @@ export async function arrivalOf(db: Db, projectId: string, userId: string | null
   return { projectId, userId, proven: true, address, name: user?.name ?? null };
 }
 
-type Marked = { id: string; projectId: string; origin: ConversationOrigin; userId: string | null; visitorHash: string | null; spam?: boolean; spamPhrase?: string | null };
+type Marked = { id: string; projectId: string; origin: ConversationOrigin; userId: string | null; visitorHash: string | null; spam?: boolean; spamReason?: string | null; spamPhrase?: string | null };
 
 /**
  * The address a mark on this conversation is a decision about: the one check 1 looked its sender up by. Null where that
@@ -294,9 +294,15 @@ export function blockableDomain(address: string): string | null {
   return domain && !FREE_MAIL_DOMAINS.has(domain) ? domain : null;
 }
 
-/** The rule a conversation the filter filed was filed by (its words are kept on it), while it's there. */
-async function ruleThatFiled(db: Db, projectId: string, phrase: string | null | undefined): Promise<Rule | null> {
-  return phrase ? ((await rulesOf(db, projectId)).find((rule) => describeSpamRule(rule) === phrase) ?? null) : null;
+/** Reasons a block rule gives: only with one of them on a conversation are its kept words (`spamPhrase`) a rule's. */
+const RULE_REASONS = new Set(["rule", "blocked_address", "blocked_domain"]);
+
+/**
+ * The rule that filed a conversation, while the filter's reason is still on it and the rule is still there. A teammate's
+ * mark clears the reason: words left from before are no rule's doing.
+ */
+async function ruleThatFiled(db: Db, projectId: string, reason: string | null | undefined, phrase: string | null | undefined): Promise<Rule | null> {
+  return phrase && RULE_REASONS.has(reason ?? "") ? ((await rulesOf(db, projectId)).find((rule) => describeSpamRule(rule) === phrase) ?? null) : null;
 }
 
 /**
@@ -307,7 +313,7 @@ async function ruleThatFiled(db: Db, projectId: string, phrase: string | null | 
 export async function spamChoices(db: Db, conversation: Marked, admin: boolean): Promise<{ blockDomain: string | null; unblocks: string | null; removesRule: string | null }> {
   const sender = admin ? await conversationSender(db, conversation) : null;
   const on = sender ? await listed(db, conversation.projectId, sender) : null;
-  const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation.spamPhrase) : null;
+  const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation.spamReason, conversation.spamPhrase) : null;
   return {
     blockDomain: sender && !on?.domain?.blocked ? blockableDomain(sender) : null,
     unblocks: sender && on?.blockedAddress ? sender : null,
@@ -334,7 +340,7 @@ export async function recordMark(
   { phrase = null, removeRule = false }: { phrase?: string | null; removeRule?: boolean } = {},
 ): Promise<string | undefined> {
   const notices: string[] = [];
-  const filedBy = !spam && reason !== "phrase" ? await ruleThatFiled(db, conversation.projectId, phrase) : null;
+  const filedBy = spam ? null : await ruleThatFiled(db, conversation.projectId, reason, phrase);
   if (removeRule) {
     if (!admin) {
       throw new OperationError(403, "forbidden", "Only project owners and admins can remove a rule");
