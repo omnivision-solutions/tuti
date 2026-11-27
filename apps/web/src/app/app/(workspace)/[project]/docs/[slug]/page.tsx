@@ -49,10 +49,10 @@ import { markedRun } from "@/lib/docs-review";
 import { pageTitle } from "@/lib/page-title";
 import { ChangelogSaving } from "@/components/changelog";
 import { ArticleVersionSave, ChangelogLanguagePill, ChangelogVersionEditor } from "@/components/changelog-languages";
-import { NO_AI_WAITING, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
-import { keepArticleVersionUpToDate, saveArticleVersion } from "@/server/article-versions";
+import { NO_AI_WAITING, sectionName, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
+import { keepArticleVersionUpToDate, saveArticleVersion, updateArticleVersionSections } from "@/server/article-versions";
 import { articleLanguages } from "@/server/changelog-languages";
-import { readArticleVersion } from "@/server/operations/translations";
+import { behindChanges, readArticleVersion } from "@/server/operations/translations";
 
 /** The tab: the article's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/docs/[slug]">): Promise<Metadata> {
@@ -191,7 +191,7 @@ export default async function ArticlePage(
   const opened = languages?.slice(1).find((language) => language.code === search.language) ?? null;
   if (opened) {
     // Its state from the read its text and token come from, not the pill's (read before it).
-    const { read, state, waiting } = await readArticleVersion(membership.project.id, article.slug, opened.code as "de");
+    const { read, state, waiting, behind } = await readArticleVersion(membership.project.id, article.slug, opened.code as "de");
     // Its draft, else its published text; neither yet: the default language's, to write over.
     const text = read.draft ?? (read.publishedAt ? read : null);
     const version = {
@@ -204,7 +204,35 @@ export default async function ArticlePage(
       title: text?.title || article.title,
       content: (text?.content ?? displayDoc(article)) as Doc,
       own: text !== null,
+      draft: read.draft !== null,
     };
+    const defaultName = languages![0]!.name;
+    const changes = behind.sections.length > 0 ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];
+    const none = { type: "doc" as const, content: [] };
+    const shown = (content: Doc) => ({ title: "", body: "", content, collection: null });
+    const changesShown =
+      changes.length > 0 ? (
+        <div className="flex flex-col gap-5">
+          {changes.map((change) => (
+            <section key={change.key} className="flex flex-col gap-2">
+              {/* Its heading is in its text, unless it's the introduction (none) or English took it out (no text). */}
+              {(change.key.startsWith("\u001f") || change.after === null) && <h3 className="group-label">{sectionName(change.key)}</h3>}
+              {change.after === null ? (
+                <p className="text-sm text-muted-foreground">Taken out of {defaultName}.</p>
+              ) : (
+                <>
+                  {change.added ? (
+                    <p className="text-sm text-muted-foreground">New in {defaultName}.</p>
+                  ) : (
+                    change.before === null && <p className="text-sm text-muted-foreground">Its earlier {defaultName} isn&apos;t kept any more. As it is now:</p>
+                  )}
+                  <ArticleDiff before={shown(change.before ?? none)} after={shown(change.after)} same="Nothing changed in its text." />
+                </>
+              )}
+            </section>
+          ))}
+        </div>
+      ) : null;
     return (
       <ChangelogSaving>
         <section className="docs-editor-page @container/editor flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border [--docs-pad:0px]">
@@ -215,7 +243,7 @@ export default async function ArticlePage(
             filters={<ChangelogLanguagePill languages={languages!} current={version.code} />}
             actions={
               <div className="flex shrink-0 items-center gap-1.5">
-                <ArticleVersionSave />
+                <ArticleVersionSave behind={behind.ask} gone={behind.gone} defaultName={defaultName} />
               </div>
             }
           />
@@ -232,6 +260,7 @@ export default async function ArticlePage(
               view={version}
               mediaUrls={await mediaUrls(version.content)}
               languages={languages!}
+              behind={{ count: behind.sections.length, changes: changesShown, update: aiEnabled() ? updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections, read.version) : null, removes: behind.gone.length > 0 }}
             />
           </div>
         </section>

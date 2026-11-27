@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 
 import type { FormState } from "./form-state";
 import { asTeam, call } from "./operations/run";
-import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, VERSION_CHANGED } from "./operations/translations";
+import { keepTranslationUpToDate, saveArticleVersionText, updateTranslationSections, VERSION_CHANGED } from "./operations/translations";
 
 /** An article's versions in other languages, from its editor's language pill (docs/plan.md L11; the articles.*Translation operations). */
 
@@ -12,32 +12,22 @@ const DENIED = "Only the project's team can edit the docs";
 
 /**
  * Saves the version's draft from its editor, against the `version` it was read at (the form's); with `intent` "publish",
- * publishes it too. What it says after, for the form's next save.
+ * publishes it too, keeping the team's edits behind English except the sections in `take` (the publish dialog's "take the
+ * new translation"). One transaction (saveArticleVersionText): a refused step leaves none done. What it says after, for the
+ * form's next save.
  */
 export async function saveArticleVersion(projectSlug: string, articleSlug: string, language: string, _state: FormState, formData: FormData): Promise<FormState & { version?: string }> {
   let version: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
-    const at = { slug: articleSlug, language: language as "de" };
-    // Kept up to date with no text of its own yet (its first translation on its way or failing): the form shows the
-    // English, and saving it as the team's would keep that English from ever being translated. Writing it turns Keep up
-    // to date off after, as an entry's does (against the save's answer; a refused save changes neither).
-    const read = await call(getTranslation, context, at);
-    const first = read.keepUpToDate && !read.publishedAt && !read.draft;
-    let saved = await call(saveTranslation, context, {
-      ...at,
-      title: String(formData.get("title") ?? "") || undefined,
-      content: formData.get("content") || undefined,
-      version: String(formData.get("version") ?? ""),
-    });
-    if (first) {
-      saved = await call(keepTranslationUpToDate, context, { ...at, keepUpToDate: false, version: saved.version });
-    }
-    // Publish keeps every edit of the team's behind the source: nothing asks yet whether to take the new translation
-    // instead (L11's publish dialog), and taking it unasked would replace their text.
-    version =
-      formData.get("intent") === "publish"
-        ? (await call(publishTranslation, context, { ...at, version: saved.version, keep: saved.draft?.behind ?? [] })).version
-        : saved.version;
+    version = (
+      await saveArticleVersionText(context.projectId, articleSlug, language as "de", {
+        title: String(formData.get("title") ?? "") || undefined,
+        content: formData.get("content") ?? undefined,
+        version: String(formData.get("version") ?? ""),
+        publish: formData.get("intent") === "publish",
+        take: formData.getAll("take").map(String),
+      })
+    ).version;
   });
   if (result.error) {
     return result;
@@ -63,4 +53,18 @@ export async function keepArticleVersionUpToDate(projectSlug: string, articleSlu
   }
   refresh();
   return { version: saved };
+}
+
+/**
+ * Update those sections: the `sections` the page showed behind English translated again (in the background), the team's
+ * edits there replaced; refused if the version changed since the page read it (`version`), so no edit it didn't show goes.
+ */
+export async function updateArticleVersionSections(projectSlug: string, articleSlug: string, language: string, sections: string[], version: string): Promise<FormState> {
+  // Against the read the sections were shown from: an edit saved since is refused rather than replaced.
+  const result = await asTeam(projectSlug, DENIED, (context) => call(updateTranslationSections, context, { slug: articleSlug, language: language as "de", sections, version }));
+  if (result.error) {
+    return result;
+  }
+  refresh();
+  return {};
 }

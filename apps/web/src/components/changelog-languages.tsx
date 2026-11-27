@@ -6,7 +6,7 @@ import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type RefObject, useActionState, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
+import { type ReactNode, type RefObject, useActionState, useContext, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ChangelogSaveButton, ChangelogSavingContext } from "@/components/changelog";
@@ -16,8 +16,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { FieldError } from "@/components/ui/field";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import type { VersionState } from "@/lib/changelog-versions";
+import { sectionName, type VersionState } from "@/lib/changelog-versions";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
 
@@ -114,6 +115,8 @@ export type VersionView = {
   content: Doc;
   /** `title` and `content` are its own (false: the default language's, shown in their place). */
   own: boolean;
+  /** An article version's unpublished changes (its form shows them). */
+  draft?: boolean;
 };
 
 /** Which kind of page a version is of: a changelog entry's is translated whole; an article's by section (L11). */
@@ -122,6 +125,9 @@ export type VersionKind = "changelog" | "article";
 /** The one line over a version's text: where it stands, and what saving does. */
 function versionLine(view: VersionView, defaultName: string, kind: VersionKind) {
   switch (view.state) {
+    case "written":
+      // Published, with a draft on top: what readers get meanwhile.
+      return view.draft ? "Unpublished changes: readers get the published text until you publish them." : null;
     case "current":
       return kind === "article"
         ? // Published edits give way where English changes; a draft's never do, so it says published.
@@ -190,6 +196,7 @@ export function ChangelogVersionForm({
   mediaUrls,
   languages,
   drafts,
+  behind,
 }: VersionActions & {
   projectSlug: string;
   kind?: VersionKind;
@@ -200,6 +207,8 @@ export function ChangelogVersionForm({
   languages: EntryLanguage[];
   /** The editor's unsaved draft, carried across the forms it mounts (ChangelogVersionEditor). */
   drafts: Drafts;
+  /** An article version's sections behind (docs/plan.md L11): how many, Show changes' content, and Update those sections. */
+  behind?: Behind;
 }) {
   // A draft carried from the form before this one (typed after its last save was sent, the page having read again since):
   // this form starts from it, and from the token that typing goes from, so its Save is checked against that.
@@ -271,11 +280,15 @@ export function ChangelogVersionForm({
   // The top bar's Save says when it's saving, and waits (ChangelogSaveButton).
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
-  const line = versionLine(view, defaultName, kind);
+  // An article's version behind English: in how many sections (the orange line, with Show changes and Update those sections).
+  const count = behind?.count ?? 0;
+  // Whenever sections are behind (a draft never published, or one kept up to date, too), not only in the "behind" state.
+  // (Unless it can't be translated: that says why, and nothing would update them.)
+  const line = count > 0 && view.state !== "waiting" ? `${defaultName} changed in ${count} ${count === 1 ? "section" : "sections"} since this was edited.` : versionLine(view, defaultName, kind);
   // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
   // its, whatever the state (not written, or a first translation on its way or failing).
   const textLang = view.own ? view.code : languages[0]!.code;
-  const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
+  const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting" || (behind?.count ?? 0) > 0;
   return (
     <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => {
         if ((event.target as HTMLElement).getAttribute("role") !== "switch") {
@@ -286,9 +299,11 @@ export function ChangelogVersionForm({
       <input type="hidden" name="version" value={loaded} />
       <div className="flex min-w-0 flex-col gap-4">
         {line && (
-          <p className={cn("rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
-            {line}
-          </p>
+          <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
+            <p className="mr-auto">{line}</p>
+            {/* Can't translate (waiting): Show changes still, but no Update those sections, which would do nothing. */}
+            {behind && count > 0 && <BehindActions behind={view.state === "waiting" ? { ...behind, update: null } : behind} defaultName={defaultName} dirty={dirty} />}
+          </div>
         )}
         <div className="flex flex-col gap-2">
           <input
@@ -435,15 +450,139 @@ function KeepUpToDate({
 /** The top bar's Save for a version (its form is below it). */
 export const ChangelogVersionSave = () => <ChangelogSaveButton form={VERSION_FORM} primary />;
 
-/** An article version's Save draft and Publish in the top bar: both submit its form, Publish saving the draft first. */
-export function ArticleVersionSave() {
+/** `update`: Update those sections (null where nothing translates, no AI set up). */
+export type Behind = { count: number; changes: ReactNode | null; update: (() => Promise<FormState>) | null; removes?: boolean };
+
+/** The orange line's Show changes (what English changed in those sections) and Update those sections. */
+function BehindActions({ behind, defaultName, dirty }: { behind: Behind; defaultName: string; dirty: RefObject<boolean> }) {
+  const [updating, startUpdate] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  const update = behind.update;
+  return (
+    <span className="flex items-center gap-1">
+      {behind.changes && (
+        <Dialog>
+          <DialogTrigger render={<Button type="button" variant="ghost" size="sm" />}>Show changes</DialogTrigger>
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>What changed in {defaultName}</DialogTitle>
+            </DialogHeader>
+            {behind.changes}
+          </DialogContent>
+        </Dialog>
+      )}
+      {update && (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={updating}
+            focusableWhenDisabled
+            onClick={() => {
+              // Updating reads the page again: typing not saved couldn't be saved over it after.
+              if (dirty.current) toast.error("Save your edits first.");
+              else setConfirming(true);
+            }}
+          >
+            {updating ? "Updating…" : "Update those sections"}
+          </Button>
+          <AlertDialog open={confirming} onOpenChange={setConfirming}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Translate those sections again?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {/* Some of them English took out: updating takes the team's text there away. */}
+                  Your edits in them are replaced.{behind.removes && ` Sections ${defaultName} took out are removed.`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <Button
+                  onClick={() => {
+                    setConfirming(false);
+                    startUpdate(async () => {
+                      const result = await update();
+                      // Translated in the background: the sections show once it's done (reading the page again).
+                      if (result.error) toast.error(result.error);
+                      else toast.success("Sections sent for translation");
+                    });
+                  }}
+                >
+                  Translate again
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * An article version's Save draft and Publish in the top bar: both submit its form, Publish saving the draft first. With
+ * sections of the draft behind English (`behind`, keys), Publish asks first, for each, to take the new translation (ticked,
+ * the default) or keep the edit: ticked ones are sent as `take`; any other section behind stays the team's.
+ */
+export function ArticleVersionSave({ behind = [], gone = [], defaultName }: { behind?: string[]; gone?: string[]; defaultName: string }) {
   const saving = useContext(ChangelogSavingContext);
+  const [asking, setAsking] = useState(false);
+  const publish = (
+    <Button
+      type="submit"
+      form={VERSION_FORM}
+      name="intent"
+      value="publish"
+      disabled={saving?.pending}
+      focusableWhenDisabled
+      // In the dialog: closed once the form is sent, its choices read with it (the submit follows the click).
+      onClick={asking ? () => setTimeout(() => setAsking(false)) : undefined}
+    >
+      Publish
+    </Button>
+  );
   return (
     <>
       <ChangelogSaveButton form={VERSION_FORM} isNew primary={false} />
-      <Button type="submit" form={VERSION_FORM} name="intent" value="publish" disabled={saving?.pending} focusableWhenDisabled>
-        Publish
-      </Button>
+      {behind.length === 0 ? (
+        publish
+      ) : (
+        <>
+          <Button type="button" disabled={saving?.pending} focusableWhenDisabled onClick={() => setAsking(true)}>
+            Publish
+          </Button>
+          <AlertDialog open={asking} onOpenChange={setAsking}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {defaultName} changed in {behind.length} {behind.length === 1 ? "section" : "sections"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>Ticked sections take the new translation. Unticked ones keep your edit.</AlertDialogDescription>
+              </AlertDialogHeader>
+              {/* A long list scrolls inside the dialog (as the command menu's results do), its buttons staying in view. */}
+              <fieldset className="flex max-h-[min(24rem,50dvh)] flex-col gap-2 overflow-y-auto">
+                <legend className="sr-only">Sections to translate again</legend>
+                {behind.map((key) => (
+                  <label key={key} className="flex items-start gap-2 text-sm">
+                    {/* In the version's form (`form`), though the dialog is outside it. One English took out is unticked:
+                        taking it removes the team's text there. */}
+                    <input type="checkbox" form={VERSION_FORM} name="take" value={key} defaultChecked={!gone.includes(key)} className="mt-0.5 size-4 shrink-0 accent-primary" />
+                    <span>
+                      {sectionName(key)}
+                      {gone.includes(key) && <span className="block text-muted-foreground">Taken out of {defaultName}: ticking removes it.</span>}
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                {publish}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </>
   );
 }

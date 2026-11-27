@@ -6,6 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { query } from "./db";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { nextModelReply } from "./model";
 
 /**
  * An article in the reader's language (docs/plan.md, Languages, L8): its German version at its German address, and in
@@ -107,4 +108,77 @@ test("the team writes a published article's German from its editor's language pi
   await team.getByRole("menuitem", { name: /English/ }).click();
   await expect(team).not.toHaveURL(/language=/);
   await expect(team.getByRole("textbox", { name: "Title" })).toHaveValue("Getting paid");
+});
+
+/** A text of paragraphs and sections ([heading, text]). */
+const textOf = (intro: string, ...parts: [string, string][]) => ({
+  type: "doc",
+  content: [
+    { type: "paragraph", content: [{ type: "text", text: intro }] },
+    ...parts.flatMap(([heading, text]) => [
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: heading }] },
+      { type: "paragraph", content: [{ type: "text", text }] },
+    ]),
+  ],
+});
+
+/** Sections behind English (docs/plan.md L11): the orange line, Show changes, Publish asking keep or take, Update those sections. */
+test("English changes a section of the team's German: the orange line shows what changed, Publish asks to keep the edit, and Update those sections translates it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", newPages: "manual" }] }, "PATCH");
+  const { slug: article } = await api("/articles", { title: "Getting paid", content: textOf("Payouts go out every Monday.", ["Fees", "There are no fees."]) });
+  await api(`/articles/${article}/publish`, {});
+  // The team's German, written and published.
+  const blank = (await api(`/articles/${article}/languages/de`, undefined, "GET")) as unknown as { version: string };
+  await api(`/articles/${article}/languages/de/draft`, { title: "Bezahlt werden", content: textOf("Auszahlungen gehen jeden Montag raus.", ["Gebühren", "Es gibt keine Gebühren."]), version: blank.version }, "PATCH");
+  await api(`/articles/${article}/languages/de/publish`, {});
+  // English changes its Fees.
+  await api(`/articles/${article}`, { content: textOf("Payouts go out every Monday.", ["Fees", "Fees are free for a year."]), publish: true }, "PATCH");
+
+  await team.setViewportSize({ width: 1280, height: 800 });
+  await team.goto(`${APP_URL}/app/${slug}/docs/${article}?language=de`);
+  await expect(team.getByText("English changed in 1 section since this was edited.")).toBeVisible();
+  // Show changes: Fees' English then and now.
+  await team.getByRole("button", { name: "Show changes" }).click();
+  const changes = team.getByRole("dialog", { name: "What changed in English" });
+  await expect(changes.getByText("Fees", { exact: true })).toBeVisible();
+  await expect(changes.getByText("Fees are free for a year.")).toBeVisible();
+  await checkpoint(team, "team-article-version-changes");
+  await team.keyboard.press("Escape");
+
+  // A draft, then Publish: it asks about Fees; unticked, the team's edit is kept (and stays behind).
+  await team.getByRole("textbox", { name: "Title" }).fill("Bezahlt werden, jede Woche");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Saved", { exact: true })).toBeVisible();
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  const asking = team.getByRole("alertdialog", { name: "English changed in 1 section" });
+  const fees = asking.getByRole("checkbox", { name: "Fees" });
+  await expect(fees).toBeChecked();
+  await checkpoint(team, "team-article-version-publish-asks");
+  await fees.uncheck();
+  await asking.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Published", { exact: true })).toBeVisible();
+  await expect(team.getByText("English changed in 1 section since this was edited.")).toBeVisible();
+  await expect(team.getByRole("textbox", { name: "Text" })).toContainText("Es gibt keine Gebühren.");
+
+  // On a phone: the line and its actions wrap under it.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-article-version-behind-phone", { fullPage: false });
+
+  // Update those sections: Fees translated again.
+  // Only that section is asked for: its heading and its paragraph.
+  await nextModelReply(JSON.stringify({ segments: { 1: "Gebühren", 2: "Gebühren sind ein Jahr lang kostenlos." } }), "Fees are free for a year.");
+  await team.getByRole("button", { name: "Update those sections" }).click();
+  await team.getByRole("alertdialog", { name: "Translate those sections again?" }).getByRole("button", { name: "Translate again" }).click();
+  await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Sections sent for translation")).toBeVisible();
+  // Translated in the background: there once the page is read again.
+  await expect(async () => {
+    await team.reload();
+    await expect(team.getByRole("textbox", { name: "Text" })).toContainText("Gebühren sind ein Jahr lang kostenlos.", { timeout: 1000 });
+  }).toPass();
+  await expect(team.getByText("English changed in 1 section since this was edited.")).toBeHidden();
 });

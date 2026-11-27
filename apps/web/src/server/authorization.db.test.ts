@@ -404,6 +404,14 @@ const matrix: Matrix = {
         return articleVersions.keepArticleVersionUpToDate(slug, "matrix-article", "de", false, read.version);
       },
     },
+    updateArticleVersionSections: {
+      allowed: "MEMBER",
+      // The fixture's German has a section behind (its English went), so there's one to update.
+      call: async (slug, f) => {
+        const read = await callOperation(getTranslation, { actor: { kind: "user", userId: users.OWNER.id }, projectId: f.projectId }, { slug: "matrix-article", language: "de" });
+        return articleVersions.updateArticleVersionSections(slug, "matrix-article", "de", ["Gone\u001f0"], read.version);
+      },
+    },
   },
   "docs-readers": {
     answerArticle: { allowed: "public", call: (slug) => docsReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
@@ -1211,7 +1219,11 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   // The published article's German (Manual in the fixture), for its editor's language pill.
   const translated = await prisma.article.findFirstOrThrow({ where: { projectId, slug: "matrix-article" }, select: { id: true } });
-  await prisma.articleTranslation.create({ data: { articleId: translated.id, projectId, language: "de", automatic: false, title: "Matrix-Artikel", publishedAt: new Date() } });
+  // A section of the team's whose English went since: behind, for Update those sections (the job takes it out).
+  const gone = { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Weg" }] }, { type: "paragraph", content: [{ type: "text", text: "Nicht mehr da." }] }] };
+  await prisma.articleTranslation.create({
+    data: { articleId: translated.id, projectId, language: "de", automatic: false, title: "Matrix-Artikel", content: gone, sections: [{ key: "Gone\u001f0", hash: "gone", own: true }], publishedAt: new Date() },
+  });
   const question = await prisma.docsQuestion.create({
     data: { projectId, askerId: "matrix-reader", question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
   });

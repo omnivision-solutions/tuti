@@ -60,6 +60,13 @@ export function versionState(version: VersionRow | undefined, hash: string, aiOn
 }
 
 /** A changelog version editor's key (ChangelogVersionEditor): its language, so what's typed in it is kept across reads. */
+/** A section's name from its key (behindKey's: its heading, a unit separator, which one of that heading it is). */
+export function sectionName(key: string) {
+  const [head, n] = key.split("\u001f");
+  const name = head || "Introduction";
+  return n && n !== "0" ? `${name} (${Number(n) + 1})` : name;
+}
+
 export const versionFormKey = (view: { code: string }) => `version:${view.code}`;
 
 /**
