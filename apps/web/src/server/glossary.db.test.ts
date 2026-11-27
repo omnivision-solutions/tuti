@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { createChangelogEntry, publishChangelogEntry } from "./operations/changelog";
+import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { createArticle, createCollection, publishArticle, updateArticle } from "./operations/docs";
 import { getGlossary, updateGlossary } from "./operations/glossary";
 import { updateLanguages } from "./operations/languages";
@@ -530,3 +530,24 @@ test("a save landing as a translation reads the glossary: the memory it cleared 
   expect(String(model.requests.at(-1)!.messages.at(-1)!.content)).toContain("Make a Board for ideas.");
   expect(String((await version("boards")).body)).not.toContain("Tafel");
 });
+
+test("a dry run answers the saved glossary's hash: a save sent with it goes through", async () => {
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
+  const { hash } = await call(getGlossary, as(), {});
+  const terms = [{ term: "Board", translations: { de: "Brett" } }];
+  const preview = await call(updateGlossary, as(), { hash, terms, dryRun: true });
+  expect(preview.hash).toBe(hash);
+  expect((await call(updateGlossary, as(), { hash: preview.hash, terms })).terms).toEqual([{ term: "Board", keep: false, translations: { de: "Brett" } }]);
+});
+
+test("a published changelog entry edited in place between a save's plan and its write (its publishedAt unmoved): planned again", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  const { number } = await call(createChangelogEntry, as(), { title: "New view", body: "See everything at once." });
+  await call(publishChangelogEntry, as(), { number });
+  const { publishedAt } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
+  const plan = await planGlossaryChanges(project.id, [], [{ term: "Board", keep: false, translations: { de: "Brett" } }]);
+  await call(updateChangelogEntry, as(), { number, body: "See every Board at once." });
+  expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } })).publishedAt).toEqual(publishedAt);
+  expect(await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan))).toBeNull();
+});
+
