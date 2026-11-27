@@ -24,10 +24,10 @@ import { jwtSso } from "./sso";
 
 /** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
-  const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
+  const { linkId, slug, projectName, next, prefix = "" } = metadata as SignInLinkMetadata;
   await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
-  // After the address: it can have a path (a portal under its site's /portal).
-  const url = new URL(`${await portalAddress(slug)}/sign-in/link`);
+  // After the address: it can have a path (a portal under its site's /portal), then the language's prefix it was asked at.
+  const url = new URL(`${await portalAddress(slug)}${prefix}/sign-in/link`);
   url.searchParams.set("token", token);
   if (next !== "/") {
     url.searchParams.set("next", next);

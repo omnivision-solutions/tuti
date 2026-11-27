@@ -819,7 +819,9 @@ Use these instead of hand-rolling layout:
   borderless `BARE_TITLE` input set like the published heading. Docs articles
   keep a pinned formatting row; changelog entries and posts have no toolbar.
   All keep the selection bar, Ctrl/⌘+K for a link, and the block menu that typing
-  / at the start of a line opens (the empty line being written says so).
+  / at the start of a line opens (the empty line being written says so). Articles'
+  and changelog entries' selection bars have Ask AI on selected text, where the
+  server has AI (`askAi`, `AskAi` in `components/ask-ai.tsx`).
   Comments keep the boxed editor with its toolbar.
 - **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
   in a muted box with "Copy", never bare code.

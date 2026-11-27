@@ -60,6 +60,21 @@ test("out of credits, each feature pauses its own way; with credits again, a pau
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toHaveAttribute("title", "This project is out of credits");
   await checkpoint(owner, "team-changelog-out-of-credits");
 
+  // An article's Ask AI on selected text: shown, off, and why.
+  await owner.goto(`/app/${slug}/docs/${article.slug}`);
+  await owner.getByRole("textbox", { name: "Article" }).getByText("Owners and admins").selectText();
+  const askAi = owner.getByRole("toolbar", { name: "Text selection" }).getByRole("button", { name: "Ask AI" });
+  await expect(askAi).toHaveAttribute("aria-disabled", "true");
+  await expect(askAi).toHaveAccessibleDescription("This project is out of credits");
+  // A new article's too, before its first save.
+  await owner.goto(`/app/${slug}/docs/new`);
+  const draft = owner.getByRole("textbox", { name: "Article" });
+  await draft.click();
+  await owner.keyboard.type("Invites expire after a week.");
+  await draft.getByText("Invites expire").selectText();
+  await expect(askAi).toHaveAttribute("aria-disabled", "true");
+  await expect(askAi).toHaveAccessibleDescription("This project is out of credits");
+
   // The inbox's Summarize says why it's off, in the menu itself (a disabled item shows no tooltip).
   await api("/conversations", { email: `e2e-kim-${id}@example.com`, subject: "Invoices", body: "Where's my invoice?" });
   await owner.goto(`/app/${slug}/inbox/1`);

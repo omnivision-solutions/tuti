@@ -3,6 +3,7 @@
 import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -28,6 +29,8 @@ const TITLE = "font-heading text-xl font-bold portal:text-2xl portal:font-[650] 
  */
 export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { failed: boolean; portal?: string; next?: string; pages?: string }) {
   const at = usePortalHref();
+  // In the page's language on a portal; English on the app (the root layout's messages).
+  const t = useTranslations("auth");
   const [error, setError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -43,11 +46,8 @@ export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { faile
     return (
       <Card className={cn("mx-auto w-full max-w-sm portal:pb-8 portal:sm:pb-10", CARD)}>
         <CardHeader className={HEADER}>
-          <CardTitle className={TITLE}>Check your email</CardTitle>
-          <CardDescription className="break-words portal:text-[0.9375rem]">
-            If there&apos;s an account for {sentTo}, we&apos;ve sent it a link to set a new password. It works once, for
-            the next {PASSWORD_RESET_MINUTES} minutes.
-          </CardDescription>
+          <CardTitle className={TITLE}>{t("checkEmail")}</CardTitle>
+          <CardDescription className="break-words portal:text-[0.9375rem]">{t("resetSent", { email: sentTo, minutes: PASSWORD_RESET_MINUTES })}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -58,19 +58,19 @@ export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { faile
       {failed && (
         <Alert variant="destructive">
           <CircleAlertIcon />
-          <AlertDescription>That link has expired or was already used. Ask for a new one.</AlertDescription>
+          <AlertDescription>{t("resetFailed")}</AlertDescription>
         </Alert>
       )}
       <Card className={CARD}>
         <CardHeader className={HEADER}>
-          <CardTitle className={TITLE}>Forgot your password?</CardTitle>
-          <CardDescription className="portal:text-[0.9375rem]">We&apos;ll email you a link to set a new one.</CardDescription>
+          <CardTitle className={TITLE}>{t("forgotPassword")}</CardTitle>
+          <CardDescription className="portal:text-[0.9375rem]">{t("resetIntro")}</CardDescription>
         </CardHeader>
         <form {...keepingFields(submit)}>
           <CardContent className="portal:px-6 portal:sm:px-10">
             {portal && <input type="hidden" name="portal" value={portal} />}
             <Field data-invalid={error ? true : undefined}>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <FieldLabel htmlFor="email">{t("email")}</FieldLabel>
               <Input
                 id="email"
                 name="email"
@@ -85,10 +85,10 @@ export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { faile
           </CardContent>
           <CardFooter className="mt-6 flex flex-col gap-3 portal:mt-4 portal:border-t-0 portal:bg-transparent portal:px-6 portal:pt-0 portal:pb-8 portal:sm:px-10 portal:sm:pb-10">
             <Button type="submit" disabled={pending} className="w-full portal:h-11 portal:rounded-lg portal:text-[0.9375rem] portal:font-semibold">
-              {pending ? "…" : "Email me a link"}
+              {pending ? "…" : t("emailMeLink")}
             </Button>
             <Link href={at(`${pages}/sign-in${next ? `?${new URLSearchParams({ next })}` : ""}`)} className="text-sm text-foreground underline underline-offset-4">
-              Back to sign in
+              {t("backToSignIn")}
             </Link>
           </CardFooter>
         </form>

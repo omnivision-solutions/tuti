@@ -8,6 +8,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -632,6 +633,94 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
 });
 
+test("signing in, signing up and resetting a password in German, the sign-in link's page and single sign-on's error, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+
+  // Signing in: its title, its fields and ways, all in German.
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/sign-in");
+  await expect(reader).toHaveTitle(/^Anmelden/);
+  await expect(reader.getByText("Bei Acme anmelden", { exact: true })).toBeVisible();
+  await expect(reader.getByText("Stimme ab, kommentiere und folge Ideen. Wir mailen dir, wenn es vorangeht und sobald sie veröffentlicht sind.")).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Stattdessen ein Passwort verwenden" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Passwort vergessen?" })).toBeVisible();
+  await expect(reader.getByText(/^Neu hier\?\s*Konto erstellen$/)).toBeVisible();
+  await expect(reader.getByText(/^Im Team\?\s*Mit Tuti anmelden$/)).toBeVisible();
+  await checkpoint(reader, "sign-in-in-german", { fullPage: false });
+  // The sent link's card.
+  const email = `e2e-${randomUUID()}@example.com`;
+  await reader.getByLabel("E-Mail").fill(email);
+  await reader.getByRole("button", { name: "Anmeldelink per E-Mail senden" }).click();
+  await expect(reader.getByText("Sieh in dein Postfach", { exact: true })).toBeVisible();
+  await expect(reader.getByText(/^Wir haben einen Anmeldelink an .+ gesendet\. Er funktioniert einmal, in den nächsten \d+ Minuten\.$/)).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Neuen Link senden" })).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Andere E-Mail-Adresse verwenden" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Zurück zu Acme" })).toBeVisible();
+  // The link as it was emailed: asked on a German page, it opens at the German address, and its page asks to confirm in German.
+  const link = linkIn(await latestEmailTo(email), portalUrl(slug));
+  expect(new URL(link).pathname).toBe("/de/sign-in/link");
+  await reader.goto(link);
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  await expect(reader.getByText(`als ${email}`)).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Anmelden" })).toBeVisible();
+  // A dead link there goes back to signing in, still in German.
+  await reader.goto("/de/sign-in/link?token=used-up");
+  await expect(reader).toHaveURL(/\/de\/sign-in\?link=failed/);
+  await expect(reader.getByText("Dieser Anmeldelink ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
+
+  // A sign-in link or sign-in that didn't work says so.
+  await reader.goto("/de/sign-in?link=failed");
+  await expect(reader.getByText("Dieser Anmeldelink ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
+  await reader.goto("/de/sign-in?continue=failed");
+  await expect(reader.getByText("Die Anmeldung hat nicht geklappt. Bitte versuche es erneut.")).toBeVisible();
+
+  // Signing up.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto("/de/sign-up");
+  await expect(visitor).toHaveTitle(/^Registrieren/);
+  await expect(visitor.getByText("Acme beitreten", { exact: true })).toBeVisible();
+  await expect(visitor.getByLabel("Name")).toHaveAttribute("placeholder", "Dein Name");
+  await expect(visitor.getByRole("button", { name: "Registrierungslink per E-Mail senden" })).toBeVisible();
+  await expect(visitor.getByText(/^Schon ein Konto\?\s*Anmelden$/)).toBeVisible();
+  await checkpoint(visitor, "sign-up-in-german-phone", { fullPage: false });
+  // Resetting a password.
+  await visitor.goto("/de/forgot-password");
+  await expect(visitor).toHaveTitle(/^Passwort zurücksetzen/);
+  await expect(visitor.getByText("Wir mailen dir einen Link, um ein neues festzulegen.")).toBeVisible();
+  await visitor.getByLabel("E-Mail").fill(email);
+  await visitor.getByRole("button", { name: "Link per E-Mail senden" }).click();
+  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} gibt`))).toBeVisible();
+  await visitor.goto("/de/forgot-password?link=failed");
+  await expect(visitor.getByText("Dieser Link ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
+  // Single sign-on's error: the reader's words in German, what went wrong for whoever set it up in English.
+  await visitor.goto("/de/sso/error?code=invalid_token");
+  await expect(visitor.getByRole("heading", { name: "Anmeldung fehlgeschlagen" })).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Erneut versuchen" })).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Weiter zum Board" })).toBeVisible();
+
+  // A private portal says so, to someone signed out and to an account without access.
+  const member = await signUp(browser, portalUrl(slug), "Mia Member");
+  await query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+  await visitor.goto("/de/sign-in");
+  await expect(visitor.getByText("Acme ist privat. Melde dich an, um es zu sehen.")).toBeVisible();
+  await member.goto("/de/sign-in");
+  await expect(member.getByText(`Acme ist privat, und ${member.email} hat keinen Zugriff.`, { exact: false })).toBeVisible();
+
+  // With single sign-on, its button first, then "oder" and the emailed link (the page kept with ?with=email).
+  await query(`UPDATE project SET "portalAccess" = 'PUBLIC', "ssoSecret" = 'e2e-secret', "ssoSignInUrl" = 'https://app.example.com/sign-in' WHERE slug = $1`, [slug]);
+  await visitor.goto("/de/sign-in?with=email");
+  await expect(visitor.getByRole("link", { name: "Weiter mit Acme" })).toBeVisible();
+  await expect(visitor.getByText("oder", { exact: true })).toBeVisible();
+});
+
 test("a reader's account in German: its sections, profile, email settings and lists, on desktop and on phones", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
@@ -683,6 +772,72 @@ test("a reader's account in German: its sections, profile, email settings and li
   await reader.goto("/de/account");
   await expect(reader.getByRole("heading", { level: 1, name: "Konto" })).toBeVisible();
   await checkpoint(reader, "account-in-german-phone", { fullPage: false });
+});
+
+test("the docs in German: tabs' and collections' names translated on the home, a collection's page and an article's, marked as German", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Two tabs: Handbooks translated, Plans not. Invoicing (translated) with Receipts in it (translated too).
+  await api("/tabs", { name: "Handbooks" });
+  // Plans for signed-in readers only: a signed-out one sees its page locked.
+  await api("/tabs", { name: "Plans", access: "signed_in", noAccess: "lock" });
+  await api("/collections", { name: "Invoicing", description: "Paying and receipts.", tab: "handbooks" });
+  await api("/collections", { name: "Receipts", description: "What you get.", parent: "invoicing" });
+  await api("/collections", { name: "Pricing", tab: "plans" });
+  for (const [title, collection] of [["Paying an invoice", "invoicing"], ["Downloading a receipt", "receipts"], ["Our plans", "pricing"]]) {
+    const article = await api("/articles", { title, body: `${title}.`, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+  // An unlisted article alone in its collection (Notes, in Handbooks): readable at its link, its collection in no list.
+  await api("/collections", { name: "Notes", tab: "handbooks" });
+  const unlisted = await api("/articles", { title: "Internal notes", body: "Notes.", collection: "notes", listing: "unlisted" });
+  await api(`/articles/${unlisted.slug}/publish`, {});
+  // German written by the team: nothing asks the model. Its names as the team wrote them (L13's settings, later).
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const german = (name: string, description?: string) => JSON.stringify({ de: { name, ...(description !== undefined && { description }), auto: false, source: null } });
+  await query(`UPDATE collection SET translations = $1 WHERE slug = 'invoicing' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Rechnungen", "Bezahlen und Belege."), slug]);
+  await query(`UPDATE collection SET translations = $1 WHERE slug = 'receipts' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Belege", "Was du bekommst."), slug]);
+  await query(`UPDATE docs_tab SET translations = $1 WHERE slug = 'handbooks' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Handbücher"), slug]);
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/docs");
+  const collections = reader.getByRole("list", { name: "Sammlungen" });
+  await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(collections.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  // The tabs: one in German, the other in the team's English, each marked so.
+  const tabs = reader.getByRole("navigation", { name: "Dokumentationsbereiche" });
+  await expect(tabs.getByRole("link", { name: "Handbücher" }).locator("[lang=de]")).toHaveText("Handbücher");
+  await expect(tabs.getByRole("link", { name: "Plans" }).locator("[lang=en]")).toHaveText("Plans");
+  await checkpoint(reader, "docs-home-names-in-german", { fullPage: false });
+  // A collection's page: its heading and description, the one in it, and its link up to its tab.
+  await reader.goto("/de/docs/invoicing");
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(reader.getByRole("main").getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("main").getByRole("heading", { name: "Belege" }).locator("[lang=de]")).toHaveText("Belege");
+  await expect(reader.getByRole("main").getByText("Was du bekommst.")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("main").getByRole("link", { name: "Handbücher", exact: true })).toHaveAttribute("lang", "de");
+  await checkpoint(reader, "docs-collection-names-in-german", { fullPage: false });
+  // The one in it: its link up to Rechnungen.
+  await reader.goto("/de/docs/receipts");
+  // (Not the tree's link to it, which has its name as its title.)
+  await expect(reader.getByRole("main").getByRole("link", { name: "Rechnungen", exact: true }).and(reader.locator("a:not([title])"))).toHaveAttribute("lang", "de");
+  // An article in Invoicing: the breadcrumb's link to it, and the sidebar's tree.
+  await reader.goto("/de/docs/paying-an-invoice");
+  await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Rechnungen" })).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("navigation", { name: "Dokumentation" }).locator("[lang=de]", { hasText: "Rechnungen" })).toBeVisible();
+  // That unlisted one: its collection not listed, its breadcrumb's link up is to its tab, Handbücher.
+  await reader.goto(`/de/docs/${unlisted.slug}`);
+  await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Handbücher" })).toHaveAttribute("lang", "de");
+  // The tab not translated, locked for this reader: its page's heading in the team's English.
+  await reader.goto("/de/docs/plans");
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=en]")).toHaveText("Plans");
+  // At the default language's address, the team's names.
+  await reader.goto("/docs");
+  await expect(reader.getByRole("list", { name: "Collections" }).getByRole("heading", { name: "Invoicing" })).toBeVisible();
 });
 
 test("AI answers in German: an answer with its sources and rating, one it can't give, Ask a person, and Still stuck?, on desktop and on phones", async ({ browser }, testInfo) => {

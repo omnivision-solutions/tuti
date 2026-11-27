@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { lockProject, markProductSettingBehind, queueLanguageTranslations } from "@tuti/jobs";
+import { forgetLabels, lockProject, markProductSettingBehind, queueLabels, queueLanguageTranslations, retranslateLabels } from "@tuti/jobs";
 import { aiEnabled, isLanguage, type Language, LANGUAGE_CODES, LANGUAGES, languageLimit, type PlanKey, planDisplay, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
@@ -160,6 +160,9 @@ export async function changeLanguages(projectId: string, change: (current: Langu
   await prisma.$transaction(async (tx) => {
     // One change at a time per project: the limit and the default language's rule hold for what's saved.
     await lockProject(tx, projectId);
+    // Its languages' rows before any label's, as a labels job's write takes them (see @tuti/jobs translateLabels): a write
+    // under way finishes first, and one after waits for this save. Taken the other way round, the two could deadlock.
+    await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} ORDER BY code FOR UPDATE`;
     const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true, live: true, productAvailable: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } } });
     const current = project.languages.map(({ code }) => code);
     const parsed = updateInput.safeParse(change(current.filter(isLanguage)));
@@ -196,7 +199,10 @@ export async function changeLanguages(projectId: string, change: (current: Langu
     // article (and sends it to the default language's page, as for an offline language).
     const kept = await tx.articleTranslation.findMany({ where: { projectId, language: removed.code, slug: { not: null }, article: { deletedAt: null } }, select: { language: true, slug: true, articleId: true } });
     await tx.articleOldSlug.createMany({ data: kept.map(({ language, slug, articleId }) => ({ projectId, language, slug: slug!, articleId })), skipDuplicates: true });
+    // Their label translations too, once their rows are gone: a labels job's write waits for that (see @tuti/jobs translateLabels).
+    const gone = await tx.projectLanguage.findMany({ where: removed, select: { code: true } });
     await tx.projectLanguage.deleteMany({ where: removed });
+    await forgetLabels(tx, projectId, gone.map(({ code }) => code));
     // Those added together keep the list's order: a millisecond apart.
     // After every language already there, even one added a moment ago (a millisecond per language, maybe ahead of the clock).
     const latest = await tx.projectLanguage.aggregate({ where: { projectId }, _max: { createdAt: true } });
@@ -211,6 +217,8 @@ export async function changeLanguages(projectId: string, change: (current: Langu
       if (flipped) {
         // Versions kept up to date are retranslated once it's saved (below); jobs already running write nothing.
         await markProductSettingBehind(tx, projectId, code);
+        // Labels kept up to date (collection and tab names) are made again too.
+        await retranslateLabels(tx, projectId, code);
         switched.push(code);
       }
     }
@@ -221,6 +229,7 @@ export async function changeLanguages(projectId: string, change: (current: Langu
   for (const code of [...added, ...switched]) {
     await queueLanguageTranslations(projectId, code);
   }
+  await queueLabels(projectId, [...added, ...switched]);
   return projectLanguages(projectId);
 }
 
@@ -244,6 +253,20 @@ export const retranslateLanguage = defineOperation({
     if (!language) {
       throw new OperationError(404, "not_found", "The project doesn't have that language");
     }
+    // Its labels too (collection and tab names): all of them anew, or what's left to translate. Locked as a languages save
+    // locks (the project, then the language, then labels), so it never deadlocks with one, or with a collection's move.
+    if (!waiting) {
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const locked = await tx.$queryRaw<unknown[]>`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} AND code = ${code} FOR UPDATE`;
+        // Removed since it was read above: nothing to make again (and nothing queued for it).
+        if (locked.length === 0) {
+          throw new OperationError(404, "not_found", "The project doesn't have that language");
+        }
+        await retranslateLabels(tx, projectId, code);
+      });
+    }
+    await queueLabels(projectId, [code]);
     return { queued: await queueLanguageTranslations(projectId, code, { fresh: !waiting, waiting }) };
   },
 });

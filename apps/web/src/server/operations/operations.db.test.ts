@@ -259,6 +259,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
   "screenshotSettings.test": () => ({}),
+  "screenshotSettings.suggestions": () => ({}),
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
   "changelog.takeScreenshots": () => ({ number: 3, shots: [{ show: "The dashboard" }] }),
@@ -679,6 +680,10 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
     vi.stubEnv(name, ["changelog.missingChanges", "changelog.addPullRequests", "changelog.removePullRequest"].includes(operation.name) ? value : "");
   }
 
+  if (operation.name === "languages.update" || operation.name === "languages.retranslate") {
+    // The collection and tab names there are, translated into the language (docs/plan.md L13), whichever project's key.
+    model.otherwise(JSON.stringify({ segments: { "0.n": "Abrechnung", "1.n": "Schnittstelle" } }), '"0.n":"Billing"');
+  }
   // Another project's key: nothing of this project comes back, and nothing changes.
   if (operation.name === "conversations.summarize") {
     // The other project has a conversation #1 too: its own is summarized.

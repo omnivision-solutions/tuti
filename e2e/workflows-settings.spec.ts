@@ -39,10 +39,10 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   await owner.waitForURL(`**/app/${slug}/settings/workflows`);
   await expect(owner).toHaveTitle(/Workflows · Settings · Acme/);
   const main = owner.getByRole("main");
-  await expect(main.getByRole("heading", { level: 2, name: /^When/ })).toHaveText(["When a conversation starts 3", "When a user replies 1"]);
+  await expect(main.getByRole("heading", { level: 2, name: /^When/ })).toHaveText(["When a conversation starts 3", "When a user replies 1", "When a conversation is about to go to a person 0"]);
   await expect(main.getByText("Built in")).toHaveCount(3);
   // The path, in the order a message takes it today: the AI first (in the widget, before a conversation), then the rest.
-  const path = ["AI answers first", "Spam filter", "When a conversation starts", "When a user replies", "Hand to the team"];
+  const path = ["AI answers first", "Spam filter", "When a conversation starts", "When a user replies", "When a conversation is about to go to a person", "Hand to the team"];
   const inOrder = async () => {
     const text = await main.innerText();
     const found = path.map((step) => text.indexOf(step));

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,9 @@ export function AuthForm({
   back?: { name: string; href: string };
 }) {
   const at = usePortalHref();
+  // The portal's words in the page's language (the app's, under the root layout's messages, are English).
+  const t = useTranslations("auth");
+  const h = useTranslations("header");
   const authClient = usePortalAuthClient();
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -107,7 +111,7 @@ export function AuthForm({
       return result;
     } catch {
       // Offline, or the server didn't answer: say so, and let them try again.
-      setLinkError("We couldn't send the email. Try again.");
+      setLinkError(t("emailFailed"));
       return {};
     } finally {
       setPending(false);
@@ -122,7 +126,7 @@ export function AuthForm({
     const nameField = form.elements.namedItem("name") as HTMLInputElement | null;
     // `required` lets a name of spaces through; the server would refuse it under Email.
     if (nameField && !nameField.value.trim()) {
-      nameField.setCustomValidity("Enter your name");
+      nameField.setCustomValidity(t("enterName"));
       nameField.reportValidity();
       return;
     }
@@ -152,11 +156,11 @@ export function AuthForm({
           // Sent again; or, with another password on the account, nothing more: its owner was emailed a reset on signing
           // up (lib/auth.ts), and the answer is the same.
           const sent = error.code === "EMAIL_NOT_VERIFIED" || error.code === "INVALID_EMAIL_OR_PASSWORD";
-          setLinkError(sent ? undefined : (error.message ?? "We couldn't send the email. Try again."));
+          setLinkError(sent ? undefined : (error.message ?? t("emailFailed")));
           setResent(sent);
         } catch {
           // Offline, or the server didn't answer.
-          setLinkError("We couldn't send the email. Try again.");
+          setLinkError(t("emailFailed"));
         } finally {
           setPending(false);
         }
@@ -177,29 +181,28 @@ export function AuthForm({
           </span>
           {/* Focused as it appears (the button that was focused is gone): read out, and the next Tab is "Send another link". */}
           <CardTitle ref={focusOnMount} tabIndex={-1} className="font-heading text-2xl font-[650] tracking-[-0.022em] outline-none sm:text-[1.625rem]">
-            Check your email
+            {t("checkEmail")}
           </CardTitle>
           <CardDescription className="text-[0.9375rem] break-words">
             {verifying ? (
-              <>
-                We sent a link to <strong className="font-semibold text-foreground">{sentTo}</strong>. Open it to verify your email and sign in.
-              </>
+              t.rich("sentVerify", { email: sentTo, b: (chunks) => <strong className="font-semibold text-foreground">{chunks}</strong> })
             ) : (
-              <>
-                We sent a sign-in link to <strong className="font-semibold text-foreground">{sentTo}</strong>. It works once, for the next{" "}
-                {SIGN_IN_LINK_MINUTES} minutes.
-              </>
+              t.rich("sentSignIn", {
+                email: sentTo,
+                minutes: SIGN_IN_LINK_MINUTES,
+                b: (chunks) => <strong className="font-semibold text-foreground">{chunks}</strong>,
+              })
             )}
           </CardDescription>
-          <p className="mt-2 text-[0.9375rem] text-muted-foreground">Not there? Check your spam folder.</p>
+          <p className="mt-2 text-[0.9375rem] text-muted-foreground">{t("spam")}</p>
         </CardHeader>
         <CardFooter className="flex flex-col gap-3 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10">
           <Button type="button" variant="outline" aria-disabled={pending} onClick={resend} className="h-11 w-full rounded-lg text-[0.9375rem] font-semibold">
-            {pending ? "…" : "Send another link"}
+            {pending ? "…" : t("sendAnother")}
           </Button>
           {/* Always there (empty, out of sight), so screen readers announce what appears in it. */}
           <p role="status" className="text-center text-sm text-balance text-muted-foreground empty:sr-only">
-            {linkError ?? (resent ? "Another link is on its way." : null)}
+            {linkError ?? (resent ? t("anotherOnWay") : null)}
           </p>
           <button
             type="button"
@@ -218,13 +221,13 @@ export function AuthForm({
             }}
             className="text-[0.9375rem] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground aria-disabled:opacity-50"
           >
-            Use a different email
+            {t("differentEmail")}
           </button>
           {back && (
             <div className="mt-2 flex w-full justify-center border-t pt-5 text-[0.9375rem] text-muted-foreground">
               <Link href={at(back.href)} className="inline-flex items-center gap-2 break-words hover:text-foreground">
                 <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
-                Back to {back.name}
+                {t("backTo", { name: back.name })}
               </Link>
             </div>
           )}
@@ -274,10 +277,10 @@ export function AuthForm({
       <CardHeader className={cn(portal && "justify-items-center gap-2 px-6 text-center sm:px-10")}>
         {portal && mark}
         <CardTitle className={cn("font-heading text-xl font-bold", portal && "text-2xl font-[650] tracking-[-0.022em] sm:text-[1.625rem]")}>
-          {title ?? (isSignUp ? "Create an account" : "Sign in")}
+          {title ?? (isSignUp ? t("createAccount") : h("signIn"))}
         </CardTitle>
         <CardDescription className={cn(portal && "text-[0.9375rem]")}>
-          {description ?? (isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in.")}
+          {description ?? (isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : t("linkDescription"))}
         </CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
@@ -299,7 +302,7 @@ export function AuthForm({
           <FieldGroup>
             {isSignUp && (
               <Field>
-                <FieldLabel htmlFor="name">Name</FieldLabel>
+                <FieldLabel htmlFor="name">{t("name")}</FieldLabel>
                 <div className="relative">
                   {portal && <UserIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />}
                   <Input
@@ -309,7 +312,7 @@ export function AuthForm({
                     defaultValue={name}
                     required
                     maxLength={100}
-                    placeholder={portal ? "Your name" : undefined}
+                    placeholder={portal ? t("yourName") : undefined}
                     onInput={(event) => event.currentTarget.setCustomValidity("")}
                     className={cn(portal && "h-11 rounded-lg pl-10 text-[0.9375rem]")}
                   />
@@ -317,7 +320,7 @@ export function AuthForm({
               </Field>
             )}
             <Field data-invalid={linkError ? true : undefined}>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <FieldLabel htmlFor="email">{t("email")}</FieldLabel>
               <div className="relative">
                 {portal && <MailIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />}
                 <Input
@@ -342,7 +345,7 @@ export function AuthForm({
                   <FieldLabel htmlFor="password">Password</FieldLabel>
                   {forgotPassword && !isSignUp && (
                     <Link href={forgotPasswordHref ?? at(`${pages}/forgot-password`)} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-                      Forgot your password?
+                      {t("forgotPassword")}
                     </Link>
                   )}
                 </div>
@@ -362,20 +365,20 @@ export function AuthForm({
         </CardContent>
         <CardFooter className={cn("mt-6 flex flex-col gap-3", portal && "mt-4 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10")}>
           <Button type="submit" disabled={pending} className={cn("w-full", portal && "h-11 rounded-lg text-[0.9375rem] font-semibold")}>
-            {pending ? "…" : submitLabel ?? (usePassword ? (isSignUp ? "Sign up" : "Sign in") : `Email me a ${isSignUp ? "sign-up" : "sign-in"} link`)}
+            {pending ? "…" : submitLabel ?? (usePassword ? (isSignUp ? "Sign up" : "Sign in") : isSignUp ? t("emailSignUpLink") : t("emailSignInLink"))}
           </Button>
           {/* A portal's (links): the password way and resetting it, then a line: new here (or not), or on the team. */}
           {portal && (
             <>
               <p className="flex flex-col items-center gap-1.5 pt-1 text-[0.9375rem] text-muted-foreground">
                 <a href={onApp(isSignUp)} className="underline decoration-border underline-offset-4 hover:text-foreground">
-                  Use a password instead
+                  {t("usePassword")}
                 </a>
                 {forgotPassword && (
                   <>
                     {/* Asked here, its link opens on the app and comes back (server/password-reset.ts). */}
                     <Link href={at("/forgot-password")} className="underline decoration-border underline-offset-4 hover:text-foreground">
-                      Forgot your password?
+                      {t("forgotPassword")}
                     </Link>
                   </>
                 )}
@@ -384,26 +387,26 @@ export function AuthForm({
                 <div className="mt-2 flex w-full flex-col items-center gap-2 border-t pt-5 text-[0.9375rem] text-muted-foreground">
                   {(isSignUp || signUp) && (
                     <p>
-                      {isSignUp ? "Have an account? " : "New here? "}
+                      {isSignUp ? t("haveAccount") : t("newHere")}{" "}
                       {signUpOnApp && !isSignUp ? (
                         <a href={onApp(true)} className="font-semibold text-soft-foreground underline-offset-4 hover:underline">
-                          Create an account
+                          {t("createAccount")}
                         </a>
                       ) : (
                         <Link
                           href={at(`/${isSignUp ? "sign-in" : "sign-up"}${next ? `?${new URLSearchParams({ next })}` : ""}`)}
                           className="font-semibold text-soft-foreground underline-offset-4 hover:underline"
                         >
-                          {isSignUp ? "Sign in" : "Create an account"}
+                          {isSignUp ? h("signIn") : t("createAccount")}
                         </Link>
                       )}
                     </p>
                   )}
                   {teamHref && (
                     <p>
-                      Team member?{" "}
+                      {t("teamMember")}{" "}
                       <a href={teamHref} className="underline decoration-border underline-offset-4 hover:text-foreground">
-                        Sign in with Tuti
+                        {t("signInWithTuti")}
                       </a>
                     </p>
                   )}
