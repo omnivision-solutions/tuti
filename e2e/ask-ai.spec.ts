@@ -17,12 +17,20 @@ test("the team asks AI to rewrite part of a changelog entry, sees its version in
   await api("/changelog", { title: "Faster exports", body: `Exports are quick now (${marker}).\n\nThey run in the background and email you when they're done.` });
 
   await team.goto(`/app/${slug}/changelog/1`);
+  // Settled (nothing still loading that could refresh the editor under the selection) before selecting.
+  await team.waitForLoadState("networkidle");
   const text = team.getByRole("textbox", { name: "What changed" });
-  // The second line, selected from the keyboard.
-  await text.getByText("They run in the background").click();
-  await team.keyboard.press("Home");
-  await team.keyboard.press("Shift+End");
-  await team.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Ask AI" }).click();
+  const askAi = team.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Ask AI" });
+  // The second line, selected from the keyboard: again until it holds (the whole line, its toolbar shown), as the editor
+  // may still be setting itself up when the first click lands.
+  await expect(async () => {
+    await text.getByText("They run in the background").click();
+    await team.keyboard.press("Home");
+    await team.keyboard.press("Shift+End");
+    expect(await team.evaluate(() => window.getSelection()?.toString())).toBe("They run in the background and email you when they're done.");
+    await expect(askAi).toBeVisible({ timeout: 1000 });
+  }).toPass();
+  await askAi.click();
   const dialog = team.getByRole("dialog", { name: "Ask AI" });
   await expect(dialog.getByRole("group", { name: "Presets" }).getByRole("button")).toHaveText(["Shorter", "Clearer", "Friendlier", "Fix grammar", "For non-developers", "Make a list"]);
   await checkpoint(team, "ask-ai-dialog", { fullPage: false });
