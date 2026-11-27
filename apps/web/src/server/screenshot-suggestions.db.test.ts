@@ -7,7 +7,7 @@ import { sealValue } from "@tuti/shared/signed";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { call } from "@/server/operations/run";
-import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/api-references";
+import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
 import { suggestScreenshotDomains } from "@/server/operations/screenshots";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 

@@ -12,9 +12,9 @@ import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters"
 
 import { displayDoc } from "../content";
 import { detectSignInServices, type SignInService } from "../sign-in-hosts";
-import { countSpecFetch } from "./api-references";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
+import { countSpecFetch } from "./fetch-limits";
 
 /**
  * Screenshots (docs/plan.md, Screenshots): an agent in a cloud browser signs in to the team's own app and takes
