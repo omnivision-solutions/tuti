@@ -13,43 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { enterSaves } from "@/lib/forms";
+import { mergeMeanwhile, type MergeRow } from "@/lib/glossary-merge";
 import { type GlossarySaved, type GlossaryTermInput, saveGlossary } from "@/server/glossary";
 
 type Language = { code: string; native: string };
-type Row = GlossaryTermInput & { key: string; /** Changed by a teammate while this was edited (a refused save merged it in). */ meanwhile?: Meanwhile };
-type Meanwhile = "Added meanwhile" | "Changed meanwhile" | "Removed meanwhile";
-
-const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep && JSON.stringify(Object.entries(a.translations).sort()) === JSON.stringify(Object.entries(b.translations).sort());
-
-/**
- * A save refused as a teammate saved meanwhile (docs/design.md: what was typed kept, the newest version beside it): the
- * teammate's changes from `before` to `theirs` put into `rows`, marked. A term they added is added; one they changed takes
- * their word in each language (and Never translated) not edited here, what was typed here staying; one they removed stays,
- * for the team to remove or keep.
- */
-export function mergeMeanwhile(rows: Row[], before: GlossaryTermInput[], theirs: GlossaryTermInput[], newKey: () => string): Row[] {
-  const byTerm = (list: GlossaryTermInput[]) => new Map(list.map((term) => [term.term.trim().toLowerCase(), term]));
-  const old = byTerm(before);
-  const now = byTerm(theirs);
-  const merged: Row[] = rows.map((row) => {
-    const name = row.term.trim().toLowerCase();
-    const was = old.get(name);
-    const is = now.get(name);
-    if (was && !is) return { ...row, meanwhile: "Removed meanwhile" };
-    if (was && is && !same(was, is)) {
-      const codes = new Set([...Object.keys(was.translations), ...Object.keys(is.translations), ...Object.keys(row.translations)]);
-      const word = (code: string) => ((row.translations[code] ?? "") === (was.translations[code] ?? "") ? is.translations[code] : row.translations[code]) ?? "";
-      const translations = Object.fromEntries([...codes].map((code) => [code, word(code)]).filter(([, text]) => text));
-      return { ...row, keep: row.keep === was.keep ? is.keep : row.keep, translations, meanwhile: "Changed meanwhile" };
-    }
-    return row;
-  });
-  const here = new Set(rows.map((row) => row.term.trim().toLowerCase()));
-  for (const [name, term] of now) {
-    if (!old.has(name) && !here.has(name)) merged.push({ ...term, key: newKey(), meanwhile: "Added meanwhile" });
-  }
-  return merged;
-}
+type Row = MergeRow;
 
 /** Languages side by side up to this many; with more, each term is a card (as on phones), its languages under it. */
 const MAX_COLUMNS = 3;
