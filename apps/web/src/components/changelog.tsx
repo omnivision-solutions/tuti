@@ -668,9 +668,10 @@ export function ChangelogForm({
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
   // What publishing does with its linked posts, as saved (the page counts them as a Completed dialog does): said only for
-  // a draft that completes some, and emails only where someone would get one.
+  // a draft that completes some, and emails only where someone would get one. A sample or imported entry's too: publishing
+  // it quietly only skips the popup and the subscribers' email.
   const shipsLine =
-    entry && !entry.published && !entry.sample && !entry.importedOn && completing > 0
+    entry && !entry.published && completing > 0
       ? completionEmails > 0
         ? "Publishing completes linked posts and emails their voters."
         : "Publishing completes linked posts."

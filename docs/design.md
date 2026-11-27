@@ -311,7 +311,7 @@ the list picks none to approve at once.
   one line each (a `PR #41` chip as Autopilot shows them, its title cut to the line; a draft's taken out with ×, their
   line with them; Add listing the ones no entry has, ticked unless Autopilot found nothing for users in them, with what
   their analyses cost where credits are on; a published entry's listed as they shipped), then, on a draft whose saved posts publishing
-  would complete (not a sample or imported one, published quietly), "Publishing completes linked posts and emails their
+  would complete (a sample or imported one's too), "Publishing completes linked posts and emails their
   voters." ("Publishing completes linked posts." when nobody would be emailed, counted as the Completed dialog does) The sidebar ends with room for the support chat's button.
   Once it's published, "View on portal" is in the header's More actions, as on a post's page. Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
   each, Edit under the team's own while it's published). Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),

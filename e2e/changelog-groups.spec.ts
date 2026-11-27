@@ -116,11 +116,16 @@ test("an entry for some groups only: their readers see it on the changelog, ever
     const box = (await owner.getByRole("group", { name: "Published in" }).getByRole("switch", { name }).boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(390);
   }
-  // Published, it says nothing of what publishing does with its posts.
-  await expect(owner.getByText(/^Publishing completes/)).toHaveCount(0);
   await owner.getByRole("heading", { name: "Pull requests" }).scrollIntoViewIfNeeded();
   await checkpoint(owner, "editor-sidebar-phone", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
+  // Published, it says nothing of what publishing does with its posts, even one reopened since (nothing publishes it again).
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  await owner.goto(`/app/${slug}/changelog/2`);
+  await expect(owner.getByRole("heading", { name: "Ships" })).toBeVisible();
+  await expect(owner.getByText(/^Publishing completes/)).toHaveCount(0);
+  await api("/posts/1", { status: "completed" }, "PATCH");
+  await owner.goto(`/app/${slug}/changelog/1`);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveCount(0);
   await owner.goto(`/app/${slug}/changelog/1`);
