@@ -254,3 +254,13 @@ test("a section whose text was rewritten without its metadata (the previous rele
   expect(rewritten[2]!.meta).toEqual({ key: source[2]!.key, hash: source[2]!.hash });
   expect(rewritten[0]!.meta.key).toBe(source[0]!.key);
 });
+
+test("a section asked for, then taken out by the team while the job translated it, isn't put back: only what's still asked for overrides that", () => {
+  const source = sourceSections(v1);
+  const billing = source[2]!.key;
+  // The team took Billing out after asking for it: the run started with it (`only`), it's no longer asked for (`asked`).
+  const { sections: edited, removed } = editedSections(versionSections(de1, [], source), doc(["", "Einleitung"], ["Einrichtung", "Installieren"]), source);
+  expect(removed).toEqual([billing]);
+  const next = withTranslation(edited, doc(["", "Einleitung 2"], ["Einrichtung", "Installieren 2"], ["Abrechnung", "Per Rechnung"]), source, { only: new Set([billing]), asked: new Set(), removed: new Set(removed) });
+  expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren"]);
+});

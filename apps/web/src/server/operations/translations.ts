@@ -112,7 +112,9 @@ function versionParts(version: Version, parts: ReturnType<typeof sourceSections>
  */
 function behindNow(version: Version, parts: ReturnType<typeof sourceSections>, sourceLanguage: string, published: Section[], draft?: { list: Section[]; removed?: string[] } | null) {
   const teamWrites = !version.automatic;
-  const lists = [{ list: published, teamWrites, removed: version.removedSections as string[] }, ...(draft ? [{ ...draft, teamWrites }] : [])];
+  // A version the team writes and never published has no text yet to lack any section: only its draft counts (as in the job).
+  const draftOnly = teamWrites && !version.publishedAt;
+  const lists = [...(draftOnly ? [] : [{ list: published, teamWrites, removed: version.removedSections as string[] }]), ...(draft ? [{ ...draft, teamWrites }] : [])];
   return behindOf(sourceLanguage, parts, lists, otherReasons(version.behind, sourceLanguage));
 }
 
@@ -125,7 +127,8 @@ const versionToken = (version: Version, sourceHash: string) => contentHash(JSON.
 
 function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts: ReturnType<typeof sourceSections>; sourceLanguage: string; sourceHash: string }): z.output<typeof translationOutput> {
   const { published, draft, drafted } = versionParts(version, parts);
-  const behind = behindNow(version, parts, sourceLanguage, published);
+  // Never published, a version the team writes is its draft: what's behind is the draft's.
+  const behind = behindNow(version, parts, sourceLanguage, published, !version.automatic && !version.publishedAt && drafted ? { list: drafted, removed: draft?.removed } : null);
   const draftBehind = drafted ? Object.keys(behindOf(sourceLanguage, parts, [{ list: drafted, teamWrites: !version.automatic, removed: draft?.removed }])) : [];
   return {
     language: version.language,

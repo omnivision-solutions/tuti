@@ -706,3 +706,34 @@ test("a version the team writes whose search data couldn't be written on publish
   expect(await prisma.articleTranslationChunk.count({ where: { translationId: waiting.id } })).toBeGreaterThan(0);
   expect(model.requests).toHaveLength(0);
 });
+
+test("a version the team writes and never published: only its draft is compared, so an update with no list translates only the section English changed", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const stored = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  const sections = sourceSections(translationSource(stored).text).map(({ key, hash }) => ({ key, hash, own: true }));
+  const ours = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]);
+  await prisma.articleTranslation.create({ data: { articleId: stored.id, projectId: project.id, language: "de", automatic: false, draft: { title: "Bezahlt werden", titleEdited: true, content: ours, sections } } });
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  const read = await call(getTranslation, as(), de);
+  expect(read.behind.map(({ section }) => section.split("\u001f")[0])).toEqual(["Billing"]);
+  expect(read.draft!.behind.map((section) => section.split("\u001f")[0])).toEqual(["Billing"]);
+  model.reply(sectionsReply("de2", ["Billing", "Pay by card or invoice"]));
+  await call(updateTranslationSections, as(), de);
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(1);
+  const draft = text((await call(getTranslation, as(), de)).draft!.content);
+  expect(draft).toContain("Hallo");
+  expect(draft).toContain("Unsere Installation");
+  expect(draft).toContain("[de2] Pay by card or invoice");
+});
+
+test("a sample article's version the team publishes is never made searchable", async () => {
+  await translated();
+  await prisma.article.updateMany({ where: { projectId: project.id }, data: { sample: true } });
+  await editBilling();
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslationChunk.count({ where: { projectId: project.id } })).toBe(0);
+});

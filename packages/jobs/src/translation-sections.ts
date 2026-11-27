@@ -94,8 +94,8 @@ export function withTranslation(
   for (const [i, { key, hash }] of source.entries()) {
     const had = byKey.get(key);
     const theirs = !asked?.has(key) && !!had?.meta.own && (!published || !!had.meta.kept || had.meta.hash === hash);
-    // Not there because the team took it out (and didn't ask for it back): left out.
-    const keep = theirs || (only && !only.has(key)) || (!had && !!removed?.has(key) && !only?.has(key));
+    // Not there because the team took it out (and didn't ask for it back, or took it out after asking): left out.
+    const keep = theirs || (only && !only.has(key)) || (!had && !!removed?.has(key) && !asked?.has(key));
     if (keep) {
       if (had) out.push(had);
     } else if (fresh[i]) {
