@@ -8,6 +8,7 @@ import { z } from "zod";
 import { rowLine } from "@/lib/format";
 import { visitorHash } from "@/lib/visitor-session";
 
+import { type AiAnswer, askPerson } from "./ai-turn";
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
@@ -122,14 +123,15 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
 async function theirConversation(who: Person, number: number) {
   return prisma.conversation.findFirst({
     where: { projectId: who.projectId, ...who.where, number: Number(number) || 0 },
-    select: { id: true, number: true, subject: true, status: true, spam: true },
+    select: { id: true, number: true, subject: true, status: true, spam: true, handledBy: true, pathDueAt: true, spamHeldAt: true },
   });
 }
 
 /**
  * One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false).
  * With whether it's waiting for the team's reply (`awaitingReply`: not closed, nor marked spam, which it never says), the address its replies are emailed to once they've left (`emailedTo`, replyRecipient's),
- * and how long the team usually takes to reply (`replyMs`, usualReplyMs).
+ * and how long the team usually takes to reply (`replyMs`, usualReplyMs). `withAi`: the AI has it (W13: its answers offer
+ * "Ask a person"), and `answering` while its turn is due.
  */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{
@@ -137,6 +139,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     awaitingReply: boolean;
     emailedTo: string | null;
     replyMs: number | null;
+    withAi: boolean;
+    answering: boolean;
     /** The language the team writes in: a translated reply's original is in it. */
     teamLanguage: string;
     messages: {
@@ -150,6 +154,10 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
        */
       original: string | null;
       language: string | null;
+      /** The AI's (not a person's on the team). */
+      ai: boolean;
+      /** The AI's answer from the docs: its sources, and the question its thumbs rate (`helpful`, as they rated it). */
+      answer: { questionId: string; sources: AiAnswer["sources"]; helpful: boolean | null } | null;
       attachments: { id: string; filename: string; contentType: string; size: number; image: boolean; url: string | null }[];
       /** Imported from another tool, attachments that weren't brought across (shown, so no message is an empty bubble). */
       dropped: number;
@@ -185,6 +193,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
         attachmentsDropped: true,
         importId: true,
+        aiAnswer: true,
       },
     }),
     // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
@@ -193,18 +202,31 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     translationSettings(who.projectId),
   ]);
   // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
-  const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
+  const answers = new Map(messages.flatMap((m) => (m.aiAnswer ? [[m.id, m.aiAnswer as AiAnswer] as const] : [])));
+  const [links, rated] = await Promise.all([
+    attachmentLinks(messages.flatMap((m) => m.attachments)).then((all) => new Map(all.map((a) => [a.id, a]))),
+    prisma.docsQuestion
+      .findMany({ where: { projectId: who.projectId, id: { in: [...answers.values()].map((a) => a.questionId) } }, select: { id: true, helpful: true } })
+      .then((all) => new Map(all.map((q) => [q.id, q.helpful]))),
+  ]);
+  const withAi = conversation.handledBy === "AI" && !conversation.spam;
   return {
     subject: conversation.subject,
     awaitingReply: conversation.status !== "CLOSED" && !conversation.spam,
     emailedTo: to,
     replyMs,
+    withAi,
+    // Its turn is due (not the spam filter's hold): the AI is writing, or about to.
+    answering: withAi && !!conversation.pathDueAt && !conversation.spamHeldAt && messages.at(-1)?.author === "USER",
     teamLanguage,
     messages: messages.map((m) => ({
       id: m.id,
       fromTeam: m.author !== "USER",
       name: m.author === "USER" ? null : (m.authorUser?.name ?? null),
-      body: m.body,
+      // An answer's text without its "Sources: …" line (the email's): the sources are listed under it.
+      body: answers.get(m.id)?.text ?? m.body,
+      ai: m.author === "AI",
+      answer: answers.has(m.id) ? { questionId: answers.get(m.id)!.questionId, sources: answers.get(m.id)!.sources, helpful: rated.get(answers.get(m.id)!.questionId) ?? null } : null,
       original: m.author !== "USER" ? m.teamText : null,
       language: m.author !== "USER" && m.teamText !== null ? m.language : null,
       attachments: m.attachments.map((a) => links.get(a.id)!),
@@ -385,5 +407,16 @@ export async function widgetSendMessage(projectSlug: string, auth: WidgetAuth, n
     throw error;
   }
   await inboxPath(who.projectId, { conversation, message });
+  return {};
+}
+
+/** "Ask a person" under the AI's answers in one of their conversations (W13): the team has it from then on. */
+export async function widgetAskPerson(projectSlug: string, auth: WidgetAuth, number: number): Promise<Result<object>> {
+  const who = await person(projectSlug, auth);
+  const conversation = who && (await theirConversation(who, number));
+  if (!who || !conversation) {
+    return who ? { error: "Conversation not found" } : signInFirst;
+  }
+  await askPerson(who.projectId, conversation);
   return {};
 }

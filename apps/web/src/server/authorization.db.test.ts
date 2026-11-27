@@ -764,6 +764,13 @@ const matrix: Matrix = {
         return widgetInbox.widgetSendMessage(slug, token, await startedNumber(slug, token), "More");
       },
     },
+    widgetAskPerson: {
+      allowed: "public",
+      call: async (slug) => {
+        const token = await inboxToken(slug);
+        return widgetInbox.widgetAskPerson(slug, token, await startedNumber(slug, token));
+      },
+    },
   },
   widget: {
     widgetSignIn: {

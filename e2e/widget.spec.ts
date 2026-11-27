@@ -6,12 +6,11 @@ import { expect, type Locator, type Page, type Route, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { spendCredits } from "./credits";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createApiKey, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
-import { heldModelReply, modelRequests, nextModelReply, releaseModelReply } from "./model";
+import { modelRequests, nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
 
 /** An HS256 SSO token, as a customer's app signs it (see docs/sso.md). */
@@ -1373,8 +1372,8 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(dropped.locator("#tuti-widget")).toHaveCount(0);
 });
 
-test("a new message in the widget's Messages gets the AI's answer first, with Ask a person; turned off, it goes to the team", async ({ browser }, testInfo) => {
-  // The AI's 20-second timeout is waited out once.
+test("a new message in the widget's Messages starts a conversation the AI answers in the thread, a follow-up too; Ask a person hands it to the team, who reply; turned off, it goes to the team", async ({ browser }, testInfo) => {
+  // The AI's turn waits a few seconds for more messages, twice.
   test.setTimeout(150_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1382,14 +1381,15 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
   const question = `How do I add a colleague to Acme ${slug}?`;
+  const followUp = "Can they be an admin?";
   const body = "Owners and admins send invites from the Team page.";
   await similar(question, `Inviting your team\n\n${body}`, 0.8);
-  const fourth = `How do I remove a colleague from Acme ${slug}?`;
-  await similar(fourth, `Inviting your team\n\n${body}`, 0.8);
+  // A follow-up is searched with the question before it.
+  await similar(`${question}\n${followUp}`, `Inviting your team\n\n${body}`, 0.8);
   await api("/support", { inbox: true }, "PATCH");
 
   // Nothing yet for the AI to answer from (sample articles are never embedded; a hidden one isn't read): a message goes
-  // straight to the team, with the email box it needs.
+  // straight to the team.
   await owner.goto(`/app/${slug}`);
   await owner.getByRole("button", { name: "Add sample content" }).click();
   await expect(owner.getByText(/^Here to try things with, labelled Sample/)).toBeVisible();
@@ -1404,178 +1404,82 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await earlyWidget.getByRole("textbox", { name: "Message" }).fill("Is there a phone number?");
   await earlyWidget.getByRole("button", { name: "Send" }).click();
   await expect(earlyWidget.getByRole("list", { name: "Messages" })).toContainText("Is there a phone number?");
-  await expect(earlyWidget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+  await expect(earlyWidget.getByText(/^We'll reply here/)).toBeVisible();
 
-  // AI only (no page, in no list): still something for the AI to answer from.
-  const article = await api("/articles", { title: "Inviting your team", body, listing: "ai_only" });
+  const article = await api("/articles", { title: "Inviting your team", body });
   await api(`/articles/${article.slug}/publish`, {});
 
-  // A visitor writes in Messages: the AI answers from the docs first, with Ask a person right there (no thumbs-down needed).
+  // A visitor writes in Messages: the conversation is the AI's, which answers in the thread with its source and thumbs,
+  // and Ask a person under it.
   const visitor = await (await browser.newContext()).newPage();
   await visitor.goto(sitePage("customer.localhost", slug));
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
   await expect(widget.getByText("Ask anything: you'll get an answer right away, and a person if you need one.")).toBeVisible();
-  await expect(widget.getByRole("textbox", { name: "Your email" })).toHaveCount(0);
-  // A question, so no longer than one (without an email box, a longer message couldn't go to the team).
-  await expect(widget.getByRole("textbox", { name: "Message" })).toHaveAttribute("maxlength", "300");
+  await nextDecision({ person: 0.05, reply: 0.9 }, question);
   await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
+  await widget.getByRole("textbox", { name: "Your email" }).fill(`e2e-asker-${slug}@example.com`);
   await widget.getByRole("textbox", { name: "Message" }).fill(question);
   await widget.getByRole("button", { name: "Send" }).click();
-  const ai = widget.getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
-  await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
-  await expect(ai.getByRole("button", { name: "Ask a person" })).toBeVisible();
-  await checkpoint(visitor, "widget-messages-ai-first");
+  const thread = widget.getByRole("list", { name: "Messages" });
+  await expect(thread).toContainText(question);
+  await expect(widget.getByText("Answering…")).toBeVisible();
+  const answer = thread.getByRole("listitem").filter({ hasText: "Owners and admins send invites from the Team page." });
+  // Once the request has answered and the turn's few seconds' wait is over.
+  await expect(answer).toContainText("AI ·", { timeout: 30_000 });
+  await expect(widget.getByText("Answering…")).toHaveCount(0);
+  await expect(answer.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(answer.getByRole("button", { name: "Ask a person" })).toBeVisible();
+  // While the AI has it, nobody promises the team's reply.
+  await expect(widget.getByText(/^We'll reply here/)).toHaveCount(0);
+  await answer.getByRole("button", { name: "Helpful", exact: true }).click();
+  await expect(answer.getByText("Thanks for letting us know.")).toBeVisible();
+  await checkpoint(visitor, "widget-messages-ai-answer");
 
-  // Asking a person starts the conversation, with the question and the AI's answer.
-  await ai.getByRole("button", { name: "Ask a person" }).click();
-  const form = ai.getByRole("form", { name: "Ask a person" });
-  await form.getByRole("textbox", { name: "Your email" }).fill(`e2e-asker-${slug}@example.com`);
-  await nextModelReply("They want to invite a colleague.", question);
-  await form.getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
-  await ai.getByRole("link", { name: "Open Messages" }).click();
-  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(question);
-  const close = widget.getByRole("button", { name: "Close the assistant" });
-  // Messages' own Send (the assistant has one too).
-  const send = widget.locator("form").filter({ has: widget.getByRole("textbox", { name: "Message" }) }).getByRole("button", { name: "Send" });
+  // A follow-up in the reply box: answered in the thread too, Ask a person now under that answer alone.
+  await nextDecision({ person: 0.05, reply: 0.9 }, followUp);
+  await nextModelReply(JSON.stringify({ answer: "Yes: pick Admin when you invite them.", sources: ["s1"] }), followUp);
+  await widget.getByRole("textbox", { name: "Reply" }).fill(followUp);
+  await widget.getByRole("button", { name: "Send" }).click();
+  const second = thread.getByRole("listitem").filter({ hasText: "Yes: pick Admin when you invite them." });
+  await expect(second).toContainText("AI ·", { timeout: 30_000 });
+  await expect(thread.getByRole("button", { name: "Ask a person" })).toHaveCount(1);
+  await expect(second.getByRole("button", { name: "Ask a person" })).toBeVisible();
 
-  // Their next message, a question of its own (not a follow-up to the first): Ask a person starts with the email they gave.
-  // (Nothing in the docs is close to it: "I don't know", with Ask a person too.)
-  const second = `Can I invite people in bulk to Acme ${slug}?`;
-  await widget.getByRole("button", { name: "New message" }).click();
-  // They correct their address in the box: Ask a person starts with that one.
-  const corrected = `e2e-corrected-${slug}@example.com`;
-  await widget.getByRole("textbox", { name: "Your email" }).fill(corrected);
-  await widget.getByRole("textbox", { name: "Message" }).fill(second);
-  await send.click();
-  await expect(ai.getByText(second)).toBeVisible();
-  await expect(ai.getByText("I don't know")).toBeVisible();
-  await ai.getByRole("button", { name: "Ask a person" }).last().click();
-  await expect(ai.getByRole("form", { name: "Ask a person" }).getByRole("textbox", { name: "Your email" })).toHaveValue(corrected);
-  await nextModelReply("They want to invite people in bulk.", second);
-  await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.").last()).toBeVisible();
-  // A follow-up asked in the assistant's own box doesn't change what focus goes back to.
-  await widget.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a follow-up" }).fill("And on mobile?");
-  await widget.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a follow-up" }).press("Enter");
-  await expect(ai.getByText("I don't know")).toHaveCount(2);
-  await close.click();
-  // Its Send went with the form (sending went back to the list): focus goes to New message there.
-  await expect(widget.getByRole("button", { name: "New message" })).toBeFocused();
+  // Ask a person: the team has it, with the AI's summary; the panel says where their reply comes.
+  await nextModelReply("They want to make a colleague an admin.", followUp);
+  await second.getByRole("button", { name: "Ask a person" }).click();
+  await expect(widget.getByText(/^We'll reply here/)).toBeVisible();
+  await expect(thread.getByRole("button", { name: "Ask a person" })).toHaveCount(0);
+  await checkpoint(visitor, "widget-messages-asked-a-person");
 
-  // Asking the AI fails (here, the request is cut off): Ask a person still reaches the team, with the message as it was.
-  const third = `Do you have an API for Acme ${slug}?`;
-  let cut = false;
-  await visitor.route("**/widget**", async (route) => {
-    // Only asking the AI the third question (a server action with it in its body), not the panel's own requests meanwhile.
-    if (!cut && route.request().method() === "POST" && route.request().postData()?.includes(third)) {
-      cut = true;
-      await route.abort();
-    } else {
-      await route.fallback();
-    }
-  });
-  // Behind the assistant, Messages went back to their list.
-  await expect(widget.getByRole("list", { name: "Conversations" })).toBeVisible();
-  await widget.getByRole("button", { name: "New message" }).click();
-  await widget.getByRole("textbox", { name: "Message" }).fill(third);
-  await send.click();
-  await expect(ai.getByRole("button", { name: "Try again" })).toBeVisible();
-  await ai.getByRole("button", { name: "Ask a person" }).last().click();
-  const direct = ai.getByRole("form", { name: "Ask a person" });
-  // No answer of the AI's to pass on: the form says only the question goes.
-  await expect(direct).toContainText("We'll pass your question to the team. They'll reply in Messages.");
-  await expect(direct.getByRole("textbox", { name: "Your email" })).toHaveValue(corrected);
-  await direct.getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toHaveCount(3);
-  // Passed to the team, it isn't asked again (that would be a second way to the team for it).
-  await expect(ai.getByRole("button", { name: "Try again" })).toHaveCount(0);
-  await visitor.unroute("**/widget**");
-  // (The first question, passed to the team before, still says so: the latest.)
-  await ai.getByRole("link", { name: "Open Messages" }).last().click();
-  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(third);
-
-  // The AI couldn't answer in time (its reply held past the timeout): Ask a person passes it on, and Try again goes.
-  const late = `late-${slug}`;
-  await heldModelReply(JSON.stringify({ answer: "Too late.", sources: ["s1"] }), fourth, late);
-  await widget.getByRole("button", { name: "New message" }).click();
-  await widget.getByRole("textbox", { name: "Message" }).fill(fourth);
-  await send.click();
-  await expect(ai.getByText("The AI couldn't answer just now.")).toBeVisible({ timeout: 40_000 });
-  await releaseModelReply(late);
-  await ai.getByRole("button", { name: "Ask a person" }).last().click();
-  await nextModelReply("They want to remove a colleague.", fourth);
-  await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toHaveCount(4);
-  await expect(ai.getByRole("button", { name: "Try again" })).toHaveCount(0);
-  await close.click();
-  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(fourth);
-
-  // Longer than a question, a message goes straight to the team.
-  const long = `Here is everything about our setup. ${"We run Acme across three offices with shared calendars. ".repeat(6)}`;
-  await widget.getByRole("button", { name: "New message" }).click();
-  await widget.getByRole("textbox", { name: "Message" }).fill(long);
-  await send.click();
-  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Here is everything about our setup.");
-  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("main").getByRole("listitem").filter({ hasText: question }).getByRole("link").click();
+  const messages = owner.getByRole("list", { name: "Messages" });
+  await expect(messages).toContainText("Summary: They want to make a colleague an admin.");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Hi! I've made them an admin for you.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByText("Sent", { exact: true })).toBeVisible();
+  await expect(thread).toContainText("Hi! I've made them an admin for you.");
+  await expect(thread.getByRole("listitem").filter({ hasText: "Hi! I've made them an admin for you." })).toContainText("Olive Owner ·");
 
   // Turned off in Customize → Widget, a new message goes straight to the team.
   await owner.goto(`/app/${slug}/settings/widget`);
   const aiFirst = owner.getByRole("switch", { name: "Answer with AI first" });
   await expect(aiFirst).toBeChecked();
-  // What it does is behind the row's ⓘ.
-  await expect(owner.getByText(/gets an answer from them right away/)).toHaveCount(0);
-  await owner.locator('[data-slot="setting-row"]').filter({ hasText: "Answer with AI first" }).getByRole("button", { name: "More about this setting" }).click();
-  await expect(owner.getByText("Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team.")).toBeVisible();
-  await owner.keyboard.press("Escape");
   await aiFirst.scrollIntoViewIfNeeded();
   await checkpoint(owner, "customize-widget-ai-first", { fullPage: false });
   await aiFirst.click();
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
-  await visitor.reload();
-  await visitor.getByRole("button", { name: "Feedback" }).click();
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  await widget.getByRole("button", { name: "Messages" }).click();
   await widget.getByRole("button", { name: "New message" }).click();
   await widget.getByRole("textbox", { name: "Message" }).fill("Can I pay by invoice?");
-  await send.click();
-  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Can I pay by invoice?");
-  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
-
-  // On, with Messages hidden (no Ask a person) but opened by the page's own code: a message goes to the team, not to an
-  // assistant that couldn't pass it on.
-  await api("/widget", { aiFirst: true, hidden: ["messages"] }, "PATCH");
-  await visitor.reload();
-  await visitor.evaluate(() => (window as unknown as { Tuti: { open: (options: object) => void } }).Tuti.open({ tab: "messages" }));
-  await widget.getByRole("button", { name: "New message" }).click();
-  // (Another address: this one has had the hour's emails it may get, a conversation each.)
-  await widget.getByRole("textbox", { name: "Your email" }).fill(`e2e-status-${slug}@example.com`);
-  await widget.getByRole("textbox", { name: "Message" }).fill("Do you have a status page?");
-  await send.click();
-  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Do you have a status page?");
-  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
-
-  // On, with Messages shown, but the project is out of credits (its AI paused): a message goes to the team, not to an
-  // assistant that would only say it's unavailable.
-  await api("/widget", { hidden: [] }, "PATCH");
-  await spendCredits(slug);
-  await visitor.reload();
-  await visitor.getByRole("button", { name: "Feedback" }).click();
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
-  await widget.getByRole("button", { name: "New message" }).click();
-  await widget.getByRole("textbox", { name: "Your email" }).fill(`e2e-paused-${slug}@example.com`);
-  await widget.getByRole("textbox", { name: "Message" }).fill("Can I change my plan?");
-  await send.click();
-  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Can I change my plan?");
-  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
-
-  // The team's conversation for the second question is that question's own: the first isn't in it.
-  await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("main").getByRole("listitem").filter({ hasText: second }).getByRole("link").click();
-  await expect(owner.getByRole("list", { name: "Messages" })).toContainText(second);
-  await expect(owner.getByRole("list", { name: "Messages" })).not.toContainText(question);
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(thread).toContainText("Can I pay by invoice?");
+  await expect(widget.getByText(/^We'll reply here/)).toBeVisible();
+  await expect(widget.getByText("Answering…")).toHaveCount(0);
 });
 
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
