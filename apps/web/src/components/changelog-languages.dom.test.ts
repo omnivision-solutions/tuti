@@ -513,3 +513,19 @@ test("an article's published version with unpublished changes says readers get t
   await form({ state: "written", keepUpToDate: false, own: true, draft: false }, { kind: "article" });
   expect(document.body.textContent).not.toContain("Unpublished changes");
 });
+
+test("Update those sections' confirm says sections English took out are removed, only when some are", async () => {
+  const update = vi.fn().mockResolvedValue({});
+  const ask = async (removes: boolean) => {
+    await form({ state: "behind", keepUpToDate: false }, { kind: "article", behind: { count: 2, changes: null, update, removes } });
+    await act(async () => [...document.querySelectorAll("button")].find((each) => each.textContent === "Update those sections")!.click());
+    const text = document.querySelector('[role="alertdialog"]')!.textContent;
+    await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+    document.body.replaceChildren();
+    return text;
+  };
+  expect(await ask(true)).toContain("Your edits in them are replaced. Sections English took out are removed.");
+  const none = await ask(false);
+  expect(none).toContain("Your edits in them are replaced.");
+  expect(none).not.toContain("took out");
+});

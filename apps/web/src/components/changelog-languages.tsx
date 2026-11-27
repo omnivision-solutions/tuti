@@ -451,7 +451,7 @@ function KeepUpToDate({
 export const ChangelogVersionSave = () => <ChangelogSaveButton form={VERSION_FORM} primary />;
 
 /** `update`: Update those sections (null where nothing translates, no AI set up). */
-export type Behind = { count: number; changes: ReactNode | null; update: (() => Promise<FormState>) | null };
+export type Behind = { count: number; changes: ReactNode | null; update: (() => Promise<FormState>) | null; removes?: boolean };
 
 /** The orange line's Show changes (what English changed in those sections) and Update those sections. */
 function BehindActions({ behind, defaultName, dirty }: { behind: Behind; defaultName: string; dirty: RefObject<boolean> }) {
@@ -491,7 +491,10 @@ function BehindActions({ behind, defaultName, dirty }: { behind: Behind; default
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Translate those sections again?</AlertDialogTitle>
-                <AlertDialogDescription>Your edits in them are replaced.</AlertDialogDescription>
+                <AlertDialogDescription>
+                  {/* Some of them English took out: updating takes the team's text there away. */}
+                  Your edits in them are replaced.{behind.removes && ` Sections ${defaultName} took out are removed.`}
+                </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
