@@ -114,11 +114,21 @@ test("“Ask a person” is handed over because the user asked", async () => {
   const { project, projectId, state, activity, told } = await setup();
   const reader = randomUUID();
   request.cookie = `tuti_reader=${reader}`;
-  const question = await prisma.docsQuestion.create({ data: { projectId, askerId: reader, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER" } });
+  // With the AI's answer, which the conversation copies in.
+  const question = await prisma.docsQuestion.create({
+    data: { projectId, askerId: reader, question: "Can I pay with crypto?", answer: "Cards and bank transfers only.", source: "PORTAL", status: "NO_ANSWER" },
+  });
   expect(await escalateDocs(project.slug, question.id, "e2e-asker@example.com", "")).not.toHaveProperty("error");
   expect((await state(1)).handledBy).toBe("TEAM");
   expect(await activity(1)).toEqual(["handed over: user_asked"]);
   expect(await told()).toEqual(["conversation.created", "conversation.handed_over user_asked"]);
+  // The copied answer is written as seen (they read it where they asked), and never emailed.
+  const copied = await prisma.conversationMessage.findFirstOrThrow({ where: { projectId, author: "AI", note: false }, select: { body: true, seenAt: true } });
+  expect(copied.body).toMatch(/^Cards and bank transfers only\./);
+  expect(copied.seenAt).not.toBeNull();
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${projectId}`;
+  await handlers.sendConversationReplies({}, log);
+  expect(mailbox.emails.filter((email) => email.to.includes("e2e-asker@example.com"))).toEqual([]);
 });
 
 test("a workflow keeps its group with the AI and replies once; someone else's reaches the team", async () => {
