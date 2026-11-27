@@ -7,6 +7,7 @@ import { apiReferencePage } from "@/server/api-reference-queries";
 import { articleAddresses, articleNamed, docsPage, landingAddresses } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 import { portalPageMetadata } from "@/server/portal-metadata";
+import { pageTranslator } from "@/server/portal-language";
 
 /**
  * Search results show the page's title and its first lines (an article's) or its description (a
@@ -25,21 +26,23 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
   if (page.kind === "redirect") {
     return {};
   }
+  // "Documentation" in the page's language.
+  const docs = (await pageTranslator("header")).t("docs");
   if (page.kind === "tab") {
     if (page.tab.locked || page.landing.kind === "overview") {
-      return portalPageMetadata(project, { title: `${page.tab.name} · Documentation`, path, noindex: page.tab.locked });
+      return portalPageMetadata(project, { title: `${page.tab.name} · ${docs}`, path, noindex: page.tab.locked });
     }
     if (page.landing.kind === "reference") {
       return portalPageMetadata(project, { ...((await referenceListing(project, page.landing.slug)) ?? { title: page.landing.name }), path });
     }
     // An article in its place: in each language it's translated into, here.
-    return portalPageMetadata(project, { ...docsPageListing(page.landing), path, ...(page.landing.kind === "article" && { addresses: await landingAddresses(project, page.landing.slug, path) }) });
+    return portalPageMetadata(project, { ...docsPageListing(page.landing, docs), path, ...(page.landing.kind === "article" && { addresses: await landingAddresses(project, page.landing.slug, path) }) });
   }
   // An article's page: in each language it's translated into, at its slug there (its canonical there); else in the default
   // language's (canonical there, by its default-language slug), with its line saying so (docs/plan.md, "A page not yet translated").
   const article = page.kind === "article" || page.kind === "locked" ? await articleNamed(project, slug) : null;
   return portalPageMetadata(project, {
-    ...docsPageListing(page),
+    ...docsPageListing(page, docs),
     path: article ? `/docs/${article.slug}` : path,
     markdown: page.kind === "article",
     ...(article && { addresses: await articleAddresses(project, article.slug) }),
@@ -65,7 +68,7 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
     case "tab":
       return <DocsTabPage project={project} docs={page.docs} tab={page.tab} landing={page.landing} path={`/docs/${slug}`} />;
     case "collection":
-      return <DocsCollectionPage page={page} />;
+      return <DocsCollectionPage project={project} page={page} />;
     case "article":
     case "locked":
       // By its default-language slug (its Markdown, the tree's current page), whichever language's address it's at.
