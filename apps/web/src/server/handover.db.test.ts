@@ -290,6 +290,33 @@ test("a new conversation whose handover fails is told to the webhooks as handed 
   expect(await told()).toEqual(["conversation.created", "conversation.handed_over ai_off"]);
 });
 
+test("a fallback for a message already handed over hands nothing over again: no second row or webhook", async () => {
+  const { projectId, conversation, start, activity } = await setup();
+  expect(await start("free-1")).toBe(1);
+  const { id } = await conversation(1);
+  const first = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: id, author: "USER" } });
+  // Run again for its first message, the main transaction failing: the fallback finds it claimed.
+  failTransaction(new Error("connection reset"));
+  expect(await handOver(projectId, id, first.id, "ai_off")).toEqual({ handedOver: null, changed: { handledBy: "TEAM" } });
+  expect(await activity(1)).toEqual(["handed over: ai_off"]);
+});
+
+test("a retry after a fallback runs no workflow: what the fallback decided stays", async () => {
+  const { project, projectId, workflow, conversation, state, activity, told } = await setup();
+  await workflow("Keep everyone", [{ kind: "reply_text", text: "Hello!" }, { kind: "dont_hand_over" }]);
+  const sam = await upsertProjectUser(projectId, "sam-3", { name: "Sam" });
+  // The handover's transaction fails as the widget starts it: the fallback gives it to the team.
+  failTransaction(new Error("connection reset"), { skip: 2 });
+  expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, sam) }, "Hello")).toEqual({ number: 1 });
+  expect(await told()).toEqual(["conversation.created", "conversation.handed_over ai_off"]);
+  // Run again for the same message: nothing runs, no reply, still the team's.
+  const { id } = await conversation(1);
+  const first = await prisma.conversationMessage.findFirstOrThrow({ where: { conversationId: id, author: "USER" } });
+  expect(await handOver(projectId, id, first.id, "ai_off")).toMatchObject({ handedOver: null });
+  expect(await state(1)).toEqual({ handledBy: "TEAM", replies: [] });
+  expect(await activity(1)).toEqual(["handed over: ai_off"]);
+});
+
 test("Not spam on what the filter filed answers with the conversation as its handover left it", async () => {
   const { projectId, admin, to, workflow, state } = await setup();
   await workflow("Keep", [{ kind: "dont_hand_over" }]);
