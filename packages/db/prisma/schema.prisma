@@ -3707,7 +3707,7 @@ model ScreenshotSettings {
   profileId            String?
   profileSignIn        String           @default("")
   /// The sign-in services found in the app's page and scripts (screenshotSettings.suggestions: [{ provider, hosts }]),
-  /// and the app address they were found at: found again once the address changes.
+  /// and the app address they were found at, with the scanner's version (sign-in-hosts.ts scannedFor): found again once either changes.
   signInServices       Json?
   signInServicesFor    String?
   updatedAt            DateTime         @updatedAt
