@@ -64,6 +64,7 @@ export { behindOf, type BehindList, type Draft, nameVersion, otherReasons, queue
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
+export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords, SCREENSHOT_RULE } from "./code-change-docs";
@@ -76,7 +77,7 @@ import { autopilotDue } from "./autopilot";
 import { inboxDue } from "./inbox-due";
 export { queueAutopilotNotices, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { type AutopilotButton, readAutopilotButton, signAutopilotButton } from "./autopilot";
-export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, COMMENT_UNSURE, composeComment, dueAt, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, VERIFY_WAITS, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, SCREENSHOT_WAITS, tooLong, waitsBecause } from "./autopilot";
+export { autopilotDue, autopilotDueToken, type AutopilotSettings, articlesViews, autopilotSettingsSelect, COMMENT_UNSURE, composeComment, dueAt, holdsForTeam, inReview, POST_COMMENT_MAX, POST_UPDATE, postReach, VERIFY_WAITS, postsReach, postUpdate, postVersion, reviewPath, recentViews, scheduleByItself, schedulePost, SCREENSHOT_WAITS, SCREENSHOTS_RETAKE, tooLong, waitsBecause } from "./autopilot";
 export { claimDocsSlug, claimLanguageSlug, docsSlugsTaken, freeDocsSlug, freeLanguageSlug, languageSlugRefused, RESERVED_ARTICLE_SLUGS, restoreLanguageSlugs } from "./docs-slugs";
 export { ARTICLE_REVISIONS_KEPT, docOf, recordRevision, versions, editName, hasTeammateEdit, landEdit, LIVE_EDIT, newestRevision, pruneRevisions, revisionsPast, sameDoc, scheduleArticle, settleWaitingEdits, takeOut, type TaggedEdit, taggedEdits, WAITING_EDIT, dismissTakenOut, editsInChanges, keepsEdit, mergeSections, newestText, changedSections, withSectionsOf } from "./article-layers";
 
