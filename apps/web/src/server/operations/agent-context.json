@@ -156,6 +156,7 @@
   "reports.get": ["allows","answer","answered","answers","article","began","compare","conversations","couldn","days","default","deleted","docs","down","first","found","fractions","helpful","inbox","last","latest","long","many","median","month","nothing","null","numbers","ones","open","otherwise","passed","past","plan","plans","possibly","quarter","questions","range","ranges","readers","replies","reply","reporting","searches","servers","sold","team","teammate","theirs","thumbs","time","today","total","under","views","went","year","yesterday"],
   "roadmap.get": ["completed","planned","posts","progress","public","roadmap"],
   "screenshotSettings.get": ["address","agent","latest","link","never","notes","password","screenshots","sign","signs","test"],
+  "screenshotSettings.suggestions": ["agent","amazon","among","auth0","calls","clerk","cognito","domains","firebase","found","hosted","hosts","okta","page","scripts","services","sign","stytch","supabase","workos"],
   "screenshotSettings.test": ["agent","background","costs","credits","lands","minutes","read","returns","running","runs","saved","screen","screenshot","screenshotsettings","settings","signs","starting","takes","time","used"],
   "screenshotSettings.update": ["account","agent","anything","demo","fields","keep","left","never","screenshot","signs","value"],
   "screenshots.get": ["image","page","screenshot","screenshots","shows","take","taken"],

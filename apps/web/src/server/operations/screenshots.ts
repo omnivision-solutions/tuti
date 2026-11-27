@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, dropChangedScreenshotProfile, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -11,6 +11,7 @@ import { z } from "zod";
 import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters";
 
 import { displayDoc } from "../content";
+import { detectSignInServices, type SignInService } from "../sign-in-hosts";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 
@@ -31,6 +32,8 @@ export const MAX_OTHER_DOMAINS = 20;
 /** A domain name as Browser Use's network policies take one: letters, digits and hyphens in dot-separated labels, no IP. */
 const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 export const MAX_ABOUT = 2000;
+/** A domain screenshotSettings.update takes as another domain: a domain name, of its own (not a shared suffix like vercel.app). */
+const acceptedDomain = (domain: string) => DOMAIN.test(domain) && getDomain(domain, { allowPrivateDomains: true }) !== null;
 
 const SIGN_INS = ["none", "password", "link"] as const;
 const WINDOW_NAMES = ["desktop", "phone"] as const;
@@ -283,6 +286,62 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   };
   await tx.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
 }
+
+const suggestionsOutput = z
+  .object({
+    suggestions: z
+      .array(
+        z.object({
+          provider: z.string().describe("The sign-in service").meta({ examples: ["Firebase"] }),
+          hosts: z.array(z.string()).describe("Its hosts to add to the other domains").meta({ examples: [["identitytoolkit.googleapis.com", "securetoken.googleapis.com"]] }),
+        }),
+      )
+      .describe("Each sign-in service found whose hosts aren't allowed yet; empty when none is, or the app's page couldn't be read"),
+  })
+  .meta({ id: "ScreenshotDomainSuggestions", description: "Hosts the screenshot agent likely needs to sign in" });
+
+/**
+ * The hosted sign-in services the app calls (sign-in-hosts.ts), with their hosts its runs' browser doesn't open yet:
+ * found once per app address (kept on the settings), as reading its page and scripts takes seconds. A page or script
+ * that couldn't be read isn't kept, so the next look tries again.
+ */
+async function domainSuggestions(projectId: string): Promise<SignInService[]> {
+  const settings = await prisma.screenshotSettings.findUnique({ where: { projectId }, select: { appUrl: true, signIn: true, signInLink: true, otherDomains: true, signInServices: true, signInServicesFor: true } });
+  if (!settings?.appUrl) {
+    return [];
+  }
+  let services = settings.signInServicesFor === settings.appUrl ? (settings.signInServices as SignInService[] | null) : null;
+  if (!services) {
+    const found = await detectSignInServices(settings.appUrl);
+    if (!found) {
+      return [];
+    }
+    services = found.services;
+    // Only a full read (a script that didn't load may hold the service), and only while the address is still the one
+    // read: one changed meanwhile is found again.
+    if (found.complete) {
+      await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl: settings.appUrl }, data: { signInServices: services, signInServicesFor: settings.appUrl } });
+    }
+  }
+  // What its runs' browser opens already: the app's host, the sign-in link's, the other domains (with subdomains).
+  const open = allowedHosts(settings);
+  const allowed = (host: string) => open.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  return services.map(({ provider, hosts }) => ({ provider, hosts: hosts.filter((host) => acceptedDomain(host) && !allowed(host)) })).filter(({ hosts }) => hosts.length > 0);
+}
+
+export const suggestScreenshotDomains = defineOperation({
+  name: "screenshotSettings.suggestions",
+  title: "Suggest screenshot domains",
+  summary:
+    "The hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), with their hosts that aren't among the other domains yet: the agent can't sign in until they are",
+  method: "GET",
+  path: "/screenshots/settings/suggestions",
+  scope: "read",
+  access: "admin",
+  input: z.object({}),
+  output: suggestionsOutput.describe("The suggested domains"),
+  run: async ({ projectId }) => ({ suggestions: await domainSuggestions(projectId) }),
+});
 
 /** Refuses a run that can't go: no key or uploads here (503), no settings (409), no credits (402). */
 async function refuseRun(projectId: string) {
