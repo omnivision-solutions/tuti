@@ -110,11 +110,14 @@ export const updateCollectionTranslation = defineOperation({
         throw new OperationError(409, "sample", "Sample collections aren't translated: write its name there instead");
       }
       const was = row.translations[input.language];
+      // What's there now, as readers get it: the team's own, or one kept up to date made from its text as it is (labelIn).
+      // An old one (made from text since changed) is never kept as the team's: it would read as current, and never be made again.
+      const current = !!was && (!was.auto || was.source === labelSource(row.name, row.description));
       // Kept up to date: made again (its source cleared, so the job finds it), readers seeing the default language's meanwhile.
       const entry: LabelTranslation = input.keepUpToDate
         ? { name: was?.name ?? "", description: was?.description ?? "", auto: true, source: was?.auto && was.source === labelSource(row.name, row.description) ? was.source : null }
         : // A description left out stays as it was there.
-          { name: input.name!, description: input.description ?? was?.description ?? "", auto: false, source: labelSource(row.name, row.description) };
+          { name: input.name!, description: input.description ?? (current ? (was.description ?? "") : ""), auto: false, source: labelSource(row.name, row.description) };
       const translations = { ...row.translations, [input.language]: entry };
       await tx.collection.update({ where: { id: row.id }, data: { translations: translations as Prisma.InputJsonValue } });
       const { automatic } = await tx.projectLanguage.findUniqueOrThrow({ where: { projectId_code: { projectId, code: input.language } }, select: { automatic: true } });
