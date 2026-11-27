@@ -1281,3 +1281,60 @@ test("the widget's panel in German framed by a page: a portal reader's named gre
   await expect(visitorPanel.getByText("Anmeldung fehlgeschlagen")).toBeVisible();
   await expect(visitorPanel.getByText("sign-in-failed")).toHaveCount(0);
 });
+
+test("an article's own words in German at /de/docs: its actions, reading time, sections, code's Copy, Was this helpful and the way on, around the team's English", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  await api("/collections", { name: "Basics" });
+  const text = (value: string) => [{ type: "text", text: value }];
+  const content = {
+    type: "doc",
+    content: [
+      { type: "tableOfContents" },
+      { type: "heading", attrs: { level: 2 }, content: text("Install") },
+      { type: "codeBlock", content: text("npm install acme") },
+      { type: "heading", attrs: { level: 2 }, content: text("Sign in") },
+      { type: "paragraph", content: text("Open the app and sign in.") },
+    ],
+  };
+  const first = await api("/articles", { title: "Setup", content, collection: "basics" });
+  await api(`/articles/${first.slug}/publish`, {});
+  const second = await api("/articles", { title: "Billing", body: "Pay by card.", collection: "basics" });
+  await api(`/articles/${second.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  await reader.goto(`/de/docs/${first.slug}`);
+  const main = reader.getByRole("main");
+  // The team's English, said so; around it the page's own words in German.
+  await expect(main.getByRole("heading", { level: 1, name: "Setup" })).toHaveAttribute("lang", "en");
+  await expect(main.getByText("1 Min. Lesezeit")).toBeVisible();
+  await expect(main.getByRole("button", { name: "Seite kopieren" })).toBeVisible();
+  await main.getByRole("button", { name: "Weitere Seitenaktionen" }).click();
+  await expect(reader.getByRole("menuitem", { name: "In ChatGPT öffnen" })).toHaveAttribute("href", /Lies%20/);
+  await expect(reader.getByRole("menuitem", { name: "Als Markdown ansehen" })).toBeVisible();
+  await reader.keyboard.press("Escape");
+  await expect(reader.getByRole("button", { name: "Lesemodus" })).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Auf dieser Seite" })).toBeVisible();
+  // The table of contents' label inside the English text: marked German.
+  const contents = main.getByRole("navigation", { name: "In diesem Artikel" });
+  await expect(contents.getByText("In diesem Artikel")).toHaveAttribute("lang", "de");
+  await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveText("Kopieren");
+  // The way on, and the answer to Was this helpful.
+  await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ })).toContainText("Billing");
+  await expect(main.getByRole("heading", { name: "War das hilfreich?" })).toBeVisible();
+  await checkpoint(reader, "article-own-words-in-german");
+  await main.getByRole("button", { name: "Nein" }).click();
+  await main.getByLabel("Wonach hast du gesucht? (optional)").fill("Mehr zu Rechnungen.");
+  await main.getByRole("button", { name: "Senden" }).click();
+  await expect(main.getByText("Danke für dein Feedback.")).toBeVisible();
+  // On a phone: the actions under the title, the sections a menu.
+  await reader.setViewportSize({ width: 390, height: 800 });
+  await reader.goto(`/de/docs/${first.slug}`);
+  await expect(main.locator("summary").getByText("Auf dieser Seite")).toBeVisible();
+  await checkpoint(reader, "article-own-words-in-german-phone", { fullPage: false });
+});
