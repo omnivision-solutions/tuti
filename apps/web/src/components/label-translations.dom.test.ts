@@ -54,7 +54,7 @@ test("typing in Description turns Keep up to date off, as typing in Name does", 
   const box = document.body.appendChild(document.createElement("div"));
   const root = createRoot(box);
   roots.push(root);
-  await act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(true)], ai: true })));
+  await act(async () => root.render(h(LabelTranslations, { kind: "collection", projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(true)], ai: true })));
   await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Edit Deutsch"]')!.click());
   const keep = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   expect(keep.checked).toBe(true);
