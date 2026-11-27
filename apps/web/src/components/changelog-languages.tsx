@@ -115,6 +115,8 @@ export type VersionView = {
   content: Doc;
   /** `title` and `content` are its own (false: the default language's, shown in their place). */
   own: boolean;
+  /** An article version's unpublished changes (its form shows them). */
+  draft?: boolean;
 };
 
 /** Which kind of page a version is of: a changelog entry's is translated whole; an article's by section (L11). */
@@ -123,6 +125,9 @@ export type VersionKind = "changelog" | "article";
 /** The one line over a version's text: where it stands, and what saving does. */
 function versionLine(view: VersionView, defaultName: string, kind: VersionKind) {
   switch (view.state) {
+    case "written":
+      // Published, with a draft on top: what readers get meanwhile.
+      return view.draft ? "Unpublished changes: readers get the published text until you publish them." : null;
     case "current":
       return kind === "article"
         ? // Published edits give way where English changes; a draft's never do, so it says published.

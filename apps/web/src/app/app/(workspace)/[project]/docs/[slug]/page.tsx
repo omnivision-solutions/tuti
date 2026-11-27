@@ -204,6 +204,7 @@ export default async function ArticlePage(
       title: text?.title || article.title,
       content: (text?.content ?? displayDoc(article)) as Doc,
       own: text !== null,
+      draft: read.draft !== null,
     };
     const defaultName = languages![0]!.name;
     const changes = behind.sections.length > 0 ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];

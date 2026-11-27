@@ -503,3 +503,13 @@ test("turning an article's Keep up to date on over the team's text asks first: i
   expect(document.body.textContent).toContain("Translate it again?");
   expect(document.body.textContent).toContain("Published sections English changed in since your edits take a new translation.");
 });
+
+test("an article's published version with unpublished changes says readers get the published text until they're published", async () => {
+  await form({ state: "written", keepUpToDate: false, own: true, draft: true }, { kind: "article" });
+  expect(document.body.textContent).toContain("Unpublished changes: readers get the published text until you publish them.");
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  // No draft: nothing to say.
+  await form({ state: "written", keepUpToDate: false, own: true, draft: false }, { kind: "article" });
+  expect(document.body.textContent).not.toContain("Unpublished changes");
+});
