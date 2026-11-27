@@ -293,6 +293,159 @@ export async function readArticleVersion(projectId: string, slug: string, langua
   );
 }
 
+type Source = Awaited<ReturnType<typeof sourceOf>>;
+
+/** A change made from an older read is refused: it would undo what changed since. */
+function checkToken(version: Version, sourceHash: string, token: string) {
+  if (versionToken(version, sourceHash) !== token) {
+    throw new OperationError(409, "changed", VERSION_CHANGED);
+  }
+}
+
+/** The editor's JSON document for a draft, checked (its images, its length). */
+async function draftDoc(projectId: string, content: unknown) {
+  const text = await readContent("article", { content }, { projectId, maxLength: MAX_ARTICLE_LENGTH });
+  if (text.error !== undefined) {
+    throw new OperationError(400, "invalid_content", text.error);
+  }
+  return text.doc;
+}
+
+/** Saves the draft (`doc`, and `given` as its title if given) on a version locked in `tx`: articles.saveTranslation's change. */
+async function saveDraftIn(tx: Prisma.TransactionClient, version: Version, source: Source, { title: given, doc }: { title?: string; doc: Doc }) {
+  const { parts, sourceLanguage } = source;
+  const { published, draft, drafted } = versionParts(version, parts);
+  const { sections: edited, removed } = editedSections(drafted ?? published, doc, parts, { automatic: version.automatic });
+  // The source's sections the team took out, this time and before (but one it has again).
+  const has = new Set(edited.map(({ meta }) => meta.key));
+  const out = [...new Set([...(draft?.removed ?? (version.removedSections as string[])), ...removed])].filter((key) => !has.has(key));
+  const title = given ?? draft?.title ?? version.title;
+  // When each was taken out: its English then (one taken out before keeps its time), so it's known when that changes.
+  const then = (draft?.removedHashes ?? (version.removedHashes as Record<string, string>)) as Record<string, string>;
+  const nowHashes = new Map(parts.map((part) => [part.key, part.hash]));
+  const removedHashes = Object.fromEntries(out.flatMap((key) => (then[key] ?? nowHashes.get(key)) !== undefined ? [[key, then[key] ?? nowHashes.get(key)!]] : []));
+  const next: Draft = { title, titleEdited: (draft?.titleEdited ?? false) || title !== (draft?.title ?? version.title), content: docOfSections(edited), sections: metaOf(edited), removed: out, removedHashes };
+  // A section edited now is the team's again: an update asked for it earlier no longer overrides it.
+  const base = new Set(drafted ?? published);
+  const editedNow = new Set(edited.filter((section) => !base.has(section) && section.meta.key !== null).map((section) => section.meta.key!));
+  const saved = await tx.articleTranslation.update({
+    where: { id: version.id },
+    data: {
+      draft: next as Prisma.InputJsonValue,
+      behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out, removedHashes }),
+      // (Taken out now too: an update asked for it would put it back.)
+      updateSections: (version.updateSections as string[]).filter((key) => !editedNow.has(key) && !removed.includes(key)),
+    },
+    select: versionSelect,
+  });
+  return saved;
+}
+
+/**
+ * Publishes the draft of a version locked in `tx`: articles.publishTranslation's change. Sections behind the source take
+ * the new translation unless in `kept`. `after`: what follows once it's committed (its search data, a translation queued).
+ */
+async function publishIn(tx: Prisma.TransactionClient, version: Version, articleId: string, source: Source, projectId: string, { language, keep: kept }: { language: string; keep?: string[] }) {
+  const { parts, sourceLanguage, titleHash } = source;
+  // Its search data to write, recorded with the publish itself: a retry time, and a try (the retry job takes a version the team
+  // writes only with one), cleared once it's embedded (versionPublished). Lost before that, the retry job embeds it.
+  const marker = new Date(Date.now() + lostAfterMs());
+  const { published, draft, drafted } = versionParts(version, parts);
+  if (!draft || !drafted) {
+    throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
+  }
+  // A version never translated has no title yet: published, it would have none.
+  if (!draft.title.trim()) {
+    throw new OperationError(409, "no_title", "Give it a title first");
+  }
+  const keep = new Set(kept);
+  const hashes = new Map(parts.map((part) => [part.key, part.hash]));
+  const fresh = new Map(published.filter(({ meta }) => meta.key !== null && !meta.own && meta.hash === hashes.get(meta.key)).map((part) => [part.meta.key!, part]));
+  // Sections the team edited whose source changed since: the new translation (the published one, if it's current;
+  // else translated again after this), or, kept, the team's, behind the source until it's updated.
+  const update: string[] = [];
+  const out = drafted.map((part): Section => {
+    const { key } = part.meta;
+    // On a version the team writes, every section is theirs: each behind is theirs to update or keep.
+    // Kept: the team's, even where an update asked earlier had made it no longer theirs.
+    const own = part.meta.own || !version.automatic || keep.has(key ?? "");
+    if (!own || key === null) return part;
+    const stale = hashes.get(key) !== part.meta.hash;
+    if (stale && !keep.has(key)) {
+      const translated = fresh.get(key);
+      // (The team's paragraph standing in for the source's intro stays after its translation: standingIn.)
+      if (translated) return standingIn(part, translated.blocks, translated.meta as { key: string; hash: string | null });
+      update.push(key);
+      return { blocks: part.blocks, meta: { key, hash: part.meta.hash, ...(part.meta.standIn !== undefined && { standIn: part.meta.standIn }) } };
+    }
+    // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
+    // version kept up to date, publishing the source again replaces edits only in the sections it touches).
+    return stale ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
+  });
+  const content = docOfSections(out);
+  const saved = await tx.articleTranslation.update({
+    where: { id: version.id },
+    data: {
+      title: draft.title,
+      // The team's own title stays theirs until the source's title changes.
+      ...(draft.titleEdited && { titleSource: titleHash }),
+      content: content as Prisma.InputJsonValue,
+      body: toPlainText(content),
+      sections: metaOf(out) as Prisma.InputJsonValue,
+      draft: Prisma.DbNull,
+      publishedAt: version.publishedAt ?? new Date(),
+      // Both counted on: a translate job running now writes nothing (its write checks `retranslate`), so none of the
+      // previous release's, which doesn't know the team's sections, writes over them during a deploy; the gap that marks
+      // a Retranslate is as it was. (A run of this release that misses is queued again below.)
+      retranslate: { increment: 1 },
+      retranslated: { increment: 1 },
+      // The sections the team took out of the draft, out of the published text now too.
+      removedSections: draft.removed ?? [],
+      // Kept out (in `keep`) though English changed since: kept out against English as it is now, so the job leaves it out.
+      removedHashes: Object.fromEntries(
+        Object.entries(draft.removedHashes ?? {}).map(([key, hash]) => [key, keep.has(key) ? (hashes.get(key) ?? hash) : hash]),
+      ) as Prisma.InputJsonValue,
+      behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
+      retryAt: marker,
+      tries: Math.max(version.tries, 1),
+      // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.
+      updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update])],
+    },
+    select: versionSelect,
+  });
+  // Its old search sections go with its old text: the new one's are embedded after (versionPublished).
+  await tx.articleTranslationChunk.deleteMany({ where: { translationId: version.id } });
+  // A run on its way now writes nothing (above): queued again wherever one may be (kept up to date, or sections asked for).
+  // One with nothing to do ends at once.
+  const retranslate = update.length > 0 || version.automatic || (version.updateSections as string[]).length > 0;
+  const after = async () => {
+    // Named on its first publish (its address there), then searchable in its language.
+    await versionPublished(projectId, version.id, version.publishedAt === null, marker, version.tries);
+    if (retranslate) await queueTranslation({ articleId, language });
+  };
+  return { saved, after };
+}
+
+/** Keep up to date on or off for a version locked in `tx`: articles.keepTranslationUpToDate's change. `after`: once committed. */
+async function keepIn(tx: Prisma.TransactionClient, version: Version, articleId: string, { language, keepUpToDate }: { language: string; keepUpToDate: boolean }) {
+  if (version.automatic === keepUpToDate) {
+    return { saved: version, after: async () => {} };
+  }
+  const { published, draft, drafted } = versionParts(version, (await sourceOf(tx, articleId)).parts);
+  // On: the team's sections are their edits now, as on any version kept up to date (theirs until English changes in
+  // them); translated again, nothing reused. Off: the team writes every section.
+  const data = keepUpToDate
+    ? {
+        automatic: true,
+        sections: metaOf(givingWay(published)) as Prisma.InputJsonValue,
+        ...(draft && drafted && { draft: { ...draft, sections: metaOf(givingWay(drafted)) } as Prisma.InputJsonValue }),
+        retranslate: { increment: 1 },
+      }
+    : { automatic: false };
+  const saved = await tx.articleTranslation.update({ where: { id: version.id }, data, select: versionSelect });
+  return { saved, after: async () => void (keepUpToDate && (await queueTranslation({ articleId, language }))) };
+}
+
 export const saveTranslation = defineOperation({
   name: "articles.saveTranslation",
   title: "Save a translation's draft",
@@ -317,42 +470,12 @@ export const saveTranslation = defineOperation({
   }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
-    const text = await readContent("article", { content: input.content }, { projectId, maxLength: MAX_ARTICLE_LENGTH });
-    if (text.error !== undefined) {
-      throw new OperationError(400, "invalid_content", text.error);
-    }
+    const doc = await draftDoc(projectId, input.content);
     return withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
       const source = await sourceOf(tx, articleId);
-      const { parts, sourceLanguage } = source;
       // Compared with what it was made from, not with what's there now: an older copy would undo a newer translation.
-      if (versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", VERSION_CHANGED);
-      }
-      const { published, draft, drafted } = versionParts(version, parts);
-      const { sections: edited, removed } = editedSections(drafted ?? published, text.doc, parts, { automatic: version.automatic });
-      // The source's sections the team took out, this time and before (but one it has again).
-      const has = new Set(edited.map(({ meta }) => meta.key));
-      const out = [...new Set([...(draft?.removed ?? (version.removedSections as string[])), ...removed])].filter((key) => !has.has(key));
-      const title = input.title ?? draft?.title ?? version.title;
-      // When each was taken out: its English then (one taken out before keeps its time), so it's known when that changes.
-      const then = (draft?.removedHashes ?? (version.removedHashes as Record<string, string>)) as Record<string, string>;
-      const nowHashes = new Map(parts.map((part) => [part.key, part.hash]));
-      const removedHashes = Object.fromEntries(out.flatMap((key) => (then[key] ?? nowHashes.get(key)) !== undefined ? [[key, then[key] ?? nowHashes.get(key)!]] : []));
-      const next: Draft = { title, titleEdited: (draft?.titleEdited ?? false) || title !== (draft?.title ?? version.title), content: docOfSections(edited), sections: metaOf(edited), removed: out, removedHashes };
-      // A section edited now is the team's again: an update asked for it earlier no longer overrides it.
-      const base = new Set(drafted ?? published);
-      const editedNow = new Set(edited.filter((section) => !base.has(section) && section.meta.key !== null).map((section) => section.meta.key!));
-      const saved = await tx.articleTranslation.update({
-        where: { id: version.id },
-        data: {
-          draft: next as Prisma.InputJsonValue,
-          behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out, removedHashes }),
-          // (Taken out now too: an update asked for it would put it back.)
-          updateSections: (version.updateSections as string[]).filter((key) => !editedNow.has(key) && !removed.includes(key)),
-        },
-        select: versionSelect,
-      });
-      return output(saved, source);
+      checkToken(version, source.sourceHash, input.version);
+      return output(await saveDraftIn(tx, version, source, { title: input.title, doc }), source);
     });
   },
 });
@@ -381,94 +504,16 @@ export const publishTranslation = defineOperation({
   }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
-    let retranslate: { articleId: string; language: string } | null = null;
-    let wentLive: { id: string; first: boolean; marker: Date; tries: number } | null = null;
-    // Its search data to write, recorded with the publish itself: a retry time, and a try (the retry job takes a version the team
-    // writes only with one), cleared once it's embedded (versionPublished). Lost before that, the retry job embeds it.
-    const marker = new Date(Date.now() + lostAfterMs());
+    let after = async () => {};
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
       const source = await sourceOf(tx, articleId);
-      const { parts, sourceLanguage, titleHash } = source;
       // Only the draft that was reviewed: one saved or retranslated since would go live unseen, `keep` meant for other sections.
-      if (input.version !== undefined && versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", VERSION_CHANGED);
-      }
-      const { published, draft, drafted } = versionParts(version, parts);
-      if (!draft || !drafted) {
-        throw new OperationError(409, "no_changes", "There are no unpublished changes to publish");
-      }
-      // A version never translated has no title yet: published, it would have none.
-      if (!draft.title.trim()) {
-        throw new OperationError(409, "no_title", "Give it a title first");
-      }
-      const keep = new Set(input.keep);
-      const hashes = new Map(parts.map((part) => [part.key, part.hash]));
-      const fresh = new Map(published.filter(({ meta }) => meta.key !== null && !meta.own && meta.hash === hashes.get(meta.key)).map((part) => [part.meta.key!, part]));
-      // Sections the team edited whose source changed since: the new translation (the published one, if it's current;
-      // else translated again after this), or, kept, the team's, behind the source until it's updated.
-      const update: string[] = [];
-      const out = drafted.map((part): Section => {
-        const { key } = part.meta;
-        // On a version the team writes, every section is theirs: each behind is theirs to update or keep.
-        // Kept: the team's, even where an update asked earlier had made it no longer theirs.
-        const own = part.meta.own || !version.automatic || keep.has(key ?? "");
-        if (!own || key === null) return part;
-        const stale = hashes.get(key) !== part.meta.hash;
-        if (stale && !keep.has(key)) {
-          const translated = fresh.get(key);
-          // (The team's paragraph standing in for the source's intro stays after its translation: standingIn.)
-          if (translated) return standingIn(part, translated.blocks, translated.meta as { key: string; hash: string | null });
-          update.push(key);
-          return { blocks: part.blocks, meta: { key, hash: part.meta.hash, ...(part.meta.standIn !== undefined && { standIn: part.meta.standIn }) } };
-        }
-        // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
-        // version kept up to date, publishing the source again replaces edits only in the sections it touches).
-        return stale ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
-      });
-      const content = docOfSections(out);
-      const saved = await tx.articleTranslation.update({
-        where: { id: version.id },
-        data: {
-          title: draft.title,
-          // The team's own title stays theirs until the source's title changes.
-          ...(draft.titleEdited && { titleSource: titleHash }),
-          content: content as Prisma.InputJsonValue,
-          body: toPlainText(content),
-          sections: metaOf(out) as Prisma.InputJsonValue,
-          draft: Prisma.DbNull,
-          publishedAt: version.publishedAt ?? new Date(),
-          // Both counted on: a translate job running now writes nothing (its write checks `retranslate`), so none of the
-          // previous release's, which doesn't know the team's sections, writes over them during a deploy; the gap that marks
-          // a Retranslate is as it was. (A run of this release that misses is queued again below.)
-          retranslate: { increment: 1 },
-          retranslated: { increment: 1 },
-          // The sections the team took out of the draft, out of the published text now too.
-          removedSections: draft.removed ?? [],
-          // Kept out (in `keep`) though English changed since: kept out against English as it is now, so the job leaves it out.
-          removedHashes: Object.fromEntries(
-            Object.entries(draft.removedHashes ?? {}).map(([key, hash]) => [key, keep.has(key) ? (hashes.get(key) ?? hash) : hash]),
-          ) as Prisma.InputJsonValue,
-          behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
-          retryAt: marker,
-          tries: Math.max(version.tries, 1),
-          // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.
-          updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update])],
-        },
-        select: versionSelect,
-      });
-      // Its old search sections go with its old text: the new one's are embedded after (versionPublished).
-      await tx.articleTranslationChunk.deleteMany({ where: { translationId: version.id } });
-      wentLive = { id: version.id, first: version.publishedAt === null, marker, tries: version.tries };
-      // A run on its way now writes nothing (above): queued again wherever one may be (kept up to date, or sections asked for).
-      // One with nothing to do ends at once.
-      if (update.length > 0 || version.automatic || (version.updateSections as string[]).length > 0) retranslate = { articleId, language: input.language };
-      return output(saved, { parts, sourceLanguage, sourceHash: source.sourceHash });
+      if (input.version !== undefined) checkToken(version, source.sourceHash, input.version);
+      const published = await publishIn(tx, version, articleId, source, projectId, { language: input.language, keep: input.keep });
+      after = published.after;
+      return output(published.saved, source);
     });
-    // Named on its first publish (its address there), then searchable in its language.
-    // (Set in the transaction's callback, which TypeScript doesn't follow.)
-    const live = wentLive as { id: string; first: boolean; marker: Date; tries: number } | null;
-    if (live) await versionPublished(projectId, live.id, live.first, live.marker, live.tries);
-    if (retranslate) await queueTranslation(retranslate);
+    await after();
     return result;
   },
 });
@@ -575,32 +620,59 @@ export const keepTranslationUpToDate = defineOperation({
   }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
-    let queued: { articleId: string; language: string } | null = null;
+    let after = async () => {};
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
       const source = await sourceOf(tx, articleId);
-      const { parts, sourceLanguage } = source;
-      if (versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", VERSION_CHANGED);
-      }
-      if (version.automatic === input.keepUpToDate) {
-        return output(version, source);
-      }
-      const { published, draft, drafted } = versionParts(version, parts);
-      // On: the team's sections are their edits now, as on any version kept up to date (theirs until English changes in
-      // them); translated again, nothing reused. Off: the team writes every section.
-      const data = input.keepUpToDate
-        ? {
-            automatic: true,
-            sections: metaOf(givingWay(published)) as Prisma.InputJsonValue,
-            ...(draft && drafted && { draft: { ...draft, sections: metaOf(givingWay(drafted)) } as Prisma.InputJsonValue }),
-            retranslate: { increment: 1 },
-          }
-        : { automatic: false };
-      const saved = await tx.articleTranslation.update({ where: { id: version.id }, data, select: versionSelect });
-      if (input.keepUpToDate) queued = { articleId, language: input.language };
-      return output(saved, { parts, sourceLanguage, sourceHash: source.sourceHash });
+      checkToken(version, source.sourceHash, input.version);
+      const kept = await keepIn(tx, version, articleId, input);
+      after = kept.after;
+      return output(kept.saved, source);
     });
-    if (queued) await queueTranslation(queued);
+    await after();
     return result;
   },
 });
+
+/**
+ * The version editor's Save draft and Publish (docs/plan.md L11): the draft saved, Keep up to date turned off where the
+ * version has no text of its own yet (its first translation on its way or failing: the form showed the English, which kept
+ * as the team's would never be translated), and with `publish`, published, all in one transaction against `version`, the
+ * read the form was loaded from, so a refused step leaves none done. Publishing keeps the team's edits behind the source
+ * except those in `take` (they take the new translation): a section behind that wasn't asked about stays the team's.
+ */
+export async function saveArticleVersionText(
+  projectId: string,
+  slug: string,
+  language: (typeof LANGUAGE_CODES)[number],
+  given: { title?: string; content: unknown; version: string; publish: boolean; take: string[] },
+) {
+  // Checked as articles.saveTranslation's input is (and `take` as `keep`), as the API would.
+  const parsed = saveTranslation.input.extend({ take: sectionList }).safeParse({ ...given, slug, language });
+  if (!parsed.success) {
+    throw new OperationError(400, "invalid_input", parsed.error.issues[0]?.message ?? "Invalid input");
+  }
+  const input = { ...parsed.data, publish: given.publish };
+  const doc = await draftDoc(projectId, input.content);
+  const after: (() => Promise<void>)[] = [];
+  const result = await withVersion(projectId, slug, language, async (tx, version, articleId) => {
+    const source = await sourceOf(tx, articleId);
+    checkToken(version, source.sourceHash, input.version);
+    const first = version.automatic && !version.publishedAt && !version.draft;
+    let saved = await saveDraftIn(tx, version, source, { title: input.title, doc });
+    if (first) {
+      const kept = await keepIn(tx, saved, articleId, { language, keepUpToDate: false });
+      saved = kept.saved;
+      after.push(kept.after);
+    }
+    if (input.publish) {
+      const take = new Set(input.take);
+      const keep = (output(saved, source).draft?.behind ?? []).filter((key) => !take.has(key));
+      const published = await publishIn(tx, saved, articleId, source, projectId, { language, keep });
+      saved = published.saved;
+      after.push(published.after);
+    }
+    return output(saved, source);
+  });
+  for (const each of after) await each();
+  return result;
+}
