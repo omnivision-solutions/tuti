@@ -8,7 +8,9 @@ import { createUpload } from "@/server/media";
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
 import { createChangelogComment } from "@/server/operations/changelog-comments";
 import { createComment, createPost } from "@/server/operations/create";
+import { getChangelogTranslation, saveChangelogTranslation } from "@/server/operations/changelog-translations";
 import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
+import { updateLanguages } from "@/server/operations/languages";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -256,3 +258,25 @@ async function waitForLockWait() {
   }
   throw new Error("The release never waited for the save");
 }
+
+test("an upload in a version in another language is kept: a changelog entry's the team wrote, and an article version's text and draft", async () => {
+  await call(updateLanguages, as(owner), { languages: [{ code: "de", newPages: "manual" }] });
+  const { number } = await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "Switch themes." });
+  await call(publishChangelogEntry, as(owner), { number });
+  // A German screenshot uploaded into the entry's German, saved from its editor (which attaches it).
+  const german = await upload();
+  const read = await call(getChangelogTranslation, as(owner), { number, language: "de" });
+  await call(saveChangelogTranslation, as(owner), { number, language: "de", title: "Dunkler Modus", content: doc(german.id), version: read.version });
+  // An article version's text and its unpublished draft, each with an upload of its own.
+  const article = await prisma.article.create({ data: { projectId: project.id, slug: "billing", title: "Billing", publishedAt: new Date() } });
+  const [text, drafted] = [await upload(), await upload()];
+  await prisma.articleTranslation.create({
+    data: { articleId: article.id, projectId: project.id, language: "de", automatic: false, title: "Abrechnung", content: doc(text.id), publishedAt: new Date(), draft: { title: "Abrechnung", content: doc(drafted.id) } },
+  });
+  await prisma.$transaction((tx) => attachMedia(tx, project.id, [text.id, drafted.id]));
+  // Attached long enough ago to be released if nothing used them.
+  await prisma.media.updateMany({ where: { id: { in: [german.id, text.id, drafted.id] } }, data: { attachedAt: daysAgo(2) } });
+  await release();
+  const kept = await prisma.media.findMany({ where: { id: { in: [german.id, text.id, drafted.id] } }, select: { id: true, attachedAt: true } });
+  expect(kept.map(({ attachedAt }) => attachedAt)).not.toContain(null);
+});
