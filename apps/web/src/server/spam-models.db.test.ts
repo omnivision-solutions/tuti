@@ -288,9 +288,9 @@ test("past 100 due at once, the job settles the oldest first", { timeout: 60_000
 test("only a conversation no free check decided is held: not one filed, nor one a decision or trust let through", { timeout: 30_000 }, async () => {
   const { projectId, admin, mail, state } = await setup();
   const inInbox = { spam: false, spamReason: null, held: false, due: false };
-  await call(updateSpamSettings, admin, { addPhrases: ["facebook admin"], allow: ["e2e-friend@example.com"] });
-  // A phrase files it (check 5).
-  expect(await state(await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" }))).toEqual({ spam: true, spamReason: "phrase", held: false, due: false });
+  await call(updateSpamSettings, admin, { addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }], allow: ["e2e-friend@example.com"] });
+  // A rule files it (check 1).
+  expect(await state(await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" }))).toEqual({ spam: true, spamReason: "rule", held: false, due: false });
   // The allowed list lets it through (check 1).
   expect(await state(await mail("e2e-friend@example.com"))).toEqual(inInbox);
   // Someone the team has replied to is trusted (check 2).

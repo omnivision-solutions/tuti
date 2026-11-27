@@ -727,11 +727,12 @@ const matrix: Matrix = {
     },
   },
   "spam-settings": {
-    listSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.listSpamSender(slug, true, "spam.example") },
-    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "spam.example") },
-    setSpamPhrase: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamPhrase(slug, "facebook admin", true) },
+    addSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.addSpamRule(slug, { field: "subject_or_body", matcher: "contains", value: "facebook admin" }) },
+    removeSpamRule: { allowed: "ADMIN", takesIds: true, call: (slug, f) => spamSettings.removeSpamRule(slug, f.spamRuleId) },
+    allowSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.allowSpamSender(slug, "forms.example") },
+    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "forms.example") },
     setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
-    trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
+    trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { from: "Kim <e2e-matrix-kim@example.com>", subject: "Hi", text: "Hello" }) },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
@@ -1108,6 +1109,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
   // A workflow, to move and delete.
+  const spamRule = await prisma.spamRule.create({ data: { projectId, field: "subject", matcher: "contains", value: "matrix" } });
   const workflow = await prisma.workflow.create({ data: { projectId, name: "Matrix workflow", trigger: "conversation_started", position: 0, actions: [{ kind: "mark_priority" }] } });
   // Screenshots set up, for their Test.
   await prisma.screenshotSettings.create({ data: { projectId, appUrl: "https://app.example.com" } });
@@ -1245,6 +1247,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     specRepoId: 95_000 + githubRepoId,
     redirectId: redirect.id,
     workflowId: workflow.id,
+    spamRuleId: spamRule.id,
     linkId: link.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,

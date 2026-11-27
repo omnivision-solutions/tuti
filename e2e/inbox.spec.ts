@@ -1475,7 +1475,7 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await api("/conversations/1", { spam: true }, "PATCH");
   await owner.goto(`/app/${slug}/inbox/1?view=spam&page=2`);
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("menuitem", { name: "Not spam" }).click();
+  await owner.getByRole("menuitem", { name: "Not spam", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=spam&page=2$`));
 
   // A search's results load more the same way, the search kept; with no more than a page of them, there's no button.

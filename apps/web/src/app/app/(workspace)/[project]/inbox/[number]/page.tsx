@@ -403,6 +403,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               // Still held for the AI check (W4): in no view yet, but a link can reach it.
               why={conversation.spamHeldAt && !conversation.spamMarkedAt ? "the spam filter is still checking it" : (spamWhy(conversation.spamReason, conversation.spamPhrase) ?? (conversation.spamMarkedAt ? "a teammate marked it" : null))}
               unblocks={marking.unblocks}
+              removesRule={marking.removesRule}
             />
           )}
           <div id="conversation" className="inbox-conversation-body relative min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
