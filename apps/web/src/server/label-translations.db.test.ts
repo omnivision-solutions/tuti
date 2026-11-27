@@ -9,6 +9,14 @@ import { createCollection, createTab, updateCollection, updateTab } from "./oper
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
+// Hatchet out of reach, for a test that queues without the inline driver.
+vi.mock("@tuti/shared/hatchet", async (original) => ({
+  ...(await original<typeof import("@tuti/shared/hatchet")>()),
+  getHatchet: () => {
+    throw new Error("Hatchet isn't reachable");
+  },
+}));
+
 /** Labels' translations (docs/plan.md, Languages, L13): collection and tab names in the project's other languages. */
 
 let model: ModelFake;
@@ -293,4 +301,19 @@ test("a save never waits for its labels' translating: the model answers only onc
   back();
   await languageTranslationsDone();
   expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung");
+});
+
+test("the retry job's queuing failing after its claim: the language is tried again at the next run but one, not a day later", async () => {
+  await german();
+  await prisma.collection.create({ data: { projectId: project.id, slug: "imported", name: "Imported" } });
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  expect(await retry()).toMatchObject({ labels: 1 });
+  vi.stubEnv("JOBS_DRIVER", "inline");
+  const { labelsRetryAt } = await prisma.projectLanguage.findFirstOrThrow({ where: { projectId: project.id } });
+  expect(labelsRetryAt!.getTime()).toBeLessThanOrEqual(Date.now() + 15 * 60_000 + 5_000);
+  // Its time come, the next run queues it.
+  await prisma.projectLanguage.updateMany({ where: { projectId: project.id }, data: { labelsRetryAt: new Date(Date.now() - 1000) } });
+  model.reply(labelsReply({ "0.n": "Importiert" }));
+  expect(await retry()).toMatchObject({ labels: 1 });
+  expect(labelIn(await collection("imported"), "de")?.name).toBe("Importiert");
 });

@@ -211,7 +211,12 @@ export async function queueLabels(projectId: string, languages?: string[]) {
   queueAll(async () => {
     const codes = languages ?? (await prisma.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
     for (const language of codes) {
-      await enqueue("translateLabels", { projectId, language }).catch((error: unknown) => serverLog.error("Queuing a project's label translations failed", { projectId, language, error }));
+      await enqueue("translateLabels", { projectId, language }).catch(async (error: unknown) => {
+        serverLog.error("Queuing a project's label translations failed", { projectId, language, error });
+        // Tried again at the retry job's next run but one (as an article's queuing is), not after a claim's safety net.
+        await prisma.$executeRaw`UPDATE project_language SET "labelsRetryAt" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${retryDelay(1) / 1000})
+          WHERE "projectId" = ${projectId} AND code = ${language}`.catch((marking: unknown) => serverLog.error("Saving a label translating's failure failed", { projectId, language, error: marking }));
+      });
     }
   });
 }
