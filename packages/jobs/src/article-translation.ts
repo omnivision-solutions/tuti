@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, keyed, sections, segmentsOf, termsUsed, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, type GlossaryTerm, keyed, sections, segmentsOf, termsUsed, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
@@ -801,27 +801,16 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
       (row) => ({ kind: ENTRY, row }),
     ),
   ];
+  // What each touched version gets, worked out first: a few statements per kind however many there are (one lock, one read,
+  // a write per 500), so a big help center saves well inside the transaction's time.
+  type Touched = { kind: Kind; sourceId: string; id: string; automatic: boolean; terms: GlossaryTerm[]; reasons: Record<string, string> };
+  const touched: Touched[] = [];
   for (const { kind, row } of sources) {
     const source = translationSource(row);
     const plain = toPlainText(source.doc);
-    const touched = row.translations.filter((version) => termsUsed(plain, changed.get(version.language)!).length > 0);
-    if (touched.length === 0) continue;
-    if (!dryRun) {
-      // The source before any of its versions, as the translate job's write locks them, so the two never cross.
-      await (kind.name === "article" ? tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.id} FOR UPDATE` : tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${row.id} FOR UPDATE`);
-    }
-    const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
-    // Their memory read again under the source's lock: a job's write before it took the lock isn't written over.
-    const memories = dryRun
-      ? new Map<string, unknown>()
-      : new Map(
-          (kind.name === "article"
-            ? await tx.articleTranslation.findMany({ where: { id: { in: touched.map(({ id }) => id) } }, select: { id: true, memory: true } })
-            : await tx.changelogTranslation.findMany({ where: { id: { in: touched.map(({ id }) => id) } }, select: { id: true, memory: true } })
-          ).map(({ id, memory }) => [id, memory]),
-        );
-    for (const version of touched) {
+    for (const version of row.translations) {
       const terms = changed.get(version.language)!;
+      if (termsUsed(plain, terms).length === 0) continue;
       // The sections that use a changed term, each with the first it uses.
       const reasons = Object.fromEntries(
         sourceSections(source.text).flatMap(({ key, blocks }) => {
@@ -834,13 +823,37 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
       } else if (Object.keys(reasons).length > 0) {
         behind++;
       }
-      if (dryRun) continue;
-      // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks
-      // would make a run send it again), so its next translation of them, the job's or Update those sections', is anew.
-      const memory = Object.fromEntries(Object.entries((memories.get(version.id) ?? {}) as Record<string, string>).filter(([text]) => termsUsed(text, terms).length === 0));
-      await tx.$executeRaw`UPDATE ${table} SET memory = ${JSON.stringify(memory)}::jsonb,
-        behind = behind || ${JSON.stringify(version.automatic ? {} : reasons)}::jsonb, "updatedAt" = now() WHERE id = ${version.id}`;
-      if (version.automatic) await safetyNet(kind, { id: version.id }, tx);
+      touched.push({ kind, sourceId: row.id, id: version.id, automatic: version.automatic, terms, reasons: version.automatic ? {} : reasons });
+    }
+  }
+  if (!dryRun) {
+    for (const kind of KINDS) {
+      const mine = touched.filter((version) => version.kind === kind);
+      if (mine.length === 0) continue;
+      const sourceTable = Prisma.raw(kind.name === "article" ? "article" : "changelog_entry");
+      const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
+      // The sources before any of their versions, as the translate job's write locks them, so the two never cross (in one
+      // order, so two saves never cross either).
+      await tx.$queryRaw`SELECT 1 FROM ${sourceTable} WHERE id = ANY(${[...new Set(mine.map(({ sourceId }) => sourceId))]}::text[]) ORDER BY id FOR UPDATE`;
+      // Their memory read under those locks: a job's write before them isn't written over.
+      const memories = new Map(
+        (await tx.$queryRaw<{ id: string; memory: Record<string, string> }[]>`SELECT id, memory FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`).map(
+          ({ id, memory }) => [id, memory],
+        ),
+      );
+      // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks would
+      // make a run send it again), so its next translation of them, the job's or Update those sections', is anew; the sections
+      // of one the team writes marked behind; one kept up to date gets its safety net (queued after the save commits).
+      const rows = mine.map(({ id, automatic, terms, reasons }) => {
+        const memory = Object.fromEntries(Object.entries(memories.get(id) ?? {}).filter(([text]) => termsUsed(text, terms).length === 0));
+        return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(reasons)}, ${automatic})`;
+      });
+      for (let i = 0; i < rows.length; i += 500) {
+        await tx.$executeRaw`
+          UPDATE ${table} t SET memory = v.memory::jsonb, behind = t.behind || v.behind::jsonb, "updatedAt" = now(),
+            "retryAt" = CASE WHEN v.net::boolean AND t.error IS NULL THEN (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000}) ELSE t."retryAt" END
+          FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net) WHERE t.id = v.id`;
+      }
     }
   }
   // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).

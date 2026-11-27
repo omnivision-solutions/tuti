@@ -1,6 +1,6 @@
 import { type Doc, segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { glossaryChangedFor, labelIn, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
+import { type Glossary, glossaryChanges, glossaryChangedFor, labelIn, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -282,5 +282,39 @@ test("a term written in another case is a change: the versions that use it are t
   await languageTranslationsDone();
   expect(systemOf(model.requests[0]!)).toContain('"board" → "Tafel"');
   expect((await version("boards")).body).toContain("[de2]");
+});
+
+test("a save's statements don't grow with the help center: as many for 50 sources as for 5", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }, { code: "fr", newPages: "manual" }] });
+  const before: Glossary = [{ term: "Board", keep: false, translations: { de: "Tafel", fr: "Tableau" } }];
+  const after: Glossary = [{ term: "Board", keep: false, translations: { de: "Brett", fr: "Planche" } }];
+  let made = 0;
+  /** `count` more published articles using "Board", each with German and French written by the team. */
+  const more = async (count: number) => {
+    for (let i = 0; i < count; i++, made++) {
+      const { id } = await prisma.article.create({ data: { projectId: project.id, slug: `boards-${made}`, title: `Boards ${made}`, body: "Make a Board.", content: BOARDS, publishedAt: new Date() } });
+      await prisma.articleTranslation.createMany({
+        data: ["de", "fr"].map((language) => ({ articleId: id, projectId: project.id, language, automatic: false, title: "x", body: "x", publishedAt: new Date() })),
+      });
+    }
+  };
+  /** The statements a save makes in its transaction (each call on it: a query, a model's method). */
+  const statements = async () => {
+    let count = 0;
+    const counted = <T extends object>(target: T): T =>
+      new Proxy(target, {
+        get(on, key) {
+          const value = Reflect.get(on, key) as unknown;
+          if (typeof value === "function") return (...args: unknown[]) => (count++, (value as (...a: unknown[]) => unknown).apply(on, args));
+          return value && typeof value === "object" && typeof key === "string" && !key.startsWith("$") ? counted(value) : value;
+        },
+      });
+    await prisma.$transaction((tx) => glossaryChanges(counted(tx), project.id, before, after), { timeout: 30_000 });
+    return count;
+  };
+  await more(5);
+  const few = await statements();
+  await more(45);
+  expect(await statements()).toBe(few);
 });
 
