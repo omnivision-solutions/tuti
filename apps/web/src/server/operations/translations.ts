@@ -306,10 +306,14 @@ export const getTranslation = defineOperation({
  * marked for another reason only (the product setting, the glossary): English never changed there, and publishing keeps
  * the team's text in them.
  */
-function behindForEnglish(read: z.output<typeof translationOutput>, version: Version, sourceLanguage: string) {
-  if (read.draft) {
-    const other = otherReasons(version.behind, sourceLanguage);
-    return read.draft.behind.filter((key) => !(key in other));
+function behindForEnglish(read: z.output<typeof translationOutput>, version: Version, { parts, sourceLanguage }: Source) {
+  const { draft, drafted } = versionParts(version, parts);
+  if (read.draft && draft && drafted) {
+    // The draft's own English check, worked out afresh: a stored reason can't hide it (a glossary save writes its reason over
+    // an English one for the same section).
+    const changed = version.automatic ? removedChanged(draft.removed, draft.removedHashes, parts) : [];
+    const english = new Set(Object.keys(behindOf(sourceLanguage, parts, [{ list: drafted, teamWrites: !version.automatic, removed: draft.removed, changed }])));
+    return read.draft.behind.filter((key) => english.has(key));
   }
   const english = new Set([sourceChanged(sourceLanguage), sourceAdded(sourceLanguage)]);
   return read.behind.filter(({ reason }) => english.has(reason)).map(({ section }) => section);
@@ -333,7 +337,7 @@ export async function behindChanges(projectId: string, slug: string, language: (
     async (db, version, articleId) => {
       const source = await sourceOf(db, articleId);
       const read = output(version, source);
-      const keys = behindForEnglish(read, version, source.sourceLanguage);
+      const keys = behindForEnglish(read, version, source);
       if (keys.length === 0) {
         return [];
       }
@@ -393,7 +397,7 @@ export async function readArticleVersion(projectId: string, slug: string, langua
       // The orange line's sections: behind for English (not only the product setting), published or in the draft. Publish
       // asks about those the text it publishes has (an edit to keep or not; a section English added has none).
       const { published, draft, drafted } = versionParts(version, source.parts);
-      const sections = behindForEnglish(read, version, source.sourceLanguage);
+      const sections = behindForEnglish(read, version, source);
       // (A section the draft took out is asked about too: ticked, it comes back translated; unticked, it stays out.)
       const has = new Set([...(drafted ?? published).map(({ meta }) => meta.key), ...(draft?.removed ?? [])]);
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.

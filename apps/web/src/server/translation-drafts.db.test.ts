@@ -1283,3 +1283,16 @@ test("a section behind only for the glossary isn't counted as English changing n
   await languageTranslationsDone();
   expect(text((await call(getTranslation, as(), de)).content)).toContain("Unsere Abrechnung");
 });
+
+test("a drafted section behind English and then marked for the glossary is still counted and asked about", async () => {
+  await translated();
+  await editBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  const billing = sourceSections(V1).at(-1)!.key;
+  expect((await readArticleVersion(project.id, de.slug, "de")).behind.sections).toEqual([billing]);
+  // A glossary save writes its reason over English's for the same section.
+  await prisma.articleTranslation.updateMany({ where: { projectId: project.id, language: "de" }, data: { behind: { [billing]: glossaryChangedFor("card") } } });
+  const { behind } = await readArticleVersion(project.id, de.slug, "de");
+  expect(behind.sections).toEqual([billing]);
+  expect(behind.ask).toEqual([billing]);
+});
