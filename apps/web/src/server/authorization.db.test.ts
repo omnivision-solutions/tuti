@@ -47,6 +47,7 @@ import * as inbox from "./inbox";
 import { getMembership } from "./membership";
 import * as invitations from "./invitations";
 import * as glossary from "./glossary";
+import * as labelTranslations from "./label-translations";
 import * as languages from "./languages";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
@@ -109,6 +110,7 @@ const modules = {
   inbox,
   invitations,
   glossary,
+  "label-translations": labelTranslations,
   languages,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
@@ -619,6 +621,13 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
+  },
+  "label-translations": {
+    // German, which the fixture adds: the team's own name there.
+    saveCollectionTranslation: {
+      allowed: "MEMBER",
+      call: (slug) => labelTranslations.saveCollectionTranslation(slug, "guides", "de", { keepUpToDate: false, name: "Anleitungen", description: "" }),
+    },
   },
   glossary: {
     saveGlossary: { allowed: "ADMIN", call: (slug) => glossary.saveGlossary(slug, [{ term: "Acme", keep: true, translations: {} }]) },
