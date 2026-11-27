@@ -91,7 +91,7 @@ test("the team writes a published article's German from its editor's language pi
   await expect(team.getByRole("switch", { name: /Keep up to date/ })).not.toBeChecked();
 
   await team.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Published", { exact: true })).toBeVisible();
   await team.getByRole("button", { name: "Language: Deutsch" }).click();
   await expect(team.getByRole("menuitem", { name: /Deutsch/ })).toContainText("Written by your team");
   await team.keyboard.press("Escape");

@@ -315,6 +315,7 @@ export function ChangelogVersionForm({
           dirty={dirty}
           keep={keep}
           kind={kind}
+          defaultName={defaultName}
           on={view.keepUpToDate}
           teamWrote={view.state === "written" || view.state === "behind" || view.state === "setting"}
         />
@@ -331,6 +332,7 @@ export function ChangelogVersionForm({
 function KeepUpToDate({
   keep,
   kind,
+  defaultName,
   on,
   teamWrote,
   version,
@@ -339,6 +341,7 @@ function KeepUpToDate({
 }: {
   keep: VersionActions["keep"];
   kind: VersionKind;
+  defaultName: string;
   on: boolean;
   teamWrote: boolean;
   /** The page's latest read of the version (`teamWrote` is that read's too): turning it on over text changed since is refused, not done unconfirmed. */
