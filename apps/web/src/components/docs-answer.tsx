@@ -212,28 +212,29 @@ export function AnswerSources({
 }) {
   const at = usePortalHref();
   const t = useTranslations("answers");
-  // The articles' titles: the team's words.
+  // The articles' titles: a translation's in its language (L10), the rest the team's words in the default language.
   const team = useTeamLanguage();
   return (
     <div className="flex flex-col gap-1">
       <h2 className="text-sm font-semibold">{t("sources")}</h2>
       <ul aria-label={t("sources")} className="flex flex-col gap-1 text-sm">
         {sources.map((source) => {
+          const lang = source.language ?? team;
           const inPlace = href?.(source.slug);
           // On its own page: only a web page's address is a link (never `javascript:` or another scheme).
           const page = inPlace === null && source.url !== null ? webPage(source.url) : undefined;
           return (
             <li key={source.slug}>
               {source.url === null || page === null ? (
-                <span lang={team} className="break-words">
+                <span lang={lang} className="break-words">
                   {source.title}
                 </span>
               ) : page ? (
-                <a href={page} target="_blank" rel="noopener noreferrer" lang={team} className="break-words text-primary hover:underline">
+                <a href={page} target="_blank" rel="noopener noreferrer" lang={lang} className="break-words text-primary hover:underline">
                   {source.title}
                 </a>
               ) : (
-                <Link href={inPlace ?? at(`/docs/${source.slug}`)} onClick={onOpen} lang={team} className="break-words text-primary hover:underline">
+                <Link href={inPlace ?? at(`/docs/${source.slug}`)} onClick={onOpen} lang={lang} className="break-words text-primary hover:underline">
                   {source.title}
                 </Link>
               )}
