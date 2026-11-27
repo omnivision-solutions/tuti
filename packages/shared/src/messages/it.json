@@ -188,7 +188,7 @@
     "tryAnotherStatus": "Prova un altro stato.",
     "beTheFirst": "Condividi la prima idea.",
     "postAsNewIdea": "Pubblicala come nuova idea",
-    "thatsAll": "Ecco tutte le {count, plural, one {# idea in arrivo} other {# idee in arrivo}} in {board}. <link>Condividi la tua</link>",
+    "thatsAll": "Ecco tutte le {count, plural, one {# idea in arrivo} other {# idee in arrivo}} in <own>{board}</own>. <link>Condividi la tua</link>",
     "notHere": "Non c’è? <link>Pubblicala</link>",
     "aboutBoard": "Informazioni sulla bacheca",
     "openIdeas": "{count, plural, one {# idea aperta} other {# idee aperte}}",

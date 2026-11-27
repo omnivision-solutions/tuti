@@ -188,7 +188,7 @@
     "tryAnotherStatus": "换个状态试试。",
     "beTheFirst": "来分享第一个想法吧。",
     "postAsNewIdea": "作为新想法发布",
-    "thatsAll": "{board} 中待实现的 {count, plural, other {# 个想法}}都在这里了。<link>分享你的想法</link>",
+    "thatsAll": "<own>{board}</own> 中待实现的 {count, plural, other {# 个想法}}都在这里了。<link>分享你的想法</link>",
     "notHere": "没找到？<link>发布它</link>",
     "aboutBoard": "关于此看板",
     "openIdeas": "{count, plural, other {# 个开放的想法}}",

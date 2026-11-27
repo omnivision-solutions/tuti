@@ -188,7 +188,7 @@
     "tryAnotherStatus": "別のステータスを試してください。",
     "beTheFirst": "最初のアイデアを共有しましょう。",
     "postAsNewIdea": "新しいアイデアとして投稿",
-    "thatsAll": "{board}の未対応のアイデアは以上の{count, plural, other {#件}}です。<link>あなたのアイデアを共有</link>",
+    "thatsAll": "<own>{board}</own>の未対応のアイデアは以上の{count, plural, other {#件}}です。<link>あなたのアイデアを共有</link>",
     "notHere": "見つかりませんか？<link>投稿する</link>",
     "aboutBoard": "このボードについて",
     "openIdeas": "未対応のアイデア{count, plural, other {#件}}",

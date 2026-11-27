@@ -188,7 +188,7 @@
     "tryAnotherStatus": "Wybierz inny status.",
     "beTheFirst": "Dodaj pierwszy pomysł.",
     "postAsNewIdea": "Dodaj go jako nowy pomysł",
-    "thatsAll": "To wszystkie pomysły czekające na realizację w {board}: {count, number}. <link>Dodaj swój</link>",
+    "thatsAll": "To wszystkie pomysły czekające na realizację w <own>{board}</own>: {count, number}. <link>Dodaj swój</link>",
     "notHere": "Nie ma go tu? <link>Dodaj go</link>",
     "aboutBoard": "O tej tablicy",
     "openIdeas": "{count, plural, one {# otwarty pomysł} few {# otwarte pomysły} many {# otwartych pomysłów} other {# otwartego pomysłu}}",

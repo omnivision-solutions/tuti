@@ -356,6 +356,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 {t.rich("thatsAll", {
                   count: posts.length,
                   board: named.name,
+                  // The board's name in its own language, inside the page's sentence (docs/plan.md L14).
+                  own: (chunks) => <span lang={named.lang}>{chunks}</span>,
                   link: (chunks) => <NewIdeaLink>{chunks}</NewIdeaLink>,
                 })}
               </p>

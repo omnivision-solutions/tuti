@@ -188,7 +188,7 @@
     "tryAnotherStatus": "Tente outro status.",
     "beTheFirst": "Seja o primeiro a compartilhar uma ideia.",
     "postAsNewIdea": "Publicar como nova ideia",
-    "thatsAll": "Essas são todas: {count, plural, one {# ideia por vir} other {# ideias por vir}} em {board}. <link>Compartilhe a sua</link>",
+    "thatsAll": "Essas são todas: {count, plural, one {# ideia por vir} other {# ideias por vir}} em <own>{board}</own>. <link>Compartilhe a sua</link>",
     "notHere": "Não encontrou? <link>Publique</link>",
     "aboutBoard": "Sobre este quadro",
     "openIdeas": "{count, plural, one {# ideia aberta} other {# ideias abertas}}",

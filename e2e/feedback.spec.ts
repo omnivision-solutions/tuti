@@ -917,6 +917,8 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await checkpoint(visitor, "portal-board-rows");
   // Under the list, how many are still to come, and a way to share one: it opens New idea's dialog.
   await expect(main.getByText("That's all 3 ideas still to come in Feature requests.")).toBeVisible();
+  // The board's name in the sentence marked with its own language (a translation's, or as here the team's).
+  await expect(main.getByText("That's all 3 ideas still to come in Feature requests.").locator("[lang=en]")).toHaveText("Feature requests");
   await main.getByRole("button", { name: "Share yours" }).click();
   await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
   await visitor.getByRole("dialog").getByRole("button", { name: "Close" }).click();

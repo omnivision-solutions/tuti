@@ -188,7 +188,7 @@
     "tryAnotherStatus": "Probeer een andere status.",
     "beTheFirst": "Deel als eerste een idee.",
     "postAsNewIdea": "Plaats het als nieuw idee",
-    "thatsAll": "Dat zijn alle {count, plural, one {# idee} other {# ideeën}} in de wacht op {board}. <link>Deel het jouwe</link>",
+    "thatsAll": "Dat zijn alle {count, plural, one {# idee} other {# ideeën}} in de wacht op <own>{board}</own>. <link>Deel het jouwe</link>",
     "notHere": "Staat het er niet bij? <link>Plaats het</link>",
     "aboutBoard": "Over dit bord",
     "openIdeas": "{count, plural, one {# open idee} other {# open ideeën}}",
