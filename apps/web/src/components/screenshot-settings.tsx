@@ -37,9 +37,12 @@ const WINDOWS = [
 
 /** How often the page reads a running Test again. */
 const REFRESH_MS = 5_000;
-/** While the worker reads the app for its sign-in services: how often the page asks again, and for how long at most. */
+/**
+ * While the worker reads the app for its sign-in services: how often the page asks again, and for how long at most (a
+ * read may wait its turn 2 minutes, then takes 15 seconds; one not done in 3 minutes is taken for lost).
+ */
 const CHECK_EVERY_MS = 2_000;
-const CHECK_FOR_MS = 30_000;
+const CHECK_FOR_MS = 3 * 60_000;
 
 /**
  * Settings → Screenshots: the team's app (its address, how the agent signs in, what it should know, the window), saved
@@ -83,7 +86,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
   // object: a Test's refresh every few seconds makes a new one.
   const looked = JSON.stringify([settings.appUrl, settings.signIn, settings.otherDomains]);
   const loading = Boolean(settings.appUrl) && (readFor?.[0] !== looked || readFor[1] !== saves);
-  // The server is reading the app (in the background): asked again every few seconds, for half a minute at most.
+  // The server is reading the app (in the background): asked again every few seconds, for as long as a read can take.
   const [checking, setChecking] = useState(false);
   const waiting = Boolean(settings.appUrl) && checking;
   useEffect(() => {
@@ -102,7 +105,9 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
           if (!current) {
             return;
           }
-          setSuggestions(result.suggestions);
+          // Not those already added to Other domains and not saved yet (a look again while checking would bring them back).
+          const listed = new Set(otherDomains.current?.value.split(/[\s,]+/).filter(Boolean));
+          setSuggestions(result.suggestions.filter((suggestion) => !suggestion.hosts.every((host) => listed.has(host))));
           // Still checking once it stops asking (the worker may be busy): said so, never shown as nothing found.
           setChecking(result.checking);
           setReadFor([looked, saves]);

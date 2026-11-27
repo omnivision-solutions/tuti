@@ -150,10 +150,10 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     // Another address on the same site: while it's read, the last one's suggestion (and the Test's pointer to it) is gone.
     const appAddress = owner.getByLabel("App address");
     const base = await appAddress.inputValue();
-    let held: Route | undefined;
-    await owner.route("**/settings/screenshots/suggestions*", (route) => {
-      held = route;
-    });
+    // Every read held (a save may ask twice: the settings and the save each change), then all of them fail.
+    const held: Route[] = [];
+    let failing = false;
+    await owner.route("**/settings/screenshots/suggestions*", (route) => (failing ? route.abort() : void held.push(route)));
     await appAddress.fill(new URL("plain", base).href);
     await save.click();
     await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
@@ -161,13 +161,18 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await expect(suggestion).toBeHidden();
     await expect(failed).not.toContainText("Try the suggested domains.");
     // A read that fails shows none either.
-    await expect.poll(() => held).toBeDefined();
-    await held!.abort();
+    await expect.poll(() => held.length).toBeGreaterThan(0);
+    failing = true;
+    await Promise.all(held.map((route) => route.abort()));
     await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
     await expect(suggestion).toBeHidden();
     // Back to the app's own address: suggested again.
     await owner.unroute("**/settings/screenshots/suggestions*");
-    await appAddress.fill(base);
+    // Typed again if the saved settings, arriving late, reset the field under it.
+    await expect(async () => {
+      await appAddress.fill(base);
+      await expect(save).toBeEnabled({ timeout: 1_000 });
+    }).toPass();
     await save.click();
     await expect(suggestion).toBeVisible();
     // A save that changes only a secret (a new sign-in link may open another host) reads them again too.
@@ -201,4 +206,45 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }
+});
+
+test("while the app is read again, the page keeps asking for as long as a read can take, and doesn't bring back a suggestion just added", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Rhea Recheck");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/screenshots`);
+  await owner.getByLabel("App address").fill("https://app.example.com");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
+
+  // An answer read again (over a week old, say), on a busy worker: the server's answers, faked.
+  const firebase = { provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] };
+  const auth0 = { provider: "Auth0", hosts: ["acme.auth0.com"] };
+  let done = false;
+  await owner.route("**/settings/screenshots/suggestions*", (route) =>
+    route.fulfill({ json: done ? { suggestions: [firebase, auth0], checking: false } : { suggestions: [firebase], checking: true } }),
+  );
+  await owner.clock.install();
+  await owner.reload();
+  const checking = owner.getByText("Checking how your app signs in…", { exact: true });
+  await expect(checking).toBeVisible();
+  const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
+  await owner.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(suggestion).toBeHidden();
+
+  // The next asks, still checking, don't bring it back while its hosts are in the field.
+  const asked = owner.waitForRequest((request) => new URL(request.url()).searchParams.get("start") === "false");
+  await owner.clock.runFor(2_000);
+  await asked;
+  await owner.clock.runFor(2_000);
+  await expect(checking).toBeVisible();
+  await expect(suggestion).toBeHidden();
+
+  // A read that waited its turn past half a minute: its answer still shows.
+  await owner.clock.runFor(60_000);
+  done = true;
+  await owner.clock.runFor(4_000);
+  await expect(owner.getByText("Auth0 sign-in needs acme.auth0.com", { exact: true })).toBeVisible();
+  await expect(checking).toBeHidden();
+  await expect(suggestion).toBeHidden();
 });
