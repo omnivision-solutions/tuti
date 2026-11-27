@@ -54,9 +54,12 @@ beforeEach(() => {
   }
   model.embeddings.setVector(QUESTION, [1, 0]);
 });
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs();
   later.length = 0;
+  // The file's tests share its database, and the inbox-due job reads every project's: nothing a test left due (a turn
+  // never run, a hold) is found by a later test's job, however long the tests took.
+  await prisma.conversation.updateMany({ where: { OR: [{ pathDueAt: { not: null } }, { spamHeldAt: { not: null } }] }, data: { pathDueAt: null, spamHeldAt: null } });
   // Every scripted answer was used, and nothing asked the models unscripted.
   model.done();
   model.requests.length = 0;
