@@ -909,7 +909,8 @@ test("AI answers in German: an answer with its sources and rating, one it can't 
   await checkpoint(reader, "ai-answer-in-german-phone", { fullPage: false });
 });
 
-test("The widget's assistant marks its sources' titles in the project's default language", async ({ browser }) => {
+test("The widget's assistant marks its sources' titles in the project's default language", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
@@ -930,4 +931,5 @@ test("The widget's assistant marks its sources' titles in the project's default 
   await assistant.getByRole("button", { name: "Send" }).click();
   const source = assistant.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Premiers pas" });
   await expect(source).toHaveAttribute("lang", "fr");
+  await checkpoint(visitor, "widget-assistant-french-sources", { fullPage: false });
 });
