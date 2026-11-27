@@ -17,6 +17,7 @@ import { mailbox } from "@/test/mailbox";
 import { reportRange } from "@/lib/report-range";
 
 import { AI_TURN_GIVE_UP_MS, runAiTurn } from "./ai-turn";
+import { handBackConversation, takeOverConversation } from "./inbox";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation, updateConversation } from "./operations/conversations";
@@ -302,6 +303,40 @@ test("a second message while the first turn writes: one answer, to both, and no 
   expect(await turn()).toBe("answered");
   expect(await state()).toEqual({ handledBy: "AI", due: false, thread: ["USER: hi", `USER: ${QUESTION}`, "AI: Go to Settings → Export."] });
   expect(model.requests.at(-1)!.messages.at(-1)!.content).toContain(`hi\\n\\n${QUESTION}`);
+});
+
+/**
+ * While a turn is writing (its decision being asked), a teammate takes the conversation over, replies and hands it back to
+ * the AI: the AI has it again, and the user's message is the newest of theirs, but the team answered it.
+ */
+async function answeredByTeamMeanwhile(person: number) {
+  const { owner, admin, projectId, mail, turn, state, handovers } = await setup();
+  await mail();
+  const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
+  model.decide({ person, reply: 0.9 }, QUESTION, async () => {
+    actAs(owner);
+    expect(await takeOverConversation(slug, 1)).toEqual({});
+    await call(replyToConversation, admin, { number: 1, body: "Settings → Export, Sam." });
+    expect(await handBackConversation(slug, 1)).toEqual({});
+    actAs(null);
+  });
+  return { turn, state, handovers };
+}
+
+test("a turn still writing when the team took over, replied and handed back posts no answer of its own", async () => {
+  const { turn, state, handovers } = await answeredByTeamMeanwhile(0.05);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  expect(await turn()).toBe("dropped");
+  expect(await state()).toEqual({ handledBy: "AI", due: false, thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
+  expect(await handovers()).toEqual([]);
+});
+
+test("a turn still writing when the team took over, replied and handed back doesn't hand it over again", async () => {
+  const { turn, state, handovers } = await answeredByTeamMeanwhile(0.95);
+  model.reply("They want a person.", undefined, "askedBefore");
+  expect(await turn()).toBe("dropped");
+  expect(await state()).toEqual({ handledBy: "AI", due: false, thread: [`USER: ${QUESTION}`, "TEAM: Settings → Export, Sam."] });
+  expect(await handovers()).toEqual([]);
 });
 
 test("two turns at once: one runs, one answer", async () => {

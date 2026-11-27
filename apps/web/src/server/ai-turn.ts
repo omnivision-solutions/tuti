@@ -391,7 +391,7 @@ async function post(projectId: string, conversationId: string, latest: Message, 
       return false;
     }
     const answered = await tx.conversationMessage.count({ where: { conversationId, author: "AI", requestId: latest.id } });
-    if (conversation.spam || conversation.handledBy !== "AI" || newest.handedOverAt || answered > 0) {
+    if (conversation.spam || conversation.handledBy !== "AI" || newest.handedOverAt || answered > 0 || (await teamRepliedSince(tx, conversationId, newest))) {
       await tx.conversation.update({ where: { id: conversationId }, data: { pathDueAt: null } });
       return false;
     }
@@ -415,8 +415,24 @@ export const newestFromUser = (tx: Tx, conversationId: string) =>
   tx.conversationMessage.findFirst({
     where: { conversationId, author: "USER", note: false },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { id: true, handedOverAt: true },
+    select: { id: true, createdAt: true, handedOverAt: true },
   });
+
+/**
+ * Whether a teammate has replied (not a note) since the user's message, by the order messages are read in ((createdAt,
+ * id)): a turn for it is over, whoever has the conversation now (taken over, replied to and handed back meanwhile).
+ */
+export async function teamRepliedSince(tx: Tx, conversationId: string, message: { id: string; createdAt: Date }): Promise<boolean> {
+  const replied = await tx.conversationMessage.count({
+    where: {
+      conversationId,
+      author: "TEAM",
+      note: false,
+      OR: [{ createdAt: { gt: message.createdAt } }, { createdAt: message.createdAt, id: { gt: message.id } }],
+    },
+  });
+  return replied > 0;
+}
 
 /** Ends a turn with nothing to do: `pathDueAt` cleared, unless a newer message from the user (than `latest`) has its own turn due. */
 async function settle(conversationId: string, latest: string | null) {
