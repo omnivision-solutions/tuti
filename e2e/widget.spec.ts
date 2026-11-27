@@ -1473,7 +1473,7 @@ test("a new message in the widget's Messages starts a conversation the AI answer
     }
   });
   await askPerson.click();
-  await expect(widget.getByRole("alert")).toHaveText("Couldn't send it. Check your connection and try again.");
+  await expect(widget.getByRole("alert").filter({ hasText: "Couldn't send it. Check your connection and try again." })).toBeVisible();
   await visitor.unroute("**/widget**");
 
   // Ask a person: the team has it, with the AI's summary; the panel says where their reply comes, and the focus goes there.
@@ -3205,8 +3205,8 @@ test("a workflow keeps Enterprise users with the AI: one asks a person in the wi
   await nextModelReply("They want to invite a colleague.", question);
   await form.getByRole("button", { name: "Send to the team" }).click();
   await ai.getByRole("link", { name: "Open Messages" }).click();
-  // The set reply is in the conversation, as the AI's.
-  await widget.getByRole("button", { name: question }).click();
+  // The set reply is in the conversation, as the AI's. (Its row in their list: the Help center's "Ask AI: …" has the question too.)
+  await widget.getByRole("list", { name: "Conversations" }).getByRole("button", { name: question }).click();
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Thanks! Our Enterprise team answers within the hour.");
   await checkpoint(visitor, "handover-set-reply");
 
