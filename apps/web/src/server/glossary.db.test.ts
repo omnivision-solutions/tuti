@@ -8,15 +8,15 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { createArticle, createCollection, publishArticle, updateArticle } from "./operations/docs";
-import { getGlossary, updateGlossary } from "./operations/glossary";
+import { getGlossary, updateGlossary, withHash } from "./operations/glossary";
 import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
 
-// planGlossaryChanges as it is, but a test may run something while a save's plan is being made (a second save landing then).
+// A save's plan and apply as they are, but a test may run something while they run (a second save landing then).
 vi.mock("@tuti/jobs", async (original) => {
   const actual = await original<typeof import("@tuti/jobs")>();
-  return { ...actual, planGlossaryChanges: vi.fn(actual.planGlossaryChanges) };
+  return { ...actual, planGlossaryChanges: vi.fn(actual.planGlossaryChanges), applyGlossaryChanges: vi.fn(actual.applyGlossaryChanges) };
 });
 
 /** The glossary (docs/plan.md, Languages, L12): terms never translated, or translated one way per language. */
@@ -564,5 +564,28 @@ test("a published changelog entry edited in place between a save's plan and its 
   await call(updateChangelogEntry, as(), { number, body: "See every Board at once." });
   expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } })).publishedAt).toEqual(publishedAt);
   expect(await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan))).toBeNull();
+});
+
+test("a save answers the hash of what it wrote, not of a teammate's save landing right after it", async () => {
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
+  // Once the first has committed (as it queues its work), a second save adds Zeta.
+  const apply = vi.mocked(applyGlossaryChanges);
+  const actual = apply.getMockImplementation()!;
+  apply.mockImplementationOnce(async (...args) => {
+    const changes = (await actual(...args))!;
+    return {
+      ...changes,
+      queue: async () => {
+        await changes.queue();
+        await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }, { term: "Zeta", keep: true }] });
+      },
+    };
+  });
+  const mine = [{ term: "Board", keep: false, translations: { de: "Brett" } }];
+  const saved = await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  expect(saved.terms).toEqual(mine);
+  expect(saved.hash).toBe(withHash(mine).hash);
+  // So a next save from it is refused, not deleting Zeta.
+  await expect(call(updateGlossary, as(), { hash: saved.hash, terms: mine })).rejects.toMatchObject({ status: 409 });
 });
 
