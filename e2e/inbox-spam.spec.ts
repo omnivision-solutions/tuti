@@ -135,10 +135,13 @@ test("Not spam on a conversation from a blocked address says it unblocks it, a l
     // In More actions the address wraps too: the item is no wider than its menu, with nothing cut off.
     await owner.getByRole("button", { name: "More actions" }).click();
     const item = owner.getByRole("menuitem", { name: label });
-    const [menu, box] = [(await owner.getByRole("menu").boundingBox())!, (await item.boundingBox())!];
-    // Within a pixel: read while the menu opens (it scales in), the edges can be a fraction of one apart.
-    expect(box.x).toBeGreaterThanOrEqual(menu.x - 1);
-    expect(box.x + box.width).toBeLessThanOrEqual(menu.x + menu.width + 1);
+    // The menu scales in as it opens, so its edges and the item's are read again until it has settled.
+    await expect
+      .poll(async () => {
+        const [menu, box] = [(await owner.getByRole("menu").boundingBox())!, (await item.boundingBox())!];
+        return box.x >= menu.x - 1 && box.x + box.width <= menu.x + menu.width + 1;
+      })
+      .toBe(true);
     expect(await item.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await checkpoint(owner, `not-spam-unblock-${width}`, { fullPage: false });
     await owner.keyboard.press("Escape");
