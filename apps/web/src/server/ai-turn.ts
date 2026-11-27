@@ -88,6 +88,12 @@ export async function aiAvailable(projectId: string): Promise<boolean> {
 }
 
 /**
+ * Whether a conversation's user waits for a reply: the latest message that isn't a note is theirs (the team's or the AI's
+ * answers it). Where Hand back to the AI is refused, and not offered (the page reads the same latest message).
+ */
+export const awaitsReply = (latest: { author: string } | null) => latest?.author === "USER";
+
+/**
  * Whether the AI would answer this conversation's user if it had the conversation: it can answer here now (aiAvailable),
  * and its answer can reach them (in the widget, a signed-out visitor's; by email only where the address is proven, as
  * toAi requires of an email). Where "Hand back to the AI" is offered. Not in Spam, nor held.

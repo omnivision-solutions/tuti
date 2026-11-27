@@ -134,7 +134,7 @@ async function slipsIn() {
   await takeOverConversation(project.slug, 1);
   const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
   await call(replyToConversation, { actor: key, projectId: project.id }, { number: 1, body: "Any news?", author: { id: sam.id } });
-  vi.spyOn(prisma.conversation, "findUnique").mockResolvedValueOnce({ waitingSince: null } as never);
+  vi.spyOn(prisma.conversationMessage, "findFirst").mockResolvedValueOnce({ author: "TEAM" } as never);
   return { project, row };
 }
 
@@ -155,4 +155,30 @@ test("a message that slips in while handing back goes to the team where the AI c
   // Handed over for it: a second row after the one from when the conversation started.
   const handovers = await prisma.conversationEvent.findMany({ where: { conversationId: after.id, kind: "handed_over" }, orderBy: { createdAt: "asc" }, select: { details: true } });
   expect(handovers).toEqual([{ details: { reason: "ai_off" } }, { details: { reason: "ai_off" } }]);
+});
+
+test("Hand back to the AI after the AI answered: nobody waits, so it's allowed, though the team never replied", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
+  await call(createConversation, { actor: key, projectId: project.id }, { user: sam, body: "Can I export my reports?" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  const [question] = await prisma.conversationMessage.findMany({ where: { conversationId: conversation.id } });
+  // The AI's answer, as its turn writes it.
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: conversation.id, author: "AI", channel: "API", body: "Reports → Export.", requestId: question!.id } });
+  actAs(owner);
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).handledBy).toBe("AI");
+});
+
+test("a message that slips in while handing back, where giving it to the AI fails: the team has it, told", async () => {
+  const { project, row } = await slipsIn();
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-test-key");
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
+  vi.spyOn(prisma.article, "findFirst").mockRejectedValueOnce(new Error("database timeout"));
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  const after = await row();
+  expect(after).toMatchObject({ handledBy: "TEAM", pathDueAt: null });
+  const handovers = await prisma.conversationEvent.findMany({ where: { conversationId: after.id, kind: "handed_over" }, orderBy: { createdAt: "asc" }, select: { details: true } });
+  expect(handovers.at(-1)).toEqual({ details: { reason: "ai_off" } });
 });
