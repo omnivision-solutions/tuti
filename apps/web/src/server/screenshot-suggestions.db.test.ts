@@ -20,6 +20,9 @@ let server: Server;
 let base: string;
 const requests: string[] = [];
 let connections = 0;
+/** Script reads at once, and the most at once. */
+let reading = 0;
+let mostReading = 0;
 /** Script reads that fail (500) before it loads. */
 let scriptFailures = 0;
 let owner: TestUser;
@@ -40,8 +43,13 @@ beforeAll(async () => {
     } else if (request.url === "/many") {
       response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 101 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
     } else if (request.url?.startsWith("/assets/s")) {
-      // The sign-in SDK deep in a Next.js page's chunks, as on a real app (its 26th of 40).
-      response.writeHead(200, { "content-type": "text/javascript" }).end(request.url === "/assets/s39.js" ? 'const a="identitytoolkit.googleapis.com";' : "");
+      // The sign-in SDK deep in a Next.js page's chunks, at the end of a large one, as on a real app (its 26th of 40).
+      reading++;
+      mostReading = Math.max(mostReading, reading);
+      setTimeout(() => {
+        reading--;
+        response.writeHead(200, { "content-type": "text/javascript" }).end(request.url === "/assets/s39.js" ? `${" ".repeat(1_000_000)}const a="identitytoolkit.googleapis.com";` : "");
+      }, 5);
     } else {
       response.writeHead(404).end();
     }
@@ -129,12 +137,13 @@ test("Tuti on localhost without SCREENSHOTS_ALLOW_LOCALHOST (a self-hosted serve
   expect(connections).toBe(0);
 });
 
-test("a page with many scripts reads the first 100, the same each time, so what's found is kept", async () => {
+test("a page with many scripts reads the first 100, 8 at a time and each in full, the same each time, so what's found is kept", async () => {
   await settle({ appUrl: `${base}/many` });
   const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
   expect(await suggestions()).toEqual(firebase);
   expect(await suggestions()).toEqual(firebase);
   expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(100);
+  expect(mostReading).toBe(8);
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/many`);
 });
 

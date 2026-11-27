@@ -89,7 +89,18 @@ function windows(text: string, folded: string, names: string[]): string {
 
 /** The sign-in services named in `texts` (a page and its scripts), each with the hosts found, in SERVICES' order. */
 export function findSignInServices(texts: string[]): SignInService[] {
-  const original = texts.join("\n");
+  return merge(texts.map(findIn));
+}
+
+/** Each text's services as one list, in SERVICES' order, each service's hosts together. */
+function merge(lists: SignInService[][]): SignInService[] {
+  return SERVICES.flatMap(({ provider }) => {
+    const hosts = new Set(lists.flatMap((list) => list.find((service) => service.provider === provider)?.hosts ?? []));
+    return hosts.size > 0 ? [{ provider, hosts: [...hosts].sort().slice(0, 5) }] : [];
+  });
+}
+
+function findIn(original: string): SignInService[] {
   const text = original.toLowerCase();
   // The lowered text where its offsets match the original's (nearly always); else only A–Z lowered, runs at a time.
   const folded = text.length === original.length ? text : original.replace(/[A-Z]+/g, (run) => run.toLowerCase());
@@ -119,13 +130,14 @@ export function findSignInServices(texts: string[]): SignInService[] {
 }
 
 const PAGE_BYTES = 2_000_000;
-const SCRIPT_BYTES = 5_000_000;
-/** All the scripts together, shared out (5 MB each up to 4 scripts, 200 KB each for 100: an app with many has small chunks): one read never holds more than PAGE_BYTES + this. */
-const SCRIPTS_BYTES = 20_000_000;
-/** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them; all are read within one TIMEOUT_MS. */
+/** Each script, read in full up to this (a vendor chunk of a few hundred KB, say): searched as it arrives and let go. */
+const SCRIPT_BYTES = 3_000_000;
+/** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them. */
 const MAX_SCRIPTS = 100;
+/** Scripts read at once, so one read never opens more connections to the app, or holds more than PAGE_BYTES + this × SCRIPT_BYTES. */
+const SCRIPTS_AT_ONCE = 8;
 const MAX_REDIRECTS = 5;
-const TIMEOUT_MS = 6_000;
+const TIMEOUT_MS = 10_000;
 
 /** Connects only to public addresses, checked on the address connected to (see publicOnlyLookup). */
 const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
@@ -205,10 +217,19 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
       return null;
     }
     // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
-    const own = scriptsOf(page).slice(0, MAX_SCRIPTS);
-    const each = Math.min(SCRIPT_BYTES, Math.floor(SCRIPTS_BYTES / Math.max(own.length, 1)));
-    const scripts = await Promise.all(own.map((script) => get(script, each, signal).catch(() => null)));
-    return { services: findSignInServices([page.text, ...scripts.map((script) => script?.text ?? "")]), complete: scripts.every(Boolean) };
+    const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
+    const found = [findIn(page.text)];
+    let complete = true;
+    await Promise.all(
+      Array.from({ length: SCRIPTS_AT_ONCE }, async () => {
+        for (let script = queue.shift(); script; script = queue.shift()) {
+          const read = await get(script, SCRIPT_BYTES, signal).catch(() => null);
+          complete &&= !!read;
+          found.push(read ? findIn(read.text) : []);
+        }
+      }),
+    );
+    return { services: merge(found), complete };
   } catch {
     return null;
   }
