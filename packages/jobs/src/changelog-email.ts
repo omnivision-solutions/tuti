@@ -364,8 +364,9 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
-  // An email-only entry has no page for readers: no link to one.
-  const entryUrl = entry.emailOnly ? null : `${origin}/changelog/${entry.number}`;
+  // An email-only entry has no page for readers: no link to one. `base`: the portal's address in the email's language, under
+  // its prefix for a translated version (/de, as the web app's languagePrefix), the default language's own otherwise.
+  const entryUrl = (base: string) => (entry.emailOnly ? null : `${base}/changelog/${entry.number}`);
   const doc = (entry.content as Doc | null) ?? fromPlainText(entry.body);
   const images = entryImages(doc, entry.cover?.status === "READY" ? entry.coverId : null, log);
   // Each subscriber gets it in their language (docs/plan.md L16) where its version there is current: one the team wrote,
@@ -408,15 +409,16 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       break;
     }
     const query = `token=${encodeURIComponent(token)}`;
+    const base = version ? `${origin}/${language!.toLowerCase()}` : origin;
     const error = await whileClaimed(entryId, id, claimedAt, log, () =>
       sendEmail({
         to: email,
         ...changelogEmail({
           ...brand,
           ...(version ? { entryTitle: version.title, doc: version.doc, coverUrl: version.coverUrl, mediaUrls: version.mediaUrls, lang: language! } : { entryTitle: entry.title, doc, ...images }),
-          entryUrl,
+          entryUrl: entryUrl(base),
           publishedAt,
-          unsubscribeUrl: `${origin}/changelog/subscription?${query}`,
+          unsubscribeUrl: `${base}/changelog/subscription?${query}`,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

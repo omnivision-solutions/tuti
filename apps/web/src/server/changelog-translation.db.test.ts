@@ -233,6 +233,18 @@ test("each subscriber gets an entry in their language where its version there is
   expect(to(english).subject).toContain(TITLE);
   expect(to(english).text).toContain(BODY);
   expect(to(french).subject).not.toContain("[");
+  // Its links in their language: the German version's under /de (the entry, its title and images, the subscription), the
+  // default language's own for English and French's fallback.
+  const page = `/changelog/${created.number}"`;
+  expect(to(german).html).toContain(`/de${page}`);
+  expect(to(german).html).toMatch(/\/de\/changelog\/subscription\?token=/);
+  const links = (address: string) => to(address).html.match(/https?:\/\/[^"'\s<>]*\/changelog\/[^"'\s<>]*/g) ?? [];
+  expect(links(german).length).toBeGreaterThan(1);
+  expect(links(german).filter((link) => !link.includes("/de/changelog/"))).toEqual([]);
+  for (const address of [english, french]) {
+    expect(to(address).html).toContain(page);
+    expect(to(address).html).not.toMatch(/\/(de|fr)\/changelog/);
+  }
 });
 
 test("a German version behind the entry (its translation still to come, past the wait) isn't sent: the default language's is", async () => {
