@@ -272,6 +272,19 @@ test("the job reads only holds left to settle: its index leaves out those a team
   expect(plan.map((row) => row["QUERY PLAN"]).join("\n")).toContain("conversation_spamHeldAt_idx");
 });
 
+test("past 100 due at once, the job settles the oldest first", { timeout: 60_000 }, async () => {
+  const { projectId } = await setup();
+  await nothingElseDue();
+  const past = new Date(Date.now() - 60_000);
+  // The newest written first, so the table's own order isn't the age order.
+  await prisma.conversation.createMany({
+    data: Array.from({ length: 101 }, (_, i) => ({ projectId, number: 2000 + i, subject: "Due", origin: "EMAIL" as const, email: `e2e-due-${i}@example.com`, createdAt: new Date(past.getTime() - i * 1000), pathDueAt: past })),
+  });
+  expect(await runDueInbox()).toEqual({ checked: 100 });
+  const left = await prisma.conversation.findMany({ where: { projectId, pathDueAt: { not: null } }, select: { number: true } });
+  expect(left).toEqual([{ number: 2000 }]);
+});
+
 test("only a conversation no free check decided is held: not one filed, nor one a decision or trust let through", { timeout: 30_000 }, async () => {
   const { projectId, admin, mail, state } = await setup();
   const inInbox = { spam: false, spamReason: null, held: false, due: false };

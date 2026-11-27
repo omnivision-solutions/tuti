@@ -265,11 +265,12 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
   // Held for 2 minutes is due too, whatever `pathDueAt` says: a release from before may have cleared it alone. Not one
   // a teammate marked as spam during the hold, which keeps `spamHeldAt` for a later Not spam: the second condition is the
   // partial index's own (conversation_spamHeldAt_idx), word for word, so it reads only holds left to settle.
+  // The oldest first, so a flood can't keep any one waiting past a few minutes.
   const due = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "conversation" WHERE "pathDueAt" <= ${now}
+    SELECT "id", "createdAt" FROM "conversation" WHERE "pathDueAt" <= ${now}
     UNION
-    SELECT "id" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
-    LIMIT 100`;
+    SELECT "id", "createdAt" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
+    ORDER BY "createdAt" LIMIT 100`;
   let checked = 0;
   for (const { id } of due) {
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {
