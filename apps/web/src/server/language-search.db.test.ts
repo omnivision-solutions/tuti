@@ -130,7 +130,7 @@ function withAi() {
   vi.stubEnv("TUTI_CONFIG", "");
 }
 
-test("a translated article whose German isn't embedded yet answers from its English meanwhile, rather than not at all", async () => {
+test("a translated article whose German isn't embedded yet, or isn't close enough to the question, answers from its English, rather than not at all", async () => {
   withAi();
   model.embeddings.setVector("Wie zahle ich?", along(1));
   model.embeddings.setVector(articleChunkText("Billing", { heading: "", text: "Pay by card." }, []), along(0.95));
@@ -142,7 +142,7 @@ test("a translated article whose German isn't embedded yet answers from its Engl
   expect(answer.sources).toEqual([{ slug: "billing", title: "Billing", url: `${await portalAddress(project.slug)}/de/docs/billing` }]);
 });
 
-test("the portal's Ask AI at a language's address answers in it: its sources at their pages there", async () => {
+test("the answer on the docs' search results page (askDocs) at a language's address: its sources at their pages there", async () => {
   withAi();
   model.embeddings.setVector("Wie zahle ich?", along(1));
   model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Mit Karte zahlen." }, []), along(0.9));
@@ -154,5 +154,31 @@ test("the portal's Ask AI at a language's address answers in it: its sources at 
     status: "answered",
     sources: [{ slug: "abrechnung", title: "Abrechnung", url: `${await portalAddress(project.slug)}/de/docs/abrechnung` }],
   });
+});
+
+test("the English matching a question its German translation doesn't (not close enough): answered from the English", async () => {
+  withAi();
+  model.embeddings.setVector("How do I pay?", along(1));
+  model.embeddings.setVector(articleChunkText("Billing", { heading: "", text: "Pay by card." }, []), along(0.9));
+  model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Mit Karte zahlen." }, []), along(0.2));
+  const billing = await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  await embedTranslation(billing.versionId!, log);
+  model.reply(JSON.stringify({ answer: "By card.", sources: ["s1"] }));
+  const answer = await answerQuestion(project.id, "asker", "How do I pay?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } });
+  expect(answer).toMatchObject({ status: "answered", sources: [{ slug: "billing", title: "Billing" }] });
+});
+
+test("a version made from an older English never answers, even embedded: its English does", async () => {
+  withAi();
+  model.embeddings.setVector("Wie zahle ich?", along(1));
+  model.embeddings.setVector(articleChunkText("Billing", { heading: "", text: "Pay by card." }, []), along(0.8));
+  model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Zu alten Preisen zahlen." }, []), along(0.95));
+  const billing = await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Zu alten Preisen zahlen.", stale: true });
+  await embedTranslation(billing.versionId!, log);
+  model.reply(JSON.stringify({ answer: "By card.", sources: ["s1"] }));
+  await answerQuestion(project.id, "asker", "Wie zahle ich?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } });
+  const sent = JSON.stringify(model.requests.at(-1)!.messages);
+  expect(sent).toContain("Pay by card.");
+  expect(sent).not.toContain("Zu alten Preisen");
 });
 

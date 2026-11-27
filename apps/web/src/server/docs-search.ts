@@ -327,9 +327,10 @@ export async function answerSections(
     operationsByMeaning(projectId, vector, ANSWER_MIN_SIMILARITY, limit, reader),
     language ? translatedSections(projectId, language, vector, limit * 2, reader) : [],
   ]);
-  // In the reader's language: an article with a current translation there answers from it (never from a version made from an
-  // older English text, nor from its English as well); the others from the default language's.
-  const there = language ? await currentIn(projectId, [...articles, ...translated].map((section) => section.articleId), language) : new Set<string>();
+  // In the reader's language: an article whose current translation there has sections close enough answers from them (never
+  // from a version made from an older English text, nor from its English as well); the others (one not translated, or not
+  // embedded there yet, or whose translation's sections aren't close enough) from the default language's.
+  const there = language ? await currentIn(projectId, translated.map((section) => section.articleId), language) : new Set<string>();
   return [
     ...articles.filter((section) => !there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
     ...translated.filter((section) => there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
@@ -356,22 +357,11 @@ function translatedSections(projectId: string, language: string, vector: string,
     LIMIT ${limit}`;
 }
 
-/**
- * Of these articles, the ones whose current version in `language` (translatedInto) has its sections for answers (its chunks:
- * written only for the text it has, so they're its current text's). One not embedded yet (its embedding waiting, say)
- * answers from its English meanwhile, rather than not at all.
- */
+/** Of these articles, the ones with a current version in `language` (translatedInto). */
 async function currentIn(projectId: string, ids: string[], language: string): Promise<Set<string>> {
   const unique = [...new Set(ids)];
-  if (unique.length === 0) {
-    return new Set();
-  }
-  const [articles, embedded] = await Promise.all([
-    prisma.article.findMany({ where: { projectId, id: { in: unique } }, select: { id: true, slug: true } }),
-    prisma.articleTranslationChunk.findMany({ where: { projectId, language, articleId: { in: unique } }, select: { articleId: true }, distinct: ["articleId"] }),
-  ]);
-  const withSections = new Set(embedded.map((chunk) => chunk.articleId));
-  return new Set([...(await translatedInto(articles, [language])).keys()].filter((id) => withSections.has(id)));
+  const articles = unique.length > 0 ? await prisma.article.findMany({ where: { projectId, id: { in: unique } }, select: { id: true, slug: true } }) : [];
+  return new Set((await translatedInto(articles, [language])).keys());
 }
 
 const operationSection = (row: OperationRow): AnswerSection => ({
