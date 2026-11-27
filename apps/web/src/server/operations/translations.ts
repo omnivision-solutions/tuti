@@ -6,8 +6,10 @@ import {
   type Draft,
   editedSections,
   metaOf,
+  ownedByTeam,
   lostAfterMs,
   otherReasons,
+  PRODUCT_SETTING_CHANGED,
   queueVersion,
   removedChanged,
   standingIn,
@@ -20,8 +22,10 @@ import {
   translationSource,
   versionSections,
 } from "@tuti/jobs";
-import { contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { aiEnabled, contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
+
+import { articleVersionState } from "@/lib/changelog-versions";
 
 import { displayDoc, readContent } from "../content";
 import { defineOperation, OperationError } from "./define";
@@ -32,6 +36,9 @@ import { MAX_ARTICLE_TITLE, teamArticle } from "./docs";
  * changes"; the editor itself is L11): read it, save a draft, publish the draft (taking the new translation in sections whose
  * source changed since the team edited them, or keeping the edit), and Update those sections.
  */
+
+/** A change made from an older read of a version is refused with this (409 `changed`). */
+export const VERSION_CHANGED = "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.";
 
 const articleSlug = z.string().trim().min(1).max(80).describe("The article's slug: the end of its address, /docs/<slug>").meta({ examples: ["billing"] });
 const language = z.enum(LANGUAGE_CODES).describe("The language's code").meta({ examples: ["de"] });
@@ -107,6 +114,10 @@ const versionSelect = {
   behind: true,
   updateSections: true,
   tries: true,
+  error: true,
+  sourceHash: true,
+  retranslate: true,
+  retranslated: true,
   glossaryHash: true,
 } as const;
 type Version = Prisma.ArticleTranslationGetPayload<{ select: typeof versionSelect }>;
@@ -195,6 +206,30 @@ function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts
   };
 }
 
+/** A version not started yet, as its row starts (the database's defaults), so a read of it gives the token a save of it matches. */
+const blankVersion = (language: string, automatic: boolean): Version => ({
+  id: "",
+  language,
+  slug: null,
+  automatic,
+  title: "",
+  content: null,
+  body: "",
+  publishedAt: null,
+  sections: [],
+  removedSections: [],
+  removedHashes: {},
+  draft: null,
+  behind: {},
+  updateSections: [],
+  tries: 0,
+  error: null,
+  sourceHash: null,
+  retranslate: 0,
+  retranslated: 0,
+  glossaryHash: null,
+});
+
 /**
  * Runs `change` on an article's version in `language`, both locked in that order (as the translate job locks them), so a
  * translation written meanwhile is never lost and never loses the team's change. `read`: only reading, nothing locked (a
@@ -208,22 +243,43 @@ async function withVersion<T>(
   { read = false } = {},
 ) {
   const article = await teamArticle(projectId, slug);
-  if (read) {
-    const version = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: lang } }, select: versionSelect });
-    if (!version) {
-      throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[lang].name}`);
+  const where = { articleId_language: { articleId: article.id, language: lang } };
+  // None yet (a Manual language's, until the team writes it): the project's language's, so it can be written.
+  const setting = async (db: Prisma.TransactionClient) => {
+    const found = await db.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: lang } }, select: { automatic: true } });
+    if (!found) {
+      throw new OperationError(404, "not_found", `${LANGUAGES[lang].name} isn't one of the project's languages`);
     }
-    return change(prisma, version, article.id);
+    return found;
+  };
+  if (read) {
+    const version = await prisma.articleTranslation.findUnique({ where, select: versionSelect });
+    return change(prisma, version ?? blankVersion(lang, (await setting(prisma)).automatic), article.id);
   }
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${article.id} FOR UPDATE`;
-    const found = await tx.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: lang } }, select: { id: true } });
+    let found = await tx.articleTranslation.findUnique({ where, select: { id: true } });
+    // Started as the blank one a read answers (its token the same), and gone again if the change is refused or stores
+    // nothing: an empty row would keep the language, once Automatic, from ever starting the article's version.
+    let started: { automatic: boolean } | null = null;
     if (!found) {
-      throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[lang].name}`);
+      const { automatic } = await setting(tx);
+      const { count } = await tx.articleTranslation.createMany({ data: [{ articleId: article.id, projectId, language: lang, automatic }], skipDuplicates: true });
+      // Started here only if this insert made it: one a translate job made meanwhile (it doesn't take the article's
+      // lock) is that job's, never cleaned up below.
+      if (count === 1) started = { automatic };
+      found = await tx.articleTranslation.findUniqueOrThrow({ where, select: { id: true } });
     }
     await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${found.id} FOR UPDATE`;
     const version = await tx.articleTranslation.findUniqueOrThrow({ where: { id: found.id }, select: versionSelect });
-    return change(tx, version, article.id);
+    const result = await change(tx, version, article.id);
+    if (started) {
+      const after = await tx.articleTranslation.findUniqueOrThrow({ where: { id: found.id }, select: { automatic: true, publishedAt: true, draft: true, updateSections: true } });
+      if (!after.publishedAt && after.draft === null && (after.updateSections as string[]).length === 0 && after.automatic === started.automatic) {
+        await tx.articleTranslation.delete({ where: { id: found.id } });
+      }
+    }
+    return result;
   });
 }
 
@@ -239,9 +295,31 @@ export const getTranslation = defineOperation({
   errors: [409],
   input: z.object({ slug: articleSlug, language }),
   output: translationOutput,
-  run: async ({ projectId }, input) =>
-    withVersion(projectId, input.slug, input.language, async (db, version, articleId) => output(version, await sourceOf(db, articleId)), { read: true }),
+  run: async ({ projectId }, input) => (await readArticleVersion(projectId, input.slug, input.language)).read,
 });
+
+/**
+ * articles.getTranslation's read, and where the version stands from the same row (the editor's pill and its confirm
+ * before Keep up to date replaces the team's text), so state, text and token never come from two reads.
+ */
+export async function readArticleVersion(projectId: string, slug: string, language: (typeof LANGUAGE_CODES)[number]) {
+  return withVersion(
+    projectId,
+    slug,
+    language,
+    async (db, version, articleId) => {
+      const source = await sourceOf(db, articleId);
+      const read = output(version, source);
+      // The published text's sections behind, and the draft's (a draft's edit English changed in since: the job keeps it,
+      // as drafts never give way, and it stays behind until published or updated).
+      const reasons = [...read.behind.map(({ reason }) => reason), ...(read.draft?.behind ?? []).map(() => "source")];
+      const behind = reasons.length === 0 ? null : reasons.every((reason) => reason === PRODUCT_SETTING_CHANGED) ? "setting" : "source";
+      // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
+      return { read, state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind), waiting: version.error };
+    },
+    { read: true },
+  );
+}
 
 export const saveTranslation = defineOperation({
   name: "articles.saveTranslation",
@@ -276,7 +354,7 @@ export const saveTranslation = defineOperation({
       const { parts, sourceLanguage } = source;
       // Compared with what it was made from, not with what's there now: an older copy would undo a newer translation.
       if (versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+        throw new OperationError(409, "changed", VERSION_CHANGED);
       }
       const { published, draft, drafted } = versionParts(version, parts);
       const { sections: edited, removed } = editedSections(drafted ?? published, text.doc, parts, { automatic: version.automatic });
@@ -346,7 +424,7 @@ export const publishTranslation = defineOperation({
       const { parts, sourceLanguage, titleHash } = source;
       // Only the draft that was reviewed: one saved or retranslated since would go live unseen, `keep` meant for other sections.
       if (input.version !== undefined && versionToken(version, source.sourceHash) !== input.version) {
-        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+        throw new OperationError(409, "changed", VERSION_CHANGED);
       }
       const { published, draft, drafted } = versionParts(version, parts);
       if (!draft || !drafted) {
@@ -477,6 +555,10 @@ export const updateTranslationSections = defineOperation({
       const source = await sourceOf(tx, articleId);
       const { parts, sourceLanguage } = source;
       const { published, draft, drafted } = versionParts(version, parts);
+      // No text yet (never written or translated): no section to place a translation in.
+      if (!version.publishedAt && !draft) {
+        throw new OperationError(409, "nothing_behind", "No section is behind the source");
+      }
       const behind = Object.keys(behindNow(version, parts, sourceLanguage, published, drafted && { list: drafted, removed: draft?.removed, removedHashes: draft?.removedHashes }));
       // Those still in the source, and those behind because theirs went (the job takes them out).
       const asked = (input.sections ?? behind).filter((key) => behind.includes(key) || parts.some((part) => part.key === key));
@@ -522,3 +604,67 @@ export const updateTranslationSections = defineOperation({
 
 /** Queues the translate job for a version (with its safety net: queuing that fails is tried again by the retry job). */
 const queueTranslation = ({ articleId, language }: { articleId: string; language: string }) => queueVersion(articleId, language);
+
+/**
+ * The team's sections on a version turned back to Keep up to date: their edits, giving way where English changes, those
+ * kept on publishing too (`kept` would keep them for good, and the switch says they take a new translation).
+ */
+const givingWay = (list: Section[]): Section[] =>
+  ownedByTeam(list).map((section) => {
+    const meta = { ...section.meta };
+    delete meta.kept;
+    return { ...section, meta };
+  });
+
+export const keepTranslationUpToDate = defineOperation({
+  name: "articles.keepTranslationUpToDate",
+  title: "Keep a translation up to date",
+  summary:
+    "Turn Keep up to date on for an article's version in another language (it's translated again; the team's sections stay theirs until English changes in them) or off (the team writes it).",
+  method: "POST",
+  path: "/articles/{slug}/languages/{language}/keep-up-to-date",
+  scope: "write",
+  access: "team",
+  errors: [409],
+  input: z.object({
+    slug: articleSlug,
+    language,
+    keepUpToDate: z.boolean().describe("On: translated again, now and whenever English changes. Off: the team writes it").meta({ examples: [true] }),
+    version: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe("The `version` of the read it was turned from: refused (409 `changed`) if it changed since, so a teammate's newer text isn't handed to the translator unseen")
+      .meta({ examples: ["5f2c9a…"] }),
+  }),
+  output: translationOutput,
+  run: async ({ projectId }, input) => {
+    let queued: { articleId: string; language: string } | null = null;
+    const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
+      const source = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage } = source;
+      if (versionToken(version, source.sourceHash) !== input.version) {
+        throw new OperationError(409, "changed", VERSION_CHANGED);
+      }
+      if (version.automatic === input.keepUpToDate) {
+        return output(version, source);
+      }
+      const { published, draft, drafted } = versionParts(version, parts);
+      // On: the team's sections are their edits now, as on any version kept up to date (theirs until English changes in
+      // them); translated again, nothing reused. Off: the team writes every section.
+      const data = input.keepUpToDate
+        ? {
+            automatic: true,
+            sections: metaOf(givingWay(published)) as Prisma.InputJsonValue,
+            ...(draft && drafted && { draft: { ...draft, sections: metaOf(givingWay(drafted)) } as Prisma.InputJsonValue }),
+            retranslate: { increment: 1 },
+          }
+        : { automatic: false };
+      const saved = await tx.articleTranslation.update({ where: { id: version.id }, data, select: versionSelect });
+      if (input.keepUpToDate) queued = { articleId, language: input.language };
+      return output(saved, { parts, sourceLanguage, sourceHash: source.sourceHash });
+    });
+    if (queued) await queueTranslation(queued);
+    return result;
+  },
+});

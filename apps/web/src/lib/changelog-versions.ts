@@ -11,6 +11,33 @@ export const NO_AI_WAITING = "translating isn't set up on this server";
  * team's), on its way, unable to be translated (an error, or `aiOn` false), behind (made from other text), or marked behind
  * by the product setting changing since (`setting`); none yet: not written.
  */
+/**
+ * An article version's, from its read (`behind`: why sections are behind, articles.getTranslation's, if any): behind by its
+ * sections, not by the whole text's hash, which writing it doesn't record and an edit kept on a version kept up to date
+ * leaves old. Otherwise as an entry's.
+ */
+export function articleVersionState(version: VersionRow | undefined, hash: string, aiOn: boolean, behind: "source" | "setting" | null): VersionState {
+  // Every section behind for the product setting's reason alone: that, not the default language, changed.
+  const why = behind === "setting" ? "setting" : "behind";
+  if (!version) {
+    return "unwritten";
+  }
+  if (version.automatic) {
+    // On its way or failing first; then the team's edits kept behind; else translated (or on its way) by the hash.
+    // The stored `behind` isn't read here: `behind` (from the read) says it, the draft's sections too. Left in, a mark the
+    // job keeps for a draft's edit would read as translating for good.
+    const unmarked = { ...version, behind: {} };
+    if (version.error || version.retranslate !== version.retranslated) {
+      return versionState(unmarked, hash, aiOn);
+    }
+    return behind ? why : versionState(unmarked, hash, aiOn);
+  }
+  if (!version.publishedAt) {
+    return "unwritten";
+  }
+  return behind ? why : "written";
+}
+
 export function versionState(version: VersionRow | undefined, hash: string, aiOn: boolean): VersionState {
   if (!version) {
     return "unwritten";

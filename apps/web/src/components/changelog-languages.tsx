@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { VersionState } from "@/lib/changelog-versions";
 import { keepingFields } from "@/lib/forms";
-import { keepChangelogVersionUpToDate, saveChangelogVersion } from "@/server/changelog";
 import type { FormState } from "@/server/form-state";
 
 /**
@@ -117,11 +116,17 @@ export type VersionView = {
   own: boolean;
 };
 
+/** Which kind of page a version is of: a changelog entry's is translated whole; an article's by section (L11). */
+export type VersionKind = "changelog" | "article";
+
 /** The one line over a version's text: where it stands, and what saving does. */
-function versionLine(view: VersionView, defaultName: string) {
+function versionLine(view: VersionView, defaultName: string, kind: VersionKind) {
   switch (view.state) {
     case "current":
-      return `Translated automatically from ${defaultName}. Saving your edits turns off Keep up to date.`;
+      return kind === "article"
+        ? // Published edits give way where English changes; a draft's never do, so it says published.
+          `Translated automatically from ${defaultName}. Publishing ${defaultName} again replaces your published edits in the sections it touches.`
+        : `Translated automatically from ${defaultName}. Saving your edits turns off Keep up to date.`;
     case "translating":
       return `Translating from ${defaultName}…`;
     case "waiting":
@@ -131,7 +136,8 @@ function versionLine(view: VersionView, defaultName: string) {
     case "setting":
       return `"Our product is available in ${view.name}" changed since this was saved.`;
     case "unwritten":
-      return `Not written yet: it starts as the ${defaultName} text.`;
+      // An article's draft, saved and not published yet (an entry's version has no drafts).
+      return view.own ? `Not published yet: readers get the ${defaultName} text until you publish it.` : `Not written yet: it starts as the ${defaultName} text.`;
     default:
       return null;
   }
@@ -168,21 +174,29 @@ function draftStore() {
 }
 type Drafts = ReturnType<typeof draftStore>;
 
+/** A version's save (its form: title, text, `version`, and `intent` "publish" for an article's Publish), and its Keep up to date. */
+export type VersionActions = {
+  save: (state: FormState, formData: FormData) => Promise<FormState & { version?: string }>;
+  keep: (on: boolean, version: string) => Promise<FormState & { version?: string; changed?: boolean }>;
+};
+
 export function ChangelogVersionForm({
   projectSlug,
-  number,
+  save,
+  keep,
+  kind = "changelog",
   defaultName,
   view,
   mediaUrls,
   languages,
   drafts,
-}: {
+}: VersionActions & {
   projectSlug: string;
-  number: number;
+  kind?: VersionKind;
   defaultName: string;
   view: VersionView;
   mediaUrls: MediaUrls | null;
-  /** The sidebar's Languages. */
+  /** The sidebar's Languages (none: no list). */
   languages: EntryLanguage[];
   /** The editor's unsaved draft, carried across the forms it mounts (ChangelogVersionEditor). */
   drafts: Drafts;
@@ -232,9 +246,9 @@ export function ChangelogVersionForm({
   }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const sent = edits.current;
-    const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
+    const result = await save(prev, formData);
     if (!result.error) {
-      toast.success("Saved");
+      toast.success(formData.get("intent") === "publish" ? "Published" : "Saved");
       // An answer for a form the page has since replaced: the one now shown goes from its own read (or its carried draft).
       if (!current()) {
         return result;
@@ -257,7 +271,7 @@ export function ChangelogVersionForm({
   // The top bar's Save says when it's saving, and waits (ChangelogSaveButton).
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
-  const line = versionLine(view, defaultName);
+  const line = versionLine(view, defaultName, kind);
   // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
   // its, whatever the state (not written, or a first translation on its way or failing).
   const textLang = view.own ? view.code : languages[0]!.code;
@@ -291,7 +305,7 @@ export function ChangelogVersionForm({
           />
           {state.error && <FieldError id="version-error">{state.error}</FieldError>}
         </div>
-        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={start?.content ?? view.content} editorRef={editor} onChange={markEdited} onMediaUrls={(urls) => (added.current = { ...added.current, ...urls })} uploads={mediaUrls ? { projectSlug, mediaUrls: { ...mediaUrls, ...start?.mediaUrls } } : undefined} />
+        <RichEditor bare profile={kind} name="content" label={kind === "article" ? "Text" : "What changed"} lang={textLang} initial={start?.content ?? view.content} editorRef={editor} onChange={markEdited} onMediaUrls={(urls) => (added.current = { ...added.current, ...urls })} uploads={mediaUrls ? { projectSlug, mediaUrls: { ...mediaUrls, ...start?.mediaUrls } } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate
@@ -300,13 +314,15 @@ export function ChangelogVersionForm({
           // token, so its save is still refused.
           onSaved={(actedOn, next) => setLoaded((current) => (current === actedOn ? next : current))}
           dirty={dirty}
-          projectSlug={projectSlug}
-          number={number}
-          code={view.code}
+          keep={keep}
+          kind={kind}
+          defaultName={defaultName}
           on={view.keepUpToDate}
-          teamWrote={view.state === "written" || view.state === "behind" || view.state === "setting"}
+          // The team has text in it: its own (written, or an article's draft saved and not published, still "unwritten";
+          // with Keep up to date off, text of its own is the team's), which a new translation can replace.
+          teamWrote={view.own || view.state === "written" || view.state === "behind" || view.state === "setting"}
         />
-        <ChangelogLanguageList languages={languages} current={view.code} />
+        {languages.length > 1 && <ChangelogLanguageList languages={languages} current={view.code} />}
       </aside>
     </form>
   );
@@ -317,18 +333,18 @@ export function ChangelogVersionForm({
  * wrote (`teamWrote`), only once they confirm, as it replaces their text.
  */
 function KeepUpToDate({
-  projectSlug,
-  number,
-  code,
+  keep,
+  kind,
+  defaultName,
   on,
   teamWrote,
   version,
   onSaved,
   dirty,
 }: {
-  projectSlug: string;
-  number: number;
-  code: string;
+  keep: VersionActions["keep"];
+  kind: VersionKind;
+  defaultName: string;
   on: boolean;
   teamWrote: boolean;
   /** The page's latest read of the version (`teamWrote` is that read's too): turning it on over text changed since is refused, not done unconfirmed. */
@@ -352,7 +368,7 @@ function KeepUpToDate({
     setChecked(next);
     setConfirming(false);
     start(async () => {
-      const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next, version);
+      const result = await keep(next, version);
       if (result.changed) {
         setChecked(!next);
         if (dirty.current) {
@@ -401,7 +417,10 @@ function KeepUpToDate({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Translate it again?</AlertDialogTitle>
-            <AlertDialogDescription>A new translation replaces your text in this version.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {/* Published ones: a draft's edits never give way, kept up to date or not. */}
+              {kind === "article" ? `Published sections ${defaultName} changed in since your edits take a new translation.` : "A new translation replaces your text in this version."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -415,3 +434,16 @@ function KeepUpToDate({
 
 /** The top bar's Save for a version (its form is below it). */
 export const ChangelogVersionSave = () => <ChangelogSaveButton form={VERSION_FORM} primary />;
+
+/** An article version's Save draft and Publish in the top bar: both submit its form, Publish saving the draft first. */
+export function ArticleVersionSave() {
+  const saving = useContext(ChangelogSavingContext);
+  return (
+    <>
+      <ChangelogSaveButton form={VERSION_FORM} isNew primary={false} />
+      <Button type="submit" form={VERSION_FORM} name="intent" value="publish" disabled={saving?.pending} focusableWhenDisabled>
+        Publish
+      </Button>
+    </>
+  );
+}
