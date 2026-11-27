@@ -306,8 +306,33 @@ export function glossaryProblems(source: string, translated: string, glossary: G
     .map(({ term, translation }) => (translation ? `"${term}" must be translated as "${translation}"` : `"${term}" must stay "${term}"`));
 }
 
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+/** How many times a text has been tested for a term (termsUsed: once per term; termMatcher: once per text, all its terms at once). For tests. */
+export const termTests = { count: 0 };
+
+/**
+ * termsUsed for many texts against one list: the terms as one pattern, built once, so each text is read once whatever the
+ * number of terms (a glossary save matching a whole help center). Where one term is part of a longer one ("Board", "Board
+ * view"), a text using only the longer is said to use the longer.
+ */
+export function termMatcher(glossary: GlossaryTerm[]): (text: string) => GlossaryTerm[] {
+  const byKey = new Map(glossary.map((entry) => [entry.term.toLowerCase(), entry]));
+  const [cjk, spaced] = [[...byKey.keys()].filter((term) => CJK.test(term)), [...byKey.keys()].filter((term) => !CJK.test(term))];
+  const escaped = spaced.sort((a, b) => b.length - a.length).map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = escaped.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}])(${escaped.join("|")})(?:s|es|'s|’s)?(?![\\p{L}\\p{N}])`, "gu") : null;
+  return (text) => {
+    termTests.count++;
+    const plain = unescape(text).toLowerCase();
+    const found = new Set<string>(pattern ? [...plain.matchAll(pattern)].map((match) => match[1]!) : []);
+    for (const term of cjk) if (plain.includes(term)) found.add(term);
+    return [...found].map((term) => byKey.get(term)!);
+  };
+}
+
 /** The glossary's terms `text` uses (as glossaryProblems checks them): only those are sent with it, and a change to another doesn't touch it. */
 export function termsUsed(text: string, glossary: GlossaryTerm[]): GlossaryTerm[] {
+  termTests.count += glossary.length;
   const plain = unescape(text).toLowerCase();
   return glossary.filter(({ term }) => uses(plain, term.toLowerCase()));
 }

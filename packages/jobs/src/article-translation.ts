@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, type GlossaryTerm, keyed, sections, segmentsOf, termsUsed, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, segmentsOf, termMatcher, termsUsed, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
@@ -780,108 +780,134 @@ export async function queueLanguageTranslations(projectId: string, language: str
   return pages.length;
 }
 
-/** What a glossary save touches (glossaryChanges): versions kept up to date retranslated, versions the team writes marked behind. */
+/** What a glossary save touches (applyGlossaryChanges): versions kept up to date retranslated, versions the team writes marked behind. */
 export type GlossaryChanges = { retranslated: number; behind: number; queue: () => Promise<void> };
 
+/** A version a glossary save touches: its source, and for one the team writes, its sections' reasons to be behind. */
+type TouchedVersion = { kind: Kind; sourceId: string; id: string; language: string; automatic: boolean; reasons: Record<string, string> };
+
 /**
- * A glossary saved (docs/plan.md L12: "Changing a term retranslates only the sections that use it"), in the save's transaction
- * (the project locked): for each language, the terms whose treatment there changed, and the published sources whose text uses
- * one. A version kept up to date is retranslated (its job finds its glossary changed and resends the segments its memory no
- * longer passes for; its safety net set here, `queue` sends it after the save commits); in a version the team writes, the
- * sections that use one are marked behind, naming the term; labels kept up to date that use one are made again. `dryRun`:
- * counted only, for the confirm dialog.
+ * What saving a glossary would change (docs/plan.md L12: "Changing a term retranslates only the sections that use it"), worked
+ * out before the save's transaction from the sources as they are: for each language, the terms whose treatment there
+ * changed; the published sources and labels whose text uses one. The terms are matched once per text, all of every language's
+ * changed terms together (termMatcher), so a big glossary on a big help center takes a pass per source (and per section of
+ * one that uses a term), never terms × sections. applyGlossaryChanges writes it.
  * ponytail: reads every published source's text per save (a rare, deliberate act); a per-term index if glossaries get big.
  */
-export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: string, before: Glossary, after: Glossary, { dryRun = false } = {}): Promise<GlossaryChanges> {
-  const languages = (await tx.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
-  const changed = new Map(languages.map((code) => [code, changedIn(before, after, code)] as const).filter(([, terms]) => terms.length > 0));
-  const pages: Page[] = [];
-  let behind = 0;
+export async function planGlossaryChanges(projectId: string, before: Glossary, after: Glossary) {
+  const languages = (await prisma.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
+  // Each language's changed terms, by lowercase term; and all of them, to match once.
+  const changed = new Map(languages.map((code) => [code, new Set(changedIn(before, after, code).map(({ term }) => term.toLowerCase()))] as const).filter(([, terms]) => terms.size > 0));
+  const union = [...new Map([...changed.keys()].flatMap((code) => changedIn(before, after, code)).map((term) => [term.term.toLowerCase(), term])).values()];
+  const match = termMatcher(union);
+  const keys = (text: string) => match(text).map(({ term }) => term.toLowerCase());
+  const touched: TouchedVersion[] = [];
+  const labels: { table: "collection" | "docs_tab"; id: string; languages: string[] }[] = [];
   if (changed.size === 0) {
-    return { retranslated: 0, behind: 0, queue: async () => {} };
+    return { projectId, codes: [], touched, labels, matchTerms: (_: string, __: string) => false };
   }
-  const codes = [...changed.keys()];
-  if (!dryRun) {
-    // A labels job already running for those languages writes nothing (as after Retranslate): the one queued after takes the
-    // new glossary. Their rows first, as a languages save and a label's write lock them.
-    await tx.projectLanguage.updateMany({ where: { projectId, code: { in: codes } }, data: { labelsVersion: { increment: 1 } } });
-  }
-  const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true } } as const;
+  const versions = { where: { language: { in: [...changed.keys()] } }, select: { id: true as const, language: true as const, automatic: true as const } };
   const sources = [
-    ...(await tx.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions } })).map(
+    ...(await prisma.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions } })).map(
       (row) => ({ kind: ARTICLE, row }),
     ),
-    ...(await tx.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, title: true, body: true, content: true, translations: versions } })).map(
+    ...(await prisma.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, title: true, body: true, content: true, translations: versions } })).map(
       (row) => ({ kind: ENTRY, row }),
     ),
   ];
-  // What each touched version gets, worked out first: a few statements per kind however many there are (one lock, one read,
-  // a write per 500), so a big help center saves well inside the transaction's time.
-  type Touched = { kind: Kind; sourceId: string; id: string; automatic: boolean; terms: GlossaryTerm[]; reasons: Record<string, string> };
-  const touched: Touched[] = [];
   for (const { kind, row } of sources) {
+    if (row.translations.length === 0) continue;
     const source = translationSource(row);
-    const plain = toPlainText(source.doc);
+    const used = new Set(keys(toPlainText(source.doc)));
+    if (used.size === 0) continue;
+    // Its sections that use one, each with the terms it uses (in order): read once, whatever the languages.
+    const sectionTerms = row.translations.some((version) => !version.automatic) ? sourceSections(source.text).map(({ key, blocks }) => ({ key, terms: keys(toPlainText({ type: "doc", content: blocks })) })) : [];
     for (const version of row.translations) {
       const terms = changed.get(version.language)!;
-      if (termsUsed(plain, terms).length === 0) continue;
-      // The sections that use a changed term, each with the first it uses.
-      const reasons = Object.fromEntries(
-        sourceSections(source.text).flatMap(({ key, blocks }) => {
-          const [term] = termsUsed(toPlainText({ type: "doc", content: blocks }), terms);
-          return term ? [[key, glossaryChangedFor(term.term)]] : [];
-        }),
-      );
-      if (version.automatic) {
-        pages.push({ kind, parentId: row.id, language: version.language });
-      } else if (Object.keys(reasons).length > 0) {
-        behind++;
-      }
-      touched.push({ kind, sourceId: row.id, id: version.id, automatic: version.automatic, terms, reasons: version.automatic ? {} : reasons });
+      if (![...used].some((term) => terms.has(term))) continue;
+      const reasons = version.automatic
+        ? {}
+        : Object.fromEntries(
+            sectionTerms.flatMap(({ key, terms: inSection }) => {
+              const term = inSection.find((found) => terms.has(found));
+              return term ? [[key, glossaryChangedFor(union.find((entry) => entry.term.toLowerCase() === term)!.term)]] : [];
+            }),
+          );
+      touched.push({ kind, sourceId: row.id, id: version.id, language: version.language, automatic: version.automatic, reasons });
     }
   }
-  if (!dryRun) {
-    for (const kind of KINDS) {
-      const mine = touched.filter((version) => version.kind === kind);
-      if (mine.length === 0) continue;
-      const sourceTable = Prisma.raw(kind.name === "article" ? "article" : "changelog_entry");
-      const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
-      // The sources before any of their versions, as the translate job's write locks them, so the two never cross (in one
-      // order, so two saves never cross either).
-      await tx.$queryRaw`SELECT 1 FROM ${sourceTable} WHERE id = ANY(${[...new Set(mine.map(({ sourceId }) => sourceId))]}::text[]) ORDER BY id FOR UPDATE`;
-      // Their memory read under those locks: a job's write before them isn't written over.
-      const memories = new Map(
-        (await tx.$queryRaw<{ id: string; memory: Record<string, string> }[]>`SELECT id, memory FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`).map(
-          ({ id, memory }) => [id, memory],
-        ),
-      );
-      // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks would
-      // make a run send it again), so its next translation of them, the job's or Update those sections', is anew; the sections
-      // of one the team writes marked behind; one kept up to date gets its safety net (queued after the save commits).
-      const rows = mine.map(({ id, automatic, terms, reasons }) => {
-        const memory = Object.fromEntries(Object.entries(memories.get(id) ?? {}).filter(([text]) => termsUsed(text, terms).length === 0));
-        return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(reasons)}, ${automatic})`;
-      });
-      for (let i = 0; i < rows.length; i += 500) {
-        await tx.$executeRaw`
-          UPDATE ${table} t SET memory = v.memory::jsonb, behind = t.behind || v.behind::jsonb, "updatedAt" = now(),
-            "retryAt" = CASE WHEN v.net::boolean AND t.error IS NULL THEN (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000}) ELSE t."retryAt" END
-          FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net) WHERE t.id = v.id`;
-      }
+  // Labels (kept up to date ones are made again).
+  for (const [table, rows] of [
+    ["collection", await prisma.collection.findMany({ where: { projectId }, select: { id: true, name: true, description: true } })],
+    ["docs_tab", await prisma.docsTab.findMany({ where: { projectId }, select: { id: true, name: true } })],
+  ] as const) {
+    for (const label of rows) {
+      const used = keys(`${label.name}\n${"description" in label ? label.description : ""}`);
+      const inLanguages = [...changed].filter(([, terms]) => used.some((term) => terms.has(term))).map(([code]) => code);
+      if (inLanguages.length > 0) labels.push({ table, id: label.id, languages: inLanguages });
+    }
+  }
+  /** Whether `text` (a remembered segment's source) uses a term changed in `language`. */
+  const matchTerms = (text: string, language: string) => keys(text).some((term) => changed.get(language)?.has(term));
+  return { projectId, codes: [...changed.keys()], touched, labels, matchTerms };
+}
+
+export type GlossaryPlan = Awaited<ReturnType<typeof planGlossaryChanges>>;
+
+/**
+ * A glossary saved, in the save's transaction (the project locked), as planGlossaryChanges worked it out: a version kept up to
+ * date is retranslated (its job finds its glossary changed and resends the segments that use a changed term, their memory
+ * cleared here; its safety net set here, `queue` sends it after the save commits); in a version the team writes, the
+ * sections that use one are marked behind, naming the term; labels kept up to date that use one are made again; a labels job
+ * already running writes nothing. Only locks, reads and writes here: a few statements per kind however many there are (one
+ * lock, one read, a write per 500), so a big help center saves well inside the transaction's time. `dryRun`: counted only.
+ */
+export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: GlossaryPlan, { dryRun = false } = {}): Promise<GlossaryChanges> {
+  const { projectId, codes, touched, labels, matchTerms } = plan;
+  const pages: Page[] = touched.filter((version) => version.automatic).map(({ kind, sourceId, language }) => ({ kind, parentId: sourceId, language }));
+  const behind = touched.filter((version) => !version.automatic && Object.keys(version.reasons).length > 0).length;
+  if (codes.length === 0 || dryRun) {
+    return { retranslated: pages.length, behind, queue: async () => {} };
+  }
+  // A labels job already running for those languages writes nothing (as after Retranslate): the one queued after takes the
+  // new glossary. Their rows first, as a languages save and a label's write lock them.
+  await tx.projectLanguage.updateMany({ where: { projectId, code: { in: codes } }, data: { labelsVersion: { increment: 1 } } });
+  for (const kind of KINDS) {
+    const mine = touched.filter((version) => version.kind === kind);
+    if (mine.length === 0) continue;
+    const sourceTable = Prisma.raw(kind.name === "article" ? "article" : "changelog_entry");
+    const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
+    // The sources before any of their versions, as the translate job's write locks them, so the two never cross (in one
+    // order, so two saves never cross either).
+    await tx.$queryRaw`SELECT 1 FROM ${sourceTable} WHERE id = ANY(${[...new Set(mine.map(({ sourceId }) => sourceId))]}::text[]) ORDER BY id FOR UPDATE`;
+    // Their memory read under those locks: a job's write before them isn't written over.
+    const memories = new Map(
+      (await tx.$queryRaw<{ id: string; memory: Record<string, string> }[]>`SELECT id, memory FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`).map(({ id, memory }) => [
+        id,
+        memory,
+      ]),
+    );
+    // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks would
+    // make a run send it again), so its next translation of them, the job's or Update those sections', is anew; the sections
+    // of one the team writes marked behind; one kept up to date gets its safety net (queued after the save commits).
+    const rows = mine.map(({ id, language, automatic, reasons }) => {
+      const memory = Object.fromEntries(Object.entries(memories.get(id) ?? {}).filter(([text]) => !matchTerms(text, language)));
+      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(reasons)}, ${automatic})`;
+    });
+    for (let i = 0; i < rows.length; i += 500) {
+      await tx.$executeRaw`
+        UPDATE ${table} t SET memory = v.memory::jsonb, behind = t.behind || v.behind::jsonb, "updatedAt" = now(),
+          "retryAt" = CASE WHEN v.net::boolean AND t.error IS NULL THEN (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000}) ELSE t."retryAt" END
+        FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net) WHERE t.id = v.id`;
     }
   }
   // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).
-  if (!dryRun) {
-    for (const [code, terms] of changed) {
-      for (const [table, rows] of [
-        ["collection", await tx.collection.findMany({ where: { projectId }, select: { id: true, name: true, description: true, translations: true } })],
-        ["docs_tab", await tx.docsTab.findMany({ where: { projectId }, select: { id: true, name: true, translations: true } })],
-      ] as const) {
-        const touched = rows.filter((label) => termsUsed(`${label.name}\n${"description" in label ? label.description : ""}`, terms).length > 0).map((label) => label.id);
-        if (touched.length > 0) {
-          await tx.$executeRaw`UPDATE ${Prisma.raw(table)} SET translations = jsonb_set(translations, ${[code, "source"]}::text[], 'null'::jsonb)
-            WHERE id = ANY(${touched}::text[]) AND (translations -> ${code} ->> 'auto')::boolean`;
-        }
+  for (const code of codes) {
+    for (const table of ["collection", "docs_tab"] as const) {
+      const ids = labels.filter((label) => label.table === table && label.languages.includes(code)).map(({ id }) => id);
+      if (ids.length > 0) {
+        await tx.$executeRaw`UPDATE ${Prisma.raw(table)} SET translations = jsonb_set(translations, ${[code, "source"]}::text[], 'null'::jsonb)
+          WHERE id = ANY(${ids}::text[]) AND (translations -> ${code} ->> 'auto')::boolean`;
       }
     }
   }

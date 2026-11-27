@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import type { Doc } from "./document";
-import { glossaryProblems, segmentOfText, segmentsOf, translateDoc, translateText } from "./translate";
+import { glossaryProblems, segmentOfText, segmentsOf, termMatcher, termsUsed, translateDoc, translateText } from "./translate";
 
 const link = { type: "link", attrs: { href: "https://example.com/billing", target: "_blank" } };
 const doc: Doc = {
@@ -430,3 +430,13 @@ test("a provider error the retry made up for isn't reported, though another segm
   expect(out.providerError).toBeUndefined();
   expect(out.problems.map((p) => p.id)).toEqual(["2"]);
 });
+
+test("termMatcher finds what termsUsed does (a word, its plural or possessive, inside words for scripts without spaces), reading each text once", () => {
+  const glossary = [{ term: "Board" }, { term: "Post" }, { term: "Tuti" }, { term: "設定" }, { term: "Q&A" }];
+  const match = termMatcher(glossary);
+  for (const text of ["Make a Board.", "Two boards", "Tuti's posts", "Postpone it", "設定を開く", "Ask in Q&amp;A", "Nothing here"]) {
+    const names = (found: { term: string }[]) => found.map(({ term }) => term).sort();
+    expect(names(match(text)), text).toEqual(names(termsUsed(text, glossary)));
+  }
+});
+
