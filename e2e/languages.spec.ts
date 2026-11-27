@@ -637,21 +637,24 @@ test("the docs home in German: its tabs' and collections' names translated, mark
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
-  // German kept up to date: each tab and collection is translated as it's made (the model's answers, each for its own request).
-  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
-  await nextModelReply(JSON.stringify({ segments: { "0.n": "Handbücher" } }), '"0.n":"Handbooks"');
   await api("/tabs", { name: "Handbooks" });
-  await nextModelReply(JSON.stringify({ segments: { "0.n": "Rechnungen", "0.d": "Bezahlen und Belege." } }), '"0.n":"Invoicing"');
   await api("/collections", { name: "Invoicing", description: "Paying and receipts.", tab: "handbooks" });
   const article = await api("/articles", { title: "Paying an invoice", body: "By card.", collection: "invoicing" });
-  await nextModelReply(JSON.stringify({ segments: { "1": "Eine Rechnung bezahlen", "2": "Mit Karte." } }), "Paying an invoice");
   await api(`/articles/${article.slug}/publish`, {});
+  // German kept up to date: its labels (collections first, then tabs) and the article translated once it's added (the
+  // model's answers, each for its own request).
+  await nextModelReply(JSON.stringify({ segments: { "0.n": "Rechnungen", "0.d": "Bezahlen und Belege.", "1.n": "Handbücher" } }), '"0.n":"Invoicing"');
+  await nextModelReply(JSON.stringify({ segments: { "1": "Eine Rechnung bezahlen", "2": "Mit Karte." } }), "Paying an invoice");
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 1280, height: 800 });
-  await reader.goto("/de/docs");
+  // Translated in the background: there once its job is done.
   const collections = reader.getByRole("list", { name: "Sammlungen" });
-  await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(async () => {
+    await reader.goto("/de/docs");
+    await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen", { timeout: 1000 });
+  }).toPass();
   await expect(collections.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
   await checkpoint(reader, "docs-home-names-in-german", { fullPage: false });
   // The sidebar's tree beside an article too.
