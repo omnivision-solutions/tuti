@@ -2133,7 +2133,7 @@ test("a subscription in a language taken offline since: its confirmation email a
   expect(await subscribe(email)).toEqual({ sentTo: email });
   await prisma.projectLanguage.updateMany({ where: { projectId: project.id, code: "de" }, data: { live: false } });
   // Asked again (not confirmed yet) on the default language's page would set it there; here the same German page sends again.
-  await prisma.signInLink.deleteMany();
+  await prisma.signInLink.deleteMany({ where: { projectId: project.id } });
   expect(await subscribe(email)).toEqual({ sentTo: email });
   request.headers = {};
   const message = await mailbox.latestTo(email);
