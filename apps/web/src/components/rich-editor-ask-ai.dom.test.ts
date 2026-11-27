@@ -226,3 +226,49 @@ test("Try again asks again for the same text and instruction; Escape on the AI's
   expect(view.shown("new")).toBeNull();
   expect(toast).toHaveBeenCalledWith("The text changed, so the AI's edit was dropped. Select it again to ask again.");
 });
+
+test("part of a list item or of a heading stays part of it once accepted", async () => {
+  const item = (text: string) => ({ type: "listItem", content: [paragraph(text)] });
+  const listed = {
+    type: "doc",
+    content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Faster exprots today" }] }, { type: "bulletList", content: [item("Alpha beta gamma"), item("Delta")] }],
+  };
+  const view = await editor({ initial: listed });
+  // "exprots" in the heading.
+  await view.select(8, 15);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "exports" }] }] } });
+  await view.click("Fix grammar");
+  await view.click("Accept");
+  // "beta" in the first item.
+  // After the heading (22), into the list, its item and its paragraph (3).
+  const beta = 22 + 3 + "Alpha ".length;
+  await view.select(beta, beta + 4);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [{ type: "bulletList", content: [item("BETA")] }] } });
+  await view.click("Clearer");
+  await view.click("Accept");
+
+  expect(view.saved()).toEqual({
+    type: "doc",
+    content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Faster exports today" }] }, { type: "bulletList", content: [item("Alpha BETA gamma"), item("Delta")] },
+      // The empty line the editor keeps after a list that ends the text.
+      { type: "paragraph" },
+    ],
+  });
+});
+
+test("the AI's version doesn't take focus from someone typing elsewhere", async () => {
+  const view = await editor();
+  await view.select(SECOND, SECOND + 26);
+  await view.click("Ask AI");
+  const settle = answer();
+  await view.click("Shorter");
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  // Now typing in the first line.
+  await act(async () => view.editor.chain().focus().setTextSelection(3).run());
+  await settle({ content: { type: "doc", content: [paragraph("They run quietly")] } });
+  expect(view.shown("new")).toContain("They run quietly");
+  expect(view.editor.view.hasFocus()).toBe(true);
+  expect(view.editor.state.selection.from).toBe(3);
+});

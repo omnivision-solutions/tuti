@@ -55,7 +55,8 @@ function remember(instruction: string) {
 }
 
 /** The text being edited, and the AI's version once it's back (null while it works). `id`: this request's, so a late answer to an earlier one is ignored. */
-type Asked = { id: number; from: number; to: number; instruction: string; result: Doc | null };
+/** `ends`: the kind of block the sent text starts and ends in (a paragraph, a list, a heading), its outermost. */
+type Asked = { id: number; from: number; to: number; instruction: string; ends: [string, string]; result: Doc | null };
 export const ASK_AI = new PluginKey<Asked | null>("askAi");
 const ask = (state: EditorState) => ASK_AI.getState(state) ?? null;
 
@@ -170,14 +171,15 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     }
     const id = ++next.current;
     const { doc } = editor.state;
-    set(editor, { id, from, to, instruction, result: null });
+    const sent = doc.slice(from, to, true).content;
+    set(editor, { id, from, to, instruction, ends: [sent.firstChild?.type.name ?? "", sent.lastChild?.type.name ?? ""], result: null });
     setStatus("The AI is editing the selected text…");
     const all = from <= 1 && to >= doc.content.size - 1;
     const result = await rewriteText(setup.projectSlug, {
       kind: setup.kind,
       entry: setup.entry,
       // With the blocks around it, so part of a line goes as a paragraph (part of a list item as a list).
-      text: { type: "doc", content: doc.slice(from, to, true).content.toJSON() as Doc["content"] },
+      text: { type: "doc", content: sent.toJSON() as Doc["content"] },
       whole: all ? undefined : editor.getJSON(),
       instruction,
     }).catch(() => ({ error: "The AI couldn't edit the text. Try again in a moment.", content: undefined }));
@@ -190,12 +192,21 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
       set(editor, null);
       setStatus("");
       toast.error(result.error ?? "The AI couldn't edit the text. Try again in a moment.");
+      // Try again pressed: its button went with the version, so back to the text.
+      if (document.activeElement === document.body) {
+        editor.commands.focus();
+      }
       return;
     }
     set(editor, { ...now, result: result.content });
     setStatus("The AI's version is under the selected text: Accept, Try again or Discard.");
-    // On its Accept: left in the text, a key there (Tab in a list indents the item) would edit the selected text and drop it.
-    editor.view.dom.querySelector<HTMLButtonElement>('[data-ask-ai="new"] button')?.focus();
+    // On its Accept while the person is still on the selected text (a key there, Tab in a list indenting the item, would
+    // edit it and drop the version) or nowhere (Try again's button went); never away from what they're typing elsewhere.
+    const { selection } = editor.state;
+    const onIt = editor.view.hasFocus() && selection.from >= now.from && selection.to <= now.to;
+    if (onIt || document.activeElement === document.body) {
+      editor.view.dom.querySelector<HTMLButtonElement>('[data-ask-ai="new"] button')?.focus();
+    }
   };
 
   // Each render's: the buttons in the text call the latest.
@@ -207,11 +218,16 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
           if (!now?.result) {
             return;
           }
-          // A paragraph at either end joins the text around it there (part of a line stays part of it); anything else
-          // (a list, a heading) goes in as its own block, as the preview shows it.
+          // Each end joins the text around it as deep as it can where it's the kind of block that was sent (part of a line,
+          // of a list item, of a heading stays part of it); a kind changed (a paragraph made a list) goes in as its own
+          // block, as the preview shows it.
           const fragment = Fragment.fromJSON(editor.schema, now.result.content ?? []);
-          const open = (node: typeof fragment.firstChild) => (node?.type.name === "paragraph" ? 1 : 0);
-          const slice = new Slice(fragment, open(fragment.firstChild), open(fragment.lastChild));
+          const max = Slice.maxOpen(fragment);
+          const slice = new Slice(
+            fragment,
+            fragment.firstChild?.type.name === now.ends[0] ? max.openStart : 0,
+            fragment.lastChild?.type.name === now.ends[1] ? max.openEnd : 0,
+          );
           const tr: Transaction = editor.state.tr.replaceRange(now.from, now.to, slice).setMeta(ASK_AI, null);
           editor.view.dispatch(tr);
           editor.commands.focus();
