@@ -150,10 +150,10 @@ export const ChangelogSavingContext = createContext<{
   /** The form's featured image isn't the saved one (one uploaded or removed, not saved yet): Publish offers no cover of its own over it. */
   coverChanged: boolean;
   setCoverChanged: (changed: boolean) => void;
-  /** Audience or the changelog list changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
+  /** Who sees it or the changelog list changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
   groupsChanged: boolean;
   setGroupsChanged: (changed: boolean) => void;
-  /** Audience is Some groups with none ticked: neither Save nor Publish goes until one is, or it's Everyone. */
+  /** Who sees it is Some groups with none ticked: neither Save nor Publish goes until one is, or it's Everyone. */
   noGroupPicked: boolean;
   setNoGroupPicked: (none: boolean) => void;
 } | null>(null);
@@ -629,7 +629,7 @@ export function ChangelogForm({
   screenshots?: LineScreenshots | null;
   /** An owner or admin: they take screenshots (changelog.takeScreenshots). */
   canTakeScreenshots?: boolean;
-  /** The project's reader groups, for Audience (not shown without any). */
+  /** The project's reader groups, for Who sees it (not shown without any). */
   groups?: { key: string; name: string }[];
   /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking works: changelog.update needs the plan only for groups added). */
   groupsUpgrade?: UpgradePrompt | null;
@@ -658,7 +658,7 @@ export function ChangelogForm({
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
-  // Saves so far: Audience and Goes to start afresh after each (from the saved groups), its picks sent again only once changed.
+  // Saves so far: Who sees it and Goes to start afresh after each (from the saved groups), its picks sent again only once changed.
   const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
   const [published, setPublished] = useState(entry?.published);
@@ -860,7 +860,7 @@ export function ChangelogForm({
 }
 
 /**
- * Who an entry is for and where it goes, under two group labels. Audience: Everyone, or Some groups (the reader groups
+ * Who an entry is for and where it goes, under two group labels. Who sees it: Everyone, or Some groups (the reader groups
  * as chips; not shown without any). Goes to: the changelog list (saved: off is `emailOnly`), the widget popup and the
  * email announcement (picked here for Publish, ChangelogSaving; a published entry's say what happened). The groups and
  * the list are sent only once changed, so a save of the text never touches ones set meanwhile (by the API, or a
@@ -915,6 +915,8 @@ export function WhoSeesIt({
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
   const needsId = useId();
+  const reachesId = useId();
+  const reaches = someGroups && !entry?.emailedSubscribers;
   return (
     <>
       {changed && <input type="hidden" name="groupsEditable" value="1" />}
@@ -968,7 +970,7 @@ export function WhoSeesIt({
                   disabled={!someGroups}
                   // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
                   aria-disabled={pending || undefined}
-                  aria-describedby={upgrade ? needsId : undefined}
+                  aria-describedby={[upgrade && needsId, reaches && reachesId].filter(Boolean).join(" ") || undefined}
                   onClick={(event) => {
                     if (pending) {
                       event.preventDefault();
@@ -997,8 +999,13 @@ export function WhoSeesIt({
               </label>
             ))}
           </div>
-          {/* Who it's for is who it reaches: Goes to's list, widget and email all leave out anyone else. */}
-          {someGroups && <p className="text-xs text-muted-foreground">Only readers in these groups see it, wherever it goes.</p>}
+          {/* Who it's for is who it reaches: Goes to's list, widget and email all leave out anyone else. Not once it's been
+              emailed: those it went to keep it. */}
+          {reaches && (
+            <p id={reachesId} className="text-xs text-muted-foreground">
+              Only readers in these groups see it, wherever it goes.
+            </p>
+          )}
           {upgrade && (
             <>
               <span id={needsId} hidden>

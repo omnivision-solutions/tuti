@@ -132,6 +132,9 @@ test("Who sees it: Everyone hides the chips; Some groups shows them, saying they
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
   expect(chips().hidden).toBe(false);
   expect(box.textContent).toContain(reach);
+  // Read with each group too, where a screen reader tabs.
+  const beta = box.querySelector<HTMLInputElement>('input[value="beta"]')!;
+  expect(beta.getAttribute("aria-describedby")!.split(" ").map((id) => document.getElementById(id)?.textContent)).toContain(reach);
   // Only showing the chips is no change to send.
   expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
   await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
@@ -278,4 +281,16 @@ test("Publish with Email announcement off emails no subscriber", async () => {
   expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("It goes on your portal and in your widget.");
   await act(async () => publish().at(-1)!.click());
   expect(publishChangelogEntry).toHaveBeenCalledWith("acme", 7, true, false, undefined);
+});
+
+test("emailed already, an entry for some groups doesn't say only they see it: the people it went to keep it", async () => {
+  const box = document.createElement("form");
+  document.body.append(box);
+  await act(async () =>
+    createRoot(box).render(
+      h(WhoSeesIt, { groups, picked: ["beta"], entry: { ...entry, published: true, emailedSubscribers: true, groups: ["beta"] } as never, upgrade: null, onChange: () => {} }),
+    ),
+  );
+  expect(box.querySelector<HTMLInputElement>('input[value="beta"]')!.checked).toBe(true);
+  expect(box.textContent).not.toContain("Only readers in these groups see it");
 });
