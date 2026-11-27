@@ -130,7 +130,7 @@ const tabSlug = z.string().min(1).max(200).describe("The tab's slug").meta({ exa
 
 export const getCollectionTranslations = defineOperation({
   name: "collections.getTranslations",
-  title: "Get a collection's translations",
+  title: "Get collection translations",
   summary: "A docs collection's name and description in each of the project's languages: the translation readers see, and whether it's kept up to date.",
   method: "GET",
   path: "/collections/{slug}/translations",
@@ -143,7 +143,7 @@ export const getCollectionTranslations = defineOperation({
 
 export const updateCollectionTranslation = defineOperation({
   name: "collections.updateTranslation",
-  title: "Update a collection's translation",
+  title: "Update collection translation",
   summary:
     "Set a docs collection's name and description in one of the project's languages: the team's own (never replaced), or kept up to date (`keepUpToDate`), translated again in the background from its name and description (costs credits where they're on).",
   method: "PATCH",
