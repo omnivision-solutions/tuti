@@ -489,6 +489,7 @@ test("Publish's question: a section English took out starts unticked and says ti
   expect(choices[1]!.closest("label")!.textContent).toBe("SetupTaken out of English: ticking removes it.");
   expect(choices[0]!.closest("label")!.textContent).toBe("Billing");
   expect(document.querySelector("fieldset")!.className).toContain("overflow-y-auto");
+});
 
 test("an article's version kept up to date says publishing English replaces the team's published edits, not a draft's", async () => {
   await form({ state: "current", keepUpToDate: true }, { kind: "article" });
