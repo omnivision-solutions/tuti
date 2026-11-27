@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 
 import type { FormState } from "./form-state";
 import { updateEmailPreferences } from "./operations/email-preferences";
+import { portalLanguage } from "./portal-base";
 import { asAnyone, call } from "./operations/run";
 
 /** One of the signed-in person's email settings on a portal's Account; see the emailPreferences.update operation. */
@@ -18,7 +19,9 @@ export async function setEmailPreference(
     "Project not found",
     () => prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } }),
     async (context) => {
-      saved.changelog = (await call(updateEmailPreferences, context, { [String(setting)]: on === true })).changelog;
+      // The changelog's emails in the page's language (its address's, /de) where the reader has none saved, as the subscribe form's.
+      const { language, prefix } = setting === "changelog" ? await portalLanguage() : { language: null, prefix: "" };
+      saved.changelog = (await call(updateEmailPreferences, context, { [String(setting)]: on === true, ...(prefix && language ? { language } : {}) })).changelog;
     },
   );
   // Stopping the project's emails, or not, changes whether the changelog reaches them (changelogReach): its switch shows it.

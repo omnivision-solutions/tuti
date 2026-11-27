@@ -49,3 +49,28 @@ export async function portalTranslator<N extends keyof Messages>(projectId: stri
   const language = address && isLanguage(address) ? address : languages.default;
   return { language, t: createTranslator({ locale: language, messages: MESSAGES[language], namespace }) };
 }
+
+/**
+ * The portal's messages under `namespace` in this request's address's language (portalLanguage: the project's default on
+ * its own addresses), for server components that don't have the project to hand (the docs' tree, tabs and pages);
+ * English off the portal.
+ */
+export async function pageTranslator<N extends keyof Messages>(namespace: N) {
+  const { language: address } = await portalLanguage();
+  const language = address && isLanguage(address) ? address : DEFAULT_LANGUAGE;
+  return { language, t: createTranslator({ locale: language, messages: MESSAGES[language], namespace }) };
+}
+
+/**
+ * A reader's changelog language (docs/plan.md L16): their saved one where it's one of the portal's live languages; null
+ * where it's the default. Undefined when this portal has none of theirs: none saved, or one it doesn't serve (saved on
+ * another portal, taken offline, past the plan's limit), which isn't a choice made here.
+ */
+export async function subscriberLanguage(projectId: string, userId: string): Promise<string | null | undefined> {
+  const [languages, user] = await Promise.all([portalLanguages(projectId), prisma.user.findUnique({ where: { id: userId }, select: { language: true } })]);
+  const language = user?.language;
+  if (language && language === languages.default) {
+    return null;
+  }
+  return language && (languages.live as string[]).includes(language) ? language : undefined;
+}
