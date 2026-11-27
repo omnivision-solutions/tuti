@@ -4,8 +4,10 @@ import { handlers, languageTranslationsDone, sourceSections, translationSource }
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { saveArticleVersion } from "./article-versions";
+import { articleLanguages } from "./changelog-languages";
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
@@ -132,6 +134,8 @@ test("kept, the edit stays the team's and behind, through later retranslations t
   expect(text(after.content)).toContain("[de3] Intro, again");
   expect(text(after.content)).toContain("Unsere Abrechnung");
   expect(after.behind.map(({ section }) => section)).toEqual([billing]);
+  // Its pill says so: behind, not translating (nothing's on its way).
+  expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("behind");
 
   // Update those sections: translated again from the source, no longer the team's. Its English was translated before (when
   // the draft was retranslated), so nothing is asked of the model: the remembered translation is used.
@@ -943,4 +947,33 @@ test("a Manual language's first version: read blank until the team writes it, st
   expect(published).toMatchObject({ keepUpToDate: false, title: "Bezahlt werden", draft: null });
   expect(text(published.content)).toContain("Unsere Zahlung");
   expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("written");
+});
+
+test("publishing a version the team writes from its editor keeps their sections behind English, and its pill says it's behind", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]), version: blank.version });
+  await call(publishTranslation, as(), de);
+  // English changes its Billing: nothing translates a version the team writes, which is behind there now.
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  expect((await articleLanguages(project.id, project.slug, article))![1]!.state).toBe("behind");
+
+  // The team fixes its intro and publishes from the editor: their Billing stays theirs, nothing asked of the model.
+  const read = await call(getTranslation, as(), de);
+  const form = new FormData();
+  form.set("title", "Bezahlt werden");
+  form.set("content", JSON.stringify(doc("Hallo!", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"])));
+  form.set("version", read.version);
+  form.set("intent", "publish");
+  actAs(owner);
+  expect(await saveArticleVersion(project.slug, de.slug, "de", {}, form)).not.toHaveProperty("error");
+  await languageTranslationsDone();
+  const published = await call(getTranslation, as(), de);
+  expect(text(published.content)).toContain("Hallo!");
+  expect(text(published.content)).toContain("Unsere Zahlung");
+  expect(model.requests).toHaveLength(0);
 });

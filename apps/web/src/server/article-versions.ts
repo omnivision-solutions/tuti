@@ -24,7 +24,12 @@ export async function saveArticleVersion(projectSlug: string, articleSlug: strin
       content: formData.get("content") || undefined,
       version: String(formData.get("version") ?? ""),
     });
-    version = formData.get("intent") === "publish" ? (await call(publishTranslation, context, { ...at, version: saved.version })).version : saved.version;
+    // Publish keeps every edit of the team's behind the source: nothing asks yet whether to take the new translation
+    // instead (L11's publish dialog), and taking it unasked would replace their text.
+    version =
+      formData.get("intent") === "publish"
+        ? (await call(publishTranslation, context, { ...at, version: saved.version, keep: saved.draft?.behind ?? [] })).version
+        : saved.version;
   });
   if (result.error) {
     return result;

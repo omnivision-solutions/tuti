@@ -12,12 +12,20 @@ export const NO_AI_WAITING = "translating isn't set up on this server";
  * by the product setting changing since (`setting`); none yet: not written.
  */
 /**
- * An article version's: kept up to date, as an entry's; one the team writes is behind by its sections (marked behind:
- * `behind`, else the row's marks), not by the whole text's hash, which writing it doesn't record.
+ * An article version's, from its read (`behind`: sections behind the source, articles.getTranslation's): behind by its
+ * sections, not by the whole text's hash, which writing it doesn't record and an edit kept on a version kept up to date
+ * leaves old. Otherwise as an entry's.
  */
-export function articleVersionState(version: VersionRow | undefined, hash: string, aiOn: boolean, behind = Object.keys((version?.behind as object | null) ?? {}).length > 0): VersionState {
-  if (!version || version.automatic) {
-    return versionState(version, hash, aiOn);
+export function articleVersionState(version: VersionRow | undefined, hash: string, aiOn: boolean, behind: boolean): VersionState {
+  if (!version) {
+    return "unwritten";
+  }
+  if (version.automatic) {
+    // On its way or failing first; then the team's edits kept behind; else translated (or on its way) by the hash.
+    if (version.error || version.retranslate !== version.retranslated) {
+      return versionState(version, hash, aiOn);
+    }
+    return version.publishedAt && behind ? "behind" : versionState(version, hash, aiOn);
   }
   if (!version.publishedAt) {
     return "unwritten";
