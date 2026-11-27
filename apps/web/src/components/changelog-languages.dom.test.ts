@@ -189,7 +189,7 @@ test("a toggle refused as changed with edits typed keeps them: the page isn't re
   await act(async () => type(title(), "Korrigiert, nicht gespeichert"));
   await act(async () => keep().click());
   expect(router.refresh).not.toHaveBeenCalled();
-  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile. Save or copy your edits, then reload.");
+  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile. Copy your edits, then reload.");
   expect(title().value).toBe("Korrigiert, nicht gespeichert");
   expect(keep().checked).toBe(true);
 });
@@ -218,7 +218,7 @@ test("an edit in the text that fires no input event (Enter, paste, drop) counts 
   await act(async () => editor.commands.insertContent(" Neu."));
   await act(async () => keep().click());
   expect(router.refresh).not.toHaveBeenCalled();
-  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile. Save or copy your edits, then reload.");
+  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile. Copy your edits, then reload.");
 });
 
 test("text typed while the toggle's request is on its way counts: its refusal doesn't read the page again over it", async () => {

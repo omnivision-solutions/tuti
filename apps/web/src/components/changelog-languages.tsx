@@ -271,7 +271,7 @@ function KeepUpToDate({
         setChecked(!next);
         if (dirty.current) {
           // Reading the page again would put its text in place of theirs.
-          toast.error("It changed meanwhile. Save or copy your edits, then reload.");
+          toast.error("It changed meanwhile. Copy your edits, then reload.");
         } else {
           router.refresh();
           toast.error("It changed meanwhile: shown as it is now. Try again.");
