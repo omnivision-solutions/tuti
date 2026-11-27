@@ -239,7 +239,7 @@ doesn't know, so for that upgrade change the file and the variables in the same 
 | `customDomains.cloudflareZoneId` | `""` | Cloudflare for SaaS gets the domains' certificates instead: its zone (Custom Hostnames on, fallback origin `customDomains.target`), with CLOUDFLARE_API_TOKEN. Empty: not used |
 | `analytics.posthogKey` | `""` | PostHog's project key (a public one). Empty: nothing is sent |
 | `analytics.posthogHost` | `"https://eu.i.posthog.com"` | PostHog's address |
-| `credits.enabled` | `false` | Credits on: projects pay for AI with prepaid credits (Tuti's cloud) |
+| `credits.enabled` | `false` | Credits on: projects pay for AI, screenshots and emails past their plan's with prepaid credits (Tuti's cloud) |
 | `credits.perTopupDollar` | `100` | Credits a dollar paid buys |
 | `credits.perUsageDollar` | `100` | Credits a dollar of model cost spends (with perTopupDollar's default, no margin) |
 | `credits.topupExpiryDays` | `365` | Whole days a top-up's credits last; 0: for good |

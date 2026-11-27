@@ -7,7 +7,7 @@ import { z } from "zod";
  */
 export const credits = z
   .strictObject({
-    enabled: z.boolean().describe("Credits on: projects pay for AI with prepaid credits (Tuti's cloud)").default(false),
+    enabled: z.boolean().describe("Credits on: projects pay for AI, screenshots and emails past their plan's with prepaid credits (Tuti's cloud)").default(false),
     perTopupDollar: z.number().positive().describe("Credits a dollar paid buys").default(100),
     perUsageDollar: z.number().positive().describe("Credits a dollar of model cost spends (with perTopupDollar's default, no margin)").default(100),
     topupExpiryDays: z.number().int().min(0).describe("Whole days a top-up's credits last; 0: for good").default(365),
