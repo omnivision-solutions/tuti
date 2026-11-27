@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Digite para buscar na documentação ou perguntar à IA.",
     "askAIColon": "Perguntar à IA:",
     "allResultsFor": "Todos os resultados para",
-    "searchFailed": "Não foi possível buscar agora. Continue digitando para tentar de novo."
+    "searchFailed": "Não foi possível buscar agora. Continue digitando para tentar de novo.",
+    "browseDocs": "Navegar pela documentação"
   },
   "footer": {
     "label": "Rodapé",

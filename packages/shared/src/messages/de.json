@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Tippe, um die Dokumentation zu durchsuchen oder die KI zu fragen.",
     "askAIColon": "KI fragen:",
     "allResultsFor": "Alle Ergebnisse für",
-    "searchFailed": "Die Suche hat gerade nicht geklappt. Tippe weiter, um es noch einmal zu versuchen."
+    "searchFailed": "Die Suche hat gerade nicht geklappt. Tippe weiter, um es noch einmal zu versuchen.",
+    "browseDocs": "Dokumentation durchstöbern"
   },
   "footer": {
     "label": "Fußzeile",

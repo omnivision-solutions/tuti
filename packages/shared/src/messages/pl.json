@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Zacznij pisać, aby przeszukać dokumentację lub zapytać AI.",
     "askAIColon": "Zapytaj AI:",
     "allResultsFor": "Wszystkie wyniki dla",
-    "searchFailed": "Nie udało się teraz wyszukać. Pisz dalej, aby spróbować ponownie."
+    "searchFailed": "Nie udało się teraz wyszukać. Pisz dalej, aby spróbować ponownie.",
+    "browseDocs": "Przeglądaj dokumentację"
   },
   "footer": {
     "label": "Stopka",

@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Digita per cercare nella documentazione o chiedere all’IA.",
     "askAIColon": "Chiedi all’IA:",
     "allResultsFor": "Tutti i risultati per",
-    "searchFailed": "Impossibile cercare ora. Continua a digitare per riprovare."
+    "searchFailed": "Impossibile cercare ora. Continua a digitare per riprovare.",
+    "browseDocs": "Sfoglia la documentazione"
   },
   "footer": {
     "label": "Piè di pagina",

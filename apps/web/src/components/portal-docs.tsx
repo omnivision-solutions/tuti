@@ -333,7 +333,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   // address (teamLanguage).
   const lang = await teamLanguage();
   return (
-    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
+    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug} browse={(await pageTranslator("helpCenter")).t("browseDocs")}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
           <Link lang={parent ? lang : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
@@ -683,6 +683,7 @@ export function DocsLayout({
   reading = false,
   extra,
   wide = false,
+  browse = "Browse docs",
   children,
 }: {
   /** Null for none (a tab's overview, whose cards are its collections). */
@@ -697,6 +698,8 @@ export function DocsLayout({
   extra?: React.ReactNode;
   /** An operation's page: from desktop width the page takes the room "On this page" would, for its examples beside it. */
   wide?: boolean;
+  /** The tree's toggle without JavaScript, in the page's language (helpCenter.browseDocs). */
+  browse?: string;
   children: React.ReactNode;
 }) {
   const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0 || tree.references.length > 0 || extra) ? tree : null;
@@ -742,7 +745,7 @@ export function DocsLayout({
             <PortalMenuPart>{nav}</PortalMenuPart>
             <noscript>
               <details className="rounded-xl border md:hidden">
-                <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
+                <summary className="cursor-pointer px-4 py-2 text-sm font-medium">{browse}</summary>
                 <div className="border-t p-2">{nav}</div>
               </details>
             </noscript>

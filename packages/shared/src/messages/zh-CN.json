@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "输入内容以搜索文档或询问 AI。",
     "askAIColon": "询问 AI：",
     "allResultsFor": "所有结果：",
-    "searchFailed": "暂时无法搜索。请继续输入以重试。"
+    "searchFailed": "暂时无法搜索。请继续输入以重试。",
+    "browseDocs": "浏览文档"
   },
   "footer": {
     "label": "页脚",

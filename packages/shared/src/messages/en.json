@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Type to search the docs, or ask AI.",
     "askAIColon": "Ask AI:",
     "allResultsFor": "All results for",
-    "searchFailed": "Couldn't search just now. Keep typing to try again."
+    "searchFailed": "Couldn't search just now. Keep typing to try again.",
+    "browseDocs": "Browse docs"
   },
   "footer": {
     "label": "Footer",

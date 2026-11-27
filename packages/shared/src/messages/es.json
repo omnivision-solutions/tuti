@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Escribe para buscar en la documentación o preguntar a la IA.",
     "askAIColon": "Preguntar a la IA:",
     "allResultsFor": "Todos los resultados para",
-    "searchFailed": "No se pudo buscar ahora. Sigue escribiendo para volver a intentarlo."
+    "searchFailed": "No se pudo buscar ahora. Sigue escribiendo para volver a intentarlo.",
+    "browseDocs": "Explorar la documentación"
   },
   "footer": {
     "label": "Pie de página",

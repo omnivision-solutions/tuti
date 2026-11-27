@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Typ om de documentatie te doorzoeken of AI te vragen.",
     "askAIColon": "AI vragen:",
     "allResultsFor": "Alle resultaten voor",
-    "searchFailed": "Zoeken lukt nu niet. Typ verder om het opnieuw te proberen."
+    "searchFailed": "Zoeken lukt nu niet. Typ verder om het opnieuw te proberen.",
+    "browseDocs": "Documentatie bekijken"
   },
   "footer": {
     "label": "Voettekst",

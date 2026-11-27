@@ -494,9 +494,9 @@ test("on a phone, a changelog page with both its page links fits, in French's lo
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test("the docs in German: the home, search (box, dialog and page), a collection and a locked tab", async ({ browser }, testInfo) => {
+test("the docs in German: the home, search (box, dialog and page), a collection, locked tabs and an empty home", async ({ browser }, testInfo) => {
   // Two projects: one with tabs, one without.
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -506,6 +506,12 @@ test("the docs in German: the home, search (box, dialog and page), a collection 
   await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
   await api("/tabs", { name: "Guides" });
   await api("/tabs", { name: "Enterprise", access: "signed_in", noAccess: "lock" });
+  // A tab for a group of readers only: a signed-in reader outside it has no access.
+  await api("/groups", { name: "Partners", conditions: [{ property: "plan", op: "is", value: "partner" }] });
+  await api("/tabs", { name: "Partner guides", access: "groups", groups: ["partners"], noAccess: "lock" });
+  await api("/collections", { name: "Reselling", tab: "partner-guides" });
+  const reselling = await api("/articles", { title: "Reselling Acme", body: "Margins.", collection: "reselling" });
+  await api(`/articles/${reselling.slug}/publish`, {});
   await api("/collections", { name: "Basics", tab: "guides" });
   await api("/collections", { name: "SAML", tab: "enterprise" });
   for (const title of ["Getting started", "Inviting your team"]) {
@@ -529,7 +535,7 @@ test("the docs in German: the home, search (box, dialog and page), a collection 
   await expect(collections.getByRole("heading", { name: "Basics" }).locator("[lang=en]")).toHaveText("Basics");
   await expect(reader.getByRole("heading", { name: "Weitere Artikel" })).toBeVisible();
   // The docs' tabs under the header, named in German.
-  await expect(reader.getByRole("navigation", { name: "Dokumentationsbereiche" }).getByRole("link", { name: "Guides" })).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Dokumentationsbereiche" }).getByRole("link", { name: "Guides", exact: true })).toBeVisible();
   await checkpoint(reader, "docs-home-in-german", { fullPage: false });
 
   // The search dialog: as typed, nothing found, then an article (its title the team's words).
@@ -561,6 +567,15 @@ test("the docs in German: the home, search (box, dialog and page), a collection 
   await expect(reader.getByText("Melde dich an, um das zu lesen.")).toBeVisible();
   await expect(reader.getByRole("main").getByRole("link", { name: "Anmelden" })).toBeVisible();
 
+  // Signed in but not in the tab's group: no access, said so.
+  const member = await signUp(browser, portalUrl(slug), "Mia Member");
+  await member.goto("/de/docs/partner-guides");
+  await expect(member.getByText("Du hast keinen Zugriff darauf.")).toBeVisible();
+
+  // Without JavaScript (where the header's menu can't open), a collection's tree opens from a summary: in German.
+  await reader.goto("/de/docs/basics");
+  expect(await reader.content()).toContain(">Dokumentation durchstöbern</summary>");
+
   // On a phone.
   await reader.setViewportSize({ width: 390, height: 844 });
   await reader.goto("/de/docs");
@@ -589,11 +604,15 @@ test("the docs in German: the home, search (box, dialog and page), a collection 
   await createProject(team, "Plain", plain);
   const plainApi = await apiFor(team, plain);
   await plainApi("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  // Nothing published yet: the docs' home says so.
+  const visitor = await newPerson(browser, portalUrl(plain));
+  await visitor.setViewportSize({ width: 1280, height: 800 });
+  await visitor.goto("/de/docs");
+  await expect(visitor.getByText("Hier ist noch nichts", { exact: true })).toBeVisible();
+  await expect(visitor.getByText("Artikel erscheinen hier, sobald sie veröffentlicht sind.")).toBeVisible();
   await plainApi("/collections", { name: "Basics" });
   const intro = await plainApi("/articles", { title: "Intro", body: "Hello.", collection: "basics" });
   await plainApi(`/articles/${intro.slug}/publish`, {});
-  const visitor = await newPerson(browser, portalUrl(plain));
-  await visitor.setViewportSize({ width: 1280, height: 800 });
   await visitor.goto("/de/docs/basics");
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
 });

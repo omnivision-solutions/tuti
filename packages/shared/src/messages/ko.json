@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "입력하여 문서를 검색하거나 AI에게 질문하세요.",
     "askAIColon": "AI에게 질문:",
     "allResultsFor": "전체 검색 결과:",
-    "searchFailed": "지금은 검색할 수 없습니다. 계속 입력하면 다시 시도합니다."
+    "searchFailed": "지금은 검색할 수 없습니다. 계속 입력하면 다시 시도합니다.",
+    "browseDocs": "문서 둘러보기"
   },
   "footer": {
     "label": "바닥글",

@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "入力してドキュメントを検索するか、AIに質問します。",
     "askAIColon": "AIに質問：",
     "allResultsFor": "すべての検索結果：",
-    "searchFailed": "現在検索できません。もう一度入力してください。"
+    "searchFailed": "現在検索できません。もう一度入力してください。",
+    "browseDocs": "ドキュメントを見る"
   },
   "footer": {
     "label": "フッター",

@@ -54,7 +54,8 @@
     "typeToSearchOrAsk": "Tapez pour rechercher dans la documentation, ou demandez à l’IA.",
     "askAIColon": "Demander à l’IA :",
     "allResultsFor": "Tous les résultats pour",
-    "searchFailed": "Recherche impossible pour le moment. Continuez à taper pour réessayer."
+    "searchFailed": "Recherche impossible pour le moment. Continuez à taper pour réessayer.",
+    "browseDocs": "Parcourir la documentation"
   },
   "footer": {
     "label": "Pied de page",

@@ -5,6 +5,7 @@ import { DocsLayout, docsPageListing, DocsSearchResults, DocsTabPage } from "@/c
 import { DOCS_HEADING } from "@/lib/portal-look";
 import { docsHome, docsTree } from "@/server/docs-queries";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
+import { pageTranslator } from "@/server/portal-language";
 
 const searchQuery = (q: string | string[] | undefined) => (typeof q === "string" ? q.trim().slice(0, 200) : "");
 
@@ -42,7 +43,7 @@ export default async function DocsPage(props: PageProps<"/portal/[project]/docs"
   const { docs, tab, landing } = await docsHome(slug);
   if (query) {
     return (
-      <DocsLayout tree={docsTree(docs, tab?.slug ?? null, null)} current={null}>
+      <DocsLayout tree={docsTree(docs, tab?.slug ?? null, null)} current={null} browse={(await pageTranslator("helpCenter")).t("browseDocs")}>
         <DocsSearchResults projectSlug={slug} query={query} />
       </DocsLayout>
     );
