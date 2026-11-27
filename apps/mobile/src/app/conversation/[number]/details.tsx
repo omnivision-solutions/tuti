@@ -145,15 +145,17 @@ export default function Details() {
     }
     setBusy(true);
     setFailed(null);
+    // Marked before it's sent, as Take over does: a fetch may show the AI has it before the update answers.
+    handedBack.current = "handledBy" in body && body.handledBy === "ai";
     try {
       const answered = await updateConversation(api, number, body);
-      handedBack.current = "handledBy" in body && body.handledBy === "ai";
       // An update's answer doesn't say whether Hand back is offered: kept as it was shown, but where who has it, or spam,
       // changed (never offered in Spam; the server's to say again after either).
       showTriage(key, "handledBy" in body || "spam" in body ? answered : { ...answered, handBack: getTriage(key)?.handBack });
       setPane("details");
       AccessibilityInfo.announceForAccessibility(done);
     } catch (e) {
+      handedBack.current = false;
       setFailed(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);

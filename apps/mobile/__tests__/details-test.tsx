@@ -344,6 +344,28 @@ describe("the details sheet", () => {
     expect(screen.queryByRole("button", { name: "Hand back to the AI" })).toBeNull();
   });
 
+  it("moves a screen reader to the Status when a fetch shows the AI has it before Hand back's own answer, and only then", async () => {
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
+    const answer = mockApi.getMockImplementation()!;
+    let answerNow!: () => void;
+    mockApi.mockImplementation((path, init) =>
+      init?.method === "PATCH" ? new Promise((resolve) => (answerNow = () => resolve(answer(path, init)))) : answer(path, init),
+    );
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Hand back to the AI" }));
+    focus.mockClear();
+    // The live stream's fetch first: the AI has it.
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "ai" }, triageChanges(KEY)));
+    const said = () => focus.mock.calls.map(([row, kind]) => `${kind}: ${(row as unknown as { props: { accessibilityLabel: string } }).props.accessibilityLabel}`);
+    expect(said()).toEqual(["focus: Status, With AI"]);
+    await act(async () => answerNow());
+    // A later change to the team and back (a teammate on the web) moves nobody's focus.
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "team" }));
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "ai" }));
+    expect(said()).toEqual(["focus: Status, With AI"]);
+  });
+
   it("says why it wasn't handed back, in the server's words, where the user wrote meanwhile", async () => {
     serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
     const answer = mockApi.getMockImplementation()!;
