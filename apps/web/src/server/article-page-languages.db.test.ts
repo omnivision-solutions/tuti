@@ -184,7 +184,12 @@ test("the docs home showing a translated article in its place: in German at its 
   expect(xml).toContain(`hreflang="de" href="${portal}/de/docs"`);
   // Its structured data: at the German address.
   const page = await docsPage(project.slug, "abrechnung");
-  const tree = await DocsArticle({ project: project.slug, slug: "billing", article: (page as { article: Parameters<typeof DocsArticle>[0]["article"] }).article, path: "/docs" });
+  expect((await structuredData(page, "/docs"))[0]).toMatchObject({ "@type": "TechArticle", headline: "Abrechnung", url: `${portal}/de/docs` });
+});
+
+/** The JSON-LD blocks Billing's page renders when shown at `path` (`page`: docsPage's answer). */
+async function structuredData(page: unknown, path: string) {
+  const tree = await DocsArticle({ project: project.slug, slug: "billing", article: (page as { article: Parameters<typeof DocsArticle>[0]["article"] }).article, path });
   const found: unknown[] = [];
   const walk = (node: ReactNode) => {
     if (Array.isArray(node)) return node.forEach(walk);
@@ -195,8 +200,8 @@ test("the docs home showing a translated article in its place: in German at its 
     }
   };
   walk(tree);
-  expect(found[0]).toMatchObject({ "@type": "TechArticle", headline: "Abrechnung", url: `${portal}/de/docs` });
-});
+  return found.flat();
+}
 
 test("a title the share card's fonts can't draw (Japanese) keeps the default language's card", async () => {
   await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }, { code: "ja", live: true, newPages: "manual" }] });
@@ -207,7 +212,7 @@ test("a title the share card's fonts can't draw (Japanese) keeps the default lan
   expect(metadata.openGraph?.images).toMatchObject([{ url: `${portal}/og/docs/billing` }]);
 });
 
-test("a tab other than the docs home showing a translated article in its place: in German at its own address, in the sitemap too", async () => {
+test("a tab other than the docs home showing a translated article in its place: in German at its own address (canonical, hreflang, structured data), in the sitemap too", async () => {
   // Guides is the first tab (the docs home); Help, the second, shows Billing (in its collection) in its place.
   await call(createTab, as(), { name: "Guides" });
   const help = await call(createTab, as(), { name: "Help" });
@@ -220,6 +225,9 @@ test("a tab other than the docs home showing a translated article in its place: 
     canonical: `${portal}/de/docs/${help.slug}`,
     languages: { en: `${portal}/docs/${help.slug}`, de: `${portal}/de/docs/${help.slug}`, "x-default": `${portal}/docs/${help.slug}` },
   });
+  // Its structured data: at the tab's German address.
+  const page = await docsPage(project.slug, "abrechnung");
+  expect((await structuredData(page, `/docs/${help.slug}`)).find((block) => (block as { "@type"?: string })["@type"] === "TechArticle")).toMatchObject({ "@type": "TechArticle", headline: "Abrechnung", url: `${portal}/de/docs/${help.slug}` });
   at(null);
   const xml = await (await sitemap(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
   expect(xml).toContain(`<loc>${portal}/de/docs/${help.slug}</loc>`);
