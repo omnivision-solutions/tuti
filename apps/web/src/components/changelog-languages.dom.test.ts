@@ -254,3 +254,18 @@ test("text shown in the version's place (its first translation on its way, or fa
   expect(title().lang).toBe("en");
   expect(document.querySelector('[role="textbox"][aria-label="What changed"]')!.getAttribute("lang")).toBe("en");
 });
+
+test("text typed while a save is on its way stays unsaved: a later read's token isn't taken for it", async () => {
+  let answer = (_: unknown) => {};
+  saveChangelogVersion.mockReturnValueOnce(new Promise((resolve) => (answer = resolve))).mockResolvedValue({ version: "v-later" });
+  const { render } = await form({ version: "v1" });
+  await act(async () => type(title(), "Erste Fassung"));
+  await submit();
+  // Typed while the save is on its way.
+  await act(async () => type(title(), "Zweite Fassung"));
+  await act(async () => answer({ version: "v-saved" }));
+  // The page reads again (the English edited, say): the form still has an unsaved edit, so it keeps its own save's token.
+  await render({ version: "v-new" });
+  await submit();
+  expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v-saved");
+});

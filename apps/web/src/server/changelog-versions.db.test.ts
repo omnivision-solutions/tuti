@@ -280,20 +280,24 @@ test("a save made while the product setting marks the version behind waits for i
     () => null,
     (error: unknown) => error,
   );
-  // Waiting on the version's row lock (not on a timer): only then does the mark commit.
-  await expect
-    .poll(
-      async () =>
-        (
-          await prisma.$queryRaw<[{ n: number }]>`
-            SELECT count(*)::int AS n FROM pg_stat_activity
-            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%changelog_translation%FOR UPDATE%'`
-        )[0].n > 0,
-      { timeout: 5000 },
-    )
-    .toBe(true);
-  commit();
-  await marking;
+  // Waiting on the version's row lock (not on a timer): only then does the mark commit. Released whatever happens, so a
+  // failed wait never leaves the transaction holding the row.
+  try {
+    await expect
+      .poll(
+        async () =>
+          (
+            await prisma.$queryRaw<[{ n: number }]>`
+              SELECT count(*)::int AS n FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%changelog_translation%FOR UPDATE%'`
+          )[0].n > 0,
+        { timeout: 5000 },
+      )
+      .toBe(true);
+  } finally {
+    commit();
+    await marking.catch(() => {});
+  }
   expect(((await saving) as OperationError).code).toBe("changed");
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ title: "Dunkler Modus", behind: true });
 });

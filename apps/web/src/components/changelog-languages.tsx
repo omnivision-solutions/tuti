@@ -161,8 +161,11 @@ export function ChangelogVersionForm({
   // state, for the page's new reads below.
   const dirty = useRef(false);
   const [edited, setEdited] = useState(false);
+  // Edits so far: a save clears the marks only where none came after it was sent (typing goes on while it saves).
+  const edits = useRef(0);
   const markEdited = () => {
     dirty.current = true;
+    edits.current += 1;
     setEdited(true);
   };
   // The page read again (its own save or toggle, or a refresh) with a new token: a form with nothing typed goes from it; one
@@ -175,12 +178,16 @@ export function ChangelogVersionForm({
     }
   }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const sent = edits.current;
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
       // Its own save is what the next one goes from.
       setLoaded(result.version!);
-      dirty.current = false;
-      setEdited(false);
+      // Typed after it was sent: still unsaved, so the form keeps going from what it saved, never a later read's token.
+      if (edits.current === sent) {
+        dirty.current = false;
+        setEdited(false);
+      }
       toast.success("Saved");
     }
     return result;
