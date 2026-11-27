@@ -44,8 +44,9 @@ type Version = { automatic: boolean; title: string; body: string; content: unkno
  */
 const versionToken = (version: Version | null, sourceHash: string) =>
   // Not Keep up to date: turning it off changes nothing an edit was made from, so a save after it isn't refused (an editor
-  // keeps the token its text was loaded with; turning it on changes the text, with a new translation).
-  contentHash(JSON.stringify([version ? [version.title, version.content, version.publishedAt, version.behind] : null, sourceHash]));
+  // keeps the token its text was loaded with; turning it on changes the text, with a new translation). Its text as shown
+  // (displayDoc: its content, else its body), so a change to either is one.
+  contentHash(JSON.stringify([version ? [version.title, displayDoc(version), version.publishedAt, version.behind] : null, sourceHash]));
 
 function output(code: string, version: Version | null, sourceHash: string): z.output<typeof translationOutput> {
   return {
@@ -148,6 +149,9 @@ export const saveChangelogTranslation = defineOperation({
         throw new OperationError(409, "not_published", "Publish the entry first: its other languages are made from what's published");
       }
       const sourceHash = translationSource({ ...locked, content: locked.content as Doc | null }).hash;
+      // The version's row locked too before it's read (as articles.saveTranslation does): a change holding it (the product
+      // setting marking it behind) is seen, and refused as changed, rather than written over once it commits.
+      await tx.$queryRaw`SELECT 1 FROM changelog_translation WHERE "entryId" = ${entry.id} AND language = ${input.language} FOR UPDATE`;
       const version = await tx.changelogTranslation.findUnique({ where, select: versionSelect });
       // Made from what was read: text written over a teammate's newer text, or Keep up to date turned on over text the team
       // changed since (which it would replace, unconfirmed), is refused.

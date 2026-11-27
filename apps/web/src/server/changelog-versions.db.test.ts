@@ -254,3 +254,44 @@ test("a save's token is against the entry's text it was checked under, never a r
   // The token is the one a read now gives: the English it was saved beside.
   expect(saved.version).toBe((await call(getChangelogTranslation, as(), { number, language: "de" })).version);
 });
+
+test("a save made while the product setting marks the version behind waits for it and is refused, never writing over the mark", async () => {
+  const number = await published("manual");
+  const empty = await call(getChangelogTranslation, as(), { number, language: "de" });
+  await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Wechsle das Design im Profilmenü."), version: empty.version });
+  const read = await call(getChangelogTranslation, as(), { number, language: "de" });
+  const entryId = (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
+  // The setting's change holds the version's row, marked behind, not committed yet (as updateLanguages does).
+  let locked = () => {};
+  const marked = new Promise<void>((resolve) => (locked = resolve));
+  let commit = () => {};
+  const held = new Promise<void>((resolve) => (commit = resolve));
+  const marking = prisma.$transaction(
+    async (tx) => {
+      await tx.changelogTranslation.updateMany({ where: { entryId, language: "de" }, data: { behind: { "\u001f0": "The product setting changed" } } });
+      locked();
+      await held;
+    },
+    { timeout: 30_000 },
+  );
+  await marked;
+  // The save, from the read before the mark, reaches the row's lock and waits; then the mark commits.
+  const saving = call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus!", version: read.version }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  commit();
+  await marking;
+  expect(((await saving) as OperationError).code).toBe("changed");
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ title: "Dunkler Modus", behind: true });
+});
+
+test("a version's token follows its text as shown: a body changing where it has no content is a change", async () => {
+  const number = await published("manual");
+  const entryId = (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
+  await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: "de", automatic: false, title: "Dunkler Modus", body: "Erste Fassung.", publishedAt: new Date() } });
+  const read = await call(getChangelogTranslation, as(), { number, language: "de" });
+  await prisma.changelogTranslation.updateMany({ where: { entryId, language: "de" }, data: { body: "Zweite Fassung." } });
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: read.version }))).code).toBe("changed");
+});

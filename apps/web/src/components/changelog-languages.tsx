@@ -110,8 +110,10 @@ export type VersionView = {
   /** Why it can't be translated yet, if it can't. */
   waiting: string | null;
   title: string;
-  /** Its text; the default language's while it isn't written, to write over. */
+  /** Its text; the default language's while it has none yet (not written, or its first translation still to come), to write over. */
   content: Doc;
+  /** `title` and `content` are its own (false: the default language's, shown in their place). */
+  own: boolean;
 };
 
 /** The one line over a version's text: where it stands, and what saving does. */
@@ -155,14 +157,30 @@ export function ChangelogVersionForm({
   // The switch goes from the page's latest read, as it changes nothing typed here.
   const [loaded, setLoaded] = useState(view.version);
   // Typed and not saved yet (the title, or any edit in the text: Enter, paste and drop fire no input event there): a refused
-  // toggle doesn't read the page again over it. A ref, read when the toggle's answer comes (typing goes on meanwhile).
+  // toggle doesn't read the page again over it. A ref, read when the toggle's answer comes (typing goes on meanwhile), and
+  // state, for the page's new reads below.
   const dirty = useRef(false);
+  const [edited, setEdited] = useState(false);
+  const markEdited = () => {
+    dirty.current = true;
+    setEdited(true);
+  };
+  // The page read again (its own save or toggle, or a refresh) with a new token: a form with nothing typed goes from it; one
+  // with edits keeps its own, so their save is refused rather than marked up to date with a change they never saw.
+  const [seen, setSeen] = useState(view.version);
+  if (seen !== view.version) {
+    setSeen(view.version);
+    if (!edited) {
+      setLoaded(view.version);
+    }
+  }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
       // Its own save is what the next one goes from.
       setLoaded(result.version!);
       dirty.current = false;
+      setEdited(false);
       toast.success("Saved");
     }
     return result;
@@ -171,13 +189,14 @@ export function ChangelogVersionForm({
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   const line = versionLine(view, defaultName);
-  // On the text alone (the labels, line and errors are the app's English): the default language's while it's still its text.
-  const textLang = view.state === "unwritten" ? languages[0]!.code : view.code;
+  // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
+  // its, whatever the state (not written, or a first translation on its way or failing).
+  const textLang = view.own ? view.code : languages[0]!.code;
   const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
     <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => {
         if ((event.target as HTMLElement).getAttribute("role") !== "switch") {
-          dirty.current = true;
+          markEdited();
         }
       }} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
@@ -202,7 +221,7 @@ export function ChangelogVersionForm({
           />
           {state.error && <FieldError id="version-error">{state.error}</FieldError>}
         </div>
-        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={view.content} onChange={() => (dirty.current = true)} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
+        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={view.content} onChange={markEdited} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate

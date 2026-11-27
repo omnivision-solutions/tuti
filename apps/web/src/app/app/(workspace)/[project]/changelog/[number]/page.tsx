@@ -189,6 +189,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         // Not written yet: the default language's title and text, to write over.
         title: read.title || entry.title,
         content: (read.content ?? displayDoc(entry)) as Doc,
+        own: read.content !== null,
       };
     })());
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;

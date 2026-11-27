@@ -44,7 +44,7 @@ const languages = [
   { code: "en", name: "English", state: "default" as const, href: "/app/acme/changelog/1" },
   { code: "de", name: "Deutsch", state: "current" as const, href: "/app/acme/changelog/1?language=de" },
 ];
-const view: VersionView = { code: "de", name: "Deutsch", state: "current", keepUpToDate: true, version: "v1", waiting: null, title: "Dunkler Modus", content: doc };
+const view: VersionView = { code: "de", name: "Deutsch", state: "current", keepUpToDate: true, version: "v1", waiting: null, title: "Dunkler Modus", content: doc, own: true };
 
 async function form(props: Partial<typeof view> = {}) {
   const box = document.createElement("div");
@@ -156,8 +156,8 @@ test("the switch goes from the page's latest read, not the token the text was lo
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v3");
   expect(keep().checked).toBe(true);
-  // Save keeps the token its text was loaded with: the toggles went from later reads (the English edited since).
-  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v1");
+  // Nothing typed: Save goes from the newest read, here the one its own toggle got back.
+  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v-on");
 });
 
 test("a first toggle (no version yet) gives Save the new version's token, so the next save isn't refused", async () => {
@@ -170,10 +170,11 @@ test("a first toggle (no version yet) gives Save the new version's token, so the
   expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v-made");
 });
 
-test("a toggle's token is taken for Save only where the form's text goes from the read it acted on; text from an older read keeps its own", async () => {
+test("a toggle's token is taken for Save only where the form's text goes from the read it acted on; edits from an older read keep its token", async () => {
   keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-after" });
   saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
   const { render } = await form({ keepUpToDate: true, version: "v1" });
+  await act(async () => type(title(), "Bearbeitet"));
   // The English edited meanwhile: the page's new read, the form's text still from v1.
   await render({ keepUpToDate: true, version: "v2" });
   await act(async () => keep().click());
@@ -206,7 +207,7 @@ test("the version's language is on its title and text only, the default language
   expect(document.querySelectorAll("[lang]")).toHaveLength(2);
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
   document.body.replaceChildren();
-  await form({ state: "unwritten", keepUpToDate: false });
+  await form({ state: "unwritten", keepUpToDate: false, own: false });
   expect(title().lang).toBe("en");
   expect(text().getAttribute("lang")).toBe("en");
 });
@@ -230,4 +231,24 @@ test("text typed while the toggle's request is on its way counts: its refusal do
   await act(async () => answer({ error: "changed", changed: true }));
   expect(router.refresh).not.toHaveBeenCalled();
   expect(title().value).toBe("Während der Anfrage getippt");
+});
+
+test("a form with nothing typed goes from the page's new read; one with edits keeps the token they were made from", async () => {
+  saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
+  const { render } = await form({ version: "v1" });
+  // The page read again (the English edited, say), the text the same: nothing typed, so Save goes from it.
+  await render({ version: "v2" });
+  await submit();
+  expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v2");
+  // Edited, then read again: the edit keeps the token it was made from, so the server refuses it.
+  await act(async () => type(title(), "Bearbeitet"));
+  await render({ version: "v3" });
+  await submit();
+  expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v-saved");
+});
+
+test("text shown in the version's place (its first translation on its way, or failing) carries the default language's lang", async () => {
+  await form({ state: "waiting", keepUpToDate: true, own: false, title: "Dark mode" });
+  expect(title().lang).toBe("en");
+  expect(document.querySelector('[role="textbox"][aria-label="What changed"]')!.getAttribute("lang")).toBe("en");
 });
