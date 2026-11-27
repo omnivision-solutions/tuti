@@ -33,6 +33,9 @@ export async function register() {
     setInterval(() => void handlers.retryCodeChanges({}, log).catch((error) => log.error("Autopilot's retries failed", { error })), 10 * 60_000).unref();
     setInterval(() => void handlers.resumeImports({}, log).catch((error) => log.error("Resuming imports failed", { error })), 60_000).unref();
     setInterval(() => void handlers.retryArticleTranslations({}, log).catch((error) => log.error("Retrying article translations failed", { error })), 15 * 60_000).unref();
+    // A changelog entry's emails still due (one whose announcement waited for its translations past ANNOUNCEMENT_WAITS_MS,
+    // or whose sending failed): every 10 minutes, as its cron runs on Hatchet.
+    setInterval(() => void handlers.resubmitChangelogEmails({}, log).catch((error) => log.error("Resubmitting changelog emails failed", { error })), 10 * 60_000).unref();
     setInterval(() => void handlers.failStaleImports({}, log).catch((error) => log.error("Failing stale imports failed", { error })), 60 * 60_000).unref();
   }
 }

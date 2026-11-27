@@ -474,3 +474,24 @@ test("articles sharing a slug that this reader can't see are ruled out together,
     findFirst.mockRestore();
   }
 });
+
+test("an up-to-date version whose naming fails is left unnamed without failing its translate job; the next names it", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  // Kept up to date and translated from the article as it is, but not named (its naming failed then).
+  const article = await prisma.article.findUniqueOrThrow({ where: { id: articleId }, select: { title: true, description: true, keywords: true, body: true, content: true } });
+  await prisma.articleTranslation.create({
+    data: { articleId, projectId: project.id, language: "de", automatic: true, title: "Abrechnung", publishedAt: new Date(), sourceHash: translationSource(article).hash, productAvailable: false },
+  });
+  // Naming fails (its transaction: a lock timeout, a slug taken meanwhile).
+  const failing = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("lock timeout"));
+  try {
+    expect(await translateArticle({ articleId, language: "de" }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "up to date" });
+  } finally {
+    failing.mockRestore();
+  }
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).slug).toBeNull();
+  // The next job names it.
+  expect(await translateArticle({ articleId, language: "de" }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "up to date" });
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).slug).toBe("abrechnung");
+});

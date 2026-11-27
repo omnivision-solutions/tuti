@@ -25,6 +25,7 @@ import {
   storeImage,
   toApiStatus,
   uploadImage,
+  queueChangelogTranslations,
 } from "@tuti/jobs";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { aiEnabled, complete, creditsEnabled, creditsPerUsageDollar, listModels, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
@@ -841,6 +842,10 @@ async function saveEntry({ actor, projectId }: { actor: Actor; projectId: string
         return saved;
       }),
     );
+    // A published entry's title or text changed: its languages kept up to date follow (docs/plan.md L16), never failing the save.
+    if (updated.publishedAt && (input.title !== undefined || text)) {
+      await queueChangelogTranslations(updated.id).catch((error: unknown) => log.warn("Couldn't queue a changelog entry's translations", { entryId: updated.id, error }));
+    }
     return entryView(updated, portal);
 }
 
@@ -1805,6 +1810,8 @@ export const publishChangelogEntry = defineOperation({
       return { deliveries, completed, emailing };
     });
     if (shipped) {
+      // Its languages kept up to date (docs/plan.md L16), before its announcement, which waits for them a little.
+      await queueChangelogTranslations(entry.id).catch((error: unknown) => log.warn("Couldn't queue a changelog entry's translations", { entryId: entry.id, error }));
       // Anything not queued now is picked up by the webhook-resubmit, shipped-emails-resubmit and changelog-emails-resubmit jobs.
       await queueDeliveries(shipped.deliveries);
       for (const postId of shipped.completed) {

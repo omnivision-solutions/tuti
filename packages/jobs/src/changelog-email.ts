@@ -6,6 +6,7 @@ import { type GroupRule, storedRule } from "@tuti/shared/group-conditions";
 
 import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
+import { ANNOUNCEMENT_WAITS_MS, entryTranslationsPending } from "./article-translation";
 import { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
 import { emailBrand } from "./email-brand";
@@ -337,6 +338,12 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
+  }
+  // Its translations kept up to date get a little while (docs/plan.md L16, ANNOUNCEMENT_WAITS_MS from when it became due):
+  // the translate job queues this again once none is on its way, and past the wait the safety net (resubmitChangelogEmails)
+  // sends it as it is, untranslated where they aren't.
+  if (Date.now() - entry.subscribersEmailDueAt.getTime() < ANNOUNCEMENT_WAITS_MS && (await entryTranslationsPending(entryId))) {
+    return { waiting: "its translations" };
   }
   const emailedAt = entry.subscribersEmailedAt;
   // Not those it's sent to already (a retry after a failed few), so each run only works through the rest.
