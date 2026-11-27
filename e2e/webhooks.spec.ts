@@ -71,7 +71,7 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     expect(box.x + box.width).toBeLessThanOrEqual(390);
     expect(await dialog.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
     const tops = await dialog.getByRole("checkbox").evaluateAll((boxes) => boxes.map((el) => el.getBoundingClientRect().top));
-    expect(new Set(tops).size).toBe(8);
+    expect(new Set(tops).size).toBe(9);
     await checkpoint(owner, "settings-webhook-added-phone", { fullPage: false });
     await dialog.getByRole("button", { name: "Close" }).click();
     await expect(dialog).toBeHidden();
