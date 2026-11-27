@@ -167,9 +167,15 @@ test("a translation under way as the glossary changes writes nothing; the one qu
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
   await call(createArticle, as(), { title: "Boards", content: BOARDS });
   model.reply(reply("Boards", BOARDS, "de", "Tafel"), () => call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] }));
-  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  // Held as the replacement asks the model, once the first has had its chance to write: what's stored then is never Tafel.
+  let before = "";
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"), async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    before = String((await version("boards")).body);
+  });
   await call(publishArticle, as(), { slug: "boards" });
   await languageTranslationsDone();
+  expect(before).not.toContain("Tafel");
   const written = await version("boards");
   expect(written.body).toContain("Brett");
   expect(written.body).not.toContain("Tafel");
@@ -179,9 +185,15 @@ test("a labels translation under way as the glossary changes writes nothing; the
   await call(updateLanguages, as(), { languages: [{ code: "de" }] });
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
   model.reply(JSON.stringify({ segments: { "0.n": "Tafeln" } }), () => call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] }));
-  model.reply(JSON.stringify({ segments: { "0.n": "Bretter" } }));
+  // As above: what's stored as the replacement asks is never Tafeln.
+  let before: string | undefined;
+  model.reply(JSON.stringify({ segments: { "0.n": "Bretter" } }), async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    before = labelIn(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id } }), "de")?.name;
+  });
   await call(createCollection, as(), { name: "Boards", description: "" });
   await languageTranslationsDone();
+  expect(before).not.toBe("Tafeln");
   expect(labelIn(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id } }), "de")?.name).toBe("Bretter");
 });
 
@@ -272,14 +284,19 @@ test("a glossary save while a translation's write holds an article (German kept 
   model.otherwise(reply("Boards", BOARDS, "de2", "Brett"), "Make a Board");
   let [done, waited] = [false, false];
   const saving = call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett", fr: "Planche" } }] }).finally(() => (done = true));
-  for (let i = 0; i < 200 && !done && !waited; i++) {
-    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-    waited = Number(count) > 0;
-    if (!waited) await new Promise((resolve) => setTimeout(resolve, 50));
+  try {
+    for (let i = 0; i < 200 && !done && !waited; i++) {
+      const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      waited = Number(count) > 0;
+      if (!waited) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // The save got as far as waiting on the held write (else this would test nothing).
+    expect(waited).toBe(true);
+  } finally {
+    // Let go whatever happened above, and both finished, so neither outlives the test.
+    release();
+    await Promise.allSettled([writing, saving]);
   }
-  // The save got as far as waiting on the held write (else this would test nothing).
-  expect(waited).toBe(true);
-  release();
   await Promise.all([writing, saving]);
   expect((await version("boards")).memory).toMatchObject({ "Pay by card.": "Mit Karte zahlen." });
 });
@@ -734,4 +751,44 @@ test("a published edit in a section using a changed term, with a draft editing o
   expect(body).toContain("[de2] Make a Brett for ideas.");
   expect(body).not.toContain("Unser eigener Text.");
   expect(body).toContain("Unsere eigene Zahlung.");
+});
+
+for (const kept of [false, true]) {
+  test(`publishing a draft whose section is behind for the glossary ${kept ? "keeping it: the team's text stays, behind" : "takes the new translation there, as behind English"}`, async () => {
+    const { de, key } = await teamBoards(false);
+    model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+    await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+    await languageTranslationsDone();
+    const published = await call(publishTranslation, as(), { ...de, ...(kept && { keep: [key] }) });
+    const body = JSON.stringify(published.content);
+    if (kept) {
+      expect(body).toContain("Unser eigener Text.");
+      expect(published.behind).toEqual([{ section: key, reason: glossaryChangedFor("Board") }]);
+    } else {
+      expect(body).toContain("[de2] Make a Brett for ideas.");
+      expect(body).not.toContain("Unser eigener Text.");
+      expect(published.behind).toEqual([]);
+    }
+  });
+}
+
+test("publishing a draft whose section is behind for the glossary, its published text not yet made with it: that section is translated again", async () => {
+  const { de, key } = await teamBoards(false);
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  // As if its retranslation hadn't run yet: made with another glossary.
+  const { id } = await version("boards");
+  await prisma.articleTranslation.update({ where: { id }, data: { glossaryHash: "older" } });
+  const published = await call(publishTranslation, as(), de);
+  // Not the published section (made with another glossary): asked for, the team's text until it's written.
+  expect(JSON.stringify(published.content)).not.toContain("[de2] Make a Brett");
+  expect((await version("boards")).updateSections).toEqual([key]);
+  await languageTranslationsDone();
+  // Translated again (from what's remembered with the glossary as it is: nothing to ask the model).
+  const after = await version("boards");
+  expect(String(after.body)).toContain("[de2] Make a Brett for ideas.");
+  expect(String(after.body)).not.toContain("Unser eigener Text.");
+  expect(after.updateSections).toEqual([]);
+  expect(after.behind).toEqual({});
 });
