@@ -194,6 +194,8 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     }
     set(editor, { ...now, result: result.content });
     setStatus("The AI's version is under the selected text: Accept, Try again or Discard.");
+    // On its Accept: left in the text, a key there (Tab in a list indents the item) would edit the selected text and drop it.
+    editor.view.dom.querySelector<HTMLButtonElement>('[data-ask-ai="new"] button')?.focus();
   };
 
   // Each render's: the buttons in the text call the latest.
@@ -205,8 +207,11 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
           if (!now?.result) {
             return;
           }
-          // Open at both ends, so a part of a line joins the text around it.
-          const slice = Slice.maxOpen(Fragment.fromJSON(editor.schema, now.result.content ?? []));
+          // A paragraph at either end joins the text around it there (part of a line stays part of it); anything else
+          // (a list, a heading) goes in as its own block, as the preview shows it.
+          const fragment = Fragment.fromJSON(editor.schema, now.result.content ?? []);
+          const open = (node: typeof fragment.firstChild) => (node?.type.name === "paragraph" ? 1 : 0);
+          const slice = new Slice(fragment, open(fragment.firstChild), open(fragment.lastChild));
           const tr: Transaction = editor.state.tr.replaceRange(now.from, now.to, slice).setMeta(ASK_AI, null);
           editor.view.dispatch(tr);
           editor.commands.focus();

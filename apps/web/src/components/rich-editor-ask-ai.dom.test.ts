@@ -172,3 +172,57 @@ test("the team's own instruction is sent and kept for next time, the last 5, new
   const recent = document.querySelector('[role="group"][aria-label="Your recent instructions"]')!;
   expect([...recent.querySelectorAll("button")].map((each) => each.textContent)).toEqual(["Two", "Six", "Five", "Four", "Three"]);
 });
+
+test("a list for part of a line goes in as its own block, as the preview shows it; the text around it stays", async () => {
+  const view = await editor();
+  await view.select(SECOND, SECOND + 26);
+  await view.click("Ask AI");
+  const settle = answer();
+  await view.click("Make a list");
+  // Answered once the dialog has closed (focus back in the text), as an AI's seconds later.
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await settle({
+    content: { type: "doc", content: [{ type: "bulletList", content: [{ type: "listItem", content: [paragraph("Runs quietly")] }, { type: "listItem", content: [paragraph("Emails you")] }] }] },
+  });
+  expect(view.shown("new")).toContain("Runs quietly");
+  // Its Accept has focus: a key in the text could no longer drop it.
+  expect(document.activeElement?.textContent).toBe("Accept");
+
+  await view.click("Accept");
+  expect(view.saved()).toEqual({
+    type: "doc",
+    content: [
+      paragraph("Exports are quick."),
+      { type: "bulletList", content: [{ type: "listItem", content: [paragraph("Runs quietly")] }, { type: "listItem", content: [paragraph("Emails you")] }] },
+      paragraph(" and email you when done."),
+    ],
+  });
+});
+
+test("Try again asks again for the same text and instruction; Escape on the AI's version discards it; an edit inside the text once it's shown drops it", async () => {
+  const view = await editor();
+  await view.select(SECOND, SECOND + 26);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("First try")] } });
+  await view.click("Clearer");
+  await vi.waitFor(() => expect(view.shown("new")).toContain("First try"));
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("Second try")] } });
+  await view.click("Try again");
+  await vi.waitFor(() => expect(view.shown("new")).toContain("Second try"));
+  expect(rewriteText).toHaveBeenCalledTimes(2);
+  expect(rewriteText.mock.calls[1]).toEqual(rewriteText.mock.calls[0]);
+
+  const version = document.querySelector<HTMLElement>('[data-ask-ai="new"]')!;
+  await act(async () => version.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(view.shown("new")).toBeNull();
+  expect(view.saved()).toEqual(doc);
+
+  await view.select(SECOND, SECOND + 26);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("Third try")] } });
+  await view.click("Clearer");
+  await vi.waitFor(() => expect(view.shown("new")).toContain("Third try"));
+  await act(async () => view.editor.chain().insertContentAt(SECOND + 5, "X").run());
+  expect(view.shown("new")).toBeNull();
+  expect(toast).toHaveBeenCalledWith("The text changed, so the AI's edit was dropped. Select it again to ask again.");
+});
