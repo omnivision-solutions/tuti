@@ -305,6 +305,8 @@ const suggestionsOutput = z
 const CHECK_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
 /** A read started longer ago than this is taken for lost: its job waits up to 2 minutes for the worker, then takes 15 seconds. */
 const SCAN_STALE_MS = 3 * 60 * 1000;
+/** How much longer a lost read still says checking to polls, for the page's last asks (each one's own time included). */
+const POLL_GRACE_MS = 60 * 1000;
 
 /**
  * The hosted sign-in services the app calls (@tuti/jobs sign-in-hosts.ts), with their hosts its runs' browser doesn't
@@ -327,10 +329,11 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }, s
   const kept = settings.signInServicesFor === key || settings.signInServicesFor === partlyScannedFor(settings.appUrl) ? (settings.signInServices as SignInService[] | null) : null;
   // One kept before answers had a time (until 2026-11) is read again too.
   const fresh = kept !== null && settings.signInServicesAt !== null && now - settings.signInServicesAt.getTime() < CHECK_AGAIN_MS;
-  // A read claimed: still checking while it may run; one taken for lost (never run, or the worker restarted) still is
-  // for the page's polls while there's no answer, so its last ones never read as nothing found; a look starts another.
-  const claimed = settings.signInScanFor === key && settings.signInScanAt !== null;
-  let checking = !fresh && claimed && (now - settings.signInScanAt!.getTime() < SCAN_STALE_MS || (!start && kept === null));
+  // A read claimed: still checking while it may run. One taken for lost (never run, or the worker restarted) still is
+  // for polls a little longer while there's no answer, so the page's last ones (it asks for SCAN_STALE_MS) never read
+  // as nothing found; then not, so an API client polling stops. A look starts another.
+  const age = settings.signInScanFor === key && settings.signInScanAt !== null ? now - settings.signInScanAt.getTime() : Infinity;
+  let checking = !fresh && (age < SCAN_STALE_MS || (!start && kept === null && age < SCAN_STALE_MS + POLL_GRACE_MS));
   if (!fresh && !checking && start) {
     checking = await startScan(context, settings.appUrl, kept !== null);
   }

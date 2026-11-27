@@ -327,11 +327,15 @@ test("past the fetch limits, an answer older than 7 days is still shown, not ref
   expect(await look()).toEqual({ suggestions: old, checking: false });
 });
 
-test("a read taken for lost (never run) still says checking to the page's polls while there's no answer; a look starts another", async () => {
+test("a read taken for lost (never run) still says checking to the page's last polls while there's no answer, not for good; a look starts another", async () => {
   const appUrl = `${base}/`;
   await settle({ appUrl });
-  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(appUrl), signInScanAt: new Date(Date.now() - 10 * 60_000) } });
+  const claim = (minutes: number) => prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(appUrl), signInScanAt: new Date(Date.now() - minutes * 60_000) } });
+  await claim(3.5);
   expect(await look({ start: false })).toEqual({ suggestions: [], checking: true });
+  // Long lost: an API client polling stops.
+  await claim(10);
+  expect(await look({ start: false })).toEqual({ suggestions: [], checking: false });
   expect(requests).toEqual([]);
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
