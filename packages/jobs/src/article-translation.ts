@@ -349,7 +349,8 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   const source = translationSource(published);
   // The glossary's terms the source uses, as set for this language (docs/plan.md L12): sent with it, checked after; a term it
   // uses changed since its last translation retranslates it (its remembered segments are reused where they still pass).
-  const glossary = glossaryFor(await projectGlossary(published.projectId), language, toPlainText(source.doc));
+  const plainSource = toPlainText(source.doc);
+  const glossary = glossaryFor(await projectGlossary(published.projectId), language, plainSource);
   const sameSetting = row.productAvailable === setting.productAvailable;
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
@@ -378,6 +379,11 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     prisma.$transaction(async (tx) => {
       const now = await kind.lockSource(tx, parentId);
       if (!now || translationSource(now).hash !== source.hash) {
+        return false;
+      }
+      // The glossary still the one it translated with (as the product setting is): a save since queued it, or marked its
+      // sections behind, again (glossaryChanges locks the source as this does, so its mark can't land under this write).
+      if (glossaryFor(await projectGlossary(published.projectId, tx), language, plainSource).hash !== glossary.hash) {
         return false;
       }
       let written: Data | null = data as Data;
@@ -426,7 +432,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     return complete({ system, user, timeoutMs: 60_000, ...ai });
   };
   // Remembered translations only from the same setting: one made under the other treats the product's words the other way.
-  const memory = !fresh && sameSetting ? (row.memory as Record<string, string>) : {};
+  // A glossary changed since: none of its terms' segments reused (the check takes a word starting with a term's translation,
+  // so a remembered one with an old, longer word could pass).
+  const remembered = !fresh && sameSetting ? (row.memory as Record<string, string>) : {};
+  const memory = row.glossaryHash === glossary.hash ? remembered : Object.fromEntries(Object.entries(remembered).filter(([text]) => termsUsed(text, glossary.terms).length === 0));
   const parts = sourceSections(source.text);
   // An article's version the team writes is translated only where it asked: just those sections are sent (no title,
   // description or keywords, which are the team's), and only their problems count.
@@ -778,6 +787,11 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
     return { retranslated: 0, behind: 0, queue: async () => {} };
   }
   const codes = [...changed.keys()];
+  if (!dryRun) {
+    // A labels job already running for those languages writes nothing (as after Retranslate): the one queued after takes the
+    // new glossary. Their rows first, as a languages save and a label's write lock them.
+    await tx.projectLanguage.updateMany({ where: { projectId, code: { in: codes } }, data: { labelsVersion: { increment: 1 } } });
+  }
   const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true, behind: true } } as const;
   const sources = [
     ...(await tx.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions } })).map(
