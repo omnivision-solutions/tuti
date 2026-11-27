@@ -364,5 +364,21 @@
   },
   "docs": {
     "notTranslated": "このページはまだ日本語に翻訳されていません。原文の言語で表示しています。"
+  },
+  "emails": {
+    "signInTo": "{name} にログイン",
+    "signInPreview": "{name} へのログインリンクです。",
+    "signInText": "{name} にログインするためのリンクです。",
+    "ignoreIt": "心当たりがない場合は、このメールを無視してください。",
+    "linkExpires": "このリンクは 1 回だけ使え、{minutes, plural, other {# 分}}で期限が切れます。",
+    "resetTitle": "パスワードのリセット",
+    "resetPreview": "{name} の新しいパスワードを設定してください。",
+    "resetText": "<b>{name}</b> のアカウントのパスワードをリセットするよう依頼がありました。",
+    "resetButton": "新しいパスワードを設定",
+    "resetIgnore": "心当たりがない場合は、このメールを無視してください。パスワードは変わりません。",
+    "changedTitle": "パスワードが変更されました",
+    "changedPreview": "パスワードが変更されました。",
+    "changedText": "リセットリンクでアカウントのパスワードが変更され、他のすべての場所からログアウトしました。",
+    "changedWarning": "心当たりがない場合は、ログインページの「{forgot}」から今すぐ新しいパスワードを設定してください。"
   }
 }

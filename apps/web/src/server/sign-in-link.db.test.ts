@@ -46,9 +46,9 @@ function ask(email: string, next = "/", slug = project.slug) {
 }
 
 /** The link in the latest sign-in email to `email`. */
-async function linkTo(email: string) {
+async function linkTo(email: string, subject = `Sign in to ${project.name}`) {
   const message = await mailbox.latestTo(email);
-  expect(message.subject).toBe(`Sign in to ${project.name}`);
+  expect(message.subject).toBe(subject);
   return new URL(message.text.split(/\s+/).find((word) => word.includes("/sign-in/link?"))!);
 }
 
@@ -104,12 +104,13 @@ test("the email has a link to a page that asks to confirm, then signs a new addr
   expect(await view(link)).toEqual({ location: FAILED });
 });
 
-test("asked at a language's address, the link opens at that address (/de/sign-in/link), so its page is in that language", async () => {
+test("asked at a language's address, the email is in that language and its link opens at that address (/de/sign-in/link), so its page is too", async () => {
   const email = newAddress();
   // What proxy.ts sets on a German address's request.
   request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
   expect(await ask(email)).toEqual({ sentTo: email });
-  const link = await linkTo(email);
+  const link = await linkTo(email, `Bei ${project.name} anmelden`);
+  expect((await mailbox.latestTo(email)).text).toContain(`Hier ist dein Link, um dich bei ${project.name} anzumelden.`);
   expect(link.origin + link.pathname).toBe(`http://${portalHost()}/de/sign-in/link`);
 });
 
