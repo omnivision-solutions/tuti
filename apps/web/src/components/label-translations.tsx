@@ -50,8 +50,12 @@ function TranslationRow({ projectSlug, slug, defaultName, row, ai }: { projectSl
   const translated = row.name !== null;
   return (
     <li className="flex items-center gap-3 px-4 py-3 @min-[34rem]/settings:px-5">
-      <span aria-hidden className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 font-mono text-xs font-semibold uppercase">
-        {row.language}
+      {/* Its code for the eye; its name for a screen reader, which reads the row as that language's. */}
+      <span className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 font-mono text-xs font-semibold uppercase">
+        <span aria-hidden>{row.language}</span>
+        <span lang={row.language} className="sr-only">
+          {row.native}
+        </span>
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         {translated ? (

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { checkpoints } from "./checkpoint";
+import { query } from "./db";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
 import { apiFor, createProject, signUp } from "./helpers";
@@ -76,6 +77,15 @@ test("a collection's settings show its name in each language: German kept up to 
     await expect(row("de")).toContainText("Erste Schritte", { timeout: 1000 });
   }).toPass();
   await expect(row("de")).toContainText("Automatic");
+
+  // Sample content is never translated: its dialog offers no Keep up to date.
+  await query(`UPDATE collection c SET sample = true FROM project p WHERE p.id = c."projectId" AND p.slug = $1 AND c.slug = 'getting-started'`, [slug]);
+  await owner.reload();
+  await owner.getByRole("button", { name: "Edit Deutsch" }).click();
+  await expect(german.getByRole("textbox", { name: "Name" })).toBeVisible();
+  await expect(german.getByRole("switch", { name: "Keep up to date" })).toHaveCount(0);
+  await german.getByRole("button", { name: "Cancel" }).click();
+  await expect(german).toBeHidden();
 
   // On a phone: the rows fit, the names wrap.
   await owner.setViewportSize({ width: 390, height: 844 });
