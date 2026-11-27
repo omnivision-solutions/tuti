@@ -1891,40 +1891,43 @@ enum ChangelogTag {
 
 /// A changelog entry: a draft the team writes, then publishes on the portal's /changelog.
 model ChangelogEntry {
-  id                    String         @id @default(cuid())
-  projectId             String
+  id                        String         @id @default(cuid())
+  projectId                 String
   /// Per-project number, like posts.
-  number                Int
-  title                 String
+  number                    Int
+  title                     String
   /// Plain text of the entry (derived from `content`).
-  body                  String         @default("")
+  body                      String         @default("")
   /// Rich content (@tuti/content "changelog" profile).
-  content               Json?
-  tags                  ChangelogTag[]
+  content                   Json?
+  tags                      ChangelogTag[]
   /// Null while it's a draft.
-  publishedAt           DateTime?
+  publishedAt               DateTime?
   /// Published with an announcement (the widget shows it as new), or quietly.
-  announced             Boolean        @default(false)
+  announced                 Boolean        @default(false)
   /// Imported as a draft though it was published in the other tool: its date there. Publishing it first uses this date,
   /// quietly (not announced or emailed: it's old news), and clears it.
-  importedPublishedAt   DateTime?
+  importedPublishedAt       DateTime?
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
-  collecting            Boolean        @default(false)
+  collecting                Boolean        @default(false)
   /// When a GitHub release closed it as the running draft (its notes still to write); cleared once it's published.
-  releasedAt            DateTime?
+  releasedAt                DateTime?
   /// An uploaded image shown above it on the portal (release-media keeps it while it's used here).
-  coverId               String?
+  coverId                   String?
   /// When it was first published with "Email subscribers": those confirmed by then get it, once. Never cleared.
-  subscribersEmailedAt  DateTime?
+  subscribersEmailedAt      DateTime?
   /// Its subscriber emails are still to send (cleared once they're all sent; a cron sends them again for two days).
-  subscribersEmailDueAt DateTime?
-  createdById           String?
+  subscribersEmailDueAt     DateTime?
+  /// Queuing its translations failed then (docs/plan.md L16): the retry job queues them again, for the languages there at
+  /// that time, and clears it.
+  translationsQueueFailedAt DateTime?
+  createdById               String?
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
   /// Never emailed to subscribers.
-  sample                Boolean        @default(false)
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
+  sample                    Boolean        @default(false)
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 
   project          Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   cover            Media?                      @relation(fields: [coverId], references: [id], onDelete: SetNull)
@@ -1939,12 +1942,15 @@ model ChangelogEntry {
   groups           ChangelogEntryGroup[]
   /// Screenshot runs that fill its "[Screenshot: …]" lines (changelog.takeScreenshots).
   screenshotRuns   ScreenshotRun[]
+  /// Its translations into the project's languages (docs/plan.md L16).
+  translations     ChangelogTranslation[]
   /// Email-only: emailed to subscribers, listed nowhere (the portal, the widget, feeds, the API to readers), its page
   /// the team's only.
   emailOnly        Boolean                     @default(false)
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])
+  @@index([translationsQueueFailedAt])
   @@map("changelog_entry")
 }
 
@@ -1966,6 +1972,9 @@ model ChangelogSubscriber {
   /// When its address's owner ended their subscription (cleared by confirming again): the team can't add it
   /// back, only a link emailed to the address can. The team's own removals don't set it.
   unsubscribedAt   DateTime?
+  /// The language they read the changelog in (docs/plan.md L16): the page's they subscribed on, or a signed-in reader's
+  /// (their switch updates it); null: the project's default language. Emails go in it where the entry is translated.
+  language         String?
   createdAt        DateTime  @default(now())
 
   project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1992,8 +2001,9 @@ model ProjectLanguage {
   productVersion   Int      @default(0)
   createdAt        DateTime @default(now())
 
-  project      Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  translations ArticleTranslation[]
+  project               Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  translations          ArticleTranslation[]
+  changelogTranslations ChangelogTranslation[]
 
   @@id([projectId, code])
   @@map("project_language")
@@ -2637,6 +2647,50 @@ model ArticleTranslation {
   /// terms are read from the project's rows in that language. A stored, indexed search text per row if docs get big.
   @@index([projectId(ops: raw("text_ops")), body(ops: raw("gin_trgm_ops"))], type: Gin, map: "article_translation_project_body_trgm_idx")
   @@map("article_translation")
+}
+
+/// A published changelog entry in one of the project's languages (docs/plan.md L16), as ArticleTranslation is an
+/// article's: translated by the same machinery (@tuti/jobs article-translation.ts, the entry kind) or written by the team.
+model ChangelogTranslation {
+  id               String    @id @default(cuid())
+  entryId          String
+  projectId        String
+  /// A code from @tuti/shared's LANGUAGES, one of the project's languages.
+  language         String
+  /// "Keep up to date": publishing the source again retranslates it.
+  automatic        Boolean   @default(true)
+  title            String    @default("")
+  /// Plain text (derived from `content`).
+  body             String    @default("")
+  content          Json?
+  /// Null until its first translation: readers get the source's version meanwhile.
+  publishedAt      DateTime?
+  /// The hash of the published source it was made from (translationSource): another one means the source changed since.
+  sourceHash       String?
+  /// The "Our product is available in" setting it was made under; `memory` is reused only under the same one.
+  productAvailable Boolean?
+  /// Its segments' translations by their source text, so a publish sends only what changed.
+  memory           Json      @default("{}")
+  /// Sections behind the source, by the source's section key: why.
+  behind           Json      @default("{}")
+  /// Why it waits: it couldn't be translated. Null once it is.
+  error            String?
+  /// Tries that failed in a row, for the backoff; `retryAt`: when it's tried again on its own (the safety net too).
+  tries            Int       @default(0)
+  retryAt          DateTime?
+  /// Retranslate requests for it, and the one the latest translation answered (as ArticleTranslation's).
+  retranslate      Int       @default(0)
+  retranslated     Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  entry           ChangelogEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  projectLanguage ProjectLanguage @relation(fields: [projectId, language], references: [projectId, code], onDelete: Cascade)
+
+  @@unique([entryId, language])
+  @@index([projectId, language])
+  @@index([retryAt])
+  @@map("changelog_translation")
 }
 
 /// A published translation's sections, embedded for search in its language (docs/plan.md L7), as ArticleChunk is for the
@@ -3569,26 +3623,26 @@ enum ScreenshotWindow {
 /// A project's Screenshots settings (docs/plan.md, Screenshots): its own app, which an agent in a cloud browser signs
 /// in to and takes screenshots of. The password and sign-in link are sealed (sealValue), never returned.
 model ScreenshotSettings {
-  projectId  String           @id
-  appUrl     String
-  signIn     ScreenshotSignIn @default(NONE)
-  username   String           @default("")
+  projectId            String           @id
+  appUrl               String
+  signIn               ScreenshotSignIn @default(NONE)
+  username             String           @default("")
   /// Sealed (@tuti/shared/signed sealValue, "screenshot-secret").
-  password   String?
+  password             String?
   /// Sealed, like the password.
-  signInLink String?
+  signInLink           String?
   /// What the agent reads every run ("pick the Acme workspace", "close the tour").
-  about      String           @default("")
-  window     ScreenshotWindow @default(DESKTOP)
+  about                String           @default("")
+  window               ScreenshotWindow @default(DESKTOP)
   /// Runs go through Browser Use's residential proxy (billed per GB): only for an app that blocks cloud servers.
-  residentialProxy Boolean    @default(false)
+  residentialProxy     Boolean          @default(false)
   /// Other domains the app loads from (a third-party sign-in, a CDN, an API elsewhere): its runs' browser opens these too.
-  otherDomains String[]       @default([])
+  otherDomains         String[]         @default([])
   /// Its runs' network policy at Browser Use (only the app's host and the sign-in link's open), and the domains it
   /// allows, space-separated: updated when they change.
   networkPolicyId      String?
-  networkPolicyDomains String   @default("")
-  updatedAt  DateTime         @updatedAt
+  networkPolicyDomains String           @default("")
+  updatedAt            DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -3604,47 +3658,47 @@ enum ScreenshotRunState {
 /// One agent run in a cloud browser: it signs in once and takes each of its screenshots. `test`: the settings' Test,
 /// which only signs in and takes the screen it lands on. Its cost is the browser session's, charged as AI usage.
 model ScreenshotRun {
-  id          String             @id @default(cuid())
-  projectId   String
+  id               String             @id @default(cuid())
+  projectId        String
   /// Who started it (an API key's creator for API runs); its images are their uploads.
-  startedById String?
-  test        Boolean            @default(false)
+  startedById      String?
+  test             Boolean            @default(false)
   /// The changelog entry whose "[Screenshot: …]" lines it fills once it's done (changelog.takeScreenshots), and when
   /// they were filled (the job, or the editor's read for a run an older worker finished).
   changelogEntryId String?
   /// Or the help center article whose lines it fills (articles.takeScreenshots), in its text last saved.
-  articleId   String?
-  placedAt    DateTime?
+  articleId        String?
+  placedAt         DateTime?
   /// Set when it put screenshots in: the entry's `updatedAt` it replaced. A save of text shown at that version or later
   /// is refused (changelog.update's `screenshotsSince`), without comparing one machine's clock with another's.
-  placedOver  DateTime?
-  state       ScreenshotRunState @default(RUNNING)
+  placedOver       DateTime?
+  state            ScreenshotRunState @default(RUNNING)
   /// Why it failed as a whole (sign-in, the service).
-  error       String             @default("")
+  error            String             @default("")
   /// The service's run and session, once started.
-  externalId  String?
-  sessionId   String?
+  externalId       String?
+  sessionId        String?
   /// The try's workspace at the service while its files may still be there (cleared once they're deleted).
-  workspaceId String?
+  workspaceId      String?
   /// Once it ended with a session or workspace left (a charge or deletion that failed): how many times a read has tried
   /// to finish them, and not before when it tries again (backing off; given up after a few).
-  cleanupAttempts Int       @default(0)
-  cleanupAfter    DateTime?
+  cleanupAttempts  Int                @default(0)
+  cleanupAfter     DateTime?
   /// In dollars, from the session: everything, and the browser's, the proxy's and the model's parts.
-  cost        Decimal?           @db.Decimal(16, 10)
-  browserCost Decimal?           @db.Decimal(16, 10)
-  proxyCost   Decimal?           @db.Decimal(16, 10)
-  llmCost     Decimal?           @db.Decimal(16, 10)
-  createdAt   DateTime           @default(now())
+  cost             Decimal?           @db.Decimal(16, 10)
+  browserCost      Decimal?           @db.Decimal(16, 10)
+  proxyCost        Decimal?           @db.Decimal(16, 10)
+  llmCost          Decimal?           @db.Decimal(16, 10)
+  createdAt        DateTime           @default(now())
   /// When its job started work (null while queued).
-  startedAt   DateTime?
-  finishedAt  DateTime?
+  startedAt        DateTime?
+  finishedAt       DateTime?
 
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  startedBy   User?        @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startedBy      User?           @relation(fields: [startedById], references: [id], onDelete: SetNull)
   changelogEntry ChangelogEntry? @relation(fields: [changelogEntryId], references: [id], onDelete: SetNull)
-  article     Article?     @relation(fields: [articleId], references: [id], onDelete: SetNull)
-  screenshots Screenshot[]
+  article        Article?        @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  screenshots    Screenshot[]
 
   @@index([projectId, test, createdAt])
   @@index([changelogEntryId, createdAt])
@@ -3655,7 +3709,7 @@ model ScreenshotRun {
 /// One screenshot a run was asked for (`show`): its image, what it shows (also its alt text) and the page's address, or
 /// why it wasn't taken.
 model Screenshot {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   projectId   String
   runId       String
   /// Its place in the run.
@@ -3665,14 +3719,14 @@ model Screenshot {
   /// The screenshot's size in pixels as taken (often 2×), before its upload was scaled down.
   width       Int?
   height      Int?
-  description String   @default("")
-  url         String   @default("")
+  description String    @default("")
+  url         String    @default("")
   /// Why it wasn't taken; empty when it was (or while the run is running).
-  failed      String   @default("")
+  failed      String    @default("")
   /// Its share of the run's cost, in dollars.
-  cost        Decimal? @db.Decimal(16, 10)
+  cost        Decimal?  @db.Decimal(16, 10)
   takenAt     DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   run     ScreenshotRun @relation(fields: [runId], references: [id], onDelete: Cascade)

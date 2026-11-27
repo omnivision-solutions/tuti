@@ -228,7 +228,7 @@ export const retranslateLanguage = defineOperation({
   name: "languages.retranslate",
   title: "Retranslate a language",
   summary:
-    "Translate a language's articles kept up to date again, in the background: all of them anew (Retranslate), or with `waiting`, only those that couldn't be translated yet (Try again). Costs AI credits where they're on.",
+    "Translate a language's articles kept up to date again, in the background: all of them anew (Retranslate), or with `waiting`, only those that couldn't be translated yet (Try again). Costs credits where they're on.",
   method: "POST",
   path: "/languages/{code}/retranslate",
   scope: "write",

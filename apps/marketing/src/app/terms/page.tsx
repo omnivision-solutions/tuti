@@ -67,7 +67,7 @@ export default function TermsPage() {
         </li>
         <li>Prices are shown before you buy and exclude taxes unless stated. We&apos;ll give you at least 30 days&apos; notice of a price change, which applies from your next renewal.</li>
         <li>
-          Credits are prepaid units for AI features. Bought credits expire after the period shown when you buy them;
+          Credits are prepaid units for AI features, screenshots of your app, and emails past those your plan includes. Bought credits expire after the period shown when you buy them;
           credits that come with a plan last until the end of the billing period they come with. Credits have no cash value and aren&apos;t refundable
           or transferable.
         </li>

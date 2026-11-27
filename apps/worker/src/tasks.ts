@@ -1,12 +1,18 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
-import { codeChange, handlers, importStep, translateArticle, translateMessage } from "@tuti/jobs";
+import { codeChange, handlers, importStep, translateArticle, translateChangelogEntry, translateMessage } from "@tuti/jobs";
 import { codeChangesSettings, type JobInput, type JobKey, jobs, log } from "@tuti/shared";
 
 /** A job's definition, as `jobs` (in @tuti/shared) declares them. */
 type Job = { name: string; cron?: string; retries?: number; backoff?: { factor: number; maxSeconds: number }; concurrencyKey?: string };
 
-/** Article translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. */
-const TRANSLATE_RUNS = 4;
+/**
+ * Translations at once on the whole server: each is a few model requests, and the worker's other jobs need slots. Split
+ * between articles and changelog entries, as a task's concurrency group is its own (Hatchet's SDK: entries are
+ * workflow-scoped unless tenant-scoped, which not every Hatchet server has): together never more than 4. Entries get two:
+ * an announcement waits for its languages (ANNOUNCEMENT_WAITS_MS), and an entry in many of them shouldn't use the wait up
+ * one at a time; articles' are background work, where one run fewer only stretches the whole.
+ */
+const TRANSLATE_RUNS = { translateArticle: 2, translateChangelogEntry: 2 } as const;
 
 /**
  * The team's email and push about a customer's message, each at once on the whole server: one may wait in its slot for
@@ -84,10 +90,11 @@ export function taskOptions(key: JobKey, job: Job = jobs[key]) {
     // A long article is several requests of up to a minute each, and one more round for segments that failed their
     // checks (Hatchet's default is 60 seconds); a whole language queued at once waits its turn rather than being dropped.
     // A few at once on the whole server, so one project's language (hundreds of pages) never takes every worker slot.
-    ...(key === "translateArticle" && {
+    // A changelog entry's the same, its share of the server's translations its own group (TRANSLATE_RUNS).
+    ...((key === "translateArticle" || key === "translateChangelogEntry") && {
       executionTimeout: "10m" as const,
       scheduleTimeout: "24h" as const,
-      concurrency: [...(own ? [own] : []), { expression: "'translate-article'", maxRuns: TRANSLATE_RUNS, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
+      concurrency: [...(own ? [own] : []), { expression: `'${job.name}'`, maxRuns: TRANSLATE_RUNS[key], limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN }],
     }),
     ...((key === "conversationMessage" || key === "conversationPush") && {
       scheduleTimeout: NOTICE_QUEUE[key],
@@ -120,6 +127,8 @@ export function taskFn(key: JobKey, retries: number, stopping: () => boolean) {
         ? translateMessage(input as JobInput<"translateMessage">, log, { lastTry: ctx.retryCount() >= retries })
         : key === "translateArticle"
           ? translateArticle(input as JobInput<"translateArticle">, log, { lastTry: ctx.retryCount() >= retries })
+          : key === "translateChangelogEntry"
+            ? translateChangelogEntry(input as JobInput<"translateChangelogEntry">, log, { lastTry: ctx.retryCount() >= retries })
         : key === "importStep"
         ? importStep(input as JobInput<"importStep">, log, () => stopping() || ctx.cancelled)
         : handlers[key](input as never, log);
