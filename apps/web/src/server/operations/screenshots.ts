@@ -324,7 +324,13 @@ async function domainSuggestions(projectId: string): Promise<SignInService[]> {
     }
   }
   // What its runs' browser opens already: the app's host, the sign-in link's, the other domains (with subdomains).
-  const open = allowedHosts(settings);
+  // A sign-in link that no longer opens (another server secret): without its host, rather than no answer.
+  let open: string[];
+  try {
+    open = allowedHosts(settings);
+  } catch {
+    open = allowedHosts({ ...settings, signInLink: null });
+  }
   const allowed = (host: string) => open.some((domain) => host === domain || host.endsWith(`.${domain}`));
   return services.map(({ provider, hosts }) => ({ provider, hosts: hosts.filter((host) => acceptedDomain(host) && !allowed(host)) })).filter(({ hosts }) => hosts.length > 0);
 }

@@ -139,3 +139,13 @@ test("settings without an app address suggest nothing", async () => {
   await settle({ appUrl: "" });
   expect(await suggestions()).toEqual([]);
 });
+
+test("a sign-in link that no longer opens (another server secret) still gets suggestions", async () => {
+  const appUrl = "https://app.example.com";
+  await settle({ appUrl });
+  await prisma.screenshotSettings.update({
+    where: { projectId: project.id },
+    data: { signIn: "LINK", signInLink: "v1.not-sealed-here", signInServicesFor: appUrl, signInServices: [{ provider: "Auth0", hosts: ["acme.auth0.com"] }] },
+  });
+  expect(await suggestions()).toEqual([{ provider: "Auth0", hosts: ["acme.auth0.com"] }]);
+});
