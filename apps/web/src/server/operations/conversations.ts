@@ -94,7 +94,7 @@ const conversationFields = {
     .meta({ examples: [null] }),
   handledBy: z
     .enum(HANDLERS)
-    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. Nothing answers for the AI yet: one it has waits there, with nobody told, till a teammate takes it over")
+    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. Nothing answers for the AI yet: its user's next message hands it to the team (emailed, `conversation.handed_over`) unless an `about_to_hand_over` workflow keeps it with the AI")
     .meta({ examples: ["team"] }),
   priority: z.boolean().describe("Marked priority: the Inbox's list says so on its row").meta({ examples: [false] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
@@ -734,7 +734,7 @@ export const getConversation = defineOperation({
               .nullable()
               .describe("Someone else on the email thread (a Cc'd colleague, say) wrote it: the address they wrote from, or `Deleted user` once they're erased. Null for the conversation's own person, and for messages that didn't come by email")
               .meta({ examples: [null] }),
-            seenAt: at("When the user saw it in the widget; null when they haven't, and for what isn't the team's reply").nullable(),
+            seenAt: at("When the user saw it in the widget; null when they haven't, and for what isn't a reply to them").nullable(),
             emailStatus: z
               .enum(["sent", "delivered", "bounced", "complained", "failed"])
               .nullable()
@@ -905,7 +905,7 @@ export const createConversation = defineOperation({
   name: "conversations.create",
   title: "Start a conversation",
   summary:
-    "Start a conversation from someone in your app or an email address, with their first message: open, and waiting on the team, who are emailed about it. Webhooks get `conversation.created`.",
+    "Start a conversation from someone in your app or an email address, with their first message: open and waiting on the team. Webhooks get `conversation.created`; unless an `about_to_hand_over` workflow keeps it with the AI, the team is emailed and webhooks get `conversation.handed_over`.",
   method: "POST",
   path: "/conversations",
   scope: "write",
@@ -1103,6 +1103,8 @@ export async function startConversation(
         channel: start.channel,
         body: next.body,
         note: next.note ?? false,
+        // Seen as it was written (the AI's answer "Ask a person" copies in, which they read where they asked): never emailed.
+        seenAt: next.note ? null : now,
         createdAt: new Date(now.getTime() + i + 1),
       })),
     });
@@ -1563,7 +1565,7 @@ export const updateConversation = defineOperation({
       handledBy: z
         .enum(HANDLERS)
         .optional()
-        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Nothing answers for the AI yet: one handed to it waits in With AI, and the team isn't told, till a teammate takes it over. Closing and reopening leave it")
+        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Nothing answers for the AI yet: its user's next message hands it back to the team unless an `about_to_hand_over` workflow keeps it. Closing and reopening leave it")
         .meta({ examples: ["team"] }),
       priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso
@@ -1603,7 +1605,8 @@ export const updateConversation = defineOperation({
     // (its workflows, then told), once (its reason goes).
     let released = false;
     // Whether a workflow marked it priority on the way.
-    let priority: boolean | undefined;
+    // As the path left it, where Not spam ran it (marked priority, kept with the AI).
+    let path: { priority: boolean; handledBy: string } | undefined;
     // Marked Not spam: what its user wrote while it was in Spam, when nobody was told, oldest first.
     let unheard: MessageRow[] = [];
     const updated = await prisma.$transaction(async (tx) => {
@@ -1732,7 +1735,8 @@ export const updateConversation = defineOperation({
       // told to the team too. The rest, to webhooks: written in Spam, they fire no trigger of their own.
       const first = released ? unheard.shift() : undefined;
       if (first) {
-        ({ priority } = await inboxPath(projectId, { started: updated, message: first }));
+        // An owner given with Not spam is the caller's choice: no handover overrides it.
+        path = await inboxPath(projectId, { started: updated, message: first }, { ownerChosen: !!input.handledBy });
       }
       for (const message of unheard) {
         await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });
@@ -1740,7 +1744,7 @@ export const updateConversation = defineOperation({
     } catch (error) {
       log.error("Announcing a conversation that isn't spam after all failed", { projectId, error });
     }
-    return { ...view(updated, await projectSlug(projectId)), ...(priority !== undefined && { priority }), ...(notice && { notice }) };
+    return { ...view(updated, await projectSlug(projectId)), ...(path && { priority: path.priority, handledBy: path.handledBy }), ...(notice && { notice }) };
   },
 });
 

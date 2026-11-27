@@ -143,6 +143,8 @@ test("a conversation the AI has emails nobody, at once or by the cron; taken ove
   // Handed to the AI, long enough ago that the team could be emailed about it again.
   await call(updateConversation, key, { number: 1, handledBy: "ai" });
   await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: null } });
+  // Kept with the AI as its user writes, rather than handed over: nothing answers for the AI yet (W11).
+  await prisma.workflow.create({ data: { projectId: project.id, name: "Keep", trigger: "about_to_hand_over", position: 0, actions: [{ kind: "dont_hand_over" }] } });
 
   await call(replyToConversation, key, { number: 1, body: "Any news?", author: { id: "user-42" } });
   expect(to(owner.email)).toEqual([]);
