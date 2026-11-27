@@ -779,3 +779,21 @@ test("publishing a draft whose paragraph at the top stands in for an intro Engli
   expect(text(published.content)).toContain("Willkommen");
   expect(text(published.content).indexOf("[de2] Intro")).toBeLessThan(text(published.content).indexOf("Willkommen"));
 });
+
+test("on a version kept up to date, a section the team took out stays out until its English changes, then comes back", async () => {
+  await translated();
+  // The team takes Billing out of the German and publishes.
+  const version = await call(getTranslation, as(), de);
+  const content = structuredClone(version.content) as Doc;
+  content.content = content.content!.slice(0, -2);
+  await call(saveTranslation, as(), { ...de, content, version: version.version });
+  await call(publishTranslation, as(), de);
+  // English changes Setup only: Billing stays out.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card"]), "de2");
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+  // English rewrites Billing: the team's taking it out gives way, as their edits do where English changed.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de3");
+  const back = await call(getTranslation, as(), de);
+  expect(text(back.content)).toContain("[de3] Pay by card or invoice");
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { language: "de", article: { slug: "getting-paid" } } })).removedSections).toEqual([]);
+});

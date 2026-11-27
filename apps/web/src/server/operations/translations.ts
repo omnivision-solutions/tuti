@@ -8,6 +8,7 @@ import {
   metaOf,
   otherReasons,
   queueVersion,
+  removedChanged,
   standingIn,
   versionPublished,
   type Section,
@@ -79,6 +80,7 @@ const versionSelect = {
   publishedAt: true,
   sections: true,
   removedSections: true,
+  removedHashes: true,
   draft: true,
   behind: true,
   updateSections: true,
@@ -111,11 +113,19 @@ function versionParts(version: Version, parts: ReturnType<typeof sourceSections>
  * it): the source changing for sections the team owns, the source's sections a version the team writes lacks, the other
  * reasons as they were.
  */
-function behindNow(version: Version, parts: ReturnType<typeof sourceSections>, sourceLanguage: string, published: Section[], draft?: { list: Section[]; removed?: string[] } | null) {
+function behindNow(
+  version: Version,
+  parts: ReturnType<typeof sourceSections>,
+  sourceLanguage: string,
+  published: Section[],
+  draft?: { list: Section[]; removed?: string[]; removedHashes?: Record<string, string> } | null,
+) {
   const teamWrites = !version.automatic;
   // A version the team writes and never published has no text yet to lack any section: only its draft counts (as in the job).
   const draftOnly = teamWrites && !version.publishedAt;
-  const lists = [...(draftOnly ? [] : [{ list: published, teamWrites, removed: version.removedSections as string[] }]), ...(draft ? [{ ...draft, teamWrites }] : [])];
+  // Kept up to date: a section the draft takes out whose English changed since is behind (the job puts it back published).
+  const changed = draft && version.automatic ? removedChanged(draft.removed, draft.removedHashes, parts) : [];
+  const lists = [...(draftOnly ? [] : [{ list: published, teamWrites, removed: version.removedSections as string[] }]), ...(draft ? [{ list: draft.list, removed: draft.removed, teamWrites, changed }] : [])];
   return behindOf(sourceLanguage, parts, lists, otherReasons(version.behind, sourceLanguage));
 }
 
@@ -130,7 +140,13 @@ function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts
   const { published, draft, drafted } = versionParts(version, parts);
   // Never published, a version the team writes is its draft: what's behind is the draft's.
   const behind = behindNow(version, parts, sourceLanguage, published, !version.automatic && !version.publishedAt && drafted ? { list: drafted, removed: draft?.removed } : null);
-  const draftBehind = drafted ? Object.keys(behindOf(sourceLanguage, parts, [{ list: drafted, teamWrites: !version.automatic, removed: draft?.removed }])) : [];
+  const draftBehind = drafted
+    ? Object.keys(
+        behindOf(sourceLanguage, parts, [
+          { list: drafted, teamWrites: !version.automatic, removed: draft?.removed, changed: version.automatic ? removedChanged(draft?.removed, draft?.removedHashes, parts) : [] },
+        ]),
+      )
+    : [];
   return {
     language: version.language,
     slug: version.slug,
@@ -233,7 +249,11 @@ export const saveTranslation = defineOperation({
       const has = new Set(edited.map(({ meta }) => meta.key));
       const out = [...new Set([...(draft?.removed ?? (version.removedSections as string[])), ...removed])].filter((key) => !has.has(key));
       const title = input.title ?? draft?.title ?? version.title;
-      const next: Draft = { title, titleEdited: (draft?.titleEdited ?? false) || title !== (draft?.title ?? version.title), content: docOfSections(edited), sections: metaOf(edited), removed: out };
+      // When each was taken out: its English then (one taken out before keeps its time), so it's known when that changes.
+      const then = (draft?.removedHashes ?? (version.removedHashes as Record<string, string>)) as Record<string, string>;
+      const nowHashes = new Map(parts.map((part) => [part.key, part.hash]));
+      const removedHashes = Object.fromEntries(out.flatMap((key) => (then[key] ?? nowHashes.get(key)) !== undefined ? [[key, then[key] ?? nowHashes.get(key)!]] : []));
+      const next: Draft = { title, titleEdited: (draft?.titleEdited ?? false) || title !== (draft?.title ?? version.title), content: docOfSections(edited), sections: metaOf(edited), removed: out, removedHashes };
       // A section edited now is the team's again: an update asked for it earlier no longer overrides it.
       const base = new Set(drafted ?? published);
       const editedNow = new Set(edited.filter((section) => !base.has(section) && section.meta.key !== null).map((section) => section.meta.key!));
@@ -241,7 +261,7 @@ export const saveTranslation = defineOperation({
         where: { id: version.id },
         data: {
           draft: next as Prisma.InputJsonValue,
-          behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out }),
+          behind: behindNow(version, parts, sourceLanguage, published, { list: edited, removed: out, removedHashes }),
           // (Taken out now too: an update asked for it would put it back.)
           updateSections: (version.updateSections as string[]).filter((key) => !editedNow.has(key) && !removed.includes(key)),
         },
@@ -336,6 +356,7 @@ export const publishTranslation = defineOperation({
           retranslated: { increment: 1 },
           // The sections the team took out of the draft, out of the published text now too.
           removedSections: draft.removed ?? [],
+          removedHashes: (draft.removedHashes ?? {}) as Prisma.InputJsonValue,
           behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
           // Kept now: an update asked for those earlier no longer overrides them. Those taking the new translation join it.
           updateSections: [...new Set([...(version.updateSections as string[]).filter((key) => !keep.has(key)), ...update])],
@@ -381,7 +402,7 @@ export const updateTranslationSections = defineOperation({
       const source = await sourceOf(tx, articleId);
       const { parts, sourceLanguage } = source;
       const { published, draft, drafted } = versionParts(version, parts);
-      const behind = Object.keys(behindNow(version, parts, sourceLanguage, published, drafted && { list: drafted, removed: draft?.removed }));
+      const behind = Object.keys(behindNow(version, parts, sourceLanguage, published, drafted && { list: drafted, removed: draft?.removed, removedHashes: draft?.removedHashes }));
       // Those still in the source, and those behind because theirs went (the job takes them out).
       const asked = (input.sections ?? behind).filter((key) => behind.includes(key) || parts.some((part) => part.key === key));
       if (asked.length === 0) {
@@ -401,6 +422,7 @@ export const updateTranslationSections = defineOperation({
           sections: metaOf(unowned(published)) as Prisma.InputJsonValue,
           // Asked for, a section the team took out comes back.
           removedSections: (version.removedSections as string[]).filter((key) => !asked.includes(key)),
+          removedHashes: Object.fromEntries(Object.entries(version.removedHashes as Record<string, string>).filter(([key]) => !asked.includes(key))) as Prisma.InputJsonValue,
           ...(draft && drafted && { draft: { ...draft, sections: metaOf(unowned(drafted)), removed: (draft.removed ?? []).filter((key) => !asked.includes(key)) } as Prisma.InputJsonValue }),
           updateSections: [...new Set([...(version.updateSections as string[]), ...asked])],
         },
