@@ -25,6 +25,8 @@ import { failStaleImports, importStep, resumeImports } from "./imports";
 import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
 import { retryArticleTranslations, translateArticle, translateChangelogEntry } from "./article-translation";
+import { translateLabels } from "./label-translation";
+export { forgetLabels, labelIn, type LabelTranslation, type LabelTranslations, labelSource, queueLabels, retranslateLabels, translateLabels } from "./label-translation";
 export { behindKey, behindSections, docOfSections, editedSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, versionSections, withTranslation } from "./translation-sections";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
@@ -111,6 +113,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   translateMessage,
   translateArticle,
   translateChangelogEntry,
+  translateLabels,
   retryArticleTranslations: () => retryArticleTranslations(),
   checkPushReceipts: (input, log) => checkPushReceipts(input, log),
   pruneInboundEmails,

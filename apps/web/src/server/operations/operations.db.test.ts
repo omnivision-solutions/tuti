@@ -679,6 +679,10 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
     vi.stubEnv(name, ["changelog.missingChanges", "changelog.addPullRequests", "changelog.removePullRequest"].includes(operation.name) ? value : "");
   }
 
+  if (operation.name === "languages.update" || operation.name === "languages.retranslate") {
+    // The collection and tab names there are, translated into the language (docs/plan.md L13), whichever project's key.
+    model.otherwise(JSON.stringify({ segments: { "0.n": "Abrechnung", "1.n": "Schnittstelle" } }), '"0.n":"Billing"');
+  }
   // Another project's key: nothing of this project comes back, and nothing changes.
   if (operation.name === "conversations.summarize") {
     // The other project has a conversation #1 too: its own is summarized.
