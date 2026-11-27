@@ -1010,11 +1010,16 @@ export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: G
       const stays = (key: string) =>
         published.some((meta) => meta.own && holds(meta) && stands(meta, key)) || (version?.drafted ?? []).some((meta) => meta.own && stands(meta, key) && (holds(meta) || draftEdit(meta)));
       const behind = automatic ? Object.fromEntries(Object.entries(reasons).filter(([key]) => stays(key))) : reasons;
-      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(behind)}, ${automatic}, ${JSON.stringify(sections)}, ${JSON.stringify(drafted ?? null)})`;
+      // Each written only where a section's ownership changed (else null, left as it is): never more than this save decided.
+      const changed = (before: SectionMeta[] | null | undefined, after: SectionMeta[] | null | undefined) => !!after && after.some((meta, i) => meta.own !== before?.[i]?.own);
+      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(behind)}, ${automatic}, ${JSON.stringify(changed(published, sections) ? sections : null)}, ${JSON.stringify(changed(version?.drafted, drafted) ? drafted : null)})`;
     });
+    // (Every write to a version's sections or draft, the team's saves included, locks its source first, as this save did above:
+    // none lands between the read and this write.)
     const owners =
       kind.name === "article"
-        ? Prisma.sql`, sections = v.sections::jsonb, draft = CASE WHEN t.draft IS NULL OR v.drafted::jsonb = 'null'::jsonb THEN t.draft ELSE jsonb_set(t.draft, '{sections}', v.drafted::jsonb) END`
+        ? Prisma.sql`, sections = CASE WHEN v.sections::jsonb = 'null'::jsonb THEN t.sections ELSE v.sections::jsonb END,
+            draft = CASE WHEN t.draft IS NULL OR v.drafted::jsonb = 'null'::jsonb THEN t.draft ELSE jsonb_set(t.draft, '{sections}', v.drafted::jsonb) END`
         : Prisma.empty;
     for (let i = 0; i < rows.length; i += 500) {
       await tx.$executeRaw`
