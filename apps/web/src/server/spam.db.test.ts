@@ -290,6 +290,15 @@ test("a report's rule is kept apart from the filter's: reporting a filed convers
   expect(await spamChoices(prisma, await row(2), true)).toMatchObject({ removesRule: null });
   await expect(call(updateConversation, admin, { number: 2, spam: false, removeRule: true })).rejects.toThrow(new OperationError(409, "no_rule", "That rule was already removed"));
   expect(await prisma.spamRule.count({ where: { projectId, value: "crypto" } })).toBe(1);
+
+  // Any other mark clears a report's rule: reported with a block, then Not spam (keeping the rule) and a plain Report
+  // spam, it offers none.
+  await mail("e2e-pat@corp.example"); // #3
+  await call(updateConversation, admin, { number: 3, spam: true, blockDomain: true });
+  expect(await spamChoices(prisma, await row(3), true)).toMatchObject({ removesRule: "Sender domain is corp.example" });
+  await call(updateConversation, admin, { number: 3, spam: false });
+  await call(updateConversation, admin, { number: 3, spam: true });
+  expect([(await row(3)).reportedRuleId, (await spamChoices(prisma, await row(3), true)).removesRule]).toEqual([null, null]);
 });
 
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
