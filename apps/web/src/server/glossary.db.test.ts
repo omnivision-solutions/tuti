@@ -615,3 +615,24 @@ test("a term crossing a formatting tag in a remembered segment (Open the <b>bill
   await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan));
   expect(Object.keys((await version("guide")).memory as Record<string, string>)).not.toContain(tagged);
 });
+
+test("on a version kept up to date, a term's change replaces the team's edit in the section using it; an edit elsewhere stays", async () => {
+  await translated();
+  // The team edits German's Boards section (it uses Board) and its Billing section (it doesn't), and publishes.
+  const de = { slug: "boards", language: "de" as const };
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![2]!.content![0]!.text = "Unser eigener Text.";
+  content.content![4]!.content![0]!.text = "Unsere eigene Zahlung.";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  await call(publishTranslation, as(), de);
+  expect(String((await version("boards")).body)).toContain("Unser eigener Text.");
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  const body = String((await version("boards")).body);
+  expect(body).toContain("[de2] Make a Brett for ideas.");
+  expect(body).not.toContain("Unser eigener Text.");
+  expect(body).toContain("Unsere eigene Zahlung.");
+  expect((await version("boards")).updateSections).toEqual([]);
+});
