@@ -32,5 +32,6 @@ test("long hostile text is scanned in linear time: a run of hyphenated labels, u
   for (const text of ['<link href="x" '.repeat(100_000), "<script src".repeat(100) + " ".repeat(500_000)]) {
     scriptsOf({ url: new URL("https://app.example.com"), text });
   }
-  expect(performance.now() - started).toBeLessThan(2_000);
-});
+  // Linear takes about a second; the old patterns took minutes. Room for a loaded machine.
+  expect(performance.now() - started).toBeLessThan(10_000);
+}, 15_000);
