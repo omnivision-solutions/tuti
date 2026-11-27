@@ -5,7 +5,7 @@ import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
-import { CheckIcon, ImageIcon, LinkIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
+import { BellDotIcon, CheckIcon, ImageIcon, ListIcon, MailIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 
 import { UpgradeDialog } from "@/components/upgrade-dialog";
@@ -55,6 +55,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { plural } from "@/lib/autopilot-words";
@@ -107,7 +108,7 @@ type Entry = {
   told: { asked: number; subscribers: number } | null;
   /** Published as new (the widget's and the portal's dot), or quietly. */
   announced: boolean;
-  /** Emailed to subscribers already (the first time it was published with Email subscribers): never again. */
+  /** Emailed to subscribers already (the first time it was published with Email announcement): never again. */
   emailedSubscribers: boolean;
   /** Of those, how many haven't had it yet (held, or unpublished before they all went): publishing sends theirs. */
   subscribersLeft: number;
@@ -136,7 +137,7 @@ export const ChangelogSavingContext = createContext<{
   /** The cover is uploading: Save waits (it would keep the one before), and so does Publish (it publishes what's saved). */
   uploading: boolean;
   setUploading: (uploading: boolean) => void;
-  /** How publishing announces it, picked in the sidebar (HowAnnounced): email subscribers, mark it new. */
+  /** How publishing announces it, picked in the sidebar's Goes to (WhoSeesIt): the email announcement, the widget popup. */
   announce: Announce;
   setAnnounce: (announce: Announce) => void;
   /** Draft with AI's dialog is open: from the top bar's button, Publish's dialog or the Edit with AI menu (AiHelpers). */
@@ -148,9 +149,12 @@ export const ChangelogSavingContext = createContext<{
   /** The form's featured image isn't the saved one (one uploaded or removed, not saved yet): Publish offers no cover of its own over it. */
   coverChanged: boolean;
   setCoverChanged: (changed: boolean) => void;
-  /** "Who sees it" changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
+  /** Audience or the changelog list changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
   groupsChanged: boolean;
   setGroupsChanged: (changed: boolean) => void;
+  /** Audience is Some groups with none ticked: neither Save nor Publish goes until one is, or it's Everyone. */
+  noGroupPicked: boolean;
+  setNoGroupPicked: (none: boolean) => void;
 } | null>(null);
 type Announce = { email: boolean; markNew: boolean };
 
@@ -164,9 +168,10 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState(false);
   const [coverChanged, setCoverChanged] = useState(false);
   const [groupsChanged, setGroupsChanged] = useState(false);
+  const [noGroupPicked, setNoGroupPicked] = useState(false);
   return (
     <ChangelogSavingContext
-      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged, groupsChanged, setGroupsChanged }}
+      value={{ pending, setPending, publishing, setPublishing, uploading, setUploading, announce, setAnnounce, drafting, setDrafting, locked, setLocked, coverChanged, setCoverChanged, groupsChanged, setGroupsChanged, noGroupPicked, setNoGroupPicked }}
     >
       {children}
     </ChangelogSavingContext>
@@ -413,7 +418,7 @@ export function FeaturedImage({
 }
 
 /** The cover designs with something to show for an entry as it's saved, the one picked when nobody picks, and `version`, which changes with each save (its previews are drawn again). */
-/** What FeaturedImage's Generate needs: AI credits are on, the project is out of them, its logo and the entry's images to work from. */
+/** What FeaturedImage's Generate needs: credits are on, the project is out of them, its logo and the entry's images to work from. */
 export type ImageGeneratorProps = { credits: boolean; paused: boolean; logo: PickedImage | null; bodyImages: PickedImage[] };
 
 export type CoverChoices = { designs: CoverDesign[]; automatic: CoverDesign; version: number };
@@ -596,7 +601,7 @@ export function ChangelogForm({
   screenshots?: LineScreenshots | null;
   /** An owner or admin: they take screenshots (changelog.takeScreenshots). */
   canTakeScreenshots?: boolean;
-  /** The project's reader groups, for "Who sees it" (not shown without any). */
+  /** The project's reader groups, for Audience (not shown without any). */
   groups?: { key: string; name: string }[];
   /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking works: changelog.update needs the plan only for groups added). */
   groupsUpgrade?: UpgradePrompt | null;
@@ -604,7 +609,7 @@ export function ChangelogForm({
   covers?: CoverChoices | null;
   /** Its merged pull requests, in their section; null for none (GitHub isn't connected and it has none). */
   pullRequests?: EntryPullRequestsProps | null;
-  /** How many people confirmed they want the changelog by email (Email subscribers; on a private portal, its readers). */
+  /** How many people confirmed they want the changelog by email (Email announcement; on a private portal, its readers). */
   subscribers?: number;
   /** The posts it lists, saved (merged ones left out); "Link post…" searches for others. */
   posts: PostOption[];
@@ -622,7 +627,7 @@ export function ChangelogForm({
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
-  // Saves so far: "Who sees it" starts afresh after each (from the saved groups), its picks sent again only once changed.
+  // Saves so far: Audience and Goes to start afresh after each (from the saved groups), its picks sent again only once changed.
   const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
   const [published, setPublished] = useState(entry?.published);
@@ -727,7 +732,7 @@ export function ChangelogForm({
         {standing && (
           <section aria-label="Status" className="flex flex-col gap-2">
             <h2 className="group-label">Status</h2>
-            <p>{standing}</p>
+            <p className="flex flex-wrap items-center gap-1">{standing}</p>
           </section>
         )}
         {/* When the text shown was saved: a save refuses to put back lines screenshots replaced since (saveChangelogEntry). */}
@@ -772,7 +777,8 @@ export function ChangelogForm({
           groups={groups}
           picked={entry?.groups ?? []}
           emailOnly={entry?.emailOnly ?? false}
-          emailable={emailable(entry, subscribers)}
+          entry={entry}
+          subscribers={subscribers}
           upgrade={groupsUpgrade}
           saving={pending}
           onChange={() => setDirty(true)}
@@ -787,22 +793,24 @@ export function ChangelogForm({
           onChange={link}
         />
         {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
-        {entry && <HowAnnounced entry={entry} subscribers={subscribers} />}
       </aside>
     </form>
   );
 }
 
 /**
- * "Who sees it": the reader groups an entry is for, as chips (none picked: everyone). Sent with the form only once a
- * pick changed, so a save of the text never touches groups set meanwhile (by the API, or a teammate), nor needs the
- * plan for ones it already has.
+ * Who an entry is for and where it goes, under two group labels. Audience: Everyone, or Some groups (the reader groups
+ * as chips; not shown without any). Goes to: the changelog list (saved: off is `emailOnly`), the widget popup and the
+ * email announcement (picked here for Publish, ChangelogSaving; a published entry's say what happened). The groups and
+ * the list are sent only once changed, so a save of the text never touches ones set meanwhile (by the API, or a
+ * teammate), nor needs the plan for groups it already has.
  */
 export function WhoSeesIt({
   groups,
   picked,
   emailOnly = false,
-  emailable = true,
+  entry = null,
+  subscribers = 0,
   upgrade,
   saving: pending = false,
   onChange,
@@ -811,133 +819,264 @@ export function WhoSeesIt({
   picked: string[];
   /** Saved as email-only: emailed to subscribers, listed nowhere. */
   emailOnly?: boolean;
-  /** Publishing can still email it: not published without email already, nor on a private portal (which emails nobody). */
-  emailable?: boolean;
+  /** The saved entry: the widget popup and the email are for one (a new entry has the list only). */
+  entry?: Entry | null;
+  /** How many people publishing would email (on a private portal, its readers; for groups, theirs). */
+  subscribers?: number;
   upgrade: UpgradePrompt | null;
   /** A save is running: the picks wait for it (one made now would be dropped as the picker starts afresh after it). */
   saving?: boolean;
   onChange: () => void;
 }) {
   const [changed, setChanged] = useState(false);
-  const [onlyChanged, setOnlyChanged] = useState(false);
+  const [someGroups, setSomeGroups] = useState(picked.length > 0);
+  const [listed, setListed] = useState(!emailOnly);
   const [upgrading, setUpgrading] = useState(false);
-  // Told to Publish, which waits for it: while this picker has a change it hasn't saved, and no longer once it's gone
+  // Told to Publish, which waits for it: while this has a change it hasn't saved, and no longer once it's gone
   // (started afresh after a save, or with the form when new saved text replaces it, which drops the picks too).
   const saving = useContext(ChangelogSavingContext);
+  const listChanged = listed === emailOnly;
+  // Some groups with none ticked (none yet, or the plan refused one) would be saved, and published, for everyone: the
+  // form isn't sent (the first chip says why) and Publish waits, until one is ticked or it's Everyone.
+  const [ticked, setTicked] = useState(picked.length);
+  const noGroup = someGroups && ticked === 0;
+  const chips = useRef<HTMLDivElement>(null);
+  useEffect(() => chips.current?.querySelector("input")?.setCustomValidity(noGroup ? "Pick a group, or choose Everyone." : ""), [noGroup]);
+  const held = changed || listChanged || noGroup;
   useEffect(() => {
-    saving?.setGroupsChanged(changed || onlyChanged);
-    return () => saving?.setGroupsChanged(false);
-  }, [saving, changed, onlyChanged]);
+    saving?.setGroupsChanged(held);
+    saving?.setNoGroupPicked(noGroup);
+    return () => {
+      saving?.setGroupsChanged(false);
+      saving?.setNoGroupPicked(false);
+    };
+  }, [saving, held, noGroup]);
+  const announce = saving?.announce ?? { email: true, markNew: true };
+  const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
   const needsId = useId();
-  const onlyId = useId();
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="group-label mb-2">Who sees it</legend>
+    <>
       {changed && <input type="hidden" name="groupsEditable" value="1" />}
-      {onlyChanged && <input type="hidden" name="emailOnlyEditable" value="1" />}
-      {groups.length > 0 && <div className="flex flex-wrap gap-2">
-        {groups.map((group) => (
-          <label
-            key={group.key}
-            className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
-          >
-            <input
-              type="checkbox"
-              name="groups"
-              value={group.key}
-              defaultChecked={picked.includes(group.key)}
-              // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
-              aria-disabled={pending || undefined}
-              aria-describedby={upgrade ? needsId : undefined}
-              onClick={(event) => {
-                if (pending) {
-                  event.preventDefault();
-                  return;
-                }
-                // Picking one needs the plan: the prompt opens and it stays unpicked.
-                if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
-                  event.preventDefault();
-                  setUpgrading(true);
-                }
-              }}
-              onChange={(event) => {
-                // The pick the prompt refused, or made while a save runs (onClick put it back), isn't a change.
-                if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
-                  return;
-                }
+      {listChanged && <input type="hidden" name="emailOnlyEditable" value="1" />}
+      {!listed && <input type="hidden" name="emailOnly" value="1" />}
+      {groups.length > 0 && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="group-label mb-2">Audience</legend>
+          <Segmented
+            name="audience"
+            aria-label="Audience"
+            aria-describedby={upgrade ? needsId : undefined}
+            options={[
+              { value: "everyone", label: "Everyone" },
+              { value: "some", label: "Some groups" },
+            ]}
+            value={someGroups ? "some" : "everyone"}
+            onValueChange={(value) => {
+              // While a save runs, nothing changes (as with the chips), but the keyboard keeps its place.
+              if (pending) {
+                return;
+              }
+              // Picking groups needs the plan (a project can keep its groups after a downgrade): the prompt opens and it
+              // stays on Everyone. One saved for some keeps them, to unpick.
+              if (value === "some" && upgrade && picked.length === 0) {
+                setUpgrading(true);
+                return;
+              }
+              setSomeGroups(value === "some");
+              // Everyone is no groups: the chips hide and aren't sent (unpicking always works, on any plan); back on
+              // Some groups, they're as they were.
+              if (value === "everyone" && (picked.length > 0 || changed)) {
                 setChanged(true);
                 onChange();
-              }}
-              className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
-            />
-            <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
-            {group.name}
-          </label>
-        ))}
-      </div>}
-      {groups.length > 0 && (
-        <p className="text-xs text-muted-foreground">None picked: everyone. Picked: only readers in one of them, and only their subscribers get its email.</p>
+              }
+            }}
+          />
+          {/* Hidden, not gone: picks not saved yet come back with Some groups. */}
+          <div ref={chips} hidden={!someGroups} className="flex flex-wrap gap-2">
+            {groups.map((group) => (
+              <label
+                key={group.key}
+                className="group/tag relative inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors select-none hover:bg-muted has-checked:border-primary has-checked:text-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+              >
+                <input
+                  type="checkbox"
+                  name="groups"
+                  value={group.key}
+                  defaultChecked={picked.includes(group.key)}
+                  // Under Everyone, not sent: no groups.
+                  disabled={!someGroups}
+                  // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
+                  aria-disabled={pending || undefined}
+                  aria-describedby={upgrade ? needsId : undefined}
+                  onClick={(event) => {
+                    if (pending) {
+                      event.preventDefault();
+                      return;
+                    }
+                    // Picking one needs the plan: the prompt opens and it stays unpicked.
+                    if (upgrade && event.currentTarget.checked && !picked.includes(group.key)) {
+                      event.preventDefault();
+                      setUpgrading(true);
+                    }
+                  }}
+                  onChange={(event) => {
+                    // The pick the prompt refused, or made while a save runs (onClick put it back), isn't a change.
+                    if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
+                      return;
+                    }
+                    const step = event.currentTarget.checked ? 1 : -1;
+                    setTicked((n) => n + step);
+                    setChanged(true);
+                    onChange();
+                  }}
+                  className="absolute inset-0 cursor-pointer appearance-none rounded-full outline-none"
+                />
+                <CheckIcon aria-hidden className="hidden size-3.5 group-has-checked/tag:block" />
+                {group.name}
+              </label>
+            ))}
+          </div>
+          {upgrade && (
+            <>
+              <span id={needsId} hidden>
+                {upgrade.title}
+              </span>
+              <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />
+            </>
+          )}
+        </fieldset>
       )}
-      <div className="flex items-start gap-2">
-        <input
-          type="checkbox"
-          id={onlyId}
-          name="emailOnly"
-          value="1"
-          defaultChecked={emailOnly}
-          aria-describedby={`${onlyId}-hint`}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="group-label mb-2">Goes to</legend>
+        <GoesToRow
+          icon={<ListIcon />}
+          label="Changelog list"
+          checked={listed}
+          // Off, but in the keyboard's reach while a save runs.
           aria-disabled={pending || undefined}
-          onClick={(event) => pending && event.preventDefault()}
           onChange={() => {
-            if (pending) {
-              return;
+            if (!pending) {
+              setListed(!listed);
+              onChange();
             }
-            setOnlyChanged(true);
-            onChange();
           }}
-          className="mt-0.5 size-4 accent-primary"
         />
-        <div className="flex flex-col gap-0.5">
-          <label htmlFor={onlyId}>Email only</label>
-          <p id={`${onlyId}-hint`} className="text-xs text-muted-foreground">
-            {/* Only what happens: with no email to go, it's simply the team's. */}
-            {emailable ? "Emailed to subscribers and listed nowhere. Its page is your team's only." : "Listed nowhere: only your team sees it."}
+        {entry && <AnnounceRows entry={entry} subscribers={subscribers} listed={listed} announce={announce} pick={pick} />}
+      </fieldset>
+    </>
+  );
+}
+
+/** A row of Goes to: its icon, its label (the switch's name) and at most one short line under it (its description). */
+function GoesToRow({ icon, label, line, ...input }: { icon: ReactNode; label: string; line?: string | null } & Omit<React.ComponentProps<"input">, "type">) {
+  const id = useId();
+  return (
+    <div className="flex items-center gap-3 rounded-lg border px-3 py-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground">
+      {icon}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <label htmlFor={id}>{label}</label>
+        {line && (
+          <p id={`${id}-line`} className="text-xs text-muted-foreground">
+            {line}
           </p>
-        </div>
+        )}
       </div>
-      {upgrade && (
-        <>
-          <span id={needsId} hidden>
-            {upgrade.title}
-          </span>
-          <UpgradeDialog prompt={upgrade} open={upgrading} onOpenChange={setUpgrading} />
-        </>
-      )}
-    </fieldset>
+      <Switch id={id} aria-describedby={line ? `${id}-line` : undefined} {...input} />
+    </div>
   );
 }
 
 /**
- * Whether publishing can still email the entry, as changelog.publish has it: never a sample one or a quiet imported
- * one, nor once it's published without email (`subscribers` null: no count, nothing emailed).
+ * The widget popup and the email announcement: a draft's are picked for Publish (all on to start with, ChangelogSaving);
+ * where they can't go (a sample entry, an imported one, one published without email) they're off with the reason, and a
+ * published entry's say what happened. An email-only entry is in no widget (publishing never announces it).
  */
-export const emailable = (entry: Pick<Entry, "sample" | "importedOn" | "published" | "emailedSubscribers"> | null, subscribers: number | null) =>
-  subscribers !== null && !entry?.sample && !entry?.importedOn && !(entry?.published && !entry.emailedSubscribers);
+function AnnounceRows({
+  entry,
+  subscribers,
+  listed,
+  announce,
+  pick,
+}: {
+  entry: Entry;
+  subscribers: number;
+  /** The changelog list's switch, as it is now (not saved yet, Publish waits). */
+  listed: boolean;
+  announce: Announce;
+  pick: (change: Partial<Announce>) => void;
+}) {
+  // Not the entry's fields: picking doesn't make it unsaved.
+  const quiet = { onInput: (event: React.FormEvent) => event.stopPropagation() };
+  const askedLine = entry.told && entry.told.asked > 0 ? `told ${entry.told.asked} ${entry.told.asked === 1 ? "person" : "people"} who asked` : null;
+  const join = (...lines: (string | null)[]) => {
+    const text = lines.filter(Boolean).join(" · ");
+    return text && text[0].toUpperCase() + text.slice(1);
+  };
+  const quietReason = entry.sample ? "Not for sample entries" : entry.importedOn ? `Published ${entry.importedOn}, before the import` : null;
+  const popup = entry.published ? (
+    <GoesToRow icon={<BellDotIcon />} label="Widget" checked={listed && entry.announced} disabled line={listed ? null : "Needs the changelog list"} readOnly />
+  ) : quietReason ? (
+    <GoesToRow icon={<BellDotIcon />} label="Widget" checked={false} disabled line={quietReason} readOnly />
+  ) : (
+    <GoesToRow
+      icon={<BellDotIcon />}
+      label="Widget"
+      // Off with the list, and back as it was once the list is on again: the pick is kept.
+      checked={listed && announce.markNew}
+      disabled={!listed}
+      line={listed ? null : "Needs the changelog list"}
+      onChange={(event) => pick({ markNew: event.target.checked })}
+      {...quiet}
+    />
+  );
+  const sentLine = entry.emailedFrom
+    ? `Sent from ${entry.emailedFrom}`
+    : entry.subscribersLeft > 0
+      ? `${subscriberCountText(entry.subscribersLeft)} still to go`
+      : `Sent to ${subscriberCountText(entry.subscribersSent)}`;
+  const n = subscribers;
+  const countLine = entry.emailPaused
+    ? "Your project's email is paused"
+    : entry.groups.length > 0
+      ? // Counted in its groups only (changelogEmailed sends it to no one else).
+        n === 0
+        ? "No subscribers in its groups"
+        : `${subscriberCountText(n)} in its groups`
+      : entry.privatePortal
+        ? n === 0
+          ? "No readers subscribed"
+          : `${n} ${n === 1 ? "reader" : "readers"} subscribed`
+        : n === 0
+          ? "No subscribers yet"
+          : subscriberCountText(n);
+  const email = entry.published ? (
+    <GoesToRow icon={<MailIcon />} label="Email announcement" checked={entry.emailedSubscribers} disabled readOnly line={join(entry.emailedSubscribers ? sentLine : "Published without it", askedLine)} />
+  ) : quietReason ? (
+    <GoesToRow icon={<MailIcon />} label="Email announcement" checked={false} disabled readOnly line={quietReason} />
+  ) : entry.emailedSubscribers ? (
+    // Emailed once already: publishing again sends it only to those it's still to go to, whatever's picked.
+    <GoesToRow icon={<MailIcon />} label="Email announcement" checked disabled readOnly line={sentLine} />
+  ) : (
+    <GoesToRow
+      icon={<MailIcon />}
+      label="Email announcement"
+      checked={announce.email && n > 0}
+      disabled={n === 0}
+      line={countLine}
+      onChange={(event) => pick({ email: event.target.checked })}
+      {...quiet}
+    />
+  );
+  return (
+    <>
+      {popup}
+      {email}
+    </>
+  );
+}
 
 /** "3 subscribers", "1 subscriber". */
 const subscriberCountText = (n: number) => `${n} ${n === 1 ? "subscriber" : "subscribers"}`;
-
-/** Who publishing told: the people who asked, the subscribers, or both. */
-const toldText = ({ asked, subscribers }: { asked: number; subscribers: number }) => {
-  const people = `${asked} ${asked === 1 ? "person" : "people"} who asked`;
-  if (subscribers === 0) {
-    return `Told ${people}.`;
-  }
-  return asked === 0 ? `Told ${subscriberCountText(subscribers)}.` : `Told ${people} and ${subscriberCountText(subscribers)}.`;
-};
-
-/** The subscribers an entry is still to be emailed to, by how many. */
-const stillToEmail = (n: number) => (n === 1 ? "the subscriber who hasn't had it yet" : `the ${n} subscribers who haven't had it yet`);
 
 /**
  * What the Publish dialog says happens, in one line: on the portal and in the widget, the posts it completes, and how
@@ -977,99 +1116,14 @@ export function publishSummary({
   return emails > 0 ? { start: `${where}${posts > 0 ? "" : ","} and sends `, count: plural(emails, "email"), who: `${who}.` } : { start: where, count: null, who: "" };
 }
 
-/**
- * How publishing announces an entry: emailed to the changelog's subscribers (once per entry), and marked new in the
- * widget's What's new (it's listed there either way). A draft's are picked here, for Publish (ChangelogSaving); a
- * published one's say what happened, and how many people it told.
- */
-export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers: number }) {
-  const saving = useContext(ChangelogSavingContext);
-  const announce = saving?.announce ?? { email: true, markNew: true };
-  const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
-  const people = (n: number) => `${n} ${n === 1 ? "person" : "people"}`;
-  const id = useId();
-  const choice = (name: string, hint: string, input: React.ComponentProps<"input">) => {
-    // Ids without spaces: aria-describedby is a list of them.
-    const key = `${id}-${name.replaceAll(" ", "-")}`;
-    return (
-      <div className="flex items-start gap-2">
-        <input type="checkbox" id={key} aria-describedby={`${key}-hint`} className="mt-0.5 size-4 accent-primary" {...input} />
-        <div className="flex flex-col gap-0.5">
-          <label htmlFor={key}>{name}</label>
-          <p id={`${key}-hint`} className="text-xs text-muted-foreground">
-            {hint}
-          </p>
-        </div>
-      </div>
-    );
-  };
+/** A sidebar group's heading row: its label, how many it has (muted) and, at the row's end, its action. */
+function GroupHeading({ count, children }: { count: number; children: [heading: ReactNode, action: ReactNode] }) {
   return (
-    // Not the entry's fields: picking doesn't make it unsaved.
-    <fieldset className="flex flex-col gap-3" onInput={(event) => event.stopPropagation()}>
-      <legend className="group-label mb-2">How it&apos;s announced</legend>
-      {entry.published ? (
-        <>
-          <p>
-            {!entry.emailedSubscribers
-              ? "Not emailed to subscribers."
-              : entry.emailedFrom
-                ? `Emailed to your subscribers from ${entry.emailedFrom}.`
-                : entry.subscribersLeft > 0
-                ? `Being emailed to subscribers: ${entry.subscribersLeft} still to go.`
-                : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
-          </p>
-          <p>{entry.emailOnly ? "Not in your widget: it's email only." : entry.announced ? "Marked new in your widget." : "Not marked new."}</p>
-          {/* The subscribers are the line above: here only the people who asked for its posts. */}
-          {entry.told !== null && entry.told.asked > 0 && <p>{toldText({ asked: entry.told.asked, subscribers: 0 })}</p>}
-        </>
-      ) : entry.sample ? (
-        // changelog.publish: a sample entry is never announced or emailed.
-        <p>Sample updates aren&apos;t emailed or marked new.</p>
-      ) : entry.importedOn ? (
-        // changelog.publish: nor is an imported one, the first time.
-        <p>Published before you imported it: it keeps that date ({entry.importedOn}) and isn&apos;t emailed or marked new.</p>
-      ) : (
-        <>
-          {entry.emailedSubscribers ? (
-            <p>
-              {entry.emailedFrom
-                ? `Emailed from ${entry.emailedFrom} before: not sent again.`
-                : entry.subscribersLeft > 0
-                ? `Emailed to ${subscriberCountText(entry.subscribersSent)}. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
-                : `Emailed to ${subscriberCountText(entry.subscribersSent)} when first published: not sent again.`}
-            </p>
-          ) : (
-            choice(
-              "Email subscribers",
-              entry.emailPaused
-                ? "Your project's email is paused."
-                : entry.groups.length > 0
-                  ? // Counted in its groups only (changelogEmailed sends it to no one else).
-                    subscribers === 0
-                    ? "Nobody in its groups has subscribed."
-                    : `${people(subscribers)} in its groups subscribed.`
-                  : entry.privatePortal
-                    ? subscribers === 0
-                      ? "None of your portal's readers has subscribed."
-                      : `${people(subscribers)} who can read your portal subscribed.`
-                    : subscribers === 0
-                      ? "Nobody has subscribed yet."
-                      : `${people(subscribers)} subscribed.`,
-              { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
-            )
-          )}
-          {/* An email-only entry is in no widget: nothing to mark (publishing doesn't announce it). */}
-          {entry.emailOnly ? (
-            <p>Not in your widget: it&apos;s email only.</p>
-          ) : (
-            choice("Mark it new", "A dot in your widget until readers see it.", {
-              checked: announce.markNew,
-              onChange: (event) => pick({ markNew: event.target.checked }),
-            })
-          )}
-        </>
-      )}
-    </fieldset>
+    <div className="flex min-h-7 items-center gap-2">
+      {children[0]}
+      <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
+      <span className="ml-auto">{children[1]}</span>
+    </div>
   );
 }
 
@@ -1105,16 +1159,47 @@ function CompletedPosts({
   const shown = linked.flatMap((number) => known.find((post) => post.number === number) ?? []);
 
   return (
-    <section aria-label="Posts it completes" className="flex flex-col gap-2">
-      <h2 className="group-label">Posts it completes</h2>
+    <section aria-label="Posts" className="flex flex-col gap-2">
       {editable && <input type="hidden" name="postsEditable" value="1" />}
       {/* The ones shown: a linked post merged away since isn't (saving drops it; it can't be listed). */}
       {editable && shown.map((post) => <input key={post.number} type="hidden" name="posts" value={post.number} />)}
-      {shown.length === 0 ? (
-        <p className="text-muted-foreground">
-          {editable ? "Link the posts it ships: publishing marks them Completed and tells the people who asked." : "None."}
-        </p>
-      ) : (
+      <GroupHeading count={shown.length}>
+        <h2 className="group-label">Posts</h2>
+        {editable && (
+          <Dialog
+            open={open}
+            onOpenChange={(next) => {
+              setOpen(next);
+              search.restart(next);
+            }}
+          >
+            {/* Its name says what it links. */}
+            <DialogTrigger render={<Button ref={linkButton} type="button" variant="ghost" size="xs" aria-label="Link post…" />}>
+              <PlusIcon />
+              Link
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Link a post</DialogTitle>
+                <DialogDescription>Pick a planned, in-progress or completed post this entry ships.</DialogDescription>
+              </DialogHeader>
+              <PostPicker
+                candidates={search.found.filter((post) => !linked.includes(post.number))}
+                query={search.query}
+                onQueryChange={search.onQueryChange}
+                onPick={(post) => {
+                  setPicked([...picked, post]);
+                  onChange([...linked, post.number]);
+                  setOpen(false);
+                  search.restart(false);
+                }}
+                searching={search.searching}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
+      </GroupHeading>
+      {shown.length > 0 && (
         <ul className="flex flex-col gap-2">
           {shown.map((post) => (
             <li key={post.number} className="flex items-start gap-2">
@@ -1146,38 +1231,6 @@ function CompletedPosts({
             </li>
           ))}
         </ul>
-      )}
-      {editable && (
-        <Dialog
-          open={open}
-          onOpenChange={(next) => {
-            setOpen(next);
-            search.restart(next);
-          }}
-        >
-          <DialogTrigger render={<Button ref={linkButton} type="button" variant="outline" size="sm" className="self-start" />}>
-            <LinkIcon />
-            Link post…
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Link a post</DialogTitle>
-              <DialogDescription>Pick a planned, in-progress or completed post this entry ships.</DialogDescription>
-            </DialogHeader>
-            <PostPicker
-              candidates={search.found.filter((post) => !linked.includes(post.number))}
-              query={search.query}
-              onQueryChange={search.onQueryChange}
-              onPick={(post) => {
-                setPicked([...picked, post]);
-                onChange([...linked, post.number]);
-                setOpen(false);
-                search.restart(false);
-              }}
-              searching={search.searching}
-            />
-          </DialogContent>
-        </Dialog>
       )}
     </section>
   );
@@ -1250,20 +1303,21 @@ function EntryPullRequests({
 
   return (
     <section aria-labelledby={PULL_REQUESTS_HEADING} className="flex flex-col gap-2">
-      <h2 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
-        Pull requests
-      </h2>
-      {list.length === 0 ? (
-        <p className="text-muted-foreground">None.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
+      <GroupHeading count={list.length}>
+        <h2 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
+          Pull requests
+        </h2>
+        {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
+      </GroupHeading>
+      {list.length > 0 && (
+        <ul className="flex flex-col gap-1">
           {list.map((pr) => (
-            <li key={pr.url} className="flex items-start gap-2">
-              {/* As Autopilot shows them: "PR #41", its title, and a link to GitHub on hover or a press. */}
-              <div className="flex min-w-0 flex-1 items-start gap-2">
+            <li key={pr.url} className="flex items-center gap-2">
+              {/* As Autopilot shows them: "PR #41", its title on one line, and a link to GitHub on hover or a press. */}
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <PullRequestChip projectSlug={projectSlug} pr={pr} />
-                {/* The chip's name says it already ("PR #41: <title>"): read once. */}
-                <span aria-hidden className="min-w-0 line-clamp-2 break-words">
+                {/* The chip's name says it already ("PR #41: <title>"): read once. In full in the chip's popover. */}
+                <span aria-hidden title={pr.title} className="min-w-0 truncate">
                   {pr.title}
                 </span>
               </div>
@@ -1285,7 +1339,6 @@ function EntryPullRequests({
           ))}
         </ul>
       )}
-      {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
       {/* Not closed while it's taking it out: Cancel then would undo nothing. */}
       <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && !pending && setConfirming(null)}>
         <AlertDialogContent closeDisabled={pending}>
@@ -1369,9 +1422,10 @@ function AddChanges({ projectSlug, addsTo, saved }: { projectSlug: string; addsT
         }
       }}
     >
-      <DialogTrigger render={<Button type="button" variant="outline" size="sm" className="self-start" />}>
+      {/* In the section's heading row; its name says what it adds. */}
+      <DialogTrigger render={<Button type="button" variant="ghost" size="xs" aria-label="Add changes…" />}>
         <PlusIcon />
-        Add changes…
+        Add
       </DialogTrigger>
       <DialogContent showCloseButton={!adding} className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
@@ -2102,7 +2156,7 @@ export function ChangelogEntryActions({
   // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
   // And for the cover's upload: Publish publishes what's saved, so it would go out without it.
   const busy = pending || (saving?.pending ?? false) || (saving?.uploading ?? false);
-  // As picked in the sidebar (HowAnnounced).
+  // As picked in the sidebar's Goes to (WhoSeesIt).
   const announce = saving?.announce ?? { email: true, markNew: true };
   // Nobody to email (or emailed before): it isn't, and the sidebar says so once it's published.
   const emailing = announce.email && subscribers > 0 && !emailedSubscribers;
@@ -2222,8 +2276,10 @@ export function ChangelogEntryActions({
               ? markers.length === 1
                 ? "Replace a line before publishing"
                 : `Replace ${markers.length} lines before publishing`
-              : groupsUnsaved
-                ? "Save who sees it before publishing"
+              : saving?.noGroupPicked
+                ? "Pick a group before publishing"
+                : groupsUnsaved
+                  ? "Save before publishing"
                 : `Publish “${title}”?`}
           </AlertDialogTitle>
           {/* The lines are the team's text, any length (a link, a line of code): they wrap anywhere, or the dialog would be as wide as the longest. */}
@@ -2231,7 +2287,11 @@ export function ChangelogEntryActions({
           <AlertDialogDescription render={<div />} className={cn("flex flex-col gap-3", markers.length > 0 && "wrap-anywhere")}>
             {/* Said first, and in the description, which is read out as the dialog opens: what the draft left to fill in, named so it's found in the text. */}
             {markers.length === 0 && groupsUnsaved ? (
-              <p>{`You changed who sees “${title}” and haven't saved it. Save, then publish.`}</p>
+              <p>
+                {saving?.noGroupPicked
+                  ? `“${title}” is for some groups, but none is picked. Pick one, or choose Everyone.`
+                  : `You changed who “${title}” is for or where it goes and haven't saved it. Save, then publish.`}
+              </p>
             ) : markers.length > 0 ? (
               <p>{`“${title}” still has ${markers.length === 1 ? "a line" : "lines"} left to fill in: ${markers.join(" ")} Replace or remove ${markers.length === 1 ? "it" : "them"}, save, then publish.`}</p>
             ) : (

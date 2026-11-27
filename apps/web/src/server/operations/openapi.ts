@@ -266,7 +266,7 @@ export const groups = [
   },
   {
     name: "Billing",
-    description: "The project's plan, licence, AI usage and credits.",
+    description: "The project's plan, licence, usage and credits.",
     prefixes: ["plan", "license", "usage", "credits"],
   },
 ] as const;

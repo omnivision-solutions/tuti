@@ -59,6 +59,14 @@ export const jobs = {
     // One at a time per page and language: Retranslate twice, or Try again while it's queued, never pays twice at once.
     concurrencyKey: "input.articleId + ':' + input.language",
   },
+  /** A published changelog entry into one language kept up to date (docs/plan.md L16): as translateArticle. */
+  translateChangelogEntry: {
+    name: "translate-changelog-entry",
+    input: z.object({ entryId: z.string(), language: z.string() }),
+    retries: 3,
+    backoff: { factor: 4, maxSeconds: 300 },
+    concurrencyKey: "input.entryId + ':' + input.language",
+  },
   /** Translations that couldn't be made (no credits, the provider failing) tried again on their own, backing off up to a day. */
   retryArticleTranslations: {
     name: "retry-article-translations",

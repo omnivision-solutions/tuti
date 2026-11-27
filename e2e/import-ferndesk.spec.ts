@@ -149,14 +149,20 @@ test("changelog entries published in Ferndesk come as drafts by default; publish
 
   // Published in Ferndesk on 2 April 2024: old news, so it keeps that date and goes out quietly.
   await owner.goto(`/app/${slug}/changelog/1`);
-  await expect(owner.getByText("Published before you imported it: it keeps that date (2 April 2024) and isn't emailed or marked new.")).toBeVisible();
+  // The popup and the email are off, each saying why.
+  const goesTo = owner.getByRole("group", { name: "Goes to" });
+  for (const name of ["Widget", "Email announcement"]) {
+    await expect(goesTo.getByRole("switch", { name })).not.toBeChecked();
+    await expect(goesTo.getByRole("switch", { name })).toBeDisabled();
+    await expect(goesTo.getByRole("switch", { name })).toHaveAccessibleDescription("Published 2 April 2024, before the import");
+  }
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const dialog = owner.getByRole("alertdialog");
   await expect(dialog).toContainText("It goes on your portal and in your widget. Published before you imported it, it keeps that date (2 April 2024) and isn't announced.");
   await checkpoint(owner, "publish-imported-entry");
   await dialog.getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published without announcing")).toBeVisible();
-  await expect(owner.getByText("Published 2 April 2024")).toBeVisible();
+  await expect(owner.getByText("Published 2 April 2024", { exact: true })).toBeVisible();
 });
 
 test("in Settings → Import, Ferndesk's published changelog entries come as drafts to begin with, as published once picked", async ({ browser }) => {

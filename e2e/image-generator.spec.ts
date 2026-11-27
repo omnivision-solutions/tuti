@@ -23,7 +23,7 @@ test("the team generates an entry's cover with AI from a prompt and a reference,
   await expect(dialog.getByRole("heading")).toContainText("Cover for “Dark mode is here”");
   await expect(dialog.getByRole("button", { name: "Cover" })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog.getByText("1200 × 630")).toBeVisible();
-  await expect(dialog.getByText("Uses AI credits")).toBeVisible();
+  await expect(dialog.getByText("Uses credits")).toBeVisible();
   await dialog.getByLabel("Describe it").fill("A parrot in a dark room, flat illustration");
 
   // A reference uploaded from the + tile's menu.

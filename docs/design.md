@@ -290,12 +290,22 @@ the list picks none to approve at once.
   posts, comments), saying nothing for none; how many reactions it had sits at the row's end.
   A changelog entry's editor has a sidebar
   beside the text with a line on its left, as a post's has (under it on phones, after a line; no card), its groups
-  under group labels: its status first (Draft, or Published and the date), its tags as chips, the posts it completes
-  ("Link post…"), its merged pull requests (each a `PR #41` chip as Autopilot shows them, its title beside it; a draft's taken out with ×,
-  their line with them, and "Add changes…" listing the ones no entry has, ticked unless Autopilot found nothing for
-  users in them, with what their analyses cost where credits are on; a published entry's listed as they shipped),
-  how it's announced (Email subscribers, Mark it new, one short line each: picked
-  there, so Publish only confirms; published, what happened, said once, and how many people who asked were told).
+  under group labels, and no hint sentences: **Status**, one neutral pill (Draft, "Draft · collecting PRs" for the running
+  draft, or Published and the date); **Tags** as chips; **Audience** (with reader groups only), a segmented control,
+  Everyone or Some groups, the second showing the groups as chips (Everyone is no groups; Some groups with none ticked isn't saved or
+  published, the first chip saying to pick one or choose Everyone; on a plan without groups, Some groups opens the
+  upgrade prompt and stays on Everyone); **Goes to**, three bordered
+  rows of an icon, a label and a switch, all on for a draft: Changelog list (off: email only; saved with the entry,
+  so Publish waits for a change to it, as for Audience), Widget (off and disabled while the list is, "Needs the
+  changelog list" under it, back as it was once the list is on) and Email announcement (the subscribers' count under it,
+  "3 subscribers", "No subscribers yet"; off and disabled with one short reason where it can't go). The popup and the
+  email are picked there, so Publish only confirms; published, they say what happened ("Sent to 3 subscribers",
+  "Published without it", and how many people who asked were told). A saved entry has the popup and the email; a new
+  one, the list only. Then **Posts** and **Pull requests**, each with its count and its action at the row's end ("+ Link",
+  "+ Add", named "Link post…" and "Add changes…"): the posts it completes, and its merged pull requests, one line each
+  (a `PR #41` chip as Autopilot shows them, its title cut to the line; a draft's taken out with ×, their line with
+  them; Add listing the ones no entry has, ticked unless Autopilot found nothing for users in them, with what their
+  analyses cost where credits are on; a published entry's listed as they shipped).
   Once it's published, "View on portal" is in the header's More actions, as on a post's page. Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
   each, Edit under the team's own while it's published). Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The featured image (its cover, and its link

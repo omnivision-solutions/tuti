@@ -91,7 +91,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
       {/* The plan's three numbers, value above label. */}
       <dl className={cn("grid rounded-xl bg-muted px-1.5 py-3 text-center", credits ? "grid-cols-3" : "grid-cols-2")}>
         {[
-          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} />, creditsCell(plan) || <NotIncluded />] as const] : []),
+          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} emails={facts.emails} label="credits a month" />, creditsCell(plan) || <NotIncluded />] as const] : []),
           ["feedback boards", compact(facts.boards)] as const,
           ["emails a month", compact(facts.emails)] as const,
         ].map(([label, value], index) => (
@@ -177,11 +177,15 @@ function Tip({ label, title, children }: { label: string; title: string; childre
   );
 }
 
-/** "Credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. */
-function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: number | null }) {
+/**
+ * "Credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. Emails past the
+ * included ones only where they spend credits: a plan with monthly credits and an email limit (emailsSpendCredits).
+ */
+function CreditsTip({ buy, credits, emails, label = "Credits a month" }: { buy: PlanFacts["creditsBuy"]; credits: number | null; emails: number | null; label?: string }) {
+  const also = `screenshots of your app${credits !== null && emails !== null ? ", and emails past those your plan includes" : ""}`;
   const rows: [string, number][] = buy ? [["AI answers", buy.answers], ...(buy.changes !== null ? [["Or checked changes", buy.changes] as [string, number]] : [])] : [];
   return (
-    <Tip label="Credits a month" title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
+    <Tip label={label} title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
       {rows.length > 0 ? (
         <>
           <dl className="grid gap-2 text-sm">
@@ -192,10 +196,10 @@ function CreditsTip({ buy, credits }: { buy: PlanFacts["creditsBuy"]; credits: n
               </div>
             ))}
           </dl>
-          <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Estimates. They vary by question and model. Credits also pay for summaries and duplicate detection.</p>
+          <p className="mt-2.5 border-t pt-2.5 text-xs text-muted-foreground">Estimates. They vary by question and model. Credits also pay for summaries, duplicate detection, {also}.</p>
         </>
       ) : (
-        <p className="text-sm text-muted-foreground">Credits pay for AI answers, summaries, duplicate detection and Autopilot&apos;s checks of the changes you ship.</p>
+        <p className="text-sm text-muted-foreground">Credits pay for AI answers, summaries, duplicate detection, Autopilot&apos;s checks of the changes you ship, {also}.</p>
       )}
     </Tip>
   );
@@ -242,7 +246,7 @@ function groups(plans: Plan[]): { title: string; icon: ReactNode; rows: Row[] }[
       icon: <SparklesIcon aria-hidden className={icon} />,
       rows: [
         ...(plans.some(({ facts }) => facts.credits !== null || facts.startCredits !== null)
-          ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} />, (_, plan) => creditsCell(plan))]
+          ? [row(<CreditsTip buy={credited?.facts.creditsBuy ?? null} credits={credited?.facts.credits ?? null} emails={credited?.facts.emails ?? null} />, (_, plan) => creditsCell(plan))]
           : []),
         row("AI answers", (facts) => facts.aiAnswers),
         row("Autopilot", (facts) => facts.features.codeChanges),
