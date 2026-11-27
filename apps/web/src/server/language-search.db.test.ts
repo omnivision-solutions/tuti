@@ -240,9 +240,13 @@ test("more outdated translations than one look at holds, all closer than a curre
   expect(sent).not.toContain("Alte Preise");
 });
 
-test("the search box as the reader types at a language's address: its translations at their slug there, without reading any article's English", async () => {
+test("the search box as the reader types at a language's address: the team's translations at their slug there; one kept up to date (maybe made from an older English) by its English", async () => {
   await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  await article("Refunds", "Ask us for a refund.", { title: "Erstattung", slug: "erstattung", body: "Erstattung zu alten Preisen.", stale: true });
   at("de");
   expect(await searchDocsAsTyped(project.slug, "Karte")).toEqual([{ slug: "abrechnung", title: "Abrechnung", snippet: "Mit Karte zahlen.", lang: "de" }]);
+  // Never its old text.
+  expect(await searchDocsAsTyped(project.slug, "Erstattung")).toEqual([]);
+  expect(await searchDocsAsTyped(project.slug, "refund")).toEqual([{ slug: "refunds", title: "Refunds", snippet: "Ask us for a refund." }]);
 });
 

@@ -50,9 +50,10 @@ export type SearchOptions = {
   unlisted?: boolean;
   operations?: boolean;
   /**
-   * At a language's address, whether a translation counts only if it was made from the English as it is (the default). False
-   * as the reader types: any published one counts, so no article's English is read per keystroke.
-   * ponytail: the English's hash isn't stored; storing it on the article would let this check be cheap everywhere.
+   * At a language's address, how a translation is known to be current: by working it out from the English as it is (the
+   * default), or, false as the reader types (no article's English read per keystroke), only one the team writes counts (it's
+   * current once published); one kept up to date is found by its English there.
+   * ponytail: the English's hash isn't stored; storing it on the article would let the box check those cheaply too.
    */
   fresh?: boolean;
 };
@@ -180,11 +181,14 @@ async function searchFor(projectId: string, query: string, limit: number, reader
   return results;
 }
 
-/** These articles' published versions in `language`, by article (translatedInto's shape), without checking they're current. */
+/**
+ * These articles' published versions in `language` the team writes (translatedInto's shape): current once published, so known
+ * without reading the English. Versions kept up to date aren't (they may be made from an older English).
+ */
 async function publishedIn(articles: { id: string; slug: string }[], language: string): Promise<Map<string, { language: string; slug: string }[]>> {
   const slugs = new Map(articles.map((article) => [article.id, article.slug]));
   const versions = await prisma.articleTranslation.findMany({
-    where: { articleId: { in: [...slugs.keys()] }, language, publishedAt: { not: null } },
+    where: { articleId: { in: [...slugs.keys()] }, language, automatic: false, publishedAt: { not: null } },
     select: { articleId: true, slug: true },
   });
   return new Map(versions.map((version) => [version.articleId, [{ language, slug: version.slug ?? slugs.get(version.articleId)! }]]));
