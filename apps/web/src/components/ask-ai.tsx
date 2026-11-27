@@ -9,7 +9,7 @@ import type { Editor } from "@tiptap/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -126,9 +126,8 @@ function aiVersion(state: EditorState, result: Doc, actions: { current: Actions 
     const each = document.createElement("button");
     each.type = "button";
     each.textContent = label;
-    each.className = primary
-      ? "rounded-md bg-primary px-2.5 py-1 font-medium text-primary-foreground hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-      : "rounded-md border px-2.5 py-1 font-medium hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none";
+    // The app's own buttons' look (design.md), on plain elements: the version isn't drawn by React.
+    each.className = buttonVariants({ variant: primary ? "default" : "outline", size: "sm" });
     each.addEventListener("click", onClick);
     return each;
   };
@@ -239,6 +238,9 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
         retry: () => {
           const now = ask(editor.state);
           if (now) {
+            // Back on the selected text while the AI works (Try again's button goes with the version): focus moves on to
+            // the new version's Accept once it's back.
+            editor.chain().focus().setTextSelection({ from: now.from, to: now.to }).run();
             void run(now.from, now.to, now.instruction);
           }
         },

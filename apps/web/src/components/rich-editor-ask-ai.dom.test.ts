@@ -207,9 +207,14 @@ test("Try again asks again for the same text and instruction; Escape on the AI's
   rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("First try")] } });
   await view.click("Clearer");
   await vi.waitFor(() => expect(view.shown("new")).toContain("First try"));
-  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("Second try")] } });
+  const second = answer();
   await view.click("Try again");
-  await vi.waitFor(() => expect(view.shown("new")).toContain("Second try"));
+  // Back on the selected text while the AI works, then on the new version's Accept.
+  expect(view.editor.view.hasFocus()).toBe(true);
+  expect(view.editor.state.selection).toMatchObject({ from: SECOND, to: SECOND + 26 });
+  await second({ content: { type: "doc", content: [paragraph("Second try")] } });
+  expect(view.shown("new")).toContain("Second try");
+  expect(document.activeElement?.textContent).toBe("Accept");
   expect(rewriteText).toHaveBeenCalledTimes(2);
   expect(rewriteText.mock.calls[1]).toEqual(rewriteText.mock.calls[0]);
 
