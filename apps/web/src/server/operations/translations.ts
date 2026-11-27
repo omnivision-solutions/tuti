@@ -334,9 +334,11 @@ export async function behindChanges(projectId: string, slug: string, language: (
       const hashOf = (key: string) =>
         sectionHash(drafted, key) ?? draft?.removedHashes?.[key] ?? sectionHash(published, key) ?? (version.removedHashes as Record<string, string>)[key] ?? null;
       const before = new Map<string, Doc>();
+      // A section English added has no earlier English to find (no hash of its own): only the others are looked for.
+      const sought = keys.filter((key) => hashOf(key) !== null);
       // ponytail: reads up to CHANGES_LOOK_BACK revisions, newest first, a page at a time, stopping once every section is
       // found; an edit older than that shows English now only.
-      for (let skip = 0; skip < CHANGES_LOOK_BACK && before.size < keys.length; skip += CHANGES_PAGE) {
+      for (let skip = 0; skip < CHANGES_LOOK_BACK && before.size < sought.length; skip += CHANGES_PAGE) {
         const revisions = await db.articleRevision.findMany({
           where: { articleId },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -346,11 +348,11 @@ export async function behindChanges(projectId: string, slug: string, language: (
         });
         for (const revision of revisions) {
           for (const part of sourceSections((revision.content as Doc | null) ?? fromPlainText(revision.body))) {
-            if (keys.includes(part.key) && !before.has(part.key) && hashOf(part.key) === part.hash) {
+            if (sought.includes(part.key) && !before.has(part.key) && hashOf(part.key) === part.hash) {
               before.set(part.key, { type: "doc", content: part.blocks });
             }
           }
-          if (before.size === keys.length) break;
+          if (before.size === sought.length) break;
         }
         if (revisions.length < CHANGES_PAGE) break;
       }
