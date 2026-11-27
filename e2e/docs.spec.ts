@@ -1755,13 +1755,19 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(conversation.getByRole("button", { name: "Helpful", exact: true })).toBeEnabled();
   await visitor.unroute("**/*");
   await conversation.getByRole("button", { name: "Helpful", exact: true }).click();
-  await expect(conversation.getByText("Thanks for letting us know.")).toBeVisible();
+  // Focus moves to it from the button that's gone.
+  await expect(conversation.getByText("Thanks for letting us know.")).toBeFocused();
 
   // A follow-up: the docs are searched with the question before it, and the AI gets the conversation so far.
   const followUp = "Can members do it too?";
   await similar(`${question}\n${followUp}`, `Inviting your team\n\n${body}`, 0.8);
   await nextModelReply(JSON.stringify({ answer: "Only owners and admins can send invites.", sources: ["s1"] }), followUp);
-  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(followUp);
+  // Typed key by key (each a render): the thanks takes focus only once, so every key stays in the box.
+  const box = assistant.getByRole("textbox", { name: "Ask a follow-up" });
+  await box.click();
+  await box.pressSequentially(followUp);
+  await expect(box).toBeFocused();
+  await expect(box).toHaveValue(followUp);
   await assistant.getByRole("button", { name: "Send" }).click();
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
   // Not what they hoped: the team will see it among the unanswered questions, with the article it cited.

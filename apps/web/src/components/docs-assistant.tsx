@@ -498,7 +498,8 @@ function AssistantReply({
             ref={(thanks) => {
               if (thanks && justRated.current) {
                 justRated.current = false;
-                thanks.focus();
+                // Only where focus fell to the page with the button: not if the reader moved on while it saved.
+                if (document.activeElement === document.body) thanks.focus();
               }
             }}
             className="outline-none"

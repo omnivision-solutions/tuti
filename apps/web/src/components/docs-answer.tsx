@@ -3,7 +3,7 @@
 import { MessageCircleIcon, SparklesIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { type FormEvent, useId, useState, useTransition } from "react";
+import { type FormEvent, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -43,6 +43,8 @@ export function DocsAnswer({
   const t = useTranslations("answers");
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [rated, setRated] = useState<boolean | null>(null);
+  // Set as a rating saves: the thanks takes focus from the button that's gone, once (not on every render after).
+  const justRated = useRef(false);
   const [pending, startTransition] = useTransition();
 
   const ask = () =>
@@ -62,6 +64,7 @@ export function DocsAnswer({
         toast.error(result.error);
         return;
       }
+      justRated.current = true;
       setRated(helpful);
     });
 
@@ -103,8 +106,17 @@ export function DocsAnswer({
           <AnswerSources sources={answer.sources} />
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
             {rated !== null ? (
-              // Only ever shown after a rating here: focus moves to it from the button that's gone.
-              <p tabIndex={-1} ref={(thanks) => thanks?.focus()} className="outline-none">
+              <p
+                tabIndex={-1}
+                ref={(thanks) => {
+                  if (thanks && justRated.current) {
+                    justRated.current = false;
+                    // Only where focus fell to the page with the button: not if the reader moved on while it saved.
+                    if (document.activeElement === document.body) thanks.focus();
+                  }
+                }}
+                className="outline-none"
+              >
                 {t("thanks")}
               </p>
             ) : (
