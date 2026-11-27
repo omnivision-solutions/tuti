@@ -353,11 +353,14 @@ test("Settings' Try a message takes From as a name and an address, and To as whe
   expect(await attempt("Kim <not an address>")).toEqual({ error: "Enter a valid email address" });
 });
 
-test("Not spam's removal of the rule waits for the rules' lock, as every change to the rules does", { timeout: 30_000 }, async () => {
+test.each([
+  ["removing the rule that filed it", { field: "subject", matcher: "contains", value: "crypto" }, { subject: "Crypto" }, true, "Filed by your rule: Subject contains crypto. It's removed."],
+  ["unblocking an address", { field: "sender_address", matcher: "is", value: "e2e-lee@strangers.example" }, {}, false, "e2e-lee@strangers.example is unblocked."],
+] as const)("an owner's Not spam %s waits for the rules' lock, as every change to the rules does", { timeout: 30_000 }, async (_what, added, message, removeRule, notice) => {
   const { projectId, admin, update, mail, filed } = await setup();
-  await update({ addRules: [rule("subject", "contains", "crypto")] });
-  await mail("e2e-lee@strangers.example", { subject: "Crypto" }); // #1
-  expect(await filed()).toEqual(["rule"]);
+  await update({ addRules: [rule(added.field, added.matcher, added.value)] });
+  await mail("e2e-lee@strangers.example", message); // #1
+  expect(await filed()).toEqual([removeRule ? "rule" : "blocked_address"]);
   // Someone else holds the lock (adding a rule in Settings, say).
   const locked = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
@@ -370,7 +373,7 @@ test("Not spam's removal of the rule waits for the rules' lock, as every change 
     { timeout: 20_000 },
   );
   await locked.promise;
-  const removal = call(updateConversation, admin, { number: 1, spam: false, removeRule: true });
+  const removal = call(updateConversation, admin, { number: 1, spam: false, ...(removeRule && { removeRule: true }) });
   // It waits for the lock, in this file's own database (the server is shared).
   await vi.waitFor(
     async () => {
@@ -384,7 +387,7 @@ test("Not spam's removal of the rule waits for the rules' lock, as every change 
   expect(await prisma.spamRule.count({ where: { projectId } })).toBe(1);
   release.resolve();
   await holding;
-  expect((await removal).notice).toBe("Filed by your rule: Subject contains crypto. It's removed.");
+  expect((await removal).notice).toBe(notice);
   expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
 });
 

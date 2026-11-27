@@ -351,8 +351,9 @@ export async function recordMark(
   { phrase = null, removeRule = false }: { phrase?: string | null; removeRule?: boolean } = {},
 ): Promise<string | undefined> {
   const notices: string[] = [];
-  if (removeRule) {
-    // As every writer of the rules: read and removed under the lock, so an "add" of the same rule waits for it.
+  if (removeRule || (!spam && admin)) {
+    // An owner's or admin's Not spam may remove rules (the one that filed it, an address's "is" rules): read and removed
+    // under the lock, as every writer of the rules, so a change in Settings waits for it.
     await lockSpamRules(db, conversation.projectId);
   }
   const filedBy = spam ? null : await ruleThatFiled(db, conversation.projectId, reason, phrase);
