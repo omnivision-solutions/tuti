@@ -15,7 +15,7 @@ import { reportingPage, sampleAiReport } from "@/server/reporting";
 
 export const metadata = { title: "AI conversations · Reporting" };
 
-const SOURCES = { portal: "Portal", widget: "Widget", api: "API" };
+const SOURCES = { portal: "Portal", widget: "Widget", api: "API", inbox: "Inbox" };
 /** Conversations a page lists: the same few questions come up again and again, and one long list buried what came after. */
 const PER_PAGE = 20;
 

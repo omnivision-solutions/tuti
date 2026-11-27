@@ -116,13 +116,12 @@ test("an AI answer at a language's address answers from the articles translated 
   expect(sent).toContain("Install the app.");
   expect(sent).not.toContain("Pay by card.");
   const portal = await portalAddress(project.slug);
-  expect(answer).toMatchObject({
-    status: "answered",
-    sources: [
-      { slug: "abrechnung", title: "Abrechnung", url: `${portal}/de/docs/abrechnung` },
-      { slug: "setup", title: "Setup", url: `${portal}/de/docs/setup` },
-    ],
-  });
+  // Each source in its own language: the translation's German (`de`), the article not translated the default's (none).
+  expect(answer).toMatchObject({ status: "answered" });
+  expect(answer.sources).toEqual([
+    { slug: "abrechnung", title: "Abrechnung", url: `${portal}/de/docs/abrechnung`, language: "de" },
+    { slug: "setup", title: "Setup", url: `${portal}/de/docs/setup` },
+  ]);
 });
 
 /** The model and embeddings fakes, for AI answers. */
@@ -155,7 +154,7 @@ test("the answer on the docs' search results page (askDocs) at a language's addr
   at("de");
   expect(await askDocs(project.slug, "Wie zahle ich?")).toMatchObject({
     status: "answered",
-    sources: [{ slug: "abrechnung", title: "Abrechnung", url: `${await portalAddress(project.slug)}/de/docs/abrechnung` }],
+    sources: [{ slug: "abrechnung", title: "Abrechnung", url: `${await portalAddress(project.slug)}/de/docs/abrechnung`, language: "de" }],
   });
 });
 

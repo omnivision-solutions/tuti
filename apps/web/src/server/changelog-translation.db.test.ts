@@ -810,3 +810,20 @@ test("Try again tries again the versions that failed, and starts none: a publish
   expect((await call(getLanguages, as(), {})).languages[0]!.entries).toEqual({ translated: 1, waiting: 0, why: null });
   expect(model.requests).toHaveLength(1);
 });
+
+test("a subscriber whose saved language the portal no longer serves gets the entry email in the default language, its Unsubscribe unprefixed", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const german = `e2e-offline-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  // German taken offline after they subscribed in it.
+  await languages({ languages: [{ code: "de", live: false, newPages: "manual" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(entryEmails(german)).toHaveLength(1));
+  const [email] = entryEmails(german);
+  expect(email!.html).toMatch(/<html[^>]* lang="en"/);
+  expect(email!.text).toContain("New ·");
+  expect(email!.text).toContain("Unsubscribe");
+  expect(email!.html).toMatch(/\/changelog\/subscription\?token=/);
+  expect(email!.html).not.toMatch(/\/de\/changelog/);
+});

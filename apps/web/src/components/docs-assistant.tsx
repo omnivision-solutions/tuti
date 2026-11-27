@@ -2,6 +2,7 @@
 
 import { SendHorizontalIcon, SparklesIcon, ThumbsDownIcon, ThumbsUpIcon, Trash2Icon, XIcon, MessageCircleIcon } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnswerSources, AnswerText, AskAPerson } from "@/components/docs-answer";
@@ -67,6 +68,8 @@ export function DocsAssistantProvider({
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
+  // In the page's language on the portal; English in the widget, for now (the root layout's messages).
+  const t = useTranslations("answers");
   const [open, setOpen] = useState(false);
   // What had focus when it opened, for it to go back to; in the widget's Messages that may be gone by then (sending went
   // back to the list), and the page's mark (data-assistant-return, its New message) takes it instead.
@@ -147,10 +150,10 @@ export function DocsAssistantProvider({
         update(turn, "error" in result ? { error: result.error } : { answer: result, error: undefined });
       } catch {
         // Offline, or the server failed: not "Thinking…" forever.
-        update(turn, { error: "Couldn't reach the assistant. Try again." });
+        update(turn, { error: t("unreachable") });
       }
     },
-    [slug, update],
+    [slug, update, t],
   );
 
   const assistant = useMemo<DocsAssistant>(
@@ -274,6 +277,7 @@ function AssistantPanel({
   onLeave: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const t = useTranslations("answers");
   const end = useRef<HTMLDivElement>(null);
   const thinking = turns.some((turn) => !turn.answer && !turn.error);
   // The latest turn in view as it's asked and as its answer comes.
@@ -295,20 +299,20 @@ function AssistantPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-1 border-b py-2 pr-2 pl-4">
-        <SheetTitle className="flex-1 text-base">Assistant</SheetTitle>
-        <SheetDescription className="sr-only">Ask about {projectName}: answers written by AI from the docs.</SheetDescription>
-        <Button variant="ghost" size="icon-sm" aria-label="Clear the conversation" disabled={turns.length === 0 || thinking} onClick={onClear}>
+        <SheetTitle className="flex-1 text-base">{t("assistant")}</SheetTitle>
+        <SheetDescription className="sr-only">{t("assistantDescription", { name: projectName })}</SheetDescription>
+        <Button variant="ghost" size="icon-sm" aria-label={t("clear")} disabled={turns.length === 0 || thinking} onClick={onClear}>
           <Trash2Icon />
         </Button>
-        <SheetClose render={<Button variant="ghost" size="icon-sm" aria-label="Close the assistant" />}>
+        <SheetClose render={<Button variant="ghost" size="icon-sm" aria-label={t("close")} />}>
           <XIcon />
         </SheetClose>
       </div>
-      <div role="log" aria-label="Conversation" aria-busy={thinking} className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-5">
+      <div role="log" aria-label={t("conversation")} aria-busy={thinking} className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-5">
         {turns.length === 0 && (
           <div className="m-auto flex max-w-xs flex-col items-center gap-2 text-center text-sm text-muted-foreground">
             <SparklesIcon aria-hidden className="size-6" />
-            <p>Ask anything about {projectName}. Answers are written by AI from the docs, with the articles they come from.</p>
+            <p>{t("empty", { name: projectName })}</p>
           </div>
         )}
         {turns.map((turn) => (
@@ -333,13 +337,13 @@ function AssistantPanel({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           maxLength={300}
-          placeholder="Ask, search, or explain…"
-          aria-label={turns.length > 0 ? "Ask a follow-up" : "Ask a question"}
+          placeholder={t("placeholder")}
+          aria-label={turns.length > 0 ? t("askFollowUp") : t("askQuestion")}
           className="h-11 flex-1"
         />
-        <Button type="submit" size="lg" disabled={!draft.trim() || thinking} aria-label="Send">
+        <Button type="submit" size="lg" disabled={!draft.trim() || thinking} aria-label={t("send")}>
           <SendHorizontalIcon />
-          <span className="max-sm:sr-only">Send</span>
+          <span className="max-sm:sr-only">{t("send")}</span>
         </Button>
       </form>
     </div>
@@ -365,7 +369,9 @@ function AssistantReply({
 }) {
   const slug = usePortalSlug();
   const at = usePortalHref();
+  const t = useTranslations("answers");
   const [rating, setRating] = useState(false);
+  const justRated = useRef(false);
   const { answer, error } = turn;
 
   if (error) {
@@ -376,7 +382,7 @@ function AssistantReply({
           <>
             <p className="text-destructive">{error}</p>
             <Button variant="outline" size="sm" onClick={onRetry}>
-              Try again
+              {t("tryAgain")}
             </Button>
           </>
         )}
@@ -400,7 +406,7 @@ function AssistantReply({
     return (
       <p role="status" className="flex items-center gap-2 text-muted-foreground">
         <SparklesIcon aria-hidden className="size-4 animate-pulse" />
-        Thinking…
+        {t("thinking")}
       </p>
     );
   }
@@ -424,10 +430,10 @@ function AssistantReply({
   if (answer.status === "failed") {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">
-        <p className="text-muted-foreground">The AI couldn&apos;t answer just now.</p>
+        <p className="text-muted-foreground">{t("failedShort")}</p>
         {!turn.escalated && (
           <Button variant="outline" size="sm" onClick={onRetry}>
-            Try again
+            {t("tryAgain")}
           </Button>
         )}
         {person}
@@ -440,21 +446,17 @@ function AssistantReply({
     return (
       <div className="flex flex-col gap-2">
         <p className="font-semibold">
-          {answer.status === "no_answer" ? "I don't know" : answer.status === "unavailable" ? "AI answers aren't available right now." : "I can't help with that here."}
+          {answer.status === "no_answer" ? t("dontKnow") : answer.status === "unavailable" ? t("unavailable") : t("cantHelp")}
         </p>
         <p className="text-sm text-muted-foreground">
-          {answer.status === "no_answer"
-            ? "Nothing in the docs answers that yet. Post it as feedback so the team sees it."
-            : answer.status === "unavailable"
-              ? "These articles may help. Or post it as feedback so the team sees it."
-              : "Post it as feedback so the team sees it."}
+          {answer.status === "no_answer" ? t("nothingAnswers") : answer.status === "unavailable" ? t("mayHelp") : t("postIt")}
         </p>
         {/* The project's AI is paused (out of credits): the closest articles instead. */}
         {answer.status === "unavailable" && answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
         <div className="flex flex-wrap items-center gap-2">
           {feedbackHref && (
             <Link href={feedbackHref} onClick={onLeave} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Post this as feedback
+              {t("postAsFeedback")}
             </Link>
           )}
           {person}
@@ -467,6 +469,7 @@ function AssistantReply({
     try {
       const result = await rateDocsAnswer(slug, answer.id, helpful);
       if (!result.error) {
+        justRated.current = true;
         onRated(helpful);
       }
     } catch {
@@ -481,15 +484,28 @@ function AssistantReply({
       <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
         {turn.rated === undefined ? (
           <>
-            <Button variant="ghost" size="icon-sm" aria-label="Helpful" disabled={rating} onClick={() => void rate(true)}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} disabled={rating} focusableWhenDisabled onClick={() => void rate(true)}>
               <ThumbsUpIcon />
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Not helpful" disabled={rating} onClick={() => void rate(false)}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} disabled={rating} focusableWhenDisabled onClick={() => void rate(false)}>
               <ThumbsDownIcon />
             </Button>
           </>
         ) : (
-          <p>Thanks for letting us know.</p>
+          // Focus moves here from the button that's gone, only just after rating (not on an earlier turn shown again).
+          <p
+            tabIndex={-1}
+            ref={(thanks) => {
+              if (thanks && justRated.current) {
+                justRated.current = false;
+                // Only where focus fell to the page with the button: not if the reader moved on while it saved.
+                if (document.activeElement === document.body) thanks.focus();
+              }
+            }}
+            className="outline-none"
+          >
+            {t("thanks")}
+          </p>
         )}
         {/* Always there: Messages asks the AI first, and the team is a way through. */}
         {person}
@@ -505,6 +521,7 @@ function AssistantReply({
  */
 export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: () => void }) {
   const assistant = useDocsAssistant();
+  const t = useTranslations("answers");
   if (!assistant) {
     return null;
   }
@@ -512,7 +529,7 @@ export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: ()
     return (
       <Button type="button" variant="outline" onClick={assistant.open}>
         <SparklesIcon />
-        Ask AI
+        {t("askAI")}
       </Button>
     );
   }
@@ -526,7 +543,7 @@ export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: ()
       className="flex w-full items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent"
     >
       <SparklesIcon aria-hidden className="size-4 shrink-0" />
-      <span className="shrink-0 font-medium">Ask AI:</span>
+      <span className="shrink-0 font-medium">{t("askAIColon")}</span>
       <span className="truncate text-muted-foreground">{question}</span>
     </button>
   );
@@ -544,6 +561,7 @@ export type SupportContact = { messages: boolean; email: string | null };
 export function StillStuck({ support, home = false }: { support: SupportContact | null; home?: boolean }) {
   const assistant = useDocsAssistant();
   const at = usePortalHref();
+  const t = useTranslations("answers");
   // The docs' home has Ask AI in its search: there, "Can't find it?" is the way to the team.
   const ask = !home && assistant;
   if (!ask && !support) {
@@ -559,17 +577,17 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
       </span>
       <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
         <h2 id="still-stuck" className="font-sans text-[1.0625rem] font-semibold">
-          {home ? "Can't find it?" : "Still stuck?"}
+          {home ? t("cantFind") : t("stillStuck")}
         </h2>
         <p className="text-[0.9375rem] text-muted-foreground">
-          {ask && support ? "Ask AI for a quick answer, or write to the team." : ask ? "Ask AI for a quick answer." : "Write to the team and we'll help."}
+          {ask && support ? t("askOrWrite") : ask ? t("askQuick") : t("write")}
         </p>
       </div>
       <div className="flex shrink-0 gap-2">
         {ask && (
           <Button variant="ghost" onClick={assistant.open} className="font-semibold portal:hover:bg-secondary-hover">
             <SparklesIcon />
-            Ask AI
+            {t("askAI")}
           </Button>
         )}
         {support && (
@@ -585,7 +603,7 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
             }}
             className={buttonVariants({ variant: "ghost", className: "font-semibold portal:hover:bg-secondary-hover" })}
           >
-            Contact us
+            {t("contactUs")}
           </a>
         )}
       </div>

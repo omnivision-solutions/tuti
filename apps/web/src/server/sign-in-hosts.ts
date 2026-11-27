@@ -89,7 +89,18 @@ function windows(text: string, folded: string, names: string[]): string {
 
 /** The sign-in services named in `texts` (a page and its scripts), each with the hosts found, in SERVICES' order. */
 export function findSignInServices(texts: string[]): SignInService[] {
-  const original = texts.join("\n");
+  return merge(texts.map(findIn));
+}
+
+/** Each text's services as one list, in SERVICES' order, each service's hosts together. */
+function merge(lists: SignInService[][]): SignInService[] {
+  return SERVICES.flatMap(({ provider }) => {
+    const hosts = new Set(lists.flatMap((list) => list.find((service) => service.provider === provider)?.hosts ?? []));
+    return hosts.size > 0 ? [{ provider, hosts: [...hosts].sort().slice(0, 5) }] : [];
+  });
+}
+
+function findIn(original: string): SignInService[] {
   const text = original.toLowerCase();
   // The lowered text where its offsets match the original's (nearly always); else only A–Z lowered, runs at a time.
   const folded = text.length === original.length ? text : original.replace(/[A-Z]+/g, (run) => run.toLowerCase());
@@ -119,12 +130,16 @@ export function findSignInServices(texts: string[]): SignInService[] {
 }
 
 const PAGE_BYTES = 2_000_000;
+/** Each script, read in full up to this (a single-page app's one bundle, say): searched as it arrives and let go. */
 const SCRIPT_BYTES = 5_000_000;
-/** All the scripts together, shared out (5 MB each up to 4 scripts, ~1.3 MB each for 15: an app with many has small chunks): one read never holds more than PAGE_BYTES + this. */
-const SCRIPTS_BYTES = 20_000_000;
-const MAX_SCRIPTS = 15;
+/** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them. */
+const MAX_SCRIPTS = 100;
+/** All the scripts together, counted as they arrive: past it, no more are read, and what was found isn't kept. */
+const SCRIPTS_BYTES = 40_000_000;
+/** Scripts read at once, so one read never opens more connections to the app, or holds more than PAGE_BYTES + this × SCRIPT_BYTES. */
+const SCRIPTS_AT_ONCE = 8;
 const MAX_REDIRECTS = 5;
-const TIMEOUT_MS = 6_000;
+const TIMEOUT_MS = 10_000;
 
 /** Connects only to public addresses, checked on the address connected to (see publicOnlyLookup). */
 const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
@@ -148,8 +163,11 @@ function allowed(url: URL): boolean {
   return url.protocol === "https:" && !isIP(url.hostname.replace(/^\[|\]$/g, ""));
 }
 
-/** A URL's body as text, up to `max` bytes, following redirects only to allowed URLs; null when it can't be read. */
-async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: URL; text: string } | null> {
+/**
+ * A URL's body as text, up to `max` bytes, following redirects only to allowed URLs; null when it can't be read. Each
+ * byte read is taken from `budget` (shared by reads at once), and reading stops once it's spent.
+ */
+async function get(url: URL, max: number, signal: AbortSignal, budget = { left: Infinity }): Promise<{ url: URL; text: string } | null> {
   for (let hop = 0; hop <= MAX_REDIRECTS && allowed(url); hop++) {
     const response = await fetch(url, { redirect: "manual", signal, headers: { accept: "text/html,*/*" }, ...(!localTesting() && { dispatcher: publicOnly }) });
     const location = response.headers.get("location");
@@ -167,7 +185,8 @@ async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: U
     for await (const chunk of response.body) {
       chunks.push(chunk);
       size += chunk.length;
-      if (size >= max) {
+      budget.left -= chunk.length;
+      if (size >= max || budget.left <= 0) {
         break;
       }
     }
@@ -192,6 +211,13 @@ export function scriptsOf(page: { url: URL; text: string }): URL[] {
  * scripts it loads from its own site, read within size and time limits; null when the page couldn't be read.
  * `complete` when every script was read too: what's found otherwise may be missing one.
  */
+/**
+ * What a saved answer is kept under (ScreenshotSettings.signInServicesFor): the address and this scanner's version, so
+ * an answer from an earlier one (15 scripts, until 2026-11) is found again, even one saved by the previous release
+ * while a deploy runs both.
+ */
+export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
+
 export async function detectSignInServices(appUrl: string): Promise<{ services: SignInService[]; complete: boolean } | null> {
   const url = new URL(appUrl);
   if (!localTesting()) {
@@ -204,10 +230,22 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
       return null;
     }
     // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
-    const own = scriptsOf(page).slice(0, MAX_SCRIPTS);
-    const each = Math.min(SCRIPT_BYTES, Math.floor(SCRIPTS_BYTES / Math.max(own.length, 1)));
-    const scripts = await Promise.all(own.map((script) => get(script, each, signal).catch(() => null)));
-    return { services: findSignInServices([page.text, ...scripts.map((script) => script?.text ?? "")]), complete: scripts.every(Boolean) };
+    const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
+    const found = [findIn(page.text)];
+    let complete = true;
+    const budget = { left: SCRIPTS_BYTES };
+    await Promise.all(
+      Array.from({ length: SCRIPTS_AT_ONCE }, async () => {
+        while (budget.left > 0 && queue.length > 0) {
+          const read = await get(queue.shift()!, SCRIPT_BYTES, signal, budget).catch(() => null);
+          complete &&= !!read;
+          found.push(read ? findIn(read.text) : []);
+        }
+      }),
+    );
+    // A spent budget cut a script short or left some unread, and which depends on which came back first: not kept,
+    // as a script that didn't load isn't.
+    return { services: merge(found), complete: complete && queue.length === 0 && budget.left > 0 };
   } catch {
     return null;
   }
