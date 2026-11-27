@@ -339,10 +339,10 @@ export async function answerSections(
   // In the reader's language: an article whose current translation there has sections close enough answers from them (never
   // from a version made from an older English text, nor from its English as well); the others (one not translated, or not
   // embedded there yet, or whose translation's sections aren't close enough) from the default language's.
-  const there = language ? await currentIn(projectId, translated.map((section) => section.articleId), language) : new Set<string>();
+  const there = new Set(translated.map((section) => section.articleId));
   return [
     ...articles.filter((section) => !there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
-    ...translated.filter((section) => there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
+    ...translated.map(({ distance, ...section }) => ({ distance, section })),
     ...operations.map((entry) => ({ distance: entry.distance, section: operationSection(entry) })),
   ]
     .sort((a, b) => a.distance - b.distance)
@@ -350,27 +350,36 @@ export async function answerSections(
     .map(({ section }) => section);
 }
 
-/** The sections of a language's published translations closest to the question's `vector`, as answerSections's: the same articles. */
-function translatedSections(projectId: string, language: string, vector: string, limit: number, reader: Reader) {
+/**
+ * The sections of a language's current translations closest to the question's `vector`, as answerSections's: the same
+ * articles. Versions made from an older English text are left out before the limit (an article with many close sections
+ * would otherwise fill it): the articles with sections close enough first, then only those whose version is current
+ * (translatedInto, which works it out from their English), then their sections.
+ */
+async function translatedSections(projectId: string, language: string, vector: string, limit: number, reader: Reader): Promise<(AnswerSection & { distance: number })[]> {
+  const close = Prisma.sql`c."projectId" = ${projectId} AND c.language = ${language} AND t."publishedAt" IS NOT NULL
+    AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+    AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
+    AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}`;
+  const candidates = await prisma.$queryRaw<{ id: string; slug: string }[]>`
+    SELECT DISTINCT a.id, a.slug
+    FROM article_translation_chunk c
+    JOIN article_translation t ON t.id = c."translationId"
+    JOIN article a ON a.id = t."articleId"
+    WHERE ${close}`;
+  const current = [...(await translatedInto(candidates, [language])).keys()];
+  if (current.length === 0) {
+    return [];
+  }
   return prisma.$queryRaw<(AnswerSection & { distance: number })[]>`
     SELECT a.id AS "articleId", coalesce(t.slug, a.slug) AS slug, t.title, a.listing, c.heading, c.text, ${language}::text AS language,
       c.embedding <=> ${vector}::vector AS distance
     FROM article_translation_chunk c
     JOIN article_translation t ON t.id = c."translationId"
     JOIN article a ON a.id = t."articleId"
-    WHERE c."projectId" = ${projectId} AND c.language = ${language} AND t."publishedAt" IS NOT NULL
-      AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
-      AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
-      AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
+    WHERE ${close} AND a.id = ANY(${current}::text[])
     ORDER BY c.embedding <=> ${vector}::vector, t.title, c.position
     LIMIT ${limit}`;
-}
-
-/** Of these articles, the ones with a current version in `language` (translatedInto). */
-async function currentIn(projectId: string, ids: string[], language: string): Promise<Set<string>> {
-  const unique = [...new Set(ids)];
-  const articles = unique.length > 0 ? await prisma.article.findMany({ where: { projectId, id: { in: unique } }, select: { id: true, slug: true } }) : [];
-  return new Set((await translatedInto(articles, [language])).keys());
 }
 
 const operationSection = (row: OperationRow): AnswerSection => ({

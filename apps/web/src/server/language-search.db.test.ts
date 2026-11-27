@@ -1,3 +1,4 @@
+import { type Doc, toChunks } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { embedTranslation } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
@@ -192,5 +193,34 @@ test("a search at a language's address is counted once in the team's insights; t
   // (Nothing more is on its way.)
   await new Promise((resolve) => setTimeout(resolve, 200));
   expect((await prisma.docsSearchDay.findFirstOrThrow({ where: { projectId: project.id } })).searches).toBe(1);
+});
+
+test("a version made from an older English with many close sections can't crowd out a current translation: it still answers", async () => {
+  withAi();
+  model.embeddings.setVector("Wie zahle ich?", along(1));
+  // Refunds' outdated German: 13 sections, every one closer than Billing's German (more than the sections looked at).
+  const parts = Array.from({ length: 13 }, (_, i) => [`Teil ${i + 1}`, `Alte Preise ${i + 1}.`]);
+  const content: Doc = {
+    type: "doc",
+    content: parts.flatMap(([heading, text]) => [
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: heading }] },
+      { type: "paragraph", content: [{ type: "text", text }] },
+    ]),
+  };
+  for (const chunk of toChunks(content)) {
+    model.embeddings.setVector(articleChunkText("Erstattung", chunk, []), along(0.99));
+  }
+  const refunds = await article("Refunds", "Ask us for a refund.", { title: "Erstattung", slug: "erstattung", body: "Alte Preise.", stale: true });
+  await prisma.articleTranslation.update({ where: { id: refunds.versionId! }, data: { content } });
+  await embedTranslation(refunds.versionId!, log);
+  expect(await prisma.articleTranslationChunk.count({ where: { translationId: refunds.versionId! } })).toBe(13);
+  model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Mit Karte zahlen." }, []), along(0.9));
+  const billing = await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  await embedTranslation(billing.versionId!, log);
+  model.reply(JSON.stringify({ answer: "Mit Karte.", sources: ["s1"] }));
+  await answerQuestion(project.id, "asker", "Wie zahle ich?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } });
+  const sent = JSON.stringify(model.requests.at(-1)!.messages);
+  expect(sent).toContain("Mit Karte zahlen.");
+  expect(sent).not.toContain("Alte Preise");
 });
 
