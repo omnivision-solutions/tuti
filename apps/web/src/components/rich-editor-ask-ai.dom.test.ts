@@ -319,3 +319,25 @@ test("bold added inside the selected text while the AI works drops it; undo afte
   await act(async () => view.editor.commands.undo());
   expect(view.saved()).toEqual({ type: "doc", content: [paragraph("Big Exports are quick."), doc.content[1]] });
 });
+
+test("a selection running to the very start of the next line, or from the very end of the one before, takes only its text", async () => {
+  const view = await editor();
+  // From the start of the first line to the start of the second (Shift+Down).
+  await view.select(1, SECOND);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("Quick.")] } });
+  await view.click("Shorter");
+  expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: { type: "doc", content: [paragraph("Exports are quick.")] } }));
+  await view.click("Accept");
+  expect(view.saved()).toEqual({ type: "doc", content: [paragraph("Quick."), doc.content[1]] });
+
+  // From the end of the first line ("Quick.") into the second.
+  const end = 1 + "Quick.".length;
+  await view.select(end, end + 2 + 4);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("Those")] } });
+  await view.click("Clearer");
+  expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: { type: "doc", content: [paragraph("They")] } }));
+  await view.click("Accept");
+  expect(view.saved()).toEqual({ type: "doc", content: [paragraph("Quick."), paragraph("Those run in the background and email you when done.")] });
+});

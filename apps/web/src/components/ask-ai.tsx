@@ -3,7 +3,7 @@
 import type { Doc } from "@tuti/content";
 import { closeHistory } from "@tiptap/pm/history";
 import { DOMSerializer, Fragment, Slice } from "@tiptap/pm/model";
-import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
+import { type EditorState, Plugin, PluginKey, Selection, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Editor } from "@tiptap/react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -265,7 +265,18 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     if (ask(editor.state)) {
       toast("The AI's earlier edit was dropped for this one.");
     }
-    const { from, to } = editor.state.selection;
+    // Only the text: a selection ending at the very start of the next line (Shift+Down, a drag) or starting at the very
+    // end of a line would otherwise take the line break along, and Accept would join the two lines.
+    const { doc } = editor.state;
+    let { from, to } = editor.state.selection;
+    const $to = doc.resolve(to);
+    if (to > from && $to.parent.isTextblock && $to.parentOffset === 0) {
+      to = Selection.findFrom(doc.resolve($to.before()), -1, true)?.from ?? to;
+    }
+    const $from = doc.resolve(from);
+    if (from < to && $from.parent.isTextblock && $from.parentOffset === $from.parent.content.size) {
+      from = Selection.findFrom(doc.resolve($from.after()), 1, true)?.from ?? from;
+    }
     setOpen(false);
     if (from < to) {
       void run(from, to, instruction);
