@@ -556,8 +556,12 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     const content = docOfSections(live);
     // A version the team writes that it never published: only its draft is written (nothing of it goes live by itself).
     const draftOnly = !now.automatic && !now.publishedAt;
-    // A version the team writes keeps its other reasons (the product setting's, the glossary's) but where it was updated.
-    const kept = now.automatic ? {} : Object.fromEntries(Object.entries(now.behind as Record<string, string>).filter(([key]) => !still.has(key)));
+    // A version the team writes keeps its other reasons (the product setting's, the glossary's) but where it was updated; one
+    // kept up to date, a glossary save's on a section still the team's (kept, or edited in its draft): elsewhere it's translated anew.
+    const theirs = new Set([...live, ...(drafted ?? [])].filter(({ meta }) => meta.own).flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
+    const kept = Object.fromEntries(
+      Object.entries(now.automatic ? otherReasons(now.behind, published.defaultLanguage) : (now.behind as Record<string, string>)).filter(([key]) => !still.has(key) && (!now.automatic || theirs.has(key))),
+    );
     return {
       ...(now.automatic && {
         ...(!ownTitle && { title: text(0), titleSource: null }),
@@ -973,34 +977,37 @@ export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: G
     // The sources before any of their versions, as the translate job's write locks them, so the two never cross (in one
     // order, so two saves never cross either).
     await tx.$queryRaw`SELECT 1 FROM ${sourceTable} WHERE id = ANY(${[...new Set(mine.map(({ sourceId }) => sourceId))]}::text[]) ORDER BY id FOR UPDATE`;
-    // Their memory (and an article version's sections asked for, and those the team took out, of its published text or its
-    // draft) read under those locks: a job's write before them isn't written over.
-    const asks = kind.name === "article" ? Prisma.sql`"updateSections"` : Prisma.sql`'[]'::jsonb`;
-    const out = kind.name === "article" ? Prisma.sql`"removedSections" || coalesce(draft -> 'removed', '[]'::jsonb)` : Prisma.sql`'[]'::jsonb`;
+    // Their memory (and an article version's sections, of its published text and its draft) read under those locks: a job's
+    // write before them isn't written over.
+    const parts = kind.name === "article" ? Prisma.sql`sections, draft -> 'sections' AS drafted` : Prisma.sql`'[]'::jsonb AS sections, NULL::jsonb AS drafted`;
     const read = new Map(
       (
-        await tx.$queryRaw<{ id: string; memory: Record<string, string>; asked: string[]; removed: string[] }[]>`
-          SELECT id, memory, ${asks} AS asked, ${out} AS removed FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`
+        await tx.$queryRaw<{ id: string; memory: Record<string, string>; sections: SectionMeta[]; drafted: SectionMeta[] | null }[]>`
+          SELECT id, memory, ${parts} FROM ${table} WHERE id = ANY(${mine.map(({ id }) => id)}::text[])`
       ).map((row) => [row.id, row]),
     );
     // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks would
     // make a run send it again), so its next translation of them, the job's or Update those sections', is anew; the sections
-    // of one the team writes marked behind; one kept up to date gets its safety net (queued after the save commits), and an
-    // article's version asks for those sections, so the team's edits there take the new translation (docs/plan.md: "a glossary
-    // change replaces your edits in the sections it touches"), its draft's too, as Update those sections does.
+    // of one the team writes marked behind; one kept up to date gets its safety net (queued after the save commits). In an
+    // article's version kept up to date (docs/plan.md: "a glossary change replaces your edits in the sections it touches"), the
+    // team's edits there in its published text are no longer theirs, so the job translates them anew; those it kept, and its
+    // draft's (where the team's edits never give way), stay theirs and are marked behind; those it took out stay out.
     const rows = mine.map(({ id, language, automatic, reasons }) => {
-      const memory = Object.fromEntries(Object.entries(read.get(id)?.memory ?? {}).filter(([text]) => !matchTerms(text, language)));
-      // A section the team took out isn't asked for: asking would bring it back.
-      const removed = new Set(read.get(id)?.removed ?? []);
-      const asked = automatic ? [...new Set([...(read.get(id)?.asked ?? []), ...Object.keys(reasons).filter((key) => !removed.has(key))])] : (read.get(id)?.asked ?? []);
-      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(automatic ? {} : reasons)}, ${automatic}, ${JSON.stringify(asked)})`;
+      const version = read.get(id);
+      const memory = Object.fromEntries(Object.entries(version?.memory ?? {}).filter(([text]) => !matchTerms(text, language)));
+      const stands = (meta: SectionMeta, key: string) => meta.key === key || (meta.also ?? []).includes(key);
+      const touches = (meta: SectionMeta) => Object.keys(reasons).some((key) => stands(meta, key));
+      const sections = (version?.sections ?? []).map((meta) => (automatic && meta.own && !meta.kept && touches(meta) ? { ...meta, own: undefined } : meta));
+      const stays = (key: string) => (version?.sections ?? []).some((meta) => meta.own && meta.kept && stands(meta, key)) || (version?.drafted ?? []).some((meta) => meta.own && stands(meta, key));
+      const behind = automatic ? Object.fromEntries(Object.entries(reasons).filter(([key]) => stays(key))) : reasons;
+      return Prisma.sql`(${id}, ${JSON.stringify(memory)}, ${JSON.stringify(behind)}, ${automatic}, ${JSON.stringify(sections)})`;
     });
-    const asking = kind.name === "article" ? Prisma.sql`, "updateSections" = v.asked::jsonb` : Prisma.empty;
+    const owners = kind.name === "article" ? Prisma.sql`, sections = v.sections::jsonb` : Prisma.empty;
     for (let i = 0; i < rows.length; i += 500) {
       await tx.$executeRaw`
         UPDATE ${table} t SET memory = v.memory::jsonb, behind = t.behind || v.behind::jsonb, "updatedAt" = now(),
-          "retryAt" = CASE WHEN v.net::boolean AND t.error IS NULL THEN (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000}) ELSE t."retryAt" END${asking}
-        FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net, asked) WHERE t.id = v.id`;
+          "retryAt" = CASE WHEN v.net::boolean AND t.error IS NULL THEN (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000}) ELSE t."retryAt" END${owners}
+        FROM (VALUES ${Prisma.join(rows.slice(i, i + 500))}) AS v(id, memory, behind, net, sections) WHERE t.id = v.id`;
     }
   }
   // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).
