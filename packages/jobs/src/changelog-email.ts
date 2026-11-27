@@ -322,7 +322,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       emailOnly: true,
       projectId: true,
       project: {
-        select: { name: true, slug: true, brandColor: true, plan: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+        select: { name: true, slug: true, brandColor: true, plan: true, language: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
       },
       translations: { where: { publishedAt: { not: null } }, select: { language: true, automatic: true, title: true, body: true, content: true, sourceHash: true } },
     },
@@ -389,8 +389,13 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   let failed = 0;
   let held = false;
   let stopped = false;
+  // The email's own words (docs/plan.md L5): the subscriber's language the portal serves, else its default; its Unsubscribe
+  // opens the subscription's page at that language's address.
+  const defaultLanguage = entry.project.language;
   for (const { id, email, token, language } of people) {
     const version = language ? versions.get(language) : undefined;
+    const words = language && served.has(language) ? language : defaultLanguage;
+    const wordsBase = words === defaultLanguage ? origin : `${origin}/${words.toLowerCase()}`;
     // Claimed before sending, so a retry or a second run doesn't email them twice.
     const claimedAt = await claim({ id: entryId, projectId, emailedAt }, id);
     if (claimedAt === "stop") {
@@ -415,10 +420,15 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
         to: email,
         ...changelogEmail({
           ...brand,
-          ...(version ? { entryTitle: version.title, doc: version.doc, coverUrl: version.coverUrl, mediaUrls: version.mediaUrls, lang: language! } : { entryTitle: entry.title, doc, ...images }),
+          // The entry's text in its own language: its version's, else the default language's, marked as such inside an email in
+          // the subscriber's.
+          ...(version
+            ? { entryTitle: version.title, doc: version.doc, coverUrl: version.coverUrl, mediaUrls: version.mediaUrls, lang: language! }
+            : { entryTitle: entry.title, doc, ...images, lang: defaultLanguage }),
           entryUrl: entryUrl(base),
           publishedAt,
-          unsubscribeUrl: `${base}/changelog/subscription?${query}`,
+          unsubscribeUrl: `${wordsBase}/changelog/subscription?${query}`,
+          language: words,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
