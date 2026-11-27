@@ -3656,6 +3656,10 @@ model ScreenshotSettings {
   /// allows, space-separated: updated when they change.
   networkPolicyId      String?
   networkPolicyDomains String           @default("")
+  /// Its runs' browser profile at Browser Use, which keeps the agent signed in between runs, and a hash of the sign-in
+  /// it was made for: deleted when that changes.
+  profileId            String?
+  profileSignIn        String           @default("")
   updatedAt            DateTime         @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
