@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { linkPullRequest, setEntryContent } from "./changelog-dates";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
@@ -56,4 +57,38 @@ test("the team asks AI to rewrite part of a changelog entry, sees its version in
   await team.reload();
   await expect(text).toContainText("Exports run quietly and email you when done.");
   await expect(text).not.toContainText("in the background");
+});
+
+test("a new entry, not saved yet, gets Ask AI too; an entry still only its pull requests' titles doesn't (Draft with AI is its one AI action)", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Noor New");
+  await createProject(team, "Acme", slug);
+  const marker = randomUUID().slice(0, 8);
+
+  await team.goto(`/app/${slug}/changelog/new`);
+  await team.getByLabel("Title").fill("Faster search");
+  const text = team.getByRole("textbox", { name: "What changed" });
+  await text.click();
+  await team.keyboard.type(`Search is a lot faster now (${marker}).`);
+  await team.keyboard.press("Shift+Home");
+  await nextModelReply(JSON.stringify({ notes: `Search is faster (${marker}).` }), marker);
+  await team.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Ask AI" }).click();
+  await team.getByRole("dialog", { name: "Ask AI" }).getByRole("button", { name: "Shorter" }).click();
+  const version = team.getByRole("group", { name: "The AI's version" });
+  await expect(version).toContainText(`Search is faster (${marker}).`);
+  await version.getByRole("button", { name: "Accept" }).click();
+  await expect(text).toHaveText(`Search is faster (${marker}).`);
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await team.waitForURL(`**/app/${slug}/changelog/1`);
+
+  // Made the pull requests' titles: not written yet.
+  await linkPullRequest(slug, 1, { repo: "acme/app", number: 7, title: "Faster search" });
+  const bullet = { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Faster search (acme/app#7)" }] }] };
+  await setEntryContent(slug, 1, { type: "doc", content: [{ type: "bulletList", content: [bullet] }] });
+  await team.reload();
+  await expect(team.getByRole("button", { name: "Draft with AI" })).toBeVisible();
+  await text.getByText("Faster search (acme/app#7)").selectText();
+  const bar = team.getByRole("toolbar", { name: "Formatting" });
+  await expect(bar.getByRole("button", { name: "Bold" })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Ask AI" })).toHaveCount(0);
 });

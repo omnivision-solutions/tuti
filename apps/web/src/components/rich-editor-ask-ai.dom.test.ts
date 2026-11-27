@@ -118,6 +118,7 @@ test("Discard leaves the text as it was; an answer that comes after Discard is i
   await view.click("Ask AI");
   await view.click("Friendlier");
   await vi.waitFor(() => expect(view.shown("new")).toContain("Quietly"));
+  expect(toast).toHaveBeenCalledWith("The AI's earlier edit was dropped for this one.");
   await settle({ content: { type: "doc", content: [paragraph("Too late")] } });
   expect(view.shown("new")).toContain("Quietly");
 
@@ -245,8 +246,10 @@ test("part of a list item or of a heading stays part of it once accepted", async
   const beta = 22 + 3 + "Alpha ".length;
   await view.select(beta, beta + 4);
   await view.click("Ask AI");
-  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [{ type: "bulletList", content: [item("BETA")] }] } });
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("BETA")] } });
   await view.click("Clearer");
+  // Sent as the line it's in, not the list around it.
+  expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: { type: "doc", content: [paragraph("beta")] } }));
   await view.click("Accept");
 
   expect(view.saved()).toEqual({
@@ -271,4 +274,19 @@ test("the AI's version doesn't take focus from someone typing elsewhere", async 
   expect(view.shown("new")).toContain("They run quietly");
   expect(view.editor.view.hasFocus()).toBe(true);
   expect(view.editor.state.selection.from).toBe(3);
+});
+
+test("a word in a nested list item goes as its own line, and comes back into it", async () => {
+  const item = (text: string, ...more: object[]) => ({ type: "listItem", content: [paragraph(text), ...more] });
+  const nested = { type: "doc", content: [{ type: "bulletList", content: [item("Outer", { type: "bulletList", content: [item("Inner words here")] })] }] };
+  const view = await editor({ initial: nested });
+  // "words": into the list, item, paragraph "Outer" (7), the nested list, its item and paragraph (3), past "Inner ".
+  const words = 1 + 1 + 7 + 3 + "Inner ".length;
+  await view.select(words, words + 5);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("WORDS")] } });
+  await view.click("Shorter");
+  expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: { type: "doc", content: [paragraph("words")] } }));
+  await view.click("Accept");
+  expect(view.saved().content[0]).toEqual({ type: "bulletList", content: [item("Outer", { type: "bulletList", content: [item("Inner WORDS here")] })] });
 });

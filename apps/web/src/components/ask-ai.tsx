@@ -171,7 +171,13 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     }
     const id = ++next.current;
     const { doc } = editor.state;
-    const sent = doc.slice(from, to, true).content;
+    // The selection in the innermost block holding all of it: its paragraph or heading, or the list whose items it runs
+    // across (a nested one's own), never the outer blocks around it (an outer list item cut to its nested list isn't
+    // text the AI can edit).
+    const $from = doc.resolve(from);
+    const holder = $from.node($from.sharedDepth(to));
+    const inside = doc.slice(from, to).content;
+    const sent = holder.isTextblock || holder.type.name === "bulletList" || holder.type.name === "orderedList" ? Fragment.from(holder.copy(inside)) : inside;
     set(editor, { id, from, to, instruction, ends: [sent.firstChild?.type.name ?? "", sent.lastChild?.type.name ?? ""], result: null });
     setStatus("The AI is editing the selected text…");
     const all = from <= 1 && to >= doc.content.size - 1;
@@ -256,6 +262,10 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     if (!editor) {
       return;
     }
+    // One at a time: a version still working or showing goes, said so (it was asked for, and may be paid for).
+    if (ask(editor.state)) {
+      toast("The AI's earlier edit was dropped for this one.");
+    }
     const { from, to } = editor.state.selection;
     setOpen(false);
     if (from < to) {
@@ -269,7 +279,6 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
       setRecent(recentInstructions());
       setOpen(true);
     },
-    busy: () => !!editor && ask(editor.state) !== null,
     dialog: editor && setup && (
       <>
         <AskAiDialog open={open} recent={recent} onClose={() => setOpen(false)} onAsk={start} editor={editor} />
