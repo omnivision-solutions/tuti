@@ -116,10 +116,10 @@ test("refused without asking the AI: no instruction, nothing it can edit, anothe
     error: "Keep the instruction under 200 characters",
   });
   expect(await rewriteText(project.slug, { kind: "article", text: doc(code), instruction: "Shorter" })).toEqual({ error: "There's no text the AI can edit there" });
-  // Longer than the model's reply could bring back whole.
-  expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("Exports are quick. ".repeat(500)))), instruction: "Shorter" })).toEqual({
-    error: "Select a shorter part to edit with AI: up to 8,000 characters at a time",
-  });
+  // Longer than the model's reply could bring back whole: in English, or in fewer characters of Japanese.
+  const tooLong = { error: "That's too much text to edit with AI at once: select a shorter part" };
+  expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("Exports are quick. ".repeat(900)))), instruction: "Shorter" })).toEqual(tooLong);
+  expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("書き出しはすぐに終わります。".repeat(300)))), instruction: "Shorter" })).toEqual(tooLong);
   expect(await rewriteText(project.slug, { kind: "changelog", text: plain, instruction: "Shorter" })).toEqual({ error: "Say which changelog entry it's in" });
   expect(await rewriteText(project.slug, { kind: "changelog", entry: 99, text: plain, instruction: "Shorter" })).toEqual({ error: "There's no changelog entry #99" });
 

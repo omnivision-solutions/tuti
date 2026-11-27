@@ -18,10 +18,17 @@ import { droppedMarkers, type RewriteKind, rewritePrompt } from "./release-notes
 type Block = NonNullable<Doc["content"]>[number];
 
 /**
- * The most text (as the Markdown sent) one edit takes: the reply has to bring all of it back within the model's
- * 4,000-token answer, so a longer one could never succeed, and each try would still be charged.
+ * The reply's budget, and the most text one edit takes, in tokens: the reply has to bring all of it back, so a longer
+ * one could never succeed, and each try would still be charged. Half the budget leaves room for an edit that adds
+ * words, and for JSON's escaping.
  */
-const MAX_REWRITE_LENGTH = 8000;
+const REPLY_TOKENS = 8000;
+const MAX_REWRITE_TOKENS = REPLY_TOKENS / 2;
+/**
+ * ponytail: a rough count, high rather than low: about 4 ASCII characters a token, any other character one (Japanese,
+ * Chinese, Korean are about one each; Cyrillic and Greek less). The provider's tokenizer if it ever matters.
+ */
+const tokensIn = (text: string) => [...text].reduce((sum, char) => sum + (char.charCodeAt(0) < 128 ? 0.25 : 1), 0);
 
 export type RewriteInput = {
   kind: RewriteKind;
@@ -85,8 +92,8 @@ async function rewrite(projectId: string, input: RewriteInput): Promise<Doc> {
     throw new OperationError(400, "nothing_to_rewrite", "There's no text the AI can edit there");
   }
   const notes = parts.filter(Boolean).join("\n\n");
-  if (notes.length > MAX_REWRITE_LENGTH) {
-    throw new OperationError(400, "too_long", `Select a shorter part to edit with AI: up to ${MAX_REWRITE_LENGTH.toLocaleString("en")} characters at a time`);
+  if (tokensIn(notes) > MAX_REWRITE_TOKENS) {
+    throw new OperationError(400, "too_long", "That's too much text to edit with AI at once: select a shorter part");
   }
 
   const ai = await aiOrRefuse(projectId, "changelog", kind === "article" ? "help_center" : undefined);
@@ -95,6 +102,7 @@ async function rewrite(projectId: string, input: RewriteInput): Promise<Doc> {
   try {
     reply = await complete({
       ...rewritePrompt({ kind, task: "Edit this text as the team's instruction says.", text: notes, whole, instruction, style }),
+      maxTokens: REPLY_TOKENS,
       ...ai,
     });
   } catch (error) {
