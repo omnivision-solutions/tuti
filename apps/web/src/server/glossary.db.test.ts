@@ -463,3 +463,29 @@ test("a save sent with the hash it read: refused (409) once a teammate's save ch
   // From the glossary as it is now: saved.
   expect((await call(updateGlossary, as(), { hash: teammate.hash, terms: [{ term: "Board", translations: { de: "Brett" } }] })).terms).toEqual([{ term: "Board", keep: false, translations: { de: "Brett" } }]);
 });
+
+test("a page published as a glossary save plans: its translation, refused by the new glossary, written promptly with it, once", async () => {
+  await translated();
+  // Setup gets a Board while the save (changing Board) plans: its job reads the glossary before the save commits and is
+  // refused after; the save, finding the page changed under its lock, plans again and queues it itself.
+  const edited = doc("Intro", ["Setup", "Install it on a Board."]);
+  let saved!: () => void;
+  const save = new Promise<void>((resolve) => (saved = resolve));
+  const plan = vi.mocked(planGlossaryChanges);
+  const actual = plan.getMockImplementation()!;
+  plan.mockImplementationOnce(async (...args) => {
+    const made = await actual(...args);
+    await call(updateArticle, as(), { slug: "setup", content: edited, publish: true });
+    return made;
+  });
+  model.reply(reply("Setup", edited, "de", "Tafel"), () => save, "Install it on a Board.");
+  model.reply(reply("Setup", edited, "de2", "Brett"), undefined, "Install it on a Board.");
+  // Boards, using Board too, is translated again by the save.
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"), undefined, "Make a Board for ideas.");
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  saved();
+  await languageTranslationsDone();
+  expect((await version("setup")).body).toContain("[de2] Install it on a Brett.");
+  // Two runs (the publish's, refused; the save's): no third one paying again.
+  expect(model.requests.filter((request) => String(request.messages.at(-1)!.content).includes("Install it on a Board."))).toHaveLength(2);
+});
