@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import type { Doc } from "./document";
-import { glossaryProblems, segmentOfText, segmentsOf, translateDoc, translateText } from "./translate";
+import { glossaryProblems, segmentOfText, segmentsOf, termMatcher, termsUsed, translateDoc, translateText } from "./translate";
 
 const link = { type: "link", attrs: { href: "https://example.com/billing", target: "_blank" } };
 const doc: Doc = {
@@ -194,6 +194,21 @@ test("a remembered translation that breaks a glossary term added since is sent a
   });
   expect(asked).toHaveLength(1);
   expect(out.memory["Open the board"]).toBe("Öffne das Board");
+});
+
+test("a remembered translation with a glossary term's old word (the term changed since) is sent again", async () => {
+  // A paragraph back in the source after the glossary changed: its remembered translation, made with Tafel, isn't reused.
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Make a Board for ideas" }] }] };
+  const asked: string[] = [];
+  const out = await translateDoc(one, {
+    from: "English",
+    to: "German",
+    glossary: [{ term: "Board", translation: "Brett" }],
+    memory: { "Make a Board for ideas": "Erstelle eine Tafel für Ideen" },
+    ask: async (_, user) => (asked.push(user), '{"segments": {"1": "Erstelle ein Brett für Ideen"}}'),
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.memory["Make a Board for ideas"]).toBe("Erstelle ein Brett für Ideen");
 });
 
 test("an image's description translated past the length limit is asked again", () => {
@@ -430,3 +445,14 @@ test("a provider error the retry made up for isn't reported, though another segm
   expect(out.providerError).toBeUndefined();
   expect(out.problems.map((p) => p.id)).toEqual(["2"]);
 });
+
+test("termMatcher finds what termsUsed does (a word, its plural or possessive, inside words for scripts without spaces), reading each text once", () => {
+  // Overlapping ones too: a term that's the start of a longer one, and one starting inside another.
+  const glossary = [{ term: "Board" }, { term: "Board view" }, { term: "view mode" }, { term: "Post" }, { term: "Tuti" }, { term: "設定" }, { term: "Q&A" }];
+  const match = termMatcher(glossary);
+  for (const text of ["Make a Board.", "Two boards", "Open the Board view mode", "Tuti's posts", "Postpone it", "設定を開く", "Ask in Q&amp;A", "Nothing here"]) {
+    const names = (found: { term: string }[]) => found.map(({ term }) => term).sort();
+    expect(names(match(text)), text).toEqual(names(termsUsed(text, glossary)));
+  }
+});
+

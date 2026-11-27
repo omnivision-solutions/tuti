@@ -294,16 +294,59 @@ export function segmentOfText(text: string): { segment: Segment; apply: (transla
   };
 }
 
+/**
+ * A segment's text as a glossary term is looked for in it (still escaped): formatting tags go without a trace ("<b1>billing</b1>
+ * guide" is "billing guide"); placeholders and breaks split words.
+ */
+export const untagged = (text: string) => text.replace(/<\/?[a-z]\d{1,4}>/g, "").replace(MARKUP, " ");
+
 /** Where a glossary term must come out in a translated segment: as its translation, or unchanged when it has none. */
 export function glossaryProblems(source: string, translated: string, glossary: GlossaryTerm[]): string[] {
-  // Formatting tags go without a trace ("<b1>billing</b1> guide" is "billing guide"); placeholders and breaks split words.
-  const plain = (text: string) => unescape(text.replace(/<\/?[a-z]\d{1,4}>/g, "").replace(MARKUP, " ")).toLowerCase();
+  const plain = (text: string) => unescape(untagged(text)).toLowerCase();
   const [from, to] = [plain(source), plain(translated)];
   return glossary
     .filter(({ term }) => uses(from, term.toLowerCase()))
     // A name kept as it is must come out whole (inflected endings allowed, "Autopilots"); only a translation may be stemmed.
     .filter(({ term, translation }) => !contains(to, translation ? stem(translation.toLowerCase()) : term.toLowerCase()))
     .map(({ term, translation }) => (translation ? `"${term}" must be translated as "${translation}"` : `"${term}" must stay "${term}"`));
+}
+
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+/** How many times a text has been tested for a term (termsUsed: once per term; termMatcher: once per text, all its terms at once). For tests. */
+export const termTests = { count: 0 };
+
+/**
+ * termsUsed for many texts against one list: the terms as one pattern, built once, so each text is read once whatever the
+ * number of terms (a glossary save matching a whole help center). It reports every term termsUsed does, overlaps included:
+ * the pattern looks at each word's start without taking the text up (so a term starting inside a longer one is found at its
+ * own start), and a longer term found brings the terms it starts with ("Board" in "Board view").
+ */
+export function termMatcher(glossary: GlossaryTerm[]): (text: string) => GlossaryTerm[] {
+  const byKey = new Map(glossary.map((entry) => [entry.term.toLowerCase(), entry]));
+  const [cjk, spaced] = [[...byKey.keys()].filter((term) => CJK.test(term)), [...byKey.keys()].filter((term) => !CJK.test(term))];
+  // The terms each term starts with, word for word ("board" for "board view"; not "post" for "postpone").
+  const within = new Map(spaced.map((term) => [term, spaced.filter((other) => other !== term && term.startsWith(other) && !/[\p{L}\p{N}]/u.test(term[other.length] ?? ""))]));
+  const escaped = spaced.sort((a, b) => b.length - a.length).map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = escaped.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}])(?=(${escaped.join("|")})(?:s|es|'s|’s)?(?![\\p{L}\\p{N}]))`, "gu") : null;
+  return (text) => {
+    termTests.count++;
+    const plain = unescape(text).toLowerCase();
+    const found = new Set<string>();
+    for (const match of pattern ? plain.matchAll(pattern) : []) {
+      found.add(match[1]!);
+      for (const shorter of within.get(match[1]!) ?? []) found.add(shorter);
+    }
+    for (const term of cjk) if (plain.includes(term)) found.add(term);
+    return [...found].map((term) => byKey.get(term)!);
+  };
+}
+
+/** The glossary's terms `text` uses (as glossaryProblems checks them): only those are sent with it, and a change to another doesn't touch it. */
+export function termsUsed(text: string, glossary: GlossaryTerm[]): GlossaryTerm[] {
+  termTests.count += glossary.length;
+  const plain = unescape(text).toLowerCase();
+  return glossary.filter(({ term }) => uses(plain, term.toLowerCase()));
 }
 
 /** Whether the source uses `term`: as a word, or its plural or possessive ("boards", "Tuti's"; not "Postpone" for "Post"). */
