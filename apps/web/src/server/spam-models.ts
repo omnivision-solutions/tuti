@@ -8,7 +8,7 @@ import { settleHold } from "./inbox-path";
 /**
  * The spam filter's model checks (docs/plan.md, Inbox automation, "The spam filter", checks 6 and 7): a new conversation
  * no free check decided (server/spam.ts) is held (`spamHeldAt`), and once the request has answered the decision model is
- * asked whether it's spam (at least 0.95 is; anything less is released, the chat model never asked). Spam is filed
+ * asked whether it's spam (at least 0.97 is; anything less is released, the chat model never asked). Spam is filed
  * with its reason; the rest is released to the inbox with the notices a new conversation gets (server/inbox-path.ts,
  * settleHold).
  *
@@ -23,7 +23,7 @@ export const EXAMPLE_CHARS = 500;
 /** The latest conversations marked each way the models read as examples. */
 export const EXAMPLES = 10;
 /** The decision model's band: at least this is spam, anything under it is released (the private evaluation set showed it). */
-export const SPAM_AT = 0.95;
+export const SPAM_AT = 0.97;
 /** The longest a conversation is held for the models: the inbox-due job releases it then, judged or not. */
 export const SPAM_HOLD_MS = 2 * 60_000;
 /** The team's guidance for the models (Settings → Spam). */
@@ -262,14 +262,14 @@ export function spamChecksAfter(conversationId: string) {
  * so a release at once with the models' verdict, or two minutes at once, settle it once. Returns how many this run settled.
  */
 export async function runDueInbox(now = new Date()): Promise<{ checked: number }> {
-  // Held for 2 minutes is due too, whatever `pathDueAt` says: a release from before may have cleared it alone.
-  const due = await prisma.conversation.findMany({
-    // Not one a teammate marked as spam during the hold: it keeps `spamHeldAt` for a later Not spam, and stays in Spam.
-    where: { OR: [{ pathDueAt: { lte: now } }, { spamHeldAt: { lte: new Date(now.getTime() - SPAM_HOLD_MS) }, OR: [{ spam: false }, { spamMarkedAt: null }] }] },
-    orderBy: { createdAt: "asc" },
-    take: 100,
-    select: { id: true },
-  });
+  // Held for 2 minutes is due too, whatever `pathDueAt` says: a release from before may have cleared it alone. Not one
+  // a teammate marked as spam during the hold, which keeps `spamHeldAt` for a later Not spam: the second condition is the
+  // partial index's own (conversation_spamHeldAt_idx), word for word, so it reads only holds left to settle.
+  const due = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "conversation" WHERE "pathDueAt" <= ${now}
+    UNION
+    SELECT "id" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
+    LIMIT 100`;
   let checked = 0;
   for (const { id } of due) {
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {

@@ -85,6 +85,11 @@ test("an owner blocks a domain, allows an address and adds a phrase in Settings 
   await attempt.getByRole("button", { name: "Try it" }).click();
   await expect(attempt.getByRole("status")).toHaveText("This would reach the Inbox: your lists and marks let this sender through.");
   await expect(attempt.getByLabel("Message")).toHaveValue("This is the facebook admin: your page will be disabled.");
+  // With the guidance written, a stranger's message nothing else decides is the AI check's to judge (not asked here).
+  await attempt.getByLabel("From").fill("e2e-kim@strangers.example");
+  await attempt.getByLabel("Message").fill("Can I export to CSV?");
+  await attempt.getByRole("button", { name: "Try it" }).click();
+  await expect(attempt.getByRole("status")).toHaveText("The AI spam check would decide this one.");
   // On a phone nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });

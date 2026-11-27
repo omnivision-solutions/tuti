@@ -23,13 +23,13 @@ import { mailbox } from "@/test/mailbox";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { listConversations, listInboxViews, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
-import { getSpamSettings, updateSpamSettings } from "./operations/spam";
+import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { createWorkflow } from "./operations/workflows";
 import { runDueInbox, runSpamChecks, SPAM_HOLD_MS, spamSignals } from "./spam-models";
 
 /**
  * The spam filter's AI check (docs/plan.md, Inbox automation, W4): a new conversation no free check decided is held
- * while the decision model checks it, once its request has answered; 0.95 or more files it, anything else (a model
+ * while the decision model checks it, once its request has answered; 0.97 or more files it, anything else (a model
  * failing included) releases it with the notices a new conversation gets, and the inbox-due job releases whatever is
  * still held after 2 minutes.
  */
@@ -155,14 +155,14 @@ test("a held conversation's page, reached by its address, says the spam filter i
   expect(await why()).toBe("the spam filter judged this spam");
 });
 
-test("0.95 or more from the decision model files it, with its reason; nothing is told, and a second run does nothing", async () => {
+test("0.97 or more from the decision model files it, with its reason; nothing is told, and a second run does nothing", async () => {
   const { projectId, mail, state, told, activity, listed } = await setup();
   const number = await mail();
-  model.decide({ spam: 0.96 });
+  model.decide({ spam: 0.98 });
   expect(await later[0]!()).toBe(true);
   expect(model.decisions[0]!.model).toBe("acme/decider");
   expect(await state(number)).toEqual(filedByModel);
-  expect(await activity(number)).toEqual(["Spam filter filed it as spam: the AI check was 96% sure it's spam"]);
+  expect(await activity(number)).toEqual(["Spam filter filed it as spam: the AI check was 98% sure it's spam"]);
   // In Spam now, with its reason; never told.
   expect((await listed(number)).listed).toBe(true);
   expect((await call(listConversations, { actor: { kind: "user" as const, userId: (await prisma.teamMember.findFirstOrThrow({ where: { projectId } })).userId }, projectId }, { view: "spam" } as never)).conversations[0]).toMatchObject({ number, spamReason: "model" });
@@ -174,13 +174,13 @@ test("0.95 or more from the decision model files it, with its reason; nothing is
   expect(await activity(number)).toHaveLength(1);
 });
 
-test("under 0.95 releases it as a new conversation, told once: its webhook and the team's email; the chat model is never asked", async () => {
+test("under 0.97 releases it as a new conversation, told once: its webhook and the team's email; the chat model is never asked", async () => {
   const { mail, check, state, told, activity, listed } = await setup();
   const number = await mail();
-  model.decide({ spam: 0.94 });
+  model.decide({ spam: 0.96 });
   expect(await check(number)).toBe(true);
   expect(await state(number)).toEqual(released);
-  expect(await activity(number)).toEqual(["Spam filter let it through: the AI check was 94% sure it's spam"]);
+  expect(await activity(number)).toEqual(["Spam filter let it through: the AI check was 96% sure it's spam"]);
   expect((await listed(number)).listed).toBe(true);
   expect(await told()).toEqual(toldOnce);
   expect(model.requests).toEqual([]);
@@ -250,6 +250,26 @@ test("nothing is held without the team's guidance, without a decision model (the
   vi.stubEnv("OPENAI_API_KEY", "");
   expect(await state2(await mail2("e2e-c@example.com"))).toEqual(inInbox);
   expect(later).toEqual([]);
+});
+
+test("trying a message nothing else decides says the AI spam check would decide it, asking no model; without guidance, that nothing filed it", async () => {
+  const { admin } = await setup();
+  const attempt = () => call(trySpamFilter, admin, { sender: "e2e-lee@strangers.example", subject: "Hi", text: "Can I export to CSV?" });
+  // No answer scripted: a model asked would fail the test.
+  expect(await attempt()).toEqual({ spam: false, aiCheck: true, reason: null, why: "the AI spam check would decide it" });
+  await prisma.project.update({ where: { id: admin.projectId }, data: { spamGuidance: "" } });
+  expect(await attempt()).toEqual({ spam: false, aiCheck: false, reason: null, why: "no check filed it" });
+});
+
+test("the job reads only holds left to settle: its index leaves out those a teammate marked as spam, and the job's query is the index's", async () => {
+  const [index] = await prisma.$queryRaw<{ indexdef: string }[]>`SELECT indexdef FROM pg_indexes WHERE indexname = 'conversation_spamHeldAt_idx'`;
+  expect(index!.indexdef).toContain(`WHERE (("spamHeldAt" IS NOT NULL) AND (("spamMarkedAt" IS NULL) OR (NOT spam)))`);
+  // The job's second query, as runDueInbox sends it, uses the index (sequential scans off, so the plan shows it can).
+  const plan = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SET LOCAL enable_seqscan = off`;
+    return tx.$queryRaw<{ "QUERY PLAN": string }[]>`EXPLAIN SELECT "id" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date()}`;
+  });
+  expect(plan.map((row) => row["QUERY PLAN"]).join("\n")).toContain("conversation_spamHeldAt_idx");
 });
 
 test("only a conversation no free check decided is held: not one filed, nor one a decision or trust let through", { timeout: 30_000 }, async () => {

@@ -1265,7 +1265,8 @@ model Conversation {
   @@index([projectId, email])
   @@index([snoozedUntil])
   @@index([pathDueAt])
-  @@index([spamHeldAt])
+  /// Holds the inbox-due job still has to settle: not one a teammate marked as spam, which keeps `spamHeldAt` for good.
+  @@index([spamHeldAt], where: raw("\"spamHeldAt\" IS NOT NULL AND (\"spamMarkedAt\" IS NULL OR NOT \"spam\")"))
   /// The conversations a placeholder holds, for its handover.
   @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")
