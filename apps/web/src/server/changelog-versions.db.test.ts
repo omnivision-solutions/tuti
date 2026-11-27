@@ -280,7 +280,18 @@ test("a save made while the product setting marks the version behind waits for i
     () => null,
     (error: unknown) => error,
   );
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Waiting on the version's row lock (not on a timer): only then does the mark commit.
+  await expect
+    .poll(
+      async () =>
+        (
+          await prisma.$queryRaw<[{ n: number }]>`
+            SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%changelog_translation%FOR UPDATE%'`
+        )[0].n > 0,
+      { timeout: 5000 },
+    )
+    .toBe(true);
   commit();
   await marking;
   expect(((await saving) as OperationError).code).toBe("changed");
