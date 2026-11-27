@@ -60,8 +60,9 @@ export async function emailSignInLink(
     slug: projectSlug,
     projectName: project.name,
     next: safeRedirectPath(next, "/"),
-    // The link opens at this page's language address (its dead-link fallback, through the page's links, too).
-    prefix: (await portalLanguage()).prefix,
+    // The link opens at this page's language address (its dead-link fallback, through the page's links, too), and the
+    // email is in its language.
+    ...(({ prefix, language }) => ({ prefix, language: language ?? undefined }))(await portalLanguage()),
   };
   try {
     // New accounts are named as typed on sign-up, else after the address (they can change it in their account).

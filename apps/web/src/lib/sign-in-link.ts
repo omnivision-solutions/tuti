@@ -21,6 +21,6 @@ export const SIGN_IN_LINKS_PER_PORTAL_PER_HOUR = 200;
 
 /**
  * What `emailSignInLink` hands the plugin, for the email. `prefix`: the language address it was asked at ("/de", or ""
- * for the default language's), so the link opens in that language.
+ * for the default language's), so the link opens in that language; `language`, that page's, the email's.
  */
-export type SignInLinkMetadata = { linkId: string; slug: string; projectName: string; next: string; prefix?: string };
+export type SignInLinkMetadata = { linkId: string; slug: string; projectName: string; next: string; prefix?: string; language?: string };

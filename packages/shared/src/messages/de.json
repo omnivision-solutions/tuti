@@ -414,5 +414,21 @@
   },
   "docs": {
     "notTranslated": "Diese Seite gibt es noch nicht auf Deutsch: Sie wird in ihrer Originalsprache angezeigt."
+  },
+  "emails": {
+    "signInTo": "Bei {name} anmelden",
+    "signInPreview": "Dein Anmeldelink für {name}.",
+    "signInText": "Hier ist dein Link, um dich bei {name} anzumelden.",
+    "ignoreIt": "Wenn du das nicht angefordert hast, ignoriere diese E-Mail.",
+    "linkExpires": "Der Link funktioniert einmal und läuft in {minutes, plural, one {# Minute} other {# Minuten}} ab.",
+    "resetTitle": "Passwort zurücksetzen",
+    "resetPreview": "Lege ein neues Passwort für {name} fest.",
+    "resetText": "Jemand hat angefordert, das Passwort für dein Konto bei <b>{name}</b> zurückzusetzen.",
+    "resetButton": "Neues Passwort festlegen",
+    "resetIgnore": "Wenn du das nicht angefordert hast, ignoriere diese E-Mail: Dein Passwort bleibt gleich.",
+    "changedTitle": "Dein Passwort wurde geändert",
+    "changedPreview": "Dein Passwort wurde gerade geändert.",
+    "changedText": "Das Passwort für dein Konto wurde gerade mit einem Link zum Zurücksetzen geändert, und du wurdest überall sonst abgemeldet.",
+    "changedWarning": "Wenn du das nicht warst, nutze „{forgot}“ auf der Anmeldeseite, um sofort ein neues festzulegen."
   }
 }

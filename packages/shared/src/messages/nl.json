@@ -414,5 +414,21 @@
   },
   "docs": {
     "notTranslated": "Deze pagina is nog niet in het Nederlands beschikbaar: ze wordt getoond in de oorspronkelijke taal."
+  },
+  "emails": {
+    "signInTo": "Inloggen bij {name}",
+    "signInPreview": "Je inloglink voor {name}.",
+    "signInText": "Hier is je link om in te loggen bij {name}.",
+    "ignoreIt": "Heb je hier niet om gevraagd? Negeer deze e-mail dan.",
+    "linkExpires": "De link werkt één keer en verloopt over {minutes, plural, one {# minuut} other {# minuten}}.",
+    "resetTitle": "Je wachtwoord opnieuw instellen",
+    "resetPreview": "Stel een nieuw wachtwoord in voor {name}.",
+    "resetText": "Iemand heeft gevraagd het wachtwoord van je account bij <b>{name}</b> opnieuw in te stellen.",
+    "resetButton": "Nieuw wachtwoord instellen",
+    "resetIgnore": "Heb je hier niet om gevraagd? Negeer deze e-mail dan: je wachtwoord blijft hetzelfde.",
+    "changedTitle": "Je wachtwoord is gewijzigd",
+    "changedPreview": "Je wachtwoord is zojuist gewijzigd.",
+    "changedText": "Het wachtwoord van je account is zojuist gewijzigd met een herstellink, en je bent overal anders uitgelogd.",
+    "changedWarning": "Was jij dit niet? Gebruik dan meteen „{forgot}” op de inlogpagina om een nieuw wachtwoord in te stellen."
   }
 }

@@ -414,5 +414,21 @@
   },
   "docs": {
     "notTranslated": "Esta página aún no está en español: se muestra en su idioma original."
+  },
+  "emails": {
+    "signInTo": "Iniciar sesión en {name}",
+    "signInPreview": "Tu enlace para iniciar sesión en {name}.",
+    "signInText": "Aquí tienes tu enlace para iniciar sesión en {name}.",
+    "ignoreIt": "Si no lo pediste, ignora este correo.",
+    "linkExpires": "El enlace funciona una sola vez y caduca en {minutes, plural, one {# minuto} other {# minutos}}.",
+    "resetTitle": "Restablece tu contraseña",
+    "resetPreview": "Elige una contraseña nueva para {name}.",
+    "resetText": "Alguien pidió restablecer la contraseña de tu cuenta en <b>{name}</b>.",
+    "resetButton": "Elegir una contraseña nueva",
+    "resetIgnore": "Si no lo pediste, ignora este correo: tu contraseña no cambia.",
+    "changedTitle": "Tu contraseña ha cambiado",
+    "changedPreview": "Tu contraseña acaba de cambiar.",
+    "changedText": "La contraseña de tu cuenta acaba de cambiarse con un enlace de restablecimiento, y se cerró tu sesión en todos los demás sitios.",
+    "changedWarning": "Si no fuiste tú, usa «{forgot}» en la página de inicio de sesión para elegir una nueva ahora mismo."
   }
 }

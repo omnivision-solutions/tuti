@@ -414,5 +414,21 @@
   },
   "docs": {
     "notTranslated": "此页面尚未翻译成简体中文，现以原文语言显示。"
+  },
+  "emails": {
+    "signInTo": "登录 {name}",
+    "signInPreview": "你的 {name} 登录链接。",
+    "signInText": "这是你登录 {name} 的链接。",
+    "ignoreIt": "如果这不是你发起的请求，请忽略此邮件。",
+    "linkExpires": "此链接只能使用一次，将在 {minutes, plural, other {# 分钟}}后失效。",
+    "resetTitle": "重置密码",
+    "resetPreview": "为 {name} 设置新密码。",
+    "resetText": "有人请求重置你在 <b>{name}</b> 上的账号密码。",
+    "resetButton": "设置新密码",
+    "resetIgnore": "如果这不是你发起的请求，请忽略此邮件：你的密码不会改变。",
+    "changedTitle": "你的密码已更改",
+    "changedPreview": "你的密码刚刚已更改。",
+    "changedText": "你的账号密码刚刚通过重置链接更改，你已在其他所有地方退出登录。",
+    "changedWarning": "如果这不是你本人操作，请立即在登录页面使用“{forgot}”设置新密码。"
   }
 }

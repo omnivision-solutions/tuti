@@ -414,5 +414,21 @@
   },
   "docs": {
     "notTranslated": "Cette page n'est pas encore disponible en français : elle s'affiche dans sa langue d'origine."
+  },
+  "emails": {
+    "signInTo": "Se connecter à {name}",
+    "signInPreview": "Votre lien de connexion à {name}.",
+    "signInText": "Voici votre lien pour vous connecter à {name}.",
+    "ignoreIt": "Si vous ne l’avez pas demandé, ignorez cet e-mail.",
+    "linkExpires": "Le lien fonctionne une seule fois et expire dans {minutes, plural, one {# minute} other {# minutes}}.",
+    "resetTitle": "Réinitialiser votre mot de passe",
+    "resetPreview": "Choisissez un nouveau mot de passe pour {name}.",
+    "resetText": "Quelqu’un a demandé à réinitialiser le mot de passe de votre compte sur <b>{name}</b>.",
+    "resetButton": "Choisir un nouveau mot de passe",
+    "resetIgnore": "Si vous ne l’avez pas demandé, ignorez cet e-mail : votre mot de passe reste le même.",
+    "changedTitle": "Votre mot de passe a été modifié",
+    "changedPreview": "Votre mot de passe vient d’être modifié.",
+    "changedText": "Le mot de passe de votre compte vient d’être modifié avec un lien de réinitialisation, et vous avez été déconnecté partout ailleurs.",
+    "changedWarning": "Si ce n’était pas vous, utilisez « {forgot} » sur la page de connexion pour en choisir un nouveau tout de suite."
   }
 }
