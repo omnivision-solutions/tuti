@@ -11,7 +11,7 @@ import { z } from "zod";
 import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters";
 
 import { displayDoc } from "../content";
-import { detectSignInServices, type SignInService } from "../sign-in-hosts";
+import { detectSignInServices, scannedFor, type SignInService } from "../sign-in-hosts";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { countSpecFetch } from "./fetch-limits";
@@ -312,7 +312,7 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }): 
   if (!settings?.appUrl) {
     return [];
   }
-  let services = settings.signInServicesFor === settings.appUrl ? (settings.signInServices as SignInService[] | null) : null;
+  let services = settings.signInServicesFor === scannedFor(settings.appUrl) ? (settings.signInServices as SignInService[] | null) : null;
   if (!services) {
     // Each read makes our server fetch and scan an address the team picks: limited as fetching an API reference is.
     await countSpecFetch(context);
@@ -324,7 +324,7 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }): 
     // Only a full read (a script that didn't load may hold the service), and only while the address is still the one
     // read: one changed meanwhile is found again.
     if (found.complete) {
-      await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl: settings.appUrl }, data: { signInServices: services, signInServicesFor: settings.appUrl } });
+      await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl: settings.appUrl }, data: { signInServices: services, signInServicesFor: scannedFor(settings.appUrl) } });
     }
   }
   // What its runs' browser opens already: the app's host, the sign-in link's, the other domains (with subdomains).
