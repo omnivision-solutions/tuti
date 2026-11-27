@@ -25,6 +25,8 @@ let connections = 0;
 let reading = 0;
 /** A 3 MB script. */
 const heavy = " ".repeat(3_000_000);
+/** A 2.8 MB script, less the sign-in SDK's line in one of them. */
+const chunk = " ".repeat(2_800_000 - 50);
 /** A 2 MB script of 1 million characters. */
 const wide = "é".repeat(1_000_000);
 let mostReading = 0;
@@ -47,8 +49,14 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/javascript" }).end('initializeApp({authDomain:"acme.firebaseapp.com"});const a="identitytoolkit.googleapis.com",b="securetoken.googleapis.com";');
     } else if (request.url === "/many") {
       response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 101 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
-    } else if (request.url === "/heavy") {
-      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 30 }, (_, i) => `<script src="/assets/h${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/heavy")) {
+      const count = Number(new URL(request.url, base).searchParams.get("scripts") ?? 30);
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: count }, (_, i) => `<script src="/assets/h${i}.js"></script>`).join(""));
+    } else if (request.url === "/chunks") {
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 14 }, (_, i) => `<script src="/assets/c${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/assets/c")) {
+      // 39.2 MB in 2.8 MB chunks, the sign-in SDK at the end of the last; answered after a moment, so 8 are read at once.
+      setTimeout(() => response.writeHead(200, { "content-type": "text/javascript" }).end(request.url === "/assets/c13.js" ? `${chunk}const a="identitytoolkit.googleapis.com";` : chunk), 20);
     } else if (request.url?.startsWith("/assets/h")) {
       response.writeHead(200, { "content-type": "text/javascript" }).end(heavy);
     } else if (request.url === "/wide") {
@@ -168,6 +176,19 @@ test("a page whose scripts pass 40 MB together reads no more of them, and the an
   // 14 fill the budget; up to 7 more were already on their way.
   expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+});
+
+test("the last script cut short by the budget, with none left to read, isn't kept either", async () => {
+  await settle({ appUrl: `${base}/heavy?scripts=14` });
+  await suggestions();
+  expect(requests.filter((path) => path.startsWith("/assets/h"))).toHaveLength(14);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+});
+
+test("scripts under the budget together are read in full, the last as much as the first, and the answer is kept", async () => {
+  await settle({ appUrl: `${base}/chunks` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/chunks`));
 });
 
 test("the budget counts the bytes read, not the characters", async () => {

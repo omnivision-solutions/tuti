@@ -134,7 +134,7 @@ const PAGE_BYTES = 2_000_000;
 const SCRIPT_BYTES = 3_000_000;
 /** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them. */
 const MAX_SCRIPTS = 100;
-/** All the scripts together: past it, no more are read (the same ones nearly every time, so what's found is kept). */
+/** All the scripts together, counted as they arrive: past it, no more are read, and what was found isn't kept. */
 const SCRIPTS_BYTES = 40_000_000;
 /** Scripts read at once, so one read never opens more connections to the app, or holds more than PAGE_BYTES + this × SCRIPT_BYTES. */
 const SCRIPTS_AT_ONCE = 8;
@@ -163,8 +163,11 @@ function allowed(url: URL): boolean {
   return url.protocol === "https:" && !isIP(url.hostname.replace(/^\[|\]$/g, ""));
 }
 
-/** A URL's body as text, up to `max` bytes, following redirects only to allowed URLs; null when it can't be read. */
-async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: URL; text: string; bytes: number } | null> {
+/**
+ * A URL's body as text, up to `max` bytes, following redirects only to allowed URLs; null when it can't be read. Each
+ * byte read is taken from `budget` (shared by reads at once), and reading stops once it's spent.
+ */
+async function get(url: URL, max: number, signal: AbortSignal, budget = { left: Infinity }): Promise<{ url: URL; text: string } | null> {
   for (let hop = 0; hop <= MAX_REDIRECTS && allowed(url); hop++) {
     const response = await fetch(url, { redirect: "manual", signal, headers: { accept: "text/html,*/*" }, ...(!localTesting() && { dispatcher: publicOnly }) });
     const location = response.headers.get("location");
@@ -182,12 +185,12 @@ async function get(url: URL, max: number, signal: AbortSignal): Promise<{ url: U
     for await (const chunk of response.body) {
       chunks.push(chunk);
       size += chunk.length;
-      if (size >= max) {
+      budget.left -= chunk.length;
+      if (size >= max || budget.left <= 0) {
         break;
       }
     }
-    const body = Buffer.concat(chunks).subarray(0, max);
-    return { url, text: body.toString("utf8"), bytes: body.length };
+    return { url, text: Buffer.concat(chunks).subarray(0, max).toString("utf8") };
   }
   return null;
 }
@@ -230,26 +233,19 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
     const found = [findIn(page.text)];
     let complete = true;
-    let left = SCRIPTS_BYTES;
+    const budget = { left: SCRIPTS_BYTES };
     await Promise.all(
       Array.from({ length: SCRIPTS_AT_ONCE }, async () => {
-        // The budget checked before a script is taken, so one it has no room for stays in the queue (and the read isn't complete).
-        while (left > 0 && queue.length > 0) {
-          const script = queue.shift()!;
-          // Taken from the budget before reading (8 at once can't each count on the same bytes left); what a read
-          // didn't use is given back, all of it kept for one that failed (it may have read some first).
-          const allowance = Math.min(SCRIPT_BYTES, left);
-          left -= allowance;
-          const read = await get(script, allowance, signal).catch(() => null);
-          left += read ? allowance - read.bytes : 0;
-          // A script cut short by the budget, not by its own limit, isn't the same bytes each time.
-          complete &&= !!read && (allowance === SCRIPT_BYTES || read.bytes < allowance);
+        while (budget.left > 0 && queue.length > 0) {
+          const read = await get(queue.shift()!, SCRIPT_BYTES, signal, budget).catch(() => null);
+          complete &&= !!read;
           found.push(read ? findIn(read.text) : []);
         }
       }),
     );
-    // Which scripts the budget let in depends on which came back first: not kept, as a script that didn't load isn't.
-    return { services: merge(found), complete: complete && queue.length === 0 };
+    // A spent budget cut a script short or left some unread, and which depends on which came back first: not kept,
+    // as a script that didn't load isn't.
+    return { services: merge(found), complete: complete && queue.length === 0 && budget.left > 0 };
   } catch {
     return null;
   }
