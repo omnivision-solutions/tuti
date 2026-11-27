@@ -93,6 +93,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.publishTranslation": () => ({ slug: "matrix-article", language: "de" }),
   // Its one section (the text before any heading), translated again in the background (see the write's case below).
   "articles.updateTranslation": () => ({ slug: "matrix-article", language: "de", sections: ["\u001f0"] }),
+  // Turned off (as the fixture's German is, or becomes): from the read's `version`, as articles.getTranslation gives it.
+  "articles.keepTranslationUpToDate": (f) => ({ slug: "matrix-article", language: "de", keepUpToDate: false, version: f.translationVersion }),
   "articles.publishChanges": () => ({ slug: "matrix-article" }),
   "articles.discardChanges": () => ({ slug: "matrix-article" }),
   "articles.unpublish": () => ({ slug: "matrix-article" }),

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { DEFAULT_LANGUAGE, isLanguage, languageLimit } from "@tuti/shared";
+import { DEFAULT_LANGUAGE, isLanguage, languageLimit, log } from "@tuti/shared";
 import { MESSAGES, type Messages } from "@tuti/shared/messages";
 import { createTranslator } from "next-intl";
 import { cookies } from "next/headers";
@@ -73,4 +73,32 @@ export async function subscriberLanguage(projectId: string, userId: string): Pro
     return null;
   }
   return language && (languages.live as string[]).includes(language) ? language : undefined;
+}
+
+/**
+ * A signed-in reader's language for their emails (docs/plan.md, Languages: "a signed-in reader's language, else the language
+ * of the page they were asked for on"): one who never chose one (User.language, the header's switcher) gets the page's, when
+ * they do something on a language's address that emails them (vote, comment, post, follow, sign in with its link). Never over one
+ * they chose; only for someone acting as themselves (`actor`: never an API key writing on someone's behalf, whatever headers
+ * it sends); only a language the project has live (not the team's preview of one that isn't); nothing at the default
+ * language's address.
+ */
+export async function rememberPageLanguage(actor: { kind: string; userId?: string }, userId: string, projectId: string) {
+  if (actor.kind !== "user" || actor.userId !== userId) {
+    return;
+  }
+  // Outside a request (an operation a job runs): no page, nothing to remember.
+  const page = await portalLanguage().catch(() => null);
+  const { language, prefix } = page ?? { language: null, prefix: "" };
+  if (!prefix || !language) {
+    return;
+  }
+  // After what they did is saved: a failure here mustn't report it as failed (a retry would post or comment twice).
+  try {
+    if ((await portalLanguages(projectId)).live.includes(language)) {
+      await prisma.user.updateMany({ where: { id: userId, language: null }, data: { language } });
+    }
+  } catch (error) {
+    log.warn("Saving a reader's page language failed", { error, userId, projectId });
+  }
 }

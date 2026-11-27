@@ -6,8 +6,8 @@ import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, releaseProje
 import { emailBrand } from "./email-brand";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
-import { portalAddress } from "./portal-address";
-import { postAudience, seenAs } from "./post-audience";
+import { portalAddress, type PortalAddress } from "./portal-address";
+import { postAudience, readerEmailLanguage, seenAs } from "./post-audience";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { claim, LATE_MINUTES, quotedText, whileClaimed } from "./reply-email";
 
@@ -112,7 +112,11 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
   // Read before anything is claimed or counted: one failing here leaves no claim to go stale and takes none of the
   // project's emails.
   const origin = await portalAddress(project.slug);
-  const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
+  const [sender, brand, emailLanguage] = await Promise.all([projectSender(projectId), emailBrand(projectId), readerEmailLanguage(projectId)]);
+  // In the author's language (readerEmailLanguage), its links at that language's address (a prefix on the portal's: still
+  // the portal's address).
+  const { language, prefix } = emailLanguage(author.language);
+  const base = `${origin}${prefix}` as PortalAddress;
   // Each comment claimed before sending (one time for all, as whileClaimed renews them), so a retry, a second run or the
   // reply's email to voters doesn't email it twice. Their own comments never become due; left out all the same.
   const claimedAt = new Date();
@@ -153,8 +157,10 @@ export async function commentsEmailed({ postId }: JobInput<"commentsEmailed">, l
           team: !comment.asReader && comment.author.teamMemberships.length > 0,
           text: quotedText(comment),
         })),
-        postUrl: portalPostUrl(origin, post),
-        unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
+        postUrl: portalPostUrl(base, post),
+        unsubscribeUrl: `${base}/unsubscribe?token=${token}`,
+        language,
+        teamLanguage: emailLanguage(null).language,
       }),
       ...sender,
       // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

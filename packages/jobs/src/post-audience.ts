@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import { type PostVisibility, Prisma, prisma } from "@tuti/db";
-import { planIncludes, readerEntriesFor } from "@tuti/shared";
+import { languageLimit, liveLanguages, planIncludes, readerEntriesFor } from "@tuti/shared";
 
 /**
  * Someone's unsubscribe token for one project's emails: their id and a MAC of the project keyed by their own secret
@@ -11,7 +11,25 @@ export const projectUnsubscribeToken = (projectId: string, user: { id: string; u
   `${user.id}.${createHmac("sha256", user.unsubscribeToken).update(projectId).digest("base64url")}`;
 
 /** Someone a post's email may go to: who they are, the address it goes to, and their unsubscribe token for the project (projectUnsubscribeToken). */
-export type Recipient = { id: string; address: string; unsubscribeToken: string };
+/** `language`: the one they chose on a portal (User.language), for their emails (readerEmailLanguage); null for none. */
+export type Recipient = { id: string; address: string; unsubscribeToken: string; language: string | null };
+
+/**
+ * The language a project's email to a reader is in (docs/plan.md, Languages: "Emails to a reader are in one language"):
+ * theirs while the portal serves it (live, within the plan's limit, as its pages do), else its default; with that
+ * language's address prefix ("/de"; "" for the default's), for the email's links to open its pages in it.
+ */
+export async function readerEmailLanguage(projectId: string): Promise<(language: string | null) => { language: string; prefix: string }> {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { plan: true, language: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+  });
+  const served = new Set<string>(liveLanguages(project.languages, languageLimit(project.plan)));
+  return (language) => {
+    const words = language && served.has(language) ? language : project.language;
+    return { language: words, prefix: words === project.language ? "" : `/${words.toLowerCase()}` };
+  };
+}
 
 type Project = { portalAccess: string; plan: Parameters<typeof planIncludes>[0] };
 
@@ -32,7 +50,7 @@ export function provenAddress(person: { emailVerified: boolean; ssoIdentity: { p
  * address isn't verified yet), `noAddress` (the project's SSO gave none, or a placeholder).
  */
 export type Reach =
-  | { status: "emailed"; address: string; unsubscribeToken: string }
+  | { status: "emailed"; address: string; unsubscribeToken: string; language: string | null }
   | { status: "team" | "optedOut" | "turnedOff" | "notReader" | "unconfirmed" | "noAddress" };
 
 /**
@@ -60,6 +78,7 @@ export async function audienceReach(
       email: true,
       emailVerified: true,
       unsubscribeToken: true,
+      language: true,
       ssoIdentity: { select: { projectId: true, email: true } },
       teamMemberships: { where: { projectId }, select: { id: true } },
       emailOptOuts: { where: { projectId }, select: { userId: true } },
@@ -100,7 +119,7 @@ export async function audienceReach(
     }
     return !address || address.endsWith(".invalid")
       ? { status: "noAddress" }
-      : { status: "emailed", address, unsubscribeToken: projectUnsubscribeToken(projectId, person) };
+      : { status: "emailed", address, unsubscribeToken: projectUnsubscribeToken(projectId, person), language: person.language };
   };
   return new Map(people.map((person) => [person.id, reach(person)]));
 }
@@ -130,7 +149,7 @@ export async function postAudience(
       continue;
     }
     seen.add(reach.address.toLowerCase());
-    audience.push({ id, address: reach.address, unsubscribeToken: reach.unsubscribeToken });
+    audience.push({ id, address: reach.address, unsubscribeToken: reach.unsubscribeToken, language: reach.language });
   }
   return audience;
 }

@@ -53,7 +53,7 @@ const languages = [
 ];
 const view: VersionView = { code: "de", name: "Deutsch", state: "current", keepUpToDate: true, version: "v1", waiting: null, title: "Dunkler Modus", content: doc, own: true };
 
-async function form(props: Partial<typeof view> = {}) {
+async function form(props: Partial<typeof view> = {}, extra: Record<string, unknown> = {}) {
   const box = document.createElement("div");
   document.body.append(box);
   const root = createRoot(box);
@@ -70,11 +70,14 @@ async function form(props: Partial<typeof view> = {}) {
             key: versionFormKey({ ...view, ...changes }),
             formKey: versionTextKey({ ...view, ...changes }),
             projectSlug: "acme",
-            number: 1,
+            // The page passes them bound to the entry and the language.
+            save: (state: object, formData: FormData) => saveChangelogVersion("acme", 1, "de", state, formData),
+            keep: (on: boolean, version: string) => keepChangelogVersionUpToDate("acme", 1, "de", on, version),
             defaultName: "English",
             view: { ...view, ...changes },
             mediaUrls: shownMedia,
             languages,
+            ...extra,
           }),
         )),
       ),
@@ -130,6 +133,13 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
   expect(keep().checked).toBe(false);
 });
 
+test("turning Keep up to date on over a draft saved and not published asks first: it's the team's text too", async () => {
+  await form({ state: "unwritten", keepUpToDate: false, own: true });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Translate it again?");
+});
+
 test("turning Keep up to date on over the team's own text asks first", async () => {
   keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-kept" });
   await form({ state: "written", keepUpToDate: false });
@@ -164,9 +174,10 @@ test("a save that leaves the text as it was is what the next save goes from; the
 
 test("the switch goes from the page's latest read, not the token the text was loaded with; refused as changed, it says so and goes back", async () => {
   keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "changed", changed: true }).mockResolvedValueOnce({ version: "v-on" });
-  const { render } = await form({ keepUpToDate: false, state: "current" });
+  // No text of the team's (`own` false): turning it on doesn't ask first, so the toggle goes straight to the server.
+  const { render } = await form({ keepUpToDate: false, state: "current", own: false });
   // The English edited since, the page read again: a new token, the same text.
-  await render({ keepUpToDate: false, state: "translating", version: "v2" });
+  await render({ keepUpToDate: false, state: "translating", version: "v2", own: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v2");
   // Nothing typed (the switch's own click isn't an edit): the page is read again.
@@ -174,7 +185,7 @@ test("the switch goes from the page's latest read, not the token the text was lo
   expect(toast.error).toHaveBeenCalledWith("It changed meanwhile: shown as it is now. Try again.");
   expect(keep().checked).toBe(false);
   // The page read again (the action refreshed it): the next try goes from that read.
-  await render({ keepUpToDate: false, state: "translating", version: "v3" });
+  await render({ keepUpToDate: false, state: "translating", version: "v3", own: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v3");
   expect(keep().checked).toBe(true);
@@ -185,7 +196,7 @@ test("the switch goes from the page's latest read, not the token the text was lo
 test("a first toggle (no version yet) gives Save the new version's token, so the next save isn't refused", async () => {
   keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-made" });
   saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
-  await form({ state: "unwritten", keepUpToDate: false, version: "v-none" });
+  await form({ state: "unwritten", keepUpToDate: false, version: "v-none", own: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", true, "v-none");
   await submit();
@@ -395,4 +406,17 @@ test("an image of the read a draft was made from still shows when a new read wit
   await render({ version: "v2", title: "Ohne Bild" });
   expect(title().value).toBe("Bearbeitet");
   expect(document.querySelector(`img[src*="${id}"]`)).not.toBeNull();
+});
+
+test("an article's version kept up to date says publishing English replaces the team's published edits, not a draft's", async () => {
+  await form({ state: "current", keepUpToDate: true }, { kind: "article" });
+  expect(document.body.textContent).toContain("Translated automatically from English. Publishing English again replaces your published edits in the sections it touches.");
+});
+
+test("turning an article's Keep up to date on over the team's text asks first: its published sections English changed in take a new translation", async () => {
+  await form({ state: "written", keepUpToDate: false }, { kind: "article" });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Translate it again?");
+  expect(document.body.textContent).toContain("Published sections English changed in since your edits take a new translation.");
 });
