@@ -160,6 +160,9 @@ export async function changeLanguages(projectId: string, change: (current: Langu
   await prisma.$transaction(async (tx) => {
     // One change at a time per project: the limit and the default language's rule hold for what's saved.
     await lockProject(tx, projectId);
+    // Its languages' rows before any label's, as a labels job's write takes them (see @tuti/jobs translateLabels): a write
+    // under way finishes first, and one after waits for this save. Taken the other way round, the two could deadlock.
+    await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} ORDER BY code FOR UPDATE`;
     const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, language: true, languages: { select: { code: true, live: true, productAvailable: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } } });
     const current = project.languages.map(({ code }) => code);
     const parsed = updateInput.safeParse(change(current.filter(isLanguage)));

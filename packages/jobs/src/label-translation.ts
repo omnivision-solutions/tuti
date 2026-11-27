@@ -239,7 +239,7 @@ export async function forgetLabels(tx: Prisma.TransactionClient, projectId: stri
 export async function queueStaleLabels(): Promise<number> {
   const due = await prisma.$queryRaw<{ projectId: string; code: string }[]>`
     SELECT l."projectId", l.code FROM project_language l
-    WHERE (l."labelsRetryAt" IS NULL OR l."labelsRetryAt" <= now())
+    WHERE (l."labelsRetryAt" IS NULL OR l."labelsRetryAt" <= now() AT TIME ZONE 'UTC')
       AND (
         EXISTS (SELECT 1 FROM collection c WHERE c."projectId" = l."projectId" AND NOT c.sample AND ${staleIn(COLLECTION_SOURCE)})
         OR EXISTS (SELECT 1 FROM docs_tab t WHERE t."projectId" = l."projectId" AND ${staleIn(TAB_SOURCE)})

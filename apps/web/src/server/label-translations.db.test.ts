@@ -198,3 +198,46 @@ test("a language being removed as a labels job writes a new label's translation:
   await Promise.all([removing, creating]);
   expect((await collection("billing")).translations).toEqual({});
 });
+
+test("a collection's description changing on its own is translated again at once", async () => {
+  await german();
+  model.reply(labelsReply({ "0.n": "Abrechnung", "0.d": "Bezahlen." }));
+  await call(createCollection, as(), { name: "Billing", description: "Paying." });
+  model.reply(labelsReply({ "0.n": "Abrechnung", "0.d": "Bezahlen und Rechnungen." }));
+  await call(updateCollection, as(), { slug: "billing", description: "Paying and invoices." });
+  expect(labelIn(await collection("billing"), "de")).toEqual({ name: "Abrechnung", description: "Bezahlen und Rechnungen." });
+});
+
+test("a languages save that removes one language and changes another waits for a label write under way: no deadlock", async () => {
+  model.reply(labelsReply({ "0.n": "Abrechnung" }));
+  model.reply(labelsReply({ "0.n": "Facturation" }));
+  await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr" }] });
+  await call(createCollection, as(), { name: "Billing", description: "" });
+  const { id } = await collection("billing");
+  // A French label write as writeLabel makes it, held open: French's row shared, then (once the save waits) the collection's.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let shared!: () => void;
+  const holding = new Promise<void>((resolve) => (shared = resolve));
+  const writing = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${project.id} AND code = 'fr' FOR SHARE`;
+      shared();
+      await gate;
+      await tx.$queryRaw`SELECT 1 FROM collection WHERE id = ${id} FOR UPDATE`;
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  // German removed and French's product setting changed (its labels made again: answered below).
+  model.otherwise(labelsReply({ "0.n": "Facturation (produit)" }), '"0.n":"Billing"');
+  const saving = call(updateLanguages, as(), { languages: [{ code: "fr", productAvailable: true }] });
+  for (let i = 0; i < 100; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (Number(count) > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  await Promise.all([writing, saving]);
+  expect(Object.keys((await collection("billing")).translations as object)).toEqual(["fr"]);
+});
