@@ -426,12 +426,13 @@ export async function recordMark(
 }
 
 /** A rule from a report, under the filter's limit, as Settings' are: past it, refused (the report with it). */
-async function addReportedRule(db: Db, projectId: string, rule: SpamRule): Promise<string> {
-  const { id } = await addSpamRule(db, projectId, rule, true);
+async function addReportedRule(db: Db, projectId: string, rule: SpamRule): Promise<string | null> {
+  const { id, added } = await addSpamRule(db, projectId, rule, true);
   if ((await db.spamRule.count({ where: { projectId } })) > MAX_SPAM_RULES) {
     throw new OperationError(409, "too_many", `The filter holds up to ${MAX_SPAM_RULES} rules: remove some first`);
   }
-  return id;
+  // Only one this report added: one that was there already (put there in Settings, say) is no report's to undo.
+  return added ? id : null;
 }
 
 /**
@@ -440,7 +441,7 @@ async function addReportedRule(db: Db, projectId: string, rule: SpamRule): Promi
  * never for a sender check 1 doesn't apply to (an address a signed-out visitor typed, mail that failed DMARC). Returns
  * the address.
  */
-export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean): Promise<{ value: string; ruleId: string }> {
+export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean): Promise<{ value: string; ruleId: string | null }> {
   if (!admin) {
     throw new OperationError(403, "forbidden", "Only project owners and admins can block a sender");
   }
@@ -456,7 +457,7 @@ export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean
  * it, from a report. Owners and admins only, as the rules are theirs; never a free-mail domain, nor for a sender check 1
  * doesn't apply to. Returns the domain.
  */
-export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean): Promise<{ value: string; ruleId: string }> {
+export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean): Promise<{ value: string; ruleId: string | null }> {
   if (!admin) {
     throw new OperationError(403, "forbidden", "Only project owners and admins can block a domain");
   }

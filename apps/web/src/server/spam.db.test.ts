@@ -310,6 +310,18 @@ test("adding a rule that's there already says so, with the same rule's ID", asyn
   expect(await prisma.spamRule.count({ where: { projectId } })).toBe(1);
 });
 
+test("a report matching a rule already there (from Settings) adds nothing for Not spam to remove", async () => {
+  const { projectId, mail, admin } = await setup();
+  await prisma.spamRule.create({ data: { projectId, field: "sender_domain", matcher: "is", value: "corp.example" } });
+  await prisma.spamSender.create({ data: { projectId, sender: "e2e-kim@corp.example", blocked: false, byAdmin: true } });
+  await mail("e2e-kim@corp.example"); // #1: allowed past the domain's rule
+  await call(updateConversation, admin, { number: 1, spam: true, blockDomain: true });
+  const row = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } });
+  expect([row.reportedRuleId, (await spamChoices(prisma, row, true)).removesRule]).toEqual([null, null]);
+  await expect(call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).rejects.toThrow(new OperationError(409, "no_rule", "That rule was already removed"));
+  expect(await prisma.spamRule.count({ where: { projectId, value: "corp.example" } })).toBe(1);
+});
+
 test("once the filter's rule is removed, Not spam offers the one a report added with it", async () => {
   const { projectId, mail, admin } = await setup();
   const crypto = await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto" } });
