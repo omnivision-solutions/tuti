@@ -399,7 +399,7 @@ const matrix: Matrix = {
     updateArticleVersionSections: {
       allowed: "MEMBER",
       // The fixture's German has a section behind (its English went), so there's one to update.
-      call: (slug) => articleVersions.updateArticleVersionSections(slug, "matrix-article", "de"),
+      call: (slug) => articleVersions.updateArticleVersionSections(slug, "matrix-article", "de", ["Gone\u001f0"]),
     },
   },
   "docs-readers": {

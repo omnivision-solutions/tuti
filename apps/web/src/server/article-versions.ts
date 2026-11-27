@@ -55,9 +55,12 @@ export async function keepArticleVersionUpToDate(projectSlug: string, articleSlu
   return { version: saved };
 }
 
-/** Update those sections: every section behind English translated again (in the background), the team's edits there replaced. */
-export async function updateArticleVersionSections(projectSlug: string, articleSlug: string, language: string): Promise<FormState> {
-  const result = await asTeam(projectSlug, DENIED, (context) => call(updateTranslationSections, context, { slug: articleSlug, language: language as "de" }));
+/**
+ * Update those sections: the `sections` the page showed behind English translated again (in the background), the team's
+ * edits there replaced; never one that fell behind since, an edit the team hasn't seen behind.
+ */
+export async function updateArticleVersionSections(projectSlug: string, articleSlug: string, language: string, sections: string[]): Promise<FormState> {
+  const result = await asTeam(projectSlug, DENIED, (context) => call(updateTranslationSections, context, { slug: articleSlug, language: language as "de", sections }));
   if (result.error) {
     return result;
   }

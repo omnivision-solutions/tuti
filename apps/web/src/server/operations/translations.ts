@@ -299,8 +299,12 @@ export async function behindChanges(projectId: string, slug: string, language: (
       if (keys.length === 0) {
         return [];
       }
-      const { published, drafted } = versionParts(version, source.parts);
-      const hashOf = (key: string) => [...(drafted ?? []), ...published].find(({ meta }) => meta.key === key)?.meta.hash ?? null;
+      const { published, draft, drafted } = versionParts(version, source.parts);
+      // The English each was edited against: its section's in the draft; taken out of the draft, its English when it was
+      // (before the published one's, which a translation since may have moved on); else the published text's.
+      const sectionHash = (list: Section[] | null, key: string) => list?.find(({ meta }) => meta.key === key)?.meta.hash ?? null;
+      const hashOf = (key: string) =>
+        sectionHash(drafted, key) ?? draft?.removedHashes?.[key] ?? sectionHash(published, key) ?? (version.removedHashes as Record<string, string>)[key] ?? null;
       const before = new Map<string, Doc>();
       // ponytail: reads up to CHANGES_LOOK_BACK revisions, newest first; an edit older than that shows English now only.
       const revisions = await db.articleRevision.findMany({
@@ -318,7 +322,8 @@ export async function behindChanges(projectId: string, slug: string, language: (
         if (before.size === keys.length) break;
       }
       const now = new Map(source.parts.map((part) => [part.key, part.blocks]));
-      return keys.map((key) => ({ key, before: before.get(key) ?? null, after: now.has(key) ? ({ type: "doc", content: now.get(key) } as Doc) : null }));
+      // `added`: English has it and the version never did (nothing to compare with).
+      return keys.map((key) => ({ key, added: hashOf(key) === null, before: before.get(key) ?? null, after: now.has(key) ? ({ type: "doc", content: now.get(key) } as Doc) : null }));
     },
     { read: true },
   );
@@ -340,8 +345,18 @@ export async function readArticleVersion(projectId: string, slug: string, langua
       // as drafts never give way, and it stays behind until published or updated).
       const reasons = [...read.behind.map(({ reason }) => reason), ...(read.draft?.behind ?? []).map(() => "source")];
       const behind = reasons.length === 0 ? null : reasons.every((reason) => reason === PRODUCT_SETTING_CHANGED) ? "setting" : "source";
+      // The orange line's sections: behind for English (not only the product setting), published or in the draft. Publish
+      // asks about those the text it publishes has (an edit to keep or not; a section English added has none).
+      const { published, drafted } = versionParts(version, source.parts);
+      const sections = [...new Set([...read.behind.filter(({ reason }) => reason !== PRODUCT_SETTING_CHANGED).map(({ section }) => section), ...(read.draft?.behind ?? [])])];
+      const has = new Set((drafted ?? published).map(({ meta }) => meta.key));
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
-      return { read, state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind), waiting: version.error };
+      return {
+        read,
+        state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind),
+        waiting: version.error,
+        behind: { sections, ask: sections.filter((key) => has.has(key)) },
+      };
     },
     { read: true },
   );

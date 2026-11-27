@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { saveArticleVersion } from "./article-versions";
+import { saveArticleVersion, updateArticleVersionSections } from "./article-versions";
 import { articleLanguages } from "./changelog-languages";
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
@@ -997,7 +997,10 @@ test("a version the team writes marked behind only for the product setting says 
   await call(publishTranslation, as(), de);
   await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual", productAvailable: true }] });
   await languageTranslationsDone();
-  expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("setting");
+  const marked = await readArticleVersion(project.id, de.slug, "de");
+  expect(marked.state).toBe("setting");
+  // Not counted on the orange line as English changing, nor asked about on publishing.
+  expect(marked.behind).toEqual({ sections: [], ask: [] });
 });
 
 test("writing a version kept up to date before its first translation arrives turns Keep up to date off: the English it showed is never kept as translated", async () => {
@@ -1130,4 +1133,56 @@ test("a section taken out of the draft whose English changed since, published wi
   const published = await call(getTranslation, as(), de);
   expect(text(published.content)).toContain("Pay by card or invoice");
   expect((await prisma.articleTranslation.findFirstOrThrow({ where: { language: "de", article: { slug: "getting-paid" } } })).removedSections).toEqual([]);
+});
+
+/** The team's German (Manual) of V1, written and published; returns the article's English sections by heading. */
+async function teamWritten() {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]), version: blank.version });
+  await call(publishTranslation, as(), de);
+}
+
+test("the sections behind English: Publish asks about those its text has, with no draft saved too, and not one English added", async () => {
+  await teamWritten();
+  // English changes Billing and adds Refunds.
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"], ["Refunds", "Within 30 days"]), publish: true });
+  await languageTranslationsDone();
+  const { behind } = await readArticleVersion(project.id, de.slug, "de");
+  const named = (keys: string[]) => keys.map((key) => key.split("\u001f")[0]).sort();
+  expect(named(behind.sections)).toEqual(["Billing", "Refunds"]);
+  expect(named(behind.ask)).toEqual(["Billing"]);
+  // Show changes: Refunds is new in English, nothing to compare with.
+  const changes = await behindChanges(project.id, de.slug, "de");
+  expect(changes.find(({ key }) => key.startsWith("Refunds"))).toMatchObject({ added: true, before: null });
+  expect(changes.find(({ key }) => key.startsWith("Billing"))).toMatchObject({ added: false });
+});
+
+test("Update those sections from the editor updates the sections it showed, not one behind since", async () => {
+  await teamWritten();
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const shown = (await readArticleVersion(project.id, de.slug, "de")).behind.sections;
+  // English changes Setup after the page was read: the team hasn't seen that edit behind.
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it today"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  model.reply(sectionsReply("de", ["Billing", "Pay by card or invoice"]));
+  actAs(owner);
+  expect(await updateArticleVersionSections(project.slug, de.slug, "de", shown)).toEqual({});
+  await languageTranslationsDone();
+  const updated = await call(getTranslation, as(), de);
+  expect(text(updated.content)).toContain("Unsere Installation");
+  expect(text(updated.content)).toContain("[de] Pay by card or invoice");
+});
+
+test("Show changes finds the English of a section the team took out of its draft, as it was taken out", async () => {
+  await translated();
+  await takeOutBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  const billing = (await behindChanges(project.id, de.slug, "de")).find(({ key }) => key.startsWith("Billing"))!;
+  expect(billing.added).toBe(false);
+  expect(text(billing.before)).toContain("Pay by card");
+  expect(text(billing.before)).not.toContain("invoice");
 });

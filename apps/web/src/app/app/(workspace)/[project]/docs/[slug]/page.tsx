@@ -191,7 +191,7 @@ export default async function ArticlePage(
   const opened = languages?.slice(1).find((language) => language.code === search.language) ?? null;
   if (opened) {
     // Its state from the read its text and token come from, not the pill's (read before it).
-    const { read, state, waiting } = await readArticleVersion(membership.project.id, article.slug, opened.code as "de");
+    const { read, state, waiting, behind } = await readArticleVersion(membership.project.id, article.slug, opened.code as "de");
     // Its draft, else its published text; neither yet: the default language's, to write over.
     const text = read.draft ?? (read.publishedAt ? read : null);
     const version = {
@@ -206,8 +206,6 @@ export default async function ArticlePage(
       own: text !== null,
     };
     const defaultName = languages![0]!.name;
-    // Its sections behind (published, and in its draft): the orange line's count, and Show changes' English then and now.
-    const behind = [...new Set([...read.behind.map(({ section }) => section), ...(read.draft?.behind ?? [])])];
     const changes = state === "behind" ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];
     const none = { type: "doc" as const, content: [] };
     const shown = (content: Doc) => ({ title: "", body: "", content, collection: null });
@@ -216,13 +214,17 @@ export default async function ArticlePage(
         <div className="flex flex-col gap-5">
           {changes.map((change) => (
             <section key={change.key} className="flex flex-col gap-2">
-              {/* Its heading is in its text; the introduction has none, so it's named. */}
-              {change.key.startsWith("\u001f") && <h3 className="group-label">{sectionName(change.key)}</h3>}
+              {/* Its heading is in its text, unless it's the introduction (none) or English took it out (no text). */}
+              {(change.key.startsWith("\u001f") || change.after === null) && <h3 className="group-label">{sectionName(change.key)}</h3>}
               {change.after === null ? (
                 <p className="text-sm text-muted-foreground">Taken out of {defaultName}.</p>
               ) : (
                 <>
-                  {change.before === null && <p className="text-sm text-muted-foreground">Its earlier {defaultName} isn&apos;t kept any more. As it is now:</p>}
+                  {change.added ? (
+                    <p className="text-sm text-muted-foreground">New in {defaultName}.</p>
+                  ) : (
+                    change.before === null && <p className="text-sm text-muted-foreground">Its earlier {defaultName} isn&apos;t kept any more. As it is now:</p>
+                  )}
                   <ArticleDiff before={shown(change.before ?? none)} after={shown(change.after)} same="Nothing changed in its text." />
                 </>
               )}
@@ -240,7 +242,7 @@ export default async function ArticlePage(
             filters={<ChangelogLanguagePill languages={languages!} current={version.code} />}
             actions={
               <div className="flex shrink-0 items-center gap-1.5">
-                <ArticleVersionSave behind={read.draft?.behind} defaultName={defaultName} />
+                <ArticleVersionSave behind={behind.ask} defaultName={defaultName} />
               </div>
             }
           />
@@ -257,7 +259,7 @@ export default async function ArticlePage(
               view={version}
               mediaUrls={await mediaUrls(version.content)}
               languages={languages!}
-              behind={{ count: behind.length, changes: changesShown, update: updateArticleVersionSections.bind(null, slug, article.slug, version.code) }}
+              behind={{ count: behind.sections.length, changes: changesShown, update: updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections) }}
             />
           </div>
         </section>
