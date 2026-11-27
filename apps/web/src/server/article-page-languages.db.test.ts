@@ -1,7 +1,8 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { translationSource } from "@tuti/jobs";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
@@ -10,7 +11,8 @@ import { generateMetadata as docsHomeMetadata } from "@/app/portal/[project]/(si
 import { GET as llmsFull } from "@/app/portal/[project]/(site)/llms-full.txt/route";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { DocsArticle } from "@/components/portal-docs";
+import { OnThisPage } from "@/components/on-this-page";
+import { DocsArticle, DocsLayout } from "@/components/portal-docs";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -228,4 +230,24 @@ test("the team's preview of a language not live yet: its Markdown's canonical is
   at("de");
   const md = await markdown(new Request("http://x"), params("abrechnung"));
   expect(md.headers.get("link")).toBe(`<${portal}/docs/billing>; rel="canonical"`);
+});
+
+test("\"On this page\" beside an article on wide screens: its list of headings in the article's text's language", () => {
+  const headings = [
+    { id: "einrichtung", text: "Einrichtung", level: 2 },
+    { id: "abrechnung", text: "Abrechnung", level: 2 },
+  ] as Parameters<typeof OnThisPage>[0]["headings"];
+  const layout = DocsLayout({ tree: null, current: null, headings, headingsLang: "de", children: null }) as ReactElement;
+  const found: ReactElement[] = [];
+  const walk = (node: ReactNode) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object" || !("props" in node)) return;
+    const element = node as ReactElement<{ children?: ReactNode }>;
+    if (element.type === OnThisPage) found.push(element);
+    walk(element.props.children);
+  };
+  walk(layout);
+  expect(found).toHaveLength(1);
+  expect(renderToStaticMarkup(found[0]!)).toContain('<ul lang="de"');
+  expect(renderToStaticMarkup(createElement(OnThisPage, { headings, lang: "en" }))).toContain('<ul lang="en"');
 });
