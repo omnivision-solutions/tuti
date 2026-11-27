@@ -164,3 +164,10 @@ test("an entry's languages in its editor: none for a draft or a sample entry, ea
   await prisma.changelogEntry.update({ where: { id: (await read()).id }, data: { sample: true } });
   expect(await entryLanguages(project.id, project.slug, await read())).toBeNull();
 });
+
+test("turning Keep up to date off doesn't refuse the save that follows: what the edit was made from didn't change", async () => {
+  const number = await published("automatic");
+  const read = await call(getChangelogTranslation, as(), { number, language: "de" });
+  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: false });
+  expect(await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: read.version })).toMatchObject({ title: "Dunkler Modus", keepUpToDate: false });
+});

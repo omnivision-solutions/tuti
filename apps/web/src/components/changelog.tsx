@@ -187,7 +187,8 @@ export function ChangelogSaveButton({ isNew = false, form = CHANGELOG_FORM, prim
   const saving = useContext(ChangelogSavingContext);
   const pending = saving?.pending ?? false;
   return (
-    <Button type="submit" form={form} variant={primary ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading}>
+    // Focusable while disabled: a keyboard user who pressed it keeps their place while it saves.
+    <Button type="submit" form={form} variant={primary ? "default" : "outline"} disabled={pending || saving?.publishing || saving?.uploading} focusableWhenDisabled>
       {pending ? "Saving…" : isNew ? "Save draft" : "Save"}
     </Button>
   );

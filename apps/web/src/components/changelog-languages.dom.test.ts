@@ -94,7 +94,9 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
   // The same switch: keyboard focus stays on it.
   expect(document.activeElement).toBe(keep());
   expect(title().value).toBe("Noch nicht gespeichert");
-  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v2");
+  // The page's new read (the entry or the product setting changed meanwhile, the text didn't): a save still goes with the
+  // token the text was loaded with, so the server refuses it rather than marking the edit up to date.
+  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v1");
   // Turned on elsewhere (a teammate), then off by a save of this text: the switch shows the server's value each time.
   await render({ keepUpToDate: true, version: "v3" });
   expect(keep().checked).toBe(true);

@@ -159,12 +159,15 @@ export function ChangelogVersionForm({
   // The top bar's Save says when it's saving, and waits (ChangelogSaveButton).
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
+  // The token its text was loaded with, kept as the page reads it again (Keep up to date flipped, say): a save made from this
+  // text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
+  const [loaded] = useState(view.version);
   const line = versionLine(view, defaultName);
   const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
     <form id={VERSION_FORM} {...keepingFields(action)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
-      <input type="hidden" name="version" value={view.version} />
+      <input type="hidden" name="version" value={loaded} />
       <div lang={view.code} className="flex min-w-0 flex-col gap-4">
         {line && (
           <p className={cn("rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")} lang="en">

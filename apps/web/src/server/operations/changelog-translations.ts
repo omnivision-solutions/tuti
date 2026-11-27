@@ -40,7 +40,9 @@ type Version = { automatic: boolean; title: string; body: string; content: unkno
  * never saw.
  */
 const versionToken = (version: Version | null, sourceHash: string) =>
-  contentHash(JSON.stringify([version ? [version.automatic, version.title, version.content, version.publishedAt, version.behind] : null, sourceHash]));
+  // Not Keep up to date: turning it off changes nothing an edit was made from, so a save after it isn't refused (an editor
+  // keeps the token its text was loaded with; turning it on changes the text, with a new translation).
+  contentHash(JSON.stringify([version ? [version.title, version.content, version.publishedAt, version.behind] : null, sourceHash]));
 
 function output(code: string, version: Version | null, sourceHash: string): z.output<typeof translationOutput> {
   return {
@@ -133,8 +135,16 @@ export const saveChangelogTranslation = defineOperation({
     const where = { entryId_language: { entryId: entry.id, language: input.language } };
     const saved = await prisma.$transaction(async (tx) => {
       // The entry locked, as the translate job locks it to write: neither loses the other's write.
-      const [locked] = await tx.$queryRaw<{ title: string; body: string; content: unknown }[]>`SELECT title, body, content FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
-      const sourceHash = translationSource({ ...locked!, content: locked!.content as Doc | null }).hash;
+      const [locked] = await tx.$queryRaw<{ title: string; body: string; content: unknown; publishedAt: Date | null }[]>`
+        SELECT title, body, content, "publishedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+      // Checked again under the lock: deleted or unpublished since it was read.
+      if (!locked) {
+        throw new OperationError(404, "not_found", `There's no changelog entry #${input.number}`);
+      }
+      if (!locked.publishedAt) {
+        throw new OperationError(409, "not_published", "Publish the entry first: its other languages are made from what's published");
+      }
+      const sourceHash = translationSource({ ...locked, content: locked.content as Doc | null }).hash;
       const version = await tx.changelogTranslation.findUnique({ where, select: versionSelect });
       if (writing) {
         if (versionToken(version, sourceHash) !== input.version) {
