@@ -147,3 +147,12 @@ test("a new collection in a language Automatic for new pages: kept up to date be
   expect((await call(getCollectionTranslations, as(), { slug: "setup" })).translations[0]).toMatchObject({ name: null, keepUpToDate: false });
 });
 
+test("the team's own name alone over an automatic translation made from an old description: that old description isn't kept as theirs", async () => {
+  await setUp();
+  // Its description changed with nothing translating it yet: German's is of the old one, so readers see English's.
+  await prisma.collection.updateMany({ where: { projectId: project.id, slug: "billing" }, data: { description: "Paying, invoices and refunds." } });
+  expect(labelIn(await billing(), "de")).toBeNull();
+  await call(updateCollectionTranslation, as(), { slug: "billing", language: "de", keepUpToDate: false, name: "Bezahlung" });
+  expect(labelIn(await billing(), "de")).toEqual({ name: "Bezahlung", description: "" });
+});
+

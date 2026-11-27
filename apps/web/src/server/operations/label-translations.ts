@@ -109,7 +109,11 @@ async function saveTranslation(kind: Kind, projectId: string, input: { slug: str
     }
     const was = (row.translations as LabelTranslations)[input.language];
     const source = labelSource(row.name, row.description);
-    const description = kind === COLLECTION ? { description: input.keepUpToDate ? (was?.description ?? "") : (input.description ?? was?.description ?? "") } : {};
+    // What's there now, as readers get it: the team's own, or one kept up to date made from its text as it is (labelIn). An
+    // old one (made from text since changed) is never kept as the team's: it would read as current, and never be made again.
+    const current = !!was && (!was.auto || was.source === source);
+    const description =
+      kind === COLLECTION ? { description: input.keepUpToDate ? (was?.description ?? "") : (input.description ?? (current ? (was.description ?? "") : "")) } : {};
     // Kept up to date: made again (its source cleared, so the job finds it), unless it's already current. The team's own: a
     // description left out stays as it was there.
     const entry: LabelTranslation = input.keepUpToDate
