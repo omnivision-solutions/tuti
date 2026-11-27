@@ -219,6 +219,21 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await expect(owner.getByRole("button", { name: "Auto: why identitytoolkit.googleapis.com was added" })).toBeHidden();
     await identity.click();
     await expect(identity).toBeHidden();
+    await save.click();
+    await expect(save).toBeDisabled();
+
+    // What's removed is per address: away and back, both are found again.
+    for (const address of [new URL("plain", base).href, base]) {
+      await expect(async () => {
+        await appAddress.fill(address);
+        await passwordField.fill(password);
+        await expect(save).toBeEnabled({ timeout: 1_000 });
+      }).toPass();
+      await save.click();
+      await expect(passwordField).toHaveValue("");
+    }
+    await expect(identity).toBeVisible();
+    await expect(token).toBeVisible();
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }

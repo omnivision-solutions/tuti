@@ -305,8 +305,10 @@ export async function scanSignInServices({ projectId, appUrl, claimedAt }: JobIn
     } else {
       // A page that couldn't be read is kept as found partly, with nothing: read again on the next look, but a run
       // (which reads first when there's no answer) doesn't wait on it again every time.
+      // One that failed replaces nothing found for this address before, partly either.
+      const kept = found ? [key] : [key, partlyScannedFor(appUrl)];
       await prisma.screenshotSettings.updateMany({
-        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }] },
+        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { notIn: kept } }] },
         data: { signInServices: found?.services ?? [], signInServicesFor: partlyScannedFor(appUrl), signInServicesAt: null },
       });
     }

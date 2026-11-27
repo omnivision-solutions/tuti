@@ -245,6 +245,15 @@ test("a tenant's host is never taken from the page itself (its text and inline d
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
+test("a read that fails keeps what an earlier partial read found for the same address", async () => {
+  const appUrl = `${base}/missing`;
+  await settle({ appUrl });
+  const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: firebase, signInServicesFor: partlyScannedFor(appUrl) } });
+  await scanSignInServices({ projectId: project.id, appUrl });
+  expect(await saved()).toMatchObject({ signInServices: firebase, signInServicesFor: partlyScannedFor(appUrl) });
+});
+
 test("settings without an app address suggest nothing", async () => {
   await settle({ appUrl: "" });
   expect(await suggestions()).toEqual([]);

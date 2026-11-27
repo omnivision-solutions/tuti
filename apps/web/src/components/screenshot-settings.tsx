@@ -203,7 +203,9 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
             <p id="screenshots-other-domains-description" className="-mt-1.5 text-sm text-muted-foreground">
               Your app&apos;s API, sign-in page or CDN.
             </p>
+            {/* Started again for another address: what was removed is per address (the server clears it too). */}
             <DomainField
+              key={settings.appUrl}
               settings={settings}
               signIn={signIn}
               found={known ? found : []}
