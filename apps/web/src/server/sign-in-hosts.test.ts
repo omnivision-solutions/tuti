@@ -9,8 +9,8 @@ describe("findSignInServices", () => {
     ["Supabase", 'createClient("https://abcdefghijklmnopqrst.supabase.co","anon")', ["abcdefghijklmnopqrst.supabase.co"]],
     ["Okta", 'new OktaAuth({issuer:"https://acme.okta.com/oauth2/default"}); "https://developer.okta.com/docs"', ["acme.okta.com"]],
     ["Amazon Cognito", 'Amplify.configure({Auth:{Cognito:{userPoolId:"us-east-1_AbC123xyz",loginWith:{oauth:{domain:"acme.auth.eu-west-1.amazoncognito.com"}}}}})', ["acme.auth.eu-west-1.amazoncognito.com", "cognito-idp.us-east-1.amazonaws.com"]],
-    // A publishable key is the Clerk host in base64 (built here, as a literal reads like a secret to the scan).
-    ["Clerk", `<script src="https://clerk.acme.com/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script> publishableKey:"pk_live_${btoa("clerk.acme.com$")}"`, ["clerk.acme.com"]],
+    // Only the publishable key names the host: the Clerk host in base64 (built here, as a literal reads like a secret to the scan).
+    ["Clerk", `ClerkProvider({publishableKey:"pk_live_${btoa("clerk.acme.com$")}"})`, ["clerk.acme.com"]],
     ["Clerk", 'ClerkProvider({publishableKey:"x"}); "https://acme-12.clerk.accounts.dev"', ["acme-12.clerk.accounts.dev"]],
     ["Stytch", 'fetch("https://api.stytch.com/sdk/v1/")', ["api.stytch.com"]],
     ["WorkOS", '"https://api.workos.com/user_management/authorize"', ["api.workos.com"]],
