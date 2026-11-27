@@ -165,7 +165,7 @@ export const updateCollectionTranslation = defineOperation({
 
 export const getTabTranslations = defineOperation({
   name: "tabs.getTranslations",
-  title: "Get a tab's translations",
+  title: "Get tab translations",
   summary: "A docs tab's name in each of the project's languages: the translation readers see, and whether it's kept up to date.",
   method: "GET",
   path: "/tabs/{slug}/translations",
@@ -178,7 +178,7 @@ export const getTabTranslations = defineOperation({
 
 export const updateTabTranslation = defineOperation({
   name: "tabs.updateTranslation",
-  title: "Update a tab's translation",
+  title: "Update tab translation",
   summary:
     "Set a docs tab's name in one of the project's languages: the team's own (never replaced), or kept up to date (`keepUpToDate`), translated again in the background from its name (costs credits where they're on).",
   method: "PATCH",
