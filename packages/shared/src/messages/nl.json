@@ -241,5 +241,8 @@
       "private": "Het portaal van {name} is privé en {email} is geen van de lezers, dus de changelog wordt daar niet naartoe gemaild.",
       "optedOut": "Je hebt alle e-mails van {name} uitgezet, dus de changelog wordt ook niet naar {email} gemaild."
     }
+  },
+  "docs": {
+    "notTranslated": "Deze pagina is nog niet in het Nederlands beschikbaar: ze wordt getoond in de oorspronkelijke taal."
   }
 }
