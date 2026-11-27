@@ -127,7 +127,7 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
       setSaved(glossaryKey(terms));
       setBase(result.hash!);
       setLatest({ hash: result.hash!, terms });
-      setRows((list) => list.map((row) => ({ ...row, meanwhile: undefined })));
+      setRows((list) => list.map((row) => ({ ...row, meanwhile: undefined, theirs: undefined })));
       toast.success("Saved the glossary");
     });
   const save = () => {
@@ -316,8 +316,15 @@ function TermRow({
               maxLength={100}
               placeholder="Model decides"
               aria-label={`${name} in ${language.native}`}
+              aria-describedby={row.theirs?.[language.code] !== undefined ? `${row.key}-${language.code}-theirs` : undefined}
               onChange={(event) => onChange({ translations: { ...row.translations, [language.code]: event.target.value } })}
             />
+            {/* A teammate changed this word too: theirs, to choose from (gone once saved). */}
+            {row.theirs?.[language.code] !== undefined && (
+              <p id={`${row.key}-${language.code}-theirs`} className="text-xs text-muted-foreground">
+                Theirs: {row.theirs[language.code] || "Model decides"}
+              </p>
+            )}
           </div>
         ))
       )}

@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import type { GlossaryTermInput } from "@/server/glossary";
 
-import { glossaryKey, mergeMeanwhile, type MergeRow } from "./glossary-merge";
+import { glossaryKey, mergeMeanwhile, type MergeRow, NEVER } from "./glossary-merge";
 
 const key = () => "new";
 const row = (term: string, translations: Record<string, string>, keep = false): MergeRow => ({ key: term, term, keep, translations });
@@ -10,7 +10,7 @@ const row = (term: string, translations: Record<string, string>, keep = false): 
 test("a term a teammate made Never translated while words were typed for it here: the typed words and the switch stay, marked", () => {
   const before = [{ term: "Board", keep: false, translations: { de: "Tafel" } }];
   const theirs = [{ term: "Board", keep: true, translations: {} }];
-  expect(mergeMeanwhile([row("Board", { de: "Brett" })], before, theirs, key)).toEqual([{ ...row("Board", { de: "Brett" }), meanwhile: "Changed meanwhile" }]);
+  expect(mergeMeanwhile([row("Board", { de: "Brett" })], before, theirs, key)).toEqual([{ ...row("Board", { de: "Brett" }), meanwhile: "Changed meanwhile", theirs: { de: NEVER } }]);
 });
 
 test("a term a teammate made Never translated, nothing typed for it here: theirs taken, marked", () => {
@@ -37,7 +37,7 @@ test("a teammate's word for another language taken beside the one typed here; th
 
 test("a term added both here and by a teammate: their words fill the languages left empty here, what was typed stays, marked", () => {
   const theirs: GlossaryTermInput[] = [{ term: "Zeta", keep: false, translations: { de: "Zett", fr: "Zêta" } }];
-  expect(mergeMeanwhile([row("zeta", { de: "Zeta" })], [], theirs, key)).toEqual([{ ...row("zeta", { de: "Zeta", fr: "Zêta" }), meanwhile: "Changed meanwhile" }]);
+  expect(mergeMeanwhile([row("zeta", { de: "Zeta" })], [], theirs, key)).toEqual([{ ...row("zeta", { de: "Zeta", fr: "Zêta" }), meanwhile: "Changed meanwhile", theirs: { de: "Zett" } }]);
   // The same on both sides: nothing to look at.
   expect(mergeMeanwhile([row("Zeta", { de: "Zett", fr: "Zêta" })], [], theirs, key)).toEqual([row("Zeta", { de: "Zett", fr: "Zêta" })]);
 });
@@ -74,5 +74,18 @@ test("the same terms in another order, their languages too, are the same list to
   ];
   expect(glossaryKey(page)).toBe(glossaryKey(server));
   expect(JSON.parse(glossaryKey(page))).toEqual(server);
+});
+
+test("a word changed both here and by a teammate: the one typed here stays, theirs carried beside it, marked", () => {
+  const before: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Tafel", fr: "Tableau" } }];
+  const theirs: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Brett" } }];
+  // German changed on both sides; French cleared there, kept here (not edited here: theirs taken, no conflict).
+  expect(mergeMeanwhile([row("Board", { de: "Planke", fr: "Tableau" })], before, theirs, key)).toEqual([
+    { ...row("Board", { de: "Planke" }), meanwhile: "Changed meanwhile", theirs: { de: "Brett" } },
+  ]);
+  // Both added it, with other German words.
+  expect(mergeMeanwhile([row("Zeta", { de: "Zett" })], [], [{ term: "Zeta", keep: false, translations: { de: "Zeh" } }], key)).toEqual([
+    { ...row("Zeta", { de: "Zett" }), meanwhile: "Changed meanwhile", theirs: { de: "Zeh" } },
+  ]);
 });
 
