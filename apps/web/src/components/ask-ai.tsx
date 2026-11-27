@@ -100,7 +100,8 @@ export function askAiPlugin(actions: { current: Actions | null }) {
         }
         const result = asked.result;
         // After the block the selection ends in: its own lines, whatever part of a line was selected.
-        const after = state.doc.resolve(asked.to).after(1);
+        const $end = state.doc.resolve(asked.to);
+        const after = $end.depth > 0 ? $end.after(1) : asked.to;
         return DecorationSet.create(state.doc, [
           Decoration.inline(asked.from, asked.to, { class: "text-muted-foreground line-through decoration-destructive/70", "data-ask-ai": "old" }),
           Decoration.widget(after, (view) => aiVersion(view.state, result, actions), { side: 1, key: `ask-ai-${asked.id}`, stopEvent: () => true, ignoreSelection: true }),
@@ -269,6 +270,13 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     // end of a line would otherwise take the line break along, and Accept would join the two lines.
     const { doc } = editor.state;
     let { from, to } = editor.state.selection;
+    // Select All's ends are the document's own, outside every line: onto the first and last text.
+    if (doc.resolve(from).depth === 0) {
+      from = Selection.findFrom(doc.resolve(from), 1, true)?.from ?? from;
+    }
+    if (doc.resolve(to).depth === 0) {
+      to = Selection.findFrom(doc.resolve(to), -1, true)?.from ?? to;
+    }
     const $to = doc.resolve(to);
     if (to > from && $to.parent.isTextblock && $to.parentOffset === 0) {
       to = Selection.findFrom(doc.resolve($to.before()), -1, true)?.from ?? to;

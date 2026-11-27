@@ -341,3 +341,16 @@ test("a selection running to the very start of the next line, or from the very e
   await view.click("Accept");
   expect(view.saved()).toEqual({ type: "doc", content: [paragraph("Quick."), paragraph("Those run in the background and email you when done.")] });
 });
+
+test("Select All edits the whole text: no extra context, and Accept replaces it", async () => {
+  const view = await editor();
+  await act(async () => view.editor.chain().focus().selectAll().run());
+  await vi.waitFor(() => expect(view.button("Bold")).toBeTruthy());
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("All of it, shorter.")] } });
+  await view.click("Shorter");
+  expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: doc, whole: undefined }));
+  await vi.waitFor(() => expect(view.shown("new")).toContain("All of it, shorter."));
+  await view.click("Accept");
+  expect(view.saved()).toEqual({ type: "doc", content: [paragraph("All of it, shorter.")] });
+});
