@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { startApiFake } from "@tuti/testkit";
+
 import type { Locator } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
@@ -631,6 +633,14 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await plainApi(`/articles/${intro.slug}/publish`, {});
   await visitor.goto("/de/docs/basics");
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+  // An article in no collection: its breadcrumb's way up is the docs' home too.
+  const uncollected = await plainApi("/articles", { title: "Loose", body: "In no collection." });
+  await plainApi(`/articles/${uncollected.slug}/publish`, {});
+  await visitor.goto(`/de/docs/${uncollected.slug}`);
+  await expect(visitor.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+  // In a collection: Dokumentation, then the collection.
+  await visitor.goto(`/de/docs/${intro.slug}`);
+  await expect(visitor.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link")).toHaveText(["Dokumentation", "Basics"]);
 });
 
 test("signing in, signing up and resetting a password in German, the sign-in link's page and single sign-on's error, on desktop and on phones", async ({ browser }, testInfo) => {
@@ -779,6 +789,103 @@ test("a reader's account in German: its sections, profile, email settings and li
   await checkpoint(reader, "account-in-german-phone", { fullPage: false });
 });
 
+test("an API reference in German: its overview, an operation's page and Try it, the spec's words the team's, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  // An API that lets browsers call it, for Try it's answer.
+  const fake = await startApiFake({ cors: true });
+  try {
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Tess Team");
+    await createProject(team, "Acme", slug);
+    const api = await apiFor(team, slug);
+    await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+    await api("/api-references", {
+      name: "Reference",
+      spec: `
+openapi: 3.1.0
+info: { title: Acme API, version: "2" }
+servers: [{ url: "${fake.origin}/v1" }]
+components: { securitySchemes: { key: { type: http, scheme: bearer } } }
+security: [{ key: [] }]
+paths:
+  /posts/{id}:
+    get:
+      tags: [Posts]
+      summary: Get a post
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer }, example: 1 }]
+      responses: { "200": { description: The post, content: { application/json: { schema: { type: object, properties: { post: { type: object, properties: { title: { type: string } } }, note: { type: [string, "null"] } } }, example: { post: { title: Dark mode } } } } } }
+  /files/large:
+    get:
+      tags: [Files]
+      summary: Get a file
+      parameters: [{ name: size, in: query, required: true, schema: { type: integer }, example: 4200 }]
+      responses: { "200": { description: The file } }
+`,
+    });
+
+    const reader = await newPerson(browser, portalUrl(slug));
+    await reader.setViewportSize({ width: 1440, height: 900 });
+    // The overview: the page's words in German, the spec's and the team's names in the team's language.
+    await reader.goto("/de/docs/reference");
+    const main = reader.getByRole("main");
+    await expect(main.locator("article")).toContainText("API-Referenz");
+    await expect(main.getByText("Version 2 · OpenAPI")).toBeVisible();
+    await expect(main.getByRole("heading", { level: 1, name: "Reference" })).toHaveAttribute("lang", "en");
+    await expect(main.getByRole("region", { name: "Wohin Anfragen gehen" })).toBeVisible();
+    await expect(main.getByRole("region", { name: "Wie Anfragen signiert werden" })).toContainText("Bearer-Token im Header Authorization");
+    await expect(main.getByRole("heading", { level: 2, name: "Endpunkte" })).toBeVisible();
+    await expect(main.getByRole("heading", { level: 3, name: "Posts" })).toHaveAttribute("lang", "en");
+    await expect(reader.getByRole("link", { name: "Übersicht" })).toBeVisible();
+    // Without JavaScript, the tree's toggle is in German too.
+    // The summary itself, inside <noscript> (the messages sent to the browser have the words too).
+    expect(await reader.content()).toMatch(/<noscript>(?:(?!<\/noscript>)[\s\S])*>Dokumentation durchstöbern<\/summary>/);
+
+    // An operation's page.
+    await reader.goto("/de/docs/reference/get-a-post");
+    await expect(main.getByRole("heading", { level: 1, name: "Get a post" })).toHaveAttribute("lang", "en");
+    await expect(main.getByText("Autorisierung Bearer-Token")).toBeVisible();
+    await expect(main.getByRole("region", { name: "Pfadparameter" })).toContainText("erforderlich");
+    const responses = main.getByRole("region", { name: "Antworten" });
+    await expect(responses.getByText("The post")).toHaveAttribute("lang", "en");
+    await expect(responses.getByText("1 Eigenschaft anzeigen")).toBeAttached();
+    await expect(responses.getByText("string · kann null sein")).toBeAttached();
+    await expect(reader.getByRole("region", { name: "Beispielanfrage" })).toBeVisible();
+    await expect(reader.getByRole("region", { name: "Beispielantwort" })).toBeVisible();
+    await checkpoint(reader, "api-reference-in-german", { fullPage: false });
+
+    // Try it: its fields, and an answer.
+    await main.getByRole("button", { name: "Ausprobieren" }).click();
+    const panel = reader.getByRole("dialog", { name: "Ausprobieren" });
+    await expect(panel.getByText("Nur in diesem Tab gespeichert.")).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Schließen" })).toBeVisible();
+    await expect(panel.getByRole("region", { name: "Parameter" })).toContainText("Pfad · erforderlich");
+    await panel.getByLabel("Bearer-Token").fill("sk_test_123");
+    await panel.getByRole("button", { name: "Senden", exact: true }).click();
+    const answer = panel.getByRole("region", { name: "Antwort" });
+    await expect(answer.getByText("201 Created")).toBeVisible();
+    await expect(answer.getByLabel("Antwort-Body")).toBeVisible();
+    // Copying says so in German, whether the browser lets it or not.
+    await panel.getByRole("button", { name: "Als cURL kopieren" }).click();
+    await expect(reader.locator("[data-sonner-toast]", { hasText: /^(Kopiert|Kopieren nicht möglich\.)/ })).toBeVisible();
+    await checkpoint(reader, "api-reference-try-it-in-german", { fullPage: false });
+
+    // A bigger answer: its size in German numbers ("4,2 KB", not "4.2 KB"), on screen.
+    await reader.goto("/de/docs/reference/get-a-file");
+    await main.getByRole("button", { name: "Ausprobieren" }).click();
+    await panel.getByRole("button", { name: "Senden", exact: true }).click();
+    await expect(panel.getByRole("region", { name: "Antwort" }).getByText("4,2 KB", { exact: true })).toBeVisible();
+
+    // On a phone.
+    await reader.setViewportSize({ width: 390, height: 844 });
+    await reader.goto("/de/docs/reference/get-a-post");
+    await expect(main.getByRole("heading", { level: 1, name: "Get a post" })).toBeVisible();
+    await checkpoint(reader, "api-reference-in-german-phone", { fullPage: false });
+  } finally {
+    await fake.close();
+  }
+});
+
 test("the docs in German: tabs' and collections' names translated on the home, a collection's page and an article's, marked as German", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -832,11 +939,11 @@ test("the docs in German: tabs' and collections' names translated on the home, a
   await expect(reader.getByRole("main").getByRole("link", { name: "Rechnungen", exact: true }).and(reader.locator("a:not([title])"))).toHaveAttribute("lang", "de");
   // An article in Invoicing: the breadcrumb's link to it, and the sidebar's tree.
   await reader.goto("/de/docs/paying-an-invoice");
-  await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Rechnungen" })).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link", { name: "Rechnungen" })).toHaveAttribute("lang", "de");
   await expect(reader.getByRole("navigation", { name: "Dokumentation" }).locator("[lang=de]", { hasText: "Rechnungen" })).toBeVisible();
   // That unlisted one: its collection not listed, its breadcrumb's link up is to its tab, Handbücher.
   await reader.goto(`/de/docs/${unlisted.slug}`);
-  await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Handbücher" })).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link", { name: "Handbücher" })).toHaveAttribute("lang", "de");
   // The tab not translated, locked for this reader: its page's heading in the team's English.
   await reader.goto("/de/docs/plans");
   await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=en]")).toHaveText("Plans");

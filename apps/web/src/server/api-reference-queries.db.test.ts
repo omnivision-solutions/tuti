@@ -322,7 +322,7 @@ describe("a body or response that isn't an object", () => {
     await addTags();
     const text = await pageText("set-the-tags", "tags");
     // The body: an array of strings, each one of two.
-    for (const shown of ["application/json · array of string · at most 5 items", `Every ${SECRET} tag`, '"Default: "', '[\\"bug\\"]', "Each item: ", "at most 20 characters", '"Each item one of"', '\\"idea\\"']) {
+    for (const shown of ["application/json · array of string · at most 5 items", `Every ${SECRET} tag`, '"Default:"', '[\\"bug\\"]', "Each item: ", "at most 20 characters", '"Each item one of"', '\\"idea\\"']) {
       expect(text).toContain(shown);
     }
     // A field that's such an array says the same of its items, and an object says what it is over its fields.
@@ -514,8 +514,8 @@ describe("a reference's page", () => {
       "https://api.example.com/v1",
       "A placeholder: the spec doesn",
       "How requests are signed",
-      '"Bearer token"',
-      '"children":"Authorization"',
+      '"Bearer token in the "',
+      '"children":["Authorization"]',
       "Endpoints",
       '"children":"Posts"',
       '"children":"Admin"',
@@ -564,7 +564,7 @@ paths:
 `,
     });
     const text = await slugText("regions");
-    for (const shown of ["https://{region}.acme.test/v1", "Production", '"children":"{region}"', '"children":"us"', '\\"eu\\"', "Where your data lives", "X-Key", "From your settings", '"regional"', "Places you run.", '"+ ",2," more"', '"/docs/regions/three"']) {
+    for (const shown of ["https://{region}.acme.test/v1", "Production", '"children":"{region}"', '"children":"us"', '\\"eu\\"', "Where your data lives", "X-Key", "From your settings", '"regional"', "Places you run.", '"+ 2 more"', '"/docs/regions/three"']) {
       expect(text).toContain(shown);
     }
     // A card's description is its first line; the rest is on the group's pages.
