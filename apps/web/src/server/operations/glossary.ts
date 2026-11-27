@@ -115,6 +115,8 @@ export const updateGlossary = defineOperation({
     let changes: GlossaryChanges | null = null;
     // The saved glossary's version as the save found it (a dry run's answer: what saving over it takes).
     let stored = "";
+    // What this save wrote, read back in its transaction: its answer, never a teammate's save after it.
+    let written: Glossary = [];
     for (let tries = 0; !changes; tries++) {
       const before = await projectGlossary(projectId);
       const plan = await planGlossaryChanges(projectId, before, after);
@@ -140,6 +142,7 @@ export const updateGlossary = defineOperation({
           if (!dryRun) {
             await tx.glossaryTerm.deleteMany({ where: { projectId } });
             await tx.glossaryTerm.createMany({ data: after.map((term) => ({ projectId, ...term })) });
+            written = await projectGlossary(projectId, tx);
           }
           return applied;
         },
@@ -149,6 +152,6 @@ export const updateGlossary = defineOperation({
     if (!dryRun) {
       await changes.queue();
     }
-    return { ...(dryRun ? { terms: after.sort((a, b) => a.term.localeCompare(b.term)), hash: stored } : withHash(await projectGlossary(projectId))), retranslating: changes.retranslated, behind: changes.behind };
+    return { ...(dryRun ? { terms: after.sort((a, b) => a.term.localeCompare(b.term)), hash: stored } : withHash(written)), retranslating: changes.retranslated, behind: changes.behind };
   },
 });
