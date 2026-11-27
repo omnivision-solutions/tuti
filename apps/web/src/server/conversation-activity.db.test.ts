@@ -70,7 +70,7 @@ test("a trigger's run is one row with every workflow it checked, a run that matc
 
 test("the spam filter's verdict is written where the conversation starts, and never without it", async () => {
   const { projectId, activity } = await setup();
-  await prisma.spamSender.create({ data: { projectId, sender: "spam.example", blocked: true, byAdmin: true } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_domain", matcher: "is", value: "spam.example" } });
   const start = (email: string) =>
     startConversation(projectId, {
       userId: null,

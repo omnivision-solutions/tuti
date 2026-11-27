@@ -67,6 +67,13 @@ function headersOf(lines: readonly { key: string; line: string }[]) {
   return headers;
 }
 
+/** The mailboxes parsed To and Cc name, lowercase: never an address written in a display name. */
+const mailboxesOf = (...fields: Mail["to"][]) =>
+  fields
+    .flatMap((field) => (Array.isArray(field) ? field : field ? [field] : []))
+    .flatMap((object) => object.value.flatMap((entry) => (entry.group ? entry.group : [entry])))
+    .flatMap((entry) => (entry.address ? [entry.address.toLowerCase()] : []));
+
 /** The addresses these headers name, lowercase. */
 const addressesIn = (lines: readonly { key: string; line: string }[], keys: string[]) =>
   lines
@@ -412,7 +419,18 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       origin: "EMAIL",
       channel: "EMAIL",
       // The team's decisions and trust go by the address only where its mail could be its own: a forged From proves nobody.
-      filter: (tx, first) => spamVerdict(tx, { projectId, address: (senderCounts(auth.dmarc) && sender) || null, userId, proven: dmarcPassed, email: { sender, dmarc: auth.dmarc }, ...first }),
+      filter: (tx, first) =>
+        spamVerdict(tx, {
+          projectId,
+          address: (senderCounts(auth.dmarc) && sender) || null,
+          userId,
+          proven: dmarcPassed,
+          email: { sender, dmarc: auth.dmarc },
+          // As written, an address in it too: only the rules read it.
+          name: mail.from?.value[0]?.name || null,
+          sentTo: mailboxesOf(mail.to, mail.cc),
+          ...first,
+        }),
       received: { ...received, fromAddress: null },
       alongside: async (tx, conversationId, messageId) => {
         if (!userId) {
