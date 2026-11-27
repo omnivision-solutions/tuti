@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { autopilotSettingsSelect, enqueue, grantCredits, SCREENSHOT_DECISIONS, SCREENSHOT_RULE, SCREENSHOT_WAITS, SCREENSHOTS_RETAKE, waitsBecause } from "@tuti/jobs";
+import { autopilotSettingsSelect, enqueue, grantCredits, lockProject, SCREENSHOT_DECISIONS, SCREENSHOT_RULE, SCREENSHOT_WAITS, SCREENSHOTS_RETAKE, waitsBecause } from "@tuti/jobs";
 import { roleDefaultModel } from "@tuti/shared";
 import { billingFile, creditsOn, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake, configFile } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -1663,8 +1663,17 @@ describe("the check before an edit is proposed (E5)", () => {
     model.decide(USERS);
     model.reply(EDIT_AT, undefined, '"merge-88"');
     model.reply(PROPOSALS, undefined, '"proposals"');
-    // The credits run out while the edit is written.
-    model.reply(EDIT, () => prisma.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } }), '"problem"');
+    // The credits run out while the edit is written: under the project's lock, as a charge takes them, so the proposals'
+    // charge running beside it can't write back the balance it read before.
+    model.reply(
+      EDIT,
+      () =>
+        prisma.$transaction(async (tx) => {
+          await lockProject(tx, project.id);
+          await tx.creditGrant.updateMany({ where: { projectId: project.id }, data: { remaining: 0 } });
+        }),
+      '"problem"',
+    );
     await merge(88);
     expect(reviews()).toEqual([]);
     expect(await edit(88)).toMatchObject({ status: "PENDING", waitReason: "It wasn't checked: credits ran out when it was written" });

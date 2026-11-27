@@ -63,7 +63,6 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.addPullRequests": () => ({ pullRequests: [{ repo: "acme/matrix", number: 5 }] }),
   "changelog.removePullRequest": () => ({ number: 2, url: "https://github.com/acme/matrix/pull/4" }),
   "changelog.draft": () => ({ number: 2 }),
-  "changelog.rewrite": () => ({ number: 2, mode: "shorten" }),
   "changelog.publish": () => ({ number: 1 }),
   "changelog.unpublish": () => ({ number: 1 }),
   "changelog.delete": () => ({ number: 1 }),
@@ -717,7 +716,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
 
   // A read and write key can run it.
   fixture = await createFixture(own);
-  if (operation.name === "changelog.draft" || operation.name === "changelog.rewrite") {
+  if (operation.name === "changelog.draft") {
     model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
   }
   if (operation.name === "docs.escalate") {

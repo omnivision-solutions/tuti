@@ -364,5 +364,21 @@
   },
   "docs": {
     "notTranslated": "Ta strona nie jest jeszcze dostępna po polsku: wyświetlamy ją w języku oryginału."
+  },
+  "emails": {
+    "signInTo": "Zaloguj się do {name}",
+    "signInPreview": "Twój link do logowania w {name}.",
+    "signInText": "Oto Twój link do zalogowania się w {name}.",
+    "ignoreIt": "Jeśli to nie Ty, zignoruj tę wiadomość.",
+    "linkExpires": "Link działa jeden raz i wygasa za {minutes, plural, one {# minutę} few {# minuty} many {# minut} other {# minuty}}.",
+    "resetTitle": "Zresetuj hasło",
+    "resetPreview": "Ustaw nowe hasło do {name}.",
+    "resetText": "Ktoś poprosił o zresetowanie hasła do Twojego konta w <b>{name}</b>.",
+    "resetButton": "Ustaw nowe hasło",
+    "resetIgnore": "Jeśli to nie Ty, zignoruj tę wiadomość: Twoje hasło się nie zmieni.",
+    "changedTitle": "Twoje hasło zostało zmienione",
+    "changedPreview": "Twoje hasło zostało właśnie zmienione.",
+    "changedText": "Hasło do Twojego konta zostało właśnie zmienione za pomocą linku do resetowania, a Ty zostałeś wylogowany ze wszystkich innych miejsc.",
+    "changedWarning": "Jeśli to nie Ty, użyj opcji „{forgot}” na stronie logowania, aby od razu ustawić nowe hasło."
   }
 }

@@ -5,7 +5,7 @@ import { creditsOn, type ModelFake, type OpenAIFake, startModelFake } from "@tut
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
-import { createChangelogEntry, draftChangelogEntry, rewriteChangelogEntry } from "@/server/operations/changelog";
+import { createChangelogEntry, draftChangelogEntry } from "@/server/operations/changelog";
 import { answerQuestion } from "@/server/operations/docs-ask";
 import { getDocsInsights } from "@/server/operations/docs-insights";
 import { createArticle, publishArticle, unpublishArticle } from "@/server/operations/docs";
@@ -103,11 +103,10 @@ test("a credit check that fails otherwise (the database) is a failed answer, wit
   expect(model.requests).toEqual([]);
 });
 
-test("Draft with AI, Edit with AI and Ask AI are refused (402) with the reason, without asking the AI", async () => {
+test("Draft with AI and Ask AI are refused (402) with the reason, without asking the AI", async () => {
   const entry = await call(createChangelogEntry, team(), { title: "Next release", body: "Dark mode is here." });
   const refused = { status: 402, code: "no_credits", message: "This project is out of credits. See Settings → Billing." };
   await expect(call(draftChangelogEntry, team(), { number: entry.number })).rejects.toMatchObject(refused);
-  await expect(call(rewriteChangelogEntry, team(), { number: entry.number, mode: "shorten" })).rejects.toMatchObject(refused);
   // Ask AI in the editors, on a changelog entry and on an article.
   actAs(owner);
   const text = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Dark mode is here." }] }] };

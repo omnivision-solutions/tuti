@@ -3,6 +3,8 @@ import type { DiffLine } from "@tuti/content";
 import { readableOn, SURFACES, textColorOn } from "@tuti/shared/colors";
 import { Fragment, type ReactNode } from "react";
 
+import { emailLanguage, emailTranslator } from "./language";
+
 // Brand colours: the light theme tokens in packages/ui/src/globals.css, as hex.
 export const colors = {
   green: "#12804a",
@@ -210,20 +212,26 @@ export function Diff({ lines, more }: { lines: DiffLine[]; more?: number }) {
  * supported, a plain bordered box. On emails to a project's customers it's required by Tuti's additional licence terms
  * (AGPL section 7(b)), as on the portal: see ADDITIONAL-TERMS.md at the root of the repository.
  */
-function PoweredBy({ mono }: { mono: boolean }) {
+function PoweredBy({ mono, language }: { mono: boolean; language?: string }) {
   const image = appImage(mono ? "email-powered-by.png" : "email-powered-by-tuti.png");
+  // Worded around the logo in the email's language, as the portal's footer is.
+  const t = emailTranslator(language, "footer");
   return (
     <table role="presentation" cellPadding={0} cellSpacing={0} align="center" style={{ margin: "18px auto 0", borderCollapse: "separate" }}>
       <tbody>
         <tr>
           <td style={{ backgroundColor: colors.card, border: "1px solid #e7e5e4", borderRadius: 999, padding: "6px 12px 6px 10px" }}>
             <Link href={POWERED_BY_URL} style={{ color: colors.muted, fontSize: 12, lineHeight: "16px", fontWeight: 500, textDecoration: "none", whiteSpace: "nowrap" }}>
-              Powered by&nbsp;{" "}
-              {image ? (
-                <Img src={image} width={43} height={16} alt="tuti" style={{ display: "inline-block", verticalAlign: "middle", border: 0 }} />
-              ) : (
-                <strong style={{ color: colors.text }}>tuti</strong>
-              )}
+              {t.rich("poweredBy", {
+                logo: () =>
+                  image ? (
+                    <Img key="logo" src={image} width={43} height={16} alt="tuti" style={{ display: "inline-block", verticalAlign: "middle", border: 0 }} />
+                  ) : (
+                    <strong key="logo" style={{ color: colors.text }}>
+                      tuti
+                    </strong>
+                  ),
+              })}
             </Link>
           </td>
         </tr>
@@ -247,12 +255,15 @@ export function Layout({
   label,
   project,
   footer,
+  language,
   children,
 }: {
   preview: string;
   label?: string;
   project?: EmailBrand;
   footer?: ReactNode;
+  /** A reader's email's language (emailLanguage): its `lang` and "Powered by"; none for English. */
+  language?: string;
   children: ReactNode;
 }) {
   const team = !project;
@@ -262,7 +273,7 @@ export function Layout({
   const name = project && (project.logo ? project.logoText : project.logoText || project.projectName);
   const initial = [...(project?.logoText || project?.projectName || "").trim()][0]?.toUpperCase() ?? "";
   return (
-    <Html lang="en">
+    <Html lang={emailLanguage(language)}>
       <Head />
       <Preview>{preview}</Preview>
       <Body style={{ backgroundColor: team ? colors.page : "#f5f5f4", fontFamily: team ? `Figtree, ${SANS}` : `Inter, ${SANS}`, margin: 0 }}>
@@ -341,7 +352,7 @@ export function Layout({
             {children}
           </Section>
           {footer && <Text style={{ fontSize: 13, lineHeight: "20px", color: colors.muted, textAlign: "center", margin: "20px 0 0" }}>{footer}</Text>}
-          {(team || project.poweredBy !== false) && <PoweredBy mono={!team} />}
+          {(team || project.poweredBy !== false) && <PoweredBy mono={!team} language={language} />}
         </Container>
       </Body>
     </Html>

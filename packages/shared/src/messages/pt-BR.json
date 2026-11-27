@@ -364,5 +364,21 @@
   },
   "docs": {
     "notTranslated": "Esta página ainda não está em português: ela é exibida no idioma original."
+  },
+  "emails": {
+    "signInTo": "Entrar em {name}",
+    "signInPreview": "Seu link para entrar em {name}.",
+    "signInText": "Aqui está seu link para entrar em {name}.",
+    "ignoreIt": "Se você não pediu isso, ignore este e-mail.",
+    "linkExpires": "O link funciona uma vez e expira em {minutes, plural, one {# minuto} other {# minutos}}.",
+    "resetTitle": "Redefina sua senha",
+    "resetPreview": "Crie uma nova senha para {name}.",
+    "resetText": "Alguém pediu para redefinir a senha da sua conta em <b>{name}</b>.",
+    "resetButton": "Criar uma nova senha",
+    "resetIgnore": "Se você não pediu isso, ignore este e-mail: sua senha continua a mesma.",
+    "changedTitle": "Sua senha foi alterada",
+    "changedPreview": "Sua senha acabou de ser alterada.",
+    "changedText": "A senha da sua conta acabou de ser alterada com um link de redefinição, e você saiu da conta em todos os outros lugares.",
+    "changedWarning": "Se não foi você, use “{forgot}” na página de entrada para criar uma nova agora mesmo."
   }
 }

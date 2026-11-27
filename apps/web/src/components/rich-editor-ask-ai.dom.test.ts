@@ -380,3 +380,74 @@ test("the version shows right after the list item it's for, and an editor that g
   await act(async () => roots.splice(0).forEach((root) => root.unmount()));
   expect(toast).toHaveBeenCalledWith("The AI's edit was dropped.");
 });
+
+test("opened on the whole text (a header's button): it says so, edits all of it, and offers Draft with AI where there's one", async () => {
+  let openWhole: (() => void) | null = null;
+  const draft = vi.fn();
+  const view = await editor({ askAi: { ...askAi, opener: (open: (() => void) | null) => (openWhole = open), draft } });
+  await vi.waitFor(() => expect(openWhole).toBeTruthy());
+  await act(async () => openWhole!());
+  const dialog = () => document.querySelector('[role="dialog"]')!;
+  expect(dialog().textContent).toContain("It edits the whole text.");
+  await view.click("Draft with AI…");
+  expect(draft).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+
+  await act(async () => openWhole!());
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("All shorter.")] } });
+  await view.click("Shorter");
+  expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: doc, whole: undefined }));
+  await view.click("Accept");
+  expect(view.saved()).toEqual({ type: "doc", content: [paragraph("All shorter.")] });
+});
+
+test("from the selection bar it says it edits the selected text, with no Draft with AI; out of credits there's no whole-text opener", async () => {
+  let openWhole: (() => void) | null = () => {};
+  const view = await editor({ askAi: { ...askAi, paused: true, opener: (open: (() => void) | null) => (openWhole = open), draft: vi.fn() } });
+  await vi.waitFor(() => expect(openWhole).toBeNull());
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+
+  const shown = await editor({ askAi: { ...askAi, draft: vi.fn() } });
+  await shown.select(SECOND, SECOND + 26);
+  await shown.click("Ask AI");
+  expect(document.querySelector('[role="dialog"]')!.textContent).toContain("It edits the selected text.");
+  expect(shown.button("Draft with AI…")).toBeUndefined();
+  void view;
+});
+
+test("what's sent is plain objects throughout, a heading's attrs too (a server action can't send ProseMirror's null-prototype ones)", async () => {
+  const titled = { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Faster exports" }] }, paragraph("They run quietly.")] };
+  const view = await editor({ initial: titled });
+  // The line under the heading: the whole text, heading and all, goes along as context.
+  const line = 1 + "Faster exports".length + 1 + 1;
+  await view.select(line, line + "They run quietly.".length);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ error: "x" });
+  await view.click("Shorter");
+  expect(rewriteText.mock.lastCall![1].whole).toEqual(expect.objectContaining({ content: expect.arrayContaining([expect.objectContaining({ type: "heading" })]) }));
+  const plainThroughout = (value: unknown): boolean =>
+    value === null || typeof value !== "object" || ((Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype) && Object.values(value).every(plainThroughout));
+  expect(plainThroughout(rewriteText.mock.lastCall![1])).toBe(true);
+});
+
+test("on a text with nothing written yet it says so; closed without asking, focus goes back to the button that opened it", async () => {
+  let openWhole: (() => void) | null = null;
+  await editor({ initial: { type: "doc", content: [{ type: "paragraph" }] }, askAi: { ...askAi, opener: (open: (() => void) | null) => (openWhole = open) } });
+  await vi.waitFor(() => expect(openWhole).toBeTruthy());
+  const header = document.createElement("button");
+  header.textContent = "Header Ask AI";
+  document.body.append(header);
+  header.focus();
+  await act(async () => openWhole!());
+  const cancel = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((each) => each.textContent === "Cancel")!;
+  await act(async () => cancel.click());
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await vi.waitFor(() => expect(document.activeElement).toBe(header));
+
+  await act(async () => openWhole!());
+  const shorter = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((each) => each.textContent === "Shorter")!;
+  await act(async () => shorter.click());
+  expect(toast).toHaveBeenCalledWith("There's no text to edit yet.");
+  expect(rewriteText).not.toHaveBeenCalled();
+});

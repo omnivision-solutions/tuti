@@ -364,5 +364,21 @@
   },
   "docs": {
     "notTranslated": "This page isn't in English yet: it's shown in the language it was written in."
+  },
+  "emails": {
+    "signInTo": "Sign in to {name}",
+    "signInPreview": "Your sign-in link for {name}.",
+    "signInText": "Here's your link to sign in to {name}.",
+    "ignoreIt": "If you didn't ask for this, ignore it.",
+    "linkExpires": "The link works once and expires in {minutes, plural, one {# minute} other {# minutes}}.",
+    "resetTitle": "Reset your password",
+    "resetPreview": "Set a new password for {name}.",
+    "resetText": "Someone asked to reset the password for your account on <b>{name}</b>.",
+    "resetButton": "Set a new password",
+    "resetIgnore": "If you didn't ask for this, ignore it: your password stays the same.",
+    "changedTitle": "Your password was changed",
+    "changedPreview": "Your password was just changed.",
+    "changedText": "The password for your account was just changed with a reset link, and you were signed out everywhere else.",
+    "changedWarning": "If this wasn't you, use \"{forgot}\" on the sign-in page to set a new one right away."
   }
 }

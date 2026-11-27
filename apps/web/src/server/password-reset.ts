@@ -10,6 +10,8 @@ import { z } from "zod";
 
 import { auth, signedWayBack } from "@/lib/auth";
 import { requestTarget } from "@/server/custom-domains";
+import { portalLanguage } from "@/server/portal-base";
+import { portalLanguages } from "@/server/portal-language";
 
 import { countEmailedLink } from "./email-link-limits";
 import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "./sign-in-link-lookup";
@@ -59,7 +61,10 @@ export async function emailPasswordReset(form: FormData): Promise<{ error?: stri
 
   // An address with no account gets nothing, so it's counted as sending nothing (the answer's the same).
   const account = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-  const limited = await countEmailedLink(project?.id ?? null, email, requestHeaders, account ? "address" : "nobody");
+  // On a portal, its email is in the page's language: where the request doesn't say (a sign-up with an address that has an
+  // account, through the auth API), the portal's default. On the app, English.
+  const language = slug && project ? ((await portalLanguage()).language ?? (await portalLanguages(project.id)).default) : null;
+  const limited = await countEmailedLink(project?.id ?? null, email, requestHeaders, account ? "address" : "nobody", language);
   if ("error" in limited) {
     return limited;
   }
@@ -107,8 +112,13 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
   }
   try {
     // From the portal it was asked on, as the reset link was; the app's from Tuti.
-    const [brand, sender] = reset.projectId ? await Promise.all([emailBrand(reset.projectId), projectSender(reset.projectId)]) : [null, {}];
-    await sendEmail({ to: reset.email, ...passwordChangedEmail(brand), ...sender });
+    const [brand, sender, languages] = reset.projectId
+      ? await Promise.all([emailBrand(reset.projectId), projectSender(reset.projectId), portalLanguages(reset.projectId)])
+      : [null, {}, null];
+    // In the reset's language while the portal still offers it (it may have gone offline since), else the portal's default;
+    // English as its email was, where it had none (asked on the app).
+    const language = reset.language && languages && ([languages.default, ...languages.live].includes(reset.language as never) ? reset.language : languages.default);
+    await sendEmail({ to: reset.email, ...passwordChangedEmail(brand, language), ...sender });
   } catch (error) {
     // The password is already changed; a missing notice mustn't make it look like it wasn't.
     log.error("Sending the password changed email failed", { error });

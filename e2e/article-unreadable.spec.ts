@@ -79,7 +79,7 @@ test("a changelog entry with something this editor doesn't know offers no AI rew
   await team.keyboard.type("It's here.");
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeVisible();
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
 
   await setEntryContent(slug, 1, {
     type: "doc",
@@ -89,8 +89,8 @@ test("a changelog entry with something this editor doesn't know offers no AI rew
   const text = team.getByRole("textbox", { name: "What changed" });
   await expect(text).toHaveText("It's here.");
   await expect(text).toHaveAttribute("aria-readonly", "true");
-  // Edit with AI (Shorten, Rewrite this section, Draft with AI) would rewrite it without what it can't show.
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+  // Ask AI (and Draft with AI in it) would rewrite it without what it can't show.
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toHaveCount(0);
 
   // Readable again (a newer release saved it): once the form remounts with it (here after publishing, no reload), the text
   // is editable and AI is back.
@@ -100,7 +100,7 @@ test("a changelog entry with something this editor doesn't know offers no AI rew
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await expect(text).toHaveText("It's here, everywhere.");
   await expect(text).toHaveAttribute("contenteditable", "true");
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeVisible();
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
 
   // An entry still only its pull requests' titles leads with Draft with AI, which this text locks too.
   await team.goto(`/app/${slug}/changelog`);
