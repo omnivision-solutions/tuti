@@ -4,6 +4,7 @@ import { createContext, type ReactNode, use, useEffect, useMemo, useState } from
 
 import { type Fresh, laterSeen, unreadNumbers } from "@/lib/whats-new";
 import { WIDGET_SEEN_BEFORE_MESSAGE, WIDGET_SEEN_MESSAGE } from "@/lib/widget-messages";
+import { useTranslations } from "next-intl";
 
 const Unread = createContext<number[]>([]);
 
@@ -38,12 +39,13 @@ export function WidgetUnread({ fresh, seen, at, children }: { fresh: Fresh[]; se
 
 /** An entry's unread dot, with "Unread" for screen readers. */
 export function UnreadDot({ number }: { number: number }) {
+  const t = useTranslations("widget");
   if (!use(Unread).includes(number)) {
     return null;
   }
   return (
     <span className="size-2.5 shrink-0 rounded-full bg-unread">
-      <span className="sr-only">Unread</span>
+      <span className="sr-only">{t("unread")}</span>
     </span>
   );
 }
@@ -51,13 +53,14 @@ export function UnreadDot({ number }: { number: number }) {
 /** Home's What's new card: "2 new". */
 export function UnreadCount() {
   const count = use(Unread).length;
+  const t = useTranslations("widget");
   if (count === 0) {
     return null;
   }
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
       <span aria-hidden className="size-2 rounded-full bg-unread" />
-      {count} new
+      {t("newCount", { count })}
     </span>
   );
 }

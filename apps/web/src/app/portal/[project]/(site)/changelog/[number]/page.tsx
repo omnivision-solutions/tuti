@@ -1,7 +1,8 @@
 import { prisma } from "@tuti/db";
 import { MESSAGES } from "@tuti/shared/messages";
 import { mediaStorage } from "@tuti/shared/storage";
-import { MessageCircleIcon } from "lucide-react";
+import { LanguagesIcon, MessageCircleIcon } from "lucide-react";
+import { createTranslator } from "next-intl";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -18,33 +19,51 @@ import { commentOnChangelogEntry } from "@/server/changelog";
 import { displayDoc } from "@/server/content";
 import { canActIn } from "@/server/membership";
 import { ChangelogMenu, changelogByEmail } from "@/components/changelog-pages";
-import { publishedEntries } from "@/server/changelog-queries";
+import { currentEntryVersions, entryAddresses, entryLanguageAsked, publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { slugReader } from "@/server/portal-access";
 import { visibleEntry } from "@/lib/reader-groups";
-import { portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalLanguage, portalLinkBase, portalLinks, teamLanguage } from "@/server/portal-base";
 import { portalTranslator } from "@/server/portal-language";
 import { mediaUrls, shareImage } from "@/server/media-urls";
 import { portalArticleJsonLd, portalPageMetadata } from "@/server/portal-metadata";
 import { summary } from "@/lib/article-links";
 import { COMMENTS_HEADING } from "@/lib/comment-threads";
 
-/** A published entry's search listing, once per request (its metadata and its page's JSON-LD), if it's for whoever's reading. */
-const listedEntry = cache(async (project: string, number: string) =>
-  /^\d{1,9}$/.test(number)
-    ? prisma.changelogEntry.findFirst({
-        where: { project: { slug: project }, number: Number(number), publishedAt: { not: null }, ...visibleEntry(await slugReader(project)) },
-        select: {
-          title: true,
-          body: true,
-          publishedAt: true,
-          sample: true,
-          cover: { select: { id: true, status: true, width: true, height: true } },
-          groups: { select: { groupId: true }, take: 1 },
-        },
-      })
-    : null,
-);
+/**
+ * A published entry's search listing, once per request (its metadata and its page's JSON-LD), if it's for whoever's reading:
+ * its title and text in the page's language where it's translated there (docs/plan.md L17), and where it reads in each
+ * language it's in (`addresses`: its canonical and `hreflang`).
+ */
+const listedEntry = cache(async (project: string, number: string) => {
+  if (!/^\d{1,9}$/.test(number)) {
+    return null;
+  }
+  const entry = await prisma.changelogEntry.findFirst({
+    where: { project: { slug: project }, number: Number(number), publishedAt: { not: null }, ...visibleEntry(await slugReader(project)) },
+    select: {
+      id: true,
+      number: true,
+      title: true,
+      body: true,
+      content: true,
+      publishedAt: true,
+      sample: true,
+      cover: { select: { id: true, status: true, width: true, height: true } },
+      groups: { select: { groupId: true }, take: 1 },
+      project: { select: { language: true } },
+    },
+  });
+  if (!entry) {
+    return null;
+  }
+  const asked = await entryLanguageAsked();
+  const [version, addresses] = await Promise.all([
+    asked ? currentEntryVersions([entry], [asked]).then((versions) => versions.get(entry.id)?.[0]) : undefined,
+    entryAddresses(project, { ...entry, projectLanguage: entry.project.language }),
+  ]);
+  return { ...entry, ...(version && { title: version.title, body: version.body }), translated: !!version, addresses };
+});
 
 /**
  * An entry's search listing and link card; sample content (server/sample-content.ts) and an entry for some groups only are
@@ -60,6 +79,7 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/chang
     title: entry.title,
     description: summary(entry.body),
     path: `/changelog/${Number(number)}`,
+    addresses: entry.addresses,
     article: { publishedTime: entry.publishedAt },
     noindex: entry.sample || entry.groups.length > 0,
     // Its Markdown copy is for everyone only (it's kept in shared caches).
@@ -77,7 +97,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   }
   const [session, reader] = await Promise.all([getSession(), slugReader(slug)]);
   const [[entry], project] = await Promise.all([
-    publishedEntries(slug, reader, { number, take: 1, userId: session?.user.id }),
+    // In the page's language where it's translated there, else the default language's (docs/plan.md L17).
+    publishedEntries(slug, reader, { number, take: 1, userId: session?.user.id, language: await entryLanguageAsked() }),
     prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
   ]);
   if (!entry || !project) {
@@ -97,7 +118,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   // Images only once signed in: uploads are someone's. Those already in a comment show in its editor.
   const uploads = commenter && mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
   // For search engines; sample content and an entry for some groups only aren't for them, as in generateMetadata.
-  const listed = await listedEntry(slug, param);
+  const [listed, { prefix }] = await Promise.all([listedEntry(slug, param), portalLanguage()]);
   const jsonLd =
     listed &&
     !listed.sample &&
@@ -106,7 +127,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       type: "BlogPosting",
       title: listed.title,
       description: summary(listed.body),
-      path: `/changelog/${number}`,
+      // Its address in the page's language where it's translated there (its canonical), else the default language's.
+      path: `${listed.translated ? prefix : ""}/changelog/${number}`,
       // Its publishing date alone: emails going out change updatedAt too.
       published: listed.publishedAt,
     }));
@@ -115,10 +137,19 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   const lang = await teamLanguage();
   // The portal's own words in the page's language.
   const [{ t, language }, { t: f }] = await Promise.all([portalTranslator(project.id, "changelog"), portalTranslator(project.id, "feedback")]);
+  // Not in the page's language yet: shown in the default language's, with a line in the page's saying so (docs/plan.md, "A
+  // page not yet translated", as an article's).
+  const notTranslated = entry.untranslated ? createTranslator({ locale: language, messages: MESSAGES[language], namespace: "docs" })("notTranslated") : null;
   return (
     <div className="flex flex-col gap-6">
       {jsonLd}
       <ChangelogMenu slug={slug} current={entry.number} />
+      {notTranslated && (
+        <p lang={language} className="flex items-start gap-2 rounded-lg bg-secondary px-3 py-2 text-sm text-muted-foreground">
+          <LanguagesIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {notTranslated}
+        </p>
+      )}
       <ChangelogEntryView
         entry={entry}
         back={<BackLink href={(await portalLinks())("/changelog")}>{MESSAGES[language].header.changelog}</BackLink>}

@@ -4,13 +4,15 @@ import { ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, use, useEffect, useMemo, useState } from "react";
 
 import { usePortalHref } from "@/components/portal-base";
-import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
+import { StatusDot } from "@/components/post-status-badge";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { useWidgetLook } from "@/components/widget-look";
 import { timeAgo } from "@/lib/format";
 import { WIDGET_LABEL, WIDGET_ROW } from "@/lib/portal-look";
 import { widgetIdeaNews } from "@/server/widget";
 import type { IdeaNews } from "@/server/widget-home";
+import { useLocale, useTranslations } from "next-intl";
+import { useTeamLanguage } from "@/components/portal-look";
 
 const Visitor = createContext<{ name: string | null; news: IdeaNews[] }>({ name: null, news: [] });
 
@@ -75,20 +77,33 @@ export function WidgetHomeVisitor({
 export function WidgetGreeting() {
   const { name } = use(Visitor);
   const { greeting } = useWidgetLook();
-  return <p className="text-lg break-words opacity-90">{greeting || `Hi ${name ? name.split(/\s+/)[0] : "there"} 👋`}</p>;
+  const t = useTranslations("widget");
+  const team = useTeamLanguage();
+  // The team's own greeting is their words (its `lang`); the default, the widget's.
+  return greeting ? (
+    <p lang={team} className="text-lg break-words opacity-90">
+      {greeting}
+    </p>
+  ) : (
+    <p className="text-lg break-words opacity-90">{name ? t("hiName", { name: name.split(/\s+/)[0]! }) : t("hiThere")}</p>
+  );
 }
 
 /** The news of their ideas ("Dark mode is now Planned"), each opening its post on the portal in a new tab. */
 export function WidgetIdeaNews() {
   const { news } = use(Visitor);
   const at = usePortalHref();
+  const t = useTranslations("widget");
+  const status = useTranslations("feedback");
+  const language = useLocale();
+  const team = useTeamLanguage();
   if (news.length === 0) {
     return null;
   }
   return (
     <section aria-labelledby="idea-news" className="flex flex-col gap-1">
       <h2 id="idea-news" className={WIDGET_LABEL}>
-        Your ideas
+        {t("yourIdeas")}
       </h2>
       <ul className="flex flex-col divide-y">
         {news.map((item) => (
@@ -97,9 +112,10 @@ export function WidgetIdeaNews() {
               <StatusDot status={item.status} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="font-medium break-words">
-                  {item.title} is now {STATUS_LABELS[item.status]}
+                  {/* The idea's title: its people's words, in the default language (L3). */}
+                  {t.rich("ideaNow", { title: (<span lang={team}>{item.title}</span>) as never, status: status(`status.${item.status}`) })}
                 </span>
-                <span className="text-sm text-muted-foreground">{timeAgo(new Date(item.at))}</span>
+                <span className="text-sm text-muted-foreground">{timeAgo(new Date(item.at), new Date(), language)}</span>
               </span>
               <ExternalLinkIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </a>

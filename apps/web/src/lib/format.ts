@@ -184,3 +184,16 @@ export function rowBy(
 /** Who "Email voters" reaches, after its label. */
 export const votersNote = (voters: number | "paused") =>
   voters === "paused" ? "your project's email is paused" : voters === 0 ? "nobody to email" : voters === 1 ? "1 person" : `${voters} people`;
+
+/** replyTime's steps as message values (`widget.usuallyReplies`), for the widget's words in its reader's language. */
+export function replyTimeUnit(ms: number): { unit: "minutes" | "underHour" | "hours" | "days"; count: number } {
+  const minutes = ms / 60_000;
+  if (minutes <= 5) {
+    return { unit: "minutes", count: 0 };
+  }
+  if (minutes < 60) {
+    return { unit: "underHour", count: 0 };
+  }
+  const hours = Math.ceil(minutes / 60);
+  return hours < 24 ? { unit: "hours", count: hours } : { unit: "days", count: Math.ceil(hours / 24) };
+}

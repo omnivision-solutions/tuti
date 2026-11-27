@@ -1,6 +1,8 @@
+import { MESSAGES } from "@tuti/shared/messages";
+import { createTranslator } from "next-intl";
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, formatDate, formatDay, formatMonth, formatShortDate, shortDate, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
+import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, formatDate, formatDay, formatMonth, formatShortDate, shortDate, initial, longDuration, replyTime, replyTimeUnit, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
 
 test.each([
   ["2026-11-10T00:01:00Z", "2026-11-10T23:59:00Z", "Today · 10 November"],
@@ -115,6 +117,25 @@ test.each([
   [50 * 60, "3 days"],
 ])("a usual reply in %i minutes → %j", (minutes, text) => {
   expect(replyTime(minutes * 60_000)).toBe(text);
+});
+
+test("the widget's reply time, as its message's values, in the same steps; the message words each in English and German", () => {
+  const usually = (language: "en" | "de", minutes: number) =>
+    createTranslator({ locale: language, messages: MESSAGES[language], namespace: "widget" })("usuallyReplies", replyTimeUnit(minutes * 60_000));
+  const steps: [number, string, string][] = [
+    [3, "Usually replies in a few minutes", "Antwortet meist in wenigen Minuten"],
+    [20, "Usually replies in under an hour", "Antwortet meist in unter einer Stunde"],
+    [60, "Usually replies in an hour", "Antwortet meist in einer Stunde"],
+    [61, "Usually replies in 2 hours", "Antwortet meist in 2 Stunden"],
+    [24 * 60, "Usually replies in a day", "Antwortet meist in einem Tag"],
+    [50 * 60, "Usually replies in 3 days", "Antwortet meist in 3 Tagen"],
+  ];
+  for (const [minutes, english, german] of steps) {
+    // The English matches replyTime's (the inbox's) for the same time.
+    expect(usually("en", minutes), `${minutes}`).toBe(`Usually replies in ${replyTime(minutes * 60_000)}`);
+    expect(usually("en", minutes)).toBe(english);
+    expect(usually("de", minutes)).toBe(german);
+  }
 });
 
 test("a post's ETA is on the portal from this month on, until it's completed or closed; setting one says so only then", () => {

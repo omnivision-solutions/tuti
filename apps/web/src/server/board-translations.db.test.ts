@@ -88,6 +88,11 @@ test("a board made another way (an import) is found and translated by the retry 
   await handlers.retryArticleTranslations({}, log);
   await languageTranslationsDone();
   expect(await inGerman("ideas")).toEqual({ name: "Ideen", description: "" });
+  // Then up to date: having no description isn't a change, so the retry job doesn't send it again.
+  const sent = model.requests.length;
+  await handlers.retryArticleTranslations({}, log);
+  await languageTranslationsDone();
+  expect(model.requests.length).toBe(sent);
   await call(updateLanguages, as(), { languages: [] });
   expect((await board("ideas")).translations).toEqual({});
 });
