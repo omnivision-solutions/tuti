@@ -45,13 +45,20 @@ test("a rating's thanks takes focus once, as it saves; later renders leave focus
   expect(document.activeElement).toBe(document.body);
 });
 
-test("a reader who moves on while the rating saves keeps their focus", async () => {
+test("while a rating saves, its buttons keep focus; a reader who moves on meanwhile keeps theirs", async () => {
   const { elsewhere, root, button, thanks } = setUp();
   let saved = () => {};
   rateDocsAnswer.mockImplementationOnce(() => new Promise((resolve) => (saved = () => resolve({}))));
   await act(async () => root.render(h(DocsAnswer, props)));
   await act(async () => button("Ask AI").click());
+  button("Helpful").focus();
   await act(async () => button("Helpful").click());
+  // While it saves, both buttons stay in the keyboard's way: focus stays on the one pressed, marked disabled.
+  expect(document.activeElement).toBe(button("Helpful"));
+  for (const name of ["Helpful", "Not helpful"]) {
+    expect(button(name).getAttribute("aria-disabled"), name).toBe("true");
+    expect(button(name).hasAttribute("disabled"), name).toBe(false);
+  }
   // Still saving: the reader goes to the search box.
   elsewhere.focus();
   await act(async () => saved());

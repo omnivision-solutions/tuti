@@ -1754,7 +1754,20 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await conversation.getByRole("button", { name: "Helpful", exact: true }).click();
   await expect(conversation.getByRole("button", { name: "Helpful", exact: true })).toBeEnabled();
   await visitor.unroute("**/*");
-  await conversation.getByRole("button", { name: "Helpful", exact: true }).click();
+  // While it saves (held here), the button keeps focus, marked disabled rather than taken out of the keyboard's way.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await visitor.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) await held;
+    await route.fallback();
+  });
+  const helpful = conversation.getByRole("button", { name: "Helpful", exact: true });
+  await helpful.click();
+  await expect(helpful).toBeFocused();
+  await expect(helpful).toHaveAttribute("aria-disabled", "true");
+  await expect(helpful).not.toHaveAttribute("disabled");
+  release();
+  await visitor.unroute("**/*");
   // Focus moves to it from the button that's gone.
   await expect(conversation.getByText("Thanks for letting us know.")).toBeFocused();
 
@@ -1799,6 +1812,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
   // Shown again, the earlier answers' thanks take no focus: only a rating just saved moves it.
   const thanksUnfocused = async () => {
+    // Both ratings' thanks are there (all() doesn't wait for them).
+    await expect(conversation.getByText("Thanks for letting us know.")).toHaveCount(2);
     for (const thanks of await conversation.getByText("Thanks for letting us know.").all()) await expect(thanks).not.toBeFocused();
   };
   await thanksUnfocused();
