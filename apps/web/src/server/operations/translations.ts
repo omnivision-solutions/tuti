@@ -370,7 +370,10 @@ export const publishTranslation = defineOperation({
           retranslated: { increment: 1 },
           // The sections the team took out of the draft, out of the published text now too.
           removedSections: draft.removed ?? [],
-          removedHashes: (draft.removedHashes ?? {}) as Prisma.InputJsonValue,
+          // Kept out (in `keep`) though English changed since: kept out against English as it is now, so the job leaves it out.
+          removedHashes: Object.fromEntries(
+            Object.entries(draft.removedHashes ?? {}).map(([key, hash]) => [key, keep.has(key) ? (hashes.get(key) ?? hash) : hash]),
+          ) as Prisma.InputJsonValue,
           behind: behindOf(sourceLanguage, parts, [{ list: out, teamWrites: !version.automatic, removed: draft.removed }], otherReasons(version.behind, sourceLanguage)),
           retryAt: marker,
           tries: Math.max(version.tries, 1),
@@ -439,7 +442,16 @@ export const updateTranslationSections = defineOperation({
           // Asked for, a section the team took out comes back.
           removedSections: (version.removedSections as string[]).filter((key) => !asked.includes(key)),
           removedHashes: Object.fromEntries(Object.entries(version.removedHashes as Record<string, string>).filter(([key]) => !asked.includes(key))) as Prisma.InputJsonValue,
-          ...(draft && drafted && { draft: { ...draft, sections: metaOf(unowned(drafted)), removed: (draft.removed ?? []).filter((key) => !asked.includes(key)) } as Prisma.InputJsonValue }),
+          ...(draft &&
+            drafted && {
+              draft: {
+                ...draft,
+                sections: metaOf(unowned(drafted)),
+                removed: (draft.removed ?? []).filter((key) => !asked.includes(key)),
+                // Its time taken out goes with it: taken out again later, it's against English as it is then.
+                removedHashes: Object.fromEntries(Object.entries(draft.removedHashes ?? {}).filter(([key]) => !asked.includes(key))),
+              } as Prisma.InputJsonValue,
+            }),
           updateSections: [...new Set([...(version.updateSections as string[]), ...asked])],
         },
         select: versionSelect,

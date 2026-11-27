@@ -829,3 +829,47 @@ test("a run for sections another run finished meanwhile writes no failure on a v
   await languageTranslationsDone();
   expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ error: null, tries: 0, retryAt: null, updateSections: [] });
 });
+
+/** The team takes Billing out of the German draft (saved, not published). */
+async function takeOutBilling() {
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.draft?.content ?? read.content) as Doc;
+  content.content = content.content!.slice(0, -2);
+  return call(saveTranslation, as(), { ...de, content, version: read.version });
+}
+
+test("a section taken out of the draft, kept out on publishing though its English changed, stays out after the job runs", async () => {
+  await translated();
+  await takeOutBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  const read = await call(getTranslation, as(), de);
+  const billing = read.draft!.behind.find((key) => key.startsWith("Billing"))!;
+  // Kept out: whatever the job translates after the publish, Billing isn't put back.
+  model.otherwise(reply(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de3"), "Install it");
+  await call(publishTranslation, as(), { ...de, keep: [billing] });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+  // English then changes only Setup: Billing, kept out against its English as it is, stays out.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de4");
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+});
+
+test("a section updated back into the draft, then taken out again, is out against English as it is then: the job leaves it out", async () => {
+  await translated();
+  await takeOutBilling();
+  const V2 = doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]);
+  await republish(V2, "de2");
+  const billing = (await call(getTranslation, as(), de)).draft!.behind.find((key) => key.startsWith("Billing"))!;
+  // Update those sections brings Billing back into the draft; the team then takes it out again, and publishes.
+  model.otherwise(reply(V2, "de3"), "Install it");
+  await call(updateTranslationSections, as(), { ...de, sections: [billing] });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).draft!.content)).toContain("Pay by card or invoice");
+  await takeOutBilling();
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+  // English then changes only Setup: Billing, taken out against its English as it is now, stays out.
+  await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de4");
+  expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
+});
