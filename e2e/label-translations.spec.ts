@@ -94,3 +94,46 @@ test("a collection's settings show its name in each language: German kept up to 
   expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await checkpoint(owner, "collection-translations-phone", { fullPage: false });
 });
+
+test("a tab's settings show its name in each language: German kept up to date, French added by the team (a name only); on a phone too", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  // In its name, so this journey's requests to the model are told apart from others running alongside.
+  const token = randomUUID().slice(0, 8);
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/languages", { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] }, "PATCH");
+  await nextModelReply(JSON.stringify({ segments: { "0.n": `Anleitungen ${token}` } }), token);
+  const tab = (await api("/tabs", { name: `Guides ${token}` })) as { slug: string };
+
+  await owner.setViewportSize({ width: 1280, height: 800 });
+  await owner.goto(`/app/${slug}/docs/tabs/${tab.slug}?view=settings`);
+  const card = owner.getByRole("list", { name: "Translations" });
+  const row = (code: string) => card.getByRole("listitem").filter({ has: owner.getByText(code, { exact: true }) });
+  await expect(async () => {
+    await owner.reload();
+    await expect(row("de")).toContainText(`Anleitungen ${token}`, { timeout: 1000 });
+  }).toPass();
+  await expect(row("de")).toContainText("Automatic");
+  await expect(row("fr")).toContainText("Not translated: readers see the English name");
+  await checkpoint(owner, "tab-translations", { fullPage: false });
+
+  // French, the team's own: a tab has a name only.
+  await owner.getByRole("button", { name: "Add Français" }).click();
+  const dialog = owner.getByRole("dialog", { name: "In Français" });
+  await expect(dialog.getByRole("textbox", { name: "Description" })).toHaveCount(0);
+  await dialog.getByRole("textbox", { name: "Name" }).fill("Guides pratiques");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(row("fr")).toContainText("Guides pratiques");
+  await expect(row("fr")).toContainText("Edited");
+  // Its toast gone, so the screenshot shows the page.
+  await expect(owner.getByText("Saved the Français name")).toBeHidden({ timeout: 10_000 });
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await row("fr").scrollIntoViewIfNeeded();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await checkpoint(owner, "tab-translations-phone", { fullPage: false });
+});

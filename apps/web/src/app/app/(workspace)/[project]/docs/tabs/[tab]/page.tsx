@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@tuti/db";
+import { aiEnabled, isLanguage, LANGUAGES } from "@tuti/shared";
 import { notFound, redirect } from "next/navigation";
 
 import { AccessForm, DeleteTabButton, TabSettingsForm } from "@/components/docs";
@@ -8,9 +9,11 @@ import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { DocsPageHeader } from "@/components/docs-page-header";
 import { FilterPills } from "@/components/filter-pills";
+import { LabelTranslations } from "@/components/label-translations";
 import { Card, CardContent } from "@/components/ui/card";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
+import { tabTranslations } from "@/server/operations/label-translations";
 import { teamDocs, treeArticle } from "@/server/team-docs";
 
 export const metadata: Metadata = { title: "Docs" };
@@ -37,6 +40,14 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
   const inTab = docs.collections.filter((c) => c.tab === tab.slug);
   const top = inTab.filter((c) => c.parent === null);
   const uncollected = first ? docs.uncollected : [];
+  // Settings: its name in the project's other languages (none: no Translations).
+  const [translations, { language: defaultLanguage }] =
+    shown === "settings"
+      ? await Promise.all([
+          tabTranslations(projectId, tab.slug).then((rows) => rows.flatMap((row) => (isLanguage(row.language) ? [{ ...row, native: LANGUAGES[row.language].native }] : []))),
+          prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { language: true } }),
+        ])
+      : [[], { language: "" }];
   // The rows' details, only when there's something to list.
   const rowDetails = top.length > 0 || uncollected.length > 0 || docs.references.some((r) => r.tab === tab.slug) ? await articleRowDetails(projectId) : null;
 
@@ -91,6 +102,18 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
             />
           </CardContent>
         </Card>
+      )}
+      {shown === "settings" && translations.length > 0 && (
+        <div className="mt-7">
+          <LabelTranslations
+            kind="tab"
+            projectSlug={slug}
+            slug={tab.slug}
+            defaultName={isLanguage(defaultLanguage) ? LANGUAGES[defaultLanguage].name : defaultLanguage}
+            translations={translations}
+            ai={aiEnabled()}
+          />
+        </div>
       )}
       </section>
     </>
