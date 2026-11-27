@@ -30,7 +30,7 @@ export const MAX_ESCALATION_NOTE = 1000;
 /** How long after asking the asker may still pass a question to the team. */
 const ESCALATE_WITHIN_MS = 60 * 60 * 1000;
 /** The summary is a nice-to-have: past this, the conversation starts without it. */
-const SUMMARY_TIMEOUT_MS = 8000;
+export const SUMMARY_TIMEOUT_MS = 8000;
 const MAX_SUMMARY = 500;
 
 export const escalateFields = z.object({
@@ -113,7 +113,7 @@ You get JSON with the user's question, the questions they asked before it in the
 Say what they need, not how to solve it. Plain text only, in the language of the question, no greeting.`;
 
 /** A short summary of what the person needs, or null if the model isn't set up, fails or takes too long. */
-async function summarize(
+export async function summarize(
   projectId: string,
   data: { question: string; askedBefore: string[]; answer: string | null; notHelpful: boolean; note: string | null },
   timeoutMs: number,

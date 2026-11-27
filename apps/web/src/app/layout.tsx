@@ -18,15 +18,16 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   // A portal page's address's language (proxy.ts says which); the app's own pages are English.
-  const { language } = languageFrom(await headers());
+  const { language, defaultLanguage } = languageFrom(await headers());
   return (
     // next-themes sets the theme class on <html> before hydration.
     <html lang={language ?? "en"} className={`${brandFonts} h-full antialiased`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {/* The portal's messages in English wherever no page gives the reader's (the app, the widget): components shared
-              with the portal use them. The portal's layout gives its own (PortalIntl). */}
-          <PortalIntl language="en" teamLanguage="en" messages={MESSAGES.en}>
+              with the portal use them, and the team's words are in the project's default language. The portal's layout gives its
+              own (PortalIntl). */}
+          <PortalIntl language="en" teamLanguage={defaultLanguage ?? "en"} messages={MESSAGES.en}>
             {children}
           </PortalIntl>
           {/* Top center: the bottom right is the widget launcher's (components/app-widget.tsx), and the top right has pages' actions. */}

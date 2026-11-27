@@ -59,6 +59,10 @@ test("out of credits, each feature pauses its own way; with credits again, a pau
   const headerAskAi = owner.getByRole("button", { name: "Ask AI", exact: true });
   await expect(headerAskAi).toHaveAttribute("aria-disabled", "true");
   await expect(headerAskAi).toHaveAccessibleDescription("This project is out of credits");
+  // A press (a tap: no hover on touch screens) says why too.
+  await headerAskAi.click({ force: true });
+  await expect(owner.locator("[data-sonner-toast]").filter({ hasText: "This project is out of credits" })).toBeVisible();
+  await expect(owner.getByRole("dialog", { name: "Ask AI" })).toHaveCount(0);
   await checkpoint(owner, "team-changelog-out-of-credits");
 
   // An article's Ask AI on selected text: shown, off, and why.
@@ -67,6 +71,9 @@ test("out of credits, each feature pauses its own way; with credits again, a pau
   const askAi = owner.getByRole("toolbar", { name: "Text selection" }).getByRole("button", { name: "Ask AI" });
   await expect(askAi).toHaveAttribute("aria-disabled", "true");
   await expect(askAi).toHaveAccessibleDescription("This project is out of credits");
+  await askAi.click({ force: true });
+  await expect(owner.locator("[data-sonner-toast]").filter({ hasText: "This project is out of credits" })).toBeVisible();
+  await expect(owner.getByRole("dialog", { name: "Ask AI" })).toHaveCount(0);
   // A new article's too, before its first save.
   await owner.goto(`/app/${slug}/docs/new`);
   const draft = owner.getByRole("textbox", { name: "Article" });
