@@ -18,6 +18,8 @@ const { forgetPageTries, RichEditor } = await import("./rich-editor");
 const ORIGINAL = "origimage00000000000a";
 const MADE = "madeimage00000000000b";
 beforeEach(() => {
+  toast.mockClear();
+  toast.error.mockClear();
   generateImage.mockReset();
   generateImage.mockResolvedValue({ image: { id: MADE, url: `https://media.example/${MADE}.png`, width: 1000, height: 500 } });
 });
