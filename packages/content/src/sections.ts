@@ -16,6 +16,9 @@ const canon = (value: unknown): string =>
     v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : v,
   );
 
+/** Blocks as one string, the same for blocks read back from Postgres as for those written (keys in one order). */
+export const canonicalBlocks = (blocks: Block[]) => canon(blocks);
+
 /** A document's text as one string, the same for documents sameDoc finds the same (Verify keeps a hash of it). */
 export const canonicalDoc = (doc: Doc) => canon(doc.content ?? []);
 

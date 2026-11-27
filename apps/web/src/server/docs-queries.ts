@@ -1,5 +1,6 @@
 import { type Doc, toMarkdown } from "@tuti/content";
 import { type DocsLanding, type NoAccess, type Prisma, prisma } from "@tuti/db";
+import { translationSource } from "@tuti/jobs";
 import { cache } from "react";
 
 import { inArticleOrder } from "@/lib/article-order";
@@ -12,6 +13,7 @@ import { portalAddress } from "./custom-domains";
 import { mediaUrls } from "./media-urls";
 import { currentReader, readableProject } from "./portal-access";
 import { portalLanguage } from "./portal-base";
+import { portalLanguages } from "./portal-language";
 
 /** Reads for the docs pages: the team's editor and the portal. */
 
@@ -460,6 +462,82 @@ export const docsPage = cache(async (projectSlug: string, slug: string): Promise
   return moved && { kind: "redirect", path: moved.path };
 });
 
+/** A version's fields for showing it. */
+const versionShown = { articleId: true, language: true, slug: true, automatic: true, title: true, description: true, body: true, content: true, publishedAt: true, sourceHash: true } as const;
+export type ShownVersion = Prisma.ArticleTranslationGetPayload<{ select: typeof versionShown }>;
+type SourceText = { id: string; title: string; description: string; keywords: string[]; body: string; content: Prisma.JsonValue };
+
+/**
+ * Whether a version reads as the article does now (docs/plan.md, "A page not yet translated"): published, and, kept up to
+ * date, made from the published text as it is. One whose source changed but couldn't be retranslated yet is as good as
+ * none: never its old text, which may state an old price. One the team writes counts once it's published.
+ */
+export const isCurrent = (version: Pick<ShownVersion, "publishedAt" | "automatic" | "sourceHash">, article: Omit<SourceText, "id">) =>
+  !!version.publishedAt && (!version.automatic || version.sourceHash === translationSource(article).hash);
+
+/** The current versions of `articles` in `languages`, by article (in `languages`' order). */
+export async function currentVersions(articles: SourceText[], languages: string[]): Promise<Map<string, ShownVersion[]>> {
+  const byId = new Map(articles.map((article) => [article.id, article]));
+  const versions =
+    articles.length > 0 && languages.length > 0
+      ? await prisma.articleTranslation.findMany({ where: { articleId: { in: [...byId.keys()] }, language: { in: languages } }, select: versionShown })
+      : [];
+  const out = new Map<string, ShownVersion[]>();
+  for (const version of versions.sort((a, b) => languages.indexOf(a.language) - languages.indexOf(b.language))) {
+    if (isCurrent(version, byId.get(version.articleId)!)) {
+      out.set(version.articleId, [...(out.get(version.articleId) ?? []), version]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The languages `articles` are translated into (current versions in `languages`, in their order), at each one's slug there,
+ * without reading any version's text: only what says it's current, and each article's English (hashed once) where a version
+ * kept up to date has to be compared with it. For lists of many (the sitemap).
+ * ponytail: the English's hash worked out from its text each time; storing it on the article is the upgrade if this grows.
+ */
+export async function translatedInto(articles: { id: string; slug: string }[], languages: string[]): Promise<Map<string, { language: string; slug: string }[]>> {
+  const out = new Map<string, { language: string; slug: string }[]>();
+  if (articles.length === 0 || languages.length === 0) {
+    return out;
+  }
+  const slugs = new Map(articles.map((article) => [article.id, article.slug]));
+  const versions = await prisma.articleTranslation.findMany({
+    where: { articleId: { in: [...slugs.keys()] }, language: { in: languages }, publishedAt: { not: null } },
+    select: { articleId: true, language: true, slug: true, automatic: true, sourceHash: true },
+  });
+  const compared = [...new Set(versions.filter((version) => version.automatic).map((version) => version.articleId))];
+  const sources =
+    compared.length > 0 ? await prisma.article.findMany({ where: { id: { in: compared } }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true } }) : [];
+  const hashes = new Map(sources.map((article) => [article.id, translationSource(article).hash]));
+  for (const version of versions.sort((a, b) => languages.indexOf(a.language) - languages.indexOf(b.language))) {
+    if (!version.automatic || version.sourceHash === hashes.get(version.articleId)) {
+      out.set(version.articleId, [...(out.get(version.articleId) ?? []), { language: version.language, slug: version.slug ?? slugs.get(version.articleId)! }]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Where an article reads in each language (docs/plan.md: "hreflang and the sitemap list only the languages a page is
+ * translated into"): its default-language address, and each live language it has a current version in, at its slug there.
+ */
+export async function articleAddresses(projectSlug: string, slug: string): Promise<Record<string, string>> {
+  const article = await prisma.article.findFirst({ where: { project: { slug: projectSlug }, slug, ...servedArticle }, select: { id: true, projectId: true, slug: true } });
+  if (!article) {
+    return {};
+  }
+  const languages = await portalLanguages(article.projectId);
+  const versions = (await translatedInto([article], languages.live)).get(article.id) ?? [];
+  return Object.fromEntries([[languages.default, `/docs/${slug}`], ...versions.map((version) => [version.language, `/docs/${version.slug}`])]);
+}
+
+/** A page showing article `slug` in its place (the docs home, a tab's), at its own `path` in every language the article reads in. */
+export async function landingAddresses(projectSlug: string, slug: string, path: string): Promise<Record<string, string>> {
+  return Object.fromEntries(Object.keys(await articleAddresses(projectSlug, slug)).map((language) => [language, path]));
+}
+
 /**
  * The article `slug` names at this address (docs/plan.md, Languages: each language its own slug), looked up in order: its
  * slug in the address's language; its default-language slug; an old slug in the address's language; another language's
@@ -581,9 +659,11 @@ const collectionLevels = cache((projectId: string) =>
 
 /** What article `slug` is to this reader: one they may read, one locked for them, or nothing (missing, or hidden from them). */
 const articleAt = cache(async (projectSlug: string, slug: string) => {
-  const article = await prisma.article.findFirst({
+  const found = await prisma.article.findFirst({
     where: { project: { slug: projectSlug }, slug, ...servedArticle },
     select: {
+      id: true,
+      keywords: true,
       projectId: true,
       publicId: true,
       ...levelSelect,
@@ -601,9 +681,20 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       project: { select: { name: true } },
     },
   });
-  if (!article) {
+  if (!found) {
     return null;
   }
+  // At another language's address, its version there while it's current (docs/plan.md, "A page not yet translated"); else
+  // the default language's, marked so: `language` is what its text is in, `untranslated` that it isn't the address's.
+  const { language: asked, defaultLanguage } = await portalLanguage().catch(() => ({ language: null, defaultLanguage: null }));
+  const other = asked && defaultLanguage && asked !== defaultLanguage ? asked : null;
+  const version = other ? (await currentVersions([found], [other])).get(found.id)?.[0] : undefined;
+  const { id: _id, keywords: _keywords, ...article } = {
+    ...found,
+    ...(version && { title: version.title, description: version.description, body: version.body, content: version.content }),
+    language: version ? version.language : (defaultLanguage ?? null),
+    untranslated: !!other && !version,
+  };
   // Its collection and the ones it's in, up to its top-level one (which has its tab); in none, the first tab.
   const up = article.collection
     ? ancestry(
@@ -634,7 +725,10 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       tab: shown(above.slice(0, 1)) ? where.tab : null,
     };
     // Picked field by field: nothing of what it says.
-    return { kind: "locked" as const, locked: { slug, publicId: article.publicId, title: article.title, ...locked, signedIn: reader?.signedIn ?? false } };
+    return {
+      kind: "locked" as const,
+      locked: { slug, publicId: article.publicId, title: article.title, language: article.language, untranslated: article.untranslated, ...locked, signedIn: reader?.signedIn ?? false },
+    };
   }
   // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
   const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;

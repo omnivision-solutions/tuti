@@ -1,7 +1,7 @@
 "use client";
 
 import { MoreHorizontalIcon } from "lucide-react";
-import { type ReactNode, useActionState, useEffect, useRef, useTransition } from "react";
+import { type ReactNode, useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import { matchText } from "@/lib/match-text";
-import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
 import type { FormState } from "@/server/form-state";
 import type { SpamSettings as Settings } from "@/server/operations/spam";
 import { listSpamSender, removeSpamSender, setSpamGuidance, setSpamPhrase, type SpamTry, trySpam } from "@/server/spam-settings";
@@ -39,12 +38,14 @@ export function SpamSettings({
   maxPhrase: number;
   maxGuidance: number;
 }) {
+  // Decided once per visit: removing the last entry leaves the card, with its empty line and the keyboard's focus in it.
+  const [showAllowed] = useState(settings.allowed.length > 0);
   return (
     <>
       <EntryList
         id="spam-blocked"
         title="Blocked"
-        description="Their email goes to Spam, and what they write signed in to the widget."
+        description="New conversations from them go to Spam."
         label="Address or domain to block"
         placeholder={SENDER}
         empty="Nobody is blocked"
@@ -54,23 +55,26 @@ export function SpamSettings({
         add={(entry) => listSpamSender(projectSlug, true, entry)}
         remove={(entry) => removeSpamSender(projectSlug, entry)}
       />
-      <EntryList
-        id="spam-allowed"
-        title="Allowed"
-        description={`Their email, and what they write signed in, skips your phrases. An address, not a domain, also skips the limit of ${NEW_BY_EMAIL_PER_HOUR} new conversations by email an hour.`}
-        label="Address or domain to allow"
-        placeholder={SENDER}
-        empty="Nobody is allowed by name"
-        entries={settings.allowed}
-        about={aboutSender}
-        as={asSender}
-        add={(entry) => listSpamSender(projectSlug, false, entry)}
-        remove={(entry) => removeSpamSender(projectSlug, entry)}
-      />
+      {/* Not offered for new entries; any already there stay listed, as they still let senders through, so they can be removed. */}
+      {showAllowed && (
+        <EntryList
+          id="spam-allowed"
+          title="Allowed"
+          description="Their messages skip your phrases."
+          label="Address or domain to allow"
+          placeholder={SENDER}
+          empty="Nobody is allowed by name"
+          entries={settings.allowed}
+          about={aboutSender}
+          as={asSender}
+          add={(entry) => listSpamSender(projectSlug, false, entry)}
+          remove={(entry) => removeSpamSender(projectSlug, entry)}
+        />
+      )}
       <EntryList
         id="spam-phrases"
         title="Phrases"
-        description="A new conversation with one in its subject or first message goes to Spam, unless its sender is allowed, trusted (one of your users, a teammate, someone you've replied to) or was marked Not spam before. Whole words, any case."
+        description="New conversations with one go to Spam, unless you trust the sender."
         label="Phrase to add"
         placeholder="facebook admin"
         maxLength={maxPhrase}
@@ -232,7 +236,7 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   return (
     <SettingsCard
       title="Guidance for the AI"
-      description="What is and isn't spam for your team, in your words. Once it's written, the AI checks each new conversation nothing above decided, holding it for a few minutes at most, and files only what it's sure is spam."
+      description="Describe your spam; the AI checks what the rules miss."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">
@@ -264,7 +268,7 @@ function TryMessage({ projectSlug }: { projectSlug: string }) {
     {},
   );
   return (
-    <SettingsCard title="Try a message" description="As an email from this address. Nothing is sent or saved.">
+    <SettingsCard title="Try a message" description="Nothing is sent or saved.">
       <form {...keepingFields(action)} className="flex flex-col divide-y">
         <SettingRow label="From" htmlFor="spam-try-sender">
           <Input id="spam-try-sender" name="sender" type="email" required maxLength={320} placeholder="kim@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />

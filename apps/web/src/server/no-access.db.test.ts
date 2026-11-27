@@ -172,10 +172,20 @@ describe("an article shown with a lock", () => {
 
   test("people signed out see its title with a lock everywhere it's listed, and its page asks them to sign in, with nothing of its text", async () => {
     expect(await listed()).toEqual(["contact", "endpoints (locked)", "getting-started"]);
-    // Only what the page may show: the title, the way back to its collection and tab, who's reading, and its ID (the widget checks it).
+    // Only what the page may show: the title (and the language it's in, and whether that's the address's), the way back to its
+    // collection and tab, who's reading, and its ID (the widget checks it).
     expect(await docsPage(project.slug, "endpoints")).toEqual({
       kind: "locked",
-      article: { slug: "endpoints", publicId: expect.stringMatching(/^a_[a-z0-9]{8}$/), title: "Endpoints", collection: { slug: "reference", name: "Reference" }, tab: "api", signedIn: false },
+      article: {
+        slug: "endpoints",
+        publicId: expect.stringMatching(/^a_[a-z0-9]{8}$/),
+        title: "Endpoints",
+        language: null,
+        untranslated: false,
+        collection: { slug: "reference", name: "Reference" },
+        tab: "api",
+        signedIn: false,
+      },
     });
     const page = await pageText("endpoints");
     expect(page).toContain("Endpoints");

@@ -6,7 +6,8 @@ import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { shownOperations } from "@/server/api-reference-queries";
-import { articleMarkdown, docsContents, everyCollection, listedArticle } from "@/server/docs-queries";
+import { articleMarkdown, currentVersions, docsContents, everyCollection, listedArticle, type ShownVersion } from "@/server/docs-queries";
+import { portalLanguage } from "@/server/portal-base";
 
 /**
  * Every docs article and API operation llms.txt links, in its order, with its full text (llmstxt.org's llms-full.txt):
@@ -29,9 +30,19 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // ponytail: every article's text in one response; page it (or cap it) if docs ever get big enough to matter.
   const rows = await prisma.article.findMany({
     where: { ...listedArticle, project: { slug }, slug: { in: slugs } },
-    select: { slug: true, title: true, body: true, content: true },
+    select: { id: true, slug: true, title: true, description: true, keywords: true, body: true, content: true },
   });
-  const bySlug = new Map(rows.map((row) => [row.slug, row]));
+  // At another language's address (/de/llms-full.txt): each article in its version there while it's current, at its address
+  // there; else the default language's, at its own (docs/plan.md, "A page not yet translated").
+  const { language, defaultLanguage, prefix } = await portalLanguage();
+  const other = language && language !== defaultLanguage ? language : null;
+  const versions = other ? await currentVersions(rows, [other]) : new Map<string, ShownVersion[]>();
+  const bySlug = new Map(
+    rows.map((row) => {
+      const version = versions.get(row.id)?.[0];
+      return [row.slug, version ? { ...row, title: version.title, body: version.body, content: version.content, path: `${prefix}/docs/${version.slug ?? row.slug}` } : { ...row, path: `/docs/${row.slug}` }];
+    }),
+  );
   // Its title, then where it's from, then what it says.
   const sourced = (markdown: string, path: string) => {
     const titleEnd = markdown.indexOf("\n");
@@ -50,7 +61,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         ...(await Promise.all(
           articleSlugs(part).flatMap((articleSlug) => {
             const row = bySlug.get(articleSlug);
-            return row ? [articleMarkdown({ title: row.title, doc: displayDoc(row) }).then((markdown) => sourced(markdown, `/docs/${articleSlug}`))] : [];
+            return row ? [articleMarkdown({ title: row.title, doc: displayDoc(row) }).then((markdown) => sourced(markdown, row.path))] : [];
           }),
         )),
         ...operations(part),
