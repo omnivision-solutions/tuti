@@ -34,3 +34,11 @@ test("a teammate's word for another language taken beside the one typed here; th
     { key: "new", term: "Zeta", keep: true, translations: {}, meanwhile: "Added meanwhile" },
   ]);
 });
+
+test("a term added both here and by a teammate: their words fill the languages left empty here, what was typed stays, marked", () => {
+  const theirs: GlossaryTermInput[] = [{ term: "Zeta", keep: false, translations: { de: "Zett", fr: "Zêta" } }];
+  expect(mergeMeanwhile([row("zeta", { de: "Zeta" })], [], theirs, key)).toEqual([{ ...row("zeta", { de: "Zeta", fr: "Zêta" }), meanwhile: "Changed meanwhile" }]);
+  // The same on both sides: nothing to look at.
+  expect(mergeMeanwhile([row("Zeta", { de: "Zett", fr: "Zêta" })], [], theirs, key)).toEqual([row("Zeta", { de: "Zett", fr: "Zêta" })]);
+});
+

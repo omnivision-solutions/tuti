@@ -12,7 +12,7 @@ const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep &
  * teammate's changes from `before` to `theirs` put into `rows`, marked. A term they added is added; one they changed takes
  * their word in each language not edited here, what was typed here staying, and their Never translated only if neither it
  * nor any word was changed here (else the words typed would be hidden, and not saved); one they removed stays, for the
- * team to remove or keep.
+ * team to remove or keep; one added both here and there gets their words in the languages left empty here.
  */
 export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], theirs: GlossaryTermInput[], newKey: () => string): MergeRow[] {
   const byTerm = (list: GlossaryTermInput[]) => new Map(list.map((term) => [term.term.trim().toLowerCase(), term]));
@@ -23,6 +23,10 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
     const was = old.get(name);
     const is = now.get(name);
     if (was && !is) return { ...row, meanwhile: "Removed meanwhile" };
+    if (!was && is && !same(row, is)) {
+      const empty = Object.entries(is.translations).filter(([code]) => !(row.translations[code] ?? "").trim());
+      return { ...row, translations: { ...row.translations, ...Object.fromEntries(empty) }, meanwhile: "Changed meanwhile" };
+    }
     if (was && is && !same(was, is)) {
       const codes = new Set([...Object.keys(was.translations), ...Object.keys(is.translations), ...Object.keys(row.translations)]);
       const edited = (code: string) => (row.translations[code] ?? "").trim() !== (was.translations[code] ?? "");
