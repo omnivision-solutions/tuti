@@ -384,11 +384,18 @@ export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean
 }
 
 /**
+ * Held till the transaction ends: one change to a project's rules and allowed list at a time (Settings, the API, Mark as
+ * spam's "Also block"), so none adds a rule another is adding, and two can't each fit under a limit.
+ */
+export const lockSpamRules = (db: Db, projectId: string) => db.$executeRaw`SELECT pg_advisory_xact_lock(41, hashtext(${projectId}))`;
+
+/**
  * A block rule, an owner's or admin's doing (`fromReport`: by marking a conversation as spam). One the same as a rule
  * there already (`spamRuleKey`) isn't added again. A "Sender address is" or "Sender domain is" rule takes the address or
  * domain off the allowed list: on one list at a time. Returns whether it was added.
  */
 export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fromReport = false): Promise<boolean> {
+  await lockSpamRules(db, projectId);
   const key = spamRuleKey(rule);
   const same = await db.spamRule.findMany({ where: { projectId, field: rule.field, matcher: rule.matcher }, select: { field: true, matcher: true, value: true } });
   if (same.some((other) => spamRuleKey(other as SpamRule) === key)) {

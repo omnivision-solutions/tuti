@@ -65,31 +65,24 @@ async function setup({ hook = false } = {}) {
         c.spam ? (c.spamReason ?? "marked") : "inbox",
       ),
     /**
-     * What's kept about senders: each address or domain, blocked (a "Sender address is" or "Sender domain is" rule) or
-     * allowed, on a list or as a conversation's mark, and whose.
+     * What's kept about senders: the conversations' marks, oldest first, then each address or domain on a list (a
+     * blocked one is its "Sender address is" or "Sender domain is" rule), in alphabetical order; and whose.
      */
     senders: async () => {
       const [rows, rules] = await Promise.all([
         prisma.spamSender.findMany({ where: { projectId }, orderBy: [{ decidedAt: "asc" }, { id: "asc" }] }),
         prisma.spamRule.findMany({ where: { projectId, matcher: "is" } }),
       ]);
-      return [
-        ...rows.map((row) => ({ at: row.decidedAt, said: `${row.sender} ${row.blocked ? "blocked" : "allowed"} by ${row.byAdmin ? "an admin" : "a member"}${row.conversationId ? "'s mark" : ", listed"}` })),
-        ...rules.map((rule) => ({ at: rule.createdAt, said: `${rule.value} blocked by an admin, listed` })),
-      ]
-        .sort((a, b) => a.at.getTime() - b.at.getTime())
-        .map(({ said }) => said);
+      const said = (row: { sender: string; blocked: boolean; byAdmin: boolean; conversationId: string | null }) =>
+        `${row.sender} ${row.blocked ? "blocked" : "allowed"} by ${row.byAdmin ? "an admin" : "a member"}${row.conversationId ? "'s mark" : ", listed"}`;
+      const listed = [...rows.filter((row) => !row.conversationId), ...rules.map((rule) => ({ sender: rule.value, blocked: true, byAdmin: true, conversationId: null }))];
+      return [...rows.filter((row) => row.conversationId).map(said), ...listed.sort((x, y) => x.sender.localeCompare(y.sender)).map(said)];
     },
-    /**
-     * An address or domain blocked (its "is" rule) or on the allowed list. Then a few milliseconds pass, so what's
-     * written next sorts after it in `senders`, which goes by the time each was written.
-     */
-    list: async (sender: string, blocked: boolean) => {
-      await (blocked
+    /** An address or domain blocked (its "is" rule) or on the allowed list. */
+    list: (sender: string, blocked: boolean) =>
+      blocked
         ? prisma.spamRule.create({ data: { projectId, field: sender.includes("@") ? "sender_address" : "sender_domain", matcher: "is", value: sender } })
-        : prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }));
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    },
+        : prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }),
     /** How many new conversations the project's webhooks were told of. */
     told: () => prisma.webhookDelivery.count({ where: { webhook: { projectId }, event: "conversation.created" } }),
   };
@@ -115,10 +108,10 @@ test("the team's decisions come first, the most exact winning: a listed address,
   await mail("e2e-kim@spam.example"); // #4
   expect((await filed())[3]).toBe("inbox");
   expect(await senders()).toEqual([
-    "spam.example blocked by an admin, listed",
     "e2e-kim@spam.example allowed by an admin's mark",
     "e2e-kim@spam.example blocked by a member's mark",
     "e2e-kim@spam.example allowed by an admin's mark",
+    "spam.example blocked by an admin, listed",
   ]);
   // The address on a list beats every mark.
   await list("e2e-kim@spam.example", true);
@@ -231,6 +224,16 @@ test("Also block offers the organisational domain to owners and admins, never a 
   await mail("e2e-lee@spam.example"); // #4
   await mail("e2e-lee@notspam.example"); // #5
   expect((await filed()).slice(2)).toEqual(["blocked_domain", "blocked_domain", "inbox"]);
+});
+
+test("two admins blocking the same domain at once from two of its conversations leave one rule, marked from a report", async () => {
+  const { projectId, admin, mail } = await setup();
+  await mail("e2e-kim@corp.example"); // #1
+  await mail("e2e-lee@mail.corp.example"); // #2
+  await Promise.all([1, 2].map((number) => call(updateConversation, admin, { number, spam: true, blockDomain: true })));
+  expect(await prisma.spamRule.findMany({ where: { projectId }, select: { field: true, matcher: true, value: true, fromReport: true } })).toEqual([
+    { field: "sender_domain", matcher: "is", value: "corp.example", fromReport: true },
+  ]);
 });
 
 test("a domain's entry is for its subdomains, never for the domain above it", async () => {
@@ -445,9 +448,9 @@ test("a member's Not spam leaves an admin's blocked address and blocked domain i
   // Both are back in the inbox, told as new; a member's Not spam against a blocked domain isn't kept at all.
   expect(await told()).toBe(2);
   expect(await senders()).toEqual([
+    "e2e-kim@corp.example allowed by a member's mark",
     "e2e-kim@corp.example blocked by an admin, listed",
     "spam.example blocked by an admin, listed",
-    "e2e-kim@corp.example allowed by a member's mark",
   ]);
   await mail("e2e-kim@corp.example"); // #3
   await mail("e2e-lee@mail.spam.example"); // #4
@@ -455,7 +458,7 @@ test("a member's Not spam leaves an admin's blocked address and blocked domain i
 
   // A spam mark the conversation had goes when a member unmarks it under a blocked domain: it's unmarked, no more.
   await call(updateConversation, asMember, { number: 2, spam: true });
-  expect((await senders()).at(-1)).toBe("e2e-lee@mail.spam.example blocked by a member's mark");
+  expect(await senders()).toContain("e2e-lee@mail.spam.example blocked by a member's mark");
   await call(updateConversation, asMember, { number: 2, spam: false });
   expect(await senders()).toHaveLength(3);
 });

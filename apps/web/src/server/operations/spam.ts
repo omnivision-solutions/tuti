@@ -7,7 +7,7 @@ import { SPAM_REASON_KEYS, spamPassedWhy, spamWhy } from "@/lib/spam-reasons";
 import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleValue } from "@/lib/spam-rules";
 
 import { userWithAddress } from "../inbound";
-import { addSpamRule, allowSender, blockableDomain, spamVerdict } from "../spam";
+import { addSpamRule, allowSender, blockableDomain, lockSpamRules, spamVerdict } from "../spam";
 import { MAX_SPAM_GUIDANCE, spamModelsOn } from "../spam-models";
 import { emailAddress } from "./assistant";
 import { defineOperation, OperationError } from "./define";
@@ -176,8 +176,7 @@ export const updateSpamSettings = defineOperation({
     }
     const blocks = block.map((entry) => ({ field: entry.includes("@") ? ("sender_address" as const) : ("sender_domain" as const), matcher: "is" as const, value: entry }));
     await prisma.$transaction(async (tx) => {
-      // The project's row is held, so two changes at once can't each fit under a limit, nor both add the same rule.
-      await tx.$queryRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR NO KEY UPDATE`;
+      await lockSpamRules(tx, projectId);
       await tx.spamRule.deleteMany({ where: { projectId, id: { in: removeRules } } });
       await tx.spamSender.deleteMany({ where: { projectId, conversationId: null, sender: { in: remove } } });
       await tx.spamRule.deleteMany({ where: { projectId, field: { in: ["sender_address", "sender_domain"] }, matcher: "is", value: { in: remove } } });
