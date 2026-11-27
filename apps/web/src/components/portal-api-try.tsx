@@ -16,6 +16,7 @@ import {
   tryServers,
 } from "@tuti/shared/api-reference";
 import { ChevronRightIcon } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { copyText } from "@/components/copy-button";
@@ -67,9 +68,20 @@ function Pick({ id, label, value, options, onChange }: { id?: string; label?: st
   );
 }
 
+/** The page's own words, in its language. */
+type Translate = ReturnType<typeof useTranslations<"apiReference">>;
+
 /** What a scheme's key is called by the input that asks for it. */
-const keyLabel = (auth: ApiAuth) =>
-  auth.kind === "header" ? `API key (${auth.name} header)` : auth.kind === "query" ? `API key (${auth.name} query parameter)` : auth.kind === "cookie" ? `API key (${auth.name} cookie)` : auth.kind === "bearer" ? "Bearer token" : "Access token";
+const keyLabel = (auth: ApiAuth, t: Translate) =>
+  auth.kind === "header"
+    ? t("keyHeader", { name: auth.name })
+    : auth.kind === "query"
+      ? t("keyQuery", { name: auth.name })
+      : auth.kind === "cookie"
+        ? t("keyCookie", { name: auth.name })
+        : auth.kind === "bearer"
+          ? t("bearer")
+          : t("accessToken");
 
 /** The keys typed for this reference, in this tab only. */
 function useKeys(reference: string) {
@@ -95,6 +107,7 @@ function useKeys(reference: string) {
 
 /** The "Try it" button by the operation's method and path, and its console. */
 export function TryIt(props: Props) {
+  const t = useTranslations("apiReference");
   const [open, setOpen] = useState(false);
   const phone = useIsMobile();
   // Here, not in the console: what the reader typed and the last answer stay while it's closed (the key is kept apart).
@@ -102,11 +115,12 @@ export function TryIt(props: Props) {
   return (
     <>
       <Button size="sm" className="ml-auto" onClick={() => setOpen(true)}>
-        Try it
+        {t("tryIt")}
       </Button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side={phone ? "bottom" : "right"}
+          closeLabel={t("close")}
           className="w-full gap-0 p-0 data-[side=bottom]:max-h-[92dvh] data-[side=right]:w-full data-[side=right]:sm:max-w-xl"
         >
           <Console {...props} form={form} />
@@ -146,6 +160,10 @@ const TIMEOUT_MS = 15_000;
 const TUTI_TIMEOUT_MS = 20_000;
 
 function Console({ reference, operationSlug, doc, operation, base, form }: Props & { form: ReturnType<typeof useForm> }) {
+  const locale = useLocale();
+  const copied = useTranslations("feedback");
+  const said = { copied: copied("copied"), failed: copied("copyFailed") };
+  const t = useTranslations("apiReference");
   const href = usePortalHref();
   const { servers, server, setServer, variables, setVariables, params, setParams, body, setBody, graphql, setGraphql, result, setResult, sending, setSending, latestRef } = form;
   const { schemes, optional } = tryAuth(doc, operation);
@@ -205,7 +223,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           signal,
         });
       } catch {
-        settle({ error: timedOut() ? "The API didn't answer within 15 seconds" : "Couldn't reach Tuti to send it. Check your connection and try again.", via });
+        settle({ error: timedOut() ? t("noAnswer") : t("cantReachTuti"), via });
         return;
       }
       let json: TryAnswer | { error: string };
@@ -213,7 +231,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         json = (await response.json()) as TryAnswer | { error: string };
       } catch {
         // Not Tuti's answer: a page from something in between (a proxy's 502 or 413, say).
-        settle({ error: `Tuti couldn't send it: it answered ${[response.status, response.statusText].filter(Boolean).join(" ")}.`, via });
+        settle({ error: t("tutiRefused", { status: [response.status, response.statusText].filter(Boolean).join(" ") }), via });
         return;
       }
       settle("error" in json ? { error: json.error, via } : { answer: json, via });
@@ -242,7 +260,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         });
       } catch (error) {
         if (signal.aborted) {
-          settle({ error: "The API didn't answer within 15 seconds", via: "browser" });
+          settle({ error: t("noAnswer"), via: "browser" });
           return;
         }
         // Refused by CORS, or no network: both a TypeError, and the API may have run it all the same (a browser only
@@ -264,7 +282,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
         read = await readUpTo(response.body, SHOWN_BYTES);
       } catch {
         settle({
-          error: timedOut() ? `The API answered ${response.status}, and the rest didn't arrive within 15 seconds.` : `The API answered ${response.status}, and the connection dropped before the rest arrived.`,
+          error: timedOut() ? t("restTimedOut", { status: response.status }) : t("dropped", { status: response.status }),
           via: "browser",
         });
         return;
@@ -288,13 +306,13 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
   }
 
   // Says so either way, as the app's other copy buttons do: a clipboard can be off (a portal over plain http, a permission denied).
-  const copy = () => "url" in made && copyText(curlCommand({ method: made.method, url: made.url.href, headers: Object.fromEntries(made.headers), body: made.body }));
+  const copy = () => "url" in made && copyText(curlCommand({ method: made.method, url: made.url.href, headers: Object.fromEntries(made.headers), body: made.body }), said);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-1 border-b border-divider px-4 pt-4 pb-3 pr-12">
-        <SheetTitle className="text-base">Try it</SheetTitle>
-        <SheetDescription className="sr-only">Send a request to {operation.title}, with your own key.</SheetDescription>
+        <SheetTitle className="text-base">{t("tryIt")}</SheetTitle>
+        <SheetDescription className="sr-only">{t("tryDescription", { title: operation.title })}</SheetDescription>
         <p className="flex min-w-0 items-baseline gap-2 font-mono text-xs">
           <span className="shrink-0 font-semibold">{operation.kind}</span>
           <span className="min-w-0 break-all text-muted-foreground">{"url" in made ? shownUrl(doc, operation, made) : operation.path}</span>
@@ -302,10 +320,10 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
         {(servers.length > 1 || chosen.variables) && (
-          <Group title="Server">
+          <Group title={t("server")}>
             {servers.length > 1 && (
               // The group's heading names it.
-              <Pick label="Server" value={server} options={servers.map((s) => ({ value: s.url, label: s.description ? `${s.description} (${s.url})` : s.url }))} onChange={setServer} />
+              <Pick label={t("server")} value={server} options={servers.map((s) => ({ value: s.url, label: s.description ? `${s.description} (${s.url})` : s.url }))} onChange={setServer} />
             )}
             {Object.entries(chosen.variables ?? {}).map(([name, variable]) => (
               <Labelled key={name} label={name} mono>
@@ -326,12 +344,12 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           </Group>
         )}
         {schemes.length > 0 && (
-          <Group title="Authorization" note={`Kept in this tab only.${optional ? " Optional for this request." : ""}`}>
+          <Group title={t("authorization")} note={optional ? t("keptOptional") : t("kept")}>
             {schemes.map((scheme) =>
               scheme.kind === "basic" ? (
                 <div key={scheme.key} className="grid gap-3 sm:grid-cols-2">
                   {(["user", "password"] as const).map((part) => (
-                    <Labelled key={part} label={part === "user" ? "Username" : "Password"}>
+                    <Labelled key={part} label={part === "user" ? t("username") : t("password")}>
                       {(id) => (
                         <Input
                           id={id}
@@ -345,7 +363,7 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
                   ))}
                 </div>
               ) : (
-                <Labelled key={scheme.key} label={keyLabel(scheme)}>
+                <Labelled key={scheme.key} label={keyLabel(scheme, t)}>
                   {(id) => (
                     <Input
                       id={id}
@@ -362,11 +380,11 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           </Group>
         )}
         {shown.length > 0 && (
-          <Group title="Parameters">
+          <Group title={t("parameters")}>
             {shown.map((param) => {
               const at = `${param.in}:${param.name}`;
               return (
-                <Labelled key={at} label={param.name} mono hint={[param.in === "header" ? "header" : param.in === "path" ? "path" : "query", param.required && "required"].filter(Boolean).join(" · ")}>
+                <Labelled key={at} label={param.name} mono hint={[param.in === "header" ? t("inHeaderHint") : param.in === "path" ? t("inPathHint") : t("inQueryHint"), param.required && t("required")].filter(Boolean).join(" · ")}>
                   {(id) => <Input id={id} value={params[at] ?? ""} onChange={(event) => setParams({ ...params, [at]: event.target.value })} />}
                 </Labelled>
               );
@@ -374,23 +392,23 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
           </Group>
         )}
         {operation.body && operation.kind !== "GET" && operation.kind !== "HEAD" && (
-          <Group title="Body" note={operation.body.contentType}>
-            <Textarea aria-label="Body" spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
+          <Group title={t("body")} note={operation.body.contentType}>
+            <Textarea aria-label={t("body")} spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={body} onChange={(event) => setBody(event.target.value)} />
           </Group>
         )}
         {graphql && (
           <>
-            <Group title="Query">
-              <Textarea aria-label="Query" spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={graphql.query} onChange={(event) => setGraphql({ ...graphql, query: event.target.value })} />
+            <Group title={t("query")}>
+              <Textarea aria-label={t("query")} spellCheck={false} rows={10} className="font-mono text-base md:text-xs" value={graphql.query} onChange={(event) => setGraphql({ ...graphql, query: event.target.value })} />
             </Group>
-            <Group title="Variables" note="JSON">
-              <Textarea aria-label="Variables" spellCheck={false} rows={4} className="font-mono text-base md:text-xs" value={graphql.variables} onChange={(event) => setGraphql({ ...graphql, variables: event.target.value })} />
+            <Group title={t("variables")} note="JSON">
+              <Textarea aria-label={t("variables")} spellCheck={false} rows={4} className="font-mono text-base md:text-xs" value={graphql.variables} onChange={(event) => setGraphql({ ...graphql, variables: event.target.value })} />
             </Group>
           </>
         )}
         {/* Always there, so a screen reader reads the answer's one line as it arrives (not its body). */}
         <p aria-live="polite" className="sr-only">
-          {result && summary(result, errors.length)}
+          {result && summary(result, errors.length, t, locale)}
         </p>
         {result && (
           <div ref={answer}>
@@ -400,10 +418,10 @@ function Console({ reference, operationSlug, doc, operation, base, form }: Props
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-divider px-4 py-3">
         <Button variant="outline" disabled={"error" in made} onClick={() => void copy()}>
-          Copy as cURL
+          {t("copyCurl")}
         </Button>
         <Button ref={sendButton} disabled={sending} focusableWhenDisabled onClick={() => void send()}>
-          {sending ? "Sending…" : "Send"}
+          {sending ? t("sending") : t("send")}
         </Button>
       </div>
     </div>
@@ -435,8 +453,11 @@ function Labelled({ label, hint, mono, children }: { label: string; hint?: strin
   );
 }
 
-/** A size in words: 312 B, 4.2 KB, 1.8 MB. */
-const size = (bytes: number) => (bytes < 1000 ? `${bytes} B` : bytes < 1_000_000 ? `${(bytes / 1000).toFixed(1)} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`);
+/** A size in words, in the page's language's numbers: 312 B, 4.2 KB (4,2 KB in German), 1.8 MB. */
+const size = (bytes: number, locale: string) => {
+  const one = (n: number) => new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
+  return bytes < 1000 ? `${bytes} B` : bytes < 1_000_000 ? `${one(bytes / 1000)} KB` : `${one(bytes / 1_000_000)} MB`;
+};
 
 /** The body as it came, or pretty when it's JSON. */
 function pretty(answer: TryAnswer) {
@@ -458,53 +479,52 @@ function graphqlErrors(answer: TryAnswer): string[] {
 }
 
 /** Why the request went through Tuti, when it did. */
-const throughLine = (result: Exclude<Result, { unread: "cors" | "redirect" }>) =>
+const throughLine = (result: Exclude<Result, { unread: "cors" | "redirect" }>, t: Translate) =>
   // Only for what was sent: an error from Tuti (it refused, or couldn't be reached) sent nothing.
   "error" in result
     ? null
     : result.via === "cors"
-    ? "Sent through Tuti, since the API doesn't allow browser requests."
+    ? t("throughCors")
     : result.via === "cookies"
-      ? "Sent through Tuti, since browsers don't send cookies to another site."
+      ? t("throughCookies")
       : result.via === "redirect"
-        ? "Sent through Tuti, which shows a redirect without following it."
+        ? t("throughRedirect")
         : null;
 
-const UNREAD = {
-  cors: "The API doesn't allow browser requests, so its answer can't be shown here. It may have run the request: send it through Tuti to see the answer, and it runs again.",
-  redirect: "The API answered with a redirect, which Try it doesn't follow. Send it through Tuti to see its status and where it points; the request runs again.",
-};
+const UNREAD = { cors: "unreadCors", redirect: "unreadRedirect" } as const;
 
 /** The answer in a line, for screen readers (with GraphQL's errors counted). */
-function summary(result: Result, errors: number) {
-  if ("unread" in result) return UNREAD[result.unread];
+function summary(result: Result, errors: number, t: Translate, locale: string) {
+  if ("unread" in result) return t(UNREAD[result.unread]);
   const what =
     "error" in result
       ? result.error
-      : `${result.answer.status} ${result.answer.statusText}, ${result.answer.ms} ms, ${size(result.answer.size)}${errors ? `, ${errors === 1 ? "1 error" : `${errors} errors`}` : ""}`;
-  return [what, throughLine(result)].filter(Boolean).join(". ");
+      : `${result.answer.status} ${result.answer.statusText}, ${result.answer.ms} ms, ${size(result.answer.size, locale)}${errors ? `, ${t("errors", { count: errors })}` : ""}`;
+  return [what, throughLine(result, t)].filter(Boolean).join(". ");
 }
 
 /** The answer: its status, time and size, its headers (closed), and its body. Or why it wasn't sent. */
 /** `errors`: a GraphQL answer's error messages. */
 function Answer({ result, onThrough, sending, errors }: { result: Result; onThrough: (why: "cors" | "redirect") => void; sending: boolean; errors: string[] }) {
+  const locale = useLocale();
+  const t = useTranslations("apiReference");
   if ("unread" in result) {
     return (
-      <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
-        <h3 className="text-sm font-semibold">Response</h3>
+      <section aria-label={t("response")} className="flex flex-col gap-2 border-t border-divider pt-4">
+        <h3 className="text-sm font-semibold">{t("response")}</h3>
         <p className="text-sm">
-          {UNREAD[result.unread]}
+          {t(UNREAD[result.unread])}
         </p>
         <Button variant="outline" className="self-start" disabled={sending} focusableWhenDisabled onClick={() => onThrough(result.unread)}>
-          Send through Tuti
+          {t("sendThrough")}
         </Button>
       </section>
     );
   }
-  const through = throughLine(result);
+  const through = throughLine(result, t);
   return (
-    <section aria-label="Response" className="flex flex-col gap-2 border-t border-divider pt-4">
-      <h3 className="text-sm font-semibold">Response</h3>
+    <section aria-label={t("response")} className="flex flex-col gap-2 border-t border-divider pt-4">
+      <h3 className="text-sm font-semibold">{t("response")}</h3>
       {"error" in result ? (
         <p className="text-sm text-destructive">
           {result.error}
@@ -523,12 +543,12 @@ function Answer({ result, onThrough, sending, errors }: { result: Result; onThro
               {result.answer.status} {result.answer.statusText}
             </span>
             <span className="text-muted-foreground">{result.answer.ms} ms</span>
-            <span className="text-muted-foreground">{size(result.answer.size)}</span>
+            <span className="text-muted-foreground">{size(result.answer.size, locale)}</span>
           </p>
-          {result.answer.cut && <p className="text-[0.8125rem] text-muted-foreground">Showing the first 2 MB.</p>}
+          {result.answer.cut && <p className="text-[0.8125rem] text-muted-foreground">{t("firstTwoMB")}</p>}
           {errors.length > 0 && (
-            <div role="group" aria-label="Errors" className="flex flex-col gap-1 rounded-lg border border-destructive/40 p-3 text-sm">
-              <p className="font-medium text-destructive">{errors.length === 1 ? "1 error" : `${errors.length} errors`}</p>
+            <div role="group" aria-label={t("errorsLabel")} className="flex flex-col gap-1 rounded-lg border border-destructive/40 p-3 text-sm">
+              <p className="font-medium text-destructive">{t("errors", { count: errors.length })}</p>
               <ul className="flex list-disc flex-col gap-1 pl-5 break-words">
                 {/* ponytail: the first 20; the body below has them all. */}
                 {errors.slice(0, 20).map((message, i) => (
@@ -541,7 +561,7 @@ function Answer({ result, onThrough, sending, errors }: { result: Result; onThro
             <details className="group/headers">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden">
                 <ChevronRightIcon aria-hidden className="size-3.5 transition-transform group-open/headers:rotate-90" />
-                Headers ({result.answer.headers.length})
+                {t("headersCount", { count: result.answer.headers.length })}
               </summary>
               <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-xs">
                 {result.answer.headers.map(([name, value], i) => (
@@ -557,7 +577,7 @@ function Answer({ result, onThrough, sending, errors }: { result: Result; onThro
             // Focusable, so a keyboard can scroll it (Safari doesn't reach one with nothing focusable inside).
             <pre
               tabIndex={0}
-              aria-label="Response body"
+              aria-label={t("responseBody")}
               className="max-h-96 overflow-auto rounded-lg bg-secondary p-3 font-mono text-xs whitespace-pre-wrap break-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {pretty(result.answer)}

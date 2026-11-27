@@ -240,12 +240,12 @@ test("the team's preview of a language not live yet: its Markdown's canonical is
   expect(md.headers.get("link")).toBe(`<${portal}/docs/billing>; rel="canonical"`);
 });
 
-test("\"On this page\" beside an article on wide screens: its list of headings in the article's text's language", () => {
+test("\"On this page\" beside an article on wide screens: its list of headings in the article's text's language", async () => {
   const headings = [
     { id: "einrichtung", text: "Einrichtung", level: 2 },
     { id: "abrechnung", text: "Abrechnung", level: 2 },
   ] as Parameters<typeof OnThisPage>[0]["headings"];
-  const layout = DocsLayout({ tree: null, current: null, headings, headingsLang: "de", children: null }) as ReactElement;
+  const layout = (await DocsLayout({ tree: null, current: null, headings, headingsLang: "de", children: null })) as ReactElement;
   const found: ReactElement[] = [];
   const walk = (node: ReactNode) => {
     if (Array.isArray(node)) return node.forEach(walk);
