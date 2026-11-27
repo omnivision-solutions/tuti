@@ -206,8 +206,8 @@ test("Report spam and block domain offers the organisational domain to owners an
     spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } }), isAdmin);
   expect(await choices(1, true)).toEqual({ blockSender: "e2e-kim@gmail.com", blockDomain: null, unblocks: null, removesRule: null });
   expect(await choices(2, true)).toEqual({ blockSender: "e2e-kim@m2.spam.example", blockDomain: "spam.example", unblocks: null, removesRule: null });
-  // The rules are the owners' and admins': a member is never offered a domain, nor can ask for it; the sender, yes.
-  expect(await choices(2, false)).toEqual({ blockSender: "e2e-kim@m2.spam.example", blockDomain: null, unblocks: null, removesRule: null });
+  // The rules are the owners' and admins': a member is offered neither, nor can ask for it.
+  expect(await choices(2, false)).toEqual({ blockSender: null, blockDomain: null, unblocks: null, removesRule: null });
   await expect(call(updateConversation, asMember, { number: 2, spam: true, blockDomain: true })).rejects.toMatchObject({ status: 403 });
   await expect(call(updateConversation, admin, { number: 1, spam: true, blockDomain: true })).rejects.toThrow(
     new OperationError(409, "no_domain", "Anyone can get an address at this domain, so it isn't blocked: marking as spam blocks this address"),
@@ -226,7 +226,7 @@ test("Report spam and block domain offers the organisational domain to owners an
   expect((await filed()).slice(2)).toEqual(["blocked_domain", "blocked_domain", "inbox"]);
 });
 
-test("Report spam and block sender: any teammate's, an Everyone rule from a report on the proven address, never for an address a visitor typed", async () => {
+test("Report spam and block sender: an owner's or admin's, an Everyone rule from a report on the proven address, never for an address a visitor typed", async () => {
   const { project, projectId, mail, filed, admin, asMember } = await setup();
   await mail("e2e-kim@spam.example"); // #1
   expect(await widgetStartConversation(project.slug, {}, "Hello", "e2e-typed@spam.example")).toMatchObject({ number: 2 });
@@ -237,9 +237,11 @@ test("Report spam and block sender: any teammate's, an Everyone rule from a repo
   await expect(call(updateConversation, admin, { number: 2, spam: true, blockSender: true })).rejects.toThrow(
     new OperationError(409, "no_sender", "This conversation's sender isn't proven, so there's no address to block"),
   );
-  await expect(call(updateConversation, asMember, { number: 1, blockSender: true })).rejects.toMatchObject({ status: 400 });
-  // A member's report blocks the sender: a rule, Everyone, from a report.
-  await call(updateConversation, asMember, { number: 1, spam: true, blockSender: true });
+  await expect(call(updateConversation, admin, { number: 1, blockSender: true })).rejects.toMatchObject({ status: 400 });
+  // A member's report is a report alone: a rule beats the allowed list, which only owners and admins decide.
+  await expect(call(updateConversation, asMember, { number: 1, spam: true, blockSender: true })).rejects.toMatchObject({ status: 403 });
+  expect(await filed()).toEqual(["inbox", "inbox"]);
+  await call(updateConversation, admin, { number: 1, spam: true, blockSender: true });
   expect(await prisma.spamRule.findMany({ where: { projectId }, select: { field: true, matcher: true, value: true, appliesTo: true, fromReport: true } })).toEqual([
     { field: "sender_address", matcher: "is", value: "e2e-kim@spam.example", appliesTo: "everyone", fromReport: true },
   ]);
@@ -247,6 +249,20 @@ test("Report spam and block sender: any teammate's, an Everyone rule from a repo
   expect(await choices(1, true)).toMatchObject({ blockSender: null, unblocks: "e2e-kim@spam.example" });
   await mail("e2e-kim@spam.example"); // #3
   expect((await filed())[2]).toBe("blocked_address");
+});
+
+test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
+  const { projectId, mail, filed, admin } = await setup();
+  await prisma.spamRule.createMany({ data: Array.from({ length: 500 }, (_, i) => ({ projectId, field: "subject", matcher: "is", value: `pitch ${i}` })) });
+  await mail("e2e-kim@spam.example"); // #1
+  const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } });
+  expect(await spamChoices(prisma, conversation, true)).toMatchObject({ blockSender: null, blockDomain: null });
+  for (const block of [{ blockSender: true }, { blockDomain: true }]) {
+    await expect(call(updateConversation, admin, { number: 1, spam: true, ...block })).rejects.toThrow(
+      new OperationError(409, "too_many", "The filter holds up to 500 rules: remove some first"),
+    );
+  }
+  expect([await filed(), await prisma.spamRule.count({ where: { projectId } })]).toEqual([["inbox"], 500]);
 });
 
 test("two admins blocking the same domain at once from two of its conversations leave one rule, marked from a report", async () => {

@@ -1552,7 +1552,7 @@ export const updateConversation = defineOperation({
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC)",
+          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Owners and admins only (403). Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC)",
         )
         .meta({ examples: [false] }),
       blockDomain: z
@@ -1673,7 +1673,7 @@ export const updateConversation = defineOperation({
           }
         }
         if (input.blockSender) {
-          await blockSenderOf(tx, sent);
+          await blockSenderOf(tx, sent, admin);
         }
         if (input.blockDomain) {
           await blockDomainOf(tx, sent, admin);

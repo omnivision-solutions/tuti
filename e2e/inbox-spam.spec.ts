@@ -12,7 +12,7 @@ import { nextDecision } from "./model";
 // Wide enough for the Inbox's four panes: its views, the list, the conversation and its details.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("Report spam, and block the sender or the domain, files their next emails, with the reason on the conversation; a member isn't offered the domain, nor anyone a free-mail one; Not spam says what stays", async ({ browser }, testInfo) => {
+test("Report spam, and block the sender or the domain, files their next emails, with the reason on the conversation; a member is offered Report spam alone, nobody a free-mail domain; Not spam says what stays", async ({ browser }, testInfo) => {
   // Eleven emails, two people and as many page loads.
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
@@ -46,7 +46,7 @@ test("Report spam, and block the sender or the domain, files their next emails, 
   await expect(owner.getByRole("menuitem", { name: /block domain/ })).toHaveCount(0);
   await owner.keyboard.press("Escape");
 
-  // A member is never offered the domain: blocking one is the owners' and admins'.
+  // A member is offered Report spam alone: block rules are the owners' and admins'.
   const member = await signUp(browser, APP_URL, "Mo Member");
   await db(
     `INSERT INTO team_member (id, "projectId", "userId", role) SELECT gen_random_uuid()::text, p.id, u.id, 'MEMBER' FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`,
@@ -54,8 +54,7 @@ test("Report spam, and block the sender or the domain, files their next emails, 
   );
   await member.goto(`/app/${slug}/inbox/1`);
   await member.getByRole("button", { name: "More actions" }).click();
-  await expect(member.getByRole("menuitem", { name: /^Report spam and block sender/ })).toContainText("e2e-kim@mail.spam-corp.example");
-  await expect(member.getByRole("menuitem", { name: /block domain/ })).toHaveCount(0);
+  await expect(member.getByRole("menuitem", { name: /^Report spam/ })).toHaveText(["Report spam"]);
   await member.close();
 
   // The company's: the owner sees all three, the organisational domain under the last, and blocking it asks nothing.
