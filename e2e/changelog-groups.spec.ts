@@ -103,6 +103,11 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   // Who it reaches, in a few words: the list, the widget and the email all leave out everyone else.
   await expect(audience).toContainText("Only users in selected groups");
   await checkpoint(owner, "editor-audience");
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.reload();
+  await expect(audience.getByRole("radio", { name: "Some groups" })).toBeChecked();
+  await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
   // On a phone the sidebar fits the screen, a long pull request title cut to its line.
   await linkPullRequest(slug, 1, { repo: "acme/app", number: 41, title: "Replace the theme picker with a menu that follows the system setting on every platform" });
   await owner.reload();
@@ -114,11 +119,6 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await owner.getByRole("heading", { name: "Pull requests" }).scrollIntoViewIfNeeded();
   await checkpoint(owner, "editor-sidebar-phone", { fullPage: false });
   await owner.setViewportSize({ width: 1280, height: 720 });
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
-  await owner.reload();
-  await expect(audience.getByRole("radio", { name: "Some groups" })).toBeChecked();
-  await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveCount(0);
   await owner.goto(`/app/${slug}/changelog/1`);
