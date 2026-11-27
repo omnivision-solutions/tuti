@@ -140,11 +140,14 @@ test("a save made beside the entry's older text is refused, so it never reads as
   expect(error.code).toBe("changed");
 });
 
-test("an Automatic language added after an entry was published has no version: Keep up to date reads off, and turning it on translates it", async () => {
+test("a language made Automatic after an entry was published has no version: Keep up to date reads off, and turning it on translates it", async () => {
+  // German added Manual after the entry was published, then made Automatic: neither starts its version (adding an
+  // Automatic language would, in bulk).
   await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }] });
   const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
   await call(publishChangelogEntry, as(), { number });
-  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de" }] });
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de", newPages: "manual" }] });
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de", newPages: "automatic" }] });
   await languageTranslationsDone();
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: false, publishedAt: null });
   model.reply(reply("de"));
@@ -217,7 +220,9 @@ test("Keep up to date turned on where there's no version yet, then Save before i
   await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }] });
   const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
   await call(publishChangelogEntry, as(), { number });
-  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de" }] });
+  // German added Manual, then made Automatic: no version started (adding it Automatic would, in bulk).
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de", newPages: "manual" }] });
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de", newPages: "automatic" }] });
   await languageTranslationsDone();
   const none = await call(getChangelogTranslation, as(), { number, language: "de" });
   expect(none.publishedAt).toBeNull();
