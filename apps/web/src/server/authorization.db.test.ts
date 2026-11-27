@@ -667,8 +667,11 @@ const matrix: Matrix = {
       before: () => {
         model.otherwise(JSON.stringify({ segments: { "1": "Article de la matrice" } }), "Matrix article");
         model.otherwise(JSON.stringify({ segments: { "1": "Entrée de la matrice" } }), "Matrix entry");
-        // Its collection and tab names too (docs/plan.md L13).
-        model.otherwise(JSON.stringify({ segments: { "0.n": "Bases", "1.n": "Guides pratiques", "2.n": "Documentation" } }), '"0.n":"Basics"');
+        // Its collection and tab names too (docs/plan.md L13), and its boards' (L14).
+        model.otherwise(
+          JSON.stringify({ segments: { "0.n": "Bases", "1.n": "Guides pratiques", "2.n": "Documentation", "3.n": "Demandes de fonctionnalités", "4.n": "Vide" } }),
+          '"0.n":"Basics"',
+        );
       },
       call: async (slug) => {
         const result = await languages.addLanguage(slug, "fr");

@@ -61,6 +61,12 @@ export default async function globalSetup() {
     }),
     '"article_after"',
   );
+  // Every project's first board, "Feature requests", is translated into a language kept up to date (docs/plan.md L14): its
+  // name in any labels request a journey doesn't script, or sent again alone where a journey's reply covers only its own
+  // labels (matched by its place in the request, `<i>.n`; a journey's own scripted reply comes first).
+  for (let i = 0; i < 10; i++) {
+    model.otherwise(JSON.stringify({ segments: { [`${i}.n`]: "Funktionswünsche" } }), `"${i}.n":"Feature requests"`);
+  }
   // Duplicates: the decision model calls every candidate the embeddings find a duplicate, so the embeddings' fixtures decide.
   model.otherwiseDecide({ "*": { duplicate: 0.9, related: 0.05, different: 0.05 } }, '"existing_0"');
   // The spam filter's AI check (only for a project with guidance): every new conversation no free check decided is

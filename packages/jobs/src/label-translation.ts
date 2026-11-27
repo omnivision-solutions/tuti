@@ -11,7 +11,8 @@ import { glossaryFor, projectGlossary } from "./glossary";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
 /**
- * Labels' translations (docs/plan.md, Languages, L13): a docs collection's name and description and a tab's name in each of
+ * Labels' translations (docs/plan.md, Languages, L13 and L14): a docs collection's name and description, a tab's name, and a
+ * feedback board's name and description (only a board readers see: not one turned off nor the team's alone), in each of
  * the project's languages, in a `translations` column on each: `{ de: { name, description, auto, source } }`. Automatic
  * ones (`auto`) are made by the `translate-labels` job and kept up to date; the team's own stay as they wrote them.
  */
@@ -43,7 +44,7 @@ export function labelIn(label: { name: string; description?: string; translation
   return { name: translation.name, description: translation.description ?? "" };
 }
 
-const ABOUT = "the names and descriptions of a software product's help center sections (short labels, each one on its own)";
+const ABOUT = "the names and descriptions of a software product's help center sections and feedback boards (short labels, each one on its own)";
 
 /** Labels to translate in a language (SQL, for `language` and whether it's Automatic for new pages): new ones, and automatic ones whose text changed. */
 const stale = (source: Prisma.Sql, language: string, automatic: Prisma.Sql) => Prisma.sql`(
@@ -52,20 +53,31 @@ const stale = (source: Prisma.Sql, language: string, automatic: Prisma.Sql) => P
 )`;
 const COLLECTION_SOURCE = Prisma.sql`name || chr(31) || description`;
 const TAB_SOURCE = Prisma.sql`name || chr(31)`;
+// A board's description may be null: its source as for an empty one (labelSource(name, "")).
+const BOARD_SOURCE = Prisma.sql`name || chr(31) || coalesce(description, '')`;
+/** Boards readers see: on, and not the team's alone (only those are translated). */
+const SHOWN_BOARD = Prisma.sql`NOT off AND "postVisibility" <> 'TEAM'`;
 
-type Label = { table: "collection" | "tab"; id: string; name: string; description: string };
+type Label = { table: "collection" | "tab" | "board"; id: string; name: string; description: string };
 
 /** A project's labels to translate into `language` (sample collections never are, as sample articles aren't). */
 async function labelsToTranslate(projectId: string, language: string, automatic: boolean): Promise<Label[]> {
   const auto = automatic ? Prisma.sql`true` : Prisma.sql`false`;
-  const [collections, tabs] = await Promise.all([
+  const [collections, tabs, boards] = await Promise.all([
     prisma.$queryRaw<{ id: string; name: string; description: string }[]>`
       SELECT id, name, description FROM collection
       WHERE "projectId" = ${projectId} AND NOT sample AND ${stale(COLLECTION_SOURCE, language, auto)} ORDER BY "createdAt", id`,
     prisma.$queryRaw<{ id: string; name: string }[]>`
       SELECT id, name FROM docs_tab WHERE "projectId" = ${projectId} AND ${stale(TAB_SOURCE, language, auto)} ORDER BY "order", id`,
+    prisma.$queryRaw<{ id: string; name: string; description: string }[]>`
+      SELECT id, name, coalesce(description, '') AS description FROM board
+      WHERE "projectId" = ${projectId} AND ${SHOWN_BOARD} AND ${stale(BOARD_SOURCE, language, auto)} ORDER BY "createdAt", id`,
   ]);
-  return [...collections.map((row) => ({ table: "collection" as const, ...row })), ...tabs.map((row) => ({ table: "tab" as const, ...row, description: "" }))];
+  return [
+    ...collections.map((row) => ({ table: "collection" as const, ...row })),
+    ...tabs.map((row) => ({ table: "tab" as const, ...row, description: "" })),
+    ...boards.map((row) => ({ table: "board" as const, ...row })),
+  ];
 }
 
 /**
@@ -155,7 +167,7 @@ export async function translateLabels({ projectId, language }: JobInput<"transla
       failed++;
       continue;
     }
-    const entry: LabelTranslation = { name, ...(label.table === "collection" && { description }), auto: true, source: labelSource(label.name, label.description) };
+    const entry: LabelTranslation = { name, ...(label.table !== "tab" && { description }), auto: true, source: labelSource(label.name, label.description) };
     written += await writeLabel(label, projectId, language, setting, entry);
   }
   if (failed > 0) {
@@ -190,7 +202,9 @@ async function writeLabel(label: Label, projectId: string, language: string, sta
     const rows =
       label.table === "collection"
         ? await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, description, translations FROM collection WHERE id = ${label.id} FOR UPDATE`
-        : await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, '' AS description, translations FROM docs_tab WHERE id = ${label.id} FOR UPDATE`;
+        : label.table === "board"
+          ? await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, coalesce(description, '') AS description, translations FROM board WHERE id = ${label.id} FOR UPDATE`
+          : await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, '' AS description, translations FROM docs_tab WHERE id = ${label.id} FOR UPDATE`;
     const now = rows[0];
     const current = now?.translations[language];
     if (!now || labelSource(now.name, now.description) !== entry.source || (current && !current.auto) || !(await sameSetting(tx, projectId, language, started))) {
@@ -199,7 +213,9 @@ async function writeLabel(label: Label, projectId: string, language: string, sta
     const translations = { ...now.translations, [language]: entry } as Prisma.InputJsonValue;
     await (label.table === "collection"
       ? tx.collection.update({ where: { id: label.id }, data: { translations } })
-      : tx.docsTab.update({ where: { id: label.id }, data: { translations } }));
+      : label.table === "board"
+        ? tx.board.update({ where: { id: label.id }, data: { translations } })
+        : tx.docsTab.update({ where: { id: label.id }, data: { translations } }));
     return 1;
   });
 }
@@ -258,7 +274,7 @@ async function queueOne(projectId: string, language: string) {
  */
 export async function retranslateLabels(tx: Prisma.TransactionClient | typeof prisma, projectId: string, language: string) {
   await tx.projectLanguage.updateMany({ where: { projectId, code: language }, data: { labelsVersion: { increment: 1 } } });
-  for (const table of [Prisma.raw("collection"), Prisma.raw("docs_tab")]) {
+  for (const table of [Prisma.raw("collection"), Prisma.raw("docs_tab"), Prisma.raw("board")]) {
     await tx.$executeRaw`
       UPDATE ${table} SET translations = jsonb_set(translations, ${[language, "source"]}::text[], 'null'::jsonb)
       WHERE "projectId" = ${projectId} AND (translations -> ${language} ->> 'auto')::boolean`;
@@ -268,7 +284,7 @@ export async function retranslateLabels(tx: Prisma.TransactionClient | typeof pr
 /** Languages removed from a project: their label translations go with them (as their articles' versions do), so adding one again translates its labels anew. */
 export async function forgetLabels(tx: Prisma.TransactionClient, projectId: string, languages: string[]) {
   if (languages.length === 0) return;
-  for (const table of [Prisma.raw("collection"), Prisma.raw("docs_tab")]) {
+  for (const table of [Prisma.raw("collection"), Prisma.raw("docs_tab"), Prisma.raw("board")]) {
     await tx.$executeRaw`UPDATE ${table} SET translations = translations - ${languages}::text[] WHERE "projectId" = ${projectId} AND translations ?| ${languages}::text[]`;
   }
 }
@@ -290,6 +306,7 @@ export async function queueStaleLabels(): Promise<number> {
         AND (
           EXISTS (SELECT 1 FROM collection c WHERE c."projectId" = l."projectId" AND NOT c.sample AND ${staleIn(COLLECTION_SOURCE)})
           OR EXISTS (SELECT 1 FROM docs_tab t WHERE t."projectId" = l."projectId" AND ${staleIn(TAB_SOURCE)})
+          OR EXISTS (SELECT 1 FROM board b WHERE b."projectId" = l."projectId" AND NOT b.off AND b."postVisibility" <> 'TEAM' AND ${staleIn(BOARD_SOURCE)})
         )
       ORDER BY l."projectId", l.code
       -- NO KEY: as the update it was takes, so a translation being written in that language (its row pointing here) isn't skipped.
