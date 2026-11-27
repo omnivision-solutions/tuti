@@ -2,8 +2,6 @@ import { toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { log as serverLog } from "@tuti/shared";
 
-import { queueChangelogTranslations } from "./article-translation";
-
 /** A content document (@tuti/content's JSON), kept loose here so the worker needn't load the editor's schema. */
 type Doc = { type: "doc"; content?: { type: string; content?: unknown[] }[] };
 
@@ -432,6 +430,9 @@ export async function setChangelogLine(
     // A published entry's text changed (an Autopilot line approved into it): its languages kept up to date follow
     // (docs/plan.md L16), never failing the line, which is written.
     const entryId = published;
+    // Imported here: at the top it would close an import cycle (code-change-docs → article-layers → … → running-draft →
+    // article-translation → … → verify → code-change-docs) that has verify read code-change-docs' prompts before they're defined.
+    const { queueChangelogTranslations } = await import("./article-translation");
     await queueChangelogTranslations(entryId).catch((error: unknown) => serverLog.error("Couldn't queue a changelog entry's translations", { entryId, error }));
   }
   return result;
