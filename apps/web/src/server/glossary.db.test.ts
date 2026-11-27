@@ -201,7 +201,7 @@ test("changelog entries too: one kept up to date that uses a changed term is tra
   expect(Object.values((await prisma.changelogTranslation.findFirstOrThrow({ where: { entryId, language: "fr" } })).behind as Record<string, string>)).toContain(glossaryChangedFor("Board"));
 });
 
-test("Update those sections under way as the glossary changes writes nothing: the section stays marked behind for the term", async () => {
+test("Update those sections under way as the glossary changes writes nothing, then is asked again at once: the section translated with the new term", async () => {
   await translated(true);
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
   await prisma.articleTranslation.create({
@@ -210,14 +210,17 @@ test("Update those sections under way as the glossary changes writes nothing: th
   const parts = sourceSections(translationSource(article).text);
   const boards = parts.find((part) => part.key.startsWith("Boards"))!;
   const { segments } = segmentsOf({ type: "doc", content: boards.blocks });
-  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text.replaceAll("Board", "Tafel")}`])) }), () =>
-    call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] }),
-  );
+  const answer = (tag: string, word: string) => JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[${tag}] ${text.replaceAll("Board", word)}`])) });
+  model.reply(answer("de", "Tafel"), () => call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] }));
+  // Asked again as the first ends (not after the 25-minute safety net): with the new term.
+  model.reply(answer("de2", "Brett"));
   await call(updateTranslationSections, as(), { slug: "boards", language: "de", sections: [boards.key] });
   await languageTranslationsDone();
   const after = await version("boards");
-  expect(after.behind).toMatchObject({ [boards.key]: glossaryChangedFor("Board") });
-  expect(String(after.body)).not.toContain("[de]");
+  expect(String(after.body)).toContain("[de2] Make a Brett for ideas.");
+  expect(String(after.body)).not.toContain("Tafel");
+  expect(after.updateSections).toEqual([]);
+  expect(after.behind).not.toHaveProperty(boards.key);
 });
 
 for (const [change, terms] of [
@@ -256,6 +259,8 @@ test("a glossary save while a translation's write holds an article (German kept 
       held();
       await gate;
       await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${german.id} FOR UPDATE`;
+      // A remembered segment it writes (one not using a changed term): the save, reading memory under its lock, keeps it.
+      await tx.$executeRaw`UPDATE article_translation SET memory = memory || '{"Pay by card.": "Mit Karte zahlen."}'::jsonb WHERE id = ${german.id}`;
     },
     { timeout: 20_000 },
   );
@@ -272,6 +277,7 @@ test("a glossary save while a translation's write holds an article (German kept 
   expect(waited).toBe(true);
   release();
   await Promise.all([writing, saving]);
+  expect((await version("boards")).memory).toMatchObject({ "Pay by card.": "Mit Karte zahlen." });
 });
 
 test("a term written in another case is a change: the versions that use it are translated again with it", async () => {
