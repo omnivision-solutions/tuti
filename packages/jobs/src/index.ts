@@ -26,7 +26,7 @@ import { postCreated } from "./post-created";
 import { translateMessage } from "./conversation-translation";
 import { retryArticleTranslations, translateArticle, translateChangelogEntry } from "./article-translation";
 import { translateLabels } from "./label-translation";
-export { type Glossary, glossaryChangedFor, glossaryIn, projectGlossary } from "./glossary";
+export { type Glossary, glossaryChangedFor, glossaryFor, glossaryIn, projectGlossary } from "./glossary";
 export { forgetLabels, labelIn, type LabelTranslation, type LabelTranslations, labelSource, queueLabels, retranslateLabels, translateLabels } from "./label-translation";
 export { behindKey, behindSections, docOfSections, editedSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, standingIn, versionSections, withTranslation } from "./translation-sections";
 import { checkPushReceipts, conversationPush } from "./push";
