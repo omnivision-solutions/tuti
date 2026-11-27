@@ -105,3 +105,39 @@ test("a request for a person that names an off-limits topic is read by the answe
   expect(await prisma.conversationEvent.findMany({ where: { conversationId: conversation.id, kind: "handed_over" }, select: { details: true } })).toEqual([{ details: { reason: "user_asked" } }]);
   expect(await prisma.docsQuestion.findMany({ where: { projectId: project.id }, select: { status: true, cause: true } })).toEqual([{ status: "FAILED", cause: null }]);
 });
+
+/** A project whose email the AI answers first, with one article; an email from a stranger saying `body`; its conversation. */
+async function emailed(body: string, { offLimits = [] as string[] } = {}) {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true, emailAiFirst: true, assistantOffLimits: offLimits } });
+  const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  await call(publishArticle, admin, { slug: (await call(createArticle, admin, { title: "Exporting", body: "Settings → Export downloads everything as CSV." })).slug });
+  const to = supportAddress(await mailSubdomain(project.id), DOMAIN);
+  actAs(null);
+  await postEmail(rawEmail({ from: "e2e-sender@example.com", to, body }), { recipient: to });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  /** Why it was handed over, and how its question was logged. */
+  const outcome = async () => ({
+    reasons: (await prisma.conversationEvent.findMany({ where: { conversationId: conversation.id, kind: "handed_over" }, select: { details: true } })).map((row) => (row.details as { reason: string }).reason),
+    questions: await prisma.docsQuestion.findMany({ where: { projectId: project.id }, select: { status: true, cause: true } }),
+  });
+  return { conversation, outcome };
+}
+
+test("a question no article is close to, which the answer model doesn't take for a request for a person: handed over as no answer, logged as a gap", async () => {
+  const { conversation, outcome } = await emailed("Do you sell gift cards?");
+  model.reply(JSON.stringify({ answer: "", sources: [] }), undefined, "Answer the question from these sections");
+  model.reply("They ask about gift cards.", undefined, "askedBefore");
+  expect(await runAiTurn(conversation.id)).toBe("handed_over");
+  expect(await outcome()).toEqual({ reasons: ["no_answer"], questions: [{ status: "NO_ANSWER", cause: "NO_RELEVANT_SECTION" }] });
+});
+
+test("an off-limits question whose flag can't be asked (the answer model failing): handed over as off-limits, as before", async () => {
+  const { conversation, outcome } = await emailed("How do refunds work?", { offLimits: ["refunds"] });
+  model.fail(500);
+  model.reply("They ask about refunds.", undefined, "askedBefore");
+  expect(await runAiTurn(conversation.id)).toBe("handed_over");
+  expect(model.requests[0]!.messages.at(-1)!.content).toContain('"sections": []');
+  expect(await outcome()).toEqual({ reasons: ["off_limits"], questions: [{ status: "NO_ANSWER", cause: "OFF_LIMITS" }] });
+});
