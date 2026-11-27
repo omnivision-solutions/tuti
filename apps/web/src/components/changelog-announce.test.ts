@@ -182,7 +182,7 @@ test("an email-only entry's Publish line says it's listed nowhere", () => {
 
 describe("Audience", () => {
   test("a draft for some groups counts, and says it counts, only the subscribers in them", () => {
-    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 0)).toContain("No subscribers yet");
+    expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 0)).toContain("No subscribers in these groups");
     expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, groups: ["enterprise"] }, 1)).toContain("1 subscriber");
     expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 }, 0)).toContain("No subscribers yet");
   });

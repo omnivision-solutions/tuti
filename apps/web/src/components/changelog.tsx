@@ -659,6 +659,7 @@ export function ChangelogForm({
   const askWhole = useRef<(() => void) | null>(null);
   const askPausedId = useId();
   const shipsId = useId();
+  const shipsPosts = (entry?.published ? entry.posts : linked).length > 0 && !entry?.sample && !entry?.importedOn;
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
@@ -866,9 +867,12 @@ export function ChangelogForm({
             onChange={link}
           />
           {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
-          <p className="text-xs text-muted-foreground">
-            {entry?.published ? "Publishing completed its posts and emailed their voters." : "Publishing completes linked posts and emails their voters."}
-          </p>
+          {/* What linking a post does, while one is and it's true (a sample or imported entry is published quietly). */}
+          {shipsPosts && (
+            <p className="text-xs text-muted-foreground">
+              {entry?.published ? "Publishing completed its posts and emailed their voters." : "Publishing completes linked posts and emails their voters."}
+            </p>
+          )}
         </section>
       </aside>
     </form>
@@ -1125,7 +1129,7 @@ function AnnounceRows({
     : entry.groups.length > 0
       ? // Counted in its groups only (changelogEmailed sends it to no one else).
         n === 0
-        ? "No subscribers yet"
+        ? "No subscribers in these groups"
         : subscriberCountText(n)
       : entry.privatePortal
         ? n === 0
@@ -1248,7 +1252,7 @@ function CompletedPosts({
       {/* The ones shown: a linked post merged away since isn't (saving drops it; it can't be listed). */}
       {editable && shown.map((post) => <input key={post.number} type="hidden" name="posts" value={post.number} />)}
       <GroupHeading count={shown.length}>
-        <h2 className="group-label">Posts</h2>
+        <h3 className="group-label">Posts</h3>
         {editable && (
           <Dialog
             open={open}
@@ -1388,9 +1392,9 @@ function EntryPullRequests({
   return (
     <section aria-labelledby={PULL_REQUESTS_HEADING} className="flex flex-col gap-2">
       <GroupHeading count={list.length}>
-        <h2 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
+        <h3 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
           Pull requests
-        </h2>
+        </h3>
         {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
       </GroupHeading>
       {list.length > 0 && (

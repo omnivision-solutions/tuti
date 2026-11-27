@@ -303,7 +303,7 @@ the list picks none to approve at once.
   lines, all on for a draft: Changelog list (off: email only; saved with the entry, so Publish waits for a change to it,
   as for Who sees it), Widget (off and disabled while the list is, "Needs the changelog list" under it, back as it was
   once the list is on) and Email (the subscribers' count under it, its groups' only where it has groups: "3
-  subscribers", "No subscribers yet"; off and disabled with one short reason where it can't go). The popup and the
+  subscribers", "No subscribers yet", "No subscribers in these groups"; off and disabled with one short reason where it can't go). The popup and the
   email are picked there, so Publish only confirms; published, they say what happened ("Sent to 3 subscribers",
   "Published without it", and how many people who asked were told). A saved entry has the popup and the email; a new
   one, the list only. Then **Ships**: **Posts** and **Pull requests**, each with its count and its action at the row's
@@ -311,7 +311,7 @@ the list picks none to approve at once.
   one line each (a `PR #41` chip as Autopilot shows them, its title cut to the line; a draft's taken out with ×, their
   line with them; Add listing the ones no entry has, ticked unless Autopilot found nothing for users in them, with what
   their analyses cost where credits are on; a published entry's listed as they shipped), then "Publishing completes
-  linked posts and emails their voters." The sidebar ends with room for the support chat's button.
+  linked posts and emails their voters." while one is linked (not on a sample or imported entry, published quietly) The sidebar ends with room for the support chat's button.
   Once it's published, "View on portal" is in the header's More actions, as on a post's page. Its readers' comments sit under both ("N comments", the thread as on a post, flat; Delete under
   each, Edit under the team's own while it's published). Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The featured image (its cover, and its link

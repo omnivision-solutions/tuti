@@ -1323,7 +1323,8 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/changelog/1`);
-  // Highlighted in the text, where they are.
+  // Counted under its status, and highlighted in the text, where they are.
+  await expect(team.getByRole("region", { name: "Status" })).toContainText("2 lines to fill in");
   await expect(team.getByRole("textbox", { name: "What changed" }).locator("[data-fill-in]")).toHaveText(["[Check: is it out on iOS yet?]", "[Screenshot: the theme menu, open]"]);
   await checkpoint(team, "team-changelog-fill-ins", { fullPage: false });
   await team.getByRole("button", { name: "Publish", exact: true }).click();
