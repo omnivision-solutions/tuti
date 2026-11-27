@@ -153,7 +153,7 @@
     "description": "Vota le idee che ti stanno più a cuore o condividi le tue.",
     "boards": "Bacheche",
     "allBoards": "Tutte le bacheche",
-    "boardMenu": "Bacheca: {board}",
+    "boardMenu": "Bacheca:",
     "search": "Cerca",
     "searchIdeas": "Cerca idee",
     "ideas": "Idee",

@@ -32,8 +32,10 @@ export function BoardSwitcher({
   const lang = useLocale();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label={t("boardMenu", { board: name })} className={pillClass(false, className)}>
+      {/* Named by its content, "Board: Bugs": the board's name in its own language (docs/plan.md L14). */}
+      <DropdownMenuTrigger className={pillClass(false, className)}>
         <LayoutListIcon aria-hidden />
+        <span className="sr-only">{t("boardMenu")}</span>
         <span lang={nameLang} className="truncate">
           {name}
         </span>

@@ -153,7 +153,7 @@
     "description": "원하는 아이디어에 투표하거나 직접 아이디어를 공유하세요.",
     "boards": "보드",
     "allBoards": "모든 보드",
-    "boardMenu": "보드: {board}",
+    "boardMenu": "보드:",
     "search": "검색",
     "searchIdeas": "아이디어 검색",
     "ideas": "아이디어",

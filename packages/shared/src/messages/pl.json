@@ -153,7 +153,7 @@
     "description": "Głosuj na pomysły, na których najbardziej ci zależy, albo dodaj własne.",
     "boards": "Tablice",
     "allBoards": "Wszystkie tablice",
-    "boardMenu": "Tablica: {board}",
+    "boardMenu": "Tablica:",
     "search": "Szukaj",
     "searchIdeas": "Szukaj pomysłów",
     "ideas": "Pomysły",

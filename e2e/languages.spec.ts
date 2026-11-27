@@ -324,6 +324,10 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await menu.getByRole("button", { name: "Menü schließen" }).click();
   // A board with no description of its own: the German one, under the board's own name.
   await expect(reader.locator('meta[name="description"]')).toHaveAttribute("content", "Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.");
+  // The board switcher named by its content: "Board:" in the page's language, the board's name marked with its own.
+  const switcher = reader.getByRole("button", { name: "Board: Funktionswünsche" });
+  await expect(switcher).not.toHaveAttribute("aria-label");
+  await expect(switcher.locator("[lang=de]")).toHaveText("Funktionswünsche");
   // Its long German name hyphenated to fit, not cut anywhere.
   await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=de]")).toHaveCSS("hyphens", "auto");
   await checkpoint(reader, "board-in-german-phone", { fullPage: false });

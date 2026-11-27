@@ -153,7 +153,7 @@
     "description": "为你最想要的想法投票，或分享你自己的想法。",
     "boards": "看板",
     "allBoards": "所有看板",
-    "boardMenu": "看板：{board}",
+    "boardMenu": "看板：",
     "search": "搜索",
     "searchIdeas": "搜索想法",
     "ideas": "想法",

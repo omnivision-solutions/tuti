@@ -153,7 +153,7 @@
     "description": "欲しいアイデアに投票するか、自分のアイデアを共有しましょう。",
     "boards": "ボード",
     "allBoards": "すべてのボード",
-    "boardMenu": "ボード：{board}",
+    "boardMenu": "ボード：",
     "search": "検索",
     "searchIdeas": "アイデアを検索",
     "ideas": "アイデア",

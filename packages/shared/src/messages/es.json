@@ -153,7 +153,7 @@
     "description": "Vota por las ideas que más te importan o comparte las tuyas.",
     "boards": "Tableros",
     "allBoards": "Todos los tableros",
-    "boardMenu": "Tablero: {board}",
+    "boardMenu": "Tablero:",
     "search": "Buscar",
     "searchIdeas": "Buscar ideas",
     "ideas": "Ideas",

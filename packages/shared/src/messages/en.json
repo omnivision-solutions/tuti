@@ -153,7 +153,7 @@
     "description": "Vote for the ideas you want most, or share your own.",
     "boards": "Boards",
     "allBoards": "All boards",
-    "boardMenu": "Board: {board}",
+    "boardMenu": "Board:",
     "search": "Search",
     "searchIdeas": "Search ideas",
     "ideas": "Ideas",
