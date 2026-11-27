@@ -808,6 +808,12 @@ paths:
       summary: Get a post
       parameters: [{ name: id, in: path, required: true, schema: { type: integer }, example: 1 }]
       responses: { "200": { description: The post, content: { application/json: { schema: { type: object, properties: { post: { type: object, properties: { title: { type: string } } }, note: { type: [string, "null"] } } }, example: { post: { title: Dark mode } } } } } }
+  /files/large:
+    get:
+      tags: [Files]
+      summary: Get a file
+      parameters: [{ name: size, in: query, required: true, schema: { type: integer }, example: 4200 }]
+      responses: { "200": { description: The file } }
 `,
     });
 
@@ -855,6 +861,12 @@ paths:
     await panel.getByRole("button", { name: "Als cURL kopieren" }).click();
     await expect(reader.locator("[data-sonner-toast]", { hasText: /^(Kopiert|Kopieren nicht möglich\.)/ })).toBeVisible();
     await checkpoint(reader, "api-reference-try-it-in-german", { fullPage: false });
+
+    // A bigger answer: its size in German numbers ("4,2 KB", not "4.2 KB"), on screen.
+    await reader.goto("/de/docs/reference/get-a-file");
+    await main.getByRole("button", { name: "Ausprobieren" }).click();
+    await panel.getByRole("button", { name: "Senden", exact: true }).click();
+    await expect(panel.getByRole("region", { name: "Antwort" }).getByText("4,2 KB", { exact: true })).toBeVisible();
 
     // On a phone.
     await reader.setViewportSize({ width: 390, height: 844 });
