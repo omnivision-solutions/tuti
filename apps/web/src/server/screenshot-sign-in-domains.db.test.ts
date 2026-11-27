@@ -42,6 +42,13 @@ beforeAll(async () => {
     requests.push(request.url!);
     if (request.url === "/") {
       response.writeHead(302, { location: "/app" }).end();
+    } else if (request.url === "/elsewhere") {
+      // To another site (this machine by another name), whose own script names a tenant.
+      response.writeHead(302, { location: `http://localhost:${(server.address() as AddressInfo).port}/tenant` }).end();
+    } else if (request.url === "/tenant") {
+      response.writeHead(200, { "content-type": "text/html" }).end('<html><script src="/assets/tenant.js"></script></html>');
+    } else if (request.url === "/assets/tenant.js") {
+      response.writeHead(200, { "content-type": "text/javascript" }).end('const a="evil.auth0.com",b="identitytoolkit.googleapis.com";');
     } else if (request.url?.startsWith("/search")) {
       // A page that echoes its address in its text, and has its config in an inline script.
       response
@@ -252,6 +259,12 @@ test("a read that fails keeps what an earlier partial read found for the same ad
   await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: firebase, signInServicesFor: partlyScannedFor(appUrl) } });
   await scanSignInServices({ projectId: project.id, appUrl });
   expect(await saved()).toMatchObject({ signInServices: firebase, signInServicesFor: partlyScannedFor(appUrl) });
+});
+
+test("an address that redirects to another site: that site's scripts aren't the app's", async () => {
+  await settle({ appUrl: `${base}/elsewhere` });
+  expect(await suggestions()).toEqual([]);
+  expect(requests).not.toContain("/assets/tenant.js");
 });
 
 test("settings without an app address suggest nothing", async () => {

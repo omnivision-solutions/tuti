@@ -223,15 +223,29 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await expect(save).toBeDisabled();
 
     // What's removed is per address: away and back, both are found again.
+    // Typed and saved again if the last save's settings, arriving late, put the old address back under it.
     for (const address of [new URL("plain", base).href, base]) {
       await expect(async () => {
         await appAddress.fill(address);
         await passwordField.fill(password);
-        await expect(save).toBeEnabled({ timeout: 1_000 });
+        await save.click({ timeout: 1_000 });
+        await expect(passwordField).toHaveValue("", { timeout: 3_000 });
+        await expect(save).toBeDisabled({ timeout: 3_000 });
+        await expect(appAddress).toHaveValue(address, { timeout: 1_000 });
       }).toPass();
-      await save.click();
-      await expect(passwordField).toHaveValue("");
     }
+    await expect(identity).toBeVisible();
+    await expect(token).toBeVisible();
+    // Nothing left to save, and an edit undone is none.
+    await expect(save).toBeDisabled();
+    await owner.getByLabel("About your app").fill("x");
+    await owner.getByLabel("About your app").fill("");
+    await expect(save).toBeDisabled();
+    // Another save keeps them: the removals before the address changed aren't sent back.
+    await owner.getByLabel("About your app").fill("Close the welcome tour.");
+    await save.click();
+    await expect(save).toBeDisabled();
+    await owner.reload();
     await expect(identity).toBeVisible();
     await expect(token).toBeVisible();
   } finally {

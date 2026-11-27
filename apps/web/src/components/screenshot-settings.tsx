@@ -57,7 +57,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
   const { state, pending, form } = useCustomizeForm({
     onSaved: () => setSaves((count) => count + 1),
     // Saved, they're never shown again, nor sent again: an address changed next to another site must get new ones.
-    clearOnSave: ["password", "signInLink"],
+    clearOnSave: ["password", "signInLink", "domainPassword"],
     save: async (prev, formData) => {
       const result = await saveScreenshotSettings(projectSlug, prev, formData);
       if (!result.error) {
@@ -265,6 +265,19 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
   const skippedField = useRef<HTMLInputElement>(null);
   useFieldChanged(typedField, typed);
   useFieldChanged(skippedField, skipped);
+  // Saved with another address, none are removed (the server clears them too): sent so, so what the form takes as
+  // saved matches what the field starts again with (it's keyed on the address).
+  useEffect(() => {
+    const form = skippedField.current?.form;
+    const clear = () => {
+      const address = form?.elements.namedItem("appUrl");
+      if (address instanceof HTMLInputElement && address.value.trim() !== (settings.appUrl ?? "") && skippedField.current) {
+        skippedField.current.value = "";
+      }
+    };
+    form?.addEventListener("submit", clear);
+    return () => form?.removeEventListener("submit", clear);
+  }, [settings.appUrl]);
   const auto = found.filter(({ host }) => !typed.includes(host) && !skipped.includes(host));
   const added = signIn === "password" && settings.passwordSet && typed.some((host) => !saved.includes(host) && !found.some((one) => one.host === host));
 
@@ -332,20 +345,19 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
           spellCheck={false}
           placeholder="Add a domain"
           aria-describedby="screenshots-other-domains-description"
-          className="h-6 min-w-36 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
+          className="h-6 min-w-36 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground/75 md:text-sm"
         />
       </div>
       <div aria-live="polite" className="sr-only" data-domains-said>
         {checking ? "Checking how your app signs in." : said ? said : auto.length > 0 ? `Added for ${[...new Set(auto.map(({ provider }) => provider))].join(", ")} sign-in: ${auto.map(({ host }) => host).join(", ")}.` : ""}
       </div>
-      {added && (
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="screenshots-domain-password" className="text-sm text-muted-foreground">
-            Enter the password again to add a domain.
-          </label>
-          <Input id="screenshots-domain-password" name="domainPassword" type="password" autoComplete="current-password" className="@min-[34rem]/settings:w-72" />
-        </div>
-      )}
+      {/* Always in the form, hidden when not needed (as the sign-in's fields are), so what "Save changes" compares stays the same. */}
+      <div hidden={!added} className="flex flex-col gap-1.5">
+        <label htmlFor="screenshots-domain-password" className="text-sm text-muted-foreground">
+          Enter the password again to add a domain.
+        </label>
+        <Input id="screenshots-domain-password" name="domainPassword" type="password" autoComplete="current-password" className="@min-[34rem]/settings:w-72" />
+      </div>
     </>
   );
 }
@@ -357,7 +369,7 @@ function Chip({ host, provider, onRemove }: { host: string; provider?: string; o
       <span className="min-w-0 truncate">{host}</span>
       {provider && (
         <Popover>
-          <PopoverTrigger openOnHover aria-label={`Auto: why ${host} was added`} className="inline-flex items-center gap-0.5 rounded-full font-sans text-[0.6875rem] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <PopoverTrigger openOnHover aria-label={`Auto: why ${host} was added`} className="inline-flex items-center gap-0.5 rounded-full font-sans text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Auto
             <InfoIcon aria-hidden className="size-3" />
           </PopoverTrigger>

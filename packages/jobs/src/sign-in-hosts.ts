@@ -202,14 +202,17 @@ async function get(url: URL, max: number, signal: AbortSignal, budget = { left: 
   return null;
 }
 
-/** The scripts a page loads (and preloads), on its own site. */
-export function scriptsOf(page: { url: URL; text: string }): URL[] {
-  const site = getDomain(page.url.hostname, { allowPrivateDomains: true }) ?? page.url.hostname;
+/**
+ * The scripts a page loads (and preloads), on the app's own site (`app`, the address asked for: a redirect elsewhere
+ * doesn't make that site's scripts the app's).
+ */
+export function scriptsOf(page: { url: URL; text: string }, app: URL = page.url): URL[] {
+  const site = getDomain(app.hostname, { allowPrivateDomains: true }) ?? app.hostname;
   const sources = [
     ...page.text.matchAll(/<script\b[^>]{0,2000}?\bsrc\s{0,20}=\s{0,20}["']([^"']{1,2000})["']/gi),
     ...page.text.matchAll(/<link\b[^>]{0,2000}?\bhref\s{0,20}=\s{0,20}["']([^"']{1,2000}?\.m?js(?:\?[^"']{0,2000})?)["']/gi),
   ].map(([, src]) => URL.canParse(src!, page.url) && new URL(src!, page.url));
-  const own = sources.filter((url): url is URL => !!url && (url.origin === page.url.origin || getDomain(url.hostname, { allowPrivateDomains: true }) === site));
+  const own = sources.filter((url): url is URL => !!url && (url.hostname === app.hostname || getDomain(url.hostname, { allowPrivateDomains: true }) === site));
   return [...new Map(own.map((url) => [url.href, url])).values()];
 }
 
@@ -268,7 +271,7 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
       return null;
     }
     // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
-    const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
+    const queue = scriptsOf(page, url).slice(0, MAX_SCRIPTS);
     // The page's text and inline data can be its users': only services' own hosts from it, tenants' from the scripts.
     const found = [findIn(page.text, false)];
     let complete = true;
