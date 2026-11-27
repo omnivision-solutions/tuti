@@ -26,10 +26,13 @@ import { firstBoardPath } from "@/server/portal-home";
 import { getSession } from "@/server/session";
 import { portalLanguage, portalLinks } from "@/server/portal-base";
 import { withLanguage } from "@/lib/language-addresses";
+import { pageTranslator } from "@/server/portal-language";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
 
 /** For the reader alone: not for search engines. */
-export const metadata: Metadata = { title: "Account", ...PRIVATE_PAGE };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await pageTranslator("account")).t("title"), ...PRIVATE_PAGE };
+}
 
 /** The signed-in person on this portal: who they're signed in as, their name (and Sign out), which emails the project sends them, and their posts and votes here. */
 export default async function PortalAccountPage(props: PageProps<"/portal/[project]/account">) {
@@ -56,18 +59,22 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
     firstBoardPath(slug),
   ]);
   const never = whyNot === "unconfirmed" ? null : whyNot;
+  // The portal's words in the page's language.
+  const [{ t, language }, { t: f }] = await Promise.all([pageTranslator("account"), pageTranslator("feedback")]);
   // Its switch wherever the changelog is emailed to their address (changelogReach): the team's too, who get it like anyone.
   const changelogShown = changelog.reach !== null && changelog.reach !== "private" && emailConfigured();
   const why = {
-    team: <p>{project.name} doesn&apos;t email its team about posts.</p>,
+    team: <p>{t("noTeamEmails", { name: project.name })}</p>,
     elsewhere: (
       <p>
-        This account is signed in through another site&apos;s single sign-on, so {project.name} doesn&apos;t email it about posts.{" "}
-        <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to choose your emails here.
+        {t.rich("elsewhere", {
+          name: project.name,
+          link: (chunks) => <SignInLink className="text-foreground underline underline-offset-4">{chunks}</SignInLink>,
+        })}
       </p>
     ),
-    notReader: <p>{project.name}&apos;s portal is private, and it doesn&apos;t email this account about posts.</p>,
-    noAddress: <p>{project.name}&apos;s sign-in didn&apos;t give this account an email address, so it can&apos;t be emailed about posts.</p>,
+    notReader: <p>{t("notReader", { name: project.name })}</p>,
+    noAddress: <p>{t("noAddress", { name: project.name })}</p>,
   };
 
   // A section of the page, its heading outside its card, as the section list jumps to it (AccountSections).
@@ -94,7 +101,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
         <p className="text-[0.9375rem] text-muted-foreground">{empty}</p>
         {boards && (
           <Link href={at("/feedback")} className={buttonVariants({ variant: "ghost", className: "hover:bg-secondary-hover" })}>
-            Browse ideas
+            {t("browseIdeas")}
           </Link>
         )}
       </div>
@@ -108,10 +115,8 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
             ) : (
               <p className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-secondary px-2.5 text-sm font-semibold tabular-nums">
                 <ChevronUpIcon aria-hidden className="size-3.5 text-muted-foreground" />
-                <span aria-hidden>{post.voteCount}</span>
-                <span className="sr-only">
-                  {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                </span>
+                <span aria-hidden>{post.voteCount.toLocaleString(language)}</span>
+                <span className="sr-only">{f("votes", { count: post.voteCount })}</span>
               </p>
             )}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
@@ -129,17 +134,17 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   return (
     <div className="flex flex-col">
       <PortalPageHeader
-        title="Account"
+        title={t("title")}
         // The address its emails go to (its SSO's): an SSO account's own is a placeholder, so none when the sign-on gave none.
-        description={changelog.email && <span className="break-all">Signed in as {changelog.email}</span>}
+        description={changelog.email && <span className="break-all">{t("signedInAs", { email: changelog.email })}</span>}
       />
       <div className="mt-5 flex flex-col gap-8 md:mt-8 md:grid md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
         <AccountSections
           sections={[
-            { id: "profile", title: "Profile" },
-            { id: "emails", title: "Emails" },
-            { id: "posts", title: "Your posts", count: posts.length },
-            { id: "votes", title: "Your votes", count: votes.length },
+            { id: "profile", title: t("profile") },
+            { id: "emails", title: t("emails") },
+            { id: "posts", title: t("yourPosts"), count: posts.length },
+            { id: "votes", title: t("yourVotes"), count: votes.length },
           ]}
         />
         <div className="flex min-w-0 flex-col gap-8 sm:gap-10">
@@ -147,15 +152,15 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
               a project's single sign-on made can't sign in there; its name comes from that sign-in. Sign out at the row's end. */}
           {section(
             "profile",
-            "Profile",
-            "Shown on your posts and comments.",
+            t("profile"),
+            t("profileDescription"),
             <div className="flex items-center gap-3 rounded-xl bg-card px-4 py-3.5 shadow-card ring-1 ring-card-edge sm:gap-4 sm:px-5 sm:py-4">
               <PortalAvatar person={{ name: session.user.name, image: session.user.image ?? null }} className="size-10" />
               <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
                 <p className="text-[0.9375rem] font-medium break-words">{session.user.name}</p>
                 {!sso && (
                   <a href={`${appUrl().origin}/app/account`} className="self-start text-primary underline underline-offset-4">
-                    Change your name in your Tuti account
+                    {t("changeName")}
                   </a>
                 )}
               </div>
@@ -164,8 +169,8 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
           )}
           {section(
             "emails",
-            "Emails",
-            `What ${project.name} emails you about.`,
+            t("emails"),
+            t("emailsDescription", { name: project.name }),
             !never || (never === "team" && changelogShown) ? (
               <EmailSettings
                 projectSlug={slug}
@@ -181,7 +186,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
                       {never === "team" && why.team}
                       {!changelog.proven && (
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <p>Confirm your email address to get these.</p>
+                          <p>{t("confirmEmail")}</p>
                           <ResendVerificationButton email={session.user.email} callbackURL={at("/account")} />
                         </div>
                       )}
@@ -193,8 +198,8 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
               <div className="rounded-xl bg-card px-4 py-3.5 text-sm text-muted-foreground shadow-card ring-1 ring-card-edge sm:px-5 sm:py-4">{why[never]}</div>
             ),
           )}
-          {section("posts", "Your posts", null, list(posts, "You haven't posted here yet.", LightbulbIcon))}
-          {section("votes", "Your votes", null, list(votes, "You haven't voted on others' posts here yet.", ChevronUpIcon))}
+          {section("posts", t("yourPosts"), null, list(posts, t("noPosts"), LightbulbIcon))}
+          {section("votes", t("yourVotes"), null, list(votes, t("noVotes"), ChevronUpIcon))}
         </div>
       </div>
     </div>
