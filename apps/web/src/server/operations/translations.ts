@@ -159,13 +159,24 @@ const versionToken = (version: Version, sourceHash: string) => contentHash(JSON.
 function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts: ReturnType<typeof sourceSections>; sourceLanguage: string; sourceHash: string }): z.output<typeof translationOutput> {
   const { published, draft, drafted } = versionParts(version, parts);
   // Never published, a version the team writes is its draft: what's behind is the draft's.
-  const behind = behindNow(version, parts, sourceLanguage, published, !version.automatic && !version.publishedAt && drafted ? { list: drafted, removed: draft?.removed } : null);
+  const all = behindNow(version, parts, sourceLanguage, published, !version.automatic && !version.publishedAt && drafted ? { list: drafted, removed: draft?.removed } : null);
+  // Kept up to date, a section behind for another reason (a glossary save's) is so where it's still the team's: in the
+  // published text, or only in the draft.
+  const own = (list: Section[] | null | undefined) => new Set((list ?? []).filter(({ meta }) => meta.own).flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
+  const other = version.automatic ? otherReasons(version.behind, sourceLanguage) : {};
+  const [ownPublished, ownDrafted] = [own(published), own(drafted)];
+  const behind = Object.fromEntries(Object.entries(all).filter(([key]) => !(key in other) || ownPublished.has(key)));
   const draftBehind = drafted
-    ? Object.keys(
-        behindOf(sourceLanguage, parts, [
-          { list: drafted, teamWrites: !version.automatic, removed: draft?.removed, changed: version.automatic ? removedChanged(draft?.removed, draft?.removedHashes, parts) : [] },
+    ? [
+        ...new Set([
+          ...Object.keys(
+            behindOf(sourceLanguage, parts, [
+              { list: drafted, teamWrites: !version.automatic, removed: draft?.removed, changed: version.automatic ? removedChanged(draft?.removed, draft?.removedHashes, parts) : [] },
+            ]),
+          ),
+          ...Object.keys(other).filter((key) => ownDrafted.has(key) && !ownPublished.has(key)),
         ]),
-      )
+      ]
     : [];
   return {
     language: version.language,

@@ -647,3 +647,45 @@ test("on a version kept up to date, a term's change replaces the team's edit in 
   expect((await version("boards")).removedSections).toHaveLength(1);
   expect((await version("boards")).updateSections).toEqual([]);
 });
+
+/** German kept up to date for Boards, with the team's own text in its Boards section (it uses Board). */
+async function teamBoards(publish: boolean) {
+  await translated();
+  const de = { slug: "boards", language: "de" as const };
+  const read = await call(getTranslation, as(), de);
+  const content = structuredClone(read.content) as Doc;
+  content.content![2]!.content![0]!.text = "Unser eigener Text.";
+  await call(saveTranslation, as(), { ...de, content, version: read.version });
+  if (publish) await call(publishTranslation, as(), de);
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+  return { de, key: sourceSections(translationSource(article).text).find((part) => part.key.startsWith("Boards"))!.key };
+}
+
+test("on a version kept up to date, a section the team kept stays theirs when a term in it changes, marked behind for it", async () => {
+  const { key } = await teamBoards(true);
+  // Kept (as publishing with `keep` leaves a section): never replaced by a retranslation.
+  const { id, sections } = await version("boards");
+  await prisma.articleTranslation.update({ where: { id }, data: { sections: (sections as { key: string | null }[]).map((meta) => (meta.key === key ? { ...meta, kept: true } : meta)) } });
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  const after = await version("boards");
+  expect(String(after.body)).toContain("Unser eigener Text.");
+  expect(after.behind).toEqual({ [key]: glossaryChangedFor("Board") });
+  expect((await call(getTranslation, as(), { slug: "boards", language: "de" })).behind).toEqual([{ section: key, reason: glossaryChangedFor("Board") }]);
+});
+
+test("on a version kept up to date, the team's draft edit stays when a term in it changes, marked behind; the published text takes the new term", async () => {
+  const { de, key } = await teamBoards(false);
+  model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await languageTranslationsDone();
+  const after = await version("boards");
+  expect(String(after.body)).toContain("[de2] Make a Brett for ideas.");
+  expect(JSON.stringify((after.draft as { content: Doc }).content)).toContain("Unser eigener Text.");
+  expect(after.behind).toEqual({ [key]: glossaryChangedFor("Board") });
+  // The editor shows it behind in the draft, where the edit is; the published text took the new term.
+  const read = await call(getTranslation, as(), de);
+  expect(read.draft!.behind).toEqual([key]);
+  expect(read.behind).toEqual([]);
+});
