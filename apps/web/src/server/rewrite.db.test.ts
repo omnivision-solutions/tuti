@@ -120,6 +120,11 @@ test("refused without asking the AI: no instruction, nothing it can edit, anothe
   const tooLong = { error: "That's too much text to edit with AI at once: select a shorter part" };
   expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("Exports are quick. ".repeat(900)))), instruction: "Shorter" })).toEqual(tooLong);
   expect(await rewriteText(project.slug, { kind: "article", text: doc(paragraph(text("書き出しはすぐに終わります。".repeat(300)))), instruction: "Shorter" })).toEqual(tooLong);
+  // Not a number the database could look up (a form or a client sending something else).
+  expect(await rewriteText(project.slug, { kind: "changelog", entry: 1.5, text: plain, instruction: "Shorter" })).toEqual({ error: "There's no such changelog entry" });
+  expect(await rewriteText(project.slug, { kind: "changelog", entry: "2" as unknown as number, text: plain, instruction: "Shorter" })).toEqual({
+    error: "There's no such changelog entry",
+  });
   expect(await rewriteText(project.slug, { kind: "changelog", entry: 99, text: plain, instruction: "Shorter" })).toEqual({ error: "There's no changelog entry #99" });
 
   const other = await signUp("Other");
