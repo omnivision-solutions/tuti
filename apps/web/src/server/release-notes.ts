@@ -127,7 +127,7 @@ You get JSON with the text to edit (Markdown), and sometimes the whole ${kind ==
 - ${kind === "changelog" ? "Write like the writing style (tone, wording), but take facts only from the text, never from the examples." : "Write like the rest of the article (tone, wording, how it speaks to the reader), but take facts only from the text."}
 
 Reply with JSON only, no other text: {"notes": "..."}
-- notes: the edited text. Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links.`;
+- notes: the edited text. Use only "## " or "### " headings, "- " list items, "1. " numbered items (a numbered list keeps its numbers: one starting at 3 starts at 3), paragraphs separated by blank lines, **bold**, and [text](url) links.`;
 
 export function rewritePrompt(input: {
   kind?: RewriteKind;

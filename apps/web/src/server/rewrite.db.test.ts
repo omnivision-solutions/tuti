@@ -152,3 +152,15 @@ test("a version that drops a line the team still has to fill in isn't offered", 
     error: "The AI's version left out a line still to fill in, so it wasn't used. Try again.",
   });
 });
+
+test("a numbered list stays numbered, from its own first number", async () => {
+  const item = (value: string) => ({ type: "listItem", content: [paragraph(text(value))] });
+  const steps = doc({ type: "orderedList", attrs: { start: 3 }, content: [item("Open the Reports page"), item("Press the Export button")] });
+  model.reply(reply("3. Open Reports\n4. Press Export"));
+
+  const result = await rewriteText(project.slug, { kind: "article", text: steps, instruction: "Shorter" });
+
+  expect(model.requests[0]!.system).toContain('"1. " numbered items');
+  expect(data(model.requests[0]!.user)).toMatchObject({ textToEdit: "3. Open the Reports page\n4. Press the Export button" });
+  expect(result).toEqual({ content: doc({ type: "orderedList", attrs: { start: 3, type: null }, content: [item("Open Reports"), item("Press Export")] }) });
+});
