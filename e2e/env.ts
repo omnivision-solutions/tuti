@@ -65,6 +65,7 @@ export const serverEnv = {
   WEBHOOK_ALLOW_PRIVATE_URLS: "true",
   // Try it through Tuti may send to a fake API on this machine (honoured only while APP_URL is on localhost).
   TRY_IT_ALLOW_LOCALHOST: "true",
+  SCREENSHOTS_ALLOW_LOCALHOST: "true",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
   // (The global setup points OPENAI_* at the model fake; ai.model stays the default.)
   OPENAI_API_KEY: "",

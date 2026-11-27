@@ -14,6 +14,7 @@ import type { SignInLinkMetadata } from "@/lib/sign-in-link";
 
 import { countEmailedLink } from "./email-link-limits";
 import { failedSignInLinkPath, pendingSignInLink } from "./sign-in-link-lookup";
+import { portalLanguage } from "@/server/portal-base";
 
 const fields = z.object({
   email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")),
@@ -59,6 +60,8 @@ export async function emailSignInLink(
     slug: projectSlug,
     projectName: project.name,
     next: safeRedirectPath(next, "/"),
+    // The link opens at this page's language address (its dead-link fallback, through the page's links, too).
+    prefix: (await portalLanguage()).prefix,
   };
   try {
     // New accounts are named as typed on sign-up, else after the address (they can change it in their account).
