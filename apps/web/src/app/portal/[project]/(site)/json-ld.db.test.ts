@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, expect, test } from "vitest";
 
-import { DocsArticle, DocsTabPage } from "@/components/portal-docs";
+import { DocsArticle, DocsCollectionPage, DocsTabPage } from "@/components/portal-docs";
 import { createArticle, createCollection, createTab, publishArticle, updateArticle, updateTab } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -11,7 +11,7 @@ import ChangelogEntryPage from "./changelog/[number]/page";
 import DocsSlugPage from "./docs/[slug]/page";
 import DocsPage from "./docs/page";
 
-/** Articles' and changelog entries' schema.org data (JSON-LD) for search and answer engines. */
+/** Articles', collections' and changelog entries' schema.org data (JSON-LD) for search and answer engines. */
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let portal: string;
@@ -197,3 +197,41 @@ test("a changelog entry's page has a BlogPosting with its canonical address and 
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
   expect(await jsonLd("7")).toBeNull();
 });
+
+/** /docs/<slug>'s JSON-LD where it's a collection's page (rendered), parsed; null without one. */
+async function collectionJsonLd(slug: string) {
+  const page = (await DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug }) } as never)) as ReactElement<Parameters<typeof DocsCollectionPage>[0]>;
+  const json = jsonLdIn(await DocsCollectionPage(page.props));
+  return json ? (JSON.parse(json) as { "@type": string; itemListElement: { name: string; item: string }[] }) : null;
+}
+/** An article published in collection `slug` (a collection with nothing to read has no page for readers). */
+async function articleIn(collection: string) {
+  const { slug } = await call(createArticle, as, { title: `In ${collection}`, body: "Read me.", collection });
+  await call(publishArticle, as, { slug });
+}
+const steps = (data: { itemListElement: { name: string; item: string }[] } | null) => data?.itemListElement.map(({ name, item }) => `${name} ${item}`);
+
+test("a collection's page has its breadcrumb: Documentation, the collection it's in, then itself", async () => {
+  expect(await collectionJsonLd("billing")).toMatchObject({ "@context": "https://schema.org", "@type": "BreadcrumbList" });
+  expect(steps(await collectionJsonLd("billing"))).toEqual([`Documentation ${portal}/docs`, `Billing ${portal}/docs/billing`]);
+  await call(createCollection, as, { name: "Refunds", parent: "billing" });
+  await articleIn("refunds");
+  expect(steps(await collectionJsonLd("refunds"))).toEqual([`Documentation ${portal}/docs`, `Billing ${portal}/docs/billing`, `Refunds ${portal}/docs/refunds`]);
+});
+
+test("a tab showing a collection in its place gives the tab's address; one locked for this reader, or sample content, has none", async () => {
+  await call(createTab, as, { name: "Guides" });
+  await call(createTab, as, { name: "API" });
+  await call(createCollection, as, { name: "Endpoints", tab: "api" });
+  await articleIn("endpoints");
+  await call(updateTab, as, { slug: "api", landing: "page", landingPage: "endpoints" });
+  const tab = (await DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug: "api" }) } as never)) as ReactElement<Parameters<typeof DocsTabPage>[0]>;
+  const collection = (await DocsTabPage(tab.props)) as ReactElement<Parameters<typeof DocsCollectionPage>[0]>;
+  expect(steps(JSON.parse(jsonLdIn(await DocsCollectionPage(collection.props))!))).toEqual([`Documentation ${portal}/docs`, `Endpoints ${portal}/docs/api`]);
+  // For signed-in readers only, shown locked to the rest: this (signed-out) reader sees its page locked.
+  await prisma.collection.updateMany({ where: { projectId: project.id, slug: "billing" }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
+  expect(await collectionJsonLd("billing")).toBeNull();
+  await prisma.collection.updateMany({ where: { projectId: project.id, slug: "billing" }, data: { access: "INHERIT", noAccess: "INHERIT", sample: true } });
+  expect(await collectionJsonLd("billing")).toBeNull();
+});
+
