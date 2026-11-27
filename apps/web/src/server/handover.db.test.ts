@@ -187,12 +187,15 @@ test("past the automated replies' cap nothing replies or keeps it: an auto-respo
 });
 
 test("a set reply is emailed only where the address is proven, as an automated reply", async () => {
-  const { projectId, to, workflow, state } = await setup();
+  const { projectId, admin, to, workflow, state } = await setup();
   await workflow("Hello", [{ kind: "reply_text", text: "Thanks, we got it." }, { kind: "dont_hand_over" }]);
   // DMARC passed: proven. No DMARC record: not.
   await postEmail(rawEmail({ from: "e2e-proven@example.com", to }), { recipient: to });
   await postEmail(rawEmail({ from: "e2e-unproven@example.com", to }), { recipient: to, auth: "spf=none dkim=none dmarc=none" });
   expect([(await state(1)).replies, (await state(2)).replies]).toEqual([["Thanks, we got it."], ["Thanks, we got it."]]);
+  // A teammate replies within the minute: one email with both, and a person's reply is never marked automatic.
+  await postEmail(rawEmail({ from: "e2e-mixed@example.com", to }), { recipient: to });
+  await call(replyToConversation, admin, { number: 3, body: "Hi, I'm looking into it." });
 
   await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${projectId}`;
   await handlers.sendConversationReplies({}, log);
@@ -200,6 +203,9 @@ test("a set reply is emailed only where the address is proven, as an automated r
   expect(sent).toHaveLength(1);
   expect(sent[0]!.headers["auto-submitted"]).toBe("auto-replied");
   expect(mailbox.emails.filter((email) => email.to.includes("e2e-unproven@example.com"))).toEqual([]);
+  const mixed = mailbox.emails.filter((email) => email.to.includes("e2e-mixed@example.com"));
+  expect(mixed).toHaveLength(1);
+  expect(mixed[0]!.headers["auto-submitted"]).toBeUndefined();
 });
 
 test("a set reply seen in the widget isn't emailed", async () => {

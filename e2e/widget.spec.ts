@@ -3290,6 +3290,14 @@ test("a workflow keeps Enterprise users with the AI: one asks a person in the wi
   // Someone not in the group: the team's.
   const other = await api("/conversations", { email: `e2e-other-${slug}@example.com`, subject: "Pricing question", body: "Do you have a discount?" });
   expect(((await api(`/conversations/${other.number}`, undefined, "GET")) as unknown as { handledBy: string }).handledBy).toBe("team");
+
+  // A set reply to an address nothing proved (given over the API) is never emailed, and its conversation says so.
+  await api("/workflows", { name: "Say hello", trigger: "about_to_hand_over", actions: [{ kind: "reply_text", text: "Hello! We'll be with you soon." }] });
+  const unproven = await api("/conversations", { email: `e2e-unproven-${slug}@example.com`, subject: "Refund", body: "Can I get a refund?" });
+  await owner.goto(`/app/${slug}/inbox/${unproven.number}`);
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem").filter({ hasText: "Hello! We'll be with you soon." })).toContainText(
+    "Not emailed: their address isn't verified",
+  );
 });
 
 test("the widget's Home: help first with suggested articles, a message to the team with when it usually replies, and news of a signed-in visitor's ideas", async ({ browser }, testInfo) => {
