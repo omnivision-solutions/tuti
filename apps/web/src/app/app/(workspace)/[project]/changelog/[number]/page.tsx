@@ -13,6 +13,9 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
+import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave } from "@/components/changelog-languages";
+import { NO_AI_WAITING } from "@/lib/changelog-versions";
+import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
@@ -25,6 +28,7 @@ import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold, generatorSources } from "@/server/changelog-queries";
 import { IMPORT_SOURCES, type ImportSourceKey } from "@/lib/import-parts";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { readChangelogVersion } from "@/server/operations/changelog-translations";
 import { entryScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { displayDoc } from "@/server/content";
 import { automaticDesign, coverContent, coverDesigns } from "@/server/cover-card";
@@ -165,6 +169,29 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }
       : null;
   const readerUrl = entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null;
+  // Its languages (docs/plan.md L16), once it's published (its versions are made from what's published; a sample entry is
+  // never translated): the pill and the sidebar's Languages, and the version `?language=` opens.
+  const languages = await entryLanguages(membership.project.id, slug, entry);
+  const { language: asked } = await props.searchParams;
+  const opened = languages?.slice(1).find((language) => language.code === asked) ?? null;
+  const version =
+    opened &&
+    (await (async () => {
+      // Its state from the read its text and token come from (not the pill's, read before it): a save landing between
+      // the two never leaves the team's text under "Not written yet", turned off unconfirmed.
+      const { read, state } = await readChangelogVersion(membership.project.id, entry.number, opened.code as "de");
+      return {
+        code: opened.code,
+        name: opened.name,
+        state,
+        keepUpToDate: read.keepUpToDate,
+        version: read.version,
+        waiting: read.waiting ?? (state === "waiting" ? NO_AI_WAITING : null),
+        // Not written yet: the default language's title and text, to write over.
+        title: read.title || entry.title,
+        content: (read.content ?? displayDoc(entry)) as Doc,
+      };
+    })());
   const commentUploads = mediaStorage() ? { projectSlug: slug, mediaUrls: commentMedia ?? {} } : undefined;
 
   return (
@@ -177,7 +204,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             back={{ href: `/app/${slug}/changelog`, label: "All entries" }}
             titleInForm
             title={entry.title}
+            filters={languages && <ChangelogLanguagePill languages={languages} current={version?.code ?? languages[0]!.code} />}
             actions={
+              version ? (
+                <PageActions pinned>
+                  <ChangelogVersionSave />
+                </PageActions>
+              ) : (
               <PageActions
                 pinned
                 more={
@@ -227,6 +260,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
                   part="publish"
                 />
               </PageActions>
+              )
             }
           />
           <PaneBody className="lg:[container-type:size] flex flex-col gap-4 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
@@ -235,6 +269,18 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               afresh; publishing or unpublishing keeps unsaved edits, and so does a new saved cover (one composed in
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
+            {version ? (
+              // Starts afresh when its text changes (a save, a translation), not when Keep up to date flips: unsaved edits stay.
+              <ChangelogVersionForm
+                key={createHash("sha256").update(JSON.stringify([version.code, version.title, version.content])).digest("base64url")}
+                projectSlug={slug}
+                number={entry.number}
+                defaultName={languages![0]!.name}
+                view={version}
+                mediaUrls={await mediaUrls(version.content)}
+                languages={languages!}
+              />
+            ) : (
             <ChangelogForm
               key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
               projectSlug={slug}
@@ -275,14 +321,15 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               }
               mediaUrls={await mediaUrls(displayDoc(entry))}
               covers={covers}
-              canEditWithAi={aiEnabled() && !unwritten}
               canAskAi={aiEnabled() && !unwritten}
               aiPaused={paused}
               imageGenerator={imageGenerator && { ...imageGenerator, credits: creditsEnabled(), paused }}
               pullRequests={pullRequests}
               screenshots={await entryScreenshots(membership.project.id, entry)}
               canTakeScreenshots={isAdminRole(membership.role)}
+              languages={languages && <ChangelogLanguageList languages={languages} current={languages[0]!.code} />}
             />
+            )}
             {/* Always there, so focus has its heading to go to once the last is deleted. */}
             <section className="flex max-w-3xl flex-col gap-4 border-t pt-6" aria-label="Comments">
               <h2 id={COMMENTS_HEADING} tabIndex={-1} className="text-sm font-semibold outline-none">
@@ -324,4 +371,3 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     </ChangelogSaving>
   );
 }
-

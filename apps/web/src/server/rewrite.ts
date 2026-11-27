@@ -118,7 +118,7 @@ async function rewrite(projectId: string, input: RewriteInput): Promise<Doc> {
     log.warn("AI rewrite unusable", { projectId, kind, reply: reply.slice(0, 500) });
     throw new OperationError(502, "ai_failed", "The AI's version couldn't be used. Try again.");
   }
-  // Facts are checked, not trusted (as changelog.rewrite's).
+  // Facts are checked, not trusted (as drafts' are).
   const unanswered = droppedMarkers({ type: "doc", content: blocks }, rewritten.doc);
   const dropped = [
     ...droppedFacts(blocks, rewritten.doc.content!),

@@ -56,6 +56,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.seen": () => ({ at: "2026-10-20T09:00:00Z", author: { id: "matrix-reader" } }),
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
+  // The published entry's German (Manual in the fixture): read it, then turn Keep up to date off (a write that needs no `version`).
+  "changelog.getTranslation": () => ({ number: 1, language: "de" }),
+  "changelog.saveTranslation": (f) => ({ number: 1, language: "de", keepUpToDate: false, version: f.changelogVersion }),
   "changelog.editSection": () => ({ number: 1, append: true, markdown: "Added by the matrix." }),
   "changelog.composeCover": () => ({ number: 1 }),
   "images.generate": () => ({ prompt: "A lighthouse", width: 320, height: 200 }),
@@ -63,7 +66,6 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.addPullRequests": () => ({ pullRequests: [{ repo: "acme/matrix", number: 5 }] }),
   "changelog.removePullRequest": () => ({ number: 2, url: "https://github.com/acme/matrix/pull/4" }),
   "changelog.draft": () => ({ number: 2 }),
-  "changelog.rewrite": () => ({ number: 2, mode: "shorten" }),
   "changelog.publish": () => ({ number: 1 }),
   "changelog.unpublish": () => ({ number: 1 }),
   "changelog.delete": () => ({ number: 1 }),
@@ -538,6 +540,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
   return {
     marker,
     // What articles.saveTranslation's `version` is for the German version as it is (articles.getTranslation's).
+    // What changelog.getTranslation gives for entry #1's German, which has no version yet.
+    changelogVersion: contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash])),
     translationVersion: contentHash(JSON.stringify([translation.title, translation.content, translation.draft, translationSource(matrixArticle).hash])),
     screenshotRunId: screenshotRun.id,
     linkId: link.id,
@@ -715,7 +719,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
 
   // A read and write key can run it.
   fixture = await createFixture(own);
-  if (operation.name === "changelog.draft" || operation.name === "changelog.rewrite") {
+  if (operation.name === "changelog.draft") {
     model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
   }
   if (operation.name === "docs.escalate") {

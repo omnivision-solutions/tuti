@@ -20,7 +20,7 @@ import { inboxPath } from "../inbox-path";
 import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
-import { blockDomainOf, recordMark } from "../spam";
+import { blockDomainOf, blockSenderOf, recordMark } from "../spam";
 import { SPAM_HOLD_MS } from "../spam-models";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
@@ -94,7 +94,7 @@ const conversationFields = {
     .meta({ examples: [null] }),
   handledBy: z
     .enum(HANDLERS)
-    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. Nothing answers for the AI yet: its user's next message hands it to the team (emailed, `conversation.handed_over`) unless an `about_to_hand_over` workflow keeps it with the AI")
+    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. The AI answers its user's messages from the docs, and hands it to the team (emailed, `conversation.handed_over`) when they ask for a person or it can't answer, unless an `about_to_hand_over` workflow keeps it with the AI. Where the AI is off or unavailable (no AI on the server, no published articles, out of credits), each message from its user is about to go to a person the same way")
     .meta({ examples: ["team"] }),
   priority: z.boolean().describe("Marked priority: the Inbox's list says so on its row").meta({ examples: [false] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
@@ -950,7 +950,7 @@ export const createConversation = defineOperation({
  * Emails the team about the user's message (packages/jobs, conversation-message) and pushes it to their phones
  * (conversation-push); never fails or holds up the request.
  */
-async function tellTeam(projectId: string, messageId: string) {
+export async function tellTeam(projectId: string, messageId: string) {
   const { translateConversations } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { translateConversations: true } });
   // Side by side: with jobs inline (JOBS_DRIVER=inline) each runs as it's queued, so the push doesn't wait on the email.
   await Promise.all([
@@ -1550,11 +1550,18 @@ export const updateConversation = defineOperation({
           "Mark it as spam, or not. Where its sender's address is proven (not mail that failed DMARC, nor an address a signed-out visitor typed or the API gave), their next conversation is filed the same way. false on one the spam filter filed (`spamReason`) tells the team and webhooks (`conversation.created`), as a new conversation",
         )
         .meta({ examples: [true] }),
+      blockSender: z
+        .boolean()
+        .optional()
+        .describe(
+          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Owners and admins only (403). Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC), (409 `allowed`) where the address is on the allowed list, (409 `already_spam`) on one already in Spam, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
+        )
+        .meta({ examples: [false] }),
       blockDomain: z
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven",
+          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven, (409 `allowed`) where the domain is on the allowed list, (409 `already_spam`) on one already in Spam, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
         )
         .meta({ examples: [false] }),
       removeRule: z
@@ -1565,7 +1572,7 @@ export const updateConversation = defineOperation({
       handledBy: z
         .enum(HANDLERS)
         .optional()
-        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Nothing answers for the AI yet: its user's next message hands it back to the team unless an `about_to_hand_over` workflow keeps it. Closing and reopening leave it")
+        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications, which answers its user's next message from the docs (or, where the AI is off or unavailable, hands it to the team unless an `about_to_hand_over` workflow keeps it). Closing and reopening leave it")
         .meta({ examples: ["team"] }),
       priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso
@@ -1582,6 +1589,7 @@ export const updateConversation = defineOperation({
       "Send a status, an assignee, spam, handledBy, priority or snoozedUntil",
     )
     .refine((input) => !input.blockDomain || input.spam === true, "blockDomain goes with spam: true")
+    .refine((input) => !input.blockSender || input.spam === true, "blockSender goes with spam: true")
     .refine((input) => !input.removeRule || input.spam === false, "removeRule goes with spam: false")
     .meta({ anyOf: ["status", "assignee", "spam", "handledBy", "priority", "snoozedUntil"].map((field) => ({ required: [field] })) }),
   example: { status: "closed" },
@@ -1613,9 +1621,9 @@ export const updateConversation = defineOperation({
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
       const [held] = await tx.$queryRaw<
-        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; spamMarkedAt: Date | null; spamHeldAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
+        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; reportedRuleId: string | null; spamMarkedAt: Date | null; spamHeldAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
       >`
-        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "spamMarkedAt", "spamHeldAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "reportedRuleId", "spamMarkedAt", "spamHeldAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1636,17 +1644,25 @@ export const updateConversation = defineOperation({
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       // One the spam filter is holding (W4) is undecided: either mark decides it, and the models' verdict is dropped.
       const marked = input.spam !== undefined && (input.spam !== held!.spam || (!!held!.spamHeldAt && !held!.spamMarkedAt));
+      // A block goes with reporting it: one already in Spam (filed or marked; not one the filter still holds, which the
+      // report decides, as `marked` has it) keeps the rule its report added for Not spam to undo, and another block is
+      // made in Settings.
+      if ((input.blockSender || input.blockDomain) && held!.spam && !(held!.spamHeldAt && !held!.spamMarkedAt)) {
+        throw new OperationError(409, "already_spam", "It's in Spam already: block in Settings → Spam");
+      }
       // Removing the rule goes with taking it out of Spam: one a teammate took out meanwhile is said, not passed over.
       if (input.removeRule && !marked) {
         throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
       }
       let markedAt = new Date();
-      if (marked || input.blockDomain) {
+      // The rule a report added ("Report spam and block …"), kept apart from the filter's: Not spam can remove it.
+      let reported: string | null = null;
+      if (marked || input.blockDomain || input.blockSender) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
         const admin = !!member && isAdminRole(member.role);
         const sent = { ...conversation, projectId };
         if (marked) {
-          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason, { phrase: held!.spamPhrase, removeRule: input.removeRule });
+          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason, { phrase: held!.spamPhrase, reportedRuleId: held!.reportedRuleId, removeRule: input.removeRule });
           released = !input.spam && (!!held!.spamReason || !!held!.spamHeldAt);
           // Read while it's held: a message waits for this, sees it unmarked and tells of itself. Since the filter filed it
           // (all of it), or since its mark; one marked before marks had a time has none to count from, and nothing is told.
@@ -1667,8 +1683,11 @@ export const updateConversation = defineOperation({
             markedAt = new Date(Math.max(markedAt.getTime(), latest?.getTime() ?? 0));
           }
         }
+        if (input.blockSender) {
+          reported = (await blockSenderOf(tx, sent, admin)).ruleId;
+        }
         if (input.blockDomain) {
-          await blockDomainOf(tx, sent, admin);
+          reported = (await blockDomainOf(tx, sent, admin)).ruleId;
         }
         if (marked && held!.spamHeldAt) {
           // The mark ends the hold: the Reply-To kept for the model (a sign, maybe another of the sender's addresses) goes.
@@ -1689,7 +1708,9 @@ export const updateConversation = defineOperation({
           // Assigned or unassigned by the team: no longer the imported holder's to take over (handOverPlaceholders).
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
-          ...(marked && { spamMarkedAt: markedAt, spamReason: null }),
+          // A teammate's mark replaces the filter's reason, and the rule an earlier report added with this one's, or none.
+          ...(marked && { spamMarkedAt: markedAt, spamReason: null, reportedRuleId: null }),
+          ...(reported && { reportedRuleId: reported }),
           // Held: decided now, so the models' checks have nothing left to do (W4). Mark as spam keeps `spamHeldAt`, as
           // nobody was ever told of it: a later Not spam then tells of it as a new conversation.
           ...(marked && held!.spamHeldAt && { pathDueAt: null, ...(!input.spam && { spamHeldAt: null }) }),

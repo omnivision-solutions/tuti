@@ -175,6 +175,7 @@ export function RichEditor({
   placeholder,
   label,
   labelledBy,
+  lang,
   invalid,
   describedBy,
   hintId,
@@ -197,6 +198,8 @@ export function RichEditor({
   placeholder?: string;
   /** Accessible name, when there's no visible label (otherwise use labelledBy). */
   label?: string;
+  /** The text's language, on the text alone (not the toolbar's or the menus' English). */
+  lang?: string;
   labelledBy?: string;
   invalid?: boolean;
   /** Id of the element with the error text, while `invalid`. */
@@ -507,6 +510,7 @@ export function RichEditor({
         "aria-multiline": "true",
         ...(label && { "aria-label": label }),
         ...(labelledBy && { "aria-labelledby": labelledBy }),
+        ...(lang && { lang }),
         ...aria.current,
         class: cn(
           "rich-text outline-none",
@@ -582,6 +586,11 @@ export function RichEditor({
     // Once per editor: the plugin reads the hook's current actions when its buttons are pressed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, canAsk]);
+
+  // A header's Ask AI opens it on the whole text.
+  useEffect(() => {
+    askAi?.opener?.(askAi.paused ? null : () => asking.open(true));
+  });
 
   // Checked sentences are decorations, independent of the document being saved.
   useEffect(() => {
@@ -669,7 +678,7 @@ export function RichEditor({
               editor={editor}
               onPrompt={setPrompt}
               editImage={editImage}
-              askAi={askAi ? { paused: askAi.paused, run: asking.open } : undefined}
+              askAi={askAi ? { paused: askAi.paused, run: () => asking.open() } : undefined}
               host={menusHost}
               label={toolbarId ? "Text selection" : "Formatting"}
             />
@@ -1284,6 +1293,8 @@ function Tool({
       disabled={disabled}
       focusableWhenDisabled
       aria-describedby={reason ? reasonId : undefined}
+      // The button's own styles let an off button take no pointer events, so neither the press below nor the tooltip would see it.
+      className={disabled && reason ? "aria-disabled:pointer-events-auto aria-disabled:active:translate-y-0" : undefined}
       // Off, a press (a tap: tooltips don't open on touch screens) says why. Seen before the button's own handler,
       // which ignores presses while it's off.
       onClickCapture={disabled && reason ? () => toast(reason) : undefined}

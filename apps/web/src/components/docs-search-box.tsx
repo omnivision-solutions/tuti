@@ -328,13 +328,13 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                       <span className="flex items-center gap-1.5 break-words">
                         {/* An API reference's operation: its method first, as the reference's cards list them. */}
                         {option.result.method && <Method kind={option.result.method as ApiOperation["kind"]} />}
-                        <span lang={team} className="min-w-0 break-words">
+                        <span lang={option.result.lang ?? team} className="min-w-0 break-words">
                           {option.result.title}
                         </span>
                         {option.result.locked && <LockIcon aria-label={h("locked")} className="size-3.5 shrink-0 text-muted-foreground" />}
                       </span>
                       {option.result.snippet && (
-                        <span lang={team} className="line-clamp-1 text-sm break-words text-muted-foreground">
+                        <span lang={option.result.lang ?? team} className="line-clamp-1 text-sm break-words text-muted-foreground">
                           <Highlighted text={option.result.snippet} query={q} />
                         </span>
                       )}

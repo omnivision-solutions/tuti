@@ -11,6 +11,8 @@ import { APP_URL, portalUrl } from "./env";
 import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
+import { nextModelReply } from "./model";
+import { similar } from "./openai";
 
 test("a reader chooses German in the portal's header and its text follows, on desktop and on phones", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -672,7 +674,10 @@ test("signing in, signing up and resetting a password in German, the sign-in lin
   await expect(reader.getByRole("button", { name: "Andere E-Mail-Adresse verwenden" })).toBeVisible();
   await expect(reader.getByRole("link", { name: "Zurück zu Acme" })).toBeVisible();
   // The link as it was emailed: asked on a German page, it opens at the German address, and its page asks to confirm in German.
-  const link = linkIn(await latestEmailTo(email), portalUrl(slug));
+  // Its email is in German too.
+  const signInEmail = await latestEmailTo(email);
+  expect(signInEmail.subject).toBe("Bei Acme anmelden");
+  const link = linkIn(signInEmail, portalUrl(slug));
   expect(new URL(link).pathname).toBe("/de/sign-in/link");
   await reader.goto(link);
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
@@ -699,13 +704,15 @@ test("signing in, signing up and resetting a password in German, the sign-in lin
   await expect(visitor.getByRole("button", { name: "Registrierungslink per E-Mail senden" })).toBeVisible();
   await expect(visitor.getByText(/^Schon ein Konto\?\s*Anmelden$/)).toBeVisible();
   await checkpoint(visitor, "sign-up-in-german-phone", { fullPage: false });
-  // Resetting a password.
+  // Resetting a password: for an account, so its email (in German) is sent.
+  const account = await signUp(browser, portalUrl(slug), "Rita Reader");
   await visitor.goto("/de/forgot-password");
   await expect(visitor).toHaveTitle(/^Passwort zurücksetzen/);
   await expect(visitor.getByText("Wir mailen dir einen Link, um ein neues festzulegen.")).toBeVisible();
-  await visitor.getByLabel("E-Mail").fill(email);
+  await visitor.getByLabel("E-Mail").fill(account.email);
   await visitor.getByRole("button", { name: "Link per E-Mail senden" }).click();
-  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} gibt`))).toBeVisible();
+  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${account.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} gibt`))).toBeVisible();
+  expect((await latestEmailTo(account.email, { subject: /Passwort/ })).subject).toBe("Passwort zurücksetzen");
   await visitor.goto("/de/forgot-password?link=failed");
   await expect(visitor.getByText("Dieser Link ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
   // Single sign-on's error: the reader's words in German, what went wrong for whoever set it up in English.
@@ -943,4 +950,135 @@ test("the docs in German: tabs' and collections' names translated on the home, a
   // At the default language's address, the team's names.
   await reader.goto("/docs");
   await expect(reader.getByRole("list", { name: "Collections" }).getByRole("heading", { name: "Invoicing" })).toBeVisible();
+});
+
+test("AI answers in German: an answer with its sources and rating, one it can't give, Ask a person, and Still stuck?, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Written by the team (Manual): nothing asks the model to translate the article.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  // The article's only section is close to the question the reader asks.
+  const answered = "Wie lade ich mein Team ein?";
+  await similar(answered, "Getting started\n\nStart here: invite your team from the Team page.", 0.8);
+  const article = await api("/articles", { title: "Getting started", body: "Start here: invite your team from the Team page." });
+  await api(`/articles/${article.slug}/publish`, {});
+  // Messages on: Ask a person after an answer, and Contact us.
+  await team.goto(`/app/${slug}/settings/support`);
+  await team.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(team.getByText("Messages on")).toBeVisible();
+
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  // An answer: its sources (the article's title the team's words) and its rating.
+  await reader.goto(`/de/docs?${new URLSearchParams({ q: answered })}`);
+  const answer = reader.getByRole("region", { name: "KI-Antwort" });
+  await expect(answer).toContainText("Erhalte eine kurze Antwort aus der Dokumentation, geschrieben von KI.");
+  await nextModelReply(JSON.stringify({ answer: "Über die Team-Seite.", sources: ["s1"] }), answered);
+  await answer.getByRole("button", { name: "KI fragen" }).click();
+  await expect(answer.getByText("Über die Team-Seite.")).toBeVisible();
+  const sources = answer.getByRole("list", { name: "Quellen" });
+  await expect(sources.getByRole("link", { name: "Getting started" })).toHaveAttribute("lang", "en");
+  await expect(answer).toContainText("Von KI aus den Artikeln oben geschrieben. War das hilfreich?");
+  await answer.getByRole("button", { name: "Hilfreich", exact: true }).click();
+  // Focus moves to it from the button that's gone.
+  await expect(answer.getByText("Danke für dein Feedback.")).toBeFocused();
+  await checkpoint(reader, "ai-answer-in-german", { fullPage: false });
+
+  // One it can't give: Post this as feedback, and Ask a person, sent.
+  const unanswered = "Gibt es einen Dunkelmodus?";
+  await reader.goto(`/de/docs?${new URLSearchParams({ q: unanswered })}`);
+  await answer.getByRole("button", { name: "KI fragen" }).click();
+  await expect(answer.getByText("Das weiß ich nicht")).toBeVisible();
+  await expect(answer).toContainText("Dazu steht noch nichts in der Dokumentation. Poste es als Feedback, damit das Team es sieht.");
+  await expect(answer.getByRole("link", { name: "Als Feedback posten" })).toBeVisible();
+  await answer.getByRole("button", { name: "Eine Person fragen" }).click();
+  const form = answer.getByRole("form", { name: "Eine Person fragen" });
+  await expect(form).toContainText("Wir geben deine Frage und die Antwort der KI ans Team weiter. Die Antwort kommt in Nachrichten.");
+  await expect(form.getByLabel("Deine E-Mail-Adresse")).toHaveValue(reader.email);
+  await form.getByLabel("Noch etwas hinzuzufügen? (optional)").fill("Für die App.");
+  await nextModelReply("They ask about a dark mode.", unanswered);
+  await form.getByRole("button", { name: "An das Team senden" }).click();
+  await expect(answer.getByText("Wir haben das ans Team weitergegeben. Die Antwort erscheint in Nachrichten.")).toBeVisible();
+  await expect(answer.getByRole("link", { name: "Nachrichten öffnen" })).toBeVisible();
+
+  // Under an article: Still stuck?, with Ask AI and Contact us; on the docs' home, Can't find it?
+  await reader.goto(`/de/docs/${article.slug}`);
+  const stuck = reader.getByRole("region", { name: "Noch Fragen?" });
+  await expect(stuck).toContainText("Frag die KI nach einer schnellen Antwort oder schreib dem Team.");
+  await expect(stuck.getByRole("button", { name: "KI fragen" })).toBeVisible();
+  await expect(stuck.getByRole("link", { name: "Kontakt" })).toBeVisible();
+  await reader.goto("/de/docs");
+  await expect(reader.getByRole("region", { name: "Nicht gefunden?" })).toContainText("Schreib dem Team, wir helfen dir.");
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto(`/de/docs?${new URLSearchParams({ q: unanswered })}`);
+  await expect(reader.getByRole("region", { name: "KI-Antwort" })).toBeVisible();
+  await checkpoint(reader, "ai-answer-in-german-phone", { fullPage: false });
+});
+
+test("The widget's assistant marks its sources' titles in the project's default language", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { default: "fr" }, "PATCH");
+  const question = "Comment inviter mon équipe ?";
+  await similar(question, "Premiers pas\n\nInvitez votre équipe depuis la page Équipe.", 0.8);
+  const article = await api("/articles", { title: "Premiers pas", body: "Invitez votre équipe depuis la page Équipe." });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
+  await visitor.goto("/docs");
+  await visitor.getByRole("main").getByRole("button", { name: "Demander à l’IA", exact: true }).click();
+  // The widget is English until it has the reader's language (L5's last part); the titles are the team's French.
+  const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await nextModelReply(JSON.stringify({ answer: "Depuis la page Équipe.", sources: ["s1"] }), question);
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(question);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  const source = assistant.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Premiers pas" });
+  await expect(source).toHaveAttribute("lang", "fr");
+  await checkpoint(visitor, "widget-assistant-french-sources", { fullPage: false });
+});
+
+test("searching the docs in German finds the articles translated there by their German, at their German address", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // German written by the team: nothing asks the model. Billing's German version as the editor will save it (L11).
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const billing = await api("/articles", { title: "Billing", body: "Pay by card." });
+  await api(`/articles/${billing.slug}/publish`, {});
+  const setup = await api("/articles", { title: "Setup", body: "Install the app." });
+  await api(`/articles/${setup.slug}/publish`, {});
+  await query(
+    `INSERT INTO article_translation (id, "articleId", "projectId", language, title, slug, body, automatic, "publishedAt", "updatedAt")
+     SELECT gen_random_uuid()::text, a.id, a."projectId", 'de', 'Abrechnung', 'abrechnung', 'Mit Karte zahlen.', false, now(), now()
+     FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, billing.slug],
+  );
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  // The search dialog as the reader types: the German title, marked German.
+  await reader.goto("/de/docs");
+  await reader.getByRole("main").getByRole("button", { name: /^(Dokumentation durchsuchen|Suchen oder KI fragen)$/ }).click();
+  await reader.getByRole("dialog").getByRole("combobox").fill("Karte");
+  await expect(reader.getByRole("dialog").getByRole("option", { name: /Abrechnung/ }).locator("[lang=de]").first()).toHaveText("Abrechnung");
+  await reader.keyboard.press("Escape");
+  // The results' page.
+  await reader.goto("/de/docs?q=Karte");
+  const result = reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Abrechnung" });
+  await expect(result).toHaveAttribute("href", "/de/docs/abrechnung");
+  await expect(result.locator("[lang=de]")).toHaveText("Abrechnung");
+  await checkpoint(reader, "docs-search-in-german", { fullPage: false });
+  // An article not translated: found by its English, marked as the team's.
+  await reader.goto("/de/docs?q=install");
+  await expect(reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Setup" }).locator("[lang=en]")).toHaveText("Setup");
 });

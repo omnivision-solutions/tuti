@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { call } from "@/server/operations/run";
 import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
 import { suggestScreenshotDomains } from "@/server/operations/screenshots";
+import { scannedFor } from "@/server/sign-in-hosts";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
@@ -20,6 +21,15 @@ let server: Server;
 let base: string;
 const requests: string[] = [];
 let connections = 0;
+/** Script reads at once, and the most at once. */
+let reading = 0;
+/** A 3 MB script. */
+const heavy = " ".repeat(3_000_000);
+/** A 2.8 MB script, less the sign-in SDK's line in one of them. */
+const chunk = " ".repeat(2_800_000 - 50);
+/** A 2 MB script of 1 million characters. */
+const wide = "é".repeat(1_000_000);
+let mostReading = 0;
 /** Script reads that fail (500) before it loads. */
 let scriptFailures = 0;
 let owner: TestUser;
@@ -38,9 +48,34 @@ beforeAll(async () => {
     } else if (request.url === "/assets/main.js") {
       response.writeHead(200, { "content-type": "text/javascript" }).end('initializeApp({authDomain:"acme.firebaseapp.com"});const a="identitytoolkit.googleapis.com",b="securetoken.googleapis.com";');
     } else if (request.url === "/many") {
-      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 16 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 101 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/heavy")) {
+      const count = Number(new URL(request.url, base).searchParams.get("scripts") ?? 30);
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: count }, (_, i) => `<script src="/assets/h${i}.js"></script>`).join(""));
+    } else if (request.url === "/one") {
+      response.writeHead(200, { "content-type": "text/html" }).end('<script src="/assets/one.js"></script>');
+    } else if (request.url === "/assets/one.js") {
+      // A single-page app's one 4 MB bundle, the sign-in SDK at its end.
+      response.writeHead(200, { "content-type": "text/javascript" }).end(`${" ".repeat(4_000_000)}const a="identitytoolkit.googleapis.com";`);
+    } else if (request.url === "/chunks") {
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 14 }, (_, i) => `<script src="/assets/c${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/assets/c")) {
+      // 39.2 MB in 2.8 MB chunks, the sign-in SDK at the end of the last; answered after a moment, so 8 are read at once.
+      setTimeout(() => response.writeHead(200, { "content-type": "text/javascript" }).end(request.url === "/assets/c13.js" ? `${chunk}const a="identitytoolkit.googleapis.com";` : chunk), 20);
+    } else if (request.url?.startsWith("/assets/h")) {
+      response.writeHead(200, { "content-type": "text/javascript" }).end(heavy);
+    } else if (request.url === "/wide") {
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 30 }, (_, i) => `<script src="/assets/w${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/assets/w")) {
+      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(wide);
     } else if (request.url?.startsWith("/assets/s")) {
-      response.writeHead(200, { "content-type": "text/javascript" }).end("");
+      // The sign-in SDK deep in a Next.js page's chunks, at the end of a large one, as on a real app (its 26th of 40).
+      reading++;
+      mostReading = Math.max(mostReading, reading);
+      setTimeout(() => {
+        reading--;
+        response.writeHead(200, { "content-type": "text/javascript" }).end(request.url === "/assets/s39.js" ? `${" ".repeat(1_000_000)}const a="identitytoolkit.googleapis.com";` : "");
+      }, 5);
     } else {
       response.writeHead(404).end();
     }
@@ -56,6 +91,8 @@ beforeEach(async () => {
   vi.stubEnv("SCREENSHOTS_ALLOW_LOCALHOST", "true");
   requests.length = 0;
   connections = 0;
+  reading = 0;
+  mostReading = 0;
   owner = await signUp("Owner");
   project = await createProject(owner);
 });
@@ -82,7 +119,7 @@ test("finds the app's sign-in service in its own scripts, once per address, and 
   await settle({ appUrl: `${base}/missing`, otherDomains: [] });
   expect(await suggestions()).toEqual([]);
   expect(requests.at(-1)).toBe("/missing");
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/`);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/`));
 });
 
 test("a script that didn't load isn't kept as nothing found: the next look reads it again", async () => {
@@ -101,7 +138,7 @@ test("never suggests what Other domains refuses (a shared suffix), nor a host th
     data: {
       signIn: "LINK",
       signInLink: sealValue(SCREENSHOT_SECRET, "https://login.acme.example/magic?token=t"),
-      signInServicesFor: appUrl,
+      signInServicesFor: scannedFor(appUrl),
       signInServices: [{ provider: "Clerk", hosts: ["vercel.app", "github.io", "acme-12.clerk.accounts.dev", "sub.app.example.com", "login.acme.example"] }],
     },
   });
@@ -128,12 +165,54 @@ test("Tuti on localhost without SCREENSHOTS_ALLOW_LOCALHOST (a self-hosted serve
   expect(connections).toBe(0);
 });
 
-test("a page with more scripts reads only the first 15, the same each time, so what's found is kept", async () => {
+test("a page with many scripts reads the first 100, 8 at a time and each in full, the same each time, so what's found is kept", async () => {
   await settle({ appUrl: `${base}/many` });
+  const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
+  expect(await suggestions()).toEqual(firebase);
+  expect(await suggestions()).toEqual(firebase);
+  expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(100);
+  expect(mostReading).toBeLessThanOrEqual(8);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/many`));
+});
+
+test("a page whose scripts pass 40 MB together reads no more of them, and the answer isn't kept", async () => {
+  await settle({ appUrl: `${base}/heavy` });
   expect(await suggestions()).toEqual([]);
+  // 14 fill the budget; up to 7 more were already on their way.
+  expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+});
+
+test("the last script cut short by the budget, with none left to read, isn't kept either", async () => {
+  await settle({ appUrl: `${base}/heavy?scripts=14` });
+  await suggestions();
+  expect(requests.filter((path) => path.startsWith("/assets/h"))).toHaveLength(14);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+});
+
+test("scripts under the budget together are read in full, the last as much as the first, and the answer is kept", async () => {
+  await settle({ appUrl: `${base}/chunks` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/chunks`));
+});
+
+test("a single-page app's one large bundle is read in full, up to 5 MB, and the answer is kept", async () => {
+  await settle({ appUrl: `${base}/one` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/one`));
+});
+
+test("the budget counts the bytes read, not the characters", async () => {
+  await settle({ appUrl: `${base}/wide` });
   expect(await suggestions()).toEqual([]);
-  expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(15);
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/many`);
+  // 20 fill the budget; up to 7 more were already on their way.
+  expect(requests.filter((path) => path.startsWith("/assets/w")).length).toBeLessThan(28);
+});
+
+test("an answer saved by the earlier scanner, under the bare address, is found again", async () => {
+  await settle({ appUrl: `${base}/many` });
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: [], signInServicesFor: `${base}/many` } });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
 test("settings without an app address suggest nothing", async () => {
@@ -146,7 +225,7 @@ test("a sign-in link that no longer opens (another server secret) still gets sug
   await settle({ appUrl });
   await prisma.screenshotSettings.update({
     where: { projectId: project.id },
-    data: { signIn: "LINK", signInLink: "v1.not-sealed-here", signInServicesFor: appUrl, signInServices: [{ provider: "Auth0", hosts: ["acme.auth0.com"] }] },
+    data: { signIn: "LINK", signInLink: "v1.not-sealed-here", signInServicesFor: scannedFor(appUrl), signInServices: [{ provider: "Auth0", hosts: ["acme.auth0.com"] }] },
   });
   expect(await suggestions()).toEqual([{ provider: "Auth0", hosts: ["acme.auth0.com"] }]);
 });

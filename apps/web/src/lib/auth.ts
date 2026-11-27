@@ -24,7 +24,7 @@ import { jwtSso } from "./sso";
 
 /** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
-  const { linkId, slug, projectName, next, prefix = "" } = metadata as SignInLinkMetadata;
+  const { linkId, slug, projectName, next, prefix = "", language } = metadata as SignInLinkMetadata;
   await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
   // After the address: it can have a path (a portal under its site's /portal), then the language's prefix it was asked at.
   const url = new URL(`${await portalAddress(slug)}${prefix}/sign-in/link`);
@@ -36,7 +36,7 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
   await sendEmail({
     to: email,
-    ...signInLinkEmail({ projectName, ...(project && (await emailBrand(project.id))), url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }),
+    ...signInLinkEmail({ projectName, ...(project && (await emailBrand(project.id))), url: url.toString(), minutes: SIGN_IN_LINK_MINUTES, language }),
     ...(project && (await projectSender(project.id))),
   });
 }
@@ -49,16 +49,16 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
  */
 async function sendPasswordReset({ user, url, token }: { user: { email: string }; url: string; token: string }) {
   const linkId = new URL(url).searchParams.get("callbackURL")!;
-  const { project } = await prisma.signInLink.update({
+  const { project, language } = await prisma.signInLink.update({
     where: { id: linkId },
     data: { tokenHash: hashSecret(token) },
-    select: { project: { select: { id: true } } },
+    select: { project: { select: { id: true } }, language: true },
   });
   const link = new URL("/app/auth/reset-password", appUrl());
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
-    ...passwordResetEmail({ project: project && (await emailBrand(project.id)), url: link.toString(), minutes: PASSWORD_RESET_MINUTES }),
+    ...passwordResetEmail({ project: project && (await emailBrand(project.id)), url: link.toString(), minutes: PASSWORD_RESET_MINUTES, language }),
     // A portal's reset comes from its project; the app's from Tuti.
     ...(project && (await projectSender(project.id))),
   });

@@ -245,7 +245,7 @@ model Project {
   changelogCoverDesign           String       @default("")
   /// The team's own image for the "Your background" cover design.
   changelogCoverBackgroundId     String?
-  /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
+  /// AI edits (Ask AI in the changelog and help center editors) in the hour that started at
   /// changelogAiHour, for the per-project hourly cap.
   changelogAiHour                DateTime     @default(now())
   changelogAiCount               Int          @default(0)
@@ -277,6 +277,9 @@ model Project {
   widgetOnPortal                 Boolean      @default(true)
   /// A new message in Messages goes to the docs' AI first, with "Ask a person" to pass it to the team.
   widgetAiFirst                  Boolean      @default(true)
+  /// A new email conversation starts with the AI, which answers it from the docs (docs/plan.md, Inbox automation, W12;
+  /// its switch is W14's): off until the team turns it on.
+  emailAiFirst                   Boolean      @default(false)
   /// A new announcement pops up as a small card by the launcher (once per browser), on top of its dot.
   widgetPopup                    Boolean      @default(false)
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
@@ -936,6 +939,8 @@ model SignInLink {
   tokenHash  String?  @unique
   /// Whether the request sent an email (only those count toward the site's hourly limit).
   sent       Boolean  @default(true)
+  /// The language of the page it was asked on, for an email sent from the row later (a password reset's); null: English.
+  language   String?
   createdAt  DateTime @default(now())
 
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1207,6 +1212,9 @@ model Conversation {
   spamReason    String?
   /// With the reason "phrase": the team's phrase that matched, as it was written then.
   spamPhrase    String?
+  /// The block rule a teammate's report added with it ("Report spam and block …"), so Not spam can offer to remove it.
+  /// Cleared by any other mark; a removed rule's ID is left, and finds nothing.
+  reportedRuleId String?
   /// When a teammate last marked it Spam or Not spam (`spam` says which way).
   spamMarkedAt  DateTime?
   /// The path's work left to do once its request has answered (the spam filter's model checks, server/spam-models.ts):
@@ -2668,6 +2676,9 @@ model ArticleTranslation {
   updateSections   Json      @default("[]")
   /// Source sections the team took out of the published text: the job doesn't put them back, nor count them as missing.
   removedSections  Json      @default("[]")
+  /// Each of those's source section hash when it was taken out: on a version kept up to date, one whose source section
+  /// changed since comes back (the team's edit giving way, as any of theirs does).
+  removedHashes    Json      @default("{}")
   /// The team published its own title: the hash of the source's title then. A version kept up to date keeps it until the
   /// source's title changes.
   titleSource      String?
@@ -2966,6 +2977,8 @@ enum DocsQuestionSource {
   WIDGET
   /// docs.ask (REST or MCP).
   API
+  /// The AI's turn in an Inbox conversation it has (server/ai-turn.ts).
+  INBOX
 }
 
 /// A question asked of the docs' AI (docs.ask) and the asker's thumbs up or down:
@@ -3699,7 +3712,7 @@ model ScreenshotSettings {
   profileId            String?
   profileSignIn        String           @default("")
   /// The sign-in services found in the app's page and scripts (screenshotSettings.suggestions: [{ provider, hosts }]),
-  /// and the app address they were found at: found again once the address changes.
+  /// and the app address they were found at, with the scanner's version (sign-in-hosts.ts scannedFor): found again once either changes.
   signInServices       Json?
   signInServicesFor    String?
   updatedAt            DateTime         @updatedAt

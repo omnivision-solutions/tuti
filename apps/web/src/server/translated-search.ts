@@ -1,11 +1,11 @@
 import { Prisma, prisma } from "@tuti/db";
-import { embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
+import { embeddingsEnabled, log, SEARCH_MIN_SIMILARITY } from "@tuti/shared";
 import { searchConfig } from "@tuti/shared/languages";
 
 import type { Reader } from "@/lib/read-access";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
-import { type DocsSearchResult, SEARCH_EMBED_TIMEOUT_MS, snippet } from "./docs-search";
+import { type DocsSearchResult, queryVector, SEARCH_EMBED_TIMEOUT_MS, snippet } from "./docs-search";
 
 /**
  * Search in one of the project's languages (docs/plan.md L7, "Search in every language"): its published translations of
@@ -21,13 +21,18 @@ export async function searchTranslatedDocs(
   query: string,
   limit: number,
   reader: Reader,
-  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, meaning = true, unlisted = false }: { embedTimeoutMs?: number; meaning?: boolean; unlisted?: boolean } = {},
+  {
+    embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS,
+    meaning = true,
+    unlisted = false,
+    vector,
+  }: { embedTimeoutMs?: number; meaning?: boolean; unlisted?: boolean; /** The query's vector, already being embedded (docs-search's SearchOptions). */ vector?: Promise<string> } = {},
 ): Promise<DocsSearchResult[]> {
   const found = Prisma.sql`t."projectId" = ${projectId} AND t.language = ${language} AND t."publishedAt" IS NOT NULL
     AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.sample = false
     AND ${unlisted ? Prisma.sql`a.listing IN ('EVERYWHERE', 'UNLISTED')` : Prisma.sql`a.listing = 'EVERYWHERE'`} AND ${visibleArticleSql(reader)}`;
   const [byMeaning, byWords] = await Promise.all([
-    meaning && embeddingsEnabled() ? meaningMatches(projectId, language, query, limit, embedTimeoutMs, found) : [],
+    meaning && embeddingsEnabled() ? meaningMatches(projectId, language, query, limit, vector ?? queryVector(query, embedTimeoutMs), found) : [],
     wordMatches(projectId, language, query, limit, found),
   ]);
   const seen = new Set(byMeaning.map((result) => result.slug));
@@ -35,11 +40,10 @@ export async function searchTranslatedDocs(
 }
 
 /** The translations' sections closest in meaning (each article's closest), at least SEARCH_MIN_SIMILARITY alike. */
-async function meaningMatches(projectId: string, language: string, query: string, limit: number, timeoutMs: number, found: Prisma.Sql): Promise<DocsSearchResult[]> {
+async function meaningMatches(projectId: string, language: string, query: string, limit: number, embedding: Promise<string>, found: Prisma.Sql): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
-    const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
-    vector = toVectorLiteral(embedding!);
+    vector = await embedding;
   } catch (error) {
     log.warn("Embedding a translated docs search failed; matching words only", { error });
     return [];

@@ -10,7 +10,6 @@ import type { Reaction } from "@/lib/reactions";
 import type { CoverDesign } from "./cover-card";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
-import type { RewriteMode } from "./release-notes";
 import {
   composeChangelogCover as composeCoverOperation,
   composeCover,
@@ -24,12 +23,12 @@ import {
   publishChangelogEntry as publishOperation,
   reactToChangelogEntry as reactOperation,
   removeChangelogPullRequest as removePullRequestOperation,
-  rewriteChangelogEntry as rewriteOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
 import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { saveChangelogTranslation, VERSION_CHANGED } from "./operations/changelog-translations";
 import {
   createChangelogComment as createCommentOperation,
   deleteChangelogComment as deleteCommentOperation,
@@ -82,6 +81,52 @@ export async function saveChangelogEntry(
   return result;
 }
 
+/**
+ * Saves an entry's version in another language from its editor (the language pill): its title and text, against the
+ * `version` it was read at (the form's). Saving stops Keep up to date (changelog.saveTranslation).
+ */
+export async function saveChangelogVersion(projectSlug: string, number: number, language: string, _state: FormState, formData: FormData): Promise<FormState & { version?: string }> {
+  let version: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    version = (
+      await call(saveChangelogTranslation, context, {
+        number,
+        language: language as "de",
+        title: String(formData.get("title") ?? ""),
+        content: formData.get("content") || undefined,
+        version: String(formData.get("version") ?? ""),
+      })
+    ).version;
+  });
+  if (result.error) {
+    return result;
+  }
+  refresh();
+  // What it says now: the form's next save goes from it (its text may be unchanged, so it isn't loaded again).
+  return { version };
+}
+
+/**
+ * Keep up to date on an entry's version (it's translated again) or off, against the `version` the page last read. Refused
+ * as changed meanwhile, `changed` says so: the editor reads the page again, or, with edits typed, keeps them on screen.
+ */
+export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState & { version?: string; changed?: boolean }> {
+  let saved: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    saved = (await call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) })).version;
+  });
+  // Changed meanwhile: the editor reads the page again where nothing's typed (it'd remount the form, losing it), else says so.
+  if (result.error === VERSION_CHANGED) {
+    return { error: VERSION_CHANGED, changed: true };
+  }
+  if (result.error) {
+    return result;
+  }
+  refresh();
+  // What it says now (a first version made, say): the form's next save goes from it.
+  return { version: saved };
+}
+
 /** The posts "Link post…" offers an entry for what's typed: planned, in progress or completed ones (searchPosts); sample ones for a sample entry, the others for the rest. */
 export async function findPostsToComplete(projectSlug: string, q: string, sampleEntry = false) {
   const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
@@ -94,34 +139,6 @@ export async function findPostsToComplete(projectSlug: string, q: string, sample
 /** Replaces a draft's text with an AI draft (see changelog.draft). */
 export async function draftChangelogEntry(projectSlug: string, number: number): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(draftOperation, context, { number: Number(number) }));
-}
-
-export type ChangelogRewrite = Awaited<ReturnType<(typeof rewriteOperation)["run"]>>;
-
-/** An AI edit of the saved text, proposed, not saved (see changelog.rewrite). */
-export async function rewriteChangelogEntry(
-  projectSlug: string,
-  number: number,
-  input: { mode: RewriteMode; section?: number; instruction?: string },
-): Promise<{ error?: string; rewrite?: ChangelogRewrite }> {
-  let rewrite: ChangelogRewrite | undefined;
-  const result = await asTeam(projectSlug, DENIED, async (context) => {
-    // As JSON: the document's attrs come from ProseMirror as null-prototype objects, which React won't send.
-    rewrite = JSON.parse(JSON.stringify(await call(rewriteOperation, context, { ...input, number: Number(number) }))) as ChangelogRewrite;
-  });
-  return rewrite ? { rewrite } : result;
-}
-
-/** Saves an accepted AI edit, unless the entry changed since it was proposed (see changelog.update). */
-export async function acceptChangelogRewrite(
-  projectSlug: string,
-  number: number,
-  content: unknown,
-  expectedUpdatedAt: string,
-): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) =>
-    call(updateChangelogEntry, context, { number: Number(number), content, expectedUpdatedAt: String(expectedUpdatedAt) }),
-  );
 }
 
 /**

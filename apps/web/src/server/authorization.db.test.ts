@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type TeamRole, prisma } from "@tuti/db";
-import { importsSettled, languageTranslationsDone, resumeToken } from "@tuti/jobs";
+import { importsSettled, languageTranslationsDone, resumeToken, translationSource } from "@tuti/jobs";
+import { contentHash } from "@tuti/shared";
 import { SignJWT } from "jose";
 import sharp from "sharp";
 import { billingFile, type BrowserUseFake, configFile, startBrowserUseFake, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
@@ -244,23 +245,27 @@ const matrix: Matrix = {
       before: () => model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." })),
       call: (slug) => changelog.draftChangelogEntry(slug, 2),
     },
-    rewriteChangelogEntry: {
-      allowed: "MEMBER",
-      before: () => model.reply(JSON.stringify({ notes: "Shipped." })),
-      call: (slug) => changelog.rewriteChangelogEntry(slug, 2, { mode: "shorten" }),
-    },
-    acceptChangelogRewrite: {
-      allowed: "MEMBER",
-      call: async (slug) => {
-        const { updatedAt } = await prisma.changelogEntry.findFirstOrThrow({ where: { project: { slug }, number: 2 } });
-        const doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Shipped." }] }] };
-        return changelog.acceptChangelogRewrite(slug, 2, doc, updatedAt.toISOString());
-      },
-    },
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     composeChangelogCover: { allowed: "MEMBER", call: (slug) => changelog.composeChangelogCover(slug, 1, "title") },
     // Owners and admins, as screenshots.take: what's asked for goes into the agent's task beside the sign-in. Inline, by Browser Use's fake.
     takeChangelogScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => changelog.takeChangelogScreenshots(slug, 3, ["The dashboard"])) },
+    // The published entry's German (Manual in the fixture), written from its editor's language pill: a first version, then
+    // Keep up to date turned off again.
+    saveChangelogVersion: {
+      allowed: "MEMBER",
+      call: (slug) => {
+        const form = new FormData();
+        form.set("title", "Matrix-Eintrag");
+        form.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] }));
+        // As changelog.getTranslation gives it for no version yet, beside the fixture entry's text.
+        form.set("version", contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash])));
+        return changelog.saveChangelogVersion(slug, 1, "de", {}, form);
+      },
+    },
+    keepChangelogVersionUpToDate: {
+      allowed: "MEMBER",
+      call: (slug) => changelog.keepChangelogVersionUpToDate(slug, 1, "de", false, contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash]))),
+    },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
     deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },
     reactToChangelogEntry: {
