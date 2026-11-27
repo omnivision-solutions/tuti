@@ -298,7 +298,9 @@ test("a glossary save while a translation's write holds an article (German kept 
   const saving = call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett", fr: "Planche" } }] }).finally(() => (done = true));
   try {
     for (let i = 0; i < 200 && !done && !waited; i++) {
-      const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      // The save's own statement waiting on a lock (its sources' lock, held by the writer): not just any waiter.
+      const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM article WHERE id = ANY(%ORDER BY id FOR UPDATE%'`;
       waited = Number(count) > 0;
       if (!waited) await new Promise((resolve) => setTimeout(resolve, 50));
     }
@@ -805,7 +807,7 @@ test("publishing a draft whose section is behind for the glossary, its published
   expect(after.behind).toEqual({});
 });
 
-test("the only term removed: publishing a team-written version's draft doesn't take its old text as current for the glossary", async () => {
+test("the only term removed: publishing a team-written version's draft that edits another section leaves Boards the team's, behind, unless asked for", async () => {
   await translated(true);
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
   await prisma.articleTranslation.create({
@@ -815,17 +817,90 @@ test("the only term removed: publishing a team-written version's draft doesn't t
   // Board, the glossary's only term, removed: its section is behind for it (the version's glossary hash and the new one both null).
   await call(updateGlossary, as(), { terms: [] });
   expect((await version("boards")).behind).toEqual({ [boards.key]: glossaryChangedFor("Board") });
-  // A draft editing another section, published without keeping Boards: Boards is asked for again, not taken as it is.
+  // A draft editing only Billing, published: Boards is neither taken as current nor translated again: the team's, still behind.
+  const de = { slug: "boards", language: "de" as const };
+  const edit = async (text: string) => {
+    const read = await call(getTranslation, as(), de);
+    const content = structuredClone(read.content) as Doc;
+    content.content!.at(-1)!.content![0]!.text = text;
+    await call(saveTranslation, as(), { ...de, content, version: read.version });
+  };
+  await edit("Unsere Zahlung.");
+  await call(publishTranslation, as(), de);
+  await languageTranslationsDone();
+  const kept = await version("boards");
+  expect(String(kept.body)).toContain("Make a Board for ideas.");
+  expect(String(kept.body)).toContain("Unsere Zahlung.");
+  expect(kept.behind).toEqual({ [boards.key]: glossaryChangedFor("Board") });
+  expect(kept.updateSections).toEqual([]);
+  // Asked for (`take`), it's translated again, not taken as it is.
+  await edit("Unsere Zahlung, wieder.");
+  const { segments } = segmentsOf({ type: "doc", content: boards.blocks });
+  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de2] ${text}`])) }));
+  await call(publishTranslation, as(), { ...de, take: [boards.key] });
+  await languageTranslationsDone();
+  const taken = await version("boards");
+  expect(String(taken.body)).toContain("[de2] Make a Board for ideas.");
+  expect(taken.behind).toEqual({});
+});
+
+/** A draft that edits only the intro, published: what happens to the sections behind for the glossary is the test's. */
+async function publishIntroEdit(take?: string[]) {
   const de = { slug: "boards", language: "de" as const };
   const read = await call(getTranslation, as(), de);
   const content = structuredClone(read.content) as Doc;
-  content.content!.at(-1)!.content![0]!.text = "Unsere Zahlung.";
+  content.content![0]!.content![0]!.text = "Unsere Einleitung.";
   await call(saveTranslation, as(), { ...de, content, version: read.version });
-  const { segments } = segmentsOf({ type: "doc", content: boards.blocks });
-  model.reply(JSON.stringify({ segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de2] ${text}`])) }));
-  await call(publishTranslation, as(), de);
-  await languageTranslationsDone();
+  return call(publishTranslation, as(), { ...de, ...(take && { take }) });
+}
+
+test("on a version the team writes, publishing a draft that edits another section leaves a section behind for the glossary the team's, and behind", async () => {
+  await translated(true);
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+  await prisma.articleTranslation.create({
+    data: { articleId: article.id, projectId: project.id, language: "de", automatic: false, title: "Tafeln", content: BOARDS, body: "Text.", publishedAt: new Date() },
+  });
+  const key = sourceSections(translationSource(article).text).find((part) => part.key.startsWith("Boards"))!.key;
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+  await publishIntroEdit();
   const after = await version("boards");
-  expect(String(after.body)).toContain("[de2] Make a Board for ideas.");
-  expect(after.behind).toEqual({});
+  expect(String(after.body)).toContain("Make a Board for ideas.");
+  expect(after.behind).toEqual({ [key]: glossaryChangedFor("Board") });
+  expect(after.updateSections).toEqual([]);
 });
+
+for (const held of ["kept", "standing for two source sections"] as const) {
+  test(`on a version kept up to date, publishing a draft that edits another section leaves a section ${held} the team's, and behind for the glossary`, async () => {
+    const { key } = await teamBoards(true);
+    const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+    const billing = sourceSections(translationSource(article).text).find((part) => part.key.startsWith("Billing"))!.key;
+    if (held !== "kept") {
+      // Boards and Billing joined (Billing's heading taken out), Billing's text the team's too: one section standing for both.
+      const de = { slug: "boards", language: "de" as const };
+      const read = await call(getTranslation, as(), de);
+      const content = structuredClone(read.content) as Doc;
+      content.content![4]!.content![0]!.text = "Unsere eigene Zahlung.";
+      content.content!.splice(3, 1);
+      await call(saveTranslation, as(), { ...de, content, version: read.version });
+      await call(publishTranslation, as(), de);
+    }
+    const { id, sections } = await version("boards");
+    await prisma.articleTranslation.update({
+      where: { id },
+      data: { sections: (sections as { key: string | null }[]).map((meta) => (meta.key === key ? { ...meta, ...(held === "kept" ? { kept: true } : { also: [billing] }) } : meta)) },
+    });
+    model.reply(reply("Boards", BOARDS, "de2", "Brett"));
+    await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }] });
+    await languageTranslationsDone();
+    expect((await version("boards")).behind).toEqual({ [key]: glossaryChangedFor("Board") });
+    await publishIntroEdit();
+    await languageTranslationsDone();
+    const after = await version("boards");
+    expect(String(after.body)).toContain("Unsere Einleitung.");
+    expect(String(after.body)).toContain("Unser eigener Text.");
+    if (held !== "kept") expect(String(after.body)).toContain("Unsere eigene Zahlung.");
+    expect(after.behind).toEqual({ [key]: glossaryChangedFor("Board") });
+    expect(after.updateSections).toEqual([]);
+  });
+}
+
