@@ -119,6 +119,12 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     const passwordField = owner.getByLabel("Password", { exact: true }).and(owner.locator('input[type="password"]'));
     await passwordField.fill(password);
     await owner.getByLabel("About your app").fill(FAKE_CANT_SIGN_IN);
+    // The page's next ask, held while the checking line is looked at (inline jobs have the answer by then).
+    const isPoll = (url: URL) => url.pathname.endsWith("/settings/screenshots/suggestions") && url.searchParams.get("start") === "false";
+    let poll: Route | undefined;
+    await owner.route(isPoll, (route) => {
+      poll = route;
+    });
     await save.click();
     await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
@@ -128,6 +134,9 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
     await checking.scrollIntoViewIfNeeded();
     await checkpoint(owner, "team-settings-screenshots-checking");
+    await expect.poll(() => poll).toBeDefined();
+    await poll!.continue();
+    await owner.unroute(isPoll);
     const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
     await expect(suggestion).toBeVisible();
     await expect(checking).toBeHidden();

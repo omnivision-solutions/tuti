@@ -102,13 +102,11 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
           if (!current) {
             return;
           }
-          const again = result.checking && polls-- > 0;
-          // Not one whose hosts are listed already (added while it was checking, not saved yet).
-          const listed = otherDomains.current?.value.split(/[\s,]+/) ?? [];
-          setSuggestions(result.suggestions.filter(({ hosts }) => hosts.some((host) => !listed.includes(host))));
-          setChecking(again);
+          setSuggestions(result.suggestions);
+          // Still checking once it stops asking (the worker may be busy): said so, never shown as nothing found.
+          setChecking(result.checking);
           setReadFor([looked, saves]);
-          if (again) {
+          if (result.checking && polls-- > 0) {
             timer = setTimeout(() => void ask(false), CHECK_EVERY_MS);
           }
         });
