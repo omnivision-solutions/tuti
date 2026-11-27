@@ -49,3 +49,20 @@ test("kept up to date but not made: being translated while AI can make it, else 
   expect(box.textContent).toContain("Not translated: readers see the English name");
 });
 
+
+test("typing in Description turns Keep up to date off, as typing in Name does", async () => {
+  const box = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(box);
+  roots.push(root);
+  await act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(true)], ai: true })));
+  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Edit Deutsch"]')!.click());
+  const keep = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
+  expect(keep.checked).toBe(true);
+  // Typed, as a browser does: the value set, then its input event.
+  const description = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea[name="description"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(description, "Alles zum Bezahlen.");
+    description.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(keep.checked).toBe(false);
+});
