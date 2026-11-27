@@ -451,6 +451,8 @@ export async function blockSenderOf(db: Db, conversation: Marked, admin: boolean
   if (!admin) {
     throw new OperationError(403, "forbidden", "Only project owners and admins can block a sender");
   }
+  // Before the allowed list is read: an allow in Settings meanwhile waits, and isn't then taken off by this rule.
+  await lockSpamRules(db, conversation.projectId);
   const sender = await conversationSender(db, conversation);
   if (!sender) {
     throw new OperationError(409, "no_sender", "This conversation's sender isn't proven, so there's no address to block");
@@ -470,6 +472,8 @@ export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean
   if (!admin) {
     throw new OperationError(403, "forbidden", "Only project owners and admins can block a domain");
   }
+  // Before the allowed list is read: an allow in Settings meanwhile waits, and isn't then taken off by this rule.
+  await lockSpamRules(db, conversation.projectId);
   const sender = await conversationSender(db, conversation);
   const domain = sender && blockableDomain(sender);
   if (!domain) {

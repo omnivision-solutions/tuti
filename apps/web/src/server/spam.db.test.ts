@@ -15,7 +15,7 @@ import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { deleteUser } from "./operations/users";
 import { upsertProjectUser } from "./project-users";
-import { addSpamRule, arrivalOf, blockableDomain, spamChoices, spamVerdict } from "./spam";
+import { addSpamRule, arrivalOf, blockableDomain, lockSpamRules, spamChoices, spamVerdict } from "./spam";
 import { widgetSendMessage, widgetStartConversation } from "./widget-inbox";
 
 /**
@@ -362,6 +362,41 @@ test("a report never blocks what the allowed list lets through: not offered, ref
     "e2e-forms@relay.example",
     "partner.example",
   ]);
+});
+
+test.each([
+  ["sender", { blockSender: true }, "e2e-kim@corp.example"],
+  ["domain", { blockDomain: true }, "corp.example"],
+] as const)("Report spam and block %s waits for the rules' lock before it reads the allowed list", { timeout: 30_000 }, async (_what, block, allowed) => {
+  const { projectId, mail, admin } = await setup();
+  await mail("e2e-kim@corp.example"); // #1
+  // Someone allows it in Settings while the report waits: the report then sees it, and is refused.
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const allowing = prisma.$transaction(
+    async (tx) => {
+      await lockSpamRules(tx, projectId);
+      locked.resolve();
+      await release.promise;
+      await tx.spamSender.create({ data: { projectId, sender: allowed, blocked: false, byAdmin: true } });
+    },
+    { timeout: 20_000 },
+  );
+  await locked.promise;
+  const report = call(updateConversation, admin, { number: 1, spam: true, ...block });
+  await vi.waitFor(
+    async () => {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%pg_advisory_xact_lock(41%'`;
+      expect(waiting).toBeGreaterThan(0);
+    },
+    { timeout: 10_000, interval: 50 },
+  );
+  release.resolve();
+  await allowing;
+  await expect(report).rejects.toMatchObject({ status: 409, code: "allowed" });
+  expect([await prisma.spamRule.count({ where: { projectId } }), await prisma.spamSender.count({ where: { projectId, conversationId: null, sender: allowed } })]).toEqual([0, 1]);
 });
 
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
