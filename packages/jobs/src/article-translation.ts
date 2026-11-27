@@ -1,10 +1,11 @@
-import { type Doc, fromPlainText, keyed, sections, segmentsOf, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, segmentsOf, termsUsed, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
 import { OutOfCredits } from "./credits";
 import { freeLanguageSlug } from "./docs-slugs";
+import { changedIn, type Glossary, glossaryChangedFor, glossaryFor, projectGlossary } from "./glossary";
 import { behindKey, behindSections, docOfSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, versionSections, withTranslation } from "./translation-sections";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 import { embedTranslation } from "./articles";
@@ -81,6 +82,7 @@ type Version = {
   automatic: boolean;
   publishedAt: Date | null;
   sourceHash: string | null;
+  glossaryHash: string | null;
   productAvailable: boolean | null;
   memory: unknown;
   error: string | null;
@@ -142,6 +144,7 @@ const versionSelect = {
   automatic: true,
   publishedAt: true,
   sourceHash: true,
+  glossaryHash: true,
   productAvailable: true,
   memory: true,
   error: true,
@@ -344,10 +347,13 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     return { skipped: "not published" };
   }
   const source = translationSource(published);
+  // The glossary's terms the source uses, as set for this language (docs/plan.md L12): sent with it, checked after; a term it
+  // uses changed since its last translation retranslates it (its remembered segments are reused where they still pass).
+  const glossary = glossaryFor(await projectGlossary(published.projectId), language, toPlainText(source.doc));
   const sameSetting = row.productAvailable === setting.productAvailable;
   // A Retranslate not answered yet: nothing reused.
   const fresh = row.retranslate !== row.retranslated;
-  if (!fresh && asked.length === 0 && row.publishedAt && !row.error && row.sourceHash === source.hash && sameSetting) {
+  if (!fresh && asked.length === 0 && row.publishedAt && !row.error && row.sourceHash === source.hash && row.glossaryHash === glossary.hash && sameSetting) {
     if (kind.name === "article" && !row.slug) {
       // Translated, but its naming failed then: named now. Never failing the job (a lock timeout, a slug taken meanwhile):
       // the retry job's nameUnnamed, or the next job, names it.
@@ -432,6 +438,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     from: languageName(published.defaultLanguage),
     to: languageName(language),
     instructions: translationInstructions(languageName(language), setting.productAvailable, setting.instructions),
+    glossary: glossary.terms,
     about: kind.about,
     ask,
     memory,
@@ -456,6 +463,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
       ...kind.fields(result.doc.content ?? [], source.meta, published),
       publishedAt: row.publishedAt ?? new Date(),
       sourceHash: source.hash,
+      glossaryHash: glossary.hash,
       productAvailable: setting.productAvailable,
       memory: result.memory,
       behind: {},
@@ -505,6 +513,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
         description: text(1),
         keywords: (published.keywords ?? []).map((_, i) => text(2 + i)),
         sourceHash: source.hash,
+        glossaryHash: glossary.hash,
       }),
       ...(!draftOnly && { content: content as Prisma.InputJsonValue, body: toPlainText(content), sections: metaOf(live) as Prisma.InputJsonValue }),
       ...(draft &&
@@ -746,6 +755,90 @@ export async function queueLanguageTranslations(projectId: string, language: str
   }
   queueAll(() => queueEach(pages));
   return pages.length;
+}
+
+/** What a glossary save touches (glossaryChanges): versions kept up to date retranslated, versions the team writes marked behind. */
+export type GlossaryChanges = { retranslated: number; behind: number; queue: () => Promise<void> };
+
+/**
+ * A glossary saved (docs/plan.md L12: "Changing a term retranslates only the sections that use it"), in the save's transaction
+ * (the project locked): for each language, the terms whose treatment there changed, and the published sources whose text uses
+ * one. A version kept up to date is retranslated (its job finds its glossary changed and resends the segments its memory no
+ * longer passes for; its safety net set here, `queue` sends it after the save commits); in a version the team writes, the
+ * sections that use one are marked behind, naming the term; labels kept up to date that use one are made again. `dryRun`:
+ * counted only, for the confirm dialog.
+ * ponytail: reads every published source's text per save (a rare, deliberate act); a per-term index if glossaries get big.
+ */
+export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: string, before: Glossary, after: Glossary, { dryRun = false } = {}): Promise<GlossaryChanges> {
+  const languages = (await tx.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
+  const changed = new Map(languages.map((code) => [code, changedIn(before, after, code)] as const).filter(([, terms]) => terms.length > 0));
+  const pages: Page[] = [];
+  let behind = 0;
+  if (changed.size === 0) {
+    return { retranslated: 0, behind: 0, queue: async () => {} };
+  }
+  const codes = [...changed.keys()];
+  const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true, behind: true } } as const;
+  const sources = [
+    ...(await tx.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions } })).map(
+      (row) => ({ kind: ARTICLE, row }),
+    ),
+    ...(await tx.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, title: true, body: true, content: true, translations: versions } })).map(
+      (row) => ({ kind: ENTRY, row }),
+    ),
+  ];
+  for (const { kind, row } of sources) {
+    const source = translationSource(row);
+    const plain = toPlainText(source.doc);
+    for (const version of row.translations) {
+      const terms = changed.get(version.language)!;
+      if (termsUsed(plain, terms).length === 0) continue;
+      if (version.automatic) {
+        pages.push({ kind, parentId: row.id, language: version.language });
+        if (!dryRun) await safetyNet(kind, { id: version.id }, tx);
+        continue;
+      }
+      // The sections that use a changed term, each with the first it uses.
+      const reasons = Object.fromEntries(
+        sourceSections(source.text).flatMap(({ key, blocks }) => {
+          const [term] = termsUsed(toPlainText({ type: "doc", content: blocks }), terms);
+          return term ? [[key, glossaryChangedFor(term.term)]] : [];
+        }),
+      );
+      if (Object.keys(reasons).length === 0) continue;
+      behind++;
+      if (!dryRun) {
+        // As the translate job's write locks them (the source, then the version), so the two never cross.
+        await (kind.name === "article" ? tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.id} FOR UPDATE` : tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${row.id} FOR UPDATE`);
+        const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
+        await tx.$executeRaw`UPDATE ${table} SET behind = behind || ${JSON.stringify(reasons)}::jsonb, "updatedAt" = now() WHERE id = ${version.id}`;
+      }
+    }
+  }
+  // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).
+  if (!dryRun) {
+    for (const [code, terms] of changed) {
+      for (const [table, rows] of [
+        ["collection", await tx.collection.findMany({ where: { projectId }, select: { id: true, name: true, description: true, translations: true } })],
+        ["docs_tab", await tx.docsTab.findMany({ where: { projectId }, select: { id: true, name: true, translations: true } })],
+      ] as const) {
+        const touched = rows.filter((label) => termsUsed(`${label.name}\n${"description" in label ? label.description : ""}`, terms).length > 0).map((label) => label.id);
+        if (touched.length > 0) {
+          await tx.$executeRaw`UPDATE ${Prisma.raw(table)} SET translations = jsonb_set(translations, ${[code, "source"]}::text[], 'null'::jsonb)
+            WHERE id = ANY(${touched}::text[]) AND (translations -> ${code} ->> 'auto')::boolean`;
+        }
+      }
+    }
+  }
+  return {
+    retranslated: pages.length,
+    behind,
+    queue: async () => {
+      if (pages.length > 0) queueAll(() => queueEach(pages));
+      const { queueLabels } = await import("./label-translation");
+      await queueLabels(projectId, codes);
+    },
+  };
 }
 
 /**

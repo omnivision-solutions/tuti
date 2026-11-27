@@ -306,6 +306,12 @@ export function glossaryProblems(source: string, translated: string, glossary: G
     .map(({ term, translation }) => (translation ? `"${term}" must be translated as "${translation}"` : `"${term}" must stay "${term}"`));
 }
 
+/** The glossary's terms `text` uses (as glossaryProblems checks them): only those are sent with it, and a change to another doesn't touch it. */
+export function termsUsed(text: string, glossary: GlossaryTerm[]): GlossaryTerm[] {
+  const plain = unescape(text).toLowerCase();
+  return glossary.filter(({ term }) => uses(plain, term.toLowerCase()));
+}
+
 /** Whether the source uses `term`: as a word, or its plural or possessive ("boards", "Tuti's"; not "Postpone" for "Post"). */
 function uses(text: string, term: string): boolean {
   if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(term)) return text.includes(term);
