@@ -217,6 +217,12 @@ test("a collection's page has its breadcrumb: Documentation, the collection it's
   await call(createCollection, as, { name: "Refunds", parent: "billing" });
   await articleIn("refunds");
   expect(steps(await collectionJsonLd("refunds"))).toEqual([`Documentation ${portal}/docs`, `Billing ${portal}/docs/billing`, `Refunds ${portal}/docs/refunds`]);
+  // A private portal isn't for search engines: none (its reader signed in, to see the page at all).
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  actAs(owner);
+  expect(await collectionJsonLd("billing")).toBeNull();
+  actAs(null);
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PUBLIC" } });
 });
 
 test("a tab showing a collection in its place gives the tab's address; one locked for this reader, or sample content, has none", async () => {

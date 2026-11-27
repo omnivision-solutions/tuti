@@ -380,6 +380,10 @@ test("the docs pages' titles (and the home's default description) are in the pag
   await call(createArticle, as(), { title: "Keys", body: "Use a key.", collection: "endpoints" });
   await call(publishArticle, as(), { slug: "keys" });
   expect((await generateMetadata(params("api"))).title).toBe("API · Dokumentation");
+  // A locked article's (for signed-in readers only, shown locked to the rest).
+  await prisma.article.update({ where: { id: articleId }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
+  expect((await generateMetadata(params("abrechnung"))).title).toBe("Abrechnung · Dokumentation");
+  await prisma.article.update({ where: { id: articleId }, data: { access: "INHERIT", noAccess: "INHERIT" } });
   // The default language's address: English.
   at(null);
   expect((await generateMetadata(params(collection.slug))).title).toBe("Payments · Documentation");
