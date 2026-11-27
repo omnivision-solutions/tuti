@@ -12,7 +12,6 @@ import { WidgetSettings } from "@/components/widget-settings";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { upgradePrompt } from "@/lib/upgrade-prompt";
 import { getAdminProject } from "@/server/membership";
-import { answersEnabled } from "@/server/operations/docs-ask";
 import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, widgetSettings } from "@/server/operations/widget";
 
 export const metadata: Metadata = { title: "Widget · Settings" };
@@ -71,8 +70,6 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
           hidden={widget.hidden}
           onPortal={widget.onPortal}
           popup={widget.popup}
-          // Under a path of the team's site, or Tuti's own portal under the app's.
-          aiFirst={answersEnabled() ? widget.aiFirst : null}
         />
       </div>
     </PortalSettingsPane>

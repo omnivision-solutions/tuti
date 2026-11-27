@@ -102,7 +102,7 @@ export function useVisitor(projectSlug: string): Visitor | null {
  * The widget's Messages tab: someone's conversations with the team. Signed in by the customer's
  * page (Tuti.identify) or on the portal itself (`portalSignedIn`); signed out, they give their
  * email to write, and the panel keeps a visitor token to show them their conversations. `team`
- * (their faces and when they usually reply) heads the list and the first message. With `aiFirst` (Customize → Widget), a
+ * (their faces and when they usually reply) heads the list and the first message. With `aiFirst` (Settings → Workflows), a
  * new conversation is the AI's first (server/ai-turn.ts): its answers come in the thread, with Ask a person under them.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = false }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode; aiFirst?: boolean }) {

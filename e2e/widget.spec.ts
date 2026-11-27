@@ -1503,15 +1503,8 @@ test("a new message in the widget's Messages starts a conversation the AI answer
   await expect(hiddenTab.frameLocator('iframe[title="Feedback"]').getByText("Ask anything: you'll get an answer right away, and a person if you need one.")).toBeVisible();
   await api("/widget", { hidden: [] }, "PATCH");
 
-  // Turned off in Customize → Widget, a new message goes straight to the team.
-  await owner.goto(`/app/${slug}/settings/widget`);
-  const aiFirst = owner.getByRole("switch", { name: "Answer with AI first" });
-  await expect(aiFirst).toBeChecked();
-  await aiFirst.scrollIntoViewIfNeeded();
-  await checkpoint(owner, "customize-widget-ai-first", { fullPage: false });
-  await aiFirst.click();
-  await owner.getByRole("button", { name: "Save changes" }).click();
-  await expect(owner.getByText("Widget saved")).toBeVisible();
+  // Turned off (Settings → Workflows → AI answers first, its own journey), a new message goes straight to the team.
+  await api("/ai-first", { widget: false }, "PATCH");
   await widget.getByRole("button", { name: "Messages" }).click();
   await widget.getByRole("button", { name: "New message" }).click();
   await widget.getByRole("textbox", { name: "Message" }).fill("Can I pay by invoice?");

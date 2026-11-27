@@ -92,6 +92,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
         supportInbox: true,
+        widgetAiFirst: true,
       },
     }),
     widgetSettings({ slug }),
@@ -140,9 +141,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         askAPerson: await askAPerson(slug),
       }
     : null;
-  // Messages' AI first (Customize → Widget) where the AI can answer a new conversation now, as the server decides
+  // Messages' AI first (Settings → Workflows) where the AI can answer a new conversation now, as the server decides
   // (aiAvailable): its first line says so. Only worked out on Messages, the one tab that uses it.
-  const aiFirst = tab === "messages" && settings.aiFirst && (await aiAvailable(project.id));
+  const aiFirst = tab === "messages" && project.widgetAiFirst && (await aiAvailable(project.id));
 
   return (
     <PortalBaseProvider base={base} slug={slug}>
