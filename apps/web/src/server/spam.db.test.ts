@@ -273,17 +273,21 @@ test("Not spam undoes a report's block: the rule it added is offered for removal
   expect(await choices(2)).toMatchObject({ removesRule: null });
 });
 
-test("a report's rule is kept apart from the filter's: reporting a filed conversation leaves its reason and words, and an older mark's leftover words name no rule", async () => {
+test("a report's rule is kept apart from the filter's: a filed conversation can't be reported with a block, and an older mark's leftover words name no rule", async () => {
   const { projectId, mail, admin } = await setup();
   await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto" } });
   const row = (number: number) => prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });
-  // Filed by the filter, then reported and the sender blocked: the page still quotes the filter's rule, and Not spam
-  // offers that one.
+  // Filed by the filter: a block now is Settings' to make, and the filter's reason, words and rule stay as they were.
   await mail("e2e-kim@spam.example"); // #1: no crypto, inbox
   await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spam: true, spamReason: "rule", spamPhrase: "Subject or body contains crypto" } });
-  await call(updateConversation, admin, { number: 1, spam: true, blockSender: true });
-  expect(await row(1)).toMatchObject({ spamReason: "rule", spamPhrase: "Subject or body contains crypto" });
-  expect(await spamChoices(prisma, await row(1), true)).toMatchObject({ removesRule: "Subject or body contains crypto", unblocks: "e2e-kim@spam.example" });
+  for (const block of [{ blockSender: true }, { blockDomain: true }]) {
+    await expect(call(updateConversation, admin, { number: 1, spam: true, ...block })).rejects.toThrow(
+      new OperationError(409, "already_spam", "It's in Spam already: block in Settings → Spam"),
+    );
+  }
+  expect(await row(1)).toMatchObject({ spamReason: "rule", spamPhrase: "Subject or body contains crypto", reportedRuleId: null });
+  expect(await spamChoices(prisma, await row(1), true)).toMatchObject({ removesRule: "Subject or body contains crypto", blockSender: "e2e-kim@spam.example" });
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(1);
   // Marked before the reports' rules were kept apart: words with no reason are no rule's, and nothing is offered.
   await mail("e2e-lee@other.example"); // #2
   await prisma.conversation.update({ where: { projectId_number: { projectId, number: 2 } }, data: { spam: true, spamReason: null, spamMarkedAt: new Date(), spamPhrase: "Subject or body contains crypto" } });
@@ -292,9 +296,11 @@ test("a report's rule is kept apart from the filter's: reporting a filed convers
   expect(await prisma.spamRule.count({ where: { projectId, value: "crypto" } })).toBe(1);
 
   // Any other mark clears a report's rule: reported with a block, then Not spam (keeping the rule) and a plain Report
-  // spam, it offers none.
+  // spam, it offers none; a second block is refused, and the first report's rule stays the one offered.
   await mail("e2e-pat@corp.example"); // #3
   await call(updateConversation, admin, { number: 3, spam: true, blockDomain: true });
+  expect(await spamChoices(prisma, await row(3), true)).toMatchObject({ removesRule: "Sender domain is corp.example" });
+  await expect(call(updateConversation, admin, { number: 3, spam: true, blockSender: true })).rejects.toMatchObject({ status: 409, code: "already_spam" });
   expect(await spamChoices(prisma, await row(3), true)).toMatchObject({ removesRule: "Sender domain is corp.example" });
   await call(updateConversation, admin, { number: 3, spam: false });
   await call(updateConversation, admin, { number: 3, spam: true });
@@ -326,8 +332,9 @@ test("once the filter's rule is removed, Not spam offers the one a report added 
   const { projectId, mail, admin } = await setup();
   const crypto = await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto" } });
   await mail("e2e-kim@corp.example"); // #1
-  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spam: true, spamReason: "rule", spamPhrase: "Subject or body contains crypto" } });
+  // Reported with a block, and (as a release before could leave it) the filter's reason and words on it too.
   await call(updateConversation, admin, { number: 1, spam: true, blockDomain: true });
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spamReason: "rule", spamPhrase: "Subject or body contains crypto" } });
   const choices = async () => spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } }), true);
   expect(await choices()).toMatchObject({ removesRule: "Subject or body contains crypto" });
   await prisma.spamRule.delete({ where: { id: crypto.id } });
@@ -446,10 +453,10 @@ test("mail that failed DMARC is filed whatever its address is allowed or trusted
     spam: false,
     notice: "Nothing is remembered about its sender: mail that fails DMARC still goes to Spam.",
   });
-  await call(updateConversation, admin, { number: 2, spam: true });
   await expect(call(updateConversation, admin, { number: 2, spam: true, blockDomain: true })).rejects.toThrow(
     new OperationError(409, "no_domain", "This conversation's sender isn't proven, so there's no domain to block"),
   );
+  await call(updateConversation, admin, { number: 2, spam: true });
   expect(await senders()).toEqual(["e2e-kim@example.com allowed by an admin, listed"]);
   await mail("e2e-sam@example.com", FAIL); // #3
   await mail("e2e-sam@example.com"); // #4: the real one

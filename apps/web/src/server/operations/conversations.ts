@@ -1554,14 +1554,14 @@ export const updateConversation = defineOperation({
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Owners and admins only (403). Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC), (409 `allowed`) where the address is on the allowed list, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
+          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Owners and admins only (403). Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC), (409 `allowed`) where the address is on the allowed list, (409 `already_spam`) on one already in Spam, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
         )
         .meta({ examples: [false] }),
       blockDomain: z
         .boolean()
         .optional()
         .describe(
-          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven, (409 `allowed`) where the domain is on the allowed list, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
+          "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven, (409 `allowed`) where the domain is on the allowed list, (409 `already_spam`) on one already in Spam, and (409 `too_many`) once the filter holds its 500 rules, the mark with it",
         )
         .meta({ examples: [false] }),
       removeRule: z
@@ -1644,6 +1644,11 @@ export const updateConversation = defineOperation({
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       // One the spam filter is holding (W4) is undecided: either mark decides it, and the models' verdict is dropped.
       const marked = input.spam !== undefined && (input.spam !== held!.spam || (!!held!.spamHeldAt && !held!.spamMarkedAt));
+      // A block goes with reporting it: one already in Spam keeps the rule its report added (Not spam can still undo
+      // that one), and another block is made in Settings.
+      if ((input.blockSender || input.blockDomain) && held!.spam) {
+        throw new OperationError(409, "already_spam", "It's in Spam already: block in Settings → Spam");
+      }
       // Removing the rule goes with taking it out of Spam: one a teammate took out meanwhile is said, not passed over.
       if (input.removeRule && !marked) {
         throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
