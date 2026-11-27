@@ -317,7 +317,9 @@ export function ChangelogVersionForm({
           kind={kind}
           defaultName={defaultName}
           on={view.keepUpToDate}
-          teamWrote={view.state === "written" || view.state === "behind" || view.state === "setting"}
+          // The team has text in it: its own (written, or an article's draft saved and not published, still "unwritten";
+          // with Keep up to date off, text of its own is the team's), which a new translation can replace.
+          teamWrote={view.own || view.state === "written" || view.state === "behind" || view.state === "setting"}
         />
         {languages.length > 1 && <ChangelogLanguageList languages={languages} current={view.code} />}
       </aside>

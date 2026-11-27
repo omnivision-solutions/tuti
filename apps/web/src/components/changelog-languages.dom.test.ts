@@ -132,6 +132,13 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
   expect(keep().checked).toBe(false);
 });
 
+test("turning Keep up to date on over a draft saved and not published asks first: it's the team's text too", async () => {
+  await form({ state: "unwritten", keepUpToDate: false, own: true });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Translate it again?");
+});
+
 test("turning Keep up to date on over the team's own text asks first", async () => {
   keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-kept" });
   await form({ state: "written", keepUpToDate: false });
@@ -166,9 +173,10 @@ test("a save that leaves the text as it was is what the next save goes from; the
 
 test("the switch goes from the page's latest read, not the token the text was loaded with; refused as changed, it says so and goes back", async () => {
   keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "changed", changed: true }).mockResolvedValueOnce({ version: "v-on" });
-  const { render } = await form({ keepUpToDate: false, state: "current" });
+  // No text of the team's (`own` false): turning it on doesn't ask first, so the toggle goes straight to the server.
+  const { render } = await form({ keepUpToDate: false, state: "current", own: false });
   // The English edited since, the page read again: a new token, the same text.
-  await render({ keepUpToDate: false, state: "translating", version: "v2" });
+  await render({ keepUpToDate: false, state: "translating", version: "v2", own: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v2");
   // Nothing typed (the switch's own click isn't an edit): the page is read again.
@@ -176,7 +184,7 @@ test("the switch goes from the page's latest read, not the token the text was lo
   expect(toast.error).toHaveBeenCalledWith("It changed meanwhile: shown as it is now. Try again.");
   expect(keep().checked).toBe(false);
   // The page read again (the action refreshed it): the next try goes from that read.
-  await render({ keepUpToDate: false, state: "translating", version: "v3" });
+  await render({ keepUpToDate: false, state: "translating", version: "v3", own: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v3");
   expect(keep().checked).toBe(true);
@@ -187,7 +195,7 @@ test("the switch goes from the page's latest read, not the token the text was lo
 test("a first toggle (no version yet) gives Save the new version's token, so the next save isn't refused", async () => {
   keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-made" });
   saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
-  await form({ state: "unwritten", keepUpToDate: false, version: "v-none" });
+  await form({ state: "unwritten", keepUpToDate: false, version: "v-none", own: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", true, "v-none");
   await submit();
