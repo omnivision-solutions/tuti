@@ -54,7 +54,7 @@ test("an owner adds German in Settings → Languages, writes its instructions, m
   const instructions = owner.getByRole("dialog", { name: "Translating into Deutsch" });
   await instructions.getByRole("textbox", { name: "Instructions" }).fill("Use du, not Sie.");
   const product = instructions.getByRole("switch", { name: "Our product is available in Deutsch" });
-  await expect(product).toHaveAccessibleDescription("Off: button and screen names stay as written. On: translated, using your Glossary's words.");
+  await expect(product).toHaveAccessibleDescription("Off: button and screen names stay as written. On: they're translated. Glossary words apply either way.");
   await product.check();
   await instructions.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Saved Deutsch's instructions")).toBeVisible();
@@ -72,8 +72,11 @@ test("an owner adds German in Settings → Languages, writes its instructions, m
   await expect(german).toContainText("Live");
   // Its toast gone, so the screenshots show the page.
   await expect(owner.getByText("Deutsch is live")).toBeHidden({ timeout: 10_000 });
-  // With another language, the glossary's row.
-  await expect(pane.getByRole("link", { name: /^Glossary/ })).toHaveAttribute("href", `/app/${slug}/settings/languages/glossary`);
+  // With another language, the glossary's row: its terms' count.
+  await expect(pane.getByRole("heading", { name: "Translating" })).toBeVisible();
+  const glossaryRow = pane.getByRole("link", { name: /^Glossary/ });
+  await expect(glossaryRow).toHaveAttribute("href", `/app/${slug}/settings/languages/glossary`);
+  await expect(glossaryRow).toContainText("No terms yet");
   await checkpoint(owner, "settings-languages");
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -202,6 +205,7 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await owner.setViewportSize({ width: 1280, height: 800 });
   // From Settings → Languages' Glossary row.
   await owner.goto(`/app/${slug}/settings/languages`);
+  await expect(owner.getByRole("region", { name: "Languages" }).getByRole("link", { name: /^Glossary/ })).toContainText("1 term");
   await owner.getByRole("region", { name: "Languages" }).getByRole("link", { name: /^Glossary/ }).click();
   await owner.waitForURL(`**/app/${slug}/settings/languages/glossary`);
   const pane = owner.getByRole("region", { name: "Glossary" });

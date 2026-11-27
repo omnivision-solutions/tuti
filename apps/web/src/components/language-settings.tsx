@@ -62,6 +62,7 @@ export function LanguageSettings({
   upgrade,
   pastLimit,
   goLiveUpgrade,
+  glossaryTerms,
 }: {
   projectSlug: string;
   defaultLanguage: string;
@@ -74,6 +75,8 @@ export function LanguageSettings({
   /** Languages past the plan's limit (after a downgrade): Go live opens `goLiveUpgrade`. */
   pastLimit: string[];
   goLiveUpgrade: UpgradePrompt | null;
+  /** How many terms the glossary has. */
+  glossaryTerms: number;
 }) {
   const byCode = (code: string) => offered.find((language) => language.code === code)!;
   const addable = offered.filter(({ code }) => code !== defaultLanguage && !languages.some((language) => language.code === code));
@@ -117,14 +120,14 @@ export function LanguageSettings({
       </SettingsCard>
       {languages.length > 0 && (
         // The glossary every translation follows: its own page (docs/plan.md, L12).
-        <SettingsCard>
+        <SettingsCard title="Translating">
           <Link
             href={`/app/${projectSlug}/settings/languages/glossary`}
             className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @min-[34rem]/settings:px-5"
           >
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-medium">Glossary</span>
-              <span className="text-sm text-muted-foreground">Words kept as they are, or always translated one way.</span>
+              <span className="text-sm text-muted-foreground">{glossaryTerms === 0 ? "No terms yet" : glossaryTerms === 1 ? "1 term" : `${glossaryTerms.toLocaleString("en")} terms`}</span>
             </span>
             <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
           </Link>
@@ -444,7 +447,7 @@ function InstructionsDialog({
                 Our product is available in {native}
               </label>
               <p id={`${id}-product-description`} className="text-sm text-muted-foreground">
-                Off: button and screen names stay as written. On: translated, using your Glossary&apos;s words.
+                Off: button and screen names stay as written. On: they&apos;re translated. Glossary words apply either way.
               </p>
             </div>
             <Switch id={`${id}-product`} name="productAvailable" defaultChecked={language.productAvailable} aria-describedby={`${id}-product-description`} />
