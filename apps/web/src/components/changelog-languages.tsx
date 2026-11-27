@@ -418,7 +418,8 @@ function KeepUpToDate({
           <AlertDialogHeader>
             <AlertDialogTitle>Translate it again?</AlertDialogTitle>
             <AlertDialogDescription>
-              {kind === "article" ? `Sections ${defaultName} changed in since your edits take a new translation.` : "A new translation replaces your text in this version."}
+              {/* Published ones: a draft's edits never give way, kept up to date or not. */}
+              {kind === "article" ? `Published sections ${defaultName} changed in since your edits take a new translation.` : "A new translation replaces your text in this version."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
