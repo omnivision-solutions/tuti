@@ -115,6 +115,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "collections.update": () => ({ slug: "basics", name: "The basics", parent: "guides" }),
   "collections.reorder": () => ({ slug: "guides", parent: "basics", position: 0 }),
   "collections.delete": () => ({ slug: "basics" }),
+  // German, which the fixture adds: the team's own (keeping it up to date would queue the labels job).
+  "collections.getTranslations": () => ({ slug: "guides" }),
+  "collections.updateTranslation": () => ({ slug: "guides", language: "de", keepUpToDate: false, name: "Anleitungen" }),
   "tabs.list": () => ({}),
   "tabs.create": () => ({ name: "API" }),
   "tabs.update": () => ({ slug: "docs", name: "Documentation" }),
