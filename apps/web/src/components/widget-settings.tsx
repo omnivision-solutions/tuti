@@ -76,7 +76,6 @@ export function WidgetSettings({
   hidden,
   onPortal,
   popup,
-  aiFirst,
 }: {
   projectSlug: string;
   label: string;
@@ -98,8 +97,6 @@ export function WidgetSettings({
   hidden: WidgetPart[];
   onPortal: boolean;
   popup: boolean;
-  /** Null where the server has no AI answers: the switch isn't there (it would do nothing). */
-  aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
   // A save refreshes the page with the icon as stored (a teammate's, perhaps): the picker follows it. Not to the one this
@@ -251,18 +248,6 @@ export function WidgetSettings({
             <Switch id={`widget-show-${part}`} name={`show-${part}`} defaultChecked={!hidden.includes(part)} />
           </SettingRow>
         ))}
-        {aiFirst !== null && (
-          <SettingRow
-            label="Answer with AI first"
-            htmlFor="widget-ai-first"
-            info="Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team."
-            inline
-          >
-            {/* Sent with the switch, so saving without it (the server has no AI answers) leaves the setting as it is. */}
-            <input type="hidden" name="aiFirstShown" value="1" />
-            <Switch id="widget-ai-first" name="aiFirst" defaultChecked={aiFirst} />
-          </SettingRow>
-        )}
         <QuickLinks links={links} />
       </SettingsCard>
       {state.error && <FieldError>{state.error}</FieldError>}

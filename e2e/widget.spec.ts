@@ -1521,20 +1521,8 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Here is everything about our setup.");
   await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
 
-  // Turned off in Customize → Widget, a new message goes straight to the team.
-  await owner.goto(`/app/${slug}/settings/widget`);
-  const aiFirst = owner.getByRole("switch", { name: "Answer with AI first" });
-  await expect(aiFirst).toBeChecked();
-  // What it does is behind the row's ⓘ.
-  await expect(owner.getByText(/gets an answer from them right away/)).toHaveCount(0);
-  await owner.locator('[data-slot="setting-row"]').filter({ hasText: "Answer with AI first" }).getByRole("button", { name: "More about this setting" }).click();
-  await expect(owner.getByText("Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team.")).toBeVisible();
-  await owner.keyboard.press("Escape");
-  await aiFirst.scrollIntoViewIfNeeded();
-  await checkpoint(owner, "customize-widget-ai-first", { fullPage: false });
-  await aiFirst.click();
-  await owner.getByRole("button", { name: "Save changes" }).click();
-  await expect(owner.getByText("Widget saved")).toBeVisible();
+  // Turned off (Settings → Workflows → AI answers first, its own journey), a new message goes straight to the team.
+  await api("/ai-first", { widget: false }, "PATCH");
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
@@ -1546,7 +1534,8 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
 
   // On, with Messages hidden (no Ask a person) but opened by the page's own code: a message goes to the team, not to an
   // assistant that couldn't pass it on.
-  await api("/widget", { aiFirst: true, hidden: ["messages"] }, "PATCH");
+  await api("/ai-first", { widget: true }, "PATCH");
+  await api("/widget", { hidden: ["messages"] }, "PATCH");
   await visitor.reload();
   await visitor.evaluate(() => (window as unknown as { Tuti: { open: (options: object) => void } }).Tuti.open({ tab: "messages" }));
   await widget.getByRole("button", { name: "New message" }).click();

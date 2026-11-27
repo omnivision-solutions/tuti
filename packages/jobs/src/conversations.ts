@@ -347,7 +347,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         email: true,
         subject: true,
         replyToken: true,
-        project: { select: { name: true, plan: true, brandColor: true, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
+        project: { select: { name: true, aiName: true, plan: true, brandColor: true, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
       },
     }),
     prisma.conversationMessage.findMany({
@@ -393,7 +393,9 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   }
   const { to, subdomain } = recipient;
   const address = (token?: string) => `support${token ? `+${token}` : ""}@${subdomain}.${domain}`;
-  const teammate = messages.at(-1)!.authorUser?.name;
+  // Who wrote it: a teammate, or the AI by the name the team gave it (Settings → Workflows → AI answers first, W14).
+  const nameOf = (m: (typeof messages)[number]) => m.authorUser?.name ?? (m.author === "AI" ? conversation.project.aiName : null);
+  const teammate = nameOf(messages.at(-1)!);
   // From the team's own domain once SES has it verified (on a plan with it), else the project's support address.
   const own = conversation.project.emailDomain;
   const teamDomain = own?.verifiedAt && ses() && planIncludes(conversation.project.plan, "emailDomain") ? own : null;
@@ -430,7 +432,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         ...brand,
         subject: conversation.subject,
         // A translated reply quotes the team's own text below the translation (docs/plan.md L22).
-        messages: messages.map((m) => ({ name: m.authorUser?.name ?? conversation.project.name, body: m.body, original: m.teamText ?? undefined })),
+        messages: messages.map((m) => ({ name: nameOf(m) ?? conversation.project.name, body: m.body, original: m.teamText ?? undefined })),
       }),
     });
   } catch (error) {

@@ -4,6 +4,7 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
+import { spendCredits } from "./credits";
 import { query } from "./db";
 import { APP_URL } from "./env";
 import { apiFor, createProject, holdActions, signUp } from "./helpers";
@@ -41,15 +42,16 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   const main = owner.getByRole("main");
   await expect(main.getByRole("heading", { level: 2, name: /^When/ })).toHaveText(["When a conversation starts 3", "When a user replies 1", "When a conversation is about to go to a person 0"]);
   await expect(main.getByText("Built in")).toHaveCount(3);
-  // The path, in the order a message takes it today: the AI first (in the widget, before a conversation), then the rest.
-  const path = ["AI answers first", "Spam filter", "When a conversation starts", "When a user replies", "When a conversation is about to go to a person", "Hand to the team"];
+  // The path, in the order a message takes it: the AI answers once the message triggers have run.
+  const path = ["Spam filter", "When a conversation starts", "When a user replies", "AI answers first", "When a conversation is about to go to a person", "Hand to the team"];
   const inOrder = async () => {
     const text = await main.innerText();
     const found = path.map((step) => text.indexOf(step));
     return found.every((index, i) => index >= 0 && (i === 0 || index > found[i - 1]!));
   };
   await expect.poll(inOrder).toBe(true);
-  await expect(main).toContainText("On in the widget, where it answers before a conversation starts, once you've published articles");
+  // No published articles yet: off for now, whatever its switches say (its own journey below).
+  await expect(main).toContainText("Off for now: No published articles");
   await expect(main.getByRole("link", { name: "Spam filter settings" })).toHaveAttribute("href", `/app/${slug}/settings/spam`);
   const started = main.getByRole("list", { name: "When a conversation starts" });
   const replied = main.getByRole("list", { name: "When a user replies" });
@@ -178,4 +180,77 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
   // Nothing wider than the screen.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "workflows-phone");
+});
+
+test("an owner turns AI answers first off and on for the widget and email, names its emails, and sees what keeps it off", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.setViewportSize({ width: 1280, height: 900 });
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const main = owner.getByRole("main");
+  const row = main.getByRole("listitem").filter({ hasText: "AI answers first" });
+
+  // Nothing published: off for now, said on the row and on its page.
+  await owner.goto(`/app/${slug}/settings/workflows`);
+  await expect(row).toContainText("Off for now: No published articles");
+  await row.getByRole("link", { name: "AI answers first settings" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/workflows/ai-first`);
+  await expect(owner).toHaveTitle(/AI answers first · Workflows · Settings · Acme/);
+  await expect(main.getByRole("status")).toHaveText(/Off for nowNo published articles/);
+  const widget = main.getByRole("switch", { name: "Widget" });
+  const email = main.getByRole("switch", { name: "Email" });
+  const name = main.getByRole("textbox", { name: "Name on emails" });
+  await expect(widget).toBeChecked();
+  await expect(email).not.toBeChecked();
+  await expect(name).toHaveValue("");
+  await expect(name).toHaveAttribute("placeholder", "Acme");
+
+  // Widget off, email on, a name: saved, as the API reads it.
+  await widget.click();
+  await email.click();
+  await name.fill("Ada");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("AI answers first saved")).toBeVisible();
+  await expect.poll(async () => api("/ai-first", undefined, "GET")).toMatchObject({ widget: false, email: true, name: "Ada", offFor: ["no_articles"] });
+
+  // An article published: on, for email alone.
+  const article = await api("/articles", { title: "Exporting", body: "Settings → Export downloads everything as CSV." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await owner.reload();
+  await expect(main.getByRole("status")).toHaveCount(0);
+  await expect(email).toBeChecked();
+  await expect(name).toHaveValue("Ada");
+  await checkpoint(owner, "ai-first");
+  await main.getByRole("region", { name: "AI answers first" }).getByRole("link", { name: "Workflows" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/workflows`);
+  await expect(row).toContainText("On for email");
+
+  // Out of AI credits: off for now, for that.
+  await spendCredits(slug);
+  await owner.reload();
+  await expect(row).toContainText("Off for now: Out of AI credits");
+
+  // Both off, then the widget on again from its page; the name cleared.
+  await row.getByRole("link", { name: "AI answers first settings" }).click();
+  await expect(main.getByRole("status")).toHaveText(/Out of AI credits/);
+  await email.click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("AI answers first saved")).toBeVisible();
+  await owner.goto(`/app/${slug}/settings/workflows`);
+  await expect(row).toContainText("Off");
+  await row.getByRole("link", { name: "AI answers first settings" }).click();
+  await widget.click();
+  await name.fill("");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("AI answers first saved")).toBeVisible();
+  await expect.poll(async () => api("/ai-first", undefined, "GET")).toMatchObject({ widget: true, email: false, name: null });
+
+  // On a phone.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  await expect(widget).toBeVisible();
+  await checkpoint(owner, "ai-first-phone");
 });
