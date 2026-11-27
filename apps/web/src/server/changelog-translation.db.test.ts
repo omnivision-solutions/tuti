@@ -779,13 +779,23 @@ test("the product switch translates again only the entry versions there are: a l
 
 test("Try again tries again the versions that failed, and starts none: a published entry with no version in the language gets none", async () => {
   await languages({ languages: [{ code: "de", newPages: "manual" }] });
-  const { entry } = await draft();
-  await call(publishChangelogEntry, as(), { number: entry.number });
+  // Two entries published while German is Manual: neither has a German version.
+  const first = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const second = await call(createChangelogEntry, as(), { title: "Faster exports", body: "Exports finish in seconds." });
+  await call(publishChangelogEntry, as(), { number: first.number });
+  await call(publishChangelogEntry, as(), { number: second.number });
   await languageTranslationsDone();
-  // German made Automatic (that starts nothing); then Try again.
+  // German made Automatic (that starts nothing); the first entry's German then fails (its version waits, with why).
   await languages({ languages: [{ code: "de", newPages: "automatic" }] });
-  expect(await call(retranslateLanguage, as(), { code: "de", waiting: true })).toEqual({ queued: 0 });
+  const failed = await idOf(first.number);
+  await prisma.changelogTranslation.create({ data: { entryId: failed, projectId: project.id, language: "de", error: "Out of credits", tries: 1 } });
+  // Try again: the one that failed is translated; the other entry gets no version.
+  model.reply(reply("de"));
+  expect(await call(retranslateLanguage, as(), { code: "de", waiting: true })).toEqual({ queued: 1 });
   await languageTranslationsDone();
-  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id } })).toBe(0);
-  expect(model.requests).toHaveLength(0);
+  expect(await prisma.changelogTranslation.count({ where: { entryId: await idOf(second.number) } })).toBe(0);
+  expect(await translation()).toMatchObject({ title: "[de] Dark mode", error: null });
+  // Nothing left waiting, so nothing waiting without a reason.
+  expect((await call(getLanguages, as(), {})).languages[0]!.entries).toEqual({ translated: 1, waiting: 0, why: null });
+  expect(model.requests).toHaveLength(1);
 });
