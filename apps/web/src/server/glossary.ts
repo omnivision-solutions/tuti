@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import type { FormState } from "./form-state";
 import { getGlossary, updateGlossary } from "./operations/glossary";
 import { asAdmin, call } from "./operations/run";
@@ -34,5 +36,12 @@ export async function saveGlossary(projectSlug: string, terms: GlossaryTermInput
     });
     return now.latest && now.latest.hash !== hash ? { ...result, latest: now.latest } : result;
   }
-  return result.error ? result : { retranslating: saved.retranslating, behind: saved.behind, hash: saved.hash };
+  if (result.error) {
+    return result;
+  }
+  // Settings → Languages counts the terms (its Glossary row).
+  if (!dryRun) {
+    revalidatePath(`/app/${projectSlug}/settings/languages`);
+  }
+  return { retranslating: saved.retranslating, behind: saved.behind, hash: saved.hash };
 }
