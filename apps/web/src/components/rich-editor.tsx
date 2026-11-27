@@ -1289,6 +1289,8 @@ function Tool({
       disabled={disabled}
       focusableWhenDisabled
       aria-describedby={reason ? reasonId : undefined}
+      // The button's own styles let an off button take no pointer events, so neither the press below nor the tooltip would see it.
+      className={disabled && reason ? "aria-disabled:pointer-events-auto aria-disabled:active:translate-y-0" : undefined}
       // Off, a press (a tap: tooltips don't open on touch screens) says why. Seen before the button's own handler,
       // which ignores presses while it's off.
       onClickCapture={disabled && reason ? () => toast(reason) : undefined}

@@ -77,7 +77,8 @@ export type DocsAnswer = {
   /** Plain text: paragraphs separated by blank lines, "- " list items. */
   answer: string | null;
   /** `url` is null for an AI-only article: it has no page, so the answer names it without a link. */
-  sources: { slug: string; title: string; url: string | null }[];
+  /** `language`: a translation's (its title is in it, docs/plan.md L10); none for the default language's. */
+  sources: { slug: string; title: string; url: string | null; language?: string }[];
 };
 
 /** `length` is the line for the team's answer length (ANSWER_LENGTHS). */
@@ -156,6 +157,7 @@ function sourcesOf(sections: AnswerSection[], portal: string): DocsAnswer["sourc
       slug: section.slug,
       title: section.title,
       url: section.listing === "AI_ONLY" ? null : `${portal}/docs/${section.slug}`,
+      ...(section.language && { language: section.language }),
     }));
 }
 
@@ -424,6 +426,7 @@ export const askDocs = defineOperation({
             slug: z.string().describe("The article's slug (an API reference's operation: its path under /docs)").meta({ examples: ["invite-your-team"] }),
             title: z.string().describe("Its title").meta({ examples: ["Invite your team"] }),
             url: z.string().nullable().describe("Its page; null for an AI-only article, which has none, so the answer names it without a link").meta({ examples: ["https://help.example.com/docs/invite-your-team"] }),
+            language: z.string().optional().describe("The language its title is in, where it's a translation; none for the default language's").meta({ examples: ["de"] }),
           }),
         )
         .describe("The articles the answer cites"),
