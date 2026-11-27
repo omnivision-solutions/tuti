@@ -31,7 +31,16 @@ import { MAX_ARTICLE_TITLE, teamArticle } from "./docs";
 
 const articleSlug = z.string().trim().min(1).max(80).describe("The article's slug: the end of its address, /docs/<slug>").meta({ examples: ["billing"] });
 const language = z.enum(LANGUAGE_CODES).describe("The language's code").meta({ examples: ["de"] });
-const section = z.string().min(1).max(400).describe("A section, as `behind` names it");
+/**
+ * A section, as `behind` names it: its heading, a separator and which one of that heading it is. A heading can be as long as
+ * the text (only the article is capped), so the cap is the article's own, with room for the separator and the count: every
+ * key `behind` gives is one `keep` and `sections` take.
+ */
+const section = z
+  .string()
+  .min(1)
+  .max(MAX_ARTICLE_LENGTH + 16)
+  .describe("A section, as `behind` names it");
 const docExample = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Mit Karte zahlen." }] }] };
 
 const behindOutput = z

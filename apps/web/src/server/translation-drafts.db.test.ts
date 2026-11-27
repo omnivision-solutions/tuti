@@ -797,3 +797,20 @@ test("on a version kept up to date, a section the team took out stays out until 
   expect(text(back.content)).toContain("[de3] Pay by card or invoice");
   expect((await prisma.articleTranslation.findFirstOrThrow({ where: { language: "de", article: { slug: "getting-paid" } } })).removedSections).toEqual([]);
 });
+
+test("a section whose heading is longer than 400 characters can be named in `keep` (and `sections`) as `behind` names it", async () => {
+  const long = `Billing ${"x".repeat(420)}`;
+  const v1 = doc("Intro", ["Setup", "Install it"], [long, "Pay by card"]);
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: v1 });
+  model.reply(reply(v1, "de"));
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  await languageTranslationsDone();
+  await editBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], [long, "Pay by card or invoice"]), "de2");
+  const read = await call(getTranslation, as(), de);
+  const [key] = read.draft!.behind;
+  expect(key!.length).toBeGreaterThan(400);
+  const published = await call(publishTranslation, as(), { ...de, keep: [key!] });
+  expect(text(published.content)).toContain("Unsere Abrechnung");
+});
