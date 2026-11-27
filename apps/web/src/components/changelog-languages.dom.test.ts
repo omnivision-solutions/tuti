@@ -150,8 +150,8 @@ test("the switch goes from the page's latest read, not the token the text was lo
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v3");
   expect(keep().checked).toBe(true);
-  // Save goes with the token its own toggle got back (the text it edits unchanged by it).
-  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v-on");
+  // Save keeps the token its text was loaded with: the toggles went from later reads (the English edited since).
+  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v1");
 });
 
 test("a first toggle (no version yet) gives Save the new version's token, so the next save isn't refused", async () => {
@@ -162,4 +162,17 @@ test("a first toggle (no version yet) gives Save the new version's token, so the
   expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", true, "v-none");
   await submit();
   expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v-made");
+});
+
+test("a toggle's token is taken for Save only where the form's text goes from the read it acted on; text from an older read keeps its own", async () => {
+  keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-after" });
+  saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
+  const { render } = await form({ keepUpToDate: true, version: "v1" });
+  // The English edited meanwhile: the page's new read, the form's text still from v1.
+  await render({ keepUpToDate: true, version: "v2" });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", false, "v2");
+  await submit();
+  // Still v1's: the server refuses an edit made before the English changed.
+  expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v1");
 });

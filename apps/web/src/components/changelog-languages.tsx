@@ -195,7 +195,9 @@ export function ChangelogVersionForm({
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate
           version={view.version}
-          onSaved={setLoaded}
+          // Only where the form's text goes from the read the toggle acted on: text loaded from an older read keeps its
+          // token, so its save is still refused.
+          onSaved={(actedOn, next) => setLoaded((current) => (current === actedOn ? next : current))}
           projectSlug={projectSlug}
           number={number}
           code={view.code}
@@ -231,8 +233,8 @@ function KeepUpToDate({
   teamWrote: boolean;
   /** The page's latest read of the version (`teamWrote` is that read's too): turning it on over text changed since is refused, not done unconfirmed. */
   version: string;
-  /** Done: what the version says now, for the form's next save (its text unchanged by the toggle). */
-  onSaved: (version: string) => void;
+  /** Done: the read it acted on (`version`) and what the version says now, for the form's next save. */
+  onSaved: (actedOn: string, version: string) => void;
 }) {
   const [checked, setChecked] = useState(on);
   // What's saved changing (a save turns it off) shows in place: the switch keeps focus, unsaved edits stay.
@@ -252,7 +254,7 @@ function KeepUpToDate({
         setChecked(!next);
         toast.error(result.error);
       } else {
-        onSaved(result.version!);
+        onSaved(version, result.version!);
       }
     });
   };
