@@ -43,7 +43,19 @@ export const queryVector = cache(async (query: string, timeoutMs: number): Promi
  * meaning at all, whether unlisted articles are found too (what the team can send a link to; never on the portal), and
  * whether API references' operations are (the portal's search: the widget lists articles only).
  */
-export type SearchOptions = { embedTimeoutMs?: number; log?: boolean; meaning?: boolean; unlisted?: boolean; operations?: boolean };
+export type SearchOptions = {
+  embedTimeoutMs?: number;
+  log?: boolean;
+  meaning?: boolean;
+  unlisted?: boolean;
+  operations?: boolean;
+  /**
+   * At a language's address, whether a translation counts only if it was made from the English as it is (the default). False
+   * as the reader types: any published one counts, so no article's English is read per keystroke.
+   * ponytail: the English's hash isn't stored; storing it on the article would let this check be cheap everywhere.
+   */
+  fresh?: boolean;
+};
 
 /**
  * A project's listed docs articles (published, listed everywhere; unlisted ones too with `unlisted`) that match a query, best first, each with a
@@ -151,7 +163,7 @@ async function searchFor(projectId: string, query: string, limit: number, reader
   ]);
   const slugs = [...new Set([...translated, ...inDefault].filter((result) => !result.method).map((result) => result.slug))];
   const articles = slugs.length > 0 ? await prisma.article.findMany({ where: { projectId, slug: { in: slugs }, deletedAt: null }, select: { id: true, slug: true } }) : [];
-  const current = await translatedInto(articles, [language]);
+  const current = options.fresh === false ? await publishedIn(articles, language) : await translatedInto(articles, [language]);
   // The article's slug → its current version's there.
   const there = new Map(articles.flatMap((article) => (current.get(article.id)?.[0] ? [[article.slug, current.get(article.id)![0]!.slug] as const] : [])));
   const byTranslation = translated.filter((result) => there.has(result.slug));
@@ -166,6 +178,16 @@ async function searchFor(projectId: string, query: string, limit: number, reader
     logSearch(projectId, query, results.length);
   }
   return results;
+}
+
+/** These articles' published versions in `language`, by article (translatedInto's shape), without checking they're current. */
+async function publishedIn(articles: { id: string; slug: string }[], language: string): Promise<Map<string, { language: string; slug: string }[]>> {
+  const slugs = new Map(articles.map((article) => [article.id, article.slug]));
+  const versions = await prisma.articleTranslation.findMany({
+    where: { articleId: { in: [...slugs.keys()] }, language, publishedAt: { not: null } },
+    select: { articleId: true, slug: true },
+  });
+  return new Map(versions.map((version) => [version.articleId, [{ language, slug: version.slug ?? slugs.get(version.articleId)! }]]));
 }
 
 /** A query as the team's insights count it: trimmed, one space between words, lower case. */
@@ -185,7 +207,7 @@ export function logSearch(projectId: string, query: string, results: number) {
   const failed = results === 0;
   // Both under one now(): the transaction's, so a search near midnight counts on one day.
   const today = Prisma.sql`(now() AT TIME ZONE 'UTC')::date`;
-  prisma
+  const writing = prisma
     .$transaction([
       prisma.$executeRaw`
         INSERT INTO docs_search_day ("projectId", day, searches, failed)
@@ -209,6 +231,18 @@ export function logSearch(projectId: string, query: string, results: number) {
         : []),
     ])
     .catch((error: unknown) => log.warn("Logging a docs search failed", { projectId, error }));
+  searchesLogging.add(writing);
+  void writing.finally(() => searchesLogging.delete(writing));
+}
+
+/** Searches' counts still being written (logSearch isn't awaited). */
+const searchesLogging = new Set<Promise<unknown>>();
+
+/** Resolves once every search counted so far is written. For tests. */
+export async function searchesLogged() {
+  while (searchesLogging.size > 0) {
+    await Promise.all([...searchesLogging]);
+  }
 }
 
 async function meaningMatches(

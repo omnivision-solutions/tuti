@@ -120,6 +120,8 @@ export async function searchDocsAsTyped(projectSlug: string, query: string, { op
   return searchForReader(project.id, String(projectSlug), q, AS_TYPED_RESULTS, {
     log: false,
     meaning: q.length >= AS_TYPED_MEANING_FROM,
+    // No article's English read per keystroke (the results page checks a translation is current).
+    fresh: false,
     operations: operations === true,
   });
 }

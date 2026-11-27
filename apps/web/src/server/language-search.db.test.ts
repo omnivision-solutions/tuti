@@ -11,7 +11,7 @@ import { request } from "@/test/next-headers";
 
 import { portalAddress } from "./custom-domains";
 import { askDocs, searchDocsAsTyped } from "./docs-readers";
-import { searchForReader } from "./docs-search";
+import { searchesLogged, searchForReader } from "./docs-search";
 import { answerQuestion } from "./operations/docs-ask";
 import { createArticle, publishArticle } from "./operations/docs";
 import { updateLanguages } from "./operations/languages";
@@ -188,11 +188,9 @@ test("a search at a language's address is counted once in the team's insights; t
   at("de");
   await search("Karte");
   await searchDocsAsTyped(project.slug, "Karte");
-  // Counted without being waited for: there once it's written.
-  await expect.poll(async () => (await prisma.docsSearchDay.findMany({ where: { projectId: project.id } })).map(({ searches, failed }) => ({ searches, failed }))).toEqual([{ searches: 1, failed: 0 }]);
-  // (Nothing more is on its way.)
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  expect((await prisma.docsSearchDay.findFirstOrThrow({ where: { projectId: project.id } })).searches).toBe(1);
+  // Counted without being waited for by the search: every count written, then read.
+  await searchesLogged();
+  expect((await prisma.docsSearchDay.findMany({ where: { projectId: project.id } })).map(({ searches, failed }) => ({ searches, failed }))).toEqual([{ searches: 1, failed: 0 }]);
 });
 
 test("a version made from an older English with many close sections can't crowd out a current translation: it still answers", async () => {
@@ -240,5 +238,11 @@ test("more outdated translations than one look at holds, all closer than a curre
   const sent = JSON.stringify(model.requests.at(-1)!.messages);
   expect(sent).toContain("Mit Karte zahlen.");
   expect(sent).not.toContain("Alte Preise");
+});
+
+test("the search box as the reader types at a language's address: its translations at their slug there, without reading any article's English", async () => {
+  await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  at("de");
+  expect(await searchDocsAsTyped(project.slug, "Karte")).toEqual([{ slug: "abrechnung", title: "Abrechnung", snippet: "Mit Karte zahlen.", lang: "de" }]);
 });
 
