@@ -308,7 +308,7 @@ export const publishTranslation = defineOperation({
   output: translationOutput,
   run: async ({ projectId }, input) => {
     let retranslate: { articleId: string; language: string } | null = null;
-    let wentLive: { id: string; first: boolean; marker: Date } | null = null;
+    let wentLive: { id: string; first: boolean; marker: Date; tries: number } | null = null;
     // Its search data to write, recorded with the publish itself: a retry time, and a try (the retry job takes a version the team
     // writes only with one), cleared once it's embedded (versionPublished). Lost before that, the retry job embeds it.
     const marker = new Date(Date.now() + lostAfterMs());
@@ -381,7 +381,7 @@ export const publishTranslation = defineOperation({
       });
       // Its old search sections go with its old text: the new one's are embedded after (versionPublished).
       await tx.articleTranslationChunk.deleteMany({ where: { translationId: version.id } });
-      wentLive = { id: version.id, first: version.publishedAt === null, marker };
+      wentLive = { id: version.id, first: version.publishedAt === null, marker, tries: version.tries };
       // A run on its way now writes nothing (above): queued again wherever one may be (kept up to date, or sections asked for).
       // One with nothing to do ends at once.
       if (update.length > 0 || version.automatic || (version.updateSections as string[]).length > 0) retranslate = { articleId, language: input.language };
@@ -389,8 +389,8 @@ export const publishTranslation = defineOperation({
     });
     // Named on its first publish (its address there), then searchable in its language.
     // (Set in the transaction's callback, which TypeScript doesn't follow.)
-    const live = wentLive as { id: string; first: boolean; marker: Date } | null;
-    if (live) await versionPublished(projectId, live.id, live.first, live.marker);
+    const live = wentLive as { id: string; first: boolean; marker: Date; tries: number } | null;
+    if (live) await versionPublished(projectId, live.id, live.first, live.marker, live.tries);
     if (retranslate) await queueTranslation(retranslate);
     return result;
   },
