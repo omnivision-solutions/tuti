@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { findSignInServices } from "./sign-in-hosts";
+import { findSignInServices, scriptsOf } from "./sign-in-hosts";
 
 describe("findSignInServices", () => {
   test.each([
@@ -24,4 +24,13 @@ describe("findSignInServices", () => {
       <a href="https://www.okta.com">Okta</a> <a href="https://auth0.com">Auth0</a> <a href="https://supabase.com">Supabase</a> clerk.browser.js <script>window.Clerk.session.id; Clerk.user.id</script></body></html>`;
     expect(findSignInServices([page])).toEqual([]);
   });
+});
+
+test("long hostile text is scanned in linear time: a run of hyphenated labels, unclosed tags", () => {
+  const started = performance.now();
+  findSignInServices(["a-".repeat(500_000), "aa-a".repeat(200_000)]);
+  for (const text of ['<link href="x" '.repeat(100_000), "<script src".repeat(100) + " ".repeat(500_000)]) {
+    scriptsOf({ url: new URL("https://app.example.com"), text });
+  }
+  expect(performance.now() - started).toBeLessThan(2_000);
 });
