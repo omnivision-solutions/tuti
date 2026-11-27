@@ -45,8 +45,9 @@ first), with these limits, so two machines never answer each other and nobody ge
 - **Marked as automatic**: the email carries `Auto-Submitted: auto-replied` when every message in it is the
   AI's.
 - **Automatic mail is never answered**: mail with `Auto-Submitted` (other than `no`), `Precedence: bulk`,
-  `junk`, `list` or `auto_reply`, `X-Autoreply` or `X-Autorespond`, an out-of-office subject, a bounce,
-  or Tuti's own mail coming back is dropped before a conversation exists.
+  `junk`, `list` or `auto_reply`, `X-Autoreply` or `X-Autorespond`, an out-of-office subject with
+  `X-Auto-Response-Suppress` (as Exchange sends it), a bounce, or Tuti's own mail coming back is dropped
+  before a conversation exists (`apps/web/src/lib/email-noise.ts`).
 - **5 an hour per conversation** (`AUTOMATED_REPLIES_PER_HOUR` in `apps/web/src/lib/workflows.ts`, not a
   setting): the AI's messages and set replies together. Past it nothing replies, a workflow's **Don't hand
   over** can't keep it, and the conversation goes to the team for the reason "too many automated replies",
