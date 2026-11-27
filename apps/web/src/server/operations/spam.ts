@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { matchText } from "@/lib/match-text";
 import { SPAM_REASON_KEYS, spamPassedWhy, spamWhy } from "@/lib/spam-reasons";
-import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleValue } from "@/lib/spam-rules";
+import { SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleAudience, type SpamRuleField, type SpamRuleMatcher, SPAM_RULE_AUDIENCE_KEYS, spamRuleValue } from "@/lib/spam-rules";
 
 import { userWithAddress } from "../inbound";
 import { addSpamRule, allowSender, blockableDomain, lockSpamRules, spamVerdict } from "../spam";
@@ -23,7 +23,7 @@ export const MAX_SPAM_RULE_VALUE = 200;
 /** The allowed list. */
 export const MAX_SPAM_SENDERS = 500;
 
-export type SpamRuleRow = { id: string; field: SpamRuleField; matcher: SpamRuleMatcher; value: string; fromReport: boolean };
+export type SpamRuleRow = { id: string; field: SpamRuleField; matcher: SpamRuleMatcher; value: string; appliesTo: SpamRuleAudience; fromReport: boolean };
 
 /** `guidance` only where the server has a model for the filter: elsewhere nothing reads it. */
 export type SpamSettings = { rules: SpamRuleRow[]; allowed: string[]; guidance?: string };
@@ -31,7 +31,7 @@ export type SpamSettings = { rules: SpamRuleRow[]; allowed: string[]; guidance?:
 /** A project's rules (newest first), allowed list (alphabetical) and guidance, as the page and the API read them. */
 export async function spamSettings(projectId: string): Promise<SpamSettings> {
   const [rules, allowed, { spamGuidance }] = await Promise.all([
-    prisma.spamRule.findMany({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true, field: true, matcher: true, value: true, fromReport: true } }),
+    prisma.spamRule.findMany({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true, field: true, matcher: true, value: true, appliesTo: true, fromReport: true } }),
     prisma.spamSender.findMany({ where: { projectId, conversationId: null, blocked: false }, orderBy: { sender: "asc" }, select: { sender: true } }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { spamGuidance: true } }),
   ]);
@@ -77,10 +77,14 @@ function ruleProblem(field: SpamRuleField, matcher: SpamRuleMatcher, value: stri
 
 const rule = z
   .object({
-    field: z.enum(SPAM_RULE_FIELD_KEYS).describe(`What it looks at: ${SPAM_RULE_FIELD_KEYS.map((key) => `${key} (${SPAM_RULE_FIELDS[key].toLowerCase()})`).join(", ")}. sender_domain and sender_address go by a proven sender, as the allowed list does; the rest skip trusted senders (one of the project's users, a teammate, someone the team has replied to) and senders marked Not spam. sent_to is the To and Cc of an email`),
+    field: z.enum(SPAM_RULE_FIELD_KEYS).describe(`What it looks at: ${SPAM_RULE_FIELD_KEYS.map((key) => `${key} (${SPAM_RULE_FIELDS[key].toLowerCase()})`).join(", ")}. sender_domain and sender_address go by a proven sender (never an address a signed-out visitor typed). sent_to is the To and Cc of an email`),
     matcher: z
       .enum(SPAM_RULE_MATCHER_KEYS)
       .describe(`How, ignoring case: ${SPAM_RULE_MATCHER_KEYS.map((key) => `${key} (${SPAM_RULE_MATCHERS[key]})`).join(", ")}. A sender_domain that "is" a domain is its subdomains too; "contains" on the subject or body matches whole words; a pattern has * (any characters) and ? (any one), never a regex`),
+    appliesTo: z
+      .enum(SPAM_RULE_AUDIENCE_KEYS)
+      .default("everyone")
+      .describe("Who it files: everyone (whoever they are, marked Not spam or not; only an allowed address, or an owner's or admin's Not spam, is an exception to a rule on the domain), or strangers (never one of the project's users, a teammate or someone the team has replied to)"),
     value: z.string().trim().min(1, "Enter a value").max(MAX_SPAM_RULE_VALUE, `Keep it under ${MAX_SPAM_RULE_VALUE} characters`).describe("What it compares with"),
   })
   .transform((input, ctx) => {
@@ -104,14 +108,15 @@ const settingsOutput = z
           field: z.enum(SPAM_RULE_FIELD_KEYS).describe("What it looks at"),
           matcher: z.enum(SPAM_RULE_MATCHER_KEYS).describe("How it compares, ignoring case"),
           value: z.string().describe("What it compares with"),
+          appliesTo: z.enum(SPAM_RULE_AUDIENCE_KEYS).describe("Who it files: everyone, or strangers only"),
           fromReport: z.boolean().describe("Whether marking a conversation as spam put it there"),
         }),
       )
       .describe("The block rules, newest first: a new conversation one matches goes to Spam")
-      .meta({ examples: [[{ id: "cm1ruleexample", field: "sender_domain", matcher: "is", value: "spam.example", fromReport: false }]] }),
+      .meta({ examples: [[{ id: "cm1ruleexample", field: "sender_domain", matcher: "is", value: "spam.example", appliesTo: "everyone", fromReport: false }]] }),
     allowed: z
       .array(z.string())
-      .describe("The allowed list, in alphabetical order: addresses, and domains (each for its subdomains too). Their messages skip the rules on what they say; an address (not a domain) also skips the rules on its domain and the hourly limit on new conversations by email")
+      .describe("The allowed list, in alphabetical order: addresses, and domains (each for its subdomains too). An address beats the rules on its domain, and a domain a less exact domain's; an address (not a domain) also skips the hourly limit on new conversations by email")
       .meta({ examples: [["forms@acme.example"]] }),
     guidance: z
       .string()
@@ -229,7 +234,7 @@ export const trySpamFilter = defineOperation({
       .nullable()
       .describe("Why, as `spamReason` on a conversation; null when it wouldn't go to Spam")
       .meta({ examples: ["rule"] }),
-    why: z.string().describe("The same in words: the reason it would go to Spam (the rule that matched, where one did), or what let it through").meta({ examples: ["it matches your rule “Subject or body contains facebook admin”"] }),
+    why: z.string().describe("The same in words: the reason it would go to Spam (the rule that matched, where one did), or what let it through").meta({ examples: ["your rule “subject or body contains facebook admin”"] }),
   }).describe("What the filter would do with the message"),
   example: { sender: "e2e-kim@spam.example", subject: "Facebook Admin", text: "Your page will be disabled." },
   run: async ({ projectId }, { sender: address, subject, text, name, to }) => {
@@ -239,7 +244,7 @@ export const trySpamFilter = defineOperation({
       spam: verdict.spam,
       reason: verdict.reason,
       // The rule that matched, where one did, even one a teammate's page names by its address or domain.
-      why: verdict.spam ? spamWhy(verdict.phrase ? "rule" : verdict.reason, verdict.phrase)! : spamPassedWhy(verdict.check),
+      why: verdict.phrase ? `your rule “${verdict.phrase.charAt(0).toLowerCase()}${verdict.phrase.slice(1)}”` : verdict.spam ? spamWhy(verdict.reason)! : spamPassedWhy(verdict.check),
     };
   },
 });

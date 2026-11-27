@@ -23,9 +23,14 @@ export const SPAM_RULE_MATCHERS = {
   pattern: "matches pattern",
 } as const;
 
+/** Who a rule files: everyone, or only those the trust check doesn't vouch for. */
+export const SPAM_RULE_AUDIENCES = { everyone: "Everyone", strangers: "Strangers only" } as const;
+
 export type SpamRuleField = keyof typeof SPAM_RULE_FIELDS;
+export type SpamRuleAudience = keyof typeof SPAM_RULE_AUDIENCES;
+export const SPAM_RULE_AUDIENCE_KEYS = Object.keys(SPAM_RULE_AUDIENCES) as [SpamRuleAudience, ...SpamRuleAudience[]];
 export type SpamRuleMatcher = keyof typeof SPAM_RULE_MATCHERS;
-export type SpamRule = { field: SpamRuleField; matcher: SpamRuleMatcher; value: string };
+export type SpamRule = { field: SpamRuleField; matcher: SpamRuleMatcher; value: string; appliesTo?: SpamRuleAudience };
 
 export const SPAM_RULE_FIELD_KEYS = Object.keys(SPAM_RULE_FIELDS) as [SpamRuleField, ...SpamRuleField[]];
 export const SPAM_RULE_MATCHER_KEYS = Object.keys(SPAM_RULE_MATCHERS) as [SpamRuleMatcher, ...SpamRuleMatcher[]];
@@ -36,9 +41,9 @@ export const isSenderRule = (rule: { field: string }) => rule.field === "sender_
 /** Fields whose "contains" matches whole words ("sex" isn't in "Essex"). */
 const WORDS = new Set<string>(["subject", "body", "subject_or_body"]);
 
-/** A rule in words: "Sender domain is spam.example". */
-export const describeSpamRule = (rule: { field: string; matcher: string; value: string }) =>
-  `${SPAM_RULE_FIELDS[rule.field as SpamRuleField]} ${SPAM_RULE_MATCHERS[rule.matcher as SpamRuleMatcher]} ${rule.value}`;
+/** A rule in words: "Sender domain is spam.example", and "(strangers only)" after one that is. */
+export const describeSpamRule = (rule: { field: string; matcher: string; value: string; appliesTo?: string }) =>
+  `${SPAM_RULE_FIELDS[rule.field as SpamRuleField]} ${SPAM_RULE_MATCHERS[rule.matcher as SpamRuleMatcher]} ${rule.value}${rule.appliesTo === "strangers" ? " (strangers only)" : ""}`;
 
 /** A value as a rule keeps it: addresses and domains lowercase, and "@acme.example" the domain. */
 export function spamRuleValue(field: SpamRuleField, value: string) {
@@ -84,7 +89,7 @@ export function matchesPattern(pattern: string, text: string): boolean {
 
 /** The value a rule compares, as it's compared: two rules with the same key are the same rule. */
 export const spamRuleKey = (rule: SpamRule) =>
-  `${rule.field} ${rule.matcher} ${rule.matcher === "contains" && WORDS.has(rule.field) ? matchText(rule.value) : fold(rule.value)}`;
+  `${rule.appliesTo ?? "everyone"} ${rule.field} ${rule.matcher} ${rule.matcher === "contains" && WORDS.has(rule.field) ? matchText(rule.value) : fold(rule.value)}`;
 
 /** What a new conversation shows the rules: each field's text, null where it has none. */
 export type SpamRuleInput = { domain?: string | null; address?: string | null; name?: string | null; subject?: string | null; text?: string | null; sentTo?: string[] };

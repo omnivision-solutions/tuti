@@ -8,6 +8,7 @@ CREATE TABLE "spam_rule" (
     "field" TEXT NOT NULL,
     "matcher" TEXT NOT NULL,
     "value" TEXT NOT NULL,
+    "appliesTo" TEXT NOT NULL DEFAULT 'everyone',
     "fromReport" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

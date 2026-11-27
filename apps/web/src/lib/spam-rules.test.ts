@@ -74,6 +74,9 @@ test("a value as kept: addresses and domains lowercase, a domain's @ dropped, te
 
 test("a rule in words, and two rules that compare the same are one", () => {
   expect(describeSpamRule({ field: "subject_or_body", matcher: "contains", value: "facebook admin" })).toBe("Subject or body contains facebook admin");
+  expect(describeSpamRule({ field: "subject", matcher: "is", value: "hi", appliesTo: "strangers" })).toBe("Subject is hi (strangers only)");
+  // Everyone and Strangers only are two rules.
+  expect(spamRuleKey({ field: "subject", matcher: "is", value: "hi", appliesTo: "strangers" })).not.toBe(spamRuleKey({ field: "subject", matcher: "is", value: "hi" }));
   expect(spamRuleKey({ field: "subject", matcher: "contains", value: "Facebook-Admin!" })).toBe(spamRuleKey({ field: "subject", matcher: "contains", value: "facebook admin" }));
   expect(spamRuleKey({ field: "subject", matcher: "is", value: "Facebook-Admin" })).not.toBe(spamRuleKey({ field: "subject", matcher: "is", value: "facebook admin" }));
 });

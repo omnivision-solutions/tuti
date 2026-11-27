@@ -268,7 +268,7 @@ test("a server without a decision model asks the chat model alone; one without a
 
 test("only a conversation no free check decided is due: not one filed, nor one a decision or trust let through", async () => {
   const { projectId, admin, mail, state } = await setup();
-  // A rule on what it says files it (check 5).
+  // A rule files it (check 1).
   await call(updateSpamSettings, admin, { addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }], allow: ["e2e-friend@example.com"] });
   const filed = await mail("e2e-stranger@example.com", { subject: "Facebook Admin notice" });
   expect(await state(filed)).toMatchObject({ spam: true, spamReason: "rule", due: false });

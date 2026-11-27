@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { z } from "zod";
 
 import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
 import { widgetToken } from "@/lib/widget-session";
@@ -15,6 +16,7 @@ import { call } from "./operations/run";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { upsertProjectUser } from "./project-users";
 import { arrivalOf, SPAM_CHECKS, spamVerdict } from "./spam";
+import { trySpam } from "./spam-settings";
 import type { SpamRuleField, SpamRuleMatcher } from "@/lib/spam-rules";
 import { widgetStartConversation } from "./widget-inbox";
 
@@ -45,7 +47,7 @@ async function setup() {
     projectId,
     owner,
     admin,
-    update: (input: Parameters<typeof updateSpamSettings.run>[1]) => call(updateSpamSettings, admin, input),
+    update: (input: z.input<typeof updateSpamSettings.input>) => call(updateSpamSettings, admin, input),
     /** An email from `from` to the project's address, DMARC passed unless said. */
     mail: async (from: string, message: { subject?: string; body?: string; auth?: string; headers?: Record<string, string> } = {}) => {
       expect(await postEmail(rawEmail({ from, to, subject: message.subject, body: message.body, headers: message.headers }), { recipient: to, ...(message.auth && { auth: message.auth }) })).toEqual({
@@ -63,16 +65,10 @@ async function setup() {
   };
 }
 
-const rule = (field: SpamRuleField, matcher: SpamRuleMatcher, value: string) => ({ field, matcher, value });
+const rule = (field: SpamRuleField, matcher: SpamRuleMatcher, value: string, appliesTo: "everyone" | "strangers" = "everyone") => ({ field, matcher, value, appliesTo });
 
-test("the rules on what it says are check 5, after the flood limit", () => {
-  expect(SPAM_CHECKS.map(({ key, whoeverSent }) => (whoeverSent ? `${key}, whoever sent it` : key))).toEqual([
-    "decisions",
-    "trusted",
-    "dmarc",
-    "flood, whoever sent it",
-    "rules",
-  ]);
+test("every rule is in check 1, before trust", () => {
+  expect(SPAM_CHECKS.map(({ key, whoeverSent }) => (whoeverSent ? `${key}, whoever sent it` : key))).toEqual(["decisions", "trusted", "dmarc", "flood, whoever sent it"]);
 });
 
 test("each kind of rule files a new email, and the conversation keeps which rule", async () => {
@@ -110,69 +106,73 @@ test("each kind of rule files a new email, and the conversation keeps which rule
     "Sent to is sales@acme.example",
     null,
   ]);
-  // An earlier check's answer stands: mail that failed DMARC is filed for that.
+  // A rule on what it says files mail that failed DMARC too (it runs first); a rule on the sender goes by a proven address.
   await mail("e2e-i@strangers.example", { body: "crypto", auth: FAIL }); // #10
-  expect((await filed())[9]).toBe("dmarc_failed");
+  await mail("e2e-j@spam.example", { auth: FAIL }); // #11
+  expect((await filed()).slice(9)).toEqual(["rule", "dmarc_failed"]);
 });
 
-test("trust and Not spam spare the rules on what it says, never those on who sent it; a stranger in the widget isn't spared", async () => {
+test("an Everyone rule files anyone, trusted, allowed or marked Not spam; a Strangers-only rule files only those trust doesn't vouch for", async () => {
   const { project, projectId, admin, update, mail, filed } = await setup();
-  await update({ addRules: [rule("subject_or_body", "contains", "crypto"), rule("sender_domain", "ends_with", ".example.org")], allow: ["friends.example"] });
-  await mail("e2e-kim@friends.example", { body: "About crypto" }); // #1: an allowed domain
+  await update({ addRules: [rule("subject_or_body", "contains", "crypto"), rule("subject_or_body", "contains", "giveaway", "strangers")], allow: ["e2e-kim@friends.example"] });
   const sam = await upsertProjectUser(projectId, "user-42", { name: "Sam", email: "e2e-sam@example.com" });
-  expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, sam) }, "Do you take crypto?")).toEqual({ number: 2 }); // one of the project's users
-  expect(await widgetStartConversation(project.slug, {}, "Buy crypto now", "e2e-typed@strangers.example")).toMatchObject({ number: 3 }); // a signed-out visitor
-  await mail("e2e-lee@strangers.example", { body: "Buy crypto now" }); // #4
-  expect(await filed()).toEqual(["inbox", "inbox", "rule", "rule"]);
+  const asSam = { token: widgetToken(projectId, sam) };
+  expect(await widgetStartConversation(project.slug, asSam, "Do you take crypto?")).toEqual({ number: 1 }); // one of the project's users: Everyone
+  expect(await widgetStartConversation(project.slug, asSam, "Join our giveaway")).toEqual({ number: 2 }); // Strangers only: spared
+  await mail("e2e-kim@friends.example", { body: "About crypto" }); // #3: an allowed address
+  expect(await widgetStartConversation(project.slug, {}, "Buy crypto now", "e2e-typed@strangers.example")).toMatchObject({ number: 4 }); // a signed-out visitor
+  await mail("e2e-lee@strangers.example", { body: "A giveaway" }); // #5: a stranger, Strangers only
+  expect(await filed()).toEqual(["rule", "inbox", "rule", "rule", "rule"]);
+  const words = async (number: number) => (await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } })).spamPhrase;
+  expect(await words(5)).toBe("Subject or body contains giveaway (strangers only)");
 
-  // One of the project's users at a blocked domain: a rule on who sent it applies to them, trusted or not.
-  const ola = await upsertProjectUser(projectId, "user-43", { name: "Ola", email: "e2e-ola@acme.example.org" });
-  expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, ola) }, "Hello")).toEqual({ number: 5 });
-  expect((await filed())[4]).toBe("rule");
-
-  // Not spam on a sender whose address is proven lets them through from now on.
-  expect((await call(updateConversation, admin, { number: 4, spam: false })).notice).toBeUndefined();
-  await mail("e2e-lee@strangers.example", { body: "More crypto" }); // #6
-  // On a visitor's typed address nothing is kept, and it says so: their next one is filed again.
-  expect((await call(updateConversation, admin, { number: 3, spam: false })).notice).toBe("Nothing is remembered about its sender: a message your rules match still goes to Spam.");
-  expect(await widgetStartConversation(project.slug, {}, "Crypto again", "e2e-typed@strangers.example")).toMatchObject({ number: 7 });
-  expect((await filed()).slice(5)).toEqual(["inbox", "rule"]);
+  // Not spam names the rule, which still applies: their next one is filed again.
+  expect((await call(updateConversation, admin, { number: 5, spam: false })).notice).toBe("Filed by your rule: Subject or body contains giveaway (strangers only). It still applies.");
+  await mail("e2e-lee@strangers.example", { body: "Another giveaway" }); // #6
+  expect((await filed())[5]).toBe("rule");
+  // Unless an owner or admin removes it with it.
+  expect((await call(updateConversation, admin, { number: 6, spam: false, removeRule: true })).notice).toBe("Filed by your rule: Subject or body contains giveaway (strangers only). It's removed.");
+  await mail("e2e-lee@strangers.example", { body: "A third giveaway" }); // #7
+  expect((await filed())[6]).toBe("inbox");
+  await expect(call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).resolves.toMatchObject({ notice: "Filed by your rule: Subject or body contains crypto. It's removed." });
+  await expect(call(updateConversation, admin, { number: 3, spam: false, removeRule: true })).rejects.toThrow(new OperationError(409, "no_rule", "That rule was already removed"));
 });
 
-test("a rule on the sender's name reads a signed-in account's name, skipping one of the project's users", async () => {
+test("a rule on the sender's name reads a signed-in account's name; Strangers only skips one of the project's users", async () => {
   const { projectId, update } = await setup();
-  await update({ addRules: [rule("sender_name", "contains", "giveaway")] });
+  await update({ addRules: [rule("sender_name", "contains", "giveaway", "strangers")] });
   // A Tuti account nobody vouched for isn't trusted: its name is checked.
   const stranger = await signUp("Big Giveaway");
   actAs(null);
-  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, stranger.id))).toMatchObject({ spam: true, reason: "rule", phrase: "Sender name contains giveaway" });
+  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, stranger.id))).toMatchObject({ spam: true, reason: "rule", phrase: "Sender name contains giveaway (strangers only)" });
   // One of the project's own users with such a name is trusted, so spared.
   const fan = await upsertProjectUser(projectId, "user-77", { name: "Giveaway Fan", email: "e2e-fan@example.com" });
   expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, fan))).toMatchObject({ spam: false, check: "trusted" });
 });
 
-test("check 1 with other rules on the sender: an allowed address beats them, they beat an allowed domain, an owner's Not spam beats them and a member's doesn't", async () => {
+test("check 1: a rule on the address files everyone, an allowed address or Not spam included; an allowed address, or an owner's Not spam, beats a rule on its domain and a member's doesn't", async () => {
   const { projectId, admin, update, mail, filed } = await setup();
   const member = await addMember(projectId, "MEMBER");
   actAs(null);
   const asMember = { actor: { kind: "user" as const, userId: member.id }, projectId };
-  await update({ addRules: [rule("sender_address", "starts_with", "e2e-noreply@")], allow: ["e2e-noreply-forms@relay.example", "corp.example"] });
-  await mail("e2e-noreply-forms@relay.example"); // #1: the allowed address
-  await mail("e2e-noreply@corp.example"); // #2: the rule, over the allowed domain
+  await update({ addRules: [rule("sender_address", "starts_with", "e2e-noreply"), rule("sender_domain", "ends_with", ".corp.example")], allow: ["e2e-noreply-forms@relay.example", "e2e-ann@mail.corp.example"] });
+  await mail("e2e-noreply-forms@relay.example"); // #1: allowed, still filed by the address's rule
+  await mail("e2e-ann@mail.corp.example"); // #2: the allowed address beats its domain's rule
   await mail("e2e-noreply@a.example"); // #3
-  await mail("e2e-noreply@b.example"); // #4
-  expect(await filed()).toEqual(["inbox", "rule", "rule", "rule"]);
-  // An owner's Not spam lets that sender through from now on, and says the rule still applies.
-  expect((await call(updateConversation, admin, { number: 3, spam: false })).notice).toBe(
-    "Your rule “Sender address starts with e2e-noreply@” still applies. e2e-noreply@a.example is let through from now on.",
+  await mail("e2e-kim@x.corp.example"); // #4
+  await mail("e2e-lee@y.corp.example"); // #5
+  expect(await filed()).toEqual(["rule", "inbox", "rule", "rule", "rule"]);
+  // An owner's Not spam on the address's rule names it: it still applies.
+  expect((await call(updateConversation, admin, { number: 3, spam: false })).notice).toBe("Filed by your rule: Sender address starts with e2e-noreply. It still applies.");
+  // On the domain's rule, an owner's lets that sender through; a member's isn't kept.
+  expect((await call(updateConversation, admin, { number: 4, spam: false })).notice).toBe("Your rule “Sender domain ends with .corp.example” still applies. e2e-kim@x.corp.example is let through from now on.");
+  expect((await call(updateConversation, asMember, { number: 5, spam: false })).notice).toBe(
+    "Your rule “Sender domain ends with .corp.example” still applies: an owner or admin can let e2e-lee@y.corp.example through.",
   );
-  // A member's isn't kept: the next one is filed again.
-  expect((await call(updateConversation, asMember, { number: 4, spam: false })).notice).toBe(
-    "Your rule “Sender address starts with e2e-noreply@” still applies: an owner or admin can let e2e-noreply@b.example through.",
-  );
-  await mail("e2e-noreply@a.example"); // #5
-  await mail("e2e-noreply@b.example"); // #6
-  expect((await filed()).slice(4)).toEqual(["inbox", "rule"]);
+  await mail("e2e-noreply@a.example"); // #6
+  await mail("e2e-kim@x.corp.example"); // #7
+  await mail("e2e-lee@y.corp.example"); // #8
+  expect((await filed()).slice(5)).toEqual(["rule", "inbox", "rule"]);
 });
 
 test("rules through spam.update: added and removed by ID, the same rule once, block and allow as rules and the allowed list, and a removed rule's next mail arrives", async () => {
@@ -273,8 +273,9 @@ test("the blocked list and the phrases from before become rules, and file as the
   await mail("e2e-kim@spam.example"); // #1
   await mail("e2e-lee@m2.junk.example"); // #2
   await mail("e2e-lee@strangers.example", { subject: "The FACEBOOK admin" }); // #3
-  await mail("e2e-ann@friends.example", { subject: "About crypto" }); // #4: still allowed
-  expect(await filed()).toEqual(["blocked_address", "blocked_domain", "rule", "inbox"]);
+  await mail("e2e-ann@friends.example", { subject: "About crypto" }); // #4: allowed, and a rule on what it says files everyone
+  await mail("e2e-ann@friends.example", { subject: "Hello" }); // #5: still allowed
+  expect(await filed()).toEqual(["blocked_address", "blocked_domain", "rule", "rule", "inbox"]);
 });
 
 test("trying a message says what the free checks would do with it and which rule matched, and changes nothing", async () => {
@@ -283,25 +284,39 @@ test("trying a message says what the free checks would do with it and which rule
   const rows = () => Promise.all([prisma.conversation.count(), prisma.inboundEmail.count(), prisma.spamSender.count({ where: { projectId } }), prisma.spamRule.count({ where: { projectId } })]);
   const before = await rows();
   const attempt = (sender: string, subject = "", text = "") => call(trySpamFilter, admin, { sender, subject, text });
-  expect(await attempt("E2E-Kim@spam.example")).toEqual({ spam: true, reason: "blocked_address", why: "it matches your rule “Sender address is e2e-kim@spam.example”" });
-  expect(await attempt("e2e-lee@m2.junk.example", "Hi")).toEqual({ spam: true, reason: "blocked_domain", why: "it matches your rule “Sender domain is junk.example”" });
+  expect(await attempt("E2E-Kim@spam.example")).toEqual({ spam: true, reason: "blocked_address", why: "your rule “sender address is e2e-kim@spam.example”" });
+  expect(await attempt("e2e-lee@m2.junk.example", "Hi")).toEqual({ spam: true, reason: "blocked_domain", why: "your rule “sender domain is junk.example”" });
   expect(await attempt("e2e-lee@strangers.example", "Hi", "This is the facebook admin.")).toEqual({
     spam: true,
     reason: "rule",
-    why: "it matches your rule “Subject or body contains Facebook Admin”",
+    why: "your rule “subject or body contains Facebook Admin”",
   });
   expect(await attempt("e2e-lee@strangers.example", "Hi", "Can I export to CSV?")).toEqual({ spam: false, reason: null, why: "no check filed it" });
-  // A teammate is trusted, so the rule on what it says is spared.
-  expect(await attempt(owner.email, "facebook admin")).toEqual({
+  // The rule whatever the sender: a teammate is filed by an Everyone rule, and trusted past a Strangers-only one.
+  expect(await attempt(owner.email, "facebook admin")).toEqual({ spam: true, reason: "rule", why: "your rule “subject or body contains Facebook Admin”" });
+  await update({ addRules: [rule("subject", "contains", "invoice", "strangers")] });
+  expect(await attempt(owner.email, "Your invoice")).toEqual({
     spam: false,
     reason: null,
     why: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
   });
+  expect(await attempt("e2e-lee@strangers.example", "Your invoice")).toMatchObject({ spam: true, why: "your rule “subject contains invoice (strangers only)”" });
   // The sender's name and where it was sent, for the rules on them.
   await update({ addRules: [rule("sender_name", "contains", "giveaway"), rule("sent_to", "is", "sales@acme.example")] });
-  expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", name: "Big Giveaway" })).toMatchObject({ spam: true, why: "it matches your rule “Sender name contains giveaway”" });
-  expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", to: ["Sales@acme.example"] })).toMatchObject({ spam: true, why: "it matches your rule “Sent to is sales@acme.example”" });
+  expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", name: "Big Giveaway" })).toMatchObject({ spam: true, why: "your rule “sender name contains giveaway”" });
+  expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", to: ["Sales@acme.example"] })).toMatchObject({ spam: true, why: "your rule “sent to is sales@acme.example”" });
   await update({ allow: ["e2e-lee@strangers.example"] });
-  expect(await attempt("e2e-lee@strangers.example", "facebook admin")).toEqual({ spam: false, reason: null, why: "your lists and marks let this sender through" });
-  expect(await rows()).toEqual([before[0], before[1], before[2] + 1, before[3] + 2]);
+  expect(await attempt("e2e-lee@strangers.example", "Hello")).toEqual({ spam: false, reason: null, why: "your lists and marks let this sender through" });
+  expect(await rows()).toEqual([before[0], before[1], before[2] + 1, before[3] + 3]);
+});
+
+test("Settings' Try a message takes From as a name and an address, and To as where it was sent", async () => {
+  const { project, owner, update } = await setup();
+  await update({ addRules: [rule("sender_name", "contains", "giveaway"), rule("sent_to", "is", "sales@acme.example")] });
+  actAs(owner);
+  const attempt = (from: string, to = "") => trySpam(project.slug, { from, to, subject: "Hi", text: "Hello" });
+  expect(await attempt('"Big Giveaway" <e2e-win@prizes.example>')).toEqual({ spam: true, why: "your rule “sender name contains giveaway”" });
+  expect(await attempt("e2e-win@prizes.example", "Sales@acme.example")).toEqual({ spam: true, why: "your rule “sent to is sales@acme.example”" });
+  expect(await attempt("Kim <e2e-kim@strangers.example>")).toEqual({ spam: false, why: "no check filed it" });
+  expect(await attempt("Kim <not an address>")).toEqual({ error: "Enter a valid email address" });
 });

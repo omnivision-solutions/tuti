@@ -29,9 +29,9 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await expect(owner).toHaveTitle(/Spam · Settings · Acme/);
   const card = (title: string) => owner.locator("section:not([data-slot])").filter({ has: owner.getByRole("heading", { name: new RegExp(`^${title}`), level: 2 }) });
   const rules = card("Block rules");
-  /** Adds a rule: the field and matcher picked where given (Sender domain and "is" to start), then the value. */
-  const add = async (value: string, field?: string, matcher?: string) => {
-    for (const [label, option] of [["Field", field], ["Matcher", matcher]] as const) {
+  /** Adds a rule: the field, matcher and who it applies to picked where given (Sender domain, "is", Everyone to start), then the value. */
+  const add = async (value: string, field?: string, matcher?: string, appliesTo?: string) => {
+    for (const [label, option] of [["Field", field], ["Matcher", matcher], ["Applies to", appliesTo]] as const) {
       if (option) {
         await rules.getByRole("combobox", { name: label }).click();
         await owner.getByRole("option", { name: option, exact: true }).click();
@@ -42,11 +42,12 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   };
 
   // One short line per card; no allowed list while it's empty.
-  await expect(rules).toContainText("New conversations that match one go to Spam.");
-  await expect(rules).toContainText("No rules yet");
+  await expect(rules).toContainText("Matching new conversations go to Spam.");
+  await expect(rules.getByRole("listitem")).toHaveCount(0);
   await expect(owner.getByRole("heading", { name: /^Allowed/, level: 2 })).toHaveCount(0);
   await expect(rules.getByRole("combobox", { name: "Field" })).toContainText("Sender domain");
   await expect(rules.getByRole("combobox", { name: "Matcher" })).toContainText("is");
+  await expect(rules.getByRole("combobox", { name: "Applies to" })).toContainText("Everyone");
 
   // What can't be a domain is refused, and stays in the field; a domain is for its subdomains.
   await add("not a domain");
@@ -54,11 +55,15 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await expect(rules.getByLabel("Value")).toHaveValue("not a domain");
   await add("Spam-Corp.example");
   await expect(owner.getByText("Rule added")).toBeVisible();
-  await expect(rules.getByRole("listitem")).toHaveText(["Sender domain is spam-corp.example"]);
+  await expect(rules.getByRole("listitem")).toHaveText(["Sender domain · is · spam-corp.example"]);
   await expect(rules.getByLabel("Value")).toHaveValue("");
   await add("Facebook Admin", "Subject or body", "contains");
-  await add("*giveaway*", "Sender name", "matches pattern");
-  await expect(rules.getByRole("listitem")).toHaveText(["Sender name matches pattern *giveaway*", "Subject or body contains Facebook Admin", "Sender domain is spam-corp.example"]);
+  await add("*giveaway*", "Sender name", "matches pattern", "Strangers only");
+  await expect(rules.getByRole("listitem")).toHaveText([
+    "Sender name · matches pattern · *giveaway* · strangers only",
+    "Subject or body · contains · Facebook Admin",
+    "Sender domain · is · spam-corp.example",
+  ]);
   await expect(rules.getByRole("heading", { level: 2 })).toHaveText("Block rules 3");
   // One that's there already, however it's written, says so.
   await add("facebook-admin", "Subject or body", "contains");
@@ -70,7 +75,7 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   // The AI spam check: Off till it's described, saved with the page's Save changes, and On on the next visit.
   const check = card("AI spam check");
   await expect(check.getByRole("heading", { level: 2 })).toHaveText("AI spam check Off");
-  await expect(check).toContainText("Describe your spam; the AI checks what the rules miss. For now it only notes what it would file.");
+  await expect(check).toContainText("Describe your spam; the AI checks what the rules miss.");
   await check.getByLabel("Describe your spam").fill("Agencies offering SEO work are spam");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Guidance saved")).toBeVisible();
@@ -81,20 +86,22 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   // Try a message: what the filter would do with it, and which rule. What was typed stays, to change and try again.
   const attempt = card("Try a message");
   await expect(attempt).toContainText("Nothing is sent or saved.");
-  await attempt.getByLabel("From").fill("e2e-kim@strangers.example");
+  // To starts as the project's support address.
+  await expect(attempt.getByLabel("To")).toHaveValue(address);
+  await attempt.getByLabel("From").fill("Kim Lee <e2e-kim@strangers.example>");
   await attempt.getByLabel("Subject").fill("A notice");
   await attempt.getByLabel("Message").fill("This is the facebook admin: your page will be disabled.");
   await attempt.getByRole("button", { name: "Try it" }).click();
-  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: it matches your rule “Subject or body contains Facebook Admin”.");
+  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: your rule “subject or body contains Facebook Admin”.");
   await attempt.getByLabel("From").fill("e2e-lee@mail.spam-corp.example");
   await attempt.getByRole("button", { name: "Try it" }).click();
-  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: it matches your rule “Sender domain is spam-corp.example”.");
+  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: your rule “sender domain is spam-corp.example”.");
   await expect(attempt.getByLabel("Message")).toHaveValue("This is the facebook admin: your page will be disabled.");
-  await attempt.getByLabel("From").fill("e2e-win@prizes.example");
-  await attempt.getByLabel("Sender name").fill("Big GIVEAWAY team");
+  // The name in From, for rules on the sender's name.
+  await attempt.getByLabel("From").fill("Big GIVEAWAY team <e2e-win@prizes.example>");
   await attempt.getByLabel("Message").fill("Claim your prize.");
   await attempt.getByRole("button", { name: "Try it" }).click();
-  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: it matches your rule “Sender name matches pattern *giveaway*”.");
+  await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: your rule “sender name matches pattern *giveaway* (strangers only)”.");
   // The whole screen in one picture: the pane scrolls inside the window, so the window is made tall enough for it.
   await expect(owner.getByText("Guidance saved")).toBeHidden({ timeout: 10_000 });
   await owner.setViewportSize({ width: 1440, height: 1300 });
@@ -121,6 +128,8 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   // The conversation says which rule.
   await rows.filter({ hasText: "A notice" }).getByRole("link").click();
   await expect(owner.locator(".inbox-spam-notice")).toContainText("Marked as spam: it matches your rule “Subject or body contains Facebook Admin”");
+  // An owner may take it out with the rule that filed it.
+  await expect(owner.locator(".inbox-spam-notice").getByRole("button", { name: "Not spam, and remove the rule" })).toBeVisible();
   await checkpoint(owner, "filed-by-a-rule", { fullPage: false });
 
   // Removed (under its ⋯), the domain's next email arrives.
@@ -140,7 +149,7 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   const api = await apiFor(owner, slug);
   await api("/spam", { allow: ["e2e-forms@relay.example"] }, "PATCH");
   await owner.goto(`/app/${slug}/settings/spam`);
-  await expect(card("Allowed")).toContainText("Their messages skip your rules on what they say.");
+  await expect(card("Allowed")).toContainText("Rules on their domain don't apply to them.");
   await expect(card("Allowed").getByRole("listitem")).toHaveText(["e2e-forms@relay.example"]);
   await card("Allowed").getByRole("button", { name: "Actions for e2e-forms@relay.example" }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();

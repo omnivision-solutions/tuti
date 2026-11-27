@@ -11,9 +11,9 @@ import { asAdmin, call } from "./operations/run";
 const DENIED = "Only project owners and admins can change the spam filter";
 
 /** Adds a block rule: a field, a matcher and a value. */
-export async function addSpamRule(projectSlug: string, rule: { field: string; matcher: string; value: string }): Promise<FormState> {
+export async function addSpamRule(projectSlug: string, rule: { field: string; matcher: string; value: string; appliesTo?: string }): Promise<FormState> {
   return asAdmin(projectSlug, DENIED, (context) =>
-    call(updateSpamSettings, context, { addRules: [{ field: String(rule?.field) as SpamRuleField, matcher: String(rule?.matcher) as SpamRuleMatcher, value: String(rule?.value ?? "") }] }),
+    call(updateSpamSettings, context, { addRules: [{ field: String(rule?.field) as SpamRuleField, matcher: String(rule?.matcher) as SpamRuleMatcher, value: String(rule?.value ?? ""), appliesTo: rule?.appliesTo === "strangers" ? "strangers" : "everyone" }] }),
   );
 }
 
@@ -40,13 +40,18 @@ export async function setSpamGuidance(projectSlug: string, guidance: string): Pr
 export type SpamTry = { error?: string; spam?: boolean; why?: string };
 
 /** Tries a message against the filter (spam.try): what it would do with it, changing nothing. */
-export async function trySpam(projectSlug: string, message: { sender: string; name?: string; to?: string; subject: string; text: string }): Promise<SpamTry> {
+/** "Kim Lee <kim@acme.example>" as its name and address; a bare address as itself. */
+function parseFrom(from: string) {
+  const named = /^\s*"?([^"<]*?)"?\s*<([^<>]+)>\s*$/.exec(from);
+  return named ? { name: named[1]!.trim(), sender: named[2]!.trim() } : { name: "", sender: from.trim() };
+}
+
+export async function trySpam(projectSlug: string, message: { from: string; to?: string; subject: string; text: string }): Promise<SpamTry> {
   let result: SpamTry = {};
   const state = await asAdmin(projectSlug, "Only project owners and admins can try the spam filter", async (context) => {
     const { spam, why } = await call(trySpamFilter, context, {
-      sender: String(message?.sender ?? ""),
-      name: String(message?.name ?? ""),
-      to: message?.to ? [String(message.to)] : [],
+      ...parseFrom(String(message?.from ?? "")),
+      to: String(message?.to ?? "").trim() ? [String(message.to).trim()] : [],
       subject: String(message?.subject ?? ""),
       text: String(message?.text ?? ""),
     });

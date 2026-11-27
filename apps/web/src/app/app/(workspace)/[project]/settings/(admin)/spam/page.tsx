@@ -5,6 +5,7 @@ import { SpamSettings } from "@/components/inbox/spam-settings";
 import { SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { MAX_SPAM_RULE_VALUE, spamSettings } from "@/server/operations/spam";
+import { supportSettings } from "@/server/operations/support";
 import { MAX_SPAM_GUIDANCE } from "@/server/spam-models";
 
 export const metadata: Metadata = { title: "Spam · Settings" };
@@ -18,7 +19,13 @@ export default async function SpamSettingsPage(props: PageProps<"/app/[project]/
   }
   return (
     <SettingsPane title="Spam" description="Who and what the Inbox files as spam">
-      <SpamSettings projectSlug={project.slug} settings={await spamSettings(project.id)} maxValue={MAX_SPAM_RULE_VALUE} maxGuidance={MAX_SPAM_GUIDANCE} />
+      <SpamSettings
+        projectSlug={project.slug}
+        settings={await spamSettings(project.id)}
+        maxValue={MAX_SPAM_RULE_VALUE}
+        maxGuidance={MAX_SPAM_GUIDANCE}
+        supportAddress={(await supportSettings(project.id)).email?.address ?? ""}
+      />
     </SettingsPane>
   );
 }

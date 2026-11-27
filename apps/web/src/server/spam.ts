@@ -64,70 +64,75 @@ type Rule = SpamRule & { id: string };
 
 /** The team's block rules, oldest first. */
 const rulesOf = (db: Db, projectId: string) =>
-  db.spamRule.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { id: true, field: true, matcher: true, value: true } }) as Promise<Rule[]>;
+  db.spamRule.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { id: true, field: true, matcher: true, value: true, appliesTo: true } }) as Promise<Rule[]>;
 
 /**
- * What the team decided of an address, the most exact first: its own entry (an allowed address, or a "Sender address
- * is" rule); another rule on the address that matches it; the most exact entry for its domain (an allowed domain, or a
- * "Sender domain is" rule, its subdomains too); else another rule on the domain that matches it. `domainBlocked`: a
- * rule blocks the address's domain at all.
+ * What the team decided of an address: its allowed entry, a "Sender address is" rule on it (`blockedAddress`), and the
+ * most exact entry for its domain (an allowed domain, or a "Sender domain is" rule, its subdomains too), else another
+ * rule on the domain that matches it.
  */
-async function listed(db: Db, projectId: string, address: string) {
+async function listed(db: Db, projectId: string, address: string, rules?: Rule[]) {
   const domain = address.slice(address.lastIndexOf("@") + 1);
-  const [allowed, rules] = await Promise.all([
+  const [allowed, all] = await Promise.all([
     db.spamSender.findMany({ where: { projectId, conversationId: null, blocked: false, sender: { in: [address, ...domainsOf(address)] } } }),
-    rulesOf(db, projectId),
+    rules ?? rulesOf(db, projectId),
   ]);
   const matches = spamRuleMatcher({ address, domain });
-  const matching = rules.filter((rule) => isSenderRule(rule) && matches(rule));
-  const exact = (rule: Rule) => rule.matcher === "is";
-  const blockedAddress = matching.find((rule) => rule.field === "sender_address" && exact(rule)) ?? null;
+  const domainRules = all.filter((rule) => rule.field === "sender_domain" && matches(rule));
   const entries = [
     ...allowed.filter((row) => row.sender !== address).map((row) => ({ sender: row.sender, blocked: false as const, rule: null })),
-    ...matching.filter((rule) => rule.field === "sender_domain" && exact(rule)).map((rule) => ({ sender: rule.value, blocked: true as const, rule })),
+    ...domainRules.filter((rule) => rule.matcher === "is").map((rule) => ({ sender: rule.value, blocked: true as const, rule })),
   ].sort((a, b) => b.sender.length - a.sender.length || Number(b.blocked) - Number(a.blocked));
-  const domainRule = matching.find((rule) => rule.field === "sender_domain");
   return {
     allowedAddress: allowed.find((row) => row.sender === address) ?? null,
-    blockedAddress,
-    addressRule: blockedAddress ? null : (matching.find((rule) => rule.field === "sender_address") ?? null),
-    domain: entries[0] ?? (domainRule ? { sender: domain, blocked: true as const, rule: domainRule } : null),
-    domainBlocked: !!domainRule,
+    blockedAddress: all.find((rule) => rule.field === "sender_address" && rule.matcher === "is" && matches(rule)) ?? null,
+    domain: entries[0] ?? (domainRules[0] ? { sender: domain, blocked: true as const, rule: domainRules[0] } : null),
   };
 }
 
-const ruleAnswer = (rule: Rule, reason: SpamReason): Answer => ({ spam: true, reason: rule.matcher === "is" ? reason : "rule", phrase: describeSpamRule(rule) });
+/** A rule's answer: an "is" rule on the sender says so as the lists did; any other is a rule. */
+const ruleAnswer = (rule: Rule): Answer => ({
+  spam: true,
+  reason: rule.matcher !== "is" ? "rule" : rule.field === "sender_address" ? "blocked_address" : rule.field === "sender_domain" ? "blocked_domain" : "rule",
+  phrase: describeSpamRule(rule),
+});
 
 /**
- * Check 1, the team's decisions, the most exact first: the address's own entry; else the newest mark on one of its
- * conversations; else another rule on the address; else its domain's entry or rule. A member's Not spam never counts
- * against a rule that blocks the sender, whenever it was made: only an owner's or admin's is an exception to one. An
- * address an owner or admin put on the allowed list spares every later check.
+ * Check 1, the team's decisions. First the block rules but those on the domain, for everyone, whoever they are or
+ * whatever was decided about them: those on what it says always, those on the address where it's proven. Then, the
+ * most exact first: the address on the allowed list; the newest mark on one of its conversations; its domain's entry or
+ * rule. So an allowed address, or an owner's or admin's Not spam, is an exception to a domain's rule and to nothing
+ * else; a member's Not spam never counts against one, whenever it was made. An address an owner or admin put on the
+ * allowed list spares every later check.
  */
-async function decided(db: Db, { projectId, address }: Arrival): Promise<Answer | null> {
+async function decided(db: Db, arrival: Arrival): Promise<Answer | null> {
+  const { projectId, address, subject, text, name, sentTo } = arrival;
+  const all = await rulesOf(db, projectId);
+  // A "Strangers only" rule files nobody the trust check vouches for (check 2, asked here only where one exists).
+  const vouched = all.some((rule) => rule.appliesTo === "strangers") && !!(await trusted(db, arrival));
+  const rules = vouched ? all.filter((rule) => rule.appliesTo !== "strangers") : all;
+  const matches = spamRuleMatcher({ address, subject, text, name, sentTo });
+  const everyone = rules.find((rule) => rule.field !== "sender_domain" && (rule.field !== "sender_address" || address) && matches(rule));
+  if (everyone) {
+    return ruleAnswer(everyone);
+  }
   if (!address) {
     return null;
   }
-  const on = await listed(db, projectId, address);
-  if (on.blockedAddress) {
-    return ruleAnswer(on.blockedAddress, "blocked_address");
-  }
+  const on = await listed(db, projectId, address, rules);
   if (on.allowedAddress) {
     return { spam: false, sparesAll: on.allowedAddress.byAdmin };
   }
   const mark = await db.spamSender.findFirst({
-    where: { projectId, sender: address, conversationId: { not: null }, ...((on.addressRule || on.domain?.blocked) && { OR: [{ blocked: true }, { byAdmin: true }] }) },
+    where: { projectId, sender: address, conversationId: { not: null }, ...(on.domain?.blocked && { OR: [{ blocked: true }, { byAdmin: true }] }) },
     orderBy: { decidedAt: "desc" },
     select: { blocked: true },
   });
   if (mark) {
     return mark.blocked ? { spam: true, reason: "marked_sender" } : { spam: false };
   }
-  if (on.addressRule) {
-    return ruleAnswer(on.addressRule, "blocked_address");
-  }
   if (on.domain) {
-    return on.domain.rule ? ruleAnswer(on.domain.rule, "blocked_domain") : { spam: false };
+    return on.domain.rule ? ruleAnswer(on.domain.rule) : { spam: false };
   }
   return null;
 }
@@ -180,16 +185,6 @@ async function flood(db: Db, { projectId, email }: Arrival): Promise<Answer | nu
   return started >= NEW_BY_EMAIL_PER_HOUR ? { spam: true, reason: "flood" } : null;
 }
 
-/**
- * Check 5, the team's rules on what it says (Settings → Spam): its sender's name, its subject, its first message's text,
- * or the addresses an email was sent to. "Contains" on the subject or text is whole words ("sex" isn't in "Essex").
- */
-async function content(db: Db, { projectId, subject, text, name, sentTo }: Arrival): Promise<Answer | null> {
-  const matches = spamRuleMatcher({ subject, text, name, sentTo });
-  const rule = (await rulesOf(db, projectId)).find((rule) => !isSenderRule(rule) && matches(rule));
-  return rule ? { spam: true, reason: "rule", phrase: describeSpamRule(rule) } : null;
-}
-
 /** The checks, in order. The models (6, 7) go after these, once the request has answered (server/spam-models.ts). */
 export const SPAM_CHECKS: Check[] = [
   { key: "decisions", check: decided },
@@ -197,8 +192,6 @@ export const SPAM_CHECKS: Check[] = [
   // Today's rule: mail that failed DMARC, whatever lists its address is on (checks 1 and 2 never saw it).
   { key: "dmarc", check: (_db, { email }) => (email?.dmarc === "fail" ? { spam: true, reason: "dmarc_failed" } : null) },
   { key: "flood", whoeverSent: true, check: flood },
-  // An allow or trust spares it: the team's own users may write "facebook admin".
-  { key: "rules", check: content },
 ];
 
 /**
@@ -259,7 +252,7 @@ export async function arrivalOf(db: Db, projectId: string, userId: string | null
   return { projectId, userId, proven: true, address, name: user?.name ?? null };
 }
 
-type Marked = { id: string; projectId: string; origin: ConversationOrigin; userId: string | null; visitorHash: string | null };
+type Marked = { id: string; projectId: string; origin: ConversationOrigin; userId: string | null; visitorHash: string | null; spam?: boolean; spamPhrase?: string | null };
 
 /**
  * The address a mark on this conversation is a decision about: the one check 1 looked its sender up by. Null where that
@@ -301,17 +294,25 @@ export function blockableDomain(address: string): string | null {
   return domain && !FREE_MAIL_DOMAINS.has(domain) ? domain : null;
 }
 
+/** The rule a conversation the filter filed was filed by (its words are kept on it), while it's there. */
+async function ruleThatFiled(db: Db, projectId: string, phrase: string | null | undefined): Promise<Rule | null> {
+  return phrase ? ((await rulesOf(db, projectId)).find((rule) => describeSpamRule(rule) === phrase) ?? null) : null;
+}
+
 /**
  * What marking this conversation would do beyond it, for the teammate looking (`admin`: an owner or admin, whose the
- * lists are): the domain Mark as spam offers to block too, and the blocked address Not spam would take off the list.
+ * rules are): the domain Mark as spam offers to block too, the "Sender address is" rule Not spam would remove
+ * (`unblocks`), and, in words, another rule that filed it, which Not spam offers to remove (`removesRule`).
  */
-export async function spamChoices(db: Db, conversation: Marked, admin: boolean): Promise<{ blockDomain: string | null; unblocks: string | null }> {
+export async function spamChoices(db: Db, conversation: Marked, admin: boolean): Promise<{ blockDomain: string | null; unblocks: string | null; removesRule: string | null }> {
   const sender = admin ? await conversationSender(db, conversation) : null;
-  if (!sender) {
-    return { blockDomain: null, unblocks: null };
-  }
-  const on = await listed(db, conversation.projectId, sender);
-  return { blockDomain: on.domainBlocked ? null : blockableDomain(sender), unblocks: on.blockedAddress ? sender : null };
+  const on = sender ? await listed(db, conversation.projectId, sender) : null;
+  const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation.spamPhrase) : null;
+  return {
+    blockDomain: sender && !on?.domain?.blocked ? blockableDomain(sender) : null,
+    unblocks: sender && on?.blockedAddress ? sender : null,
+    removesRule: filedBy && filedBy.id !== on?.blockedAddress?.id ? describeSpamRule(filedBy) : null,
+  };
 }
 
 /**
@@ -319,30 +320,48 @@ export async function spamChoices(db: Db, conversation: Marked, admin: boolean):
  * kept too, as the conversation's own mark (one per conversation, deleted with it; the newest on an address wins).
  * Returns what Not spam leaves behind, to say, so it never looks more lasting than it is:
  * - A "Sender address is" rule: an owner's or admin's Not spam removes it; a member's leaves it, and the rule beats their mark.
- * - Another rule that blocks the sender (its domain, a pattern): an owner's or admin's is an exception for this sender;
- *   a member's isn't kept at all.
- * - `reason`, why the filter had filed it: the flood limit still applies, mail that fails DMARC is still filed, and so
- *   is a rule's next match from a sender nothing is kept about.
+ * - A rule on its domain: an owner's or admin's Not spam is an exception for this sender; a member's isn't kept at all.
+ * - Any other rule that filed it (`phrase`, its words): it still applies to everyone, and says so, unless an owner or
+ *   admin removes it with Not spam (`removeRule`).
+ * - `reason`, why the filter had filed it: the flood limit still applies, and mail that fails DMARC is still filed.
  */
-export async function recordMark(db: Db, conversation: Marked, spam: boolean, admin: boolean, reason: string | null): Promise<string | undefined> {
-  const sender = await conversationSender(db, conversation);
+export async function recordMark(
+  db: Db,
+  conversation: Marked,
+  spam: boolean,
+  admin: boolean,
+  reason: string | null,
+  { phrase = null, removeRule = false }: { phrase?: string | null; removeRule?: boolean } = {},
+): Promise<string | undefined> {
   const notices: string[] = [];
+  const filedBy = !spam && reason !== "phrase" ? await ruleThatFiled(db, conversation.projectId, phrase) : null;
+  if (removeRule) {
+    if (!admin) {
+      throw new OperationError(403, "forbidden", "Only project owners and admins can remove a rule");
+    }
+    if (!filedBy) {
+      throw new OperationError(409, "no_rule", "That rule was already removed");
+    }
+    await db.spamRule.deleteMany({ where: { id: filedBy.id } });
+  }
+  const sender = await conversationSender(db, conversation);
   if (sender) {
     const on = spam ? null : await listed(db, conversation.projectId, sender);
     const mark = { sender, blocked: spam, byAdmin: admin, decidedAt: new Date() };
     let kept = true;
-    // The rule that blocks the sender, as said: a domain by its name, another rule in words.
-    const blocker = on && !on.allowedAddress && (on.addressRule ?? (on.domain?.blocked ? on.domain.rule : null));
     if (on?.blockedAddress) {
       if (admin) {
         // Not `delete`: unblocked from another of their conversations at once, it's gone already, which is what was asked.
         await db.spamRule.deleteMany({ where: { id: on.blockedAddress.id } });
       }
       notices.push(admin ? `${sender} is unblocked.` : `${sender} stays blocked: an owner or admin can unblock it.`);
-    } else if (blocker) {
-      const name = blocker.field === "sender_domain" && blocker.matcher === "is" ? blocker.value : `Your rule “${describeSpamRule(blocker)}”`;
+    } else if (on?.domain?.rule && !on.allowedAddress) {
+      // The rule on its domain, as said: a domain by its name, another rule in words.
+      const blocker = on.domain.rule;
+      const exact = blocker.matcher === "is";
+      const name = exact ? blocker.value : `Your rule “${describeSpamRule(blocker)}”`;
+      const stays = exact ? "stays blocked" : "still applies";
       kept = admin;
-      const stays = blocker.field === "sender_domain" && blocker.matcher === "is" ? "stays blocked" : "still applies";
       notices.push(admin ? `${name} ${stays}. ${sender} is let through from now on.` : `${name} ${stays}: an owner or admin can let ${sender} through.`);
     }
     if (kept) {
@@ -352,11 +371,18 @@ export async function recordMark(db: Db, conversation: Marked, spam: boolean, ad
       await db.spamSender.deleteMany({ where: { conversationId: conversation.id } });
     }
   }
+  // A rule on anything but the domain applies to everyone, Not spam or not: said, so the next one isn't a surprise.
+  if (filedBy && filedBy.field !== "sender_domain" && !(filedBy.field === "sender_address" && filedBy.matcher === "is")) {
+    const words = describeSpamRule(filedBy);
+    notices.push(removeRule ? `Filed by your rule: ${words}. It's removed.` : `Filed by your rule: ${words}. It still applies${admin ? "" : ": an owner or admin can remove it"}.`);
+  } else if (removeRule && filedBy) {
+    notices.unshift(`Filed by your rule: ${describeSpamRule(filedBy)}. It's removed.`);
+  }
   if (!spam && reason === "flood") {
     notices.push(`The hourly limit still applies: past ${NEW_BY_EMAIL_PER_HOUR} new conversations by email from one address in an hour, more go to Spam.`);
   }
-  if (!spam && (reason === "phrase" || reason === "rule") && !sender) {
-    notices.push("Nothing is remembered about its sender: a message your rules match still goes to Spam.");
+  if (!spam && reason === "phrase" && !sender) {
+    notices.push("Nothing is remembered about its sender: a message with one of your phrases still goes to Spam.");
   }
   if (!spam && reason === "dmarc_failed") {
     notices.push("Nothing is remembered about its sender: mail that fails DMARC still goes to Spam.");
@@ -400,7 +426,7 @@ export const lockSpamRules = (db: Db, projectId: string) => db.$executeRaw`SELEC
 export async function addSpamRule(db: Db, projectId: string, rule: SpamRule, fromReport = false): Promise<boolean> {
   await lockSpamRules(db, projectId);
   const key = spamRuleKey(rule);
-  const same = await db.spamRule.findMany({ where: { projectId, field: rule.field, matcher: rule.matcher }, select: { field: true, matcher: true, value: true } });
+  const same = await db.spamRule.findMany({ where: { projectId, field: rule.field, matcher: rule.matcher }, select: { field: true, matcher: true, value: true, appliesTo: true } });
   if (same.some((other) => spamRuleKey(other as SpamRule) === key)) {
     return false;
   }

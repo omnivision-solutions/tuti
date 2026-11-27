@@ -1328,6 +1328,9 @@ model SpamRule {
   /// is, contains, starts_with, ends_with or pattern (`*` and `?`).
   matcher    String
   value      String
+  /// Who it files: `everyone`, or `strangers` (never one the trust check vouches for: the project's users, a teammate,
+  /// someone the team has replied to).
+  appliesTo  String   @default("everyone")
   /// Put there by marking a conversation as spam ("Also block").
   fromReport Boolean  @default(false)
   createdAt  DateTime @default(now())

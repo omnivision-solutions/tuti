@@ -14,7 +14,20 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
-import { describeSpamRule, SPAM_RULE_FIELD_KEYS, SPAM_RULE_FIELDS, SPAM_RULE_MATCHER_KEYS, SPAM_RULE_MATCHERS, type SpamRuleField, type SpamRuleMatcher, spamRuleKey, spamRuleValue } from "@/lib/spam-rules";
+import {
+  describeSpamRule,
+  SPAM_RULE_AUDIENCE_KEYS,
+  SPAM_RULE_AUDIENCES,
+  SPAM_RULE_FIELD_KEYS,
+  SPAM_RULE_FIELDS,
+  SPAM_RULE_MATCHER_KEYS,
+  SPAM_RULE_MATCHERS,
+  type SpamRuleAudience,
+  type SpamRuleField,
+  type SpamRuleMatcher,
+  spamRuleKey,
+  spamRuleValue,
+} from "@/lib/spam-rules";
 import type { FormState } from "@/server/form-state";
 import type { SpamRuleRow, SpamSettings as Settings } from "@/server/operations/spam";
 import { addSpamRule, allowSpamSender, removeSpamRule, removeSpamSender, setSpamGuidance, type SpamTry, trySpam } from "@/server/spam-settings";
@@ -40,7 +53,20 @@ const PLACEHOLDERS: Record<SpamRuleField, string> = {
  * only while it has entries), the AI spam check's guidance, and a box to try a message against it. The rules and the
  * list save as they're changed (see spam.update); the guidance with the page's "Save changes".
  */
-export function SpamSettings({ projectSlug, settings, maxValue, maxGuidance }: { projectSlug: string; settings: Settings; maxValue: number; maxGuidance: number }) {
+export function SpamSettings({
+  projectSlug,
+  settings,
+  maxValue,
+  maxGuidance,
+  supportAddress,
+}: {
+  projectSlug: string;
+  settings: Settings;
+  maxValue: number;
+  maxGuidance: number;
+  /** Try a message's To to start with: the project's support address, where it has one. */
+  supportAddress: string;
+}) {
   // The last allowed entry removed takes its card: focus goes to the rules' field.
   useFocusAfterRemoval(settings.allowed.length, settings.allowed.length > 0 ? "spam-allowed" : "spam-rule-value");
   return (
@@ -51,7 +77,7 @@ export function SpamSettings({ projectSlug, settings, maxValue, maxGuidance }: {
         <EntryList
           id="spam-allowed"
           title="Allowed"
-          description="Their messages skip your rules on what they say."
+          description="Rules on their domain don't apply to them."
           label="Address or domain to allow"
           placeholder={SENDER}
           entries={settings.allowed}
@@ -63,7 +89,7 @@ export function SpamSettings({ projectSlug, settings, maxValue, maxGuidance }: {
       )}
       {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
       {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
-      <TryMessage projectSlug={projectSlug} />
+      <TryMessage projectSlug={projectSlug} supportAddress={supportAddress} />
     </>
   );
 }
@@ -73,8 +99,9 @@ function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rul
   const form = useRef<HTMLFormElement>(null);
   const [field, setField] = useState<SpamRuleField>("sender_domain");
   const [matcher, setMatcher] = useState<SpamRuleMatcher>("is");
+  const [appliesTo, setAppliesTo] = useState<SpamRuleAudience>("everyone");
   const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
-    const rule = { field, matcher, value: spamRuleValue(field, String(formData.get("value") ?? "")) };
+    const rule = { field, matcher, appliesTo, value: spamRuleValue(field, String(formData.get("value") ?? "")) };
     // Said here: the server takes one that's there already as done, and "Added" would be wrong.
     if (rules.some((other) => spamRuleKey(other) === spamRuleKey(rule))) {
       return { error: "That rule is already there" };
@@ -88,62 +115,67 @@ function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rul
   }, {});
   useFocusAfterRemoval(rules.length, "spam-rule-value");
   return (
-    <SettingsCard title="Block rules" count={rules.length} description="New conversations that match one go to Spam.">
+    <SettingsCard title="Block rules" count={rules.length} description="Matching new conversations go to Spam.">
       <SettingBlock className="gap-2">
-        <form ref={form} {...keepingFields(action)} className="flex flex-col gap-2 @min-[34rem]/settings:flex-row @min-[34rem]/settings:items-center">
-          <div className="flex gap-2">
-            <Select items={SPAM_RULE_FIELDS} value={field} onValueChange={(next) => setField(next as SpamRuleField)}>
-              <SelectTrigger className="min-w-0 flex-1 @min-[34rem]/settings:w-40 @min-[34rem]/settings:flex-none" aria-label="Field">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SPAM_RULE_FIELD_KEYS.map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {SPAM_RULE_FIELDS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select items={SPAM_RULE_MATCHERS} value={matcher} onValueChange={(next) => setMatcher(next as SpamRuleMatcher)}>
-              <SelectTrigger className="min-w-0 flex-1 @min-[34rem]/settings:w-40 @min-[34rem]/settings:flex-none" aria-label="Matcher">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SPAM_RULE_MATCHER_KEYS.map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {SPAM_RULE_MATCHERS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex min-w-0 flex-1 gap-2">
-            <Input
-              id="spam-rule-value"
-              name="value"
-              required
-              maxLength={maxValue}
-              placeholder={matcher === "pattern" ? "*@*.spam.example" : PLACEHOLDERS[field]}
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              aria-label="Value"
-              aria-invalid={state.error ? true : undefined}
-              aria-describedby={state.error ? "spam-rule-error" : undefined}
-              className="min-w-0 flex-1"
-            />
-            <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled aria-label={pending ? undefined : "Add rule"}>
-              {pending ? "Adding…" : "Add"}
-            </Button>
-          </div>
+        {/* One line from a card 34rem wide; on a phone the value takes a line of its own. */}
+        <form ref={form} {...keepingFields(action)} className="flex flex-wrap items-center gap-2">
+          <Select items={SPAM_RULE_FIELDS} value={field} onValueChange={(next) => setField(next as SpamRuleField)}>
+            <SelectTrigger className="min-w-0 flex-1 basis-32 @min-[34rem]/settings:w-36 @min-[34rem]/settings:flex-none" aria-label="Field">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPAM_RULE_FIELD_KEYS.map((key) => (
+                <SelectItem key={key} value={key}>
+                  {SPAM_RULE_FIELDS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select items={SPAM_RULE_MATCHERS} value={matcher} onValueChange={(next) => setMatcher(next as SpamRuleMatcher)}>
+            <SelectTrigger className="min-w-0 flex-1 basis-32 @min-[34rem]/settings:w-32 @min-[34rem]/settings:flex-none" aria-label="Matcher">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPAM_RULE_MATCHER_KEYS.map((key) => (
+                <SelectItem key={key} value={key}>
+                  {SPAM_RULE_MATCHERS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            id="spam-rule-value"
+            name="value"
+            required
+            maxLength={maxValue}
+            placeholder={matcher === "pattern" ? "*@*.spam.example" : PLACEHOLDERS[field]}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-label="Value"
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "spam-rule-error" : undefined}
+            className="min-w-0 flex-1 basis-full @min-[34rem]/settings:basis-0"
+          />
+          <Select items={SPAM_RULE_AUDIENCES} value={appliesTo} onValueChange={(next) => setAppliesTo(next as SpamRuleAudience)}>
+            <SelectTrigger className="min-w-0 flex-1 basis-32 @min-[34rem]/settings:w-36 @min-[34rem]/settings:flex-none" aria-label="Applies to">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPAM_RULE_AUDIENCE_KEYS.map((key) => (
+                <SelectItem key={key} value={key}>
+                  {SPAM_RULE_AUDIENCES[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled aria-label={pending ? undefined : "Add rule"}>
+            {pending ? "Adding…" : "Add"}
+          </Button>
         </form>
         {state.error && <FieldError id="spam-rule-error">{state.error}</FieldError>}
       </SettingBlock>
-      {rules.length === 0 ? (
-        <SettingBlock>
-          <p className="text-sm text-muted-foreground">No rules yet</p>
-        </SettingBlock>
-      ) : (
+      {rules.length > 0 && (
         <ul aria-label="Block rules" className="flex flex-col divide-y">
           {rules.map((rule) => (
             <Entry
@@ -151,16 +183,9 @@ function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rul
               entry={describeSpamRule(rule)}
               shown={
                 <>
-                  <span className="text-muted-foreground">
-                    {SPAM_RULE_FIELDS[rule.field]} {SPAM_RULE_MATCHERS[rule.matcher]}
-                  </span>{" "}
-                  {rule.value}
-                  {rule.fromReport && (
-                    <>
-                      {" "}
-                      <Badge variant="secondary">from a report</Badge>
-                    </>
-                  )}
+                  {SPAM_RULE_FIELDS[rule.field]} · {SPAM_RULE_MATCHERS[rule.matcher]} · {rule.value}
+                  {rule.fromReport && <span className="text-muted-foreground"> · from a report</span>}
+                  {rule.appliesTo === "strangers" && <span className="text-muted-foreground"> · strangers only</span>}
                 </>
               }
               removed="Rule removed"
@@ -331,7 +356,7 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
           AI spam check <Badge variant={guidance.trim() ? "soft" : "secondary"}>{guidance.trim() ? "On" : "Off"}</Badge>
         </>
       }
-      description="Describe your spam; the AI checks what the rules miss. For now it only notes what it would file."
+      description="Describe your spam; the AI checks what the rules miss."
     >
       {/* Locked while saving, as other settings forms: an edit made meanwhile would be lost. */}
       <form {...form} inert={pending} className="flex flex-col">
@@ -356,30 +381,24 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
   );
 }
 
-/** The box to try a message: what the filter would do with an email from this address, and why. Nothing is saved. */
-function TryMessage({ projectSlug }: { projectSlug: string }) {
+/**
+ * The box to try a message: what the filter would do with this email, and why. From takes "Name <address>" or an
+ * address; To starts as the project's support address. Nothing is saved.
+ */
+function TryMessage({ projectSlug, supportAddress }: { projectSlug: string; supportAddress: string }) {
   const [state, action, pending] = useActionState<SpamTry, FormData>(
     (_prev, formData) =>
-      trySpam(projectSlug, {
-        sender: String(formData.get("sender") ?? ""),
-        name: String(formData.get("name") ?? ""),
-        to: String(formData.get("to") ?? "").trim() || undefined,
-        subject: String(formData.get("subject") ?? ""),
-        text: String(formData.get("text") ?? ""),
-      }),
+      trySpam(projectSlug, { from: String(formData.get("from") ?? ""), to: String(formData.get("to") ?? ""), subject: String(formData.get("subject") ?? ""), text: String(formData.get("text") ?? "") }),
     {},
   );
   return (
     <SettingsCard title="Try a message" description="Nothing is sent or saved.">
       <form {...keepingFields(action)} className="flex flex-col divide-y">
-        <SettingRow label="From" htmlFor="spam-try-sender">
-          <Input id="spam-try-sender" name="sender" type="email" required maxLength={320} placeholder="kim@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />
+        <SettingRow label="From" htmlFor="spam-try-from">
+          <Input id="spam-try-from" name="from" required maxLength={540} placeholder="Kim Lee <kim@acme.example>" autoComplete="off" className="@min-[34rem]/settings:w-80" />
         </SettingRow>
-        <SettingRow label="Sender name" htmlFor="spam-try-name">
-          <Input id="spam-try-name" name="name" maxLength={200} placeholder="Kim Lee" autoComplete="off" className="@min-[34rem]/settings:w-80" />
-        </SettingRow>
-        <SettingRow label="Sent to" htmlFor="spam-try-to">
-          <Input id="spam-try-to" name="to" type="email" maxLength={320} placeholder="sales@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />
+        <SettingRow label="To" htmlFor="spam-try-to">
+          <Input id="spam-try-to" name="to" type="email" defaultValue={supportAddress} maxLength={320} placeholder="support@acme.example" autoComplete="off" className="@min-[34rem]/settings:w-80" />
         </SettingRow>
         <SettingRow label="Subject" htmlFor="spam-try-subject">
           <Input id="spam-try-subject" name="subject" maxLength={200} autoComplete="off" className="@min-[34rem]/settings:w-80" />

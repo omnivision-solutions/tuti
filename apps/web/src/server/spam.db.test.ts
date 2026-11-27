@@ -204,10 +204,10 @@ test("Also block offers the organisational domain to owners and admins, never a 
   await mail("e2e-kim@m2.spam.example"); // #2
   const choices = async (number: number, isAdmin: boolean) =>
     spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } }), isAdmin);
-  expect(await choices(1, true)).toEqual({ blockDomain: null, unblocks: null });
-  expect(await choices(2, true)).toEqual({ blockDomain: "spam.example", unblocks: null });
+  expect(await choices(1, true)).toEqual({ blockDomain: null, unblocks: null, removesRule: null });
+  expect(await choices(2, true)).toEqual({ blockDomain: "spam.example", unblocks: null, removesRule: null });
   // The lists are the owners' and admins': a member is never offered it, nor can ask for it.
-  expect(await choices(2, false)).toEqual({ blockDomain: null, unblocks: null });
+  expect(await choices(2, false)).toEqual({ blockDomain: null, unblocks: null, removesRule: null });
   await expect(call(updateConversation, asMember, { number: 2, spam: true, blockDomain: true })).rejects.toMatchObject({ status: 403 });
   await expect(call(updateConversation, admin, { number: 1, spam: true, blockDomain: true })).rejects.toThrow(
     new OperationError(409, "no_domain", "Anyone can get an address at this domain, so it isn't blocked: marking as spam blocks this address"),
@@ -219,7 +219,7 @@ test("Also block offers the organisational domain to owners and admins, never a 
   await call(updateConversation, admin, { number: 2, spam: true, blockDomain: true });
   expect(await senders()).toEqual(["e2e-kim@m2.spam.example blocked by an admin's mark", "spam.example blocked by an admin, listed"]);
   // Blocked now: not offered again.
-  expect(await choices(2, true)).toEqual({ blockDomain: null, unblocks: null });
+  expect(await choices(2, true)).toEqual({ blockDomain: null, unblocks: null, removesRule: null });
   await mail("e2e-lee@m2.spam.example"); // #3
   await mail("e2e-lee@spam.example"); // #4
   await mail("e2e-lee@notspam.example"); // #5

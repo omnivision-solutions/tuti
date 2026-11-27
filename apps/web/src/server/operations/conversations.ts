@@ -1547,6 +1547,11 @@ export const updateConversation = defineOperation({
           "With `spam: true`: also block the sender's domain (their organisation's, its subdomains too), so new conversations from it go to Spam, but for senders an owner or admin marked not spam. Owners and admins only (403). Refused (409 `no_domain`) for a domain anyone can get an address at (gmail.com), and where the sender's address isn't proven",
         )
         .meta({ examples: [false] }),
+      removeRule: z
+        .boolean()
+        .optional()
+        .describe("With `spam: false` on one a block rule filed: also remove that rule, so it files nobody's from now on. Owners and admins only (403); 409 `no_rule` once it's gone")
+        .meta({ examples: [false] }),
       handledBy: z
         .enum(HANDLERS)
         .optional()
@@ -1567,6 +1572,7 @@ export const updateConversation = defineOperation({
       "Send a status, an assignee, spam, handledBy, priority or snoozedUntil",
     )
     .refine((input) => !input.blockDomain || input.spam === true, "blockDomain goes with spam: true")
+    .refine((input) => !input.removeRule || input.spam === false, "removeRule goes with spam: false")
     .meta({ anyOf: ["status", "assignee", "spam", "handledBy", "priority", "snoozedUntil"].map((field) => ({ required: [field] })) }),
   example: { status: "closed" },
   output: z
@@ -1596,9 +1602,9 @@ export const updateConversation = defineOperation({
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
       const [held] = await tx.$queryRaw<
-        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamMarkedAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
+        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; spamMarkedAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
       >`
-        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamMarkedAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "spamMarkedAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1624,7 +1630,7 @@ export const updateConversation = defineOperation({
         const admin = !!member && isAdminRole(member.role);
         const sent = { ...conversation, projectId };
         if (marked) {
-          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason);
+          notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason, { phrase: held!.spamPhrase, removeRule: input.removeRule });
           released = !input.spam && !!held!.spamReason;
           // Read while it's held: a message waits for this, sees it unmarked and tells of itself. Since the filter filed it
           // (all of it), or since its mark; one marked before marks had a time has none to count from, and nothing is told.
