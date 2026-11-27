@@ -363,26 +363,26 @@ export async function answerSections(
     return null;
   }
   // ponytail: scans all of the project's chunks, like meaningMatches.
+  // In the reader's language: an article whose current translation there has sections close enough answers from them (never
+  // from a version made from an older English text, nor from its English as well); the others (one not translated, or not
+  // embedded there yet, or whose translation's sections aren't close enough) from the default language's. Those answering
+  // from their translation are left out of the English's sections in the query, before its limit, so their English can't
+  // crowd the others out.
+  const translated = language ? await translatedSections(projectId, language, vector, limit * 2, reader) : [];
+  const there = new Set(translated.map((section) => section.articleId));
   const sections = prisma.$queryRaw<(AnswerSection & { distance: number })[]>`
     SELECT a.id AS "articleId", a.slug, a.title, a.listing, c.heading, c.text, c.embedding <=> ${vector}::vector AS distance
     FROM article_chunk c
     JOIN article a ON a.id = c."articleId"
     WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
       AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
+      AND a.id <> ALL(${[...there]}::text[])
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
-    LIMIT ${language ? limit * 2 : limit}`;
-  const [articles, operations, translated] = await Promise.all([
-    sections,
-    operationsByMeaning(projectId, vector, ANSWER_MIN_SIMILARITY, limit, reader),
-    language ? translatedSections(projectId, language, vector, limit * 2, reader) : [],
-  ]);
-  // In the reader's language: an article whose current translation there has sections close enough answers from them (never
-  // from a version made from an older English text, nor from its English as well); the others (one not translated, or not
-  // embedded there yet, or whose translation's sections aren't close enough) from the default language's.
-  const there = new Set(translated.map((section) => section.articleId));
+    LIMIT ${limit}`;
+  const [articles, operations] = await Promise.all([sections, operationsByMeaning(projectId, vector, ANSWER_MIN_SIMILARITY, limit, reader)]);
   return [
-    ...articles.filter((section) => !there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
+    ...articles.map(({ distance, ...section }) => ({ distance, section })),
     ...translated.map(({ distance, ...section }) => ({ distance, section })),
     ...operations.map((entry) => ({ distance: entry.distance, section: operationSection(entry) })),
   ]

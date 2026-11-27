@@ -276,3 +276,35 @@ test("more outdated translations matching a search than are looked at: a current
   expect(await search("Preise")).toEqual([{ slug: "zahlung", title: "Payments", snippet: "How to pay." }]);
 });
 
+test("a translated article's English can't crowd an untranslated one out of an answer: it's left out before the sections are counted", async () => {
+  withAi();
+  model.embeddings.setVector("Wie zahle ich?", along(1));
+  // Billing's English: 13 sections, every one closer than Setup's (more than the sections looked at); its German, one close.
+  const content: Doc = {
+    type: "doc",
+    content: Array.from({ length: 13 }, (_, i) => [
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: `Part ${i + 1}` }] },
+      { type: "paragraph", content: [{ type: "text", text: `Paying ${i + 1}.` }] },
+    ]).flat(),
+  };
+  for (const chunk of toChunks(content)) {
+    model.embeddings.setVector(articleChunkText("Billing", chunk, []), along(0.99));
+  }
+  model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Mit Karte zahlen." }, []), along(0.9));
+  model.embeddings.setVector(articleChunkText("Setup", { heading: "", text: "Install the app." }, []), along(0.85));
+  const { slug } = await call(createArticle, as(), { title: "Billing", content });
+  await call(publishArticle, as(), { slug });
+  const { id: articleId } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug } });
+  const { id: versionId } = await prisma.articleTranslation.create({
+    data: { articleId, projectId: project.id, language: "de", title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen.", automatic: false, publishedAt: new Date() },
+  });
+  await embedTranslation(versionId, log);
+  await article("Setup", "Install the app.");
+  model.reply(JSON.stringify({ answer: "Mit Karte.", sources: ["s1"] }));
+  await answerQuestion(project.id, "asker", "Wie zahle ich?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } });
+  const sent = JSON.stringify(model.requests.at(-1)!.messages);
+  expect(sent).toContain("Mit Karte zahlen.");
+  expect(sent).toContain("Install the app.");
+  expect(sent).not.toContain("Paying 1.");
+});
+
