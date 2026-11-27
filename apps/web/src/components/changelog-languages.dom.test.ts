@@ -495,3 +495,11 @@ test("an article's version kept up to date says publishing English replaces the 
   await form({ state: "current", keepUpToDate: true }, { kind: "article" });
   expect(document.body.textContent).toContain("Translated automatically from English. Publishing English again replaces your published edits in the sections it touches.");
 });
+
+test("turning an article's Keep up to date on over the team's text asks first: its published sections English changed in take a new translation", async () => {
+  await form({ state: "written", keepUpToDate: false }, { kind: "article" });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Translate it again?");
+  expect(document.body.textContent).toContain("Published sections English changed in since your edits take a new translation.");
+});
