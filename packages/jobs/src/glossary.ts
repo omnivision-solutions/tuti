@@ -32,13 +32,17 @@ export function glossaryFor(glossary: Glossary, language: string, text: string):
 /** Why a section of a version the team writes is behind after a glossary term it uses changed. */
 export const glossaryChangedFor = (term: string) => `The glossary changed for ${term}.`;
 
-/** The terms whose treatment in `language` differs between two glossaries (added, removed, kept or translated otherwise). */
+/**
+ * The terms whose treatment in `language` differs between two glossaries: added, removed, kept or translated otherwise, or
+ * written in another case (the team changed what they want written; the prompt says it as written, and glossaryFor's hash
+ * changes with it).
+ */
 export function changedIn(before: Glossary, after: Glossary, language: string): GlossaryTerm[] {
   const key = (term: string) => term.toLowerCase();
   const [was, now] = [new Map(glossaryIn(before, language).map((t) => [key(t.term), t])), new Map(glossaryIn(after, language).map((t) => [key(t.term), t]))];
   const terms = new Set([...was.keys(), ...now.keys()]);
   return [...terms].flatMap((term) => {
     const [a, b] = [was.get(term), now.get(term)];
-    return a?.translation === b?.translation && !!a === !!b ? [] : [b ?? a!];
+    return a?.translation === b?.translation && a?.term === b?.term ? [] : [b ?? a!];
   });
 }

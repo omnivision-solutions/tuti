@@ -274,3 +274,13 @@ test("a glossary save while a translation's write holds an article (German kept 
   await Promise.all([writing, saving]);
 });
 
+test("a term written in another case is a change: the versions that use it are translated again with it", async () => {
+  await translated();
+  model.requests.length = 0;
+  model.reply(reply("Boards", BOARDS, "de2", "Tafel"));
+  expect(await call(updateGlossary, as(), { terms: [{ term: "board", translations: { de: "Tafel" } }] })).toMatchObject({ retranslating: 1 });
+  await languageTranslationsDone();
+  expect(systemOf(model.requests[0]!)).toContain('"board" → "Tafel"');
+  expect((await version("boards")).body).toContain("[de2]");
+});
+
