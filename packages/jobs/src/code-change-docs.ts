@@ -1,4 +1,4 @@
-import { blocksToNotes, type Doc, droppedFacts, factsIn, insertAfterPassage, parseDoc, passagesIn, readNotes, replacePassage, toPlainText } from "@tuti/content";
+import { blocksToNotes, type Doc, droppedFacts, factsIn, insertAfterPassage, parseDoc, passagesIn, readNotes, replacePassage, toPlainText, writable } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { collectionName } from "@tuti/shared";
 
@@ -90,21 +90,6 @@ export function placeWords(
  */
 export type Ask = (system: string, user: string, maxTokens: number) => Promise<string>;
 
-/**
- * Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't rewritten
- * whole: its passages are replaced, taken out or added after one by one instead (replacePassage, insertAfterPassage). An image goes as its {{media N}} line and comes
- * back as the node it was (blocksToNotes, readNotes).
- */
-const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak", "image"]);
-const WRITABLE_MARKS = new Set(["bold", "link"]);
-// A list's item one paragraph of one line: the model's lists come back flat, so a nested list, a second paragraph or a
-// line break in an item wouldn't survive the round trip.
-const writable = (node: Block): boolean =>
-  WRITABLE_NODES.has(node.type ?? "") &&
-  (node.type !== "listItem" ||
-    (node.content?.length === 1 && node.content[0]!.type === "paragraph" && !(node.content[0]!.content ?? []).some((inline) => inline.type === "hardBreak"))) &&
-  (node.marks ?? []).every((mark) => WRITABLE_MARKS.has(mark.type)) &&
-  (node.content ?? []).every(writable);
 
 /**
  * How Autopilot writes into an article: one block, in the prompts of all three writers (an edit after a pull request, a new article,
