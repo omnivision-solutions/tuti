@@ -430,9 +430,12 @@ export async function DocsArticle({
       path: ownPath,
       published: readable.publishedAt,
       modified: readable.updatedAt,
-      // A tab showing it in its place is its own page: no step for it.
+      // A tab showing it in its place is its own page: no step for it. Each step at its address in the page's language, as
+      // the article's own (ownPath): the names are that language's where they're translated.
       breadcrumb: [
-        ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }].filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path),
+        ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }]
+          .filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path)
+          .map((crumb) => ({ ...crumb, path: prefix && !article.untranslated ? `${prefix}${crumb.path}` : crumb.path })),
         { name: readable.title, path: ownPath },
       ],
     }));

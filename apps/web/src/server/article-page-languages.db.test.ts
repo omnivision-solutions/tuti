@@ -78,6 +78,9 @@ async function page(slug: string) {
 const text = (node: unknown): string => (typeof node === "string" ? node : Array.isArray(node) ? node.map(text).join("") : node && typeof node === "object" && "props" in node ? text((node as ReactElement<{ children?: unknown }>).props.children) : "");
 
 test("at a language's address an article translated there reads in its version, in that language", async () => {
+  // In a collection, for its breadcrumb's step.
+  await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: "payments" });
   at("de");
   expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "article", article: { title: "Abrechnung", language: "de", untranslated: false } });
   const elements = await page("abrechnung");
@@ -91,6 +94,15 @@ test("at a language's address an article translated there reads in its version, 
   const jsonLd = elements.find(({ props }) => typeof (props.dangerouslySetInnerHTML as { __html?: string } | undefined)?.__html === "string");
   const data = JSON.parse((jsonLd!.props.dangerouslySetInnerHTML as { __html: string }).__html) as { headline?: string; url?: string }[];
   expect(data[0]).toMatchObject({ headline: "Abrechnung", url: `${portal}/de/docs/abrechnung` });
+  // Its breadcrumb: every step at its German address.
+  expect(data[1]).toMatchObject({
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { position: 1, name: "Documentation", item: `${portal}/de/docs` },
+      { position: 2, name: "Payments", item: `${portal}/de/docs/payments` },
+      { position: 3, name: "Abrechnung", item: `${portal}/de/docs/abrechnung` },
+    ],
+  });
 });
 
 test("not translated: the default language's version, its `lang`, and a line in the page's language saying so", async () => {
