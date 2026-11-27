@@ -11,6 +11,7 @@ import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
 import { usePortalHref } from "@/components/portal-base";
 import { useScrollToEnd } from "@/components/scroll-to-end";
+import { SendError } from "@/components/send-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -672,7 +673,7 @@ function Composer({
           }
         }}
       />
-      {error && <p lang={error === t("couldntSend") ? undefined : "en"} className="text-sm text-destructive">{error}</p>}
+      {error && <SendError error={error} />}
       {upload && <UploadList uploads={files.uploads} remove={files.remove} />}
       <div className={upload ? "flex items-center justify-between gap-2" : "flex justify-end"}>
         {upload && <AttachButton attach={files.attach} />}
@@ -916,9 +917,7 @@ function Conversation({
           </Button>
           {askError && (
             // The server's own words stay English (L5); the panel's own failure is in its language.
-            <p role="alert" lang={askError === t("couldntSend") ? undefined : "en"} className="text-sm text-destructive">
-              {askError}
-            </p>
+            <SendError error={askError} alert />
           )}
         </div>
       )}

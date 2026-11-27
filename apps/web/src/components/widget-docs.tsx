@@ -256,16 +256,16 @@ async function WidgetArticle({
             {article.collection.name}
           </p>
         )}
-        {/* The team's words, in the default language (the article's version there is the portal's page's, L8). */}
-        <h1 id="article-title" lang={team} className="font-heading text-xl font-bold tracking-tight break-words">
+        {/* In the address's language where it's translated (its current version there), else the team's. */}
+        <h1 id="article-title" lang={article.language ?? team} className="font-heading text-xl font-bold tracking-tight break-words">
           {article.title}
         </h1>
       </div>
       {"doc" in article ? (
         <RichText
           doc={article.doc}
-          // The team's words, in the default language, as its title.
-          lang={team}
+          // In the language its text is in, as its title.
+          lang={article.language ?? team}
           mediaUrls={await mediaUrls(article.doc)}
           headingIds
           // Its links to the portal's other articles open them here in the panel; to its other docs pages, on the portal.

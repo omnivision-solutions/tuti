@@ -1295,6 +1295,13 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   await api(`/articles/${intro.slug}/publish`, {});
   const loose = await api("/articles", { title: "Release notes", body: "What changed." });
   await api(`/articles/${loose.slug}/publish`, {});
+  // Its German version, written by the team.
+  await query(
+    `INSERT INTO article_translation (id, "articleId", "projectId", language, title, slug, body, automatic, "publishedAt", "updatedAt")
+     SELECT gen_random_uuid()::text, a.id, a."projectId", 'de', 'Versionshinweise', 'versionshinweise', 'Was sich geändert hat.', false, now(), now()
+     FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, loose.slug],
+  );
   await team.goto(`/app/${slug}/settings/support`);
   await team.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(team.getByText("Messages on")).toBeVisible();
@@ -1323,6 +1330,10 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   await expect(visitor.getByText("Keine Artikel zu „zebra“")).toBeVisible();
   await visitor.goto(`/de/widget?tab=docs&article=nowhere`);
   await expect(visitor.getByText("Artikel nicht gefunden")).toBeVisible();
+  // A translated article: its German version, marked German.
+  await visitor.goto(`/de/widget?tab=docs&article=${loose.slug}`);
+  await expect(visitor.getByRole("heading", { level: 1, name: "Versionshinweise" })).toHaveAttribute("lang", "de");
+  await expect(visitor.getByText("Was sich geändert hat.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "de");
 
   // Messages with the docs to answer from: the AI first, said in German.
   await visitor.goto("/de/widget?tab=messages");
