@@ -112,18 +112,21 @@ export async function saveChangelogVersion(projectSlug: string, number: number, 
  * Keep up to date on an entry's version (it's translated again) or off, against the `version` the page last read. Refused
  * as changed meanwhile, the page reads it again (as it is now) and says so, so the switch isn't stuck until a reload.
  */
-export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState> {
-  const result = await asTeam(projectSlug, DENIED, (context) =>
-    call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) }),
-  );
+export async function keepChangelogVersionUpToDate(projectSlug: string, number: number, language: string, on: boolean, version: string): Promise<FormState & { version?: string }> {
+  let saved: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    saved = (await call(saveChangelogTranslation, context, { number, language: language as "de", keepUpToDate: on === true, version: String(version) })).version;
+  });
   if (result.error === VERSION_CHANGED) {
     refresh();
     return { error: "It changed meanwhile: shown as it is now. Try again." };
   }
-  if (!result.error) {
-    refresh();
+  if (result.error) {
+    return result;
   }
-  return result;
+  refresh();
+  // What it says now (a first version made, say): the form's next save goes from it.
+  return { version: saved };
 }
 
 /** The posts "Link post…" offers an entry for what's typed: planned, in progress or completed ones (searchPosts); sample ones for a sample entry, the others for the rest. */

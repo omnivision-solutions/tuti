@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { keepChangelogVersionUpToDate } from "./changelog";
+import { keepChangelogVersionUpToDate, saveChangelogVersion } from "./changelog";
 import { entryLanguages } from "./changelog-languages";
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { getChangelogTranslation, saveChangelogTranslation } from "./operations/changelog-translations";
@@ -208,7 +208,34 @@ test("Keep up to date from the editor after the English changed: the page's new 
   // The page's next read (the action refreshed it): on, and translated.
   const now = await call(getChangelogTranslation, as(), { number, language: "de" });
   model.reply(reply("de", TITLE, "Switch themes from the menu."));
-  expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, now.version)).toEqual({});
+  expect(await keepChangelogVersionUpToDate(project.slug, number, "de", true, now.version)).toEqual({ version: expect.any(String) });
   await languageTranslationsDone();
   expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode", behind: false });
+});
+
+test("Keep up to date turned on where there's no version yet, then Save before its translation lands: the save goes from the toggle's token and wins", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }] });
+  const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  await call(publishChangelogEntry, as(), { number });
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de" }] });
+  await languageTranslationsDone();
+  const none = await call(getChangelogTranslation, as(), { number, language: "de" });
+  expect(none.publishedAt).toBeNull();
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  model.reply(reply("de"), () => held);
+  actAs(owner);
+  const toggled = await keepChangelogVersionUpToDate(project.slug, number, "de", true, none.version);
+  expect(toggled.version).toBeDefined();
+  expect(toggled.version).not.toBe(none.version);
+  // Save, its translation still on its way: the toggle's token is current.
+  const form = new FormData();
+  form.set("title", "Dunkler Modus");
+  form.set("content", JSON.stringify(paragraph("Wechsle das Design im Profilmenü.")));
+  form.set("version", toggled.version!);
+  expect(await saveChangelogVersion(project.slug, number, "de", {}, form)).toMatchObject({ version: expect.any(String) });
+  release();
+  await languageTranslationsDone();
+  // Saving turned Keep up to date off: the translation finishing writes nothing over it.
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ title: "Dunkler Modus", keepUpToDate: false });
 });

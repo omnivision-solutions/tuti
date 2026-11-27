@@ -81,7 +81,7 @@ test("a failed save keeps what was typed and says why; the top bar's Save shows 
 });
 
 test("Keep up to date follows what's saved, and unsaved edits stay as it changes", async () => {
-  keepChangelogVersionUpToDate.mockResolvedValue({});
+  keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-kept" });
   const { render } = await form();
   expect(keep().checked).toBe(true);
   type(title(), "Noch nicht gespeichert");
@@ -94,9 +94,9 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
   // The same switch: keyboard focus stays on it.
   expect(document.activeElement).toBe(keep());
   expect(title().value).toBe("Noch nicht gespeichert");
-  // The page's new read (the entry or the product setting changed meanwhile, the text didn't): a save still goes with the
-  // token the text was loaded with, so the server refuses it rather than marking the edit up to date.
-  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v1");
+  // The page's new read (the entry or the product setting changed meanwhile, the text didn't): a save goes with the token
+  // its own toggle got back, not the page's, so the server refuses an edit made before a change it didn't see.
+  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v-kept");
   // Turned on elsewhere (a teammate), then off by a save of this text: the switch shows the server's value each time.
   await render({ keepUpToDate: true, version: "v3" });
   expect(keep().checked).toBe(true);
@@ -105,7 +105,7 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
 });
 
 test("turning Keep up to date on over the team's own text asks first", async () => {
-  keepChangelogVersionUpToDate.mockResolvedValue({});
+  keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-kept" });
   await form({ state: "written", keepUpToDate: false });
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ test("a save that leaves the text as it was is what the next save goes from; the
 });
 
 test("the switch goes from the page's latest read, not the token the text was loaded with; refused as changed, it says so and goes back", async () => {
-  keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "It changed meanwhile: shown as it is now. Try again." }).mockResolvedValueOnce({});
+  keepChangelogVersionUpToDate.mockResolvedValueOnce({ error: "It changed meanwhile: shown as it is now. Try again." }).mockResolvedValueOnce({ version: "v-on" });
   const { render } = await form({ keepUpToDate: false, state: "current" });
   // The English edited since, the page read again: a new token, the same text.
   await render({ keepUpToDate: false, state: "translating", version: "v2" });
@@ -150,6 +150,16 @@ test("the switch goes from the page's latest read, not the token the text was lo
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenLastCalledWith("acme", 1, "de", true, "v3");
   expect(keep().checked).toBe(true);
-  // Save still goes with the token its text was loaded with.
-  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v1");
+  // Save goes with the token its own toggle got back (the text it edits unchanged by it).
+  expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v-on");
+});
+
+test("a first toggle (no version yet) gives Save the new version's token, so the next save isn't refused", async () => {
+  keepChangelogVersionUpToDate.mockResolvedValue({ version: "v-made" });
+  saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
+  await form({ state: "unwritten", keepUpToDate: false, version: "v-none" });
+  await act(async () => keep().click());
+  expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", true, "v-none");
+  await submit();
+  expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v-made");
 });
