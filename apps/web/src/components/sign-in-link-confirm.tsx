@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 import { SubmitButton } from "@/components/submit-button";
 import { confirmSignInLink } from "@/server/sign-in-link";
 import { usePortalHref } from "@/components/portal-base";
@@ -11,6 +13,7 @@ import { usePortalHref } from "@/components/portal-base";
  */
 export function SignInLinkConfirm({ token, next }: { token: string; next: string }) {
   const at = usePortalHref();
+  const signIn = useTranslations("header")("signIn");
   return (
     <form
       className="w-full"
@@ -21,7 +24,7 @@ export function SignInLinkConfirm({ token, next }: { token: string; next: string
     >
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="next" value={next} />
-      <SubmitButton className="w-full">Sign in</SubmitButton>
+      <SubmitButton className="w-full">{signIn}</SubmitButton>
     </form>
   );
 }

@@ -17,12 +17,19 @@ import { canReadPortal, invitedReader } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
+import { MESSAGES } from "@tuti/shared/messages";
+import { pageTranslator } from "@/server/portal-language";
 
 /** For the reader alone: not for search engines. */
-export const metadata: Metadata = { title: "Sign in", ...PRIVATE_PAGE };
+export async function generateMetadata(): Promise<Metadata> {
+  const { language } = await pageTranslator("auth");
+  return { title: MESSAGES[language].header.signIn, ...PRIVATE_PAGE };
+}
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
   const at = await portalLinks();
+  // The portal's words in the page's language.
+  const { t } = await pageTranslator("auth");
   const [{ project }, { continue: handoff, link, next, title, with: via }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
   // A board's "Share an idea" posted here before its script ran: the title typed comes along, for the way back.
@@ -59,9 +66,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
         <Alert variant="destructive">
           <CircleAlertIcon />
           <AlertDescription>
-            {link === "failed"
-              ? "That sign-in link has expired or was already used. Ask for a new one."
-              : "That sign-in didn't work. Try again."}
+            {link === "failed" ? t("linkFailed") : t("signInFailed")}
           </AlertDescription>
         </Alert>
       )}
@@ -70,10 +75,10 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           <LockIcon />
           <AlertDescription className="break-words">
             {unverified
-              ? `${refused} can read ${portal.name} once the address is verified. Sign in with an emailed link to verify it.`
+              ? t("unverified", { email: refused, name: portal.name })
               : refused
-                ? `${portal.name} is private, and ${refused} doesn't have access. Sign in with another account, or ask the team for access.`
-                : `${portal.name} is private. Sign in to see it.`}
+                ? t("refused", { email: refused, name: portal.name })
+                : t("privatePortal", { name: portal.name })}
           </AlertDescription>
         </Alert>
       )}
@@ -84,9 +89,9 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
             href={ssoUrl.href}
             className={cn(buttonVariants({ variant: "secondary" }), "h-auto min-h-9 w-full py-1.5 text-center whitespace-normal")}
           >
-            Continue with {portal.name}
+            {t("continueWith", { name: portal.name })}
           </a>
-          <Or />
+          <Or word={t("or")} />
         </>
       )}
       {/* Sign-in links need email that really goes out. Passwords are typed on the app (lib/auth.ts): its "Use a password instead"
@@ -102,8 +107,8 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           signUp={!isPrivate}
           // With SSO the portal's sign-up sends people to sign in on the team's app: the app's sign-up, and back.
           signUpOnApp={!!ssoUrl}
-          title={portal ? `Sign in to ${portal.name}` : undefined}
-          description="Vote, comment and follow ideas. We'll email you as they move forward and when they ship."
+          title={portal ? t("signInTo", { name: portal.name }) : undefined}
+          description={t("description")}
           mark={<PortalMark name={portal?.name ?? project} />}
           // Where they were; not a page that would bring them back here (a private portal's, or Account).
           back={
@@ -117,18 +122,18 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           className={buttonVariants({ variant: "outline", className: "w-full" })}
         >
           <TutiMark mono className="size-4" />
-          Continue with your Tuti account
+          {t("continueTuti")}
         </a>
       )}
     </div>
   );
 }
 
-function Or() {
+function Or({ word }: { word: string }) {
   return (
     <div className="flex items-center gap-3 text-xs text-muted-foreground">
       <span className="h-px flex-1 bg-divider" />
-      or
+      {word}
       <span className="h-px flex-1 bg-divider" />
     </div>
   );

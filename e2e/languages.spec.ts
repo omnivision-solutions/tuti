@@ -8,6 +8,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { latestEmailTo, linkIn } from "./mail";
 
 test("a reader chooses German in the portal's header and its text follows, on desktop and on phones", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -628,4 +629,86 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await plainApi(`/articles/${intro.slug}/publish`, {});
   await visitor.goto("/de/docs/basics");
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+});
+
+test("signing in, signing up and resetting a password in German, the sign-in link's page and single sign-on's error, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+
+  // Signing in: its title, its fields and ways, all in German.
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/sign-in");
+  await expect(reader).toHaveTitle(/^Anmelden/);
+  await expect(reader.getByText("Bei Acme anmelden", { exact: true })).toBeVisible();
+  await expect(reader.getByText("Stimme ab, kommentiere und folge Ideen. Wir mailen dir, wenn es vorangeht und sobald sie veröffentlicht sind.")).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Stattdessen ein Passwort verwenden" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Passwort vergessen?" })).toBeVisible();
+  await expect(reader.getByText(/^Neu hier\?\s*Konto erstellen$/)).toBeVisible();
+  await expect(reader.getByText(/^Im Team\?\s*Mit Tuti anmelden$/)).toBeVisible();
+  await checkpoint(reader, "sign-in-in-german", { fullPage: false });
+  // The sent link's card.
+  const email = `e2e-${randomUUID()}@example.com`;
+  await reader.getByLabel("E-Mail").fill(email);
+  await reader.getByRole("button", { name: "Anmeldelink per E-Mail senden" }).click();
+  await expect(reader.getByText("Sieh in dein Postfach", { exact: true })).toBeVisible();
+  await expect(reader.getByText(/^Wir haben einen Anmeldelink an .+ gesendet\. Er funktioniert einmal, in den nächsten \d+ Minuten\.$/)).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Neuen Link senden" })).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Andere E-Mail-Adresse verwenden" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Zurück zu Acme" })).toBeVisible();
+  // The link's page, at its German address: it asks to confirm.
+  const link = new URL(linkIn(await latestEmailTo(email), portalUrl(slug)));
+  await reader.goto(`/de${link.pathname}${link.search}`);
+  await expect(reader.getByText(`als ${email}`)).toBeVisible();
+  await expect(reader.getByRole("button", { name: "Anmelden" })).toBeVisible();
+
+  // A sign-in link or sign-in that didn't work says so.
+  await reader.goto("/de/sign-in?link=failed");
+  await expect(reader.getByText("Dieser Anmeldelink ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
+  await reader.goto("/de/sign-in?continue=failed");
+  await expect(reader.getByText("Die Anmeldung hat nicht geklappt. Bitte versuche es erneut.")).toBeVisible();
+
+  // Signing up.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto("/de/sign-up");
+  await expect(visitor).toHaveTitle(/^Registrieren/);
+  await expect(visitor.getByText("Acme beitreten", { exact: true })).toBeVisible();
+  await expect(visitor.getByLabel("Name")).toHaveAttribute("placeholder", "Dein Name");
+  await expect(visitor.getByRole("button", { name: "Registrierungslink per E-Mail senden" })).toBeVisible();
+  await expect(visitor.getByText(/^Schon ein Konto\?\s*Anmelden$/)).toBeVisible();
+  await checkpoint(visitor, "sign-up-in-german-phone", { fullPage: false });
+  // Resetting a password.
+  await visitor.goto("/de/forgot-password");
+  await expect(visitor).toHaveTitle(/^Passwort zurücksetzen/);
+  await expect(visitor.getByText("Wir mailen dir einen Link, um ein neues festzulegen.")).toBeVisible();
+  await visitor.getByLabel("E-Mail").fill(email);
+  await visitor.getByRole("button", { name: "Link per E-Mail senden" }).click();
+  await expect(visitor.getByText(new RegExp(`^Falls es ein Konto für ${email.replace(/[.]/g, "\\.")} gibt`))).toBeVisible();
+  await visitor.goto("/de/forgot-password?link=failed");
+  await expect(visitor.getByText("Dieser Link ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
+  // Single sign-on's error: the reader's words in German, what went wrong for whoever set it up in English.
+  await visitor.goto("/de/sso/error?code=invalid_token");
+  await expect(visitor.getByRole("heading", { name: "Anmeldung fehlgeschlagen" })).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Erneut versuchen" })).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Weiter zum Board" })).toBeVisible();
+
+  // A private portal says so, to someone signed out and to an account without access.
+  const member = await signUp(browser, portalUrl(slug), "Mia Member");
+  await query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+  await visitor.goto("/de/sign-in");
+  await expect(visitor.getByText("Acme ist privat. Melde dich an, um es zu sehen.")).toBeVisible();
+  await member.goto("/de/sign-in");
+  await expect(member.getByText(`Acme ist privat, und ${member.email} hat keinen Zugriff.`, { exact: false })).toBeVisible();
+
+  // With single sign-on, its button first, then "oder" and the emailed link (the page kept with ?with=email).
+  await query(`UPDATE project SET "portalAccess" = 'PUBLIC', "ssoSecret" = 'e2e-secret', "ssoSignInUrl" = 'https://app.example.com/sign-in' WHERE slug = $1`, [slug]);
+  await visitor.goto("/de/sign-in?with=email");
+  await expect(visitor.getByRole("link", { name: "Weiter mit Acme" })).toBeVisible();
+  await expect(visitor.getByText("oder", { exact: true })).toBeVisible();
 });

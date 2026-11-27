@@ -8,9 +8,12 @@ import { PortalMark } from "@/components/portal-look";
 import { safeRedirectPath } from "@/lib/redirects";
 import { portalLinks } from "@/server/portal-base";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
+import { pageTranslator } from "@/server/portal-language";
 
 /** For the reader alone: not for search engines. */
-export const metadata: Metadata = { title: "Sign up", ...PRIVATE_PAGE };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await pageTranslator("auth")).t("signUp"), ...PRIVATE_PAGE };
+}
 
 /**
  * "Create an account" on a portal: as its sign-in, an emailed link (it makes the account, named as typed here), and
@@ -26,6 +29,8 @@ export default async function PortalSignUpPage(props: PageProps<"/portal/[projec
     select: { name: true, portalAccess: true, ssoSecret: true, ssoSignInUrl: true },
   });
   const at = await portalLinks();
+  // The portal's words in the page's language.
+  const { t } = await pageTranslator("auth");
   if (!portal || portal.portalAccess === "PRIVATE" || (portal.ssoSecret && portal.ssoSignInUrl)) {
     redirect(at(nextPath ? `/sign-in?${new URLSearchParams({ next: nextPath })}` : "/sign-in"));
   }
@@ -41,8 +46,8 @@ export default async function PortalSignUpPage(props: PageProps<"/portal/[projec
         redirectTo="/"
         next={nextPath || undefined}
         linkProject={project}
-        title={`Join ${portal.name}`}
-        description="Vote, comment and follow ideas. We'll email you as they move forward and when they ship."
+        title={t("joinPortal", { name: portal.name })}
+        description={t("description")}
         mark={<PortalMark name={portal.name} />}
         back={{ name: portal.name, href: /^\/account(?:[/?#]|$)/.test(nextPath) ? "/" : nextPath || "/" }}
       />

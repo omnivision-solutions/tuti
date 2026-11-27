@@ -7,8 +7,13 @@ import { safeRedirectPath } from "@/lib/redirects";
 import { failedSignInLinkPath, pendingSignInLink } from "@/server/sign-in-link-lookup";
 import { portalLinks } from "@/server/portal-base";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";
+import { MESSAGES } from "@tuti/shared/messages";
+import { pageTranslator } from "@/server/portal-language";
 
-export const metadata: Metadata = { title: "Sign in", ...PRIVATE_PAGE };
+export async function generateMetadata(): Promise<Metadata> {
+  const { language } = await pageTranslator("auth");
+  return { title: MESSAGES[language].header.signIn, ...PRIVATE_PAGE };
+}
 
 /**
  * <project>.tuti.so/sign-in/link?token=…&next=… is the link in a sign-in email
@@ -23,11 +28,13 @@ export default async function SignInLinkPage(props: PageProps<"/portal/[project]
     redirect((await portalLinks())(failedSignInLinkPath(nextPath)));
   }
 
+  // The portal's words in the page's language.
+  const { t } = await pageTranslator("auth");
   return (
     <Card data-auth-page className="mx-auto w-full max-w-sm sm:mt-12">
       <CardHeader>
-        <CardTitle className="font-heading text-xl font-bold">Sign in to {link.projectName}</CardTitle>
-        <CardDescription className="break-all">as {link.email}</CardDescription>
+        <CardTitle className="font-heading text-xl font-bold">{t("signInTo", { name: link.projectName })}</CardTitle>
+        <CardDescription className="break-all">{t("signInAs", { email: link.email })}</CardDescription>
       </CardHeader>
       {/* No line inside the card on the portal (docs/design.md → Surfaces). */}
       <CardFooter className="border-t-0 pt-0">
