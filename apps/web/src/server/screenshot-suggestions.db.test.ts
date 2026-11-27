@@ -38,9 +38,10 @@ beforeAll(async () => {
     } else if (request.url === "/assets/main.js") {
       response.writeHead(200, { "content-type": "text/javascript" }).end('initializeApp({authDomain:"acme.firebaseapp.com"});const a="identitytoolkit.googleapis.com",b="securetoken.googleapis.com";');
     } else if (request.url === "/many") {
-      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 16 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 101 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
     } else if (request.url?.startsWith("/assets/s")) {
-      response.writeHead(200, { "content-type": "text/javascript" }).end("");
+      // The sign-in SDK deep in a Next.js page's chunks, as on a real app (its 26th of 40).
+      response.writeHead(200, { "content-type": "text/javascript" }).end(request.url === "/assets/s39.js" ? 'const a="identitytoolkit.googleapis.com";' : "");
     } else {
       response.writeHead(404).end();
     }
@@ -128,11 +129,12 @@ test("Tuti on localhost without SCREENSHOTS_ALLOW_LOCALHOST (a self-hosted serve
   expect(connections).toBe(0);
 });
 
-test("a page with more scripts reads only the first 15, the same each time, so what's found is kept", async () => {
+test("a page with many scripts reads the first 100, the same each time, so what's found is kept", async () => {
   await settle({ appUrl: `${base}/many` });
-  expect(await suggestions()).toEqual([]);
-  expect(await suggestions()).toEqual([]);
-  expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(15);
+  const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
+  expect(await suggestions()).toEqual(firebase);
+  expect(await suggestions()).toEqual(firebase);
+  expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(100);
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/many`);
 });
 

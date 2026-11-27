@@ -120,9 +120,10 @@ export function findSignInServices(texts: string[]): SignInService[] {
 
 const PAGE_BYTES = 2_000_000;
 const SCRIPT_BYTES = 5_000_000;
-/** All the scripts together, shared out (5 MB each up to 4 scripts, ~1.3 MB each for 15: an app with many has small chunks): one read never holds more than PAGE_BYTES + this. */
+/** All the scripts together, shared out (5 MB each up to 4 scripts, 200 KB each for 100: an app with many has small chunks): one read never holds more than PAGE_BYTES + this. */
 const SCRIPTS_BYTES = 20_000_000;
-const MAX_SCRIPTS = 15;
+/** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them; all are read within one TIMEOUT_MS. */
+const MAX_SCRIPTS = 100;
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 6_000;
 
