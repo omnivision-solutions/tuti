@@ -24,7 +24,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   }
   // In the address's language (/de/changelog/rss.xml): its title, description and the entries' tags, and its links to that
   // language's pages (the entries are the team's words).
-  const [address, { prefix }, { t, language }, asked] = await Promise.all([portalAddress(slug), portalLanguage(), portalTranslator(project.id, "changelog"), entryLanguageAsked()]);
+  const [address, { prefix, defaultLanguage }, { t, language }, asked] = await Promise.all([portalAddress(slug), portalLanguage(), portalTranslator(project.id, "changelog"), entryLanguageAsked()]);
   const portal = `${address}${prefix}`;
   // Not sample content (Home's "Add sample content"): feed readers keep what they're sent. For everyone only: no feed
   // reader signs in, and it's kept in shared caches. Each entry in the address's language where its version there is
@@ -35,7 +35,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     // translated): its guid stays the same once it is, so feed readers don't list it twice.
     const url = `${portal}/changelog/${entry.number}`;
     return [
-      "<item>",
+      // Not translated into the feed's language: its text is the default language's, and says so (as its page's `lang`).
+      entry.untranslated && defaultLanguage ? `<item xml:lang="${xml(defaultLanguage)}">` : "<item>",
       `<title>${xml(entry.title)}</title>`,
       `<link>${xml(url)}</link>`,
       `<guid isPermaLink="true">${xml(url)}</guid>`,

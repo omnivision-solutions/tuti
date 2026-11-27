@@ -23,7 +23,7 @@ test("the changelog feed lists published entries only, newest first, with text t
   const response = await GET(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) });
   expect(response.headers.get("content-type")).toBe("application/rss+xml; charset=utf-8");
   const feed = await response.text();
-  const titles = [...feed.matchAll(/<item><title>(.*?)<\/title>/g)].map((m) => m[1]);
+  const titles = [...feed.matchAll(/<item[^>]*><title>(.*?)<\/title>/g)].map((m) => m[1]);
   expect(titles).toEqual(["Tags &amp; &lt;things&gt;", "Older"]);
   expect(feed).not.toContain("Draft only");
   expect(feed).toContain(`<link>http://${project.slug}.localhost:3100/changelog/3</link>`);
@@ -48,13 +48,16 @@ test("at a language's address, the feed has each entry in its version there wher
   try {
     request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de", "x-tuti-language-default": "en" };
     const german = await feed();
-    expect([...german.matchAll(/<item><title>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dunkler Modus"]);
+    expect([...german.matchAll(/<item[^>]*><title>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dunkler Modus"]);
     expect(german).toContain("<description>Wechsle das Design.</description>");
     expect(german).toContain("<language>de</language>");
+    // The one not translated says its text is the default language's; the translated one is the feed's.
+    expect(german).toContain('<item xml:lang="en"><title>Faster search</title>');
+    expect(german).toContain("<item><title>Dunkler Modus</title>");
     expect(german).toContain(`<link>http://${project.slug}.localhost:3100/de/changelog/1</link>`);
     request.headers = { "x-tuti-language": "en", "x-tuti-language-default": "en" };
     const english = await feed();
-    expect([...english.matchAll(/<item><title>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dark mode"]);
+    expect([...english.matchAll(/<item[^>]*><title>(.*?)<\/title>/g)].map((m) => m[1])).toEqual(["Faster search", "Dark mode"]);
     expect(english).toContain("<language>en</language>");
   } finally {
     request.headers = {};
