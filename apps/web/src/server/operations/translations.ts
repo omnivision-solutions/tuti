@@ -243,15 +243,24 @@ async function withVersion<T>(
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${article.id} FOR UPDATE`;
     let found = await tx.articleTranslation.findUnique({ where, select: { id: true } });
+    // Started as the blank one a read answers (its token the same), and gone again if the change is refused or stores
+    // nothing: an empty row would keep the language, once Automatic, from ever starting the article's version.
+    let started: { automatic: boolean } | null = null;
     if (!found) {
-      // Started as the blank one a read answers (its token the same), and gone again if the change is refused.
-      const { automatic } = await setting(tx);
-      await tx.articleTranslation.createMany({ data: [{ articleId: article.id, projectId, language: lang, automatic }], skipDuplicates: true });
+      started = await setting(tx);
+      await tx.articleTranslation.createMany({ data: [{ articleId: article.id, projectId, language: lang, automatic: started.automatic }], skipDuplicates: true });
       found = await tx.articleTranslation.findUniqueOrThrow({ where, select: { id: true } });
     }
     await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${found.id} FOR UPDATE`;
     const version = await tx.articleTranslation.findUniqueOrThrow({ where: { id: found.id }, select: versionSelect });
-    return change(tx, version, article.id);
+    const result = await change(tx, version, article.id);
+    if (started) {
+      const after = await tx.articleTranslation.findUniqueOrThrow({ where: { id: found.id }, select: { automatic: true, publishedAt: true, draft: true, updateSections: true } });
+      if (!after.publishedAt && after.draft === null && (after.updateSections as string[]).length === 0 && after.automatic === started.automatic) {
+        await tx.articleTranslation.delete({ where: { id: found.id } });
+      }
+    }
+    return result;
   });
 }
 
@@ -495,6 +504,10 @@ export const updateTranslationSections = defineOperation({
       const source = await sourceOf(tx, articleId);
       const { parts, sourceLanguage } = source;
       const { published, draft, drafted } = versionParts(version, parts);
+      // No text yet (never written or translated): no section to place a translation in.
+      if (!version.publishedAt && !draft) {
+        throw new OperationError(409, "nothing_behind", "No section is behind the source");
+      }
       const behind = Object.keys(behindNow(version, parts, sourceLanguage, published, drafted && { list: drafted, removed: draft?.removed, removedHashes: draft?.removedHashes }));
       // Those still in the source, and those behind because theirs went (the job takes them out).
       const asked = (input.sections ?? behind).filter((key) => behind.includes(key) || parts.some((part) => part.key === key));
