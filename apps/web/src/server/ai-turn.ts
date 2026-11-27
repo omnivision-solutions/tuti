@@ -92,7 +92,8 @@ export const awaitsReply = (latest: { author: string } | null) => latest?.author
 
 /**
  * Whether a conversation's user waits on the team: the latest message that isn't a note is theirs, or their latest message
- * was handed over to the team (`handedOverAt`) and no teammate has replied since. An answer from the AI counts as a reply
+ * was handed to the team (`handedOverAt`, with the handover's `handed_over` Activity row: one a Don't hand over kept with
+ * the AI has none) and no teammate has replied since. An answer from the AI counts as a reply
  * only where it wasn't followed by a handover ("Ask a person" after an AI answer, a workflow's set reply as it went to the
  * team). The one rule for Hand back to the AI: the page offers it, and the action allows it, only where nobody waits.
  */
@@ -110,7 +111,12 @@ export async function userWaits(conversationId: string): Promise<boolean> {
   if (!asked?.handedOverAt) {
     return false;
   }
-  return (await prisma.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } })) === 0;
+  // Handed to the team, not kept with the AI by a Don't hand over (which marks the message all the same): its Activity row.
+  const [toTeam, replied] = await Promise.all([
+    prisma.conversationEvent.count({ where: { conversationId, kind: "handed_over", createdAt: { gte: asked.createdAt } } }),
+    prisma.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } }),
+  ]);
+  return toTeam > 0 && replied === 0;
 }
 
 /**

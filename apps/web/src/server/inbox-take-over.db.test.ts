@@ -222,3 +222,20 @@ test("Hand back to the AI is refused after a workflow's set reply as the convers
   await call(replyToConversation, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number: 1, body: "We take cards." });
   expect(await handBackConversation(project.slug, 1)).toEqual({});
 });
+
+test("Hand back to the AI is allowed where a Don't hand over kept the conversation with the AI: its set reply answered them", async () => {
+  const { owner, project, start } = await startedAndHandedOver();
+  await call(createWorkflow, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {
+    name: "Keep",
+    trigger: "about_to_hand_over",
+    conditions: [],
+    actions: [{ kind: "reply_text", text: "Thanks, the AI can help." }, { kind: "dont_hand_over" }],
+  });
+  await start();
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  expect(conversation.handledBy).toBe("AI");
+  actAs(owner);
+  await takeOverConversation(project.slug, 1);
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).handledBy).toBe("AI");
+});
