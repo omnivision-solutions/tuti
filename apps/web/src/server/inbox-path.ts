@@ -27,9 +27,15 @@ type Started = { started: Parameters<typeof announceConversation>[1]; message: P
 /** A later message from the user, as addMessage wrote it. */
 type Replied = { conversation: { id: string; number: number }; message: Parameters<typeof announceUserMessage>[2] };
 
-export function inboxPath(projectId: string, arrival: Started): ReturnType<typeof announceConversation>;
-export function inboxPath(projectId: string, arrival: Replied): ReturnType<typeof announceUserMessage>;
-export async function inboxPath(projectId: string, arrival: Started | Replied) {
+/**
+ * `ownerChosen`: a teammate set who has it in the same act (Not spam with `handledBy`): no handover overrides them, and
+ * the conversation is told as they left it (the team's notices only when it's the team's).
+ */
+type PathOptions = { ownerChosen?: boolean };
+
+export function inboxPath(projectId: string, arrival: Started, options?: PathOptions): ReturnType<typeof announceConversation>;
+export function inboxPath(projectId: string, arrival: Replied, options?: PathOptions): ReturnType<typeof announceUserMessage>;
+export async function inboxPath(projectId: string, arrival: Started | Replied, { ownerChosen = false }: PathOptions = {}) {
   if ("started" in arrival) {
     const { started, message } = arrival;
     if (started.spamHeldAt) {
@@ -43,7 +49,7 @@ export async function inboxPath(projectId: string, arrival: Started | Replied) {
     const changed = await runWorkflows(projectId, started.id, message.id, "conversation_started");
     // Every new conversation starts with the AI, which answers nothing yet: "Ask a person" because the user asked, the
     // rest because it's off.
-    const handed = await handOver(projectId, started.id, message.id, handoverReason(started));
+    const handed: Handed = ownerChosen ? { handedOver: null, changed: {} } : await handOver(projectId, started.id, message.id, handoverReason(started));
     // Told as the workflows left it (marked priority, kept with the AI). The team's email and push skip one the AI has.
     const told = await announceConversation(projectId, { ...started, ...changed, ...handed.changed }, message);
     await handedOverEvent(projectId, started.number, handed);

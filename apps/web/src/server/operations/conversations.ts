@@ -1725,7 +1725,8 @@ export const updateConversation = defineOperation({
       // told to the team too. The rest, to webhooks: written in Spam, they fire no trigger of their own.
       const first = released ? unheard.shift() : undefined;
       if (first) {
-        path = await inboxPath(projectId, { started: updated, message: first });
+        // An owner given with Not spam is the caller's choice: no handover overrides it.
+        path = await inboxPath(projectId, { started: updated, message: first }, { ownerChosen: !!input.handledBy });
       }
       for (const message of unheard) {
         await emitEvent(projectId, "conversation.message_created", { conversation: updated.number, message: messageView(message) });

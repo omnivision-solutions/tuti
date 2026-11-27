@@ -325,3 +325,23 @@ test("Not spam on what the filter filed answers with the conversation as its han
   expect(await call(updateConversation, admin, { number: 1, spam: false })).toMatchObject({ spam: false, handledBy: "ai" });
   expect((await state(1)).handledBy).toBe("AI");
 });
+
+test("Not spam with an owner keeps the caller's choice: no handover overrides it", async () => {
+  const { owner, projectId, admin, to, workflow, state, activity } = await setup();
+  await prisma.spamSender.create({ data: { projectId, sender: "blocked.example.com", blocked: true, byAdmin: true } });
+  await postEmail(rawEmail({ from: "e2e-kim@blocked.example.com", to }), { recipient: to });
+  await postEmail(rawEmail({ from: "e2e-lee@blocked.example.com", to }), { recipient: to });
+
+  // No workflows: given to the AI, it stays the AI's, with no handover and nobody on the team told.
+  expect(await call(updateConversation, admin, { number: 1, spam: false, handledBy: "ai" })).toMatchObject({ spam: false, handledBy: "ai" });
+  expect((await state(1)).handledBy).toBe("AI");
+  expect(await activity(1)).toEqual([]);
+  expect(emailed(owner.email)).toBe(0);
+
+  // A workflow that would keep it with the AI: given to the team, it stays the team's, and the team is told.
+  await workflow("Keep", [{ kind: "dont_hand_over" }]);
+  expect(await call(updateConversation, admin, { number: 2, spam: false, handledBy: "team" })).toMatchObject({ spam: false, handledBy: "team" });
+  expect((await state(2)).handledBy).toBe("TEAM");
+  expect(await activity(2)).toEqual([]);
+  expect(emailed(owner.email)).toBe(1);
+});
