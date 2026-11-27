@@ -1,11 +1,11 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronLeftIcon, ChevronRightIcon, SquarePenIcon } from "lucide-react";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { ChevronLeftIcon, ChevronRightIcon, MessageCircleIcon, SquarePenIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
-import { useDocsAssistant } from "@/components/docs-assistant-context";
+import { AnswerSources } from "@/components/docs-answer";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
@@ -20,9 +20,11 @@ import { replyTime, subjectFrom, timeAgo } from "@/lib/format";
 import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
 import { WIDGET_LABEL, WIDGET_ROW } from "@/lib/portal-look";
-import { MAX_QUESTION } from "@/lib/widget-docs";
+import { widgetSourceHref } from "@/lib/widget-docs";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
+import { rateDocsAnswer } from "@/server/docs-readers";
 import {
+  widgetAskPerson,
   widgetConversation,
   widgetConversations,
   widgetHere,
@@ -100,8 +102,8 @@ export function useVisitor(projectSlug: string): Visitor | null {
  * The widget's Messages tab: someone's conversations with the team. Signed in by the customer's
  * page (Tuti.identify) or on the portal itself (`portalSignedIn`); signed out, they give their
  * email to write, and the panel keeps a visitor token to show them their conversations. `team`
- * (their faces and when they usually reply) heads the list and the first message. With `aiFirst` (Customize → Widget), a
- * new message goes to the docs' assistant first (useAskFirst).
+ * (their faces and when they usually reply) heads the list and the first message. With `aiFirst` (Settings → Workflows), a
+ * new conversation is the AI's first (server/ai-turn.ts): its answers come in the thread, with Ask a person under them.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = false }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode; aiFirst?: boolean }) {
   const { signedIn, error, known: pageAnswered, pending: pageSigningIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
@@ -186,6 +188,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = fa
       <FirstMessage
         projectSlug={projectSlug}
         team={team}
+        aiFirst={aiFirst}
         onStarted={setStarted}
         onSignedIn={(number) => {
           setStarted(number);
@@ -214,7 +217,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = fa
       {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
       {/* No box of its own: a fieldset's content doesn't grow with it, and the conversation must, to keep its reply box at the bottom. */}
       <fieldset disabled={signingIn} className="contents">
-        <AiFirst value={aiFirst}>{view}</AiFirst>
+        {view}
       </fieldset>
     </div>
   );
@@ -476,7 +479,7 @@ function ConversationList({
         {loading ? (
           NEW_MESSAGE_SKELETON
         ) : (
-          // Where the assistant's focus goes back to when what opened it (Send, AI first) is gone.
+          // Where the assistant's focus goes back to when what opened it is gone.
           <Button ref={newMessage} size="lg" onClick={onNew} className="w-full" data-assistant-return>
             <SquarePenIcon data-icon="inline-start" />
             New message
@@ -602,12 +605,10 @@ function Composer({
   email,
   send,
   upload,
-  maxLength,
 }: {
   placeholder: string;
   label: string;
   email?: string;
-  maxLength?: number;
   send: (text: string, email: string, attachments: string[]) => Promise<{ error?: string }>;
   /** Where files they attach upload (with "Attach files"); without it, there's no attaching. */
   upload?: StartUpload;
@@ -653,7 +654,6 @@ function Composer({
         aria-label={label}
         placeholder={placeholder}
         value={text}
-        maxLength={maxLength}
         rows={3}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
@@ -691,48 +691,26 @@ function BackButton({ onBack }: { onBack: () => void }) {
 }
 
 /** Someone signed out, writing for the first time: their email, so the team can reply once they've left. */
-const AiFirstContext = createContext(false);
-const AiFirst = ({ value, children }: { value: boolean; children: ReactNode }) => <AiFirstContext value={value}>{children}</AiFirstContext>;
-
-/**
- * With AI first: a new message without files, short enough to be a question (MAX_QUESTION), is one for the docs'
- * assistant, which takes the panel with its answer and "Ask a person" (which starts the conversation, with the question and
- * the answer). Null otherwise, and false for a message it doesn't take: it goes to the team.
- */
-function useAskFirst() {
-  const assistant = useDocsAssistant();
-  if (!useContext(AiFirstContext) || !assistant) {
-    return null;
-  }
-  return (text: string, attachments: string[]) => {
-    if (attachments.length > 0 || text.trim().length > MAX_QUESTION) {
-      return false;
-    }
-    // A question of its own: a new message, not a follow-up to what the assistant answered before.
-    assistant.ask(text, { fresh: true });
-    return true;
-  };
-}
-
 function FirstMessage({
   projectSlug,
   team,
   onStarted,
   onSignedIn,
+  aiFirst,
 }: {
   projectSlug: string;
   team: ReactNode;
+  aiFirst: boolean;
   onStarted: (number: number) => void;
   /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
   onSignedIn: (number: number) => void;
 }) {
-  const askFirst = useAskFirst();
   const at = usePortalHref();
   return (
     <div className="flex flex-col gap-4">
       <TeamCard team={team} />
       <p className="text-sm text-muted-foreground">
-        {askFirst ? "Ask anything: you'll get an answer right away, and a person if you need one." : "Leave your email so the team can get back to you."}{" "}
+        {aiFirst ? "Ask anything: you'll get an answer right away, and a person if you need one." : "Leave your email so the team can get back to you."}{" "}
         <a href={at("/sign-in")} target="_blank" rel="noreferrer" className="underline underline-offset-4">
           Sign in
         </a>{" "}
@@ -741,13 +719,8 @@ function FirstMessage({
       <Composer
         label="Message"
         placeholder="How can we help?"
-        // Asked first, the email comes with "Ask a person"; it's a question, so no longer than one.
-        email={askFirst ? undefined : ""}
-        maxLength={askFirst ? MAX_QUESTION : undefined}
+        email=""
         send={async (text, email) => {
-          if (askFirst?.(text, [])) {
-            return {};
-          }
           const result = await widgetStartConversation(projectSlug, {}, text, email);
           if ("error" in result) {
             return result;
@@ -780,7 +753,6 @@ function NewConversation({
   onStarted: (number: number) => void;
   onNewVisitor: (number: number) => void;
 }) {
-  const askFirst = useAskFirst();
   return (
     <div className="flex flex-col gap-3">
       <BackButton onBack={onBack} />
@@ -790,15 +762,6 @@ function NewConversation({
         email={visitorEmail ?? undefined}
         upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
         send={async (text, email, attachments) => {
-          // Asked first: behind the assistant, their list, where a conversation it starts shows. The email they gave
-          // (perhaps corrected) is the one Ask a person starts with.
-          if (askFirst?.(text, attachments)) {
-            if (visitorEmail !== null && auth.visitor) {
-              visitorStore.write(projectSlug, { token: auth.visitor, email: email.trim() });
-            }
-            onBack();
-            return {};
-          }
           const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email, attachments);
           if ("error" in result) {
             return result;
@@ -863,6 +826,19 @@ function Conversation({
   const list = useRef<HTMLOListElement>(null);
   const panel = useCallback(() => list.current?.closest("[data-widget-scroll]") ?? null, []);
   useScrollToEnd(opened?.messages.length ?? 0, panel);
+  // Where the focus goes once Ask a person is gone: the line saying where the team's reply comes.
+  const status = useRef<HTMLParagraphElement>(null);
+  const [asking, startAsking] = useTransition();
+  const [askError, setAskError] = useState<string>();
+  const askPerson = (button: HTMLElement) =>
+    startAsking(async () => {
+      const result = await widgetAskPerson(projectSlug, auth, number).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      setAskError("error" in result ? result.error : undefined);
+      if (!("error" in result)) {
+        await reload();
+        keepFocus(button, status.current);
+      }
+    });
 
   return (
     <div className="flex flex-1 flex-col gap-3">
@@ -874,12 +850,13 @@ function Conversation({
           <h2 className={cn("font-medium break-words", opened.messages[0] && subjectFrom(opened.messages[0].body) === opened.subject && "line-clamp-2")}>
             {opened.subject}
           </h2>
-          <ol ref={list} className="flex flex-col gap-2" aria-label="Messages">
+          {/* New messages are read out as they come (the AI's answer, the team's reply). */}
+          <ol ref={list} className="flex flex-col gap-2" aria-label="Messages" aria-live="polite" aria-relevant="additions">
             {opened.messages.map((m) => (
               <li key={m.id} className={cn("flex", !m.fromTeam && "justify-end")}>
                 <div className={cn("max-w-[85%] rounded-xl border px-3 py-2", !m.fromTeam && "bg-muted")}>
                   <p className="text-xs text-muted-foreground">
-                    {m.fromTeam ? (m.name ?? "The team") : "You"} · {timeAgo(new Date(m.createdAt))}
+                    {m.ai ? "AI" : m.fromTeam ? (m.name ?? "The team") : "You"} · {timeAgo(new Date(m.createdAt))}
                   </p>
                   <p lang={m.language ?? undefined} className="text-sm break-words whitespace-pre-wrap">
                     <MessageText text={m.body} ugc={!m.fromTeam} />
@@ -901,16 +878,35 @@ function Conversation({
                     </details>
                   )}
                   <MessageAttachments attachments={m.attachments} dropped={m.dropped} imported />
+                  {m.answer && <AiAnswerFooter projectSlug={projectSlug} answer={m.answer} />}
                 </div>
               </li>
             ))}
           </ol>
         </>
       )}
+      {/* While the AI has it and isn't writing: under its latest answer (or their message it said nothing to, a "hi"). */}
+      {opened?.askPerson && !opened.answering && (
+        <div className="flex flex-col items-start gap-1">
+          <Button variant="outline" size="sm" disabled={asking} focusableWhenDisabled onClick={(event) => askPerson(event.currentTarget)}>
+            <MessageCircleIcon data-icon="inline-start" />
+            Ask a person
+          </Button>
+          {askError && (
+            <p role="alert" className="text-sm text-destructive">
+              {askError}
+            </p>
+          )}
+        </div>
+      )}
       {/* Waiting for the team's reply, theirs the latest: where it comes, and when. A live region on the page from the
           start (empty until then), so screen readers hear it appear once they've sent a message. */}
-      <p role="status" className="text-center text-sm break-words text-muted-foreground">
-        {opened?.awaitingReply && opened.messages.at(-1)?.fromTeam === false ? replyWhere(opened.emailedTo, opened.replyMs) : ""}
+      <p ref={status} tabIndex={-1} role="status" className="text-center text-sm break-words text-muted-foreground outline-none">
+        {opened?.answering
+          ? "Answering…"
+          : opened?.awaitingReply && !opened.withAi && opened.messages.findLast((m) => !m.ai)?.fromTeam === false
+            ? replyWhere(opened.emailedTo, opened.replyMs)
+            : ""}
       </p>
       {opened && (
         <>
@@ -931,6 +927,45 @@ function Conversation({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Under the AI's answer in the thread: its sources, and thumbs up or down. */
+function AiAnswerFooter({ projectSlug, answer }: { projectSlug: string; answer: NonNullable<Opened["messages"][number]["answer"]> }) {
+  const at = usePortalHref();
+  const [rated, setRated] = useState(answer.helpful);
+  const [pending, startTransition] = useTransition();
+  const rate = (helpful: boolean) =>
+    startTransition(async () => {
+      // Offline, or the server failing: as it was, to try again.
+      const result = await rateDocsAnswer(projectSlug, answer.questionId, helpful).catch(() => ({ error: "failed" }));
+      if (!result.error) {
+        setRated(helpful);
+      }
+    });
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {answer.sources.length > 0 && (
+        // An article opens in the panel's Help center, an API reference's operation on its page.
+        <AnswerSources
+          sources={answer.sources}
+          href={(slug) => {
+            const href = widgetSourceHref(slug);
+            return href === null ? null : at(href);
+          }}
+        />
+      )}
+      {/* The thumbs stay (pressed once rated, and can be changed), so the focus stays on them. */}
+      <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+        <Button variant="ghost" size="icon-sm" aria-label="Helpful" aria-pressed={rated === true} disabled={pending} focusableWhenDisabled onClick={() => rate(true)}>
+          <ThumbsUpIcon className={cn(rated === true && "fill-current")} />
+        </Button>
+        <Button variant="ghost" size="icon-sm" aria-label="Not helpful" aria-pressed={rated === false} disabled={pending} focusableWhenDisabled onClick={() => rate(false)}>
+          <ThumbsDownIcon className={cn(rated === false && "fill-current")} />
+        </Button>
+        <span role="status">{rated !== null && "Thanks for letting us know."}</span>
+      </div>
     </div>
   );
 }

@@ -1625,6 +1625,9 @@ model ConversationMessage {
   /// A user's message the conversation was about to go to a person for: when that handover ran (its workflows, then the
   /// team or not), so it never runs for the message twice. Null until then, and where nothing handed it over.
   handedOverAt       DateTime?
+  /// The AI's answer in a conversation (server/ai-turn.ts): `{ questionId, text, sources: [{ slug, title, url }] }`, its
+  /// `docs_question` (the thumbs) and what the widget shows of it (the body carries the sources as text, for email).
+  aiAnswer           Json?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
