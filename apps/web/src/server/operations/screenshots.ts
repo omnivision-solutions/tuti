@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, dropChangedScreenshotProfile, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -233,6 +233,7 @@ export const updateScreenshotSettings = defineOperation({
       await lockProject(tx, projectId);
       await saveSettings(tx, projectId, input);
     });
+    await dropChangedScreenshotProfile(projectId);
     return settingsView(projectId);
   },
 });

@@ -209,13 +209,14 @@ export async function setConversationPriority(projectSlug: string, conversation:
  * Marks a conversation as spam (with `blockDomain`, its sender's domain too: owners and admins) or not: `notice` is what
  * Not spam leaves in place or undid (conversations.update's), to say with it.
  */
-export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean, blockDomain = false): Promise<FormState & { notice?: string }> {
+export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean, blockDomain = false, removeRule = false): Promise<FormState & { notice?: string }> {
   let notice: string | undefined;
   const result = await asTeam(projectSlug, "Only the project's team can mark spam", async (context) => {
     const updated = await call(updateConversation, context, {
       number: conversationNumber(conversation),
       spam: spam === true,
       ...(spam === true && blockDomain === true && { blockDomain: true }),
+      ...(spam === false && removeRule === true && { removeRule: true }),
     });
     notice = updated.notice;
   });

@@ -630,6 +630,59 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
 });
 
+test("a reader's account in German: its sections, profile, email settings and lists, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // A vote, for the votes list.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/feedback/feature-requests");
+  await reader.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
+  await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible();
+  // Saved (not only shown): still there after a reload.
+  await expect(async () => {
+    await reader.reload();
+    await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+
+  await reader.goto("/de/account");
+  await expect(reader).toHaveTitle(/^Konto/);
+  await expect(reader.getByRole("heading", { level: 1, name: "Konto" })).toBeVisible();
+  await expect(reader.getByText(`Angemeldet als ${reader.email}`)).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Kontobereiche" }).last().getByRole("link")).toHaveText(["Profil", "E-Mails", "Deine Beiträge 0", "Deine Stimmen 1"]);
+  // Profile.
+  const profile = reader.getByRole("region", { name: "Profil" });
+  await expect(profile).toContainText("Wird bei deinen Beiträgen und Kommentaren angezeigt.");
+  await expect(profile.getByRole("link", { name: "Ändere deinen Namen in deinem Tuti-Konto" })).toBeVisible();
+  await expect(profile.getByRole("button", { name: "Abmelden" })).toBeVisible();
+  // Email settings: their switches, and one saved.
+  const emails = reader.getByRole("region", { name: "E-Mails" });
+  await expect(emails).toContainText("Worüber Acme dir E-Mails schickt.");
+  await expect(emails.getByRole("switch", { name: "Meine Beiträge" })).toBeVisible();
+  await expect(emails.getByRole("switch", { name: "Beiträge, für die ich gestimmt habe oder denen ich folge" })).toBeVisible();
+  await emails.getByRole("switch", { name: "Keine E-Mails von Acme" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "E-Mail-Einstellungen gespeichert" })).toBeVisible();
+  // The lists: none posted yet, and the vote's count read out in German.
+  const posts = reader.getByRole("region", { name: "Deine Beiträge" });
+  await expect(posts).toContainText("Du hast hier noch nichts gepostet.");
+  await expect(posts.getByRole("link", { name: "Ideen ansehen" })).toBeVisible();
+  await expect(reader.getByRole("region", { name: "Deine Stimmen" }).getByText("2 Stimmen")).toBeAttached();
+  await checkpoint(reader, "account-in-german", { fullPage: false });
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/de/account");
+  await expect(reader.getByRole("heading", { level: 1, name: "Konto" })).toBeVisible();
+  await checkpoint(reader, "account-in-german-phone", { fullPage: false });
+});
+
 test("the docs in German: tabs' and collections' names translated on the home, a collection's page and an article's, marked as German", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

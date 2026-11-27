@@ -4,14 +4,14 @@ import { AI_ROLES, type Ai, type AiRole, type AiUsage, creditsEnabled, creditsPe
 import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } from "./credits";
 
 /**
- * The AI for a piece of work in `projectId`, by the role it's done in: the model its level gives that role (roleModel), and a meter for its requests, recorded as the role's feature. With credits on, it throws OutOfCredits once the balance is 0 or
+ * The AI for a piece of work in `projectId`, by the role it's done in: the model its level gives that role (roleModel), and a meter for its requests, recorded as the role's feature (or `feature`: work done with another feature's model, as help center edits with the changelog's). With credits on, it throws OutOfCredits once the balance is 0 or
  * below: checked here, once per piece of work, so what already started finishes (and a balance can end
  * a little below 0, which the next credits cover first).
  */
-export async function aiFor(projectId: string, role: AiRole): Promise<Ai> {
+export async function aiFor(projectId: string, role: AiRole, feature: UsageFeature = AI_ROLES[role].feature): Promise<Ai> {
   await refuseIfPaused(projectId);
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { plan: true, aiModels: true, aiLevels: true } });
-  return { model: roleModel(project ?? { plan: null, aiModels: {}, aiLevels: {} }, role), meter: meter(projectId, AI_ROLES[role].feature) };
+  return { model: roleModel(project ?? { plan: null, aiModels: {}, aiLevels: {} }, role), meter: meter(projectId, feature) };
 }
 
 /** Throws OutOfCredits once the project's balance is 0 or below (credits on). */

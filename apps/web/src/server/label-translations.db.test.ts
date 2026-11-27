@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { forgetLabels, handlers, labelIn, labelSource, languageTranslationsDone } from "@tuti/jobs";
+import { forgetLabels, handlers, labelIn, labelSource, languageTranslationsDone, lockProject } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -316,4 +316,125 @@ test("the retry job's queuing failing after its claim: the language is tried aga
   model.reply(labelsReply({ "0.n": "Importiert" }));
   expect(await retry()).toMatchObject({ labels: 1 });
   expect(labelIn(await collection("imported"), "de")?.name).toBe("Importiert");
+});
+
+test("collections made one after another while a labels job translates: the next run waits for it, so each label is sent once", async () => {
+  await german();
+  // Setup is made while Billing's translation is on its way: its run goes after, with Setup alone.
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), () => call(createCollection, as(), { name: "Setup", description: "" }));
+  model.reply(labelsReply({ "0.n": "Einrichtung" }));
+  await settled(call(createCollection, as(), { name: "Billing", description: "" }));
+  const sent = model.requests.map((request) => String(request.messages.at(-1)!.content));
+  expect(sent.filter((text) => text.includes('"Billing"'))).toHaveLength(1);
+  expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung");
+  expect(labelIn(await collection("setup"), "de")?.name).toBe("Einrichtung");
+});
+
+test("the retry job's claim while a languages save holds one of the languages: it takes the other, and neither waits on the other", async () => {
+  // French first, so its row comes first in the table (where a plain update would lock it first).
+  await settled(call(updateLanguages, as(), { languages: [{ code: "fr" }] }));
+  await settled(call(updateLanguages, as(), { languages: [{ code: "fr" }, { code: "de" }] }));
+  await prisma.collection.create({ data: { projectId: project.id, slug: "imported", name: "Imported" } });
+  // A save held open as languages.update takes its rows (by code): German's, then (once let go) French's.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let held!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const saving = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${project.id} AND code = 'de' FOR UPDATE`;
+      held();
+      await gate;
+      await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${project.id} AND code = 'fr' FOR UPDATE`;
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  model.otherwise(labelsReply({ "0.n": "Importé" }), '"0.n":"Imported"');
+  let done = false;
+  const retrying = handlers.retryArticleTranslations({}, log).finally(() => (done = true));
+  // Let the save go once the retry is done, or waiting on a lock.
+  for (let i = 0; i < 100 && !done; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (Number(count) > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  const [, result] = await Promise.all([saving, retrying]);
+  await languageTranslationsDone();
+  // French claimed and translated; German, held, is the next run's.
+  expect(result).toMatchObject({ labels: 1 });
+  expect(labelIn(await collection("imported"), "fr")?.name).toBe("Importé");
+});
+
+test("Retranslate while collections are being moved: it waits for the move (the project's lock first), no deadlock", async () => {
+  await german();
+  model.reply(labelsReply({ "0.n": "Abrechnung" }));
+  await settled(call(createCollection, as(), { name: "Billing", description: "" }));
+  model.reply(labelsReply({ "0.n": "Einrichtung" }));
+  await settled(call(createCollection, as(), { name: "Setup", description: "" }));
+  const [billing, setup] = [await collection("billing"), await collection("setup")];
+  // A move held open as collections.reorder makes it: the project's lock, then Setup's row, then (once let go) Billing's.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let held!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const moving = prisma.$transaction(
+    async (tx) => {
+      await lockProject(tx, project.id);
+      await tx.$queryRaw`SELECT 1 FROM collection WHERE id = ${setup.id} FOR UPDATE`;
+      held();
+      await gate;
+      await tx.$queryRaw`SELECT 1 FROM collection WHERE id = ${billing.id} FOR UPDATE`;
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  model.otherwise(labelsReply({ "0.n": "Abrechnung (neu)", "1.n": "Einrichtung (neu)" }), '"0.n":"Billing"');
+  let done = false;
+  const retranslating = call(retranslateLanguage, as(), { code: "de" }).finally(() => (done = true));
+  for (let i = 0; i < 100 && !done; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (Number(count) > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  await Promise.all([moving, retranslating]);
+  await languageTranslationsDone();
+  expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung (neu)");
+});
+
+test("Retranslate as the language is being removed: it waits for the removal, then says the language is gone, queuing nothing", async () => {
+  await german();
+  // A removal held open as languages.update makes it: the project's lock, the language's row deleted.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let held!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const removing = prisma.$transaction(
+    async (tx) => {
+      await lockProject(tx, project.id);
+      await tx.projectLanguage.deleteMany({ where: { projectId: project.id, code: "de" } });
+      held();
+      await gate;
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  let done = false;
+  const retranslating = call(retranslateLanguage, as(), { code: "de" }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  void retranslating.finally(() => (done = true));
+  for (let i = 0; i < 100 && !done; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (Number(count) > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  await removing;
+  expect(await retranslating).toMatchObject({ status: 404 });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(0);
 });
