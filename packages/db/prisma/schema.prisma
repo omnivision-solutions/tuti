@@ -1213,6 +1213,11 @@ model Conversation {
   /// set in the transaction that started it, cleared when it's done. The inbox-due job runs what's still here at this
   /// time (a deploy, a crash). Empty on every conversation from before, so none of those is ever picked up.
   pathDueAt     DateTime?
+  /// Held while the spam filter's models check it (no free check decided): `spam` too, so every view, count and notice
+  /// leaves it out, and out of the Spam view as well. Cleared by the verdict, Not spam, or the inbox-due job after 2
+  /// minutes (it fails open). A teammate's Mark as spam during the hold keeps it (`spamMarkedAt` then says it's decided,
+  /// and in Spam): nobody was ever told of it, so a later Not spam tells of it as a new conversation.
+  spamHeldAt    DateTime?
   /// Who has it. The AI's are out of the team's views, counts, emails and pushes, in "With AI"; a teammate's reply (not a
   /// note) or Take over makes it the team's, Hand back to the AI the AI's. Closing and reopening leave it.
   handledBy     ConversationOwner  @default(TEAM)
@@ -1260,6 +1265,8 @@ model Conversation {
   @@index([projectId, email])
   @@index([snoozedUntil])
   @@index([pathDueAt])
+  /// Holds the inbox-due job still has to settle: not one a teammate marked as spam, which keeps `spamHeldAt` for good.
+  @@index([spamHeldAt], where: raw("\"spamHeldAt\" IS NOT NULL AND (\"spamMarkedAt\" IS NULL OR NOT \"spam\")"))
   /// The conversations a placeholder holds, for its handover.
   @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")

@@ -197,12 +197,10 @@ export const SPAM_CHECKS: Check[] = [
 /**
  * Runs the checks on a new conversation, in the transaction that starts it: the first with an answer decides, and says
  * which (`check`). An allow or trust only spares the checks after it that don't count everyone's (`whoeverSent`). One
- * that none decided, neither filed nor let through, is for the models (`askModels`) where this server has one.
+ * that none decided, neither filed nor let through, is for the models (`askModels`) where this server has one and the
+ * team has written its guidance for them.
  */
 export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boolean; reason: SpamReason | null; check: string | null; phrase?: string; askModels?: boolean }> {
-  // The models are asked only where the team has said what spam is to it ("AI spam check"): without, nothing is.
-  const askModels = async () =>
-    spamModelsOn() && !!(await db.project.findUniqueOrThrow({ where: { id: arrival.projectId }, select: { spamGuidance: true } })).spamGuidance.trim();
   let passedBy: string | null = null;
   for (const { key, whoeverSent, check } of SPAM_CHECKS) {
     if (passedBy && !whoeverSent) {
@@ -219,7 +217,12 @@ export async function spamVerdict(db: Db, arrival: Arrival): Promise<{ spam: boo
       passedBy = key;
     }
   }
-  return { spam: false, reason: null, check: passedBy, ...(!passedBy && (await askModels()) && { askModels: true }) };
+  if (passedBy || !spamModelsOn()) {
+    return { spam: false, reason: null, check: passedBy };
+  }
+  // The AI check runs only for a team that has told it what spam is to them (its guidance, Settings → Spam).
+  const { spamGuidance } = await db.project.findUniqueOrThrow({ where: { id: arrival.projectId }, select: { spamGuidance: true } });
+  return { spam: false, reason: null, check: null, ...(spamGuidance.trim() !== "" && { askModels: true }) };
 }
 
 /**

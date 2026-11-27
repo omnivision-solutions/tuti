@@ -424,7 +424,7 @@ function TryMessage({ projectSlug, supportAddress }: { projectSlug: string; supp
             {pending ? "Trying…" : "Try it"}
           </Button>
           <p role="status" className="min-w-0 text-sm wrap-anywhere">
-            {!pending && state.why && (state.spam ? `This would go to Spam: ${state.why}.` : `This would reach the Inbox: ${state.why}.`)}
+            {!pending && state.why && (state.aiCheck ? "The AI spam check would decide this one." : state.spam ? `This would go to Spam: ${state.why}.` : `This would reach the Inbox: ${state.why}.`)}
           </p>
           {!pending && state.error && <FieldError>{state.error}</FieldError>}
         </SettingBlock>

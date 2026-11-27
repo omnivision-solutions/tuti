@@ -314,19 +314,21 @@ test("trying a message says what the free checks would do with it and which rule
   const rows = () => Promise.all([prisma.conversation.count(), prisma.inboundEmail.count(), prisma.spamSender.count({ where: { projectId } }), prisma.spamRule.count({ where: { projectId } })]);
   const before = await rows();
   const attempt = (sender: string, subject = "", text = "") => call(trySpamFilter, admin, { sender, subject, text });
-  expect(await attempt("E2E-Kim@spam.example")).toEqual({ spam: true, reason: "blocked_address", why: "your rule “sender address is e2e-kim@spam.example”" });
-  expect(await attempt("e2e-lee@m2.junk.example", "Hi")).toEqual({ spam: true, reason: "blocked_domain", why: "your rule “sender domain is junk.example”" });
+  expect(await attempt("E2E-Kim@spam.example")).toEqual({ spam: true, aiCheck: false, reason: "blocked_address", why: "your rule “sender address is e2e-kim@spam.example”" });
+  expect(await attempt("e2e-lee@m2.junk.example", "Hi")).toEqual({ spam: true, aiCheck: false, reason: "blocked_domain", why: "your rule “sender domain is junk.example”" });
   expect(await attempt("e2e-lee@strangers.example", "Hi", "This is the facebook admin.")).toEqual({
     spam: true,
+    aiCheck: false,
     reason: "rule",
     why: "your rule “subject or body contains Facebook Admin”",
   });
-  expect(await attempt("e2e-lee@strangers.example", "Hi", "Can I export to CSV?")).toEqual({ spam: false, reason: null, why: "no check filed it" });
+  expect(await attempt("e2e-lee@strangers.example", "Hi", "Can I export to CSV?")).toEqual({ spam: false, aiCheck: false, reason: null, why: "no check filed it" });
   // The rule whatever the sender: a teammate is filed by an Everyone rule, and trusted past a Strangers-only one.
-  expect(await attempt(owner.email, "facebook admin")).toEqual({ spam: true, reason: "rule", why: "your rule “subject or body contains Facebook Admin”" });
+  expect(await attempt(owner.email, "facebook admin")).toEqual({ spam: true, aiCheck: false, reason: "rule", why: "your rule “subject or body contains Facebook Admin”" });
   await update({ addRules: [rule("subject", "contains", "invoice", "strangers")] });
   expect(await attempt(owner.email, "Your invoice")).toEqual({
     spam: false,
+    aiCheck: false,
     reason: null,
     why: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
   });
@@ -336,7 +338,7 @@ test("trying a message says what the free checks would do with it and which rule
   expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", name: "Big Giveaway" })).toMatchObject({ spam: true, why: "your rule “sender name contains giveaway”" });
   expect(await call(trySpamFilter, admin, { sender: "e2e-win@prizes.example", to: ["Sales@acme.example"] })).toMatchObject({ spam: true, why: "your rule “sent to is sales@acme.example”" });
   await update({ allow: ["e2e-lee@strangers.example"] });
-  expect(await attempt("e2e-lee@strangers.example", "Hello")).toEqual({ spam: false, reason: null, why: "your lists and marks let this sender through" });
+  expect(await attempt("e2e-lee@strangers.example", "Hello")).toEqual({ spam: false, aiCheck: false, reason: null, why: "your lists and marks let this sender through" });
   expect(await rows()).toEqual([before[0], before[1], before[2] + 1, before[3] + 3]);
 });
 
@@ -345,9 +347,9 @@ test("Settings' Try a message takes From as a name and an address, and To as whe
   await update({ addRules: [rule("sender_name", "contains", "giveaway"), rule("sent_to", "is", "sales@acme.example")] });
   actAs(owner);
   const attempt = (from: string, to = "") => trySpam(project.slug, { from, to, subject: "Hi", text: "Hello" });
-  expect(await attempt('"Big Giveaway" <e2e-win@prizes.example>')).toEqual({ spam: true, why: "your rule “sender name contains giveaway”" });
-  expect(await attempt("e2e-win@prizes.example", "Sales@acme.example")).toEqual({ spam: true, why: "your rule “sent to is sales@acme.example”" });
-  expect(await attempt("Kim <e2e-kim@strangers.example>")).toEqual({ spam: false, why: "no check filed it" });
+  expect(await attempt('"Big Giveaway" <e2e-win@prizes.example>')).toEqual({ spam: true, aiCheck: false, why: "your rule “sender name contains giveaway”" });
+  expect(await attempt("e2e-win@prizes.example", "Sales@acme.example")).toEqual({ spam: true, aiCheck: false, why: "your rule “sent to is sales@acme.example”" });
+  expect(await attempt("Kim <e2e-kim@strangers.example>")).toEqual({ spam: false, aiCheck: false, why: "no check filed it" });
   expect(await attempt("Kim <not an address>")).toEqual({ error: "Enter a valid email address" });
 });
 

@@ -108,6 +108,11 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await owner.setViewportSize({ width: 1440, height: 1300 });
   await checkpoint(owner, "spam-settings", { fullPage: false });
   await owner.setViewportSize({ width: 1440, height: 900 });
+  // With the guidance written, a stranger's message no rule decides is the AI check's to judge (not asked here).
+  await attempt.getByLabel("From").fill("e2e-kim@strangers.example");
+  await attempt.getByLabel("Message").fill("Can I export to CSV?");
+  await attempt.getByRole("button", { name: "Try it" }).click();
+  await expect(attempt.getByRole("status")).toHaveText("The AI spam check would decide this one.");
   // On a phone nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -121,8 +126,11 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await receive(address, rawEmail("Kim Lee <e2e-kim@strangers.example>", "A notice", "This is the FACEBOOK ADMIN: your page will be disabled."));
   await receive(address, rawEmail("Big Giveaway Team <e2e-win@prizes.example>", "You won", "Claim your prize."));
   await receive(address, rawEmail("Acme forms <e2e-forms@relay.example>", "Contact form", "Someone wrote: how do I export my data?"));
-  await owner.goto(`/app/${slug}/inbox`);
-  await expectMoreView(owner, "Needs reply 1");
+  // The last is held while the AI check (the guidance is written) judges it, then released: a reload till it's in.
+  await expect(async () => {
+    await owner.goto(`/app/${slug}/inbox`);
+    await expectMoreView(owner, "Needs reply 1");
+  }).toPass({ timeout: 30_000 });
   await (await moreView(owner, "Spam 3")).click();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(3);
@@ -142,8 +150,11 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   // Its row and menu are gone: the keyboard's focus is in the value field.
   await expect(rules.getByLabel("Value")).toBeFocused();
   await receive(address, rawEmail("Lee Roe <e2e-lee@mail.spam-corp.example>", "Followers, again", "Last chance."));
-  await owner.goto(`/app/${slug}/inbox`);
-  await expectMoreView(owner, "Needs reply 2");
+  // Held while the AI check judges it, then released.
+  await expect(async () => {
+    await owner.goto(`/app/${slug}/inbox`);
+    await expectMoreView(owner, "Needs reply 2");
+  }).toPass({ timeout: 30_000 });
   await expectMoreView(owner, "Spam 3");
 
   // An address allowed before (or over the API) is listed while it lets its sender through, so it can be removed.

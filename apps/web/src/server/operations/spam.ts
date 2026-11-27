@@ -229,7 +229,8 @@ export const trySpamFilter = defineOperation({
     to: z.array(emailAddress).max(10).default([]).describe("The addresses it was sent to (its To and Cc)"),
   }),
   output: z.object({
-    spam: z.boolean().describe("Whether it would go to Spam").meta({ examples: [true] }),
+    spam: z.boolean().describe("Whether it would go to Spam; false when the AI spam check would decide (`aiCheck`)").meta({ examples: [true] }),
+    aiCheck: z.boolean().describe("No other check decides it: the AI spam check would, holding it for a few minutes. It isn't asked here").meta({ examples: [false] }),
     reason: z
       .enum(SPAM_REASON_KEYS)
       .nullable()
@@ -243,9 +244,16 @@ export const trySpamFilter = defineOperation({
     const verdict = await spamVerdict(prisma, { projectId, address, userId, proven: true, email: { sender: address, dmarc: "pass" }, subject, text, name: name || null, sentTo: to });
     return {
       spam: verdict.spam,
+      aiCheck: !!verdict.askModels,
       reason: verdict.reason,
       // The rule that matched, where one did, even one a teammate's page names by its address or domain.
-      why: verdict.phrase ? `your rule “${verdict.phrase.charAt(0).toLowerCase()}${verdict.phrase.slice(1)}”` : verdict.spam ? spamWhy(verdict.reason)! : spamPassedWhy(verdict.check),
+      why: verdict.phrase
+        ? `your rule “${verdict.phrase.charAt(0).toLowerCase()}${verdict.phrase.slice(1)}”`
+        : verdict.spam
+          ? spamWhy(verdict.reason)!
+          : verdict.askModels
+            ? "the AI spam check would decide it"
+            : spamPassedWhy(verdict.check),
     };
   },
 });

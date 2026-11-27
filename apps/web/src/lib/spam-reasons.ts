@@ -13,6 +13,7 @@ export const SPAM_REASONS = {
   flood: `more than ${NEW_BY_EMAIL_PER_HOUR} new conversations by email from this address in an hour`,
   phrase: "it has one of your phrases",
   rule: "it matches one of your block rules",
+  model: "the spam filter judged this spam",
 } as const;
 
 export type SpamReason = keyof typeof SPAM_REASONS;
@@ -34,6 +35,7 @@ export const spamWhy = (reason: string | null, phrase?: string | null): string |
 const PASSED: Record<string, string> = {
   decisions: "your lists and marks let this sender through",
   trusted: "this sender is trusted: one of your users, a teammate, or someone your team has replied to",
+  model_unanswered: "the AI check didn't answer, so it wasn't held any longer",
 };
 
 export const spamPassedWhy = (check: string | null): string => PASSED[check ?? ""] ?? "no check filed it";

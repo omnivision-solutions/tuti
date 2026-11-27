@@ -21,7 +21,7 @@ import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { blockDomainOf, recordMark } from "../spam";
-import { CHECKS_DUE_AFTER_MS } from "../spam-models";
+import { SPAM_HOLD_MS } from "../spam-models";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
 
@@ -89,7 +89,7 @@ const conversationFields = {
     .enum(SPAM_REASON_KEYS)
     .nullable()
     .describe(
-      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC), flood (too many new conversations by email from this address in an hour), rule (another of the team's block rules matched) or phrase (one of the team's phrases, before the block rules). Null when it isn't spam, and when a teammate marked it",
+      "Why the spam filter filed it: blocked_address or blocked_domain (on the team's blocked list), marked_sender (an earlier conversation from this sender was marked as spam), dmarc_failed (its email failed DMARC), flood (too many new conversations by email from this address in an hour), rule (another of the team's block rules matched), phrase (one of the team's phrases, before the block rules) or model (the AI check judged it spam). Null when it isn't spam, when a teammate marked it, and while the spam filter is still checking it",
     )
     .meta({ examples: [null] }),
   handledBy: z
@@ -209,7 +209,7 @@ const linkedPostsOutput = z
   .object({ posts: z.array(linkedPostOutput).describe("The posts it's linked to, the first linked first") })
   .describe("The conversation's posts as they are now");
 
-const conversationSelect = {
+export const conversationSelect = {
   id: true,
   number: true,
   subject: true,
@@ -220,6 +220,7 @@ const conversationSelect = {
   emailVerified: true,
   spam: true,
   spamReason: true,
+  spamHeldAt: true,
   handledBy: true,
   priority: true,
   lastMessageAt: true,
@@ -232,7 +233,7 @@ const conversationSelect = {
 
 type ConversationRow = Prisma.ConversationGetPayload<{ select: typeof conversationSelect }>;
 
-const messageSelect = {
+export const messageSelect = {
   id: true,
   author: true,
   channel: true,
@@ -287,7 +288,7 @@ function view(row: ConversationRow, slug: string) {
   };
 }
 
-function messageView(row: MessageRow) {
+export function messageView(row: MessageRow) {
   return {
     id: row.id,
     author: row.author.toLowerCase(),
@@ -353,6 +354,9 @@ export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
 /** The team member writing or looking: the signed-in one, or for an API key, the one who created it. */
 const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
 
+/** Held while the spam filter's AI check runs (W4): `spamHeldAt` with no teammate's mark yet (Mark as spam keeps it, see conversations.update). */
+const stillHeld = { spamHeldAt: { not: null }, spamMarkedAt: null } satisfies Prisma.ConversationWhereInput;
+
 /** The Inbox's views, in its order (what needs an answer first, then the rest), each by its name there. */
 export const INBOX_VIEWS = {
   open: "Needs reply",
@@ -385,7 +389,8 @@ export function viewWhere(view: InboxView, projectId: string, userId: string, si
     // Closed is done with, snoozed or not (a snooze left on one, by a release from before, doesn't hide it).
     snoozed: { spam: false, handledBy: "TEAM", status: { not: "CLOSED" }, snoozedUntil: { gt: now } },
     closed: { spam: false, status: "CLOSED" },
-    spam: { spam: true },
+    // Not one the spam filter is still holding (W4): it's in no view till it's judged.
+    spam: { spam: true, NOT: stillHeld },
   };
   return { AND: [filters[view], visibleConversations(since)], projectId };
 }
@@ -651,7 +656,8 @@ export const listConversations = defineOperation({
     const history = await historySince(projectId);
     const where: Prisma.ConversationWhereInput = {
       projectId,
-      ...(!input.view && { spam: input.spam }),
+      // Spam lists what's filed, not what the spam filter is still holding (in no list till it's judged).
+      ...(!input.view && { spam: input.spam, ...(input.spam && { NOT: stillHeld }) }),
       ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
       ...(input.assignee !== undefined && { assigneeId }),
       ...(input.user && { user: { ssoIdentity: { projectId, externalId: input.user } } }),
@@ -1049,11 +1055,13 @@ export async function startConversation(
         email: start.email?.toLowerCase() ?? null,
         name: start.name ?? null,
         visitorHash: start.visitorHash ?? null,
-        spam: verdict?.spam ?? false,
+        // Left to the models (server/spam-models.ts): held, as spam, so it's in no view and tells nobody, till they've
+        // judged it or the inbox-due job releases it at `pathDueAt` (it fails open).
+        spam: (verdict?.spam || verdict?.askModels) ?? false,
         spamReason: verdict?.spam ? verdict.reason : null,
         spamPhrase: (verdict?.spam && verdict.phrase) || null,
-        // Its model checks are left to do (server/spam-models.ts): picked up here if they haven't run by then.
-        pathDueAt: verdict?.askModels ? new Date(now.getTime() + CHECKS_DUE_AFTER_MS) : null,
+        spamHeldAt: verdict?.askModels ? now : null,
+        pathDueAt: verdict?.askModels ? new Date(now.getTime() + SPAM_HOLD_MS) : null,
         lastMessageAt: now,
         activeAt: now,
         waitingSince: now,
@@ -1074,8 +1082,8 @@ export async function startConversation(
       },
       select: messageSelect,
     });
-    if (verdict) {
-      // The spam filter's verdict, in its Activity (W16).
+    if (verdict && !verdict.askModels) {
+      // The spam filter's verdict, in its Activity (W16); the models' is written with it once they've judged it.
       await logEvents(tx, conversation.id, [{ kind: "spam_filter", actor: "spam_filter", details: { spam: verdict.spam, reason: verdict.spam ? verdict.reason : null, check: verdict.check ?? null, ...(verdict.spam && verdict.phrase && { phrase: verdict.phrase }) } }]);
     }
     let first = message;
@@ -1602,9 +1610,9 @@ export const updateConversation = defineOperation({
       // The row as it is now, held till this commits: what's decided on it isn't undone by a change in between (a close,
       // a reply, spam). NO KEY: a message being added (its foreign key's share lock) doesn't wait for it, nor it for that.
       const [held] = await tx.$queryRaw<
-        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; spamMarkedAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
+        { status: ConversationStatus; spam: boolean; snoozedUntil: Date | null; spamReason: string | null; spamPhrase: string | null; spamMarkedAt: Date | null; spamHeldAt: Date | null; assigneeId: string | null; priority: boolean; handledBy: ConversationOwner }[]
       >`
-        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "spamMarkedAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+        SELECT "status", "spam", "snoozedUntil", "spamReason", "spamPhrase", "spamMarkedAt", "spamHeldAt", "assigneeId", "priority", "handledBy" FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
       // A closed one, or spam, is done with: nothing to snooze (open it first, or in the same change).
       if (input.snoozedUntil && (input.status ?? toApiStatus(held!.status)) === "closed") {
         throw new OperationError(409, "closed", "A closed conversation isn't snoozed");
@@ -1623,7 +1631,8 @@ export const updateConversation = defineOperation({
         }
       }
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
-      const marked = input.spam !== undefined && input.spam !== held!.spam;
+      // One the spam filter is holding (W4) is undecided: either mark decides it, and the models' verdict is dropped.
+      const marked = input.spam !== undefined && (input.spam !== held!.spam || (!!held!.spamHeldAt && !held!.spamMarkedAt));
       // Removing the rule goes with taking it out of Spam: one a teammate took out meanwhile is said, not passed over.
       if (input.removeRule && !marked) {
         throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
@@ -1635,7 +1644,7 @@ export const updateConversation = defineOperation({
         const sent = { ...conversation, projectId };
         if (marked) {
           notice = await recordMark(tx, sent, input.spam!, admin, held!.spamReason, { phrase: held!.spamPhrase, removeRule: input.removeRule });
-          released = !input.spam && !!held!.spamReason;
+          released = !input.spam && (!!held!.spamReason || !!held!.spamHeldAt);
           // Read while it's held: a message waits for this, sees it unmarked and tells of itself. Since the filter filed it
           // (all of it), or since its mark; one marked before marks had a time has none to count from, and nothing is told.
           // ponytail: the first 100.
@@ -1658,6 +1667,10 @@ export const updateConversation = defineOperation({
         if (input.blockDomain) {
           await blockDomainOf(tx, sent, admin);
         }
+        if (marked && held!.spamHeldAt) {
+          // The mark ends the hold: the Reply-To kept for the model (a sign, maybe another of the sender's addresses) goes.
+          await tx.inboundEmail.updateMany({ where: { conversationId: conversation.id, replyTo: { not: null } }, data: { replyTo: null } });
+        }
       }
       // Woken by hand, as when its time passes: open again (unless it's being closed, or is or becomes spam). A snooze
       // whose time has just passed too, before the wake job got to it: clearing it here, it would never open otherwise.
@@ -1674,6 +1687,9 @@ export const updateConversation = defineOperation({
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(marked && { spamMarkedAt: markedAt, spamReason: null }),
+          // Held: decided now, so the models' checks have nothing left to do (W4). Mark as spam keeps `spamHeldAt`, as
+          // nobody was ever told of it: a later Not spam then tells of it as a new conversation.
+          ...(marked && held!.spamHeldAt && { pathDueAt: null, ...(!input.spam && { spamHeldAt: null }) }),
           // Take over, or Hand back to the AI: nothing else about it moves (its status, its assignee, how old it is).
           ...(input.handledBy && { handledBy: input.handledBy.toUpperCase() as ConversationOwner }),
           ...(input.priority !== undefined && { priority: input.priority }),
