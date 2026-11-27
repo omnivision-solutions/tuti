@@ -402,3 +402,13 @@ test("Not spam on one a phrase filed before the rules names the rule the phrase 
   expect((await call(updateConversation, admin, { number: 2, spam: false, removeRule: true })).notice).toBe("Filed by your rule: Subject or body contains bitcoin. It's removed.");
   expect((await call(getSpamSettings, admin, {})).rules.map((r) => r.value)).toEqual(["crypto"]);
 });
+
+test("an owner's Not spam unblocks the address from both its Everyone and its Strangers-only rule", async () => {
+  const { projectId, admin, update, mail, filed } = await setup();
+  await update({ addRules: [rule("sender_address", "is", "e2e-kim@spam.example"), rule("sender_address", "is", "e2e-kim@spam.example", "strangers")] });
+  await mail("e2e-kim@spam.example"); // #1
+  expect((await call(updateConversation, admin, { number: 1, spam: false })).notice).toBe("e2e-kim@spam.example is unblocked.");
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
+  await mail("e2e-kim@spam.example"); // #2
+  expect(await filed()).toEqual(["inbox", "inbox"]);
+});

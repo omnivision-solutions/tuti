@@ -67,7 +67,7 @@ const rulesOf = (db: Db, projectId: string) =>
   db.spamRule.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { id: true, field: true, matcher: true, value: true, appliesTo: true } }) as Promise<Rule[]>;
 
 /**
- * What the team decided of an address: its allowed entry, a "Sender address is" rule on it (`blockedAddress`), and the
+ * What the team decided of an address: its allowed entry, its "Sender address is" rules (`blockedAddresses`), and the
  * most exact entry for its domain (an allowed domain, or a "Sender domain is" rule, its subdomains too), else another
  * rule on the domain that matches it.
  */
@@ -85,7 +85,8 @@ async function listed(db: Db, projectId: string, address: string, rules?: Rule[]
   ].sort((a, b) => b.sender.length - a.sender.length || Number(b.blocked) - Number(a.blocked));
   return {
     allowedAddress: allowed.find((row) => row.sender === address) ?? null,
-    blockedAddress: all.find((rule) => rule.field === "sender_address" && rule.matcher === "is" && matches(rule)) ?? null,
+    // Everyone's and Strangers only's are two rules: unblocking takes both.
+    blockedAddresses: all.filter((rule) => rule.field === "sender_address" && rule.matcher === "is" && matches(rule)),
     domain: entries[0] ?? (domainRules[0] ? { sender: domain, blocked: true as const, rule: domainRules[0] } : null),
   };
 }
@@ -326,8 +327,8 @@ export async function spamChoices(db: Db, conversation: Marked, admin: boolean):
   const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation.spamReason, conversation.spamPhrase) : null;
   return {
     blockDomain: sender && !on?.domain?.blocked ? blockableDomain(sender) : null,
-    unblocks: sender && on?.blockedAddress ? sender : null,
-    removesRule: filedBy && filedBy.id !== on?.blockedAddress?.id ? describeSpamRule(filedBy) : null,
+    unblocks: sender && on?.blockedAddresses.length ? sender : null,
+    removesRule: filedBy && !on?.blockedAddresses.some((rule) => rule.id === filedBy.id) ? describeSpamRule(filedBy) : null,
   };
 }
 
@@ -369,10 +370,10 @@ export async function recordMark(
     const on = spam ? null : await listed(db, conversation.projectId, sender);
     const mark = { sender, blocked: spam, byAdmin: admin, decidedAt: new Date() };
     let kept = true;
-    if (on?.blockedAddress) {
+    if (on?.blockedAddresses.length) {
       if (admin) {
         // Not `delete`: unblocked from another of their conversations at once, it's gone already, which is what was asked.
-        await db.spamRule.deleteMany({ where: { id: on.blockedAddress.id } });
+        await db.spamRule.deleteMany({ where: { id: { in: on.blockedAddresses.map((rule) => rule.id) } } });
       }
       notices.push(admin ? `${sender} is unblocked.` : `${sender} stays blocked: an owner or admin can unblock it.`);
     } else if (on?.domain?.rule && !on.allowedAddress) {
