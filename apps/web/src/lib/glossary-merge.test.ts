@@ -123,3 +123,14 @@ test("a term added both here and there, Never translated on one side only: the o
   ]);
 });
 
+
+test("a Never translated term's old words, still on screen but never saved, aren't edits: a teammate's removal or new words win", () => {
+  // Saved Never translated; the row still holds the words it had before, in case it's turned off again.
+  const hidden = row("Board", { de: "Tafel" }, true);
+  const before: GlossaryTermInput[] = [{ term: "Board", keep: true, translations: {} }];
+  // They removed it: it goes, not back as Removed meanwhile.
+  expect(mergeMeanwhile([hidden], before, [], key)).toEqual([]);
+  // They turned Never translated off and gave it a word: theirs, not the hidden one.
+  const theirs: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Brett" } }];
+  expect(mergeMeanwhile([hidden], before, theirs, key)).toEqual([{ ...row("Board", { de: "Brett" }), meanwhile: "Changed meanwhile" }]);
+});
