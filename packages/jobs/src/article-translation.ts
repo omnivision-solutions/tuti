@@ -792,7 +792,7 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
     // new glossary. Their rows first, as a languages save and a label's write lock them.
     await tx.projectLanguage.updateMany({ where: { projectId, code: { in: codes } }, data: { labelsVersion: { increment: 1 } } });
   }
-  const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true, behind: true } } as const;
+  const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true, memory: true } } as const;
   const sources = [
     ...(await tx.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions } })).map(
       (row) => ({ kind: ARTICLE, row }),
@@ -804,14 +804,15 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
   for (const { kind, row } of sources) {
     const source = translationSource(row);
     const plain = toPlainText(source.doc);
-    for (const version of row.translations) {
+    const touched = row.translations.filter((version) => termsUsed(plain, changed.get(version.language)!).length > 0);
+    if (touched.length === 0) continue;
+    if (!dryRun) {
+      // The source before any of its versions, as the translate job's write locks them, so the two never cross.
+      await (kind.name === "article" ? tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.id} FOR UPDATE` : tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${row.id} FOR UPDATE`);
+    }
+    const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
+    for (const version of touched) {
       const terms = changed.get(version.language)!;
-      if (termsUsed(plain, terms).length === 0) continue;
-      if (version.automatic) {
-        pages.push({ kind, parentId: row.id, language: version.language });
-        if (!dryRun) await safetyNet(kind, { id: version.id }, tx);
-        continue;
-      }
       // The sections that use a changed term, each with the first it uses.
       const reasons = Object.fromEntries(
         sourceSections(source.text).flatMap(({ key, blocks }) => {
@@ -819,14 +820,18 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
           return term ? [[key, glossaryChangedFor(term.term)]] : [];
         }),
       );
-      if (Object.keys(reasons).length === 0) continue;
-      behind++;
-      if (!dryRun) {
-        // As the translate job's write locks them (the source, then the version), so the two never cross.
-        await (kind.name === "article" ? tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.id} FOR UPDATE` : tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${row.id} FOR UPDATE`);
-        const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
-        await tx.$executeRaw`UPDATE ${table} SET behind = behind || ${JSON.stringify(reasons)}::jsonb, "updatedAt" = now() WHERE id = ${version.id}`;
+      if (version.automatic) {
+        pages.push({ kind, parentId: row.id, language: version.language });
+      } else if (Object.keys(reasons).length > 0) {
+        behind++;
       }
+      if (dryRun) continue;
+      // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks
+      // would make a run send it again), so its next translation of them, the job's or Update those sections', is anew.
+      const memory = Object.fromEntries(Object.entries(version.memory as Record<string, string>).filter(([text]) => termsUsed(text, terms).length === 0));
+      await tx.$executeRaw`UPDATE ${table} SET memory = ${JSON.stringify(memory)}::jsonb,
+        behind = behind || ${JSON.stringify(version.automatic ? {} : reasons)}::jsonb, "updatedAt" = now() WHERE id = ${version.id}`;
+      if (version.automatic) await safetyNet(kind, { id: version.id }, tx);
     }
   }
   // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).

@@ -220,3 +220,55 @@ test("Update those sections under way as the glossary changes writes nothing: th
   expect(String(after.body)).not.toContain("[de]");
 });
 
+for (const [change, terms] of [
+  ["removed", []],
+  ["left to the model (its word cleared)", [{ term: "Board", translations: { de: "" } }]],
+] as const) {
+  test(`a term ${change}: the versions that use it translate its segments anew`, async () => {
+    await translated();
+    model.requests.length = 0;
+    model.reply(reply("Boards", BOARDS, "de2", "Pinnwand"));
+    expect(await call(updateGlossary, as(), { terms: [...terms] })).toMatchObject({ retranslating: 1 });
+    await languageTranslationsDone();
+    expect(String(model.requests[0]!.messages.at(-1)!.content)).toContain("Make a Board for ideas.");
+    expect((await version("boards")).body).toContain("Pinnwand");
+  });
+}
+
+test("a glossary save while a translation's write holds an article (German kept up to date, French the team's): no deadlock", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel", fr: "Tableau" } }] });
+  await call(createArticle, as(), { title: "Boards", content: BOARDS });
+  model.reply(reply("Boards", BOARDS, "de", "Tafel"));
+  await call(publishArticle, as(), { slug: "boards" });
+  await languageTranslationsDone();
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "boards" } });
+  await prisma.articleTranslation.create({ data: { articleId: article.id, projectId: project.id, language: "fr", automatic: false, title: "Tableaux", body: "Texte.", publishedAt: new Date() } });
+  const german = await version("boards");
+  // A write held open as the translate job's: the article's row, then (once let go) its German version's.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let held!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const writing = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${article.id} FOR UPDATE`;
+      held();
+      await gate;
+      await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${german.id} FOR UPDATE`;
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  model.otherwise(reply("Boards", BOARDS, "de2", "Brett"), "Make a Board");
+  let done = false;
+  const saving = call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett", fr: "Planche" } }] }).finally(() => (done = true));
+  for (let i = 0; i < 100 && !done; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (Number(count) > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  await Promise.all([writing, saving]);
+});
+
