@@ -10,7 +10,8 @@ import { apiFor, createProject, newPerson, signUp } from "./helpers";
 /** An image added to the text from the / menu, then picked (clicked) and edited with AI (the model fake answers), replacing it. Its media id before and after. */
 async function editImageInText(team: Page, text: ReturnType<Page["getByRole"]>, bar: string, title: string, checkpoint: ReturnType<typeof checkpoints>) {
   await text.click();
-  await team.keyboard.press("End");
+  // The end of the whole text: right after a save the editor may still put the caret at its start.
+  await team.keyboard.press("ControlOrMeta+End");
   await team.keyboard.press("Enter");
   const chooser = team.waitForEvent("filechooser");
   await team.keyboard.type("/image");
