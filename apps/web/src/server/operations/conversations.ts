@@ -1550,7 +1550,7 @@ export const updateConversation = defineOperation({
       removeRule: z
         .boolean()
         .optional()
-        .describe("With `spam: false` on one a block rule filed: also remove that rule, so it files nobody's from now on. Owners and admins only (403); 409 `no_rule` once it's gone")
+        .describe("With `spam: false` on one a block rule filed: also remove that rule, so it files nobody's from now on. Owners and admins only (403); 409 `no_rule` once the rule is gone or the conversation is out of Spam")
         .meta({ examples: [false] }),
       handledBy: z
         .enum(HANDLERS)
@@ -1624,6 +1624,10 @@ export const updateConversation = defineOperation({
       }
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       const marked = input.spam !== undefined && input.spam !== held!.spam;
+      // Removing the rule goes with taking it out of Spam: one a teammate took out meanwhile is said, not passed over.
+      if (input.removeRule && !marked) {
+        throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
+      }
       let markedAt = new Date();
       if (marked || input.blockDomain) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });

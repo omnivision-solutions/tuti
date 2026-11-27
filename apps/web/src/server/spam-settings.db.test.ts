@@ -136,6 +136,14 @@ test("an Everyone rule files anyone, trusted, allowed or marked Not spam; a Stra
   expect((await filed())[6]).toBe("inbox");
   await expect(call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).resolves.toMatchObject({ notice: "Filed by your rule: Subject or body contains crypto. It's removed." });
   await expect(call(updateConversation, admin, { number: 3, spam: false, removeRule: true })).rejects.toThrow(new OperationError(409, "no_rule", "That rule was already removed"));
+  // Two admins at once: the first takes it out of Spam, the second's "and remove the rule" is refused, not passed over.
+  await update({ addRules: [rule("subject_or_body", "contains", "news")] });
+  await mail("e2e-lee@strangers.example", { body: "Crypto news" }); // #8
+  expect((await filed())[7]).toBe("rule");
+  await call(updateConversation, admin, { number: 8, spam: false });
+  await expect(call(updateConversation, admin, { number: 8, spam: false, removeRule: true })).rejects.toThrow(
+    new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam"),
+  );
 });
 
 test("a member's Not spam names the rule and can't remove it; once a teammate's mark replaces the filter's reason, no rule is named or offered", async () => {
@@ -234,6 +242,7 @@ test("spam.update refuses a rule whose value can't match as asked, a free-mail d
   await refused({ addRules: [rule("sender_address", "is", "kim@")] }, "Enter an address, like kim@acme.example");
   await refused({ addRules: [rule("subject", "contains", "!!!")] }, "Add a word");
   await refused({ addRules: [rule("body", "pattern", "*?*")] }, "Add something besides * and ?");
+  await refused({ addRules: [rule("subject", "pattern", "＊")] }, "Add something besides * and ?");
   await refused({ addRules: [rule("subject", "is", "   ")] }, "Enter a value");
   // "@" alone is nothing once a domain's "@" goes, and would match every sender.
   await refused({ addRules: [rule("sender_domain", "contains", "@")] }, "Enter a value");

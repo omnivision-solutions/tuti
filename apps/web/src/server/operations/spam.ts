@@ -67,7 +67,8 @@ function ruleProblem(field: SpamRuleField, matcher: SpamRuleMatcher, value: stri
     return emailAddress.safeParse(value).success ? null : "Enter an address, like kim@acme.example";
   }
   if (matcher === "pattern") {
-    return /[^*?\s]/.test(value) ? null : "Add something besides * and ?";
+    // As it's matched: a fullwidth "＊" is a star there too.
+    return /[^*?\s]/.test(value.normalize("NFKC")) ? null : "Add something besides * and ?";
   }
   if (matcher === "contains" && ["subject", "body", "subject_or_body"].includes(field)) {
     return matchText(value) ? null : "Add a word";

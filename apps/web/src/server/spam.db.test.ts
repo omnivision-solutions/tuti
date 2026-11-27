@@ -596,3 +596,23 @@ test("a mark goes with its conversation, and users.delete takes the marks on the
   expect(await prisma.conversation.count({ where: { projectId } })).toBe(2);
   expect(await senders()).toEqual(["e2e-sam@example.com blocked by an admin, listed", "example.com allowed by an admin, listed"]);
 });
+
+test("users.delete clears a sender rule's words from the conversations it erases, which could name them; a rule on what it says stays", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const { project, projectId, mail, admin } = await setup();
+  await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto", createdAt: new Date(Date.now() - 60_000) } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_address", matcher: "starts_with", value: "e2e-sam" } });
+  const sam = await upsertProjectUser(projectId, "user-42", { name: "Sam", email: "e2e-sam@example.com" });
+  await mail("e2e-sam@example.com"); // #1: the rule on their address
+  expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, sam) }, "About crypto")).toEqual({ number: 2 });
+  const words = async () => (await prisma.conversation.findMany({ where: { projectId }, orderBy: { number: "asc" }, select: { spamReason: true, spamPhrase: true } })).map((c) => [c.spamReason, c.spamPhrase]);
+  expect(await words()).toEqual([
+    ["rule", "Sender address starts with e2e-sam"],
+    ["rule", "Subject or body contains crypto"],
+  ]);
+  await call(deleteUser, admin, { user: "user-42" });
+  expect(await words()).toEqual([
+    ["rule", null],
+    ["rule", "Subject or body contains crypto"],
+  ]);
+});

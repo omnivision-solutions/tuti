@@ -465,6 +465,12 @@ export const deleteUser = defineOperation({
             })
           ).map((conversation) => conversation.id);
           await tx.conversation.updateMany({ where: { id: { in: conversations } }, data: { userId, email: null, name: null, emailVerified: false } });
+          // The words of a sender rule that filed one ("Sender address starts with kim.lee@") name them: gone, the reason's
+          // own words stand in. A rule on what it says is the team's words, and stays.
+          await tx.conversation.updateMany({
+            where: { id: { in: conversations }, OR: ["Sender domain", "Sender address", "Sender name"].map((field) => ({ spamPhrase: { startsWith: `${field} ` } })) },
+            data: { spamPhrase: null },
+          });
           // Whichever address it came from (one users.sync has changed since too). A later email from it then finds none of
         // these by an earlier one (inbound.ts, replies to a signed-out visitor's address) and starts a conversation anew.
           // Its Reply-To too, which may be another of their addresses.
