@@ -1032,3 +1032,17 @@ test("a version kept up to date with an unpublished draft edit English changed i
   const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
   expect((await articleLanguages(project.id, project.slug, article))![1]!.state).toBe("behind");
 });
+
+test("a write that stores nothing on a Manual language's version not started leaves no row: Keep up to date as it is, or sections to update", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  await call(keepTranslationUpToDate, as(), { ...de, keepUpToDate: false, version: blank.version });
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(0);
+  const billing = sourceSections(V1).at(-1)!.key;
+  await expect(call(updateTranslationSections, as(), { ...de, sections: [billing] })).rejects.toMatchObject({ status: 409, code: "nothing_behind" });
+  await languageTranslationsDone();
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(0);
+  expect(model.requests).toHaveLength(0);
+});
