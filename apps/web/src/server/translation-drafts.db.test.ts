@@ -1202,6 +1202,8 @@ test("Show changes finds the English of a section the team took out of its draft
   expect((await readArticleVersion(project.id, de.slug, "de")).behind.ask).toEqual([billing.key]);
   expect(text(billing.before)).toContain("Pay by card");
   expect(text(billing.before)).not.toContain("invoice");
+});
+
 test("a row made by someone else between the write's read and its insert isn't the write's to clean up: a no-op keeps it", async () => {
   await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
   await call(createArticle, as(), { title: "Getting paid", content: V1 });
