@@ -661,11 +661,17 @@ test("signing in, signing up and resetting a password in German, the sign-in lin
   await expect(reader.getByRole("button", { name: "Neuen Link senden" })).toBeVisible();
   await expect(reader.getByRole("button", { name: "Andere E-Mail-Adresse verwenden" })).toBeVisible();
   await expect(reader.getByRole("link", { name: "Zurück zu Acme" })).toBeVisible();
-  // The link's page, at its German address: it asks to confirm.
-  const link = new URL(linkIn(await latestEmailTo(email), portalUrl(slug)));
-  await reader.goto(`/de${link.pathname}${link.search}`);
+  // The link as it was emailed: asked on a German page, it opens at the German address, and its page asks to confirm in German.
+  const link = linkIn(await latestEmailTo(email), portalUrl(slug));
+  expect(new URL(link).pathname).toBe("/de/sign-in/link");
+  await reader.goto(link);
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
   await expect(reader.getByText(`als ${email}`)).toBeVisible();
   await expect(reader.getByRole("button", { name: "Anmelden" })).toBeVisible();
+  // A dead link there goes back to signing in, still in German.
+  await reader.goto("/de/sign-in/link?token=used-up");
+  await expect(reader).toHaveURL(/\/de\/sign-in\?link=failed/);
+  await expect(reader.getByText("Dieser Anmeldelink ist abgelaufen oder wurde schon verwendet. Fordere einen neuen an.")).toBeVisible();
 
   // A sign-in link or sign-in that didn't work says so.
   await reader.goto("/de/sign-in?link=failed");
