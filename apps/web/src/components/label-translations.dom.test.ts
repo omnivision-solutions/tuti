@@ -6,7 +6,7 @@ import { afterEach, expect, test, vi } from "vitest";
 vi.mock("@/server/label-translations", () => ({ saveCollectionTranslation: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) }));
 
-const { CollectionTranslations } = await import("./label-translations");
+const { LabelTranslations } = await import("./label-translations");
 
 /** A collection's settings → Translations: each language's dialog. */
 
@@ -22,7 +22,7 @@ test("opened again, the dialog's Keep up to date is the row's as it is now, not 
   const box = document.body.appendChild(document.createElement("div"));
   const root = createRoot(box);
   roots.push(root);
-  const render = (keepUpToDate: boolean) => act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(keepUpToDate)], ai: true })));
+  const render = (keepUpToDate: boolean) => act(async () => root.render(h(LabelTranslations, { kind: "collection", projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(keepUpToDate)], ai: true })));
   const edit = () => document.querySelector<HTMLButtonElement>('button[aria-label="Edit Deutsch"]')!;
   const keep = () => document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   const cancel = () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent === "Cancel")!;
@@ -41,7 +41,7 @@ test("kept up to date but not made: being translated while AI can make it, else 
   const root = createRoot(box);
   roots.push(root);
   const waiting = { language: "de", native: "Deutsch", name: null, description: null, keepUpToDate: true };
-  const render = (ai: boolean) => act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [waiting], ai })));
+  const render = (ai: boolean) => act(async () => root.render(h(LabelTranslations, { kind: "collection", projectSlug: "acme", slug: "billing", defaultName: "English", translations: [waiting], ai })));
   await render(true);
   expect(box.textContent).toContain("Being translated: readers see the English name");
   // AI off (or a sample collection): nothing will make it.
