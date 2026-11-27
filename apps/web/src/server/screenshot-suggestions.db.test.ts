@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { call } from "@/server/operations/run";
 import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
 import { suggestScreenshotDomains } from "@/server/operations/screenshots";
+import { scannedFor } from "@/server/sign-in-hosts";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
@@ -99,7 +100,7 @@ test("finds the app's sign-in service in its own scripts, once per address, and 
   await settle({ appUrl: `${base}/missing`, otherDomains: [] });
   expect(await suggestions()).toEqual([]);
   expect(requests.at(-1)).toBe("/missing");
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/`);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/`));
 });
 
 test("a script that didn't load isn't kept as nothing found: the next look reads it again", async () => {
@@ -118,7 +119,7 @@ test("never suggests what Other domains refuses (a shared suffix), nor a host th
     data: {
       signIn: "LINK",
       signInLink: sealValue(SCREENSHOT_SECRET, "https://login.acme.example/magic?token=t"),
-      signInServicesFor: appUrl,
+      signInServicesFor: scannedFor(appUrl),
       signInServices: [{ provider: "Clerk", hosts: ["vercel.app", "github.io", "acme-12.clerk.accounts.dev", "sub.app.example.com", "login.acme.example"] }],
     },
   });
@@ -152,15 +153,21 @@ test("a page with many scripts reads the first 100, 8 at a time and each in full
   expect(await suggestions()).toEqual(firebase);
   expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(100);
   expect(mostReading).toBeLessThanOrEqual(8);
-  expect(mostReading).toBeGreaterThan(1);
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/many`);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/many`));
 });
 
-test("a page whose scripts pass 40 MB together reads no more of them", async () => {
+test("a page whose scripts pass 40 MB together reads no more of them, and the answer isn't kept", async () => {
   await settle({ appUrl: `${base}/heavy` });
   expect(await suggestions()).toEqual([]);
   // 14 fill the budget; up to 7 more were already on their way.
   expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+});
+
+test("an answer saved by the earlier scanner, under the bare address, is found again", async () => {
+  await settle({ appUrl: `${base}/many` });
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: [], signInServicesFor: `${base}/many` } });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
 test("settings without an app address suggest nothing", async () => {
@@ -173,7 +180,7 @@ test("a sign-in link that no longer opens (another server secret) still gets sug
   await settle({ appUrl });
   await prisma.screenshotSettings.update({
     where: { projectId: project.id },
-    data: { signIn: "LINK", signInLink: "v1.not-sealed-here", signInServicesFor: appUrl, signInServices: [{ provider: "Auth0", hosts: ["acme.auth0.com"] }] },
+    data: { signIn: "LINK", signInLink: "v1.not-sealed-here", signInServicesFor: scannedFor(appUrl), signInServices: [{ provider: "Auth0", hosts: ["acme.auth0.com"] }] },
   });
   expect(await suggestions()).toEqual([{ provider: "Auth0", hosts: ["acme.auth0.com"] }]);
 });

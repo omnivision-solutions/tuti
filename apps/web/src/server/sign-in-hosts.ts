@@ -207,6 +207,13 @@ export function scriptsOf(page: { url: URL; text: string }): URL[] {
  * scripts it loads from its own site, read within size and time limits; null when the page couldn't be read.
  * `complete` when every script was read too: what's found otherwise may be missing one.
  */
+/**
+ * What a saved answer is kept under (ScreenshotSettings.signInServicesFor): the address and this scanner's version, so
+ * an answer from an earlier one (15 scripts, until 2026-11) is found again, even one saved by the previous release
+ * while a deploy runs both.
+ */
+export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
+
 export async function detectSignInServices(appUrl: string): Promise<{ services: SignInService[]; complete: boolean } | null> {
   const url = new URL(appUrl);
   if (!localTesting()) {
@@ -233,7 +240,8 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
         }
       }),
     );
-    return { services: merge(found), complete };
+    // Which scripts the budget let in depends on which came back first: not kept, as a script that didn't load isn't.
+    return { services: merge(found), complete: complete && left > 0 };
   } catch {
     return null;
   }
