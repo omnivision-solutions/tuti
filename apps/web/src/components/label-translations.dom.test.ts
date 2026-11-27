@@ -71,7 +71,7 @@ test("each row says its language to a screen reader (the code chip is for the ey
   const box = document.body.appendChild(document.createElement("div"));
   const root = createRoot(box);
   roots.push(root);
-  await act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(true)], ai: true })));
+  await act(async () => root.render(h(LabelTranslations, { kind: "collection", projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(true)], ai: true })));
   const named = box.querySelector<HTMLElement>("li .sr-only")!;
   expect(named.textContent).toBe("Deutsch");
   expect(named.closest("[aria-hidden]")).toBeNull();
@@ -81,7 +81,7 @@ test("with AI off (or on a sample collection, where the page passes ai false), t
   const box = document.body.appendChild(document.createElement("div"));
   const root = createRoot(box);
   roots.push(root);
-  await act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(false)], ai: false })));
+  await act(async () => root.render(h(LabelTranslations, { kind: "collection", projectSlug: "acme", slug: "billing", defaultName: "English", translations: [german(false)], ai: false })));
   await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Edit Deutsch"]')!.click());
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   expect(document.querySelector('[role="dialog"] input[type="checkbox"]')).toBeNull();
