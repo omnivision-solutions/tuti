@@ -151,6 +151,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         name: true,
         emailVerified: true,
         snoozedUntil: true,
+        waitingSince: true,
         assigneeId: true,
         userId: true,
         visitorHash: true,
@@ -300,8 +301,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const personName = person.name ?? person.email ?? "Unknown";
   // The AI has it (docs/plan.md, Inbox automation): said under the title, and Take over is where the reply box would be.
   const withAi = conversation.handledBy === "AI";
-  // Hand back to the AI: only on the team's, and only where the AI would answer its user's next message.
-  const canHandBack = !withAi && (await aiWouldAnswer(projectId, conversation));
+  // Hand back to the AI: only on the team's, never while its user waits on the team (their message would go unanswered),
+  // and only where the AI would answer their next one.
+  const canHandBack = !withAi && !conversation.waitingSince && (await aiWouldAnswer(projectId, conversation));
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = said?.author === "TEAM";
   // The column beside the messages, hidden or not as this browser left it (DetailsToggle).

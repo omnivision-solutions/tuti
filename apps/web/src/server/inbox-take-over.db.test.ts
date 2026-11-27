@@ -83,6 +83,23 @@ test("Hand back to the AI makes a conversation the team has the AI's, for any te
   expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Only the project's team can hand conversations back to the AI" });
 });
 
+test("Hand back to the AI is refused while its user waits on the team: their message would go unanswered", async () => {
+  const { owner, project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  // Sam writes again; nobody on the team has answered.
+  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
+  await call(replyToConversation, { actor: key, projectId: project.id }, { number: 1, body: "Any news?", author: { id: sam.id } });
+  expect((await row()).waitingSince).not.toBeNull();
+
+  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Reply first: they're waiting on your team." });
+  expect((await row()).handledBy).toBe("TEAM");
+  // Answered: it can go back.
+  await call(replyToConversation, { actor: key, projectId: project.id }, { number: 1, body: "Looking into it." });
+  expect(await handBackConversation(project.slug, 1)).toEqual({});
+  expect((await row()).handledBy).toBe("AI");
+});
+
 test("Hand back to the AI is offered only where the AI would answer: AI on the server, the project's own published article, and a user its answer can reach", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);

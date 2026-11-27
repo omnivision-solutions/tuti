@@ -200,13 +200,19 @@ export async function takeOverConversation(projectSlug: string, conversation: nu
 
 /**
  * Hand back to the AI (docs/plan.md, Inbox automation, W12): a conversation the team has becomes the AI's, out of the
- * team's views, with nothing else about it moved; the AI answers its user's next message. The page offers it only where
- * the AI would answer (aiWouldAnswer).
+ * team's views, with nothing else about it moved; the AI answers its user's next message. Refused while its user waits on
+ * the team (`waitingSince`): their message would go unanswered, with nobody told. The page offers it only where nobody
+ * waits and the AI would answer (aiWouldAnswer).
  */
 export async function handBackConversation(projectSlug: string, conversation: number): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can hand conversations back to the AI", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "ai" }),
-  );
+  return asTeam(projectSlug, "Only the project's team can hand conversations back to the AI", async (context) => {
+    const number = conversationNumber(conversation);
+    const found = await prisma.conversation.findUnique({ where: { projectId_number: { projectId: context.projectId, number } }, select: { waitingSince: true } });
+    if (found?.waitingSince) {
+      throw new OperationError(409, "waiting", "Reply first: they're waiting on your team.");
+    }
+    return call(updateConversation, context, { number, handledBy: "ai" });
+  });
 }
 
 /** Mark priority, or Remove priority. */
