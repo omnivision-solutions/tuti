@@ -191,11 +191,11 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <h2 className="font-sans text-[1.0625rem] font-semibold break-words">
-                    <span lang={lang}>{collection.name}</span>
+                    <span lang={collection.lang ?? lang}>{collection.name}</span>
                     {collection.locked && <LockedMark />}
                   </h2>
                   {collection.sample && <SampleBadge />}
-                  {collection.description && <p lang={lang} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
+                  {collection.description && <p lang={collection.lang ?? lang} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
                   <div className="mt-auto pt-2">
                     <ArticleCount count={articleCount(collection)} label={t("articleCount", { count: articleCount(collection) })} />
                   </div>
@@ -631,13 +631,14 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
   const named = (collection: DocsTreeCollection) => (
     <>
       <CollectionIcon name={collection.icon} />
-      {locked(collection.name, collection.locked)}
+      {locked(collection.name, collection.locked, collection.lang)}
     </>
   );
-  // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short).
-  const locked = (name: string, isLocked?: boolean) => (
+  // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short); `nameLang`, a
+  // collection's name translated into the page's language.
+  const locked = (name: string, isLocked?: boolean, nameLang?: string) => (
     <>
-      <span lang={lang} className="min-w-0 break-words">
+      <span lang={nameLang ?? lang} className="min-w-0 break-words">
         {name}
       </span>
       {isLocked && <LockedMark />}

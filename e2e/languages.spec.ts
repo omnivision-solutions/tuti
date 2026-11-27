@@ -8,6 +8,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { nextModelReply } from "./model";
 
 test("a reader chooses German in the portal's header and its text follows, on desktop and on phones", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -628,4 +629,35 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await plainApi(`/articles/${intro.slug}/publish`, {});
   await visitor.goto("/de/docs/basics");
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+});
+
+test("the docs home in German: its tabs' and collections' names translated, marked as German", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // German kept up to date: each tab and collection is translated as it's made (the model's answers, each for its own request).
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await nextModelReply(JSON.stringify({ segments: { "0.n": "Handbücher" } }), '"0.n":"Handbooks"');
+  await api("/tabs", { name: "Handbooks" });
+  await nextModelReply(JSON.stringify({ segments: { "0.n": "Rechnungen", "0.d": "Bezahlen und Belege." } }), '"0.n":"Invoicing"');
+  await api("/collections", { name: "Invoicing", description: "Paying and receipts.", tab: "handbooks" });
+  const article = await api("/articles", { title: "Paying an invoice", body: "By card.", collection: "invoicing" });
+  await nextModelReply(JSON.stringify({ segments: { "1": "Eine Rechnung bezahlen", "2": "Mit Karte." } }), "Paying an invoice");
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/docs");
+  const collections = reader.getByRole("list", { name: "Sammlungen" });
+  await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(collections.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  await checkpoint(reader, "docs-home-names-in-german", { fullPage: false });
+  // The sidebar's tree beside an article too.
+  await reader.goto(`/de/docs/${article.slug}`);
+  await expect(reader.getByRole("navigation", { name: "Dokumentation" }).locator("[lang=de]", { hasText: "Rechnungen" })).toBeVisible();
+  // At the default language's address, the team's names.
+  await reader.goto("/docs");
+  await expect(reader.getByRole("list", { name: "Collections" }).getByRole("heading", { name: "Invoicing" })).toBeVisible();
 });
