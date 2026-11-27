@@ -75,6 +75,7 @@ export const jobs = {
     name: "translate-labels",
     input: z.object({ projectId: z.string(), language: z.string() }),
     concurrencyKey: "input.projectId + ':' + input.language",
+    retries: 0,
   },
   /** Translations that couldn't be made (no credits, the provider failing) tried again on their own, backing off up to a day. */
   retryArticleTranslations: {
