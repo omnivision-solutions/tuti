@@ -49,7 +49,8 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
   const [rows, setRows] = useState<Row[]>(() => keyed(terms));
   const [saved, setSaved] = useState(JSON.stringify(terms));
   const [pending, startTransition] = useTransition();
-  const [confirm, setConfirm] = useState<{ retranslating: number; behind: number } | null>(null);
+  // The dialog's counts, and the terms they're for: what Save took when it was pressed (edits after it aren't in it, and stay unsaved).
+  const [confirm, setConfirm] = useState<{ retranslating: number; behind: number; terms: GlossaryTermInput[] } | null>(null);
   const added = useRef(0);
   // The term just added: its field takes focus as it appears.
   const [fresh, setFresh] = useState<string | null>(null);
@@ -83,9 +84,8 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
     setRows((list) => [...list, { key, term: "", keep: false, translations: {} }]);
     setFresh(key);
   };
-  const commit = () =>
+  const commit = (terms: GlossaryTermInput[]) =>
     startTransition(async () => {
-      const terms = toSave();
       const result = await saveGlossary(projectSlug, terms);
       if (result.error) {
         toast.error(result.error);
@@ -101,18 +101,20 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
       document.getElementById(`${unnamed.key}-term`)?.focus();
       return;
     }
+    // The terms as they are now: what the dialog describes, and what's saved (never edits made while it works it out).
+    const terms = toSave();
     startTransition(async () => {
       // What saving would change first: pages that use a changed term are worth asking about (docs/plan.md, "Nothing large without asking").
-      const preview = await saveGlossary(projectSlug, toSave(), true);
+      const preview = await saveGlossary(projectSlug, terms, true);
       if (preview.error) {
         toast.error(preview.error);
         return;
       }
       if ((preview.retranslating ?? 0) + (preview.behind ?? 0) > 0) {
-        setConfirm({ retranslating: preview.retranslating ?? 0, behind: preview.behind ?? 0 });
+        setConfirm({ retranslating: preview.retranslating ?? 0, behind: preview.behind ?? 0, terms });
         return;
       }
-      commit();
+      commit(terms);
     });
   };
   return (
@@ -207,7 +209,7 @@ function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string
           )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <Button disabled={pending} focusableWhenDisabled onClick={commit}>
+            <Button disabled={pending} focusableWhenDisabled onClick={() => confirm && commit(confirm.terms)}>
               {pending ? "Saving…" : "Save"}
             </Button>
           </AlertDialogFooter>

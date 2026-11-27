@@ -181,15 +181,29 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await expect(terms.getByRole("textbox", { name: "Acme in Deutsch" })).toHaveCount(0);
   await checkpoint(owner, "glossary", { fullPage: false });
 
-  // Saving asks first: the German page using Board is the team's, so it gets its sections to update.
+  // Saving asks first: the German page using Board is the team's, so it gets its sections to update. What it asks about is
+  // the terms as Save found them: an edit made while it works that out (its request held here) isn't saved with them.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let posts = 0;
+  await owner.route(`**/app/${slug}/settings/languages/glossary`, async (route) => {
+    if (route.request().method() === "POST" && posts++ === 0) await held;
+    await route.continue();
+  });
   await pane.getByRole("button", { name: "Save changes" }).click();
+  await terms.getByRole("textbox", { name: "Board in Français" }).fill("Planche");
+  release();
   const confirm = owner.getByRole("alertdialog", { name: "Save the glossary?" });
   await expect(confirm).toContainText("To update1 page your team writes");
   await checkpoint(owner, "glossary-confirm", { fullPage: false });
   await confirm.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Saved the glossary")).toBeVisible();
   await expect(confirm).toBeHidden();
-  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await owner.unroute(`**/app/${slug}/settings/languages/glossary`);
+  // Saved as Save found it: French's "Planche" (typed after) isn't, and is still there to save.
+  const saved = (await api("/glossary", undefined, "GET")) as unknown as { terms: { term: string; translations: Record<string, string> }[] };
+  expect(saved.terms.find(({ term }) => term === "Board")?.translations).toEqual({ de: "Brett" });
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeEnabled();
 
   // A change no page uses (French's word for Board: no French page) saves without asking; Enter in a field saves, as Save changes does.
   await terms.getByRole("textbox", { name: "Board in Français" }).fill("Tableau");
