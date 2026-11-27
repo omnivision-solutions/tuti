@@ -196,6 +196,21 @@ test("a remembered translation that breaks a glossary term added since is sent a
   expect(out.memory["Open the board"]).toBe("Öffne das Board");
 });
 
+test("a remembered translation with a glossary term's old word (the term changed since) is sent again", async () => {
+  // A paragraph back in the source after the glossary changed: its remembered translation, made with Tafel, isn't reused.
+  const one: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Make a Board for ideas" }] }] };
+  const asked: string[] = [];
+  const out = await translateDoc(one, {
+    from: "English",
+    to: "German",
+    glossary: [{ term: "Board", translation: "Brett" }],
+    memory: { "Make a Board for ideas": "Erstelle eine Tafel für Ideen" },
+    ask: async (_, user) => (asked.push(user), '{"segments": {"1": "Erstelle ein Brett für Ideen"}}'),
+  });
+  expect(asked).toHaveLength(1);
+  expect(out.memory["Make a Board for ideas"]).toBe("Erstelle ein Brett für Ideen");
+});
+
 test("an image's description translated past the length limit is asked again", () => {
   const { check } = segmentsOf({ type: "doc", content: [{ type: "image", attrs: { mediaId: "m", alt: "A long description", w: 1, h: 1 } }] });
   expect(check("1", "x".repeat(301))).toBe("an image's description must be at most 300 characters");
