@@ -62,31 +62,27 @@ const MAX_HITS = 1_000;
 const BEFORE = 200;
 const AFTER = 600;
 
-const HOST_CHAR = /[a-z0-9.-]/i;
+const isHostChar = (char: string | undefined) => char !== undefined && /[a-z0-9.-]/i.test(char);
 
 /**
- * The text around each of `names` (any case) in `text`, apart; a host cut at a window's edge is left out, so a part
- * of one is never taken for a host.
+ * The text around each of `names` (ASCII, lower case) in `text`, apart; a host cut at a window's edge is left out, so a
+ * part of one is never taken for a host. Found in `text` with only A–Z lowered, so offsets match it and a key in the
+ * window keeps its case.
  */
 function windows(text: string, names: string[]): string {
+  const folded = text.replace(/[A-Z]/g, (char) => char.toLowerCase());
   const parts: string[] = [];
   for (const name of names) {
-    const pattern = new RegExp(name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), "gi");
-    let hits = 0;
-    for (const { index: at } of text.matchAll(pattern)) {
-      if (hits++ >= MAX_HITS) {
-        break;
+    for (let at = folded.indexOf(name), hits = 0; at !== -1 && hits < MAX_HITS; at = folded.indexOf(name, at + name.length), hits++) {
+      let start = Math.max(0, at - BEFORE);
+      let end = Math.min(text.length, at + name.length + AFTER);
+      if (start > 0 && isHostChar(text[start - 1])) {
+        while (start < at && isHostChar(text[start])) start++;
       }
-      const start = Math.max(0, at - BEFORE);
-      const end = Math.min(text.length, at + name.length + AFTER);
-      let part = text.slice(start, end);
-      if (start > 0 && HOST_CHAR.test(text[start - 1]!)) {
-        part = part.replace(/^[a-z0-9.-]*/i, "");
+      if (end < text.length && isHostChar(text[end])) {
+        while (end > at + name.length && isHostChar(text[end - 1])) end--;
       }
-      if (end < text.length && HOST_CHAR.test(text[end]!)) {
-        part = part.replace(/[a-z0-9.-]*$/i, "");
-      }
-      parts.push(part);
+      parts.push(text.slice(start, end));
     }
   }
   return parts.join("\n");
