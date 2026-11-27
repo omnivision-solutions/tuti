@@ -327,6 +327,15 @@ test("past the fetch limits, an answer older than 7 days is still shown, not ref
   expect(await look()).toEqual({ suggestions: old, checking: false });
 });
 
+test("a read ending clears only its own claim, not a later one for the same address", async () => {
+  const appUrl = `${base}/`;
+  await settle({ appUrl });
+  const later = new Date();
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(appUrl), signInScanAt: later } });
+  await scanSignInServices({ projectId: project.id, appUrl, claimedAt: new Date(later.getTime() - 60_000).toISOString() });
+  expect(await saved()).toMatchObject({ signInScanFor: scannedFor(appUrl), signInScanAt: later });
+});
+
 test("a read of an address since changed keeps nothing and leaves the new address's read alone", async () => {
   const now = new Date();
   await settle({ appUrl: `${base}/many` });

@@ -365,17 +365,18 @@ async function startScan(context: { actor: Actor; projectId: string }, appUrl: s
   }
   const key = scannedFor(appUrl);
   // Claimed in one statement, so of looks at once only one starts it; only while the address is still this one.
+  const claimedAt = new Date();
   const { count } = await prisma.screenshotSettings.updateMany({
     where: { projectId, appUrl, OR: [{ signInScanFor: null }, { signInScanFor: { not: key } }, { signInScanAt: null }, { signInScanAt: { lt: new Date(Date.now() - SCAN_STALE_MS) } }] },
-    data: { signInScanFor: key, signInScanAt: new Date() },
+    data: { signInScanFor: key, signInScanAt: claimedAt },
   });
   if (count === 0) {
     return true;
   }
   try {
-    await enqueue("screenshotSignInScan", { projectId, appUrl });
+    await enqueue("screenshotSignInScan", { projectId, appUrl, claimedAt: claimedAt.toISOString() });
   } catch (error) {
-    await prisma.screenshotSettings.updateMany({ where: { projectId, signInScanFor: key }, data: { signInScanFor: null, signInScanAt: null } });
+    await prisma.screenshotSettings.updateMany({ where: { projectId, signInScanFor: key, signInScanAt: claimedAt }, data: { signInScanFor: null, signInScanAt: null } });
     throw error;
   }
   return true;

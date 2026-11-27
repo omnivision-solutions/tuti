@@ -259,7 +259,7 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
  * without a time, so it's shown but read again on the next look, and never in place of a full one; either way the read
  * ends, so the screen stops waiting.
  */
-export async function scanSignInServices({ projectId, appUrl }: JobInput<"screenshotSignInScan">) {
+export async function scanSignInServices({ projectId, appUrl, claimedAt }: JobInput<"screenshotSignInScan">) {
   const key = scannedFor(appUrl);
   try {
     const found = await detectSignInServices(appUrl);
@@ -273,6 +273,7 @@ export async function scanSignInServices({ projectId, appUrl }: JobInput<"screen
     }
     return { read: !!found, complete: !!found?.complete, services: found?.services.length ?? 0 };
   } finally {
-    await prisma.screenshotSettings.updateMany({ where: { projectId, signInScanFor: key }, data: { signInScanFor: null, signInScanAt: null } });
+    // Only its own claim: a later look may have claimed the same address again for the read queued after this one.
+    await prisma.screenshotSettings.updateMany({ where: { projectId, signInScanFor: key, ...(claimedAt && { signInScanAt: new Date(claimedAt) }) }, data: { signInScanFor: null, signInScanAt: null } });
   }
 }

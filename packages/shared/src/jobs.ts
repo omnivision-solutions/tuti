@@ -199,7 +199,9 @@ export const jobs = {
    */
   screenshotSignInScan: {
     name: "screenshot-sign-in-scan",
-    input: z.object({ projectId: z.string(), appUrl: z.string() }),
+    // `claimedAt`: the claim's time (signInScanAt), so the read clears only its own claim, not a later one for the same
+    // address; missing from a read the previous release started.
+    input: z.object({ projectId: z.string(), appUrl: z.string(), claimedAt: z.string().optional() }),
     retries: 0,
     concurrencyKey: "input.projectId",
   },
