@@ -4,9 +4,10 @@ import { ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, use, useEffect, useState } from "react";
 
 import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
-import { inPreview } from "@/components/portal-look";
+import { inPreview, useTeamLanguage } from "@/components/portal-look";
 import { type FromPortal, isToPortal, WIDGET_ROW, WIDGET_TILE, type WidgetLook, widgetOnly, type WidgetPart } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 const WidgetLookContext = createContext<WidgetLook>({ links: [], title: "", greeting: "", hidden: [] });
 
@@ -66,17 +67,28 @@ export function WidgetPart({ part, children }: { part: WidgetPart; children: Rea
 
 /** Home's heading: the team's, or "How can we help?". */
 export function WidgetTitle() {
-  return <p className="font-heading text-2xl font-bold break-words">{useWidgetLook().title || "How can we help?"}</p>;
+  const { title } = useWidgetLook();
+  const t = useTranslations("widget");
+  const team = useTeamLanguage();
+  // The team's own heading is their words (its `lang`); the default, the widget's.
+  return (
+    <p lang={title ? team : undefined} className="font-heading text-2xl font-bold break-words">
+      {title || t("howCanWeHelp")}
+    </p>
+  );
 }
 
 /** Home's quick links (Customize → Widget), each opening in a new tab: rows in Home's last list. */
 export function WidgetQuickLinks() {
   const { links } = useWidgetLook();
+  const t = useTranslations("widget");
+  // The links' names are the team's words.
+  const team = useTeamLanguage();
   if (links.length === 0) {
     return null;
   }
   return (
-    <nav aria-label="Quick links">
+    <nav aria-label={t("quickLinks")}>
       <ul className="flex flex-col divide-y">
         {links.map((link, i) => (
           <li key={i}>
@@ -84,7 +96,9 @@ export function WidgetQuickLinks() {
               <span className={WIDGET_TILE}>
                 <ExternalLinkIcon aria-hidden />
               </span>
-              <span className="min-w-0 flex-1 font-medium">{link.label}</span>
+              <span lang={team} className="min-w-0 flex-1 font-medium">
+                {link.label}
+              </span>
               <ExternalLinkIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </a>
           </li>

@@ -284,13 +284,13 @@ function ThemeSwitch() {
  * "Powered by tuti", linking to tuti.so: under the portal's pages and the widget's tabs (see PortalFooter). The link says
  * where it was (utm_*): the badge sends no referrer, so otherwise every click would read as a direct visit. Never which
  * project: on a self-hosted installation that would tell tuti.so what it runs (docs/self-hosting.md lists what it sends).
- * `children` words it around the logo in the reader's language (the portal's footer); the widget's is English until its text moves (L5).
+ * `children` words it around the logo; by default the page's language's (footer.poweredBy), as the widget's.
  */
 export function PoweredByTuti({
   source,
   className,
   lang,
-  children = (logo) => <>Powered by {logo()}</>,
+  children,
 }: {
   source: "portal" | "widget";
   className?: string;
@@ -303,6 +303,8 @@ export function PoweredByTuti({
       <TutiWordmark className="text-foreground" />
     </>
   );
+  const t = useTranslations("footer");
+  const words = children ?? ((logo: () => React.ReactNode) => t.rich("poweredBy", { logo }));
   const href = `https://tuti.so/?utm_source=${source}&utm_medium=powered_by&utm_campaign=badge`;
   return (
     <a
@@ -313,7 +315,7 @@ export function PoweredByTuti({
       lang={lang}
       className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground", className)}
     >
-      {children(logo)}
+      {words(logo)}
     </a>
   );
 }
