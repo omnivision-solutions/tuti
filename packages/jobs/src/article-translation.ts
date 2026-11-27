@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, keyed, sections, segmentsOf, termMatcher, termsUsed, toPlainText, translateDoc } from "@tuti/content";
+import { type Doc, fromPlainText, keyed, sections, segmentsOf, termMatcher, toPlainText, translateDoc } from "@tuti/content";
 import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, contentHash, embeddingsEnabled, isLanguage, type JobInput, LANGUAGES, log as serverLog } from "@tuti/shared";
 
@@ -467,13 +467,13 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
     return complete({ system, user, timeoutMs: 60_000, ...ai });
   };
   // Remembered translations only from the same setting: one made under the other treats the product's words the other way.
-  // A glossary changed since: none of its terms' segments reused (the check takes a word starting with a term's translation,
-  // so a remembered one with an old, longer word could pass).
-  // Read again now, after the glossary: one the glossary's save cleaned meanwhile is never used with the glossary from before
-  // (a save after this, the write's check refuses).
+  // A glossary change needs nothing here: the save (the only writer of the glossary) cleared the segments using a term it
+  // changed, so the rest are reused, those using unchanged terms too (the check takes a word starting with a term's
+  // translation, so a remembered one with an old, longer word could pass: hence cleared, not left to it).
+  // Read after the glossary: one a save cleaned before that read is never used with that save's glossary (a save after it,
+  // the write's check refuses).
   const [memoryNow] = (await kind.table().findMany({ where: { id: row.id }, select: { memory: true } })).map(({ memory }) => memory);
-  const remembered = !fresh && sameSetting ? ((memoryNow ?? row.memory) as Record<string, string>) : {};
-  const memory = row.glossaryHash === glossary.hash ? remembered : Object.fromEntries(Object.entries(remembered).filter(([text]) => termsUsed(text, glossary.terms).length === 0));
+  const memory = !fresh && sameSetting ? ((memoryNow ?? row.memory) as Record<string, string>) : {};
   const parts = sourceSections(source.text);
   // An article's version the team writes is translated only where it asked: just those sections are sent (no title,
   // description or keywords, which are the team's), and only their problems count.
