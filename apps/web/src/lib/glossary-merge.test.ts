@@ -98,3 +98,17 @@ test("a term a teammate removed, untouched here: it goes (their removal wins), u
   expect(mergeMeanwhile([row("Board", { de: "Planke" }), row("Old", {}, true)], before, theirs, key)).toEqual([row("Board", { de: "Planke" })]);
 });
 
+test("Never translated set on one side only: their every changed word is carried, whichever side set it", () => {
+  const before: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Tafel", fr: "Tableau" } }];
+  // Made Never translated here; they changed German and French: both their words carried (shown under the term).
+  const words: GlossaryTermInput[] = [{ term: "Board", keep: false, translations: { de: "Brett", fr: "Planche" } }];
+  expect(mergeMeanwhile([row("Board", { de: "Tafel", fr: "Tableau" }, true)], before, words, key)).toEqual([
+    { ...row("Board", { de: "Brett", fr: "Planche" }, true), meanwhile: "Changed meanwhile", theirs: { de: "Brett", fr: "Planche" } },
+  ]);
+  // They made it Never translated; German was edited here: every language whose word they dropped says so.
+  const never: GlossaryTermInput[] = [{ term: "Board", keep: true, translations: {} }];
+  expect(mergeMeanwhile([row("Board", { de: "Planke", fr: "Tableau" })], before, never, key)).toEqual([
+    { ...row("Board", { de: "Planke" }), meanwhile: "Changed meanwhile", theirs: { de: NEVER, fr: NEVER } },
+  ]);
+});
+

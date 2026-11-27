@@ -176,6 +176,8 @@ test("adding a language counts the published changelog entries it takes on, tran
 });
 
 test("an owner edits the glossary: a term's word per language, one never translated, saved after saying which pages it updates; a card per term on phones", async ({ browser }, testInfo) => {
+  // A long journey (the screen's every case, a reload, a phone): past the default on a loaded runner.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");

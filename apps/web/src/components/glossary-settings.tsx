@@ -271,6 +271,12 @@ function TermRow({
   onRemove: () => void;
 }) {
   const name = row.term.trim() || "this term";
+  const keptTheirs =
+    row.keep &&
+    languages
+      .filter(({ code }) => row.theirs?.[code] !== undefined)
+      .map(({ code, native }) => `${native} ${row.theirs![code] || "Model decides"}`)
+      .join(", ");
   // Each field's own name: shown above it in a card, the column's on wide screens (only for screen readers there).
   const fieldLabel = cn("text-sm font-medium", columns && "@min-[44rem]/settings:sr-only");
   return (
@@ -292,13 +298,19 @@ function TermRow({
           placeholder="Board"
           // The term the team just asked to add.
           autoFocus={fresh}
-          aria-describedby={row.meanwhile && `${row.key}-meanwhile`}
+          aria-describedby={[row.meanwhile && `${row.key}-meanwhile`, keptTheirs && `${row.key}-theirs`].filter(Boolean).join(" ") || undefined}
           onChange={(event) => onChange({ term: event.target.value })}
         />
         {row.meanwhile && (
           <Badge id={`${row.key}-meanwhile`} variant="highlight" className="self-start">
             {row.meanwhile}
           </Badge>
+        )}
+        {/* Never translated here, so no word fields: a teammate's words, all on one line. */}
+        {keptTheirs && (
+          <p id={`${row.key}-theirs`} className="text-xs text-muted-foreground">
+            Theirs: {keptTheirs}
+          </p>
         )}
       </div>
       {row.keep ? (

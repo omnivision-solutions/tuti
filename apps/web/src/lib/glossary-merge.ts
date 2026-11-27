@@ -56,8 +56,11 @@ export function mergeMeanwhile(rows: MergeRow[], before: GlossaryTermInput[], th
       const translations = Object.fromEntries([...codes].map((code) => [code, word(code)]).filter(([, text]) => text));
       const keep = row.keep === was.keep && ![...codes].some(edited) ? is.keep : row.keep;
       // Changed on both sides, differently: what was typed stays, theirs shown beside it, for the team to choose.
-      const both = [...codes].filter((code) => edited(code) && (is.translations[code] ?? "") !== (was.translations[code] ?? "") && (is.translations[code] ?? "") !== (row.translations[code] ?? "").trim());
-      return [{ ...row, keep, translations, meanwhile: "Changed meanwhile", ...(both.length > 0 && { theirs: Object.fromEntries(both.map((code) => [code, is.keep && !row.keep ? NEVER : (is.translations[code] ?? "")])) }) }];
+      const theirsChanged = (code: string) => (is.translations[code] ?? "") !== (was.translations[code] ?? "");
+      // Never translated differs between here and theirs: their every changed word, else it would go unseen (hidden here, or
+      // replaced by this side's choice); otherwise only the words changed on both sides, differently.
+      const both = [...codes].filter((code) => theirsChanged(code) && (keep !== is.keep || (edited(code) && (is.translations[code] ?? "") !== (row.translations[code] ?? "").trim())));
+      return [{ ...row, keep, translations, meanwhile: "Changed meanwhile", ...(both.length > 0 && { theirs: Object.fromEntries(both.map((code) => [code, is.keep && !keep ? NEVER : (is.translations[code] ?? "")])) }) }];
     }
     return [row];
   });
