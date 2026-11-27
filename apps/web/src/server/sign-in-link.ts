@@ -15,6 +15,7 @@ import type { SignInLinkMetadata } from "@/lib/sign-in-link";
 import { countEmailedLink } from "./email-link-limits";
 import { failedSignInLinkPath, pendingSignInLink } from "./sign-in-link-lookup";
 import { portalLanguage } from "@/server/portal-base";
+import { rememberPageLanguage } from "@/server/portal-language";
 
 const fields = z.object({
   email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")),
@@ -91,11 +92,20 @@ export async function confirmSignInLink(form: FormData): Promise<{ location: str
   // The portal is the one this request came to (the session cookie is set there), never a form field.
   const target = await requestTarget(requestHeaders.get("host"));
   let signedIn = false;
-  if (target.kind === "portal" && (await pendingSignInLink(target.slug, token))) {
+  const pending = target.kind === "portal" ? await pendingSignInLink(target.slug, token) : null;
+  if (pending) {
     try {
       // Better Auth uses the token up (once, if still fresh), makes the account if needed and sets the cookie.
       await auth.api.magicLinkVerify({ query: { token }, headers: requestHeaders });
       signedIn = true;
+      // The link opens at the language address it was asked at: their emails' language, where they have none.
+      const [account, project] = await Promise.all([
+        prisma.user.findFirst({ where: { email: { equals: pending.email, mode: "insensitive" } }, select: { id: true } }),
+        prisma.project.findUnique({ where: { slug: (target as { slug: string }).slug }, select: { id: true } }),
+      ]);
+      if (account && project) {
+        await rememberPageLanguage({ kind: "user", userId: account.id }, account.id, project.id);
+      }
     } catch (error) {
       // Used up or expired since the check (Better Auth's redirect error): the same as any other dead link.
       if (!(error instanceof APIError)) {

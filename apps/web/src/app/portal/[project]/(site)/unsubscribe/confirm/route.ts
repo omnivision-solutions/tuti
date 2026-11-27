@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { portalHref } from "@/server/portal-base";
 import { findOptOut } from "@/server/unsubscribe";
 
 /**
@@ -19,6 +20,7 @@ export async function POST(request: Request, { params }: RouteContext<"/portal/[
   if (form?.get("List-Unsubscribe") === "One-Click") {
     return new NextResponse("Unsubscribed.");
   }
-  // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one).
-  return new NextResponse(null, { status: 303, headers: { location: `/unsubscribe?token=${encodeURIComponent(token)}` } });
+  // Relative, so it stays on the portal's host (the request URL is the rewritten /portal one), with the site's path and the
+  // language's prefix it was asked at, so the page answers in that language (as the changelog's subscription does).
+  return new NextResponse(null, { status: 303, headers: { location: await portalHref(`/unsubscribe?token=${encodeURIComponent(token)}`) } });
 }

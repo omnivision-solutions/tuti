@@ -12,6 +12,7 @@ import { type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { commentShape, findVisiblePost, postNumber, postShape, postSummarySelect, projectPortal, summary } from "./read";
 import { onTeam, signedInAsReader } from "../session";
+import { rememberPageLanguage } from "@/server/portal-language";
 
 /** A comment that isn't (or is no longer) on the post: replied to or liked. */
 export const noSuchComment = () => new OperationError(404, "not_found", "There's no such comment on this post");
@@ -184,6 +185,8 @@ export const createPost = defineOperation({
     }
     const created = summary(post, portal);
     await emitEvent(projectId, "post.created", created);
+    // Its news is emailed to them: in this page's language where they have none (rememberPageLanguage).
+    await rememberPageLanguage(context.actor, userId, projectId);
     return created;
   },
 });
@@ -345,6 +348,8 @@ export const createComment = defineOperation({
       replyTo: comment.parentId,
     };
     const { url, number, title } = summary(post, portal);
+    // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
+    await rememberPageLanguage(context.actor, userId, projectId);
     if (post.sample) {
       return created;
     }

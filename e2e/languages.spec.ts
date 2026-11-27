@@ -549,6 +549,8 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await reader.setViewportSize({ width: 1280, height: 800 });
   await reader.goto("/de/docs");
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  // Its title (what a search result or a tab shows) in German too.
+  await expect(reader).toHaveTitle(/^Dokumentation/);
   await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
   await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).toBeVisible();
   // The default heading is the portal's words: the page's language, no lang of its own.
@@ -577,12 +579,20 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   // The results' page.
   await reader.goto("/de/docs?q=zebra");
   await expect(reader.getByRole("heading", { level: 1, name: "Ergebnisse für „zebra“" })).toBeVisible();
+  await expect(reader).toHaveTitle(/^Ergebnisse für „zebra“ · Dokumentation/);
   await expect(reader.getByText("Keine Artikel zu „zebra“", { exact: true })).toBeVisible();
   await expect(reader.getByRole("link", { name: "Alle Artikel" })).toBeVisible();
 
   // A collection: its articles' list.
   await reader.goto("/de/docs/basics");
   await expect(reader.getByRole("main").getByRole("list", { name: "Artikel" }).getByRole("link")).toHaveCount(2);
+  await expect(reader).toHaveTitle(/^Basics · Dokumentation/);
+  // Its breadcrumb for search engines: German words, German addresses.
+  const breadcrumb = JSON.parse((await reader.locator('script[type="application/ld+json"]').textContent())!) as { itemListElement: { name: string; item: string }[] };
+  expect(breadcrumb.itemListElement.map(({ name, item }) => [name, new URL(item).pathname])).toEqual([
+    ["Dokumentation", "/de/docs"],
+    ["Basics", "/de/docs/basics"],
+  ]);
   // The tree beside it, named in German.
   await expect(reader.getByRole("navigation", { name: "Dokumentation", exact: true }).getByRole("link", { name: /Getting started/ })).toBeVisible();
 
@@ -1096,6 +1106,45 @@ test("searching the docs in German finds the articles translated there by their 
   // An article not translated: found by its English, marked as the team's.
   await reader.goto("/de/docs?q=install");
   await expect(reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Setup" }).locator("[lang=en]")).toHaveText("Setup");
+});
+
+test("a post's news to a reader who chose German: its email in German, and its unsubscribe page and button at the German address, on a phone", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const post = await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // Signed in, they choose German in the header (saved on their account), and vote.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/feedback/feature-requests");
+  await reader.getByRole("button", { name: "Language: English" }).click();
+  await reader.getByRole("menuitemradio", { name: "Deutsch" }).click();
+  await expect(reader).toHaveURL(/\/de\/feedback\/feature-requests$/);
+  await reader.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
+  await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible();
+  await expect(async () => {
+    await reader.reload();
+    await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+
+  // The team starts it: the reader's email is German.
+  await api(`/posts/${post.number}`, { status: "in_progress" }, "PATCH");
+  const email = await latestEmailTo(reader.email, { subject: /Dark mode/ });
+  expect(email.subject).toBe("In Arbeit: Dark mode");
+  expect(email.text).toContain("Das Team hat mit der Umsetzung begonnen.");
+  // Its unsubscribe link opens the page at the German address, in German; its button stays there.
+  const unsubscribe = linkIn(email, `${portalUrl(slug)}/de/unsubscribe?token=`);
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto(unsubscribe);
+  await expect(reader.getByRole("heading", { name: "Keine E-Mails mehr von Acme?" })).toBeVisible();
+  await checkpoint(reader, "unsubscribe-in-german-phone", { fullPage: false });
+  await reader.getByRole("button", { name: "Abbestellen" }).click();
+  await expect(reader).toHaveURL(/\/de\/unsubscribe\?token=/);
+  await expect(reader.getByRole("heading", { name: "Du hast abbestellt" })).toBeVisible();
 });
 
 test("the widget's panel in German at its language's address (/de/widget): its tabs, Home, Feedback and What's new, the team's words in theirs", async ({ browser }, testInfo) => {

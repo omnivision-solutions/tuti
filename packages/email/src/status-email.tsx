@@ -1,17 +1,21 @@
 import { Button } from "@react-email/components";
 
-import { Message, Paragraph, PostCard, STATUS_PILLS } from "./blocks";
+import { inTheirWords, Message, Paragraph, peopleLanguage, PostCard } from "./blocks";
+import { emailTranslator } from "./language";
 import { buttonStyle, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 
 /** The statuses a post's people hear about before it ships (Completed's is the shipped email), each as it reads. */
 const STATUSES = {
-  PLANNED: { is: "is planned", next: "The team plans to build it." },
-  IN_PROGRESS: { is: "is in progress", next: "The team has started building it." },
+  PLANNED: { is: "isPlanned", next: "plannedNext" },
+  IN_PROGRESS: { is: "isInProgress", next: "inProgressNext" },
 } as const;
 
 export type ProgressStatus = keyof typeof STATUSES;
 
-/** `note`: the team's comment posted with the change, quoted under the news. `board`: left out for a Team only board's. */
+/**
+ * `note`: the team's comment posted with the change, quoted under the news. `board`: left out for a Team only board's.
+ * `language`: the reader's (readerEmailLanguage), else English; `teamLanguage`: the project's default, the board's name's.
+ */
 type StatusProps = EmailBrand & {
   status: ProgressStatus;
   postTitle: string;
@@ -20,40 +24,41 @@ type StatusProps = EmailBrand & {
   postUrl: string;
   unsubscribeUrl: string;
   note?: { from: string; text: string };
+  language?: string;
+  teamLanguage?: string;
 };
 
-export function StatusEmail({ projectName, accent, poweredBy, logo, logoText, status, postTitle, board, votes, postUrl, unsubscribeUrl, note }: StatusProps) {
+export function StatusEmail({ projectName, accent, poweredBy, logo, logoText, status, postTitle, board, votes, postUrl, unsubscribeUrl, note, language, teamLanguage }: StatusProps) {
+  const t = emailTranslator(language, "emails");
   const { is, next } = STATUSES[status];
+  const words = peopleLanguage(language, teamLanguage);
   return (
     <Layout
-      preview={`An idea you're following moved to ${STATUS_PILLS[status].label}`}
+      preview={t("statusPreview", { status: emailTranslator(language, "feedback")(`status.${status}`) })}
       project={{ projectName, accent, poweredBy, logo, logoText }}
-      footer={
-        <>
-          You&apos;re getting this because you posted, voted, commented on or subscribed to it.{" "}
-          <FooterLink href={unsubscribeUrl}>Unsubscribe from {projectName}</FooterLink>
-        </>
-      }
+      footer={t.rich("followFooter", { name: projectName, link: (chunks) => <FooterLink href={unsubscribeUrl}>{chunks}</FooterLink> })}
+      language={language}
     >
-      <Eyebrow accent={accent}>Update on an idea you asked for</Eyebrow>
-      <Title>
-        {postTitle} {is}
-      </Title>
-      <PostCard title={postTitle} votes={votes} board={board} status={status} />
-      <Paragraph>{next} We&apos;ll email you again when it ships.</Paragraph>
+      <Eyebrow accent={accent}>{t("statusEyebrow")}</Eyebrow>
+      <Title>{t.rich(is, { title: inTheirWords(postTitle, words) })}</Title>
+      <PostCard title={postTitle} votes={votes} board={board} status={status} language={language} teamLanguage={teamLanguage} />
+      <Paragraph>{t(next)}</Paragraph>
       {note && (
-        <Message name={note.from} team={`${projectName} team`} accent={accent}>
+        <Message name={note.from} team={t("teamOf", { name: projectName })} accent={accent} lang={words}>
           {note.text}
         </Message>
       )}
       <Button href={postUrl} style={buttonStyle(accent)}>
-        See the idea
+        {t("seeIdea")}
       </Button>
     </Layout>
   );
 }
 
 export const statusEmail = (props: StatusProps) => ({
-  subject: `${STATUS_PILLS[props.status].label}: ${props.postTitle}`,
+  subject: emailTranslator(props.language, "emails")("statusSubject", {
+    status: emailTranslator(props.language, "feedback")(`status.${props.status}`),
+    title: props.postTitle,
+  }),
   body: <StatusEmail {...props} />,
 });

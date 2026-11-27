@@ -465,3 +465,25 @@ test("a teammate's comment is tagged as the team's in the email; a reader's isn'
   expect(second!.text).toContain("As a reader.");
   expect(second!.text).not.toContain(`${name} team`);
 });
+
+test("in the author's language while the portal serves it: its words, its status, and its links at that language's address", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const { author, post } = await authorsPost();
+  await prisma.user.update({ where: { id: author.id }, data: { language: "de" } });
+  const [sam, ada, max] = [await verified("Sam Lee"), await verified("Ada Byron"), await verified("Max Muster")];
+  for (const reader of [sam, ada, max]) {
+    await call(createComment, as(reader.id), { number: post.number, body: `From ${reader.id}.` });
+  }
+  await minutesLater();
+  const email = mailbox.emails.find((e) => e.to.includes(author.email) && e.subject.startsWith("Neue Kommentare"))!;
+  expect(email.subject).toBe("Neue Kommentare zu „Dark mode“");
+  expect(email.html).toMatch(/<html[^>]* lang="de"/);
+  expect(email.text).toMatch(/Sam und 2 weitere haben deine Idee kommentiert/i);
+  // The status as the German portal names it, and the post and unsubscribe links at /de.
+  expect(email.text).toContain("Offen");
+  // The comments are their writers' words: marked as the default language's, as the post's title is.
+  expect(email.html).toMatch(new RegExp(`<p lang="en"[^>]*>From ${sam.id}\\.</p>`));
+  expect(email.html).toMatch(/<div lang="en"[^>]*>Dark mode<\/div>/);
+  expect(email.text).toContain(`/de/feedback/feature-requests/dark-mode-${post.number}`);
+  expect(email.text).toContain("/de/unsubscribe?token=");
+});

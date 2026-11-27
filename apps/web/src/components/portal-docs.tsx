@@ -35,7 +35,7 @@ import { formatDate } from "@/lib/format";
 import { CUSTOMIZE } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
-import { portalArticleJsonLd } from "@/server/portal-metadata";
+import { portalArticleJsonLd, portalBreadcrumbJsonLd } from "@/server/portal-metadata";
 import {
   articleCount,
   articleEnd,
@@ -291,7 +291,7 @@ export async function DocsTabPage({
     case "article":
       return <DocsArticle project={project} slug={landing.slug} article={landing.article} path={path} />;
     case "collection":
-      return <DocsCollectionPage page={landing} />;
+      return <DocsCollectionPage project={project} page={landing} path={path} />;
     case "reference":
       return <ApiReferenceLanding project={project} slug={landing.slug} />;
     case "overview":
@@ -308,13 +308,14 @@ export async function DocsTabPage({
  * An article's or collection's search listing and link card (portalPageMetadata: the caller adds its path). A locked
  * one: its title only, and not for search engines.
  */
-export function docsPageListing(page: Extract<DocsPage, { kind: "article" | "locked" | "collection" }>) {
+/** A docs page's title, description and whether search engines may list it; `docs`: "Documentation" in the page's language. */
+export function docsPageListing(page: Extract<DocsPage, { kind: "article" | "locked" | "collection" }>, docs: string) {
   if (page.kind === "locked") {
-    return { title: `${page.article.title} · Documentation`, noindex: true };
+    return { title: `${page.article.title} · ${docs}`, noindex: true };
   }
   if (page.kind === "collection") {
     const { name, description, locked, sample } = page.collection;
-    return { title: `${name} · Documentation`, description, noindex: locked || sample };
+    return { title: `${name} · ${docs}`, description, noindex: locked || sample };
   }
   const { article } = page;
   return {
@@ -326,17 +327,32 @@ export function docsPageListing(page: Extract<DocsPage, { kind: "article" | "loc
   };
 }
 
-/** A collection's page: its articles, then the collections in it. */
-export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { kind: "collection" }> }) {
-  const at = await portalLinks();
+/**
+ * A collection's page: its articles, then the collections in it. `path`: its own (/docs/<slug>, or its tab's showing it in its
+ * place).
+ */
+export async function DocsCollectionPage({ project, page, path = `/docs/${page.collection.slug}` }: { project: string; page: Extract<DocsPage, { kind: "collection" }>; path?: string }) {
+  const [at, { prefix }] = await Promise.all([portalLinks(), portalLanguage()]);
   const { docs, tab, parent, collection } = page;
   // The level above: the collection it's in, else its tab or all of them.
   const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
   // The team's words (its and its parent's names, its description, its articles): in the default language under another's
   // address (teamLanguage), but names and descriptions translated into the page's (their own `lang`, docs/plan.md L9).
   const lang = await teamLanguage();
+  // For search engines, when it's for them: its breadcrumb as shown, Documentation first, every step (this page too) at its
+  // address in the page's language, as an article's are. A tab showing it in its place is its own page: no step for it.
+  const jsonLd =
+    !collection.locked &&
+    !collection.sample &&
+    (await portalBreadcrumbJsonLd(
+      project,
+      [{ name: (await pageTranslator("header")).t("docs"), path: "/docs" }, { name: up.label, path: up.href }, { name: collection.name, path }]
+        .filter((crumb, i, all) => i === all.length - 1 || ((i === 0 || crumb.path !== "/docs") && crumb.path !== path))
+        .map((crumb) => ({ ...crumb, path: `${prefix}${crumb.path}` })),
+    ));
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
+      {jsonLd}
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
           <Link lang={parent ? (parent.lang ?? lang) : "tab" in up ? (tab?.lang ?? lang) : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
@@ -419,7 +435,7 @@ export async function DocsArticle({
   // How long it takes to read, at about 200 words a minute.
   const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
   // For search engines, when it's for them and every signed-out reader: its breadcrumb as shown, Documentation first.
-  const listing = readable && docsPageListing({ kind: "article", article: readable });
+  const listing = readable && docsPageListing({ kind: "article", article: readable }, crumbs.docs);
   const jsonLd =
     readable &&
     listing &&

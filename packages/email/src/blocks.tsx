@@ -1,8 +1,9 @@
 import { Text } from "@react-email/components";
-import type { CSSProperties, ReactNode } from "react";
+import { createElement, type CSSProperties, type ReactNode } from "react";
 
 import { luminance, readableOn } from "@tuti/shared/colors";
 
+import { emailLanguage, emailTranslator } from "./language";
 import { accentColors, colors } from "./layout";
 
 /** A post's status (PostStatus in @tuti/db; this package doesn't depend on it). */
@@ -42,12 +43,39 @@ export function Paragraph({ children }: { children: ReactNode }) {
   return <Text style={{ fontSize: 15, lineHeight: "24px", color: "#44403c", margin: "0 0 16px" }}>{children}</Text>;
 }
 
+/** The `lang` for the team's and its people's words (the project's default language's) in an email in `language`; none where they're the same. */
+export const peopleLanguage = (language?: string, teamLanguage?: string) => (teamLanguage && teamLanguage !== emailLanguage(language) ? teamLanguage : undefined);
+
+/** People's words (a post's title) inside a sentence in the email's language: their own `lang` (peopleLanguage). */
+export const inTheirWords = (text: string, lang: string | undefined) => (lang ? (createElement("span", { lang }, text) as never as string) : text);
+
 /**
  * The post an email is about, as on the portal: its votes in a box, its board over its title, its status as the
  * portal's pill. What the sender doesn't know is left out.
  */
-export function PostCard({ title, votes, board, status }: { title: string; votes?: number; board?: string; status?: PostStatus }) {
+export function PostCard({
+  title,
+  votes,
+  board,
+  status,
+  language,
+  teamLanguage,
+}: {
+  title: string;
+  votes?: number;
+  board?: string;
+  status?: PostStatus;
+  /** The email's: the status's name and the votes' word in it. */
+  language?: string;
+  /** The project's default language: the board's name is the team's words (its `lang` in another language's email). */
+  teamLanguage?: string;
+}) {
   const pill = status ? STATUS_PILLS[status] : null;
+  // The board's name and the post's title: the team's and its people's words, in the default language (L3), marked where the
+  // email is in another.
+  const words = peopleLanguage(language, teamLanguage);
+  const feedback = emailTranslator(language, "feedback");
+  const voteWord = votes === undefined ? "" : emailTranslator(language, "emails")("voteWord", { count: votes });
   return (
     <table {...table} width="100%" style={{ backgroundColor: SOFT_FILL, borderRadius: 12, borderCollapse: "separate", margin: "16px 0" }}>
       <tbody>
@@ -66,9 +94,9 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
                         &#9650;
                       </span>
                       {/* The box says it's votes to the eye; the label to screen readers, the hidden word to the plain text. */}
-                      <span role="img" aria-label={`${votes} ${votes === 1 ? "vote" : "votes"}`} style={{ display: "block", fontSize: 14, lineHeight: "18px", fontWeight: 700, color: colors.text }}>
+                      <span role="img" aria-label={feedback("votes", { count: votes })} style={{ display: "block", fontSize: 14, lineHeight: "18px", fontWeight: 700, color: colors.text }}>
                         {votes}
-                        <span style={{ display: "none", msoHide: "all" } as CSSProperties}> {votes === 1 ? "vote" : "votes"}</span>
+                        <span style={{ display: "none", msoHide: "all" } as CSSProperties}> {voteWord}</span>
                       </span>
                     </td>
                   </tr>
@@ -77,8 +105,14 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
             </td>
           )}
           <td style={{ padding: 14, verticalAlign: "middle" }}>
-            {board && <div style={{ fontSize: 12, lineHeight: "16px", color: colors.muted }}>{board}</div>}
-            <div style={{ fontSize: 15, lineHeight: "21px", fontWeight: 600, color: colors.text, wordBreak: "break-word" }}>{title}</div>
+            {board && (
+              <div lang={words} style={{ fontSize: 12, lineHeight: "16px", color: colors.muted }}>
+                {board}
+              </div>
+            )}
+            <div lang={words} style={{ fontSize: 15, lineHeight: "21px", fontWeight: 600, color: colors.text, wordBreak: "break-word" }}>
+              {title}
+            </div>
           </td>
           {pill && (
             <td align="right" style={{ padding: "14px 14px 14px 0", verticalAlign: "middle", whiteSpace: "nowrap" }}>
@@ -97,7 +131,7 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
                 }}
               >
                 <span aria-hidden="true" data-skip-in-text="true">&#9679;&nbsp;</span>
-                {pill.label}
+                {feedback(`status.${status!}`)}
               </span>
             </td>
           )}
@@ -111,7 +145,8 @@ export function PostCard({ title, votes, board, status }: { title: string; votes
  * Someone's message: their initial in their avatar colour, their name and, for the team's, "<Project> team" tinted in
  * the accent; then the text in a soft rounded fill.
  */
-export function Message({ name, team, accent, children }: { name: string; team?: string; accent?: string | null; children?: ReactNode }) {
+/** `lang`: the words' language, where the email around them is in another (people's words: the project's default language's). */
+export function Message({ name, team, accent, lang, children }: { name: string; team?: string; accent?: string | null; lang?: string; children?: ReactNode }) {
   // The tag's text judged against its own tint (4.5:1 at its size), not the page.
   const link = accentColors(accent).link;
   const fill = tint(link, 0.1);
@@ -146,7 +181,7 @@ export function Message({ name, team, accent, children }: { name: string; team?:
         </tbody>
       </table>
       {children && (
-        <Text style={{ fontSize: 15, lineHeight: "24px", color: colors.text, whiteSpace: "pre-wrap", backgroundColor: SOFT_FILL, borderRadius: 12, padding: "14px 16px", margin: "0 0 16px" }}>
+        <Text lang={lang} style={{ fontSize: 15, lineHeight: "24px", color: colors.text, whiteSpace: "pre-wrap", backgroundColor: SOFT_FILL, borderRadius: 12, padding: "14px 16px", margin: "0 0 16px" }}>
           {children}
         </Text>
       )}

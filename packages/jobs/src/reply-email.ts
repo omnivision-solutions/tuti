@@ -7,8 +7,8 @@ import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedP
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
-import { portalAddress } from "./portal-address";
-import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
+import { portalAddress, type PortalAddress } from "./portal-address";
+import { postAudience, readerEmailLanguage, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { emailBrand } from "./email-brand";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
@@ -157,14 +157,18 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
 
   const origin = await portalAddress(project.slug);
   const [sender, brand] = await Promise.all([projectSender(projectId), emailBrand(projectId)]);
-  const postUrl = portalPostUrl(origin, post);
+  // Each voter's email in their language (readerEmailLanguage), its links at that language's address (a prefix on the
+  // portal's: still the portal's address).
+  const emailLanguage = await readerEmailLanguage(projectId);
   const doc = (comment.content as Doc | null) ?? undefined;
   const mediaUrls = lastingMediaUrls(doc);
   const text = quotedText(comment);
   let emailed = 0;
   let failed = 0;
   let held = false;
-  for (const { id, address, unsubscribeToken } of people) {
+  for (const { id, address, unsubscribeToken, language: chosen } of people) {
+    const { language, prefix } = emailLanguage(chosen);
+    const base = `${origin}${prefix}` as PortalAddress;
     // Claimed before sending, so a retry or a second run doesn't email them twice.
     const claimedAt = await claim(commentId, id, seenAs(post));
     if (!claimedAt) {
@@ -193,8 +197,10 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           text,
           doc,
           mediaUrls,
-          postUrl,
-          unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
+          postUrl: portalPostUrl(base, post),
+          unsubscribeUrl: `${base}/unsubscribe?token=${token}`,
+          language,
+          teamLanguage: emailLanguage(null).language,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
