@@ -4,7 +4,7 @@ import { aiEnabled, isLanguage, LANGUAGES } from "@tuti/shared";
 import { notFound, redirect } from "next/navigation";
 
 import { CollectionSettingsForm, DeleteCollectionButton } from "@/components/docs";
-import { CollectionTranslations } from "@/components/label-translations";
+import { LabelTranslations } from "@/components/label-translations";
 import { CollectionHeader } from "@/components/docs-article-rows";
 import { SettingRow, SettingsCard } from "@/components/settings-card";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
@@ -73,7 +73,8 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
           level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
         />
         {translations.length > 0 && (
-          <CollectionTranslations
+          <LabelTranslations
+            kind="collection"
             projectSlug={slug}
             slug={collection.slug}
             defaultName={isLanguage(defaultLanguage) ? LANGUAGES[defaultLanguage].name : defaultLanguage}

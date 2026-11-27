@@ -662,6 +662,7 @@ const matrix: Matrix = {
       allowed: "MEMBER",
       call: (slug) => labelTranslations.saveCollectionTranslation(slug, "guides", "de", { keepUpToDate: false, name: "Anleitungen", description: "" }),
     },
+    saveTabTranslation: { allowed: "MEMBER", call: (slug) => labelTranslations.saveTabTranslation(slug, "docs", "de", { keepUpToDate: false, name: "Dokumentation" }) },
   },
   glossary: {
     saveGlossary: { allowed: "ADMIN", call: (slug) => glossary.saveGlossary(slug, [{ term: "Acme", keep: true, translations: {} }]) },
