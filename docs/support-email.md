@@ -54,8 +54,8 @@ first), with these limits, so two machines never answer each other and nobody ge
   over** can't keep it, and the conversation goes to the team for the reason "too many automated replies",
   so an auto-responder that gets past the checks above is answered a few times at most.
 - **One set reply per conversation**: a workflow's set reply is sent once, whatever triggers it again.
-- The answer **Ask a person** copies into a new conversation is the reader's own, already seen, and is
-  never emailed.
+- The AI's answer that **Ask a person** copies into a new conversation was already seen by the reader,
+  and is never emailed.
 
 ## For servers
 
