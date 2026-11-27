@@ -49,6 +49,7 @@ import * as imports from "./imports";
 import * as inbox from "./inbox";
 import { getMembership } from "./membership";
 import * as invitations from "./invitations";
+import * as glossary from "./glossary";
 import * as languages from "./languages";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
@@ -111,6 +112,7 @@ const modules = {
   imports,
   inbox,
   invitations,
+  glossary,
   languages,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
@@ -644,6 +646,9 @@ const matrix: Matrix = {
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
   },
+  glossary: {
+    saveGlossary: { allowed: "ADMIN", call: (slug) => glossary.saveGlossary(slug, [{ term: "Acme", keep: true, translations: {} }]) },
+  },
   languages: {
     // The fixture has German besides English, so the default stays as it is.
     setDefaultLanguage: { allowed: "ADMIN", call: (slug) => languages.setDefaultLanguage(slug, "en") },
@@ -824,6 +829,15 @@ const matrix: Matrix = {
       call: async (slug) => {
         const token = await inboxToken(slug);
         return widgetInbox.widgetSendMessage(slug, token, await startedNumber(slug, token), "More");
+      },
+    },
+    widgetAskPerson: {
+      allowed: "public",
+      // The conversation is the AI's (the matrix's project has articles): handing it over asks for a summary.
+      before: () => model.reply("They need help."),
+      call: async (slug) => {
+        const token = await inboxToken(slug);
+        return widgetInbox.widgetAskPerson(slug, token, await startedNumber(slug, token));
       },
     },
   },

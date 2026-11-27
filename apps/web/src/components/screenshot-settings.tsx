@@ -37,6 +37,13 @@ const WINDOWS = [
 
 /** How often the page reads a running Test again. */
 const REFRESH_MS = 5_000;
+/**
+ * While the worker reads the app for its sign-in services: how often the page asks again, and for how long at most (a
+ * read may wait its turn 2 minutes, then takes 15 seconds; one not done in 3 minutes is taken for lost).
+ */
+const CHECK_EVERY_MS = 2_000;
+// The server's SCAN_STALE_MS, which its POLL_GRACE_MS (how long a lost read still says checking) covers: raise them together.
+const CHECK_FOR_MS = 3 * 60_000;
 
 /**
  * Settings → Screenshots: the team's app (its address, how the agent signs in, what it should know, the window), saved
@@ -80,20 +87,48 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
   // object: a Test's refresh every few seconds makes a new one.
   const looked = JSON.stringify([settings.appUrl, settings.signIn, settings.otherDomains]);
   const loading = Boolean(settings.appUrl) && (readFor?.[0] !== looked || readFor[1] !== saves);
+  // The server is reading the app (in the background): asked again every few seconds, for as long as a read can take.
+  const [checking, setChecking] = useState(false);
+  const waiting = Boolean(settings.appUrl) && checking;
   useEffect(() => {
     if (!settings.appUrl) {
       return;
     }
     let current = true;
-    fetch(`/app/${projectSlug}/settings/screenshots/suggestions`)
-      .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[] }>) : { suggestions: [] }))
-      .then(
-        (result) => current && setSuggestions(result.suggestions),
-        () => current && setSuggestions([]),
-      )
-      .finally(() => current && setReadFor([looked, saves]));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = CHECK_FOR_MS / CHECK_EVERY_MS;
+    // The first look may start a read; the next ones only ask how it went.
+    const ask = (start: boolean) =>
+      fetch(`/app/${projectSlug}/settings/screenshots/suggestions${start ? "" : "?start=false"}`)
+        .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[]; checking: boolean }>) : null))
+        .catch(() => null)
+        .then((answer) => {
+          if (!current) {
+            return;
+          }
+          // A look again that failed (a deploy's restart, a dropped connection) changes nothing shown and asks again;
+          // the first look's failure shows none.
+          if (!answer && !start) {
+            if (polls-- > 0) {
+              timer = setTimeout(() => void ask(false), CHECK_EVERY_MS);
+            }
+            return;
+          }
+          const result = answer ?? { suggestions: [], checking: false };
+          // Not those already added to Other domains and not saved yet (a look again while checking would bring them back).
+          const listed = new Set(otherDomains.current?.value.split(/[\s,]+/).filter(Boolean));
+          setSuggestions(result.suggestions.filter((suggestion) => !suggestion.hosts.every((host) => listed.has(host))));
+          // Still checking once it stops asking (the worker may be busy): said so, never shown as nothing found.
+          setChecking(result.checking);
+          setReadFor([looked, saves]);
+          if (result.checking && polls-- > 0) {
+            timer = setTimeout(() => void ask(false), CHECK_EVERY_MS);
+          }
+        });
+    void ask(true);
     return () => {
       current = false;
+      clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `looked` stands for the settings it reads
   }, [projectSlug, looked, saves]);
@@ -196,7 +231,8 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               aria-describedby="screenshots-other-domains-description"
               placeholder="acme.auth0.com"
             />
-            <div className="contents" aria-busy={loading} data-suggestions>
+            <div className="contents" aria-busy={loading || waiting} data-suggestions>
+              {!loading && waiting && <p className="text-sm text-muted-foreground">Checking how your app signs in…</p>}
               {/* Only the answer for the settings as they are: never another address's while it's read again. */}
               {!loading &&
                 Boolean(settings.appUrl) &&

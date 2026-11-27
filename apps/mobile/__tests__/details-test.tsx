@@ -99,7 +99,9 @@ function serve(person: Person, triage: Triage = OPEN) {
       const body = init.body as Record<string, unknown>;
       const assignee = "assignee" in body ? (TEAM.find((a) => a.email === body.assignee) ?? null) : now.assignee;
       now = { ...now, ...body, assignee: assignee && { name: assignee.name, email: assignee.email } } as Triage;
-      return Promise.resolve(now);
+      // As conversations.update answers: without conversations.get's `handBack`.
+      const { handBack: _handBack, ...answer } = now;
+      return Promise.resolve(answer);
     }
     return new Promise(() => {});
   });
@@ -290,16 +292,88 @@ describe("the details sheet", () => {
     expect(screen.queryByRole("button", { name: /priority/i })).toBeNull();
   });
 
-  it("says With AI as the status of one the AI has, never Needs reply, and offers no way to hand one back", async () => {
-    serve(SAM, { ...OPEN, handledBy: "ai" });
+  it("says With AI as the status of one the AI has, never Needs reply, and offers no hand back on it", async () => {
+    serve(SAM, { ...OPEN, handledBy: "ai", handBack: false });
     await render(<Details />);
     expect(await screen.findByLabelText("Status, With AI")).toBeTruthy();
     expect(screen.queryByLabelText("Status, Needs reply")).toBeNull();
+    expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
 
-    // The team's: as before, and nothing hands it to the AI (nothing answers for it yet).
-    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "team" }));
+    // The team's, where the server doesn't offer it (someone waits, or the AI wouldn't answer), or a server from before
+    // it (no `handBack`): not offered.
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "team", handBack: false }));
     expect(screen.getByLabelText("Status, Needs reply")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "team" }));
+    expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
+  });
+
+  it("hands one back to the AI where the server offers it, asking it to refuse if the user waits; says so to screen readers, whose focus goes to the Status", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    focus.mockClear();
+    serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
+    await render(<Details />);
+
+    await fireEvent.press(await screen.findByRole("button", { name: "Hand back to the AI" }));
+    expect(patches()).toEqual([{ handledBy: "ai", ifNobodyWaits: true }]);
+    expect(getTriage(KEY)?.handledBy).toBe("ai");
+    // The AI's now, and the update's answer doesn't offer it: gone at once.
+    expect(getTriage(KEY)?.handBack).toBeUndefined();
+    expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
+    expect(announce).toHaveBeenLastCalledWith("Handed back to the AI");
+    expect(await screen.findByLabelText("Status, With AI")).toBeTruthy();
+    // Its row went from under the screen reader: its focus is on the Status, which says who has it.
+    const [[row, kind]] = focus.mock.calls.slice(-1) as unknown as [[{ props: { accessibilityLabel: string } }, string]];
+    expect(`${kind}: ${row.props.accessibilityLabel}`).toBe("focus: Status, With AI");
+  });
+
+  it("keeps Hand back offered through another change, whose answer doesn't say", async () => {
+    serve(SAM, { ...OPEN, handledBy: "team", priority: false, handBack: true });
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Mark priority" }));
+    expect(patches()).toEqual([{ priority: true }]);
+    expect(await screen.findByRole("button", { name: "Hand back to the AI" })).toBeTruthy();
+  });
+
+  it("offers no Hand back once it's marked as spam, which the AI never answers", async () => {
+    serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Mark as spam" }));
+    expect(await screen.findByRole("button", { name: "Not spam" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Hand back to the AI" })).toBeNull();
+  });
+
+  it("moves a screen reader to the Status when a fetch shows the AI has it before Hand back's own answer, and only then", async () => {
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
+    const answer = mockApi.getMockImplementation()!;
+    let answerNow!: () => void;
+    mockApi.mockImplementation((path, init) =>
+      init?.method === "PATCH" ? new Promise((resolve) => (answerNow = () => resolve(answer(path, init)))) : answer(path, init),
+    );
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Hand back to the AI" }));
+    focus.mockClear();
+    // The live stream's fetch first: the AI has it.
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "ai" }, triageChanges(KEY)));
+    const said = () => focus.mock.calls.map(([row, kind]) => `${kind}: ${(row as unknown as { props: { accessibilityLabel: string } }).props.accessibilityLabel}`);
+    expect(said()).toEqual(["focus: Status, With AI"]);
+    await act(async () => answerNow());
+    // A later change to the team and back (a teammate on the web) moves nobody's focus.
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "team" }));
+    await act(async () => showTriage(KEY, { ...OPEN, handledBy: "ai" }));
+    expect(said()).toEqual(["focus: Status, With AI"]);
+  });
+
+  it("says why it wasn't handed back, in the server's words, where the user wrote meanwhile", async () => {
+    serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
+    const answer = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path, init) => (init?.method === "PATCH" ? Promise.reject(new Error("Reply first: they're waiting on your team.")) : answer(path, init)));
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Hand back to the AI" }));
+    expect(await screen.findByText("Reply first: they're waiting on your team.")).toBeTruthy();
+    expect(getTriage(KEY)?.handledBy).toBe("team");
   });
 
   it("says why a change didn't happen, in the server's words", async () => {

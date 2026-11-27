@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { prisma } from "@tuti/db";
 import { LANGUAGE_CODES, LANGUAGES, languageLimit, roomierPlan } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -16,7 +17,7 @@ export default async function LanguagesPage(props: PageProps<"/app/[project]/set
   if (!project) {
     notFound();
   }
-  const [saved, pages] = await Promise.all([projectLanguages(project.id), publishedPages(project.id)]);
+  const [saved, pages, glossaryTerms] = await Promise.all([projectLanguages(project.id), publishedPages(project.id), prisma.glossaryTerm.count({ where: { projectId: project.id } })]);
   const limit = languageLimit(project.plan);
   const full = limit !== null && 1 + saved.languages.length >= limit;
   const billingHref = roomierPlan(project.plan, languageLimit) ? `/app/${slug}/settings/billing` : null;
@@ -32,6 +33,7 @@ export default async function LanguagesPage(props: PageProps<"/app/[project]/set
         // Past the limit (after a downgrade) only the oldest within it can be live: Go live on the rest offers the upgrade.
         pastLimit={limit === null ? [] : saved.languages.slice(Math.max(limit - 1, 0)).map(({ code }) => code)}
         goLiveUpgrade={limit === null ? null : { title: languagesFull(project.plan, limit, "make more live"), billingHref, note: null }}
+        glossaryTerms={glossaryTerms}
       />
     </SettingsPane>
   );
