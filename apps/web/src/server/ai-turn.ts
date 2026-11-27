@@ -1,5 +1,5 @@
 import { type ConversationOrigin, type MessageChannel, prisma } from "@tuti/db";
-import { aiFor, aiPaused } from "@tuti/jobs";
+import { aiFor, aiPaused, automatedRepliesEmailed } from "@tuti/jobs";
 import { decide, decisionsAvailable, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
@@ -84,15 +84,26 @@ export async function toAi(projectId: string, conversationId: string, messageId:
   }
   const due = await prisma.$transaction(async (tx) => {
     const [conversation] = await tx.$queryRaw<
-      { spam: boolean; spamHeldAt: Date | null; handledBy: "AI" | "TEAM"; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]
+      {
+        spam: boolean;
+        spamHeldAt: Date | null;
+        handledBy: "AI" | "TEAM";
+        number: number;
+        userId: string | null;
+        visitorHash: string | null;
+        email: string | null;
+        emailVerified: boolean;
+      }[]
     >`
-      SELECT "spam", "spamHeldAt", "handledBy", "number", "userId", "visitorHash", "email" FROM "conversation"
+      SELECT "spam", "spamHeldAt", "handledBy", "number", "userId", "visitorHash", "email", "emailVerified" FROM "conversation"
       WHERE "id" = ${conversationId} AND "projectId" = ${projectId} FOR NO KEY UPDATE`;
     if (!conversation || conversation.spam || conversation.spamHeldAt || (!start && conversation.handledBy !== "AI")) {
       return false;
     }
-    const message = await tx.conversationMessage.findFirst({ where: { id: messageId, conversationId, author: "USER", handedOverAt: null }, select: { id: true } });
-    if (!message) {
+    const message = await tx.conversationMessage.findFirst({ where: { id: messageId, conversationId, author: "USER", handedOverAt: null }, select: { channel: true } });
+    // An email whose sender isn't proven would never get the answer (never an automated reply to mail we can't prove):
+    // the team has it instead.
+    if (!message || (message.channel === "EMAIL" && !automatedRepliesEmailed(conversation))) {
       return false;
     }
     await tx.conversation.update({ where: { id: conversationId }, data: { handledBy: "AI", pathDueAt: new Date(Date.now() + AI_TURN_DUE_MS) } });

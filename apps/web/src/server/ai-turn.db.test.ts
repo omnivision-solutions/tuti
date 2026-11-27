@@ -82,8 +82,8 @@ async function setup({ aiFirst = true } = {}) {
     projectId,
     conversation,
     /** An email from SENDER (DMARC passed) starting a conversation. */
-    mail: async (body = QUESTION) => {
-      expect(await postEmail(rawEmail({ from: SENDER, to, subject: "Exporting", body }), { recipient: to })).toEqual({ status: 200, body: { outcome: "added" } });
+    mail: async (body = QUESTION, auth?: string) => {
+      expect(await postEmail(rawEmail({ from: SENDER, to, subject: "Exporting", body }), { recipient: to, auth })).toEqual({ status: 200, body: { outcome: "added" } });
     },
     /** SENDER's reply by email. */
     reply: async (body: string, number = 1) => {
@@ -320,6 +320,35 @@ test("“AI answers first” off for email: the conversation goes to the team as
   expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
   expect(await handovers()).toEqual(["ai_off"]);
   expect(later).toHaveLength(0);
+});
+
+test("an email whose sender isn't proven (no DMARC record) goes to the team: the AI's answer could never reach them", async () => {
+  const { owner, mail, state, handovers } = await setup();
+  await mail(QUESTION, "spf=pass dkim=none dmarc=none");
+  expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
+  expect(await handovers()).toEqual(["ai_off"]);
+  expect(later).toHaveLength(0);
+  expect(teamEmails(owner.email)).toBe(1);
+});
+
+test("giving a message to the AI failing hands it over, a new conversation's and a reply's, and the team is told", async () => {
+  const { owner, projectId, mail, reply, turn, state, handovers } = await setup();
+  vi.spyOn(prisma.article, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+  await mail();
+  expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
+  expect(await handovers()).toEqual(["ai_off"]);
+  expect(teamEmails(owner.email)).toBe(1);
+
+  await mail("Another question");
+  model.decide({ person: 0.05 }, "Another question");
+  model.reply("They ask another question.", undefined, "askedBefore");
+  await turn(2);
+  // Handed over for no answer; given back to the AI over the API, its next reply fails to reach the AI.
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 2 } }, data: { handledBy: "AI" } });
+  vi.spyOn(prisma.article, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+  await reply("Hello?", 2);
+  expect(await state(2)).toMatchObject({ handledBy: "TEAM", due: false });
+  expect(await handovers()).toEqual(["ai_off", "no_answer", "ai_off"]);
 });
 
 test("past the automated replies' cap the turn hands over without asking anything", async () => {
