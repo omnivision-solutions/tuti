@@ -15,7 +15,7 @@ import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { upsertProjectUser } from "./project-users";
-import { arrivalOf, SPAM_CHECKS, spamChoices, spamVerdict } from "./spam";
+import { arrivalOf, lockSpamRules, SPAM_CHECKS, spamChoices, spamVerdict } from "./spam";
 import { trySpam } from "./spam-settings";
 import type { SpamRuleField, SpamRuleMatcher } from "@/lib/spam-rules";
 import { widgetStartConversation } from "./widget-inbox";
@@ -349,4 +349,39 @@ test("Settings' Try a message takes From as a name and an address, and To as whe
   expect(await attempt("e2e-win@prizes.example", "Sales@acme.example")).toEqual({ spam: true, why: "your rule “sent to is sales@acme.example”" });
   expect(await attempt("Kim <e2e-kim@strangers.example>")).toEqual({ spam: false, why: "no check filed it" });
   expect(await attempt("Kim <not an address>")).toEqual({ error: "Enter a valid email address" });
+});
+
+test("Not spam's removal of the rule waits for the rules' lock, as every change to the rules does", { timeout: 30_000 }, async () => {
+  const { projectId, admin, update, mail, filed } = await setup();
+  await update({ addRules: [rule("subject", "contains", "crypto")] });
+  await mail("e2e-lee@strangers.example", { subject: "Crypto" }); // #1
+  expect(await filed()).toEqual(["rule"]);
+  // Someone else holds the lock (adding a rule in Settings, say).
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const holding = prisma.$transaction(
+    async (tx) => {
+      await lockSpamRules(tx, projectId);
+      locked.resolve();
+      await release.promise;
+    },
+    { timeout: 20_000 },
+  );
+  await locked.promise;
+  const removal = call(updateConversation, admin, { number: 1, spam: false, removeRule: true });
+  // It waits for the lock, in this file's own database (the server is shared).
+  await vi.waitFor(
+    async () => {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%pg_advisory_xact_lock(41%'`;
+      expect(waiting).toBeGreaterThan(0);
+    },
+    { timeout: 10_000, interval: 50 },
+  );
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(1);
+  release.resolve();
+  await holding;
+  expect((await removal).notice).toBe("Filed by your rule: Subject contains crypto. It's removed.");
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
 });
