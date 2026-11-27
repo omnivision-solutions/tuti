@@ -5,7 +5,7 @@ import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useContext, useEffect, useState, useTransition } from "react";
+import { type RefObject, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ChangelogSaveButton, ChangelogSavingContext } from "@/components/changelog";
@@ -154,14 +154,15 @@ export function ChangelogVersionForm({
   // made from this text is refused once the version, its marks or the entry's text changed since (changelog.saveTranslation).
   // The switch goes from the page's latest read, as it changes nothing typed here.
   const [loaded, setLoaded] = useState(view.version);
-  // Typed and not saved yet: a refused toggle doesn't read the page again over it.
-  const [dirty, setDirty] = useState(false);
+  // Typed and not saved yet (the title, or any edit in the text: Enter, paste and drop fire no input event there): a refused
+  // toggle doesn't read the page again over it. A ref, read when the toggle's answer comes (typing goes on meanwhile).
+  const dirty = useRef(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
     if (!result.error) {
       // Its own save is what the next one goes from.
       setLoaded(result.version!);
-      setDirty(false);
+      dirty.current = false;
       toast.success("Saved");
     }
     return result;
@@ -170,14 +171,20 @@ export function ChangelogVersionForm({
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   const line = versionLine(view, defaultName);
+  // On the text alone (the labels, line and errors are the app's English): the default language's while it's still its text.
+  const textLang = view.state === "unwritten" ? languages[0]!.code : view.code;
   const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
-    <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => (event.target as HTMLElement).getAttribute("role") !== "switch" && setDirty(true)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+    <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => {
+        if ((event.target as HTMLElement).getAttribute("role") !== "switch") {
+          dirty.current = true;
+        }
+      }} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
       <input type="hidden" name="version" value={loaded} />
-      <div lang={view.code} className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4">
         {line && (
-          <p className={cn("rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")} lang="en">
+          <p className={cn("rounded-md px-3 py-2 text-sm", attention ? "bg-highlight text-highlight-foreground" : "bg-soft")}>
             {line}
           </p>
         )}
@@ -185,6 +192,7 @@ export function ChangelogVersionForm({
           <input
             name="title"
             aria-label="Title"
+            lang={textLang}
             defaultValue={view.title}
             required
             autoComplete="off"
@@ -194,7 +202,7 @@ export function ChangelogVersionForm({
           />
           {state.error && <FieldError id="version-error">{state.error}</FieldError>}
         </div>
-        <RichEditor bare profile="changelog" name="content" label="What changed" initial={view.content} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
+        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={view.content} onChange={() => (dirty.current = true)} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate
@@ -242,7 +250,7 @@ function KeepUpToDate({
   /** Done: the read it acted on (`version`) and what the version says now, for the form's next save. */
   onSaved: (actedOn: string, version: string) => void;
   /** The form has edits not saved yet: refused as changed, the page isn't read again over them. */
-  dirty: boolean;
+  dirty: RefObject<boolean>;
 }) {
   const [checked, setChecked] = useState(on);
   // What's saved changing (a save turns it off) shows in place: the switch keeps focus, unsaved edits stay.
@@ -261,7 +269,7 @@ function KeepUpToDate({
       const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next, version);
       if (result.changed) {
         setChecked(!next);
-        if (dirty) {
+        if (dirty.current) {
           // Reading the page again would put its text in place of theirs.
           toast.error("It changed meanwhile. Save or copy your edits, then reload.");
         } else {

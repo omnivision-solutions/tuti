@@ -193,3 +193,41 @@ test("a toggle refused as changed with edits typed keeps them: the page isn't re
   expect(title().value).toBe("Korrigiert, nicht gespeichert");
   expect(keep().checked).toBe(true);
 });
+
+test("the version's language is on its title and text only, the default language's while it's still that text; the line and errors stay the app's", async () => {
+  saveChangelogVersion.mockResolvedValue({ error: "It or the entry changed since you opened it" });
+  await form();
+  const text = () => document.querySelector('[role="textbox"][aria-label="What changed"]')!;
+  expect(title().lang).toBe("de");
+  expect(text().getAttribute("lang")).toBe("de");
+  await submit();
+  const error = [...document.querySelectorAll("p, div")].find((each) => each.textContent === "It or the entry changed since you opened it")!;
+  expect(error.closest("[lang]")).toBeNull();
+  expect(document.querySelectorAll("[lang]")).toHaveLength(2);
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.replaceChildren();
+  await form({ state: "unwritten", keepUpToDate: false });
+  expect(title().lang).toBe("en");
+  expect(text().getAttribute("lang")).toBe("en");
+});
+
+test("an edit in the text that fires no input event (Enter, paste, drop) counts as typed: a refused toggle doesn't read the page again over it", async () => {
+  keepChangelogVersionUpToDate.mockResolvedValue({ error: "changed", changed: true });
+  await form({ keepUpToDate: true });
+  const editor = (document.querySelector('[role="textbox"][aria-label="What changed"]') as HTMLElement & { editor: { commands: { insertContent: (text: string) => void } } }).editor;
+  await act(async () => editor.commands.insertContent(" Neu."));
+  await act(async () => keep().click());
+  expect(router.refresh).not.toHaveBeenCalled();
+  expect(toast.error).toHaveBeenCalledWith("It changed meanwhile. Save or copy your edits, then reload.");
+});
+
+test("text typed while the toggle's request is on its way counts: its refusal doesn't read the page again over it", async () => {
+  let answer = (_: unknown) => {};
+  keepChangelogVersionUpToDate.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  await form({ keepUpToDate: true });
+  await act(async () => keep().click());
+  await act(async () => type(title(), "Während der Anfrage getippt"));
+  await act(async () => answer({ error: "changed", changed: true }));
+  expect(router.refresh).not.toHaveBeenCalled();
+  expect(title().value).toBe("Während der Anfrage getippt");
+});

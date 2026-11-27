@@ -174,6 +174,7 @@ export function RichEditor({
   placeholder,
   label,
   labelledBy,
+  lang,
   invalid,
   describedBy,
   hintId,
@@ -195,6 +196,8 @@ export function RichEditor({
   placeholder?: string;
   /** Accessible name, when there's no visible label (otherwise use labelledBy). */
   label?: string;
+  /** The text's language, on the text alone (not the toolbar's or the menus' English). */
+  lang?: string;
   labelledBy?: string;
   invalid?: boolean;
   /** Id of the element with the error text, while `invalid`. */
@@ -503,6 +506,7 @@ export function RichEditor({
         "aria-multiline": "true",
         ...(label && { "aria-label": label }),
         ...(labelledBy && { "aria-labelledby": labelledBy }),
+        ...(lang && { lang }),
         ...aria.current,
         class: cn(
           "rich-text outline-none",
