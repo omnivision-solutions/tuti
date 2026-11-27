@@ -224,3 +224,21 @@ test("a version made from an older English with many close sections can't crowd 
   expect(sent).not.toContain("Alte Preise");
 });
 
+test("more outdated translations than one look at holds, all closer than a current one: the current one is still found and answers", async () => {
+  withAi();
+  model.embeddings.setVector("Wie zahle ich?", along(1));
+  for (let i = 1; i <= 13; i++) {
+    model.embeddings.setVector(articleChunkText(`Alt ${i}`, { heading: "", text: `Alte Preise ${i}.` }, []), along(0.99));
+    const old = await article(`Old ${i}`, `Old prices ${i}.`, { title: `Alt ${i}`, slug: `alt-${i}`, body: `Alte Preise ${i}.`, stale: true });
+    await embedTranslation(old.versionId!, log);
+  }
+  model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Mit Karte zahlen." }, []), along(0.9));
+  const billing = await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  await embedTranslation(billing.versionId!, log);
+  model.reply(JSON.stringify({ answer: "Mit Karte.", sources: ["s1"] }));
+  await answerQuestion(project.id, "asker", "Wie zahle ich?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } });
+  const sent = JSON.stringify(model.requests.at(-1)!.messages);
+  expect(sent).toContain("Mit Karte zahlen.");
+  expect(sent).not.toContain("Alte Preise");
+});
+

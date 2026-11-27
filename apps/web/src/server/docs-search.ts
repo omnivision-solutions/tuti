@@ -353,21 +353,30 @@ export async function answerSections(
 /**
  * The sections of a language's current translations closest to the question's `vector`, as answerSections's: the same
  * articles. Versions made from an older English text are left out before the limit (an article with many close sections
- * would otherwise fill it): the articles with sections close enough first, then only those whose version is current
- * (translatedInto, which works it out from their English), then their sections.
+ * would otherwise fill it): the articles with sections close enough, closest first, then the first `limit` whose version is
+ * current (translatedInto, which works it out from their English), then their sections.
  */
 async function translatedSections(projectId: string, language: string, vector: string, limit: number, reader: Reader): Promise<(AnswerSection & { distance: number })[]> {
   const close = Prisma.sql`c."projectId" = ${projectId} AND c.language = ${language} AND t."publishedAt" IS NOT NULL
     AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
     AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
     AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}`;
+  // Closest first, checked a window at a time until there are as many current articles as sections asked for (more can't
+  // be used), so a big translated help center never has every article's English read for one question.
   const candidates = await prisma.$queryRaw<{ id: string; slug: string }[]>`
-    SELECT DISTINCT a.id, a.slug
+    SELECT a.id, a.slug
     FROM article_translation_chunk c
     JOIN article_translation t ON t.id = c."translationId"
     JOIN article a ON a.id = t."articleId"
-    WHERE ${close}`;
-  const current = [...(await translatedInto(candidates, [language])).keys()];
+    WHERE ${close}
+    GROUP BY a.id, a.slug
+    ORDER BY min(c.embedding <=> ${vector}::vector), a.id`;
+  const current: string[] = [];
+  for (let i = 0; i < candidates.length && current.length < limit; i += limit) {
+    const window = candidates.slice(i, i + limit);
+    const kept = await translatedInto(window, [language]);
+    current.push(...window.filter((candidate) => kept.has(candidate.id)).map((candidate) => candidate.id));
+  }
   if (current.length === 0) {
     return [];
   }
