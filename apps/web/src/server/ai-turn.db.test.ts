@@ -10,7 +10,7 @@ const later = vi.hoisted(() => [] as (() => unknown)[]);
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (task: () => unknown) => void later.push(task) }));
 
 import { AUTOMATED_REPLIES_PER_HOUR } from "@/lib/workflows";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
@@ -318,15 +318,41 @@ test("someone a private portal doesn't let in gets no answer from its docs: hand
   expect(await prisma.docsQuestion.count({ where: { projectId } })).toBe(0);
 });
 
-test("a workflow that keeps it with the AI when the user asks for a person: no handover, and no summary note", async () => {
-  const { admin, mail, turn, state, handovers } = await setup();
+test("a workflow that keeps it with the AI when the user asks for a person: no handover, no summary note, and not counted as passed to the team", async () => {
+  const { admin, projectId, mail, reply, turn, state, handovers } = await setup();
   await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "reply_text", text: "Our team is away; the AI can help." }, { kind: "dont_hand_over" }] });
-  await mail("Can I talk to a human?");
+  await mail();
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  await turn();
+  await reply("Can I talk to a human?");
   model.decide({ person: 0.95, reply: 0.9 }, "talk to a human");
   model.reply("They want a human.", undefined, "askedBefore");
   expect(await turn()).toBe("kept");
   expect(await handovers()).toEqual([]);
-  expect(await state()).toEqual({ handledBy: "AI", due: false, thread: ["USER: Can I talk to a human?", "AI: Our team is away; the AI can help."] });
+  expect(await state()).toEqual({
+    handledBy: "AI",
+    due: false,
+    thread: [`USER: ${QUESTION}`, "AI: Go to Settings → Export.", "USER: Can I talk to a human?", "AI: Our team is away; the AI can help."],
+  });
+  expect(await prisma.docsQuestion.findMany({ where: { projectId }, select: { escalatedAt: true } })).toEqual([{ escalatedAt: null }]);
+});
+
+test("a handover that fails and falls back still counts the AI's conversation as passed to the team", async () => {
+  const { projectId, mail, reply, turn, state, handovers } = await setup();
+  await mail();
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  await turn();
+  await reply("A person please");
+  model.decide({ person: 0.95, reply: 0.9 }, "A person please");
+  model.reply("They want a person.", undefined, "askedBefore");
+  // The handover's own transaction fails: its fallback gives it to the team.
+  failTransaction(new Error("connection reset"));
+  expect(await turn()).toBe("handed_over");
+  expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
+  expect(await handovers()).toEqual(["user_asked"]);
+  expect(await prisma.docsQuestion.findMany({ where: { projectId }, select: { escalatedAt: true } })).toEqual([{ escalatedAt: expect.any(Date) }]);
 });
 
 test("out of credits: a new conversation goes to the team as the AI is off, and one the AI has is handed over on its next message", async () => {
