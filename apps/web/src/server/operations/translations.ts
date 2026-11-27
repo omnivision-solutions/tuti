@@ -539,6 +539,17 @@ export const updateTranslationSections = defineOperation({
 /** Queues the translate job for a version (with its safety net: queuing that fails is tried again by the retry job). */
 const queueTranslation = ({ articleId, language }: { articleId: string; language: string }) => queueVersion(articleId, language);
 
+/**
+ * The team's sections on a version turned back to Keep up to date: their edits, giving way where English changes, those
+ * kept on publishing too (`kept` would keep them for good, and the switch says they take a new translation).
+ */
+const givingWay = (list: Section[]): Section[] =>
+  ownedByTeam(list).map((section) => {
+    const meta = { ...section.meta };
+    delete meta.kept;
+    return { ...section, meta };
+  });
+
 export const keepTranslationUpToDate = defineOperation({
   name: "articles.keepTranslationUpToDate",
   title: "Keep a translation up to date",
@@ -578,8 +589,8 @@ export const keepTranslationUpToDate = defineOperation({
       const data = input.keepUpToDate
         ? {
             automatic: true,
-            sections: metaOf(ownedByTeam(published)) as Prisma.InputJsonValue,
-            ...(draft && drafted && { draft: { ...draft, sections: metaOf(ownedByTeam(drafted)) } as Prisma.InputJsonValue }),
+            sections: metaOf(givingWay(published)) as Prisma.InputJsonValue,
+            ...(draft && drafted && { draft: { ...draft, sections: metaOf(givingWay(drafted)) } as Prisma.InputJsonValue }),
             retranslate: { increment: 1 },
           }
         : { automatic: false };

@@ -18,20 +18,20 @@ export async function saveArticleVersion(projectSlug: string, articleSlug: strin
   let version: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     const at = { slug: articleSlug, language: language as "de" };
-    let token = String(formData.get("version") ?? "");
     // Kept up to date with no text of its own yet (its first translation on its way or failing): the form shows the
     // English, and saving it as the team's would keep that English from ever being translated. Writing it turns Keep up
-    // to date off first, as an entry's does (against the same read: refused if it changed).
+    // to date off after, as an entry's does (against the save's answer; a refused save changes neither).
     const read = await call(getTranslation, context, at);
-    if (read.keepUpToDate && !read.publishedAt && !read.draft) {
-      token = (await call(keepTranslationUpToDate, context, { ...at, keepUpToDate: false, version: token })).version;
-    }
-    const saved = await call(saveTranslation, context, {
+    const first = read.keepUpToDate && !read.publishedAt && !read.draft;
+    let saved = await call(saveTranslation, context, {
       ...at,
       title: String(formData.get("title") ?? "") || undefined,
       content: formData.get("content") || undefined,
-      version: token,
+      version: String(formData.get("version") ?? ""),
     });
+    if (first) {
+      saved = await call(keepTranslationUpToDate, context, { ...at, keepUpToDate: false, version: saved.version });
+    }
     // Publish keeps every edit of the team's behind the source: nothing asks yet whether to take the new translation
     // instead (L11's publish dialog), and taking it unasked would replace their text.
     version =

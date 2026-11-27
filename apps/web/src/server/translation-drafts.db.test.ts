@@ -976,6 +976,16 @@ test("publishing a version the team writes from its editor keeps their sections 
   expect(text(published.content)).toContain("Hallo!");
   expect(text(published.content)).toContain("Unsere Zahlung");
   expect(model.requests).toHaveLength(0);
+
+  // Keep up to date turned on: the Billing they kept takes the new translation, as the switch says; their intro stays.
+  model.reply(reply(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de"));
+  await call(keepTranslationUpToDate, as(), { ...de, keepUpToDate: true, version: published.version });
+  await languageTranslationsDone();
+  const on = await call(getTranslation, as(), de);
+  expect(text(on.content)).toContain("Hallo!");
+  expect(text(on.content)).toContain("Unsere Installation");
+  expect(text(on.content)).toContain("[de] Pay by card or invoice");
+  expect(on.behind).toEqual([]);
 });
 
 test("a version the team writes marked behind only for the product setting says so, not that English changed", async () => {
@@ -1001,10 +1011,14 @@ test("writing a version kept up to date before its first translation arrives tur
   const waiting = await call(getTranslation, as(), de);
   expect(waiting).toMatchObject({ keepUpToDate: true, publishedAt: null, draft: null });
   const form = new FormData();
-  form.set("title", "Getting paid");
   form.set("content", JSON.stringify(V1));
   form.set("version", waiting.version);
   actAs(owner);
+  // A save refused (a title too long) changes nothing: still kept up to date.
+  form.set("title", "x".repeat(500));
+  expect(await saveArticleVersion(project.slug, de.slug, "de", {}, form)).toHaveProperty("error");
+  expect(await call(getTranslation, as(), de)).toMatchObject({ keepUpToDate: true });
+  form.set("title", "Getting paid");
   expect(await saveArticleVersion(project.slug, de.slug, "de", {}, form)).not.toHaveProperty("error");
   expect(await call(getTranslation, as(), de)).toMatchObject({ keepUpToDate: false });
 });
