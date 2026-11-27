@@ -334,12 +334,14 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
 /**
  * "Ask a person" under the AI's answers in the widget's Messages (W13): the conversation the AI has is handed over for
  * "the user asked", for the user's latest message, with the AI's summary as a note for the team (as its turn's handovers
- * have), then the team is told. False where the AI doesn't have it (handed over already, the team's, in Spam).
+ * have), then the team is told. False where the AI doesn't have it (handed over already, the team's, in Spam); "busy"
+ * while the AI is writing or another press is handing it over.
  */
-export async function askPerson(projectId: string, conversation: { id: string; number: number }): Promise<boolean> {
+export async function askPerson(projectId: string, conversation: { id: string; number: number }): Promise<boolean | "busy"> {
   // Claimed first, as a turn is (`pathDueAt` leased; never over a running turn's lease), so presses at once pay for one
-  // summary: the others find it claimed. The handover clears the lease.
-  const lease = new Date(Date.now() + AI_TURN_LEASE_MS);
+  // summary: the others find it claimed. The handover clears the lease; one left by a crash lasts only the summary's wait,
+  // past the turns' window (a turn can't take it meanwhile).
+  const lease = new Date(Date.now() + AI_TURN_DUE_MS + SUMMARY_TIMEOUT_MS + 10_000);
   const { count } = await prisma.conversation.updateMany({
     where: {
       id: conversation.id,
@@ -352,7 +354,8 @@ export async function askPerson(projectId: string, conversation: { id: string; n
     data: { pathDueAt: lease },
   });
   if (count === 0) {
-    return false;
+    const now = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { handledBy: true, spam: true, spamHeldAt: true } });
+    return now?.handledBy === "AI" && !now.spam && !now.spamHeldAt ? "busy" : false;
   }
   const messages = (
     await prisma.conversationMessage.findMany({

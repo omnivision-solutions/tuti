@@ -422,6 +422,8 @@ export async function widgetAskPerson(projectSlug: string, auth: WidgetAuth, num
   if (!who || !conversation) {
     return who ? { error: "Conversation not found" } : signInFirst;
   }
-  await askPerson(who.projectId, conversation);
+  if ((await askPerson(who.projectId, conversation)) === "busy") {
+    return { error: "The AI is answering. Try again in a moment." };
+  }
   return {};
 }

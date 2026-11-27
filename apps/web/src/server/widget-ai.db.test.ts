@@ -229,10 +229,26 @@ test("Ask a person pressed twice at once hands it over once, paying for one summ
   await turn();
   const asked = model.requests.length;
   model.reply("They want to export.", undefined, QUESTION);
-  expect(await Promise.all([widgetAskPerson(project.slug, auth, 1), widgetAskPerson(project.slug, auth, 1)])).toEqual([{}, {}]);
+  // One hands it over; the other finds it claimed (said so) or already the team's.
+  const results = await Promise.all([widgetAskPerson(project.slug, auth, 1), widgetAskPerson(project.slug, auth, 1)]);
+  expect(results).toContainEqual({});
+  for (const result of results) {
+    expect([{}, { error: "The AI is answering. Try again in a moment." }]).toContainEqual(result);
+  }
   expect(model.requests).toHaveLength(asked + 1);
   const { id, handledBy, pathDueAt } = await conversation();
   expect({ handledBy, pathDueAt }).toEqual({ handledBy: "TEAM", pathDueAt: null });
   expect(await prisma.conversationEvent.count({ where: { conversationId: id, kind: "handed_over" } })).toBe(1);
   expect(await prisma.conversationMessage.count({ where: { conversationId: id, note: true } })).toBe(1);
+});
+
+test("Ask a person while the AI is writing says so, and hands nothing over", async () => {
+  const { project, auth, conversation } = await setup();
+  await widgetStartConversation(project.slug, auth, QUESTION);
+  // A running turn's lease.
+  const { id } = await conversation();
+  await prisma.conversation.update({ where: { id }, data: { pathDueAt: new Date(Date.now() + 5 * 60_000) } });
+  expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({ error: "The AI is answering. Try again in a moment." });
+  expect(await conversation()).toMatchObject({ handledBy: "AI" });
+  expect(await prisma.conversationEvent.count({ where: { conversationId: id, kind: "handed_over" } })).toBe(0);
 });
