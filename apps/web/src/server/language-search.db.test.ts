@@ -9,6 +9,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { portalAddress } from "./custom-domains";
+import { askDocs } from "./docs-readers";
 import { searchForReader } from "./docs-search";
 import { answerQuestion } from "./operations/docs-ask";
 import { createArticle, publishArticle } from "./operations/docs";
@@ -77,6 +78,8 @@ test("searching at a language's address: its translations, at their slug there a
   at("de");
   expect(await search("Karte")).toEqual([{ slug: "abrechnung", title: "Abrechnung", snippet: "Mit Karte zahlen.", lang: "de" }]);
   expect(await search("install")).toEqual([{ slug: "setup", title: "Setup", snippet: "Install the app." }]);
+  // A translated one its German doesn't match but its English does: found in the team's words, linking to its German page.
+  expect(await search("card")).toEqual([{ slug: "abrechnung", title: "Billing", snippet: "Pay by card." }]);
   // At the default language's address: the team's words only.
   at(null);
   expect(await search("Karte")).toEqual([]);
@@ -118,3 +121,38 @@ test("an AI answer at a language's address answers from the articles translated 
     ],
   });
 });
+
+/** The model and embeddings fakes, for AI answers. */
+function withAi() {
+  for (const [name, value] of Object.entries(model.env)) {
+    vi.stubEnv(name, value);
+  }
+  vi.stubEnv("TUTI_CONFIG", "");
+}
+
+test("a translated article whose German isn't embedded yet answers from its English meanwhile, rather than not at all", async () => {
+  withAi();
+  model.embeddings.setVector("Wie zahle ich?", along(1));
+  model.embeddings.setVector(articleChunkText("Billing", { heading: "", text: "Pay by card." }, []), along(0.95));
+  await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  model.reply(JSON.stringify({ answer: "By card.", sources: ["s1"] }));
+  const answer = await answerQuestion(project.id, "asker", "Wie zahle ich?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } });
+  expect(JSON.stringify(model.requests.at(-1)!.messages)).toContain("Pay by card.");
+  // Its page there is still the German one.
+  expect(answer.sources).toEqual([{ slug: "billing", title: "Billing", url: `${await portalAddress(project.slug)}/de/docs/billing` }]);
+});
+
+test("the portal's Ask AI at a language's address answers in it: its sources at their pages there", async () => {
+  withAi();
+  model.embeddings.setVector("Wie zahle ich?", along(1));
+  model.embeddings.setVector(articleChunkText("Abrechnung", { heading: "", text: "Mit Karte zahlen." }, []), along(0.9));
+  const billing = await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  await embedTranslation(billing.versionId!, log);
+  model.reply(JSON.stringify({ answer: "Mit Karte.", sources: ["s1"] }));
+  at("de");
+  expect(await askDocs(project.slug, "Wie zahle ich?")).toMatchObject({
+    status: "answered",
+    sources: [{ slug: "abrechnung", title: "Abrechnung", url: `${await portalAddress(project.slug)}/de/docs/abrechnung` }],
+  });
+});
+

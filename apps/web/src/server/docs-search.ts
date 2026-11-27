@@ -124,10 +124,10 @@ export async function searchForReader(
 }
 
 /**
- * searchDocs in the page's language (docs/plan.md L10): at another language's address, the articles translated there, by
- * their translations (current ones only: never a version made from an older English text), at their slug there and marked
- * as in it; then, by the default language's search, the articles that aren't (and API references' operations), in the
- * team's words. At the default language's address, searchDocs as it is.
+ * searchDocs in the page's language (docs/plan.md L10): at another language's address, the articles found by their
+ * translations there (current ones only: never a version made from an older English text), at their slug there and marked
+ * as in it; then the rest the default language's search finds (and API references' operations), in the team's words (one
+ * translated there links to its page there). At the default language's address, searchDocs as it is.
  */
 async function searchFor(projectId: string, query: string, limit: number, reader: Reader, options: SearchOptions): Promise<DocsSearchResult[]> {
   const { language, prefix } = await portalLanguage();
@@ -144,9 +144,13 @@ async function searchFor(projectId: string, query: string, limit: number, reader
   const current = await translatedInto(articles, [language]);
   // The article's slug → its current version's there.
   const there = new Map(articles.flatMap((article) => (current.get(article.id)?.[0] ? [[article.slug, current.get(article.id)![0]!.slug] as const] : [])));
+  const byTranslation = translated.filter((result) => there.has(result.slug));
+  const found = new Set(byTranslation.map((result) => result.slug));
   const results = [
-    ...translated.filter((result) => there.has(result.slug)).map((result) => ({ ...result, slug: there.get(result.slug)!, lang: language })),
-    ...inDefault.filter((result) => result.method || !there.has(result.slug)),
+    ...byTranslation.map((result) => ({ ...result, slug: there.get(result.slug)!, lang: language })),
+    ...inDefault
+      .filter((result) => result.method || !found.has(result.slug))
+      .map((result) => (!result.method && there.has(result.slug) ? { ...result, slug: there.get(result.slug)! } : result)),
   ].slice(0, limit);
   if (options.log !== false) {
     logSearch(projectId, query, results.length);
@@ -352,11 +356,22 @@ function translatedSections(projectId: string, language: string, vector: string,
     LIMIT ${limit}`;
 }
 
-/** Of these articles, the ones with a current version in `language` (translatedInto). */
+/**
+ * Of these articles, the ones whose current version in `language` (translatedInto) has its sections for answers (its chunks:
+ * written only for the text it has, so they're its current text's). One not embedded yet (its embedding waiting, say)
+ * answers from its English meanwhile, rather than not at all.
+ */
 async function currentIn(projectId: string, ids: string[], language: string): Promise<Set<string>> {
   const unique = [...new Set(ids)];
-  const articles = unique.length > 0 ? await prisma.article.findMany({ where: { projectId, id: { in: unique } }, select: { id: true, slug: true } }) : [];
-  return new Set((await translatedInto(articles, [language])).keys());
+  if (unique.length === 0) {
+    return new Set();
+  }
+  const [articles, embedded] = await Promise.all([
+    prisma.article.findMany({ where: { projectId, id: { in: unique } }, select: { id: true, slug: true } }),
+    prisma.articleTranslationChunk.findMany({ where: { projectId, language, articleId: { in: unique } }, select: { articleId: true }, distinct: ["articleId"] }),
+  ]);
+  const withSections = new Set(embedded.map((chunk) => chunk.articleId));
+  return new Set([...(await translatedInto(articles, [language])).keys()].filter((id) => withSections.has(id)));
 }
 
 const operationSection = (row: OperationRow): AnswerSection => ({

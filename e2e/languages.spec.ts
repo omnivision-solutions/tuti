@@ -649,6 +649,13 @@ test("searching the docs in German finds the articles translated there by their 
   );
 
   const reader = await newPerson(browser, portalUrl(slug));
+  // The search dialog as the reader types: the German title, marked German.
+  await reader.goto("/de/docs");
+  await reader.getByRole("main").getByRole("button", { name: /^(Dokumentation durchsuchen|Suchen oder KI fragen)$/ }).click();
+  await reader.getByRole("dialog").getByRole("combobox").fill("Karte");
+  await expect(reader.getByRole("dialog").getByRole("option", { name: /Abrechnung/ }).locator("[lang=de]").first()).toHaveText("Abrechnung");
+  await reader.keyboard.press("Escape");
+  // The results' page.
   await reader.goto("/de/docs?q=Karte");
   const result = reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Abrechnung" });
   await expect(result).toHaveAttribute("href", "/de/docs/abrechnung");
