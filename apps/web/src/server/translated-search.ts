@@ -1,11 +1,11 @@
 import { Prisma, prisma } from "@tuti/db";
-import { embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
+import { embeddingsEnabled, log, SEARCH_MIN_SIMILARITY } from "@tuti/shared";
 import { searchConfig } from "@tuti/shared/languages";
 
 import type { Reader } from "@/lib/read-access";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
-import { type DocsSearchResult, SEARCH_EMBED_TIMEOUT_MS, snippet } from "./docs-search";
+import { type DocsSearchResult, queryVector, SEARCH_EMBED_TIMEOUT_MS, snippet } from "./docs-search";
 
 /**
  * Search in one of the project's languages (docs/plan.md L7, "Search in every language"): its published translations of
@@ -38,8 +38,7 @@ export async function searchTranslatedDocs(
 async function meaningMatches(projectId: string, language: string, query: string, limit: number, timeoutMs: number, found: Prisma.Sql): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
-    const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
-    vector = toVectorLiteral(embedding!);
+    vector = await queryVector(query, timeoutMs);
   } catch (error) {
     log.warn("Embedding a translated docs search failed; matching words only", { error });
     return [];

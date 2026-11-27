@@ -630,7 +630,8 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
 });
 
-test("searching the docs in German finds the articles translated there by their German, at their German address", async ({ browser }) => {
+test("searching the docs in German finds the articles translated there by their German, at their German address", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
@@ -660,6 +661,7 @@ test("searching the docs in German finds the articles translated there by their 
   const result = reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Abrechnung" });
   await expect(result).toHaveAttribute("href", "/de/docs/abrechnung");
   await expect(result.locator("[lang=de]")).toHaveText("Abrechnung");
+  await checkpoint(reader, "docs-search-in-german", { fullPage: false });
   // An article not translated: found by its English, marked as the team's.
   await reader.goto("/de/docs?q=install");
   await expect(reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Setup" }).locator("[lang=en]")).toHaveText("Setup");

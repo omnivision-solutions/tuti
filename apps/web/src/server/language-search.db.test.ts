@@ -9,7 +9,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { portalAddress } from "./custom-domains";
-import { askDocs } from "./docs-readers";
+import { askDocs, searchDocsAsTyped } from "./docs-readers";
 import { searchForReader } from "./docs-search";
 import { answerQuestion } from "./operations/docs-ask";
 import { createArticle, publishArticle } from "./operations/docs";
@@ -180,5 +180,17 @@ test("a version made from an older English never answers, even embedded: its Eng
   const sent = JSON.stringify(model.requests.at(-1)!.messages);
   expect(sent).toContain("Pay by card.");
   expect(sent).not.toContain("Zu alten Preisen");
+});
+
+test("a search at a language's address is counted once in the team's insights; the box's as-you-type search isn't counted", async () => {
+  await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  at("de");
+  await search("Karte");
+  await searchDocsAsTyped(project.slug, "Karte");
+  // Counted without being waited for: there once it's written.
+  await expect.poll(async () => (await prisma.docsSearchDay.findMany({ where: { projectId: project.id } })).map(({ searches, failed }) => ({ searches, failed }))).toEqual([{ searches: 1, failed: 0 }]);
+  // (Nothing more is on its way.)
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect((await prisma.docsSearchDay.findFirstOrThrow({ where: { projectId: project.id } })).searches).toBe(1);
 });
 

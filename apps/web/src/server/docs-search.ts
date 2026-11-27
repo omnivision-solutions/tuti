@@ -1,6 +1,7 @@
 import { type ArticleListing, Prisma, prisma } from "@tuti/db";
 import { FAILED_SEARCHES_PER_DAY } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
+import { cache } from "react";
 
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { visibleArticleSql, visibleReferenceSql } from "@/lib/reader-groups";
@@ -27,6 +28,15 @@ export type DocsSearchResult = {
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
 export const SEARCH_EMBED_TIMEOUT_MS = 2000;
+
+/**
+ * A search's query as a vector, embedded once per request: at a language's address the default language's search and the
+ * reader's language's (translated-search.ts) share it, so the provider is asked once (and both match by meaning, or neither).
+ */
+export const queryVector = cache(async (query: string, timeoutMs: number): Promise<string> => {
+  const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
+  return toVectorLiteral(embedding!);
+});
 
 /**
  * How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, whether it matches by
@@ -212,8 +222,7 @@ async function meaningMatches(
 ): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
-    const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
-    vector = toVectorLiteral(embedding!);
+    vector = await queryVector(query, timeoutMs);
   } catch (error) {
     log.warn("Embedding a docs search failed; matching words only", { error });
     return [];
