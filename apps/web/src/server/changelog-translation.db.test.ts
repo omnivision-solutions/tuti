@@ -1,15 +1,20 @@
 import { segmentsOf } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { ANNOUNCEMENT_WAITS_MS, handlers, languageTranslationsDone, placeScreenshots, PRODUCT_SETTING_CHANGED, setChangelogLine, translationSource } from "@tuti/jobs";
-import { type ModelFake, startModelFake } from "@tuti/testkit";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { billingFile, type ModelFake, startModelFake, startS3Fake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 import { mailbox } from "@/test/mailbox";
 
+import { subscribeToChangelog } from "./changelog-subscribe";
 import { createChangelogEntry, editChangelogSection, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
+import { setEmailPreference } from "./email-preferences";
+import { updateEmailPreferences } from "./operations/email-preferences";
 import { call } from "./operations/run";
+import { chooseLanguage } from "./reader-language";
 
 /** Changelog translations (docs/plan.md L16): the same machinery as articles' (L6), and the announcement's wait. */
 
@@ -204,6 +209,193 @@ test("screenshots placed in a published entry's text bring its translations up t
   expect(model.requests).toHaveLength(2);
 });
 
+/** A confirmed subscriber in `language` (null: the default language's). */
+const subscriber = (email: string, language: string | null) =>
+  prisma.changelogSubscriber.create({ data: { projectId: project.id, email, language, confirmedAt: new Date(Date.now() - 60_000) } });
+
+test("each subscriber gets an entry in their language where its version there is current, else in the default language", async () => {
+  await languages({ languages: [{ code: "de", live: true }, { code: "fr", live: true, newPages: "manual" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const german = `e2e-de-${project.slug}@example.com`;
+  const english = `e2e-en-${project.slug}@example.com`;
+  const french = `e2e-fr-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  await subscriber(english, null);
+  // French is the team's to write, and they haven't: the default language's.
+  await subscriber(french, "fr");
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await languageTranslationsDone();
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => [german, english, french].some((a) => m.to.includes(a)))).toHaveLength(3));
+  const to = (address: string) => mailbox.emails.find((m) => m.to.includes(address))!;
+  expect(to(german).subject).toContain("[de] Dark mode");
+  expect(to(german).text).toContain("[de] Switch themes from your profile menu.");
+  expect(to(english).subject).toContain(TITLE);
+  expect(to(english).text).toContain(BODY);
+  expect(to(french).subject).not.toContain("[");
+  // Its links in their language: the German version's under /de (the entry, its title and images, the subscription), the
+  // default language's own for English and French's fallback.
+  const page = `/changelog/${created.number}"`;
+  expect(to(german).html).toContain(`/de${page}`);
+  expect(to(german).html).toMatch(/\/de\/changelog\/subscription\?token=/);
+  const links = (address: string) => to(address).html.match(/https?:\/\/[^"'\s<>]*\/changelog\/[^"'\s<>]*/g) ?? [];
+  expect(links(german).length).toBeGreaterThan(1);
+  expect(links(german).filter((link) => !link.includes("/de/changelog/"))).toEqual([]);
+  for (const address of [english, french]) {
+    expect(to(address).html).toContain(page);
+    expect(to(address).html).not.toMatch(/\/(de|fr)\/changelog/);
+  }
+});
+
+test("a German version behind the entry (its translation still to come, past the wait) isn't sent: the default language's is", async () => {
+  await languages({ languages: [{ code: "de", live: true }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  const german = `e2e-de-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: created.number });
+  await languageTranslationsDone();
+  // Edited, its new translation held; then emailed past the wait.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  model.reply(JSON.stringify({ segments: { "1": "[de] Dunkler Modus" } }), () => held);
+  await call(updateChangelogEntry, as(), { number: created.number, title: "Dark mode is here" });
+  await prisma.changelogEntry.update({ where: { id: entryId }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date(Date.now() - ANNOUNCEMENT_WAITS_MS - 1000) } });
+  await handlers.changelogEmailed({ entryId }, log);
+  expect(mailbox.emails.find((m) => m.to.includes(german))!.subject).toContain("Dark mode is here");
+  release();
+  await languageTranslationsDone();
+});
+
+test("subscribing on a language's page keeps that language; a signed-in reader's switch moves their subscription to theirs", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  await onPortal(reader, project);
+  actAs(reader);
+  const subscribe = (email: string) => {
+    const form = new FormData();
+    form.set("email", email);
+    return subscribeToChangelog(project.slug, form);
+  };
+  const languageOf = async (email: string) => (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).language;
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  try {
+    expect(await subscribe(reader.email)).toEqual({ sentTo: reader.email });
+    expect(await languageOf(reader.email)).toBe("de");
+    // From the default language's pages: null (the default's).
+    request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
+    const other = `e2e-other-${project.slug}@example.com`;
+    expect(await subscribe(other)).toEqual({ sentTo: other });
+    expect(await languageOf(other)).toBeNull();
+  } finally {
+    request.headers = {};
+  }
+  // Their switch moves their own subscription, and no one else's.
+  expect(await chooseLanguage(project.slug, "en")).toEqual({});
+  expect(await languageOf(reader.email)).toBeNull();
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  expect(await languageOf(reader.email)).toBe("de");
+  expect(await languageOf(`e2e-other-${project.slug}@example.com`)).toBeNull();
+});
+
+test("a version the team wrote goes as it is, even behind the entry; an offline language's never goes", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", newPages: "manual" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  // The team's own German (made from an older text: still theirs to send), and French, not live.
+  await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: "de", automatic: false, title: "Dunkler Modus", body: "Unser Text.", sourceHash: "older", publishedAt: new Date() } });
+  await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: "fr", automatic: false, title: "Mode sombre", body: "Notre texte.", publishedAt: new Date() } });
+  const german = `e2e-de-${project.slug}@example.com`;
+  const french = `e2e-fr-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  await subscriber(french, "fr");
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => [german, french].some((a) => m.to.includes(a)))).toHaveLength(2));
+  expect(mailbox.emails.find((m) => m.to.includes(german))!.text).toContain("Unser Text.");
+  const toFrench = mailbox.emails.find((m) => m.to.includes(french))!;
+  expect(toFrench.subject).toContain(TITLE);
+  expect(toFrench.text).toContain(BODY);
+});
+
+test("subscribing again sets the language of the page it's done on; a reader's own Account switch subscribes them in their language", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const subscribe = (email: string) => {
+    const form = new FormData();
+    form.set("email", email);
+    return subscribeToChangelog(project.slug, form);
+  };
+  const languageOf = async (email: string) => (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).language;
+  const address = `e2e-again-${project.slug}@example.com`;
+  try {
+    request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+    await subscribe(address);
+    expect(await languageOf(address)).toBe("de");
+    // Not confirmed yet, asked again from the default language's page: the default's.
+    request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
+    await subscribe(address);
+    expect(await languageOf(address)).toBeNull();
+    // Confirmed (and since opted out, so asking again sends a link): a typed-in address leaves its language be.
+    await prisma.changelogSubscriber.updateMany({ where: { projectId: project.id, email: address }, data: { confirmedAt: new Date(), language: "de", unsubscribedAt: new Date() } });
+    await subscribe(address);
+    expect(await languageOf(address)).toBe("de");
+  } finally {
+    request.headers = {};
+  }
+  // A signed-in reader who reads in German turns the changelog on from their Account: in German.
+  const reader = await signUp("Reader");
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await languageOf(reader.email)).toBe("de");
+});
+
+test("a reader whose address isn't proven theirs moves nobody's subscription with their switch", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader", undefined, { verified: false });
+  await subscriber(reader.email, null);
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email } })).language).toBeNull();
+});
+
+test("a version the team wrote has its own images in its email", async () => {
+  // Media storage, which images in emails are served from.
+  const s3 = await startS3Fake();
+  onTestFinished(() => s3.close());
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  // Their German has a screenshot of its own, which the source doesn't.
+  const image = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 1000, status: "READY", width: 1200, height: 800 } });
+  const content = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Unser Text." }] }, { type: "image", attrs: { mediaId: image.id, alt: "Das Menü", w: 1200, h: 800 } }] };
+  await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: "de", automatic: false, title: "Dunkler Modus", body: "Unser Text.", content, publishedAt: new Date() } });
+  const german = `e2e-de-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => m.to.includes(german))).toHaveLength(1));
+  const html = mailbox.emails.find((m) => m.to.includes(german))!.html;
+  expect(html).toContain('alt="Das Menü"');
+  expect(html).toContain(image.id);
+});
+
+test("a reader whose unconfirmed subscription predates their language takes it as they turn the changelog on from Account", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the default language's page before, not confirmed.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase() } });
+  await onPortal(reader, project);
+  actAs(reader);
+  await prisma.user.update({ where: { id: reader.id }, data: { language: "de" } });
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
+});
+
 test("a sample entry's translation ending never announces it", async () => {
   await languages({ languages: [{ code: "de" }] });
   const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
@@ -258,6 +450,128 @@ test("screenshots placed are kept even when queuing the entry's translations the
   // Cleared: the next run has nothing to queue.
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
 });
+
+test("a language past the plan's limit (after a downgrade) isn't emailed in, as the portal doesn't serve it", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  // Pro: up to 3 languages, the default included: German and Spanish are served, French (added last) isn't.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
+  for (const [i, code] of ["de", "es", "fr"].entries()) {
+    await prisma.projectLanguage.create({ data: { projectId: project.id, code, live: true, automatic: false, createdAt: new Date(Date.now() - (3 - i) * 60_000) } });
+  }
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const entryId = await idOf(created.number);
+  for (const [code, title] of [["es", "Modo oscuro"], ["fr", "Mode sombre"]] as const) {
+    await prisma.changelogTranslation.create({ data: { entryId, projectId: project.id, language: code, automatic: false, title, body: title, publishedAt: new Date() } });
+  }
+  const spanish = `e2e-es-${project.slug}@example.com`;
+  const french = `e2e-fr-${project.slug}@example.com`;
+  await subscriber(spanish, "es");
+  await subscriber(french, "fr");
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => [spanish, french].some((a) => m.to.includes(a)))).toHaveLength(2));
+  expect(mailbox.emails.find((m) => m.to.includes(spanish))!.subject).toContain("Modo oscuro");
+  expect(mailbox.emails.find((m) => m.to.includes(french))!.subject).toContain(TITLE);
+});
+
+test("a signed-in reader subscribing on the default language's page gets their saved language", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  const form = new FormData();
+  form.set("email", reader.email);
+  request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
+  try {
+    expect(await subscribeToChangelog(project.slug, form)).toEqual({ sentTo: reader.email });
+  } finally {
+    request.headers = {};
+  }
+  expect((await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).language).toBe("de");
+});
+
+test("turning the changelog on from Account keeps an unconfirmed subscription's language when the reader has none saved", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the German page before, not confirmed; the reader has no language saved.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase(), language: "de" } });
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
+});
+
+test("turning the changelog on from Account takes the default when that's the language the reader saved", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the German page before, not confirmed; the reader then picked English, the default.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase(), language: "de" } });
+  await prisma.user.update({ where: { id: reader.id }, data: { language: "en" } });
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: null });
+});
+
+test("turning the changelog on from Account keeps an unconfirmed subscription's language when the reader's saved one isn't served here", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // Asked for on the German page before, not confirmed; the reader's saved language (French, chosen on another portal) isn't one of this one's.
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: reader.email.toLowerCase(), language: "de" } });
+  await prisma.user.update({ where: { id: reader.id }, data: { language: "fr" } });
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true })).toMatchObject({ changelog: true });
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de" });
+});
+
+test("a reader with no language saved turning the changelog on from Account on a German page gets it in German, as the subscribe form would", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Reader");
+  // On /de (a link, or the browser's language), nothing saved.
+  await onPortal(reader, project);
+  actAs(reader);
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  try {
+    expect(await setEmailPreference(project.slug, "changelog", true)).not.toHaveProperty("error");
+  } finally {
+    request.headers = {};
+  }
+  expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de", confirmedAt: expect.any(Date) });
+});
+
+test("the page's language the Account switch passes counts only where the portal is in it: an offline one leaves the subscription's, the default's is null", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: false, newPages: "manual" }] });
+  const turnOn = async (name: string, language: "fr" | "en") => {
+    const reader = await signUp(name);
+    const email = reader.email.toLowerCase();
+    // Asked for on the German page before, not confirmed; nothing saved.
+    await prisma.changelogSubscriber.create({ data: { projectId: project.id, email, language: "de" } });
+    await onPortal(reader, project);
+    actAs(reader);
+    await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true, language });
+    return (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).language;
+  };
+  expect(await turnOn("Reader One", "fr")).toBe("de");
+  expect(await turnOn("Reader Two", "en")).toBeNull();
+});
+
+test("on an SSO portal, the switch moves the subscription at the sign-on's address, not the account's", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
+  const reader = await signUp("Sam SSO");
+  const signOn = `e2e-sso-${project.slug}@example.com`;
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: reader.id, userId: reader.id, email: signOn } });
+  // A subscription at each address: the project's emails go to the sign-on's.
+  await subscriber(reader.email.toLowerCase(), null);
+  await subscriber(signOn, null);
+  await onPortal(reader, project);
+  actAs(reader);
+  expect(await chooseLanguage(project.slug, "de")).toEqual({});
+  const languageOf = async (email: string) => (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).language;
+  expect(await languageOf(signOn)).toBe("de");
+  expect(await languageOf(reader.email.toLowerCase())).toBeNull();
+});
+
 
 test("the retry job queues a failed entry only in the languages there when it failed, never one added since (not confirmed for entries)", async () => {
   await languages({ languages: [{ code: "de" }] });
@@ -360,4 +674,24 @@ test("an Autopilot line approved into a published entry brings its translations 
   expect(await setChangelogLine(project.id, pr, line)).toMatchObject({ number: created.number });
   await languageTranslationsDone();
   expect((await translation()).body).toContain(`[de] ${line}`);
+});
+
+test("an email in a subscriber's language marks its translated title and text with that language", async () => {
+  await languages({ languages: [{ code: "de", live: true }] });
+  const created = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const german = `e2e-de-${project.slug}@example.com`;
+  await subscriber(german, "de");
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: created.number, emailSubscribers: true });
+  await languageTranslationsDone();
+  await vi.waitFor(() => expect(mailbox.emails.filter((m) => m.to.includes(german))).toHaveLength(1));
+  const sent = mailbox.emails.find((m) => m.to.includes(german))!.html;
+  // Its visible body (the inbox's preview line before it is hidden: display:none, never read out).
+  const body = sent.slice(sent.indexOf("<!--body-->"));
+  // The title and the text are inside what carries lang="de"; the email's own words before it aren't.
+  const at = body.indexOf('lang="de"');
+  expect(at).toBeGreaterThan(-1);
+  expect(body.slice(at)).toContain("[de] Dark mode");
+  expect(body.slice(at)).toContain("[de] Switch themes from your profile menu.");
+  expect(body.slice(0, at)).not.toContain("[de]");
 });

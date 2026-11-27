@@ -18,10 +18,12 @@ type ChangelogProps = EmailBrand & {
   /** Lasting URLs of its images' files (lastingMediaUrls in apps/web); images without one are left out. */
   mediaUrls?: MediaUrls | null;
   unsubscribeUrl: string;
+  /** The language of its title and text where it's a translation (docs/plan.md L16): their `lang`, for screen readers. */
+  lang?: string;
 };
 
 /** A published changelog entry, in full, to the changelog's subscribers. */
-export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt, doc, coverUrl, mediaUrls, unsubscribeUrl, accent, poweredBy, logo, logoText }: ChangelogProps) {
+export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt, doc, coverUrl, mediaUrls, unsubscribeUrl, accent, poweredBy, logo, logoText, lang }: ChangelogProps) {
   return (
     <Layout
       preview={toPlainText(doc).slice(0, 140) || entryTitle}
@@ -32,10 +34,13 @@ export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt,
         </>
       }
     >
-      {coverUrl && <Img src={coverUrl} alt={entryTitle} width={CONTENT_WIDTH} style={{ borderRadius: 12, margin: "20px 0 0", maxWidth: "100%", height: "auto" }} />}
+      {coverUrl && <Img src={coverUrl} alt={entryTitle} lang={lang} width={CONTENT_WIDTH} style={{ borderRadius: 12, margin: "20px 0 0", maxWidth: "100%", height: "auto" }} />}
       <Eyebrow accent={accent}>{`New · ${formatDate(publishedAt)}`}</Eyebrow>
-      <Title>{entryTitle}</Title>
-      <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} accent={accent} />
+      {/* The team's words in their own language (the email's own words are the portal's, L5). */}
+      <div lang={lang}>
+        <Title>{entryTitle}</Title>
+        <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} accent={accent} />
+      </div>
       {entryUrl && (
         <Button href={entryUrl} style={buttonStyle(accent)}>
           Read the update
