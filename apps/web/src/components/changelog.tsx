@@ -728,7 +728,7 @@ export function ChangelogForm({
                 title={aiPaused ? "This project is out of credits" : undefined}
                 aria-describedby={aiPaused ? askPausedId : undefined}
                 // Off, it still takes the pointer (the button's styles drop it), so a hover shows its title and a tap says why.
-                className="aria-disabled:pointer-events-auto"
+                className="aria-disabled:pointer-events-auto aria-disabled:active:translate-y-0"
                 onClickCapture={aiPaused ? () => toast("This project is out of credits") : undefined}
                 onClick={() => askWhole.current?.()}
               >
