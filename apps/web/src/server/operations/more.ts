@@ -396,6 +396,10 @@ export const setSubscription = defineOperation({
         await tx.postSubscription.deleteMany({ where: { postId: post.id, userId } });
       }
     });
+    // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
+    if (input.subscribed) {
+      await rememberPageLanguage(context.actor, userId, context.projectId);
+    }
     return { number: post.number, subscribed: input.subscribed };
   },
 });

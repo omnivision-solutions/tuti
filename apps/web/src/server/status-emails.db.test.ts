@@ -6,9 +6,9 @@ import { handlers } from "@tuti/jobs";
 import { billingFile } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
-import { setVote } from "@/server/operations/more";
+import { setSubscription, setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -466,4 +466,26 @@ test("a vote saves no language at the default language's address, at an offline 
   const behalf = voters.map(({ userId }) => userId).filter((id) => ![author.id, atDefault.id, previewing.id].includes(id));
   expect(behalf).toHaveLength(1);
   expect(await languageOf(behalf[0]!)).toBeNull();
+});
+
+test("a reader who never chose a language takes the page's when they post, comment or follow at a language's address", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const author = await verified("Author");
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  const [poster, commenter, follower] = [await verified("Poster"), await verified("Commenter"), await verified("Follower")];
+  // On the German address (what proxy.ts sets on its requests).
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  await call(createPost, as(poster.id), { board: "feature-requests", title: "PDF export" });
+  await call(createComment, as(commenter.id), { number: post.number, body: "Ja, bitte." });
+  await call(setSubscription, as(follower.id), { number: post.number, subscribed: true });
+  request.headers = {};
+  for (const [what, reader] of [["posted", poster], ["commented", commenter], ["followed", follower]] as const) {
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: reader.id } })).language, what).toBe("de");
+  }
+  // Their news is German: the follower's, for one.
+  await setStatus(post.number, "in_progress");
+  expect(subjectsTo(follower.email)).toEqual(["In Arbeit: CSV export"]);
 });

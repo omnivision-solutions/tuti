@@ -78,7 +78,7 @@ export async function subscriberLanguage(projectId: string, userId: string): Pro
 /**
  * A signed-in reader's language for their emails (docs/plan.md, Languages: "a signed-in reader's language, else the language
  * of the page they were asked for on"): one who never chose one (User.language, the header's switcher) gets the page's, when
- * they do something on a language's address that emails them (vote, comment, post, sign in with its link). Never over one
+ * they do something on a language's address that emails them (vote, comment, post, follow, sign in with its link). Never over one
  * they chose; only for someone acting as themselves (`actor`: never an API key writing on someone's behalf, whatever headers
  * it sends); only a language the project has live (not the team's preview of one that isn't); nothing at the default
  * language's address.
