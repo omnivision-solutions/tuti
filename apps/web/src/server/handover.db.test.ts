@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { automatedRepliesEmailed, handlers } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { AUTOMATED_REPLIES_PER_HOUR } from "@/lib/workflows";
@@ -196,6 +196,9 @@ test("a set reply is emailed only where the address is proven, as an automated r
   // A teammate replies within the minute: one email with both, and a person's reply is never marked automatic.
   await postEmail(rawEmail({ from: "e2e-mixed@example.com", to }), { recipient: to });
   await call(replyToConversation, admin, { number: 3, body: "Hi, I'm looking into it." });
+  // One of the project's users, given with their address over the API (no DMARC to pass): proven.
+  await call(createConversation, admin, { user: { id: "user-mail", email: "e2e-user-mail@example.com" }, body: "Hello" });
+  expect((await state(4)).replies).toEqual(["Thanks, we got it."]);
 
   await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${projectId}`;
   await handlers.sendConversationReplies({}, log);
@@ -206,6 +209,11 @@ test("a set reply is emailed only where the address is proven, as an automated r
   const mixed = mailbox.emails.filter((email) => email.to.includes("e2e-mixed@example.com"));
   expect(mixed).toHaveLength(1);
   expect(mixed[0]!.headers["auto-submitted"]).toBeUndefined();
+  // The conversation's page says a set reply wasn't emailed by the same rule the job sent them by: they never disagree.
+  const conversations = await prisma.conversation.findMany({ where: { projectId }, orderBy: { number: "asc" }, select: { userId: true, emailVerified: true } });
+  const emailed = ["e2e-proven", "e2e-unproven", "e2e-mixed", "e2e-user-mail"].map((who) => mailbox.emails.some((email) => email.to.includes(`${who}@example.com`)));
+  expect(emailed).toEqual([true, false, true, true]);
+  expect(conversations.map(automatedRepliesEmailed)).toEqual(emailed);
 });
 
 test("a set reply seen in the widget isn't emailed", async () => {
@@ -238,8 +246,8 @@ test("a handover that fails gives the conversation to the team, so its user's me
 test("Not spam on what the filter filed answers with the conversation as its handover left it", async () => {
   const { projectId, admin, to, workflow, state } = await setup();
   await workflow("Keep", [{ kind: "dont_hand_over" }]);
-  await prisma.spamSender.create({ data: { projectId, sender: "spam.example", blocked: true, byAdmin: true } });
-  await postEmail(rawEmail({ from: "e2e-kim@spam.example", to }), { recipient: to });
+  await prisma.spamSender.create({ data: { projectId, sender: "blocked.example.com", blocked: true, byAdmin: true } });
+  await postEmail(rawEmail({ from: "e2e-kim@blocked.example.com", to }), { recipient: to });
   expect(await call(updateConversation, admin, { number: 1, spam: false })).toMatchObject({ spam: false, handledBy: "ai" });
   expect((await state(1)).handledBy).toBe("AI");
 });

@@ -192,10 +192,16 @@ export const MAX_TRIES = 3;
 const MAX_REFERENCES = 20;
 
 /**
- * Automated replies that may be emailed (docs/plan.md, Inbox automation, "Never an automated reply to mail we can't
- * prove"): the AI's that answer a user's message, a workflow's set reply among them (they carry a `requestId`; the answer
- * "Ask a person" copies in has none, and isn't emailed), only where the conversation's address is proven (one of the
- * project's users, or an email whose DMARC passed). Sent with `Auto-Submitted: auto-replied`.
+ * Whether a conversation's automated replies may be emailed (docs/plan.md, Inbox automation, "Never an automated reply to
+ * mail we can't prove"): only where its address is proven, one of the project's users or an email whose DMARC passed. The
+ * one rule: `automated` and the job's query below send by it, and the conversation's page says by it when one isn't sent.
+ */
+export const automatedRepliesEmailed = (conversation: { userId: string | null; emailVerified: boolean }) => conversation.userId !== null || conversation.emailVerified;
+
+/**
+ * Automated replies that may be emailed: the AI's that answer a user's message, a workflow's set reply among them (they
+ * carry a `requestId`; the answer "Ask a person" copies in has none, and isn't emailed), where automatedRepliesEmailed
+ * says so. Sent with `Auto-Submitted: auto-replied`.
  */
 const automated = { author: "AI" as const, requestId: { not: null }, conversation: { OR: [{ userId: { not: null } }, { emailVerified: true }] } };
 

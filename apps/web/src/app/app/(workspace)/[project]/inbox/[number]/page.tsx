@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, composerTranslation, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, composerTranslation, translationSettings, emailsThisMonth, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, automatedRepliesEmailed, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { ListIcon, LockKeyholeIcon, MailIcon, SparklesIcon } from "lucide-react";
@@ -320,7 +320,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const emailed = (message: Message) =>
     !(message.author === "TEAM" || automated(message)) || message.note
       ? undefined
-      : automated(message) && !message.seenAt && !message.emailStatus && !conversation.userId && !conversation.emailVerified
+      : automated(message) && !message.seenAt && !message.emailStatus && !automatedRepliesEmailed(conversation)
         ? "Not emailed: their address isn't verified"
         : message.seenAt
         ? "Seen"

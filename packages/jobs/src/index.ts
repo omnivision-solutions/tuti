@@ -17,7 +17,7 @@ import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
 import { screenshotRun } from "./screenshots";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
-export { replyRecipient, type ReplyRecipient } from "./conversations";
+export { automatedRepliesEmailed, replyRecipient, type ReplyRecipient } from "./conversations";
 export { checkPushReceipts, PUSH_TEXT_MAX, RECEIPT_AFTER_MS } from "./push";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
