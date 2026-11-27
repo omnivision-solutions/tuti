@@ -432,9 +432,10 @@ test("a provider error the retry made up for isn't reported, though another segm
 });
 
 test("termMatcher finds what termsUsed does (a word, its plural or possessive, inside words for scripts without spaces), reading each text once", () => {
-  const glossary = [{ term: "Board" }, { term: "Post" }, { term: "Tuti" }, { term: "設定" }, { term: "Q&A" }];
+  // Overlapping ones too: a term that's the start of a longer one, and one starting inside another.
+  const glossary = [{ term: "Board" }, { term: "Board view" }, { term: "view mode" }, { term: "Post" }, { term: "Tuti" }, { term: "設定" }, { term: "Q&A" }];
   const match = termMatcher(glossary);
-  for (const text of ["Make a Board.", "Two boards", "Tuti's posts", "Postpone it", "設定を開く", "Ask in Q&amp;A", "Nothing here"]) {
+  for (const text of ["Make a Board.", "Two boards", "Open the Board view mode", "Tuti's posts", "Postpone it", "設定を開く", "Ask in Q&amp;A", "Nothing here"]) {
     const names = (found: { term: string }[]) => found.map(({ term }) => term).sort();
     expect(names(match(text)), text).toEqual(names(termsUsed(text, glossary)));
   }

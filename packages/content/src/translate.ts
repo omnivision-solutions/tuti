@@ -313,18 +313,25 @@ export const termTests = { count: 0 };
 
 /**
  * termsUsed for many texts against one list: the terms as one pattern, built once, so each text is read once whatever the
- * number of terms (a glossary save matching a whole help center). Where one term is part of a longer one ("Board", "Board
- * view"), a text using only the longer is said to use the longer.
+ * number of terms (a glossary save matching a whole help center). It reports every term termsUsed does, overlaps included:
+ * the pattern looks at each word's start without taking the text up (so a term starting inside a longer one is found at its
+ * own start), and a longer term found brings the terms it starts with ("Board" in "Board view").
  */
 export function termMatcher(glossary: GlossaryTerm[]): (text: string) => GlossaryTerm[] {
   const byKey = new Map(glossary.map((entry) => [entry.term.toLowerCase(), entry]));
   const [cjk, spaced] = [[...byKey.keys()].filter((term) => CJK.test(term)), [...byKey.keys()].filter((term) => !CJK.test(term))];
+  // The terms each term starts with, word for word ("board" for "board view"; not "post" for "postpone").
+  const within = new Map(spaced.map((term) => [term, spaced.filter((other) => other !== term && term.startsWith(other) && !/[\p{L}\p{N}]/u.test(term[other.length] ?? ""))]));
   const escaped = spaced.sort((a, b) => b.length - a.length).map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const pattern = escaped.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}])(${escaped.join("|")})(?:s|es|'s|’s)?(?![\\p{L}\\p{N}])`, "gu") : null;
+  const pattern = escaped.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}])(?=(${escaped.join("|")})(?:s|es|'s|’s)?(?![\\p{L}\\p{N}]))`, "gu") : null;
   return (text) => {
     termTests.count++;
     const plain = unescape(text).toLowerCase();
-    const found = new Set<string>(pattern ? [...plain.matchAll(pattern)].map((match) => match[1]!) : []);
+    const found = new Set<string>();
+    for (const match of pattern ? plain.matchAll(pattern) : []) {
+      found.add(match[1]!);
+      for (const shorter of within.get(match[1]!) ?? []) found.add(shorter);
+    }
     for (const term of cjk) if (plain.includes(term)) found.add(term);
     return [...found].map((term) => byKey.get(term)!);
   };
