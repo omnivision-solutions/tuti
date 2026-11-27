@@ -373,3 +373,22 @@ test("a section of the team's with no heading, merged into the intro English add
   const again = withTranslation(back, doc(["", "Einleitung"], ["Abrechnung", "Mit Karte zahlen"], ["Einrichtung", "Installieren"]), source2, { only: new Set([intro]) });
   expect(texts(docOfSections(again))).toEqual(["Einleitung", "Unsere Einrichtung", "Abrechnung", "Mit Karte zahlen"]);
 });
+
+test("a version the team writes keeps its intro standing in whole when English takes the intro out and the team updates another section", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  const de = doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const edited: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...de.content!] };
+  const { sections: ours } = editedSections(versionSections(de, [], source), edited, source, { automatic: false });
+  const source2 = sourceSections(doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]));
+  const intro = source2[0]!.key;
+  // The team asks for the intro: its translation, their paragraph after it.
+  const withIntro = withTranslation(ownedByTeam(ours), doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), source2, { only: new Set([intro]) });
+  expect(texts(docOfSections(withIntro))).toEqual(["Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+  // English takes the intro out and changes Billing; the team updates only Billing: the top section is theirs to keep, whole.
+  const source3 = sourceSections(doc(["Setup", "Install it"], ["Billing", "Pay by invoice"]));
+  const billing = source3.find((section) => section.key.startsWith("Billing"))!.key;
+  const back = ownedByTeam(versionSections(docOfSections(withIntro), metaOf(withIntro), source2));
+  const out = withTranslation(back, doc(["Einrichtung", "Installieren"], ["Abrechnung", "Per Rechnung"]), source3, { only: new Set([billing]) });
+  expect(texts(docOfSections(out))).toEqual(["Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Per Rechnung"]);
+});

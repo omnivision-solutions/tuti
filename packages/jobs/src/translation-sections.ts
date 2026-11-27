@@ -95,15 +95,15 @@ export function withTranslation(
       byKey.set(key, section);
       for (const other of section.meta.also ?? []) if (inSource.has(other) && !byKey.has(other)) byKey.set(other, section);
       previous = key;
-    } else if (section.meta.standIn !== undefined && key !== null && !inSource.has(key)) {
-      // Standing in for an intro the source no longer has: the intro's translation goes, the team's own paragraph stays,
-      // theirs (as it was before the intro came).
-      const own = section.blocks.slice(section.meta.standIn);
-      if (own.length > 0) after.set(previous, [...(after.get(previous) ?? []), { blocks: own, meta: { key: null, hash: null, own: true } }]);
     } else if (key === null || (section.meta.own && (!published || section.meta.kept) && !asked?.has(key)) || (only && !only.has(key))) {
       // (Published on a version kept up to date, the team's edit whose source section went goes too, unless they kept it.)
       // (A version the team writes keeps its sections whose source went, but where it asked for them.)
       after.set(previous, [...(after.get(previous) ?? []), section]);
+    } else if (section.meta.standIn !== undefined && key !== null && !inSource.has(key)) {
+      // Standing in for an intro the source no longer has, and going (not kept, not left as it is): the intro's translation
+      // goes, the team's own paragraph stays, theirs (as it was before the intro came).
+      const own = section.blocks.slice(section.meta.standIn);
+      if (own.length > 0) after.set(previous, [...(after.get(previous) ?? []), { blocks: own, meta: { key: null, hash: null, own: true } }]);
     }
   }
   const out: Section[] = [...(after.get(null) ?? [])];
