@@ -610,7 +610,12 @@ const SEARCH_WAITS = "its search data couldn't be written";
  */
 async function searchable(translationId: string, tries: number, read: Date | null, log: JobLogger) {
   try {
-    await embedTranslation(translationId, log);
+    const result = await embedTranslation(translationId, log);
+    // Its text changed while it was embedded: a newer write's state (its own failure's tries and time) is that run's to keep.
+    // Only an attempt done for the text as it is clears the count (embeddings turned off too: nothing would try again).
+    if (result.changed) {
+      return true;
+    }
     if (tries > 0) {
       await prisma.articleTranslation.updateMany({ where: { id: translationId, error: null }, data: { tries: 0 } });
     }
