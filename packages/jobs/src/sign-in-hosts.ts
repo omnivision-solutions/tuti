@@ -214,6 +214,12 @@ export function scriptsOf(page: { url: URL; text: string }): URL[] {
  * while a deploy runs both.
  */
 export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
+/**
+ * What a read that wasn't complete (a script that didn't load may hold the service) is kept under: shown, read again on
+ * the next look, and never in place of a full answer, which is kept under scannedFor (with a time or, saved before
+ * answers had one, without).
+ */
+export const partlyScannedFor = (appUrl: string) => `partial ${scannedFor(appUrl)}`;
 
 /**
  * The sign-in services the app at `appUrl` calls: its page (over https, an http address asked for over https) and the
@@ -267,8 +273,8 @@ export async function scanSignInServices({ projectId, appUrl, claimedAt }: JobIn
       await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl }, data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: new Date() } });
     } else if (found) {
       await prisma.screenshotSettings.updateMany({
-        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }, { signInServicesAt: null }] },
-        data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: null },
+        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }] },
+        data: { signInServices: found.services, signInServicesFor: partlyScannedFor(appUrl), signInServicesAt: null },
       });
     }
     return { read: !!found, complete: !!found?.complete, services: found?.services.length ?? 0 };

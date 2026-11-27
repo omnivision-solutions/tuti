@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, allowedHosts, dropChangedScreenshotProfile, enqueue, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, scannedFor, screenshotsAsked, settleStaleScreenshotRuns, type SignInService, startScreenshots } from "@tuti/jobs";
+import { aiPaused, allowedHosts, dropChangedScreenshotProfile, enqueue, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, partlyScannedFor, scannedFor, screenshotsAsked, settleStaleScreenshotRuns, type SignInService, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -323,7 +323,8 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }, s
   }
   const key = scannedFor(settings.appUrl);
   const now = Date.now();
-  const kept = settings.signInServicesFor === key ? (settings.signInServices as SignInService[] | null) : null;
+  // A full answer, or what a read that wasn't complete found (no time, so read again).
+  const kept = settings.signInServicesFor === key || settings.signInServicesFor === partlyScannedFor(settings.appUrl) ? (settings.signInServices as SignInService[] | null) : null;
   // One kept before answers had a time (until 2026-11) is read again too.
   const fresh = kept !== null && settings.signInServicesAt !== null && now - settings.signInServicesAt.getTime() < CHECK_AGAIN_MS;
   let checking = !fresh && settings.signInScanFor === key && settings.signInScanAt !== null && now - settings.signInScanAt.getTime() < SCAN_STALE_MS;

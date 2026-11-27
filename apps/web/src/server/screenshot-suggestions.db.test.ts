@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { prisma } from "@tuti/db";
-import { SCREENSHOT_SECRET, scannedFor, scanSignInServices } from "@tuti/jobs";
+import { partlyScannedFor, SCREENSHOT_SECRET, scannedFor, scanSignInServices } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -195,7 +195,7 @@ test("a page whose scripts pass 40 MB together reads no more of them, and the an
   expect(await suggestions()).toEqual([]);
   // 14 fill the budget; up to 7 more were already on their way.
   expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
-  expect(await saved()).toMatchObject({ signInServicesFor: scannedFor(`${base}/heavy`), signInServicesAt: null });
+  expect(await saved()).toMatchObject({ signInServicesFor: partlyScannedFor(`${base}/heavy`), signInServicesAt: null });
 });
 
 test("the last script cut short by the budget, with none left to read, isn't kept as the answer either", async () => {
@@ -349,7 +349,7 @@ test("what a read that isn't complete found is shown, and the next look reads th
   const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
   await settle({ appUrl });
   expect(await suggestions()).toEqual(firebase);
-  expect(await saved()).toMatchObject({ signInServicesFor: scannedFor(appUrl), signInServicesAt: null });
+  expect(await saved()).toMatchObject({ signInServicesFor: partlyScannedFor(appUrl), signInServicesAt: null });
   // Read again (and shown meanwhile).
   expect(await look()).toEqual({ suggestions: firebase, checking: true });
   expect(requests.filter((path) => path === "/partial")).toHaveLength(2);
@@ -360,7 +360,11 @@ test("what a read that isn't complete found is shown, and the next look reads th
 
   // A full answer, expired, isn't replaced by a partial read.
   const full = [{ provider: "Auth0", hosts: ["acme.auth0.com"] }];
-  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: full, signInServicesAt: new Date(0) } });
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: full, signInServicesFor: scannedFor(appUrl), signInServicesAt: new Date(0) } });
   expect(await suggestions()).toEqual(full);
-  expect(await saved()).toMatchObject({ signInServices: full, signInServicesAt: new Date(0) });
+  expect(await saved()).toMatchObject({ signInServices: full, signInServicesFor: scannedFor(appUrl), signInServicesAt: new Date(0) });
+  // Nor one saved before answers had a time (or by the previous release while a deploy runs both).
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServicesAt: null } });
+  expect(await suggestions()).toEqual(full);
+  expect(await saved()).toMatchObject({ signInServices: full, signInServicesFor: scannedFor(appUrl), signInServicesAt: null });
 });
