@@ -73,7 +73,7 @@ export function translationInstructions(language: string, productAvailable: bool
   return [product, instructions.trim()].filter(Boolean).join("\n\n");
 }
 
-const languageName = (code: string) => (isLanguage(code) ? LANGUAGES[code].name : code);
+export const languageName = (code: string) => (isLanguage(code) ? LANGUAGES[code].name : code);
 
 /** What the translate job reads of a version: the row, its language's setting, and its source. */
 type Version = {
@@ -643,7 +643,7 @@ const safetyNet = (kind: Kind, where: object, client?: Client) =>
 /** Queuing (inline, translating) still going after the request or publish answered. */
 const inBackground = new Set<Promise<void>>();
 /** Runs `queuing`: inline, where each job runs as it's queued, in the background, so a save or request never waits on the model. */
-function queueAll(queuing: () => Promise<void>) {
+export function queueAll(queuing: () => Promise<void>) {
   // Never awaited: a language's every page queued (or, inline, translated) one by one would hold the request for long. Each
   // page already has its safety net, so one a restart keeps this from reaching is queued again by the retry job.
   const running = queuing().catch((error: unknown) => serverLog.error("Queuing translations failed", { error }));
@@ -794,7 +794,10 @@ export async function retryArticleTranslations(): Promise<JobResult> {
     queued += await retryKind(kind);
   }
   queued += await entriesLeftBehind();
-  return { queued, ...(named > 0 && { named }) };
+  // Docs labels (collection and tab names) still to translate, whatever wrote them.
+  const { queueStaleLabels } = await import("./label-translation");
+  const labels = await queueStaleLabels();
+  return { queued, ...(labels > 0 && { labels }), ...(named > 0 && { named }) };
 }
 
 /**

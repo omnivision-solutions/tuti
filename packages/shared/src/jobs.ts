@@ -67,6 +67,17 @@ export const jobs = {
     backoff: { factor: 4, maxSeconds: 300 },
     concurrencyKey: "input.entryId + ':' + input.language",
   },
+  /**
+   * A project's docs labels (collection and tab names) into one of its languages (docs/plan.md L13): new ones and those kept
+   * up to date whose text changed. Two quick retries for an unexpected failure (a deadlock, a restart): each label is written as
+   * it's translated, so a retry only asks for what's left; what fails for longer, retryArticleTranslations finds, backing off.
+   */
+  translateLabels: {
+    name: "translate-labels",
+    input: z.object({ projectId: z.string(), language: z.string() }),
+    concurrencyKey: "input.projectId + ':' + input.language",
+    retries: 2,
+  },
   /** Translations that couldn't be made (no credits, the provider failing) tried again on their own, backing off up to a day. */
   retryArticleTranslations: {
     name: "retry-article-translations",
