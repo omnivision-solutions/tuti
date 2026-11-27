@@ -3,6 +3,7 @@ import { type Doc, toPlainText } from "@tuti/content";
 import type { MediaUrls } from "@tuti/content/media";
 import { formatDate } from "@tuti/shared/dates";
 
+import { emailTranslator } from "./language";
 import { buttonStyle, type EmailBrand, Eyebrow, FooterLink, Layout, Title } from "./layout";
 import { CONTENT_WIDTH, EmailRichText } from "./rich-text";
 
@@ -20,22 +21,22 @@ type ChangelogProps = EmailBrand & {
   unsubscribeUrl: string;
   /** The language of its title and text where it's a translation (docs/plan.md L16): their `lang`, for screen readers. */
   lang?: string;
+  /** The email's own words' (the subscriber's language the portal serves, else its default; docs/plan.md L5), else English. */
+  language?: string;
 };
 
 /** A published changelog entry, in full, to the changelog's subscribers. */
-export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt, doc, coverUrl, mediaUrls, unsubscribeUrl, accent, poweredBy, logo, logoText, lang }: ChangelogProps) {
+export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt, doc, coverUrl, mediaUrls, unsubscribeUrl, accent, poweredBy, logo, logoText, lang, language }: ChangelogProps) {
+  const t = emailTranslator(language, "emails");
   return (
     <Layout
       preview={toPlainText(doc).slice(0, 140) || entryTitle}
       project={{ projectName, accent, poweredBy, logo, logoText }}
-      footer={
-        <>
-          You&apos;re getting this because you subscribed to {projectName}&apos;s changelog. <FooterLink href={unsubscribeUrl}>Unsubscribe</FooterLink>
-        </>
-      }
+      footer={t.rich("subscribedFooter", { name: projectName, link: (chunks) => <FooterLink href={unsubscribeUrl}>{chunks}</FooterLink> })}
+      language={language}
     >
       {coverUrl && <Img src={coverUrl} alt={entryTitle} lang={lang} width={CONTENT_WIDTH} style={{ borderRadius: 12, margin: "20px 0 0", maxWidth: "100%", height: "auto" }} />}
-      <Eyebrow accent={accent}>{`New · ${formatDate(publishedAt)}`}</Eyebrow>
+      <Eyebrow accent={accent}>{t("newOn", { date: formatDate(publishedAt, language) })}</Eyebrow>
       {/* The team's words in their own language (the email's own words are the portal's, L5). */}
       <div lang={lang}>
         <Title>{entryTitle}</Title>
@@ -43,7 +44,7 @@ export function ChangelogEmail({ projectName, entryTitle, entryUrl, publishedAt,
       </div>
       {entryUrl && (
         <Button href={entryUrl} style={buttonStyle(accent)}>
-          Read the update
+          {t("readUpdate")}
         </Button>
       )}
     </Layout>

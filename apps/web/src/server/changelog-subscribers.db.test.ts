@@ -2097,3 +2097,46 @@ describe("the list (changelogSubscribers.list, Users → Subscribers)", () => {
     ]);
   });
 });
+
+test("subscribed on a German page: the confirmation email is German, its link opens the subscription page at /de, in German; the unsubscribe page reads in its address's language too", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const email = newAddress();
+  const german = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  request.headers = german;
+  expect(await subscribe(email)).toEqual({ sentTo: email });
+  const message = await mailbox.latestTo(email);
+  expect(message.subject).toBe(`Updates von ${project.name} per E-Mail bestätigen`);
+  expect(message.text).toContain(`Bestätige, um die Changelog-Einträge zu bekommen, die ${project.name} an Abonnenten mailt`);
+  const link = new URL(message.text.split(/\s+/).find((word) => word.includes("/changelog/subscription?"))!);
+  expect(link.pathname).toBe("/de/changelog/subscription");
+  // Its page, at that address.
+  expect(await page({ confirm: link.searchParams.get("confirm")! })).toContain(`Updates von ${project.name} per E-Mail bekommen?`);
+  // A broken link's page, and the project's unsubscribe page, in German at a German address; English at the default one.
+  expect(await page({ token: "nope" })).toContain("Dieser Link funktioniert nicht");
+  const ada = await signUp("Ada");
+  const unsubscribePage = async () =>
+    renderToStaticMarkup(
+      await UnsubscribePage({
+        params: params(),
+        searchParams: Promise.resolve({ token: projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: ada.id } })) }),
+      } as PageProps<"/portal/[project]/unsubscribe">),
+    );
+  expect(await unsubscribePage()).toContain(`Keine E-Mails mehr von ${project.name}?`);
+  request.headers = {};
+  expect(await unsubscribePage()).toContain(`Stop emails from ${project.name}?`);
+});
+
+test("a subscription in a language taken offline since: its confirmation email and link fall back to the default language's", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const email = newAddress();
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  expect(await subscribe(email)).toEqual({ sentTo: email });
+  await prisma.projectLanguage.updateMany({ where: { projectId: project.id, code: "de" }, data: { live: false } });
+  // Asked again (not confirmed yet) on the default language's page would set it there; here the same German page sends again.
+  await prisma.signInLink.deleteMany();
+  expect(await subscribe(email)).toEqual({ sentTo: email });
+  request.headers = {};
+  const message = await mailbox.latestTo(email);
+  expect(message.subject).toBe(`Confirm ${project.name}'s updates by email`);
+  expect(new URL(message.text.split(/\s+/).find((word) => word.includes("/changelog/subscription?"))!).pathname).toBe("/changelog/subscription");
+});
