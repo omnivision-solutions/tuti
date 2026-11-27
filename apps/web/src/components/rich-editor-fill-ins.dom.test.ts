@@ -63,10 +63,12 @@ test("an article's are only its screenshot lines outside code, as its publishing
         { type: "paragraph", content: [text("Ask for one with "), { type: "text", text: "[Screenshot: what to show]", marks: [{ type: "code" }] }, text(" on its own line.")] },
         { type: "codeBlock", content: [text("[Screenshot: the theme menu]")] },
         { type: "paragraph", content: [text("[Screenshot: the export button]")] },
+        // Code inside one: still the one line it asks for, highlighted through the code.
+        { type: "paragraph", content: [text("[Screenshot: the "), { type: "text", text: "Theme", marks: [{ type: "code" }] }, text(" menu, open]")] },
       ],
     }),
   );
-  expect(highlighted()).toEqual(["[Screenshot: the export button]"]);
+  expect(highlighted()).toEqual(["[Screenshot: the export button]", "[Screenshot: the ", "Theme", " menu, open]"]);
 });
 
 test("a comment or post isn't a draft: nothing highlighted", async () => {

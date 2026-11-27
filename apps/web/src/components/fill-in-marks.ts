@@ -23,12 +23,16 @@ export function fillInsPlugin(kind: keyof typeof MARKERS) {
       if (!node.isTextblock) {
         return true;
       }
-      // Its text, each character's position beside it: anything else inline (a line break, an image, an article's code) ends a line.
+      // Its text, each character's position beside it: anything else inline (a line break, an image) ends a line.
       let text = "";
       const at: number[] = [];
       node.forEach((child, offset) => {
         const start = pos + 1 + offset;
-        const piece = child.isText && (code || !child.marks.some((mark) => mark.type.name === "code")) ? child.text! : "\n".repeat(child.nodeSize);
+        // An article's inline code is left out and the text around it joined, as publishing reads it (withoutCode).
+        if (!code && child.marks.some((mark) => mark.type.name === "code")) {
+          return;
+        }
+        const piece = child.isText ? child.text! : "\n";
         for (let i = 0; i < piece.length; i++) {
           at.push(start + i);
         }
