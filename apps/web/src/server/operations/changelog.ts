@@ -49,8 +49,6 @@ import {
   droppedMarkers,
   markersIn,
   releaseNotesPrompt,
-  REWRITE_MODES,
-  REWRITE_TASKS,
   rewritePrompt,
   sectionRange,
 } from "../release-notes";
@@ -696,7 +694,7 @@ const updateInput = z.object({
     expectedUpdatedAt: z.iso
       .datetime()
       .optional()
-      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt`, or the `expectedUpdatedAt` changelog.rewrite returns")
+      .describe("Save only if the entry hasn't changed since (a 409 otherwise): the entry's `updatedAt` as you read it")
       .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
     screenshotsSince: z.iso
       .datetime()
@@ -1096,140 +1094,8 @@ async function withAutopilotNotes<PullRequest extends { repo: string; number: nu
 }
 
 export const MAX_INSTRUCTION_LENGTH = 200;
-/** AI edits (changelog.rewrite) a project may ask for per clock hour, all of its team together. */
+/** AI edits (rewriteText: the changelog's and the help center's) a project may ask for per clock hour, all of its team together. */
 export const AI_EDITS_PER_HOUR = 60;
-
-export const rewriteChangelogEntry = defineOperation({
-  name: "changelog.rewrite",
-  title: "Rewrite an entry with AI",
-  summary: `Propose an AI edit of an entry's text, without saving it. To accept it, send \`proposed.content\` to changelog.update with \`expectedUpdatedAt\`. Up to ${AI_EDITS_PER_HOUR} AI edits an hour per project, its whole team together (then a 429)`,
-  method: "POST",
-  path: "/changelog/{number}/rewrite",
-  scope: "write",
-  access: "team",
-  errors: [402, 429, 502, 503],
-  input: z.object({
-    number: entryNumber,
-    mode: z
-      .enum(REWRITE_MODES)
-      .describe("The edit: `shorten` it, explain it for non-developers (`plain`), or rewrite a `section` so it reads better (needs `section`)")
-      .meta({ examples: ["shorten"] }),
-    section: z
-      .union([z.number().int().min(0), z.string().trim().min(1).max(200)])
-      .optional()
-      .describe("The one section to edit: its heading, or its number (1 for the first heading, 0 for the text before it); without it, the whole text")
-      .meta({ examples: ["Dark mode"] }),
-    instruction: z
-      .string()
-      .trim()
-      .max(MAX_INSTRUCTION_LENGTH, `Keep the instruction under ${MAX_INSTRUCTION_LENGTH} characters`)
-      .optional()
-      .describe(`Optional: what the AI should do too, under ${MAX_INSTRUCTION_LENGTH} characters`)
-      .meta({ examples: ["Mention it follows the system setting"] }),
-  }),
-  output: z
-    .object({
-      number: z.number().int().describe("The entry's number").meta({ examples: [7] }),
-      mode: z.enum(REWRITE_MODES).describe("The edit").meta({ examples: ["shorten"] }),
-      section: z
-        .object({
-          index: z.number().int().describe("Its number: 1 for the first heading, 0 for the text before it").meta({ examples: [1] }),
-          heading: z.string().nullable().describe("Its heading; null for the text before the first one").meta({ examples: ["Dark mode"] }),
-        })
-        .nullable()
-        .describe("The section it edited; null for the whole text"),
-      body: z.string().describe("The entry's text now, as plain text").meta({ examples: ["Dark mode\nYou can now switch to a dark theme from your profile menu, any time of day."] }),
-      proposed: z
-        .object({
-          content: doc.describe("The whole entry's text with the edit, as rich content: send it to changelog.update to accept it").meta({ examples: [exampleDoc] }),
-          body: z.string().describe("The same, as plain text").meta({ examples: ["Switch themes from your profile menu."] }),
-        })
-        .describe("The whole entry's text with the edit, not saved"),
-      expectedUpdatedAt: z
-        .string()
-        .describe("Send it with the proposed content to changelog.update: saving it then only works if the entry hasn't changed since")
-        .meta({ examples: ["2026-11-03T10:00:00.000Z"] }),
-    })
-    .describe("The proposed edit"),
-  example: { mode: "section", section: "Dark mode", instruction: "Mention it follows the system setting" },
-  run: async ({ projectId }, input) => {
-    const portal = await projectPortal(projectId);
-    if (!aiEnabled()) {
-      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
-    }
-    if (input.mode === "section" && input.section === undefined) {
-      throw new OperationError(400, "invalid_input", "Pick the section to rewrite");
-    }
-    const entry = await teamEntry(projectId, input.number);
-    const doc = displayDoc(entry);
-    const blocks = doc.content ?? [];
-    const range = input.section === undefined ? { start: 0, end: blocks.length, index: null, heading: null } : sectionRange(blocks, input.section);
-    if (!range) {
-      throw new OperationError(400, "no_section", `There's no section ${typeof input.section === "string" ? `“${input.section}”` : input.section}`);
-    }
-    const target = blocks.slice(range.start, range.end);
-    const media: NonNullable<Doc["content"]> = [];
-    const text = blocksToNotes(target, media);
-    if (text.trim() === "") {
-      throw new OperationError(400, "nothing_to_rewrite", "There's no text to rewrite yet");
-    }
-    const ai = await aiOrRefuse(projectId, "changelog");
-    await countAiEdit(projectId);
-    const { posts } = await entryView(asReaderSees(entry, false), portal);
-    let reply: string;
-    try {
-      reply = await complete({
-        ...rewritePrompt({
-          task: REWRITE_TASKS[input.mode],
-          text,
-          whole: target.length < blocks.length ? toMarkdown(doc) : undefined,
-          instruction: input.instruction || undefined,
-          style: await writingStyle(projectId, entry.id),
-        }),
-        ...ai,
-      });
-    } catch (error) {
-      log.warn("AI changelog rewrite failed", { projectId, number: input.number, error });
-      throw new OperationError(502, "ai_failed", "The AI couldn't edit the text. Try again in a moment.");
-    }
-    // Links can be kept, or go to the entry's posts; nothing else.
-    const before = factsIn(target);
-    const links = [...before.keys()].filter((key) => key.startsWith("link ")).map((key) => key.slice("link ".length));
-    const rewritten = readReleaseNotes(reply, new Set([...links, ...posts.map((post) => post.url)]), media);
-    // Checked like anything the team saves.
-    const proposed =
-      rewritten &&
-      (await readContent(
-        "changelog",
-        { content: { type: "doc", content: [...blocks.slice(0, range.start), ...rewritten.doc.content!, ...blocks.slice(range.end)] } },
-        { projectId, maxLength: MAX_ENTRY_LENGTH },
-      ));
-    if (!rewritten || !proposed || proposed.error !== undefined) {
-      log.warn("AI changelog rewrite unusable", { projectId, number: input.number, reply: reply.slice(0, 500) });
-      throw new OperationError(502, "ai_failed", "The AI's version couldn't be used. Try again.");
-    }
-    // Facts are checked, not trusted: a version that drops a link, an image or a video isn't offered.
-    // Nor one that drops a line the team still has to fill in: accepted, the entry could be published with the question never answered.
-    const unanswered = droppedMarkers({ type: "doc", content: target }, rewritten.doc);
-    const dropped = [...droppedFacts(target, rewritten.doc.content!), ...(unanswered.length > 0 ? [unanswered.length === 1 ? "a line still to fill in" : `${unanswered.length} lines still to fill in`] : [])];
-    if (dropped.length > 0) {
-      const list = dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} and ${dropped.at(-1)}` : dropped[0];
-      throw new OperationError(502, "dropped_facts", `The AI's version left out ${list}, so it wasn't used. Try again.`);
-    }
-    return {
-      number: input.number,
-      mode: input.mode,
-      /** The section it edited (null: the whole text). */
-      section: range.index === null ? null : { index: range.index, heading: range.heading },
-      /** The entry's text now, as plain text. */
-      body: toPlainText(doc),
-      /** The whole entry's text with the edit, not saved. */
-      proposed: { content: proposed.doc, body: proposed.text },
-      /** Send with the proposed content to changelog.update: it's saved only if the entry hasn't changed since. */
-      expectedUpdatedAt: entry.updatedAt.toISOString(),
-    };
-  },
-});
 
 /** Counts an AI edit (the changelog's and the help center's together) against the project's hourly cap, or refuses it (429). */
 export async function countAiEdit(projectId: string) {

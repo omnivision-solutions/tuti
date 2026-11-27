@@ -10,7 +10,6 @@ import type { Reaction } from "@/lib/reactions";
 import type { CoverDesign } from "./cover-card";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
-import type { RewriteMode } from "./release-notes";
 import {
   composeChangelogCover as composeCoverOperation,
   composeCover,
@@ -24,7 +23,6 @@ import {
   publishChangelogEntry as publishOperation,
   reactToChangelogEntry as reactOperation,
   removeChangelogPullRequest as removePullRequestOperation,
-  rewriteChangelogEntry as rewriteOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
   updateChangelogStyle,
@@ -141,34 +139,6 @@ export async function findPostsToComplete(projectSlug: string, q: string, sample
 /** Replaces a draft's text with an AI draft (see changelog.draft). */
 export async function draftChangelogEntry(projectSlug: string, number: number): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(draftOperation, context, { number: Number(number) }));
-}
-
-export type ChangelogRewrite = Awaited<ReturnType<(typeof rewriteOperation)["run"]>>;
-
-/** An AI edit of the saved text, proposed, not saved (see changelog.rewrite). */
-export async function rewriteChangelogEntry(
-  projectSlug: string,
-  number: number,
-  input: { mode: RewriteMode; section?: number; instruction?: string },
-): Promise<{ error?: string; rewrite?: ChangelogRewrite }> {
-  let rewrite: ChangelogRewrite | undefined;
-  const result = await asTeam(projectSlug, DENIED, async (context) => {
-    // As JSON: the document's attrs come from ProseMirror as null-prototype objects, which React won't send.
-    rewrite = JSON.parse(JSON.stringify(await call(rewriteOperation, context, { ...input, number: Number(number) }))) as ChangelogRewrite;
-  });
-  return rewrite ? { rewrite } : result;
-}
-
-/** Saves an accepted AI edit, unless the entry changed since it was proposed (see changelog.update). */
-export async function acceptChangelogRewrite(
-  projectSlug: string,
-  number: number,
-  content: unknown,
-  expectedUpdatedAt: string,
-): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) =>
-    call(updateChangelogEntry, context, { number: Number(number), content, expectedUpdatedAt: String(expectedUpdatedAt) }),
-  );
 }
 
 /**
