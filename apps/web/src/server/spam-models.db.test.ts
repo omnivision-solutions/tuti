@@ -423,7 +423,10 @@ test("a held conversation isn't handed over till it's released: then \"A convers
   model.decide({ spam: 0.2 });
   await check(kept);
   expect(await path(kept)).toEqual({ rows: ["conversation_started", "about_to_hand_over"], handledBy: "AI", replies: 1 });
-  expect((await told()).webhooks).toEqual(["conversation.created"]);
+  // Told as the handover left it: the AI's, so the team isn't emailed and the webhook says who has it.
+  expect(await told()).toEqual({ webhooks: ["conversation.created"], emails: 0 });
+  const created = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId }, event: "conversation.created" }, select: { payload: true } });
+  expect((created.payload as { data: { handledBy: string } }).data.handledBy).toBe("ai");
   await check(kept);
   expect(await path(kept)).toEqual({ rows: ["conversation_started", "about_to_hand_over"], handledBy: "AI", replies: 1 });
 
@@ -433,7 +436,7 @@ test("a held conversation isn't handed over till it's released: then \"A convers
   model.decide({ spam: 0.2 });
   await check(handed);
   expect(await path(handed)).toEqual({ rows: ["conversation_started", "handed over"], handledBy: "TEAM", replies: 0 });
-  expect((await told()).webhooks).toEqual(["conversation.created", "conversation.created", "conversation.handed_over"]);
+  expect(await told()).toEqual({ webhooks: ["conversation.created", "conversation.created", "conversation.handed_over"], emails: 1 });
 
   // Filed by the model: never handed over.
   const filed = await mail("e2e-third@example.com");
