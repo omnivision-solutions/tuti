@@ -610,6 +610,7 @@ export function ChangelogForm({
   mediaUrls,
   covers = null,
   canEditWithAi = false,
+  canAskAi = false,
   aiPaused = false,
   imageGenerator = null,
   subscribers = 0,
@@ -642,6 +643,8 @@ export function ChangelogForm({
   mediaUrls: MediaUrls | null;
   /** AI is set up on this server and the text is written (not still pull-request titles): the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
+  /** Ask AI on selected text (the server has AI). */
+  canAskAi?: boolean;
   /** The project is out of credits: the helpers show, disabled. */
   aiPaused?: boolean;
   /** The featured image's Generate (AI images); null where the server can't make them. */
@@ -740,6 +743,7 @@ export function ChangelogForm({
             uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
             editorRef={editor}
             imageEditing={imageGenerator && { ...imageGenerator, title: entry?.title }}
+            askAi={canAskAi ? { projectSlug, kind: "changelog", entry: entry?.number, paused: aiPaused } : null}
             onChange={() => setDirty(true)}
             // Its AI helpers (here and Draft with AI in the top bar) would rewrite it without what it can't show; told on
             // every editor made, so text that's readable again (the form remounted with it) unlocks them.

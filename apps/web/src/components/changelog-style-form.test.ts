@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 
 vi.mock("@/server/changelog", () => ({}));
 vi.mock("@/server/images", () => ({}));
+vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));
