@@ -52,6 +52,11 @@ beforeAll(async () => {
     } else if (request.url?.startsWith("/heavy")) {
       const count = Number(new URL(request.url, base).searchParams.get("scripts") ?? 30);
       response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: count }, (_, i) => `<script src="/assets/h${i}.js"></script>`).join(""));
+    } else if (request.url === "/one") {
+      response.writeHead(200, { "content-type": "text/html" }).end('<script src="/assets/one.js"></script>');
+    } else if (request.url === "/assets/one.js") {
+      // A single-page app's one 4 MB bundle, the sign-in SDK at its end.
+      response.writeHead(200, { "content-type": "text/javascript" }).end(`${" ".repeat(4_000_000)}const a="identitytoolkit.googleapis.com";`);
     } else if (request.url === "/chunks") {
       response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 14 }, (_, i) => `<script src="/assets/c${i}.js"></script>`).join(""));
     } else if (request.url?.startsWith("/assets/c")) {
@@ -189,6 +194,12 @@ test("scripts under the budget together are read in full, the last as much as th
   await settle({ appUrl: `${base}/chunks` });
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/chunks`));
+});
+
+test("a single-page app's one large bundle is read in full, up to 5 MB, and the answer is kept", async () => {
+  await settle({ appUrl: `${base}/one` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/one`));
 });
 
 test("the budget counts the bytes read, not the characters", async () => {

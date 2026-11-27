@@ -130,8 +130,8 @@ function findIn(original: string): SignInService[] {
 }
 
 const PAGE_BYTES = 2_000_000;
-/** Each script, read in full up to this (a vendor chunk of a few hundred KB, say): searched as it arrives and let go. */
-const SCRIPT_BYTES = 3_000_000;
+/** Each script, read in full up to this (a single-page app's one bundle, say): searched as it arrives and let go. */
+const SCRIPT_BYTES = 5_000_000;
 /** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them. */
 const MAX_SCRIPTS = 100;
 /** All the scripts together, counted as they arrive: past it, no more are read, and what was found isn't kept. */
