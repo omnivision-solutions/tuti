@@ -541,6 +541,21 @@ test("the retry job queues a failed entry only in the languages there when it fa
   expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id, language: "fr" } })).toBe(0);
 });
 
+test("a published entry's other changes (its tags) never bring a language added since into it, the retry job's run neither", async () => {
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  model.reply(reply("de"));
+  await call(publishChangelogEntry, as(), { number: entry.number });
+  await languageTranslationsDone();
+  await languages({ languages: [{ code: "de" }, { code: "fr" }] });
+  // Its change time moves; its text, and what's confirmed for it, don't.
+  await call(updateChangelogEntry, as(), { number: entry.number, tags: ["improved"] });
+  await languageTranslationsDone();
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  await languageTranslationsDone();
+  expect(await prisma.changelogTranslation.count({ where: { entryId: entry.id, language: "fr" } })).toBe(0);
+});
+
 test("an announcement whose translation ends after the wait is sent by the email safety net (every 10 minutes, inline too)", async () => {
   await languages({ languages: [{ code: "de" }] });
   const { entry, email } = await draft();
