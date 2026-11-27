@@ -261,9 +261,10 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
       await queue(kind, parentId, language);
       return result;
     }
-    if (result.skipped === CHANGED && kind.name === "article") {
-      // An article's version the team writes, with sections asked for (Update those sections), whose write a change refused
-      // (the glossary saved meanwhile, which queues only versions kept up to date): asked again now, not after the safety net.
+    if (result.skipped === CHANGED && started.glossaryChanged && kind.name === "article") {
+      // An article's version the team writes, with sections asked for (Update those sections), whose write the glossary
+      // refused (saved meanwhile, which queues only versions kept up to date): asked again now, not after the safety net. Other
+      // refusals (a publish, the source changing) queue their own run.
       const version = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: parentId, language } }, select: { automatic: true, updateSections: true } });
       if (version && !version.automatic && (version.updateSections as string[]).length > 0) {
         await queue(kind, parentId, language);
@@ -337,7 +338,7 @@ export const sourceChanged = (sourceLanguage: string) => `${languageName(sourceL
 export const otherReasons = (behind: unknown, sourceLanguage: string) =>
   Object.fromEntries(Object.entries((behind ?? {}) as Record<string, string>).filter(([, why]) => why !== sourceChanged(sourceLanguage) && why !== sourceAdded(sourceLanguage)));
 /** What a job learns as it goes: its guarded write once it has one, and the safety net's time it read. */
-type Started = { settle?: Settle; retryAt?: Date | null };
+type Started = { settle?: Settle; retryAt?: Date | null; /** Its write was refused because the glossary changed since it read it. */ glossaryChanged?: true };
 
 async function translateOne(kind: Kind, parentId: string, language: string, log: JobLogger, { lastTry }: JobRun, started: Started): Promise<JobResult> {
   const row = await kind.read(parentId, language);
@@ -393,6 +394,7 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
       // The glossary still the one it translated with (as the product setting is): a save since queued it, or marked its
       // sections behind, again (glossaryChanges locks the source as this does, so its mark can't land under this write).
       if (glossaryFor(await projectGlossary(published.projectId, tx), language, plainSource).hash !== glossary.hash) {
+        started.glossaryChanged = true;
         return false;
       }
       let written: Data | null = data as Data;
@@ -443,7 +445,10 @@ async function translateOne(kind: Kind, parentId: string, language: string, log:
   // Remembered translations only from the same setting: one made under the other treats the product's words the other way.
   // A glossary changed since: none of its terms' segments reused (the check takes a word starting with a term's translation,
   // so a remembered one with an old, longer word could pass).
-  const remembered = !fresh && sameSetting ? (row.memory as Record<string, string>) : {};
+  // Read again now, after the glossary: one the glossary's save cleaned meanwhile is never used with the glossary from before
+  // (a save after this, the write's check refuses).
+  const memoryNow = (kind.name === "article" ? await prisma.articleTranslation.findUnique({ where: { id: row.id }, select: { memory: true } }) : await prisma.changelogTranslation.findUnique({ where: { id: row.id }, select: { memory: true } }))?.memory;
+  const remembered = !fresh && sameSetting ? ((memoryNow ?? row.memory) as Record<string, string>) : {};
   const memory = row.glossaryHash === glossary.hash ? remembered : Object.fromEntries(Object.entries(remembered).filter(([text]) => termsUsed(text, glossary.terms).length === 0));
   const parts = sourceSections(source.text);
   // An article's version the team writes is translated only where it asked: just those sections are sent (no title,
