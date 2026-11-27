@@ -285,6 +285,10 @@ export default function Details() {
               onPress={() => void change({ priority: !triage.priority }, triage.priority ? "No longer priority" : "Marked priority")}
             />
           )}
+          {/* Only where the server offers it (conversations.get's `handBack`): the team's, nobody waiting, the AI able to answer. */}
+          {triage?.handBack && (
+            <Row label="Hand back to the AI" busy={busy} action colors={colors} onPress={() => void change({ handledBy: "ai", ifNobodyWaits: true }, "Handed back to the AI")} />
+          )}
           {triage && (
             <Row
               label={triage.spam ? "Not spam" : "Mark as spam"}

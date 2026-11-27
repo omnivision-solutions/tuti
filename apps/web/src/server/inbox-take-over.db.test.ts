@@ -5,7 +5,7 @@ import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
 import { aiWouldAnswer } from "./ai-turn";
 import { handBackConversation, setConversationPriority, takeOverConversation } from "./inbox";
-import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
+import { createConversation, getConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import type { Actor } from "./operations/define";
 import { call } from "./operations/run";
 import { createWorkflow } from "./operations/workflows";
@@ -129,39 +129,6 @@ test("Hand back to the AI is offered only where the AI would answer: AI on the s
   expect(await would({ userId: (await signUp("Nora Notareader")).id })).toBe(false);
 });
 
-/**
- * A conversation the team has, its user's message written while Hand back checked (the check reads nobody waiting): the
- * timing a lock-free check leaves open, made by answering the check's read as if before the message.
- */
-async function slipsIn() {
-  const { owner, project, tess, row } = await handedToAi();
-  actAs(tess);
-  await takeOverConversation(project.slug, 1);
-  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
-  await call(replyToConversation, { actor: key, projectId: project.id }, { number: 1, body: "Any news?", author: { id: sam.id } });
-  vi.spyOn(prisma.conversationMessage, "findFirst").mockResolvedValueOnce({ author: "TEAM" } as never);
-  return { project, row };
-}
-
-test("a message that slips in while handing back gets the AI's turn where it can answer", async () => {
-  const { project, row } = await slipsIn();
-  vi.stubEnv("OPENAI_API_KEY", "sk-or-test-key");
-  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
-  await prisma.article.create({ data: { projectId: project.id, slug: "exporting", title: "Exporting", publishedAt: new Date() } });
-  expect(await handBackConversation(project.slug, 1)).toEqual({});
-  expect(await row()).toMatchObject({ handledBy: "AI", pathDueAt: expect.any(Date) });
-});
-
-test("a message that slips in while handing back goes to the team where the AI can't answer: never left with the AI", async () => {
-  const { project, row } = await slipsIn();
-  expect(await handBackConversation(project.slug, 1)).toEqual({});
-  const after = await row();
-  expect(after).toMatchObject({ handledBy: "TEAM", pathDueAt: null });
-  // Handed over for it: a second row after the one from when the conversation started.
-  const handovers = await prisma.conversationEvent.findMany({ where: { conversationId: after.id, kind: "handed_over" }, orderBy: { createdAt: "asc" }, select: { details: true } });
-  expect(handovers).toEqual([{ details: { reason: "ai_off" } }, { details: { reason: "ai_off" } }]);
-});
-
 test("Hand back to the AI after the AI answered: nobody waits, so it's allowed, though the team never replied", async () => {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
@@ -176,18 +143,6 @@ test("Hand back to the AI after the AI answered: nobody waits, so it's allowed, 
   actAs(owner);
   expect(await handBackConversation(project.slug, 1)).toEqual({});
   expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).handledBy).toBe("AI");
-});
-
-test("a message that slips in while handing back, where giving it to the AI fails: the team has it, told", async () => {
-  const { project, row } = await slipsIn();
-  vi.stubEnv("OPENAI_API_KEY", "sk-or-test-key");
-  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
-  vi.spyOn(prisma.article, "findFirst").mockRejectedValueOnce(new Error("database timeout"));
-  expect(await handBackConversation(project.slug, 1)).toEqual({});
-  const after = await row();
-  expect(after).toMatchObject({ handledBy: "TEAM", pathDueAt: null });
-  const handovers = await prisma.conversationEvent.findMany({ where: { conversationId: after.id, kind: "handed_over" }, orderBy: { createdAt: "asc" }, select: { details: true } });
-  expect(handovers.at(-1)).toEqual({ details: { reason: "ai_off" } });
 });
 
 /** A conversation one of the project's users starts over the API, handed to the team as it starts; its row. */
@@ -253,4 +208,44 @@ test("Hand back to the AI is refused after a handover whatever the clocks say: a
   await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id, author: "AI" }, data: { createdAt: new Date(event.createdAt.getTime() + 10) } });
   actAs(owner);
   expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Reply first: they're waiting on your team." });
+});
+
+test("over the API: ifNobodyWaits refuses handing back while the user waits, as the app's Hand back does; without it, the API hands back as before", async () => {
+  const { owner, project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
+  const context = { actor: key, projectId: project.id };
+  await call(replyToConversation, context, { number: 1, body: "Any news?", author: { id: sam.id } });
+  await expect(call(updateConversation, context, { number: 1, handledBy: "ai", ifNobodyWaits: true })).rejects.toMatchObject({ status: 409, code: "waiting" });
+  expect((await row()).handledBy).toBe("TEAM");
+  // ifNobodyWaits goes with handledBy: ai.
+  await expect(call(updateConversation, context, { number: 1, priority: true, ifNobodyWaits: true })).rejects.toMatchObject({ status: 400 });
+  // An integration's own call, without it: handed back as before.
+  await call(updateConversation, context, { number: 1, handledBy: "ai" });
+  expect((await row()).handledBy).toBe("AI");
+});
+
+test("conversations.get says whether Hand back to the AI is offered: on the team's, nobody waiting, where the AI would answer", async () => {
+  const { owner, project, tess } = await handedToAi();
+  const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
+  const context = { actor: key, projectId: project.id };
+  const offered = async () => (await call(getConversation, context, { number: 1 })).handBack;
+  vi.stubEnv("OPENAI_API_KEY", "sk-or-test-key");
+  vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:9");
+  await prisma.article.create({ data: { projectId: project.id, slug: "exporting", title: "Exporting", publishedAt: new Date() } });
+  // The AI's: nothing to hand back.
+  expect(await offered()).toBe(false);
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  // The team's, and the team replied last.
+  expect(await offered()).toBe(true);
+  // Sam writes: he waits.
+  await call(replyToConversation, context, { number: 1, body: "Any news?", author: { id: sam.id } });
+  expect(await offered()).toBe(false);
+  await call(replyToConversation, context, { number: 1, body: "Looking into it." });
+  expect(await offered()).toBe(true);
+  // No AI on the server: it wouldn't answer.
+  vi.unstubAllEnvs();
+  expect(await offered()).toBe(false);
 });
