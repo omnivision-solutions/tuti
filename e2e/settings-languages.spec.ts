@@ -269,22 +269,33 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await terms.getByRole("button", { name: "Remove this term", exact: true }).click();
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
 
-  // A teammate saves meanwhile (adding Zeta): a save from the list shown here is refused, the edit kept; undone, the
-  // teammate's list shows.
-  await api("/glossary", { terms: [...saved.terms, { term: "Zeta", translations: { fr: "Zêta" } }] }, "PATCH");
+  // A teammate saves meanwhile: Zeta added, Board's French changed. A save from the list shown here is refused, what was
+  // typed kept and the teammate's changes merged in, marked; saved again, it goes on top of them, with both.
+  const theirs = (await api("/glossary", undefined, "GET")) as unknown as { terms: { term: string; keep: boolean; translations: Record<string, string> }[] };
+  const board = (list: typeof theirs.terms) => list.find(({ term }) => term === "Board")!;
+  board(theirs.terms).translations.fr = "Planche";
+  await api("/glossary", { terms: [...theirs.terms, { term: "Zeta", translations: { fr: "Zêta" } }] }, "PATCH");
   await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Planke");
   await pane.getByRole("button", { name: "Save changes" }).click();
-  await expect(owner.getByText("The glossary changed since you opened it. Reload to see it, then save again")).toBeVisible();
+  await expect(owner.getByText("Changed meanwhile: check the marked terms, then save")).toBeVisible();
   await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Planke");
-  await expect(terms.getByRole("textbox", { name: "Zeta in Français" })).toHaveCount(0);
-  await terms.getByRole("textbox", { name: "Board in Deutsch" }).fill("Brett");
+  await expect(terms.getByRole("textbox", { name: "Board in Français" })).toHaveValue("Planche");
   await expect(terms.getByRole("textbox", { name: "Zeta in Français" })).toHaveValue("Zêta");
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveAccessibleDescription("Added meanwhile");
+  await expect(terms.getByRole("listitem").filter({ has: owner.getByRole("textbox", { name: "Board in Deutsch" }) }).getByRole("textbox", { name: "Term", exact: true })).toHaveAccessibleDescription("Changed meanwhile");
+  await checkpoint(owner, "glossary-meanwhile", { fullPage: false });
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await confirm.getByRole("button", { name: "Save" }).click();
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect(terms.getByText("Added meanwhile")).toHaveCount(0);
+  const both = (await api("/glossary", undefined, "GET")) as unknown as typeof theirs;
+  expect(board(both.terms).translations).toEqual({ de: "Planke", fr: "Planche" });
+  expect(both.terms.map(({ term }) => term)).toEqual(["Acme", "Board", "Zeta"]);
 
   // Saved: there after a reload, and as a card per term on a phone.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.reload();
-  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Brett");
+  await expect(terms.getByRole("textbox", { name: "Board in Deutsch" })).toHaveValue("Planke");
   await expect(terms.getByRole("listitem").filter({ has: owner.getByRole("switch", { checked: true }) }).getByRole("textbox", { name: "Term", exact: true })).toHaveValue("Acme");
   await expect(terms.getByText("Deutsch", { exact: true }).first()).toBeVisible();
   await checkpoint(owner, "glossary-phone");

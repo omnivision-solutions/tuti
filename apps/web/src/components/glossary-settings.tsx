@@ -2,21 +2,54 @@
 
 import { cn } from "cn";
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { usePreview } from "@/components/customize-shell";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { enterSaves } from "@/lib/forms";
-import { type GlossaryTermInput, saveGlossary } from "@/server/glossary";
+import { type GlossarySaved, type GlossaryTermInput, saveGlossary } from "@/server/glossary";
 
 type Language = { code: string; native: string };
-type Row = GlossaryTermInput & { key: string };
+type Row = GlossaryTermInput & { key: string; /** Changed by a teammate while this was edited (a refused save merged it in). */ meanwhile?: Meanwhile };
+type Meanwhile = "Added meanwhile" | "Changed meanwhile" | "Removed meanwhile";
+
+const same = (a: GlossaryTermInput, b: GlossaryTermInput) => a.keep === b.keep && JSON.stringify(Object.entries(a.translations).sort()) === JSON.stringify(Object.entries(b.translations).sort());
+
+/**
+ * A save refused as a teammate saved meanwhile (docs/design.md: what was typed kept, the newest version beside it): the
+ * teammate's changes from `before` to `theirs` put into `rows`, marked. A term they added is added; one they changed takes
+ * their word in each language (and Never translated) not edited here, what was typed here staying; one they removed stays,
+ * for the team to remove or keep.
+ */
+export function mergeMeanwhile(rows: Row[], before: GlossaryTermInput[], theirs: GlossaryTermInput[], newKey: () => string): Row[] {
+  const byTerm = (list: GlossaryTermInput[]) => new Map(list.map((term) => [term.term.trim().toLowerCase(), term]));
+  const old = byTerm(before);
+  const now = byTerm(theirs);
+  const merged: Row[] = rows.map((row) => {
+    const name = row.term.trim().toLowerCase();
+    const was = old.get(name);
+    const is = now.get(name);
+    if (was && !is) return { ...row, meanwhile: "Removed meanwhile" };
+    if (was && is && !same(was, is)) {
+      const codes = new Set([...Object.keys(was.translations), ...Object.keys(is.translations), ...Object.keys(row.translations)]);
+      const word = (code: string) => ((row.translations[code] ?? "") === (was.translations[code] ?? "") ? is.translations[code] : row.translations[code]) ?? "";
+      const translations = Object.fromEntries([...codes].map((code) => [code, word(code)]).filter(([, text]) => text));
+      return { ...row, keep: row.keep === was.keep ? is.keep : row.keep, translations, meanwhile: "Changed meanwhile" };
+    }
+    return row;
+  });
+  const here = new Set(rows.map((row) => row.term.trim().toLowerCase()));
+  for (const [name, term] of now) {
+    if (!old.has(name) && !here.has(name)) merged.push({ ...term, key: newKey(), meanwhile: "Added meanwhile" });
+  }
+  return merged;
+}
 
 /** Languages side by side up to this many; with more, each term is a card (as on phones), its languages under it. */
 const MAX_COLUMNS = 3;
@@ -58,7 +91,6 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
     setSent(hash);
     setLatest({ hash, terms });
   }
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   // The dialog's counts, and the terms they're for: what Save took when it was pressed (edits after it aren't in it, and stay unsaved).
   const [confirm, setConfirm] = useState<{ retranslating: number; behind: number; terms: GlossaryTermInput[] } | null>(null);
@@ -100,19 +132,31 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
     setRows((list) => [...list, { key, term: "", keep: false, translations: {} }]);
     setFresh(key);
   };
+  // Refused: a teammate's save meanwhile is merged into the rows, marked, and the next Save goes on top of it; else its error.
+  const refused = (result: GlossarySaved) => {
+    if (!result.latest) {
+      toast.error(result.error);
+      return;
+    }
+    const { terms: theirs, hash: now } = result.latest;
+    setRows((list) => mergeMeanwhile(list, JSON.parse(saved) as GlossaryTermInput[], theirs, () => `${id}-new-${added.current++}`));
+    setSaved(JSON.stringify(theirs));
+    setBase(now);
+    setLatest({ hash: now, terms: theirs });
+    toast.error("Changed meanwhile: check the marked terms, then save");
+  };
   const commit = (terms: GlossaryTermInput[]) =>
     startTransition(async () => {
       const result = await saveGlossary(projectSlug, terms, base);
       setConfirm(null);
       if (result.error) {
-        toast.error(result.error);
-        // Refused as the glossary changed meanwhile: its latest fetched, shown once the edits are undone (kept till then).
-        router.refresh();
+        refused(result);
         return;
       }
       setSaved(JSON.stringify(terms));
       setBase(result.hash!);
       setLatest({ hash: result.hash!, terms });
+      setRows((list) => list.map((row) => ({ ...row, meanwhile: undefined })));
       toast.success("Saved the glossary");
     });
   const save = () => {
@@ -127,8 +171,7 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
       // What saving would change first: pages that use a changed term are worth asking about (docs/plan.md, "Nothing large without asking").
       const preview = await saveGlossary(projectSlug, terms, base, true);
       if (preview.error) {
-        toast.error(preview.error);
-        router.refresh();
+        refused(preview);
         return;
       }
       if ((preview.retranslating ?? 0) + (preview.behind ?? 0) > 0) {
@@ -278,8 +321,14 @@ function TermRow({
           placeholder="Board"
           // The term the team just asked to add.
           autoFocus={fresh}
+          aria-describedby={row.meanwhile && `${row.key}-meanwhile`}
           onChange={(event) => onChange({ term: event.target.value })}
         />
+        {row.meanwhile && (
+          <Badge id={`${row.key}-meanwhile`} variant="highlight" className="self-start">
+            {row.meanwhile}
+          </Badge>
+        )}
       </div>
       {row.keep ? (
         // In the table, across the languages' columns (a card says it by its switch).
