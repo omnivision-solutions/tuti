@@ -1473,7 +1473,7 @@ test("a new message in the widget's Messages starts a conversation the AI answer
     }
   });
   await askPerson.click();
-  await expect(widget.getByText("Couldn't send it. Check your connection and try again.")).toBeVisible();
+  await expect(widget.getByRole("alert")).toHaveText("Couldn't send it. Check your connection and try again.");
   await visitor.unroute("**/widget**");
 
   // Ask a person: the team has it, with the AI's summary; the panel says where their reply comes, and the focus goes there.

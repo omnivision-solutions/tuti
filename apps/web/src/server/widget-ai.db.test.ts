@@ -219,6 +219,9 @@ test("kept with the AI by a workflow, Ask a person is gone, and pressing it agai
   const asked = model.requests.length;
   expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
   expect(model.requests).toHaveLength(asked);
+  // Its claim let go: a press now isn't told the AI is answering.
+  expect(await conversation()).toMatchObject({ pathDueAt: null });
+  expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
 });
 
 test("Ask a person pressed twice at once hands it over once, paying for one summary", async () => {

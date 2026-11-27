@@ -892,7 +892,11 @@ function Conversation({
             <MessageCircleIcon data-icon="inline-start" />
             Ask a person
           </Button>
-          {askError && <p className="text-sm text-destructive">{askError}</p>}
+          {askError && (
+            <p role="alert" className="text-sm text-destructive">
+              {askError}
+            </p>
+          )}
         </div>
       )}
       {/* Waiting for the team's reply, theirs the latest: where it comes, and when. A live region on the page from the
