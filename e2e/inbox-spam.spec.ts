@@ -75,12 +75,12 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await expect(notice).toContainText("Marked as spam: you blocked this address's domain");
   // The button is beside the reason, not under it.
   const beside = async () => {
-    const [reason, button] = [(await notice.locator("p").boundingBox())!, (await notice.getByRole("button", { name: "Not spam" }).boundingBox())!];
+    const [reason, button] = [(await notice.locator("p").boundingBox())!, (await notice.getByRole("button", { name: "Not spam", exact: true }).boundingBox())!];
     return button.x >= reason.x + reason.width && button.y < reason.y + reason.height;
   };
   expect(await beside()).toBe(true);
   // A dense control's height, as the buttons over it.
-  expect((await notice.getByRole("button", { name: "Not spam" }).boundingBox())!.height).toBe(32);
+  expect((await notice.getByRole("button", { name: "Not spam", exact: true }).boundingBox())!.height).toBe(32);
   await checkpoint(owner, "why-its-in-spam");
   // On a phone too, the reason wrapping beside it, and nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
@@ -93,7 +93,7 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   // Not spam, by an owner: this sender is let through, the domain stays blocked, and it says so. Opened by its address
   // (in no list to move on in), its line goes with the mark, and the keyboard's focus to More actions, which stays.
   await owner.goto(`/app/${slug}/inbox/4`);
-  await notice.getByRole("button", { name: "Not spam" }).click();
+  await notice.getByRole("button", { name: "Not spam", exact: true }).click();
   await expect(owner.getByText("Moved back to the inbox")).toBeVisible();
   await expect(owner.getByText("spam-corp.example stays blocked. e2e-lee@spam-corp.example is let through from now on.")).toBeVisible();
   await expect(notice).toHaveCount(0);
@@ -136,10 +136,13 @@ test("Not spam on a conversation from a blocked address says it unblocks it, a l
     // In More actions the address wraps too: the item is no wider than its menu, with nothing cut off.
     await owner.getByRole("button", { name: "More actions" }).click();
     const item = owner.getByRole("menuitem", { name: label });
-    const [menu, box] = [(await owner.getByRole("menu").boundingBox())!, (await item.boundingBox())!];
-    // Within a pixel: read while the menu opens (it scales in), the edges can be a fraction of one apart.
-    expect(box.x).toBeGreaterThanOrEqual(menu.x - 1);
-    expect(box.x + box.width).toBeLessThanOrEqual(menu.x + menu.width + 1);
+    // The menu scales in as it opens, so its edges and the item's are read again until it has settled.
+    await expect
+      .poll(async () => {
+        const [menu, box] = [(await owner.getByRole("menu").boundingBox())!, (await item.boundingBox())!];
+        return box.x >= menu.x - 1 && box.x + box.width <= menu.x + menu.width + 1;
+      })
+      .toBe(true);
     expect(await item.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await checkpoint(owner, `not-spam-unblock-${width}`, { fullPage: false });
     await owner.keyboard.press("Escape");

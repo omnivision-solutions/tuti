@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "cn";
+import { useTranslations } from "next-intl";
 import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -31,6 +32,7 @@ export function EmailSettings({
   /** Whether the project emails them about posts (not its team): those switches only then. */
   posts?: boolean;
 }) {
+  const t = useTranslations("account");
   const [settings, setSettings] = useState(saved);
   // What the switches show, what the server has, and the saves, one after another: each sends the latest choice
   // when its turn comes, so the last click is what's saved. Clicks per switch, so a failed save knows if one came since.
@@ -57,7 +59,7 @@ export function EmailSettings({
       try {
         result = await setEmailPreference(projectSlug, setting, wanted);
       } catch {
-        result = { error: "Couldn't save your email settings. Try again." };
+        result = { error: t("saveFailed") };
       }
       const { error } = result;
       if (!error) {
@@ -70,7 +72,7 @@ export function EmailSettings({
             show("changelog", result.changelog);
           }
         }
-        toast.success("Email settings saved");
+        toast.success(t("saved"));
         return;
       }
       toast.error(error);
@@ -110,19 +112,17 @@ export function EmailSettings({
       {notice}
       <div className="flex flex-col rounded-xl bg-card shadow-card ring-1 ring-card-edge">
         {/* Reply emails go only to a post's voters (reply-email.ts); writing a post votes for it. */}
-        {posts && row("ownPosts", "Posts I wrote", "As they move forward and when they ship, when someone comments, and the team's replies emailed to voters (writing one votes for it).", settings.unsubscribed)}
+        {posts && row("ownPosts", t("ownPosts"), t("ownPostsDescription"), settings.unsubscribed)}
         {posts &&
-          row("followedPosts", "Posts I voted on or follow", "As they move forward and when they ship, and, for ones you voted on, the team's replies emailed to voters.", settings.unsubscribed)}
+          row("followedPosts", t("followedPosts"), t("followedPostsDescription"), settings.unsubscribed)}
         {/* Its subscription at their address, confirmed at once: so only with an address they've proven, as stopping. */}
-        {changelog && row("changelog", "The changelog", `The entries ${projectName} emails to subscribers.`, settings.unsubscribed || !canStop)}
+        {changelog && row("changelog", t("changelog"), t("changelogDescription", { name: projectName }), settings.unsubscribed || !canStop)}
         {/* The opt-out covers emails about posts (audienceReach) and the changelog's (changelogReach): support replies and sign-in emails don't read it. */}
         {/* The team's too: it's what stops their changelog emails (they get none about posts), and their way back from it. */}
         {row(
           "unsubscribed",
-          `Email me nothing from ${projectName}`,
-          posts
-            ? "None of the emails above, whatever you follow. Replies to your messages, sign-in emails and notices that you've been let into its private portal still arrive."
-            : "No changelog emails, whatever's subscribed at your address. Your team's emails and sign-in emails still arrive.",
+          t("nothing", { name: projectName }),
+          posts ? t("nothingDescription") : t("nothingTeamDescription"),
           // Already stopped, it can still be turned back on.
           !canStop && !settings.unsubscribed,
         )}

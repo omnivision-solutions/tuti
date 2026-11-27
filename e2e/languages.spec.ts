@@ -494,3 +494,191 @@ test("on a phone, a changelog page with both its page links fits, in French's lo
   await expect(reader.getByRole("link", { name: "Entrées plus anciennes" })).toBeVisible();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+test("the docs in German: the home, search (box, dialog and page), a collection, locked tabs and an empty home", async ({ browser }, testInfo) => {
+  // Two projects: one with tabs, one without.
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Written by the team (Manual): nothing asks the model to translate the articles.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
+  await api("/tabs", { name: "Guides" });
+  await api("/tabs", { name: "Enterprise", access: "signed_in", noAccess: "lock" });
+  // A tab for a group of readers only: a signed-in reader outside it has no access.
+  await api("/groups", { name: "Partners", conditions: [{ property: "plan", op: "is", value: "partner" }] });
+  await api("/tabs", { name: "Partner guides", access: "groups", groups: ["partners"], noAccess: "lock" });
+  await api("/collections", { name: "Reselling", tab: "partner-guides" });
+  const reselling = await api("/articles", { title: "Reselling Acme", body: "Margins.", collection: "reselling" });
+  await api(`/articles/${reselling.slug}/publish`, {});
+  await api("/collections", { name: "Basics", tab: "guides" });
+  await api("/collections", { name: "SAML", tab: "enterprise" });
+  for (const title of ["Getting started", "Inviting your team"]) {
+    const article = await api("/articles", { title, body: `${title}: how it works.`, collection: "basics" });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+  // One in no collection: "More articles" on the home.
+  const loose = await api("/articles", { title: "Release notes", body: "What changed." });
+  await api(`/articles/${loose.slug}/publish`, {});
+  const saml = await api("/articles", { title: "Setting up SAML", body: "SAML.", collection: "saml" });
+  await api(`/articles/${saml.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/docs");
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
+  await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).toBeVisible();
+  // The default heading is the portal's words: the page's language, no lang of its own.
+  await expect(reader.getByRole("heading", { level: 1 })).not.toHaveAttribute("lang");
+  await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).not.toHaveAttribute("lang");
+  const collections = reader.getByRole("list", { name: "Sammlungen" });
+  await expect(collections.getByRole("link", { name: /Basics/ })).toContainText("2 Artikel");
+  await expect(collections.getByRole("heading", { name: "Basics" }).locator("[lang=en]")).toHaveText("Basics");
+  await expect(reader.getByRole("heading", { name: "Weitere Artikel" })).toBeVisible();
+  // The docs' tabs under the header, named in German.
+  await expect(reader.getByRole("navigation", { name: "Dokumentationsbereiche" }).getByRole("link", { name: "Guides", exact: true })).toBeVisible();
+  await checkpoint(reader, "docs-home-in-german", { fullPage: false });
+
+  // The search dialog: as typed, nothing found, then an article (its title the team's words).
+  await reader.getByRole("main").getByRole("button", { name: /^(Dokumentation durchsuchen|Suchen oder KI fragen)$/ }).click();
+  const dialog = reader.getByRole("dialog");
+  const box = dialog.getByRole("combobox");
+  await expect(dialog.getByText(/^Tippe, um die Dokumentation zu durchsuchen( oder die KI zu fragen)?\.$/)).toBeVisible();
+  await box.fill("zebra");
+  await expect(dialog.getByText("Keine Artikel zu „zebra“.")).toBeVisible();
+  await box.fill("inviting");
+  const results = dialog.getByRole("listbox", { name: "Suchergebnisse" });
+  await expect(results.getByRole("option").first()).toContainText(/^(KI fragen:|Alle Ergebnisse für)\s*inviting/);
+  await expect(results.getByRole("option", { name: /Inviting your team/ }).locator("[lang=en]").first()).toHaveText("Inviting your team");
+  await reader.keyboard.press("Escape");
+  // The results' page.
+  await reader.goto("/de/docs?q=zebra");
+  await expect(reader.getByRole("heading", { level: 1, name: "Ergebnisse für „zebra“" })).toBeVisible();
+  await expect(reader.getByText("Keine Artikel zu „zebra“", { exact: true })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Alle Artikel" })).toBeVisible();
+
+  // A collection: its articles' list.
+  await reader.goto("/de/docs/basics");
+  await expect(reader.getByRole("main").getByRole("list", { name: "Artikel" }).getByRole("link")).toHaveCount(2);
+  // The tree beside it, named in German.
+  await expect(reader.getByRole("navigation", { name: "Dokumentation", exact: true }).getByRole("link", { name: /Getting started/ })).toBeVisible();
+
+  // A locked tab: signing in to read it.
+  await reader.goto("/de/docs/enterprise");
+  await expect(reader.getByText("Melde dich an, um das zu lesen.")).toBeVisible();
+  await expect(reader.getByRole("main").getByRole("link", { name: "Anmelden" })).toBeVisible();
+
+  // Signed in but not in the tab's group: no access, said so.
+  const member = await signUp(browser, portalUrl(slug), "Mia Member");
+  await member.goto("/de/docs/partner-guides");
+  await expect(member.getByText("Du hast keinen Zugriff darauf.")).toBeVisible();
+
+  // Without JavaScript (where the header's menu can't open), a collection's tree opens from a summary: in German.
+  await reader.goto("/de/docs/basics");
+  expect(await reader.content()).toContain(">Dokumentation durchstöbern</summary>");
+  // And on an article's page.
+  await reader.goto(`/de/docs/${loose.slug}`);
+  expect(await reader.content()).toContain(">Dokumentation durchstöbern</summary>");
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/de/docs");
+  await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
+  await checkpoint(reader, "docs-home-in-german-phone", { fullPage: false });
+
+  // The team's own heading (Customize → Docs home) is the team's words: in the project's language.
+  await api("/branding", { docsHome: { title: "Acme Help", subtitle: "Answers for Acme customers." } }, "PATCH");
+  await reader.goto("/de/docs");
+  await expect(reader.getByRole("heading", { level: 1, name: "Acme Help" })).toHaveAttribute("lang", "en");
+  await expect(reader.getByText("Answers for Acme customers.")).toHaveAttribute("lang", "en");
+
+  // The home's box in French, whose "Demander à l’IA" is wider than "Ask AI": the button leaves the box's words and its
+  // shortcut uncovered, on desktop and on a phone.
+  await reader.goto("/fr/docs");
+  const hero = reader.locator("[data-docs-hero] [role=search]");
+  const askAI = hero.getByRole("button", { name: "Demander à l’IA", exact: true });
+  for (const width of [1280, 390]) {
+    await reader.setViewportSize({ width, height: 844 });
+    await expect(askAI).toBeVisible();
+    const button = (await askAI.boundingBox())!;
+    for (const covered of [hero.locator("button span.truncate"), hero.locator("kbd")]) {
+      if (await covered.isVisible()) {
+        const box = (await covered.boundingBox())!;
+        expect(box.x + box.width, `${width}px`).toBeLessThanOrEqual(button.x);
+      }
+    }
+  }
+
+  // Without tabs, the way up from a collection's page is the docs' home: "Alle Sammlungen".
+  const plain = `e2e-${randomUUID().slice(0, 8)}`;
+  await createProject(team, "Plain", plain);
+  const plainApi = await apiFor(team, plain);
+  await plainApi("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  // Nothing published yet: the docs' home says so.
+  const visitor = await newPerson(browser, portalUrl(plain));
+  await visitor.setViewportSize({ width: 1280, height: 800 });
+  await visitor.goto("/de/docs");
+  await expect(visitor.getByText("Hier ist noch nichts", { exact: true })).toBeVisible();
+  await expect(visitor.getByText("Artikel erscheinen hier, sobald sie veröffentlicht sind.")).toBeVisible();
+  await plainApi("/collections", { name: "Basics" });
+  const intro = await plainApi("/articles", { title: "Intro", body: "Hello.", collection: "basics" });
+  await plainApi(`/articles/${intro.slug}/publish`, {});
+  await visitor.goto("/de/docs/basics");
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+});
+
+test("a reader's account in German: its sections, profile, email settings and lists, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // A vote, for the votes list.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/feedback/feature-requests");
+  await reader.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
+  await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible();
+  // Saved (not only shown): still there after a reload.
+  await expect(async () => {
+    await reader.reload();
+    await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+
+  await reader.goto("/de/account");
+  await expect(reader).toHaveTitle(/^Konto/);
+  await expect(reader.getByRole("heading", { level: 1, name: "Konto" })).toBeVisible();
+  await expect(reader.getByText(`Angemeldet als ${reader.email}`)).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Kontobereiche" }).last().getByRole("link")).toHaveText(["Profil", "E-Mails", "Deine Beiträge 0", "Deine Stimmen 1"]);
+  // Profile.
+  const profile = reader.getByRole("region", { name: "Profil" });
+  await expect(profile).toContainText("Wird bei deinen Beiträgen und Kommentaren angezeigt.");
+  await expect(profile.getByRole("link", { name: "Ändere deinen Namen in deinem Tuti-Konto" })).toBeVisible();
+  await expect(profile.getByRole("button", { name: "Abmelden" })).toBeVisible();
+  // Email settings: their switches, and one saved.
+  const emails = reader.getByRole("region", { name: "E-Mails" });
+  await expect(emails).toContainText("Worüber Acme dir E-Mails schickt.");
+  await expect(emails.getByRole("switch", { name: "Meine Beiträge" })).toBeVisible();
+  await expect(emails.getByRole("switch", { name: "Beiträge, für die ich gestimmt habe oder denen ich folge" })).toBeVisible();
+  await emails.getByRole("switch", { name: "Keine E-Mails von Acme" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "E-Mail-Einstellungen gespeichert" })).toBeVisible();
+  // The lists: none posted yet, and the vote's count read out in German.
+  const posts = reader.getByRole("region", { name: "Deine Beiträge" });
+  await expect(posts).toContainText("Du hast hier noch nichts gepostet.");
+  await expect(posts.getByRole("link", { name: "Ideen ansehen" })).toBeVisible();
+  await expect(reader.getByRole("region", { name: "Deine Stimmen" }).getByText("2 Stimmen")).toBeAttached();
+  await checkpoint(reader, "account-in-german", { fullPage: false });
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/de/account");
+  await expect(reader.getByRole("heading", { level: 1, name: "Konto" })).toBeVisible();
+  await checkpoint(reader, "account-in-german-phone", { fullPage: false });
+});

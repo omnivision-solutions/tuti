@@ -10,7 +10,8 @@ import { answerQuestion } from "@/server/operations/docs-ask";
 import { getDocsInsights } from "@/server/operations/docs-insights";
 import { createArticle, publishArticle, unpublishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { rewriteText } from "@/server/rewrite";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** Out of credits (docs/plan.md, AI usage per project): each feature pauses its own way, without asking the AI. */
 
@@ -102,11 +103,16 @@ test("a credit check that fails otherwise (the database) is a failed answer, wit
   expect(model.requests).toEqual([]);
 });
 
-test("Draft with AI and Edit with AI are refused (402) with the reason, without asking the AI", async () => {
+test("Draft with AI, Edit with AI and Ask AI are refused (402) with the reason, without asking the AI", async () => {
   const entry = await call(createChangelogEntry, team(), { title: "Next release", body: "Dark mode is here." });
   const refused = { status: 402, code: "no_credits", message: "This project is out of credits. See Settings → Billing." };
   await expect(call(draftChangelogEntry, team(), { number: entry.number })).rejects.toMatchObject(refused);
   await expect(call(rewriteChangelogEntry, team(), { number: entry.number, mode: "shorten" })).rejects.toMatchObject(refused);
+  // Ask AI in the editors, on a changelog entry and on an article.
+  actAs(owner);
+  const text = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Dark mode is here." }] }] };
+  expect(await rewriteText(project.slug, { kind: "changelog", entry: entry.number, text, instruction: "Shorter" })).toEqual({ error: refused.message });
+  expect(await rewriteText(project.slug, { kind: "article", text, instruction: "Shorter" })).toEqual({ error: refused.message });
   expect(model.requests).toEqual([]);
   // Not counted against the hour's AI edits either.
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogAiCount: true } })).toEqual({ changelogAiCount: 0 });

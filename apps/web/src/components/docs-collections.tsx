@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { CollectionIcon } from "@/components/collection-icon";
+import { T } from "@/components/portal-text";
 import type { DocsArticleLink, DocsCollection } from "@/server/docs-queries";
 
 type Articles = DocsArticleLink[];
@@ -13,7 +14,10 @@ export function LockedMark({ className }: { className?: string }) {
   return (
     <>
       <LockIcon aria-hidden className={cn("ml-1.5 inline-block size-3.5 shrink-0 align-[-0.1em] text-muted-foreground", className)} />
-      <span className="sr-only"> Locked</span>
+      <span className="sr-only">
+        {" "}
+        <T id="header.locked" />
+      </span>
     </>
   );
 }
@@ -100,18 +104,21 @@ export function CollectionContents({
   href,
   collectionHref,
   lang,
+  articlesLabel = "Articles",
 }: {
   collection: DocsCollection;
   href: (slug: string) => string;
   collectionHref: (slug: string) => string;
   /** The team's words' language where the page is in another (teamLanguage). */
   lang?: string;
+  /** The articles list's name, in the page's language (docs.articles). */
+  articlesLabel?: string;
 }) {
   return (
     <>
       {collection.articles.length > 0 && (
         <div className={card}>
-          <Rows label="Articles" articles={collection.articles} href={href} collectionHref={collectionHref} lang={lang} />
+          <Rows label={articlesLabel} articles={collection.articles} href={href} collectionHref={collectionHref} lang={lang} />
         </div>
       )}
       {collection.collections.map((child) => (

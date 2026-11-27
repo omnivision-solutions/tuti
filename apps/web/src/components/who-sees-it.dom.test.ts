@@ -6,6 +6,7 @@ import { afterEach, expect, test, vi } from "vitest";
 const publishChangelogEntry = vi.fn(async () => ({}));
 vi.mock("@/server/changelog", () => ({ publishChangelogEntry }));
 vi.mock("@/server/images", () => ({}));
+vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/server/media", () => ({}));

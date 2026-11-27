@@ -52,6 +52,23 @@ export function droppedFacts(before: JSONContent[], after: JSONContent[]): strin
 }
 
 /**
+ * Nodes and marks the reader can write back. Anything else (a table, code, italics) doesn't survive the round trip: the
+ * docs agent replaces such a section's passages one by one instead (replacePassage, insertAfterPassage), and the
+ * editor's AI rewrite keeps such blocks as they are. An image goes as its {{media N}} line and comes back as the node it
+ * was (blocksToNotes, readNotes).
+ */
+const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak", "image"]);
+const WRITABLE_MARKS = new Set(["bold", "link"]);
+// A list's item one paragraph of one line: the model's lists come back flat, so a nested list, a second paragraph or a
+// line break in an item wouldn't survive the round trip.
+export const writable = (node: JSONContent): boolean =>
+  WRITABLE_NODES.has(node.type ?? "") &&
+  (node.type !== "listItem" ||
+    (node.content?.length === 1 && node.content[0]!.type === "paragraph" && !(node.content[0]!.content ?? []).some((inline) => inline.type === "hardBreak"))) &&
+  (node.marks ?? []).every((mark) => WRITABLE_MARKS.has(mark.type)) &&
+  (node.content ?? []).every(writable);
+
+/**
  * The model's reply (JSON with `notes`, and maybe a `title`) as a title and a document, or null if it
  * can't be read. Links survive only to `allowedLinks`; other links keep their text.
  */
