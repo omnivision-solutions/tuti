@@ -31,6 +31,8 @@ const EMBED_TIMEOUT_MS = 3000;
 const ANSWER_TIMEOUT_MS = 20_000;
 /** Characters kept of an answer; the longest length's token cap fits in it. */
 const MAX_ANSWER_LENGTH = 8000;
+/** The reply's cap where the answer model is asked only whether the user asks for a person: enough for its JSON flag. */
+const PERSON_FLAG_TOKENS = 50;
 /** How many earlier turns of a conversation a follow-up takes as its context. */
 export const MAX_EARLIER_TURNS = 4;
 /** How many of the earlier questions the docs are searched with, besides the follow-up: the latest ones say most. */
@@ -262,8 +264,8 @@ export async function answerTurn(
     return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, await portalAddress(slug)) };
   };
 
-  // A topic the team put off-limits: a fixed reply, decided here rather than by the model (which isn't asked).
-  // Nor does an earlier turn on one steer a follow-up: it's left out of what's searched and what the model gets.
+  // A topic the team put off-limits: a fixed reply, decided here rather than by the model, which isn't asked for an answer
+  // (with `askPerson`, only whether the user asks for a person; see asksPerson). Nor does an earlier turn on one steer a follow-up: it's left out of what's searched and what the model gets.
   const context = earlier.filter((turn) => !offLimitsTopic(turn.question, settings.offLimits));
   /**
    * With `askPerson`, where nothing would ask the model (an off-limits topic, nothing in the docs close enough): it's still
@@ -275,7 +277,8 @@ export async function answerTurn(
       return false;
     }
     try {
-      return asksForPerson(await complete({ ...answerPrompt(question, [], settings, context, { askPerson }), timeoutMs, ...(await aiFor(projectId, "answers")) }));
+      // Only the flag is read: a small cap on the reply.
+      return asksForPerson(await complete({ ...answerPrompt(question, [], settings, context, { askPerson }), maxTokens: PERSON_FLAG_TOKENS, timeoutMs, ...(await aiFor(projectId, "answers")) }));
     } catch (error) {
       log.warn("Asking the answer model whether the user asks for a person failed", { projectId, error });
       return false;
