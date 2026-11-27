@@ -197,6 +197,22 @@ async function get(url: URL, max: number, signal: AbortSignal, budget = { left: 
   return null;
 }
 
+/** What a page's inline scripts hold, together: an app's config is there, its text never is. */
+export function inlineScripts(html: string): string {
+  const lower = html.toLowerCase();
+  const parts: string[] = [];
+  for (let at = lower.indexOf("<script"); at !== -1; at = lower.indexOf("<script", at)) {
+    const open = lower.indexOf(">", at);
+    const close = open === -1 ? -1 : lower.indexOf("</script", open);
+    if (close === -1) {
+      break;
+    }
+    parts.push(html.slice(open + 1, close));
+    at = close + 8;
+  }
+  return parts.join("\n");
+}
+
 /** The scripts a page loads (and preloads), on its own site. */
 export function scriptsOf(page: { url: URL; text: string }): URL[] {
   const site = getDomain(page.url.hostname, { allowPrivateDomains: true }) ?? page.url.hostname;
@@ -210,10 +226,10 @@ export function scriptsOf(page: { url: URL; text: string }): URL[] {
 
 /**
  * What a saved answer is kept under (ScreenshotSettings.signInServicesFor): the address and this scanner's version, so
- * an answer from an earlier one (15 scripts, until 2026-11) is found again, even one saved by the previous release
+ * an answer from an earlier one (15 scripts, or the page's text, until 2026-11) is found again, even one saved by the previous release
  * while a deploy runs both.
  */
-export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
+export const scannedFor = (appUrl: string) => `3 ${appUrl}`;
 /**
  * What a read that wasn't complete (a script that didn't load may hold the service) is kept under: shown, read again on
  * the next look, and never in place of a full answer, which is kept under scannedFor (with a time or, saved before
@@ -224,9 +240,9 @@ export const partlyScannedFor = (appUrl: string) => `partial ${scannedFor(appUrl
 /**
  * The hosts found for the app at its saved address (a full answer or a partial one), allowed for its runs as the
  * other domains are, without the team adding them: each with its service. Not those the team removed
- * (`skippedDomains`), nor a shared suffix (vercel.app), nor a Clerk host on another site than the app's (Clerk's own
- * domain for an app is always under it): only the app's own code names them, so whoever could change that controls the
- * app already.
+ * (`skippedDomains`), nor a shared suffix (vercel.app), nor a Clerk host but its development one or clerk. under the
+ * app's own site (where Clerk's own domain for an app always is; never another tenant's host on a shared site): only
+ * the app's scripts name them, so whoever could change those controls the app already.
  */
 export function foundDomains(settings: { appUrl: string; signInServices: unknown; signInServicesFor: string | null; skippedDomains: string[] }): { host: string; provider: string }[] {
   if (settings.signInServicesFor !== scannedFor(settings.appUrl) && settings.signInServicesFor !== partlyScannedFor(settings.appUrl)) {
@@ -239,7 +255,7 @@ export function foundDomains(settings: { appUrl: string; signInServices: unknown
       .filter((host) => !settings.skippedDomains.includes(host))
       .filter((host) => {
         const domain = getDomain(host, { allowPrivateDomains: true });
-        return domain !== null && (provider !== "Clerk" || host.endsWith(".clerk.accounts.dev") || domain === site);
+        return domain !== null && (provider !== "Clerk" || host.endsWith(".clerk.accounts.dev") || (host.startsWith("clerk.") && domain === site));
       })
       .map((host) => ({ host, provider })),
   );
@@ -263,7 +279,8 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     }
     // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
     const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
-    const found = [findIn(page.text)];
+    // Only the page's scripts, not its text, which can be its users' or echo its address.
+    const found = [findIn(inlineScripts(page.text))];
     let complete = true;
     const budget = { left: SCRIPTS_BYTES };
     await Promise.all(

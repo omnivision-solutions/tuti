@@ -42,6 +42,9 @@ beforeAll(async () => {
     requests.push(request.url!);
     if (request.url === "/") {
       response.writeHead(302, { location: "/app" }).end();
+    } else if (request.url?.startsWith("/search")) {
+      // A page that echoes its address in its text, and has its config in an inline script.
+      response.writeHead(200, { "content-type": "text/html" }).end(`<html><p>Results for ${decodeURIComponent(request.url)}</p><script>const config={domain:"acme.auth0.com"}</script></html>`);
     } else if (request.url === "/app") {
       response.writeHead(200, { "content-type": "text/html" }).end('<html><script type="module" src="/assets/main.js"></script><script src="https://cdn.elsewhere.example/x.js"></script></html>');
     } else if (request.url === "/assets/main.js" && scriptFailures > 0) {
@@ -106,7 +109,7 @@ beforeEach(async () => {
 });
 
 /** The hosts found, by service, as the scanner keeps them. */
-const byService = (domains: { host: string; provider: string }[]) =>
+const byService = (domains: { host: string; provider: string; skipped: boolean }[]) =>
   [...new Set(domains.map(({ provider }) => provider))].map((provider) => ({ provider, hosts: domains.filter((one) => one.provider === provider).map(({ host }) => host) }));
 /** A look at the sign-in domains (by service); `start: false` (the screen's polls) only reads. */
 const look = async (input: { start?: boolean } = {}) => {
@@ -160,7 +163,7 @@ test("never a shared suffix, nor a Clerk host on another site than the app's", a
       signInServices: [{ provider: "Clerk", hosts: ["vercel.app", "github.io", "acme-12.clerk.accounts.dev", "sub.app.example.com", "login.acme.example"] }],
     },
   });
-  expect(await suggestions()).toEqual([{ provider: "Clerk", hosts: ["acme-12.clerk.accounts.dev", "sub.app.example.com"] }]);
+  expect(await suggestions()).toEqual([{ provider: "Clerk", hosts: ["acme-12.clerk.accounts.dev"] }]);
 });
 
 test("off localhost, only public addresses over https: an app at a private address isn't read", async () => {
@@ -231,6 +234,11 @@ test("an answer saved by the earlier scanner, under the bare address, is found a
   await settle({ appUrl: `${base}/many` });
   await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: [], signInServicesFor: `${base}/many` } });
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+});
+
+test("only the page's scripts are read, never its text, which can echo its address", async () => {
+  await settle({ appUrl: `${base}/search?q=evil.auth0.com` });
+  expect(await suggestions()).toEqual([{ provider: "Auth0", hosts: ["acme.auth0.com"] }]);
 });
 
 test("settings without an app address suggest nothing", async () => {

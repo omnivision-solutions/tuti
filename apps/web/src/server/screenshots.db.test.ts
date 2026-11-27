@@ -78,22 +78,24 @@ test("settings keep the password and sign-in link sealed, never return them, and
   expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ signInLinkSet: true });
 });
 
-test("moving the app to another host forgets the saved password and link, so they're never given to it", async () => {
+test("changing the app's address forgets the saved password and link, so they're never given to it", async () => {
   await setUp();
-  // The same host keeps it.
-  expect(await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other" })).toMatchObject({ passwordSet: true });
+  // The same address keeps it.
+  expect(await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/home", about: "Close the tour." })).toMatchObject({ passwordSet: true });
   await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({
     status: 400,
-    message: "Enter the password again: the app's address moved to another site",
+    message: "Enter the password again: the app's address changed",
   });
-  expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ appUrl: "https://app.example.com/other", passwordSet: true });
+  // Another page on the same site too: what's found in it is allowed for the password, and a page can echo its address.
+  await expect(call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/search?q=evil.auth0.com" })).rejects.toMatchObject({ status: 400 });
+  expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ appUrl: "https://app.example.com/home", passwordSet: true });
   // With a new one, it moves, and the agent gets only that one, bound to the new host.
   expect(await call(updateScreenshotSettings, as(), { appUrl: "https://demo.example.net", password: "a-new-password" })).toMatchObject({ passwordSet: true });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect(browserUse.runs.at(-1)!.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: "a-new-password" }, allowedDomains: ["demo.example.net"] }]);
   // A link too.
   await call(updateScreenshotSettings, as(), { signIn: "link", signInLink: LINK, appUrl: "https://app.example.com" });
-  await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({ message: "Enter the sign-in link again: the app's address moved to another site" });
+  await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({ message: "Enter the sign-in link again: the app's address changed" });
   // Another scheme or port on the same host is another site too.
   await expect(call(updateScreenshotSettings, as(), { appUrl: "http://app.example.com" })).rejects.toMatchObject({ status: 400 });
   await expect(call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com:8443" })).rejects.toMatchObject({ status: 400 });
@@ -879,7 +881,7 @@ test("a changed sign-in deletes the profile at once: a new password, then a new 
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   const second = profileOf()!;
   expect(second).not.toBe(first);
-  await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other" });
+  await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other", password: PASSWORD });
   expect(browserUse.profiles.has(second)).toBe(false);
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect([first, second]).not.toContain(profileOf());

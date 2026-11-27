@@ -54,7 +54,7 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(save).toBeDisabled();
   await owner.getByLabel("App address").fill("https://other.example.net");
   await save.click();
-  await expect(owner.getByText("Enter the password again: the app's address moved to another site")).toBeVisible();
+  await expect(owner.getByText("Enter the password again: the app's address changed")).toBeVisible();
   await owner.getByLabel("App address").fill("https://app.example.com");
   // Saved, the password is never shown again, nor in the page.
   await owner.reload();
@@ -151,24 +151,28 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await checkpoint(owner, "team-settings-screenshots-found");
     await owner.mouse.move(0, 0);
 
-    // Another address on the same site, where nothing is found: the last one's are gone.
+    // Another address on the same site, where nothing is found: the last one's are gone. (Any change of address asks
+    // for the password again.)
     const appAddress = owner.getByLabel("App address");
     const base = await appAddress.inputValue();
     await appAddress.fill(new URL("plain", base).href);
+    await passwordField.fill(password);
     await save.click();
     await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
     await expect(identity).toBeHidden();
     // Back: found again.
     await expect(async () => {
       await appAddress.fill(base);
+      await passwordField.fill(password);
       await expect(save).toBeEnabled({ timeout: 1_000 });
     }).toPass();
     await save.click();
     await expect(identity).toBeVisible();
 
-    // One removed, saved without the password.
+    // One removed, saved without the password; focus stays in the field.
     await token.click();
     await expect(token).toBeHidden();
+    await expect(owner.getByLabel("Other domains")).toBeFocused();
     await save.click();
     await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
     await expect(save).toBeDisabled();
@@ -187,6 +191,10 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await expect(identity).toBeVisible();
     await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
     await expect(token).toBeHidden();
+    // Typed again, it's found again (no password asked).
+    await owner.getByLabel("Other domains").fill("securetoken.googleapis.com ");
+    await expect(token).toBeVisible();
+    await expect(owner.getByLabel("Enter the password again to add a domain.")).toBeHidden();
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }

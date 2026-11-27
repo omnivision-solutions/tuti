@@ -258,13 +258,14 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   }
   const signIn = (input.signIn?.toUpperCase() ?? saved?.signIn ?? "NONE") as ScreenshotSignIn;
   const username = input.username ?? saved?.username ?? "";
-  // The secrets are only ever given to the agent on the app's own host: one that moved forgets them, so changing the
-  // address can't send the saved password (typed only on that host) or link somewhere else.
-  // By origin: another scheme (https to http) or port is another place too.
-  const sameHost = !!saved && new URL(saved.appUrl).origin === new URL(appUrl).origin;
-  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameHost ? saved.password : null;
-  const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameHost ? saved.signInLink : null;
-  const moved = saved && !sameHost ? " again: the app's address moved to another site" : "";
+  // The secrets are only ever given to the agent on the app's own host: an address changed forgets them, so changing
+  // it can't send the saved password (typed only on that host) or link somewhere else. Any change, a path on the same
+  // site too: the hosts found in the page it points to are allowed for them (foundDomains), and a page can echo text
+  // from its address (a search's query).
+  const sameAddress = !!saved && saved.appUrl === appUrl;
+  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameAddress ? saved.password : null;
+  const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameAddress ? saved.signInLink : null;
+  const moved = saved && !sameAddress ? " again: the app's address changed" : "";
   if (signIn === "PASSWORD" && (!username || !password)) {
     throw new OperationError(400, "invalid_input", username && moved ? `Enter the password${moved}` : "Enter the username and password to sign in with");
   }
@@ -303,11 +304,12 @@ const signInDomainsOutput = z
     domains: z
       .array(
         z.object({
-          host: z.string().describe("The host, allowed for your app's runs").meta({ examples: ["identitytoolkit.googleapis.com"] }),
+          host: z.string().describe("The host, allowed for your app's runs unless `skipped`").meta({ examples: ["identitytoolkit.googleapis.com"] }),
           provider: z.string().describe("The sign-in service it's for").meta({ examples: ["Firebase"] }),
+          skipped: z.boolean().describe("Whether you removed it (skippedDomains): not allowed").meta({ examples: [false] }),
         }),
       )
-      .describe("Each host found, without those removed (skippedDomains); empty when none is, the app's page couldn't be read, or it hasn't been read yet"),
+      .describe("Each host found; empty when none is, the app's page couldn't be read, or it hasn't been read yet"),
     checking: z.boolean().describe("Whether the app is being read now: ask again in a few seconds for the answer").meta({ examples: [false] }),
   })
   .meta({ id: "ScreenshotSignInDomains", description: "Hosts your app's sign-in needs, found in its code and allowed for its runs" });
@@ -352,7 +354,8 @@ async function signInDomains(context: { actor: Actor; projectId: string }, start
   if (!fresh && !checking && start) {
     checking = await startScan(context, settings.appUrl, kept !== null);
   }
-  return { domains: foundDomains(settings), checking };
+  // Those removed too, said so: typed again, one comes back as found.
+  return { domains: foundDomains({ ...settings, skippedDomains: [] }).map((one) => ({ ...one, skipped: settings.skippedDomains.includes(one.host) })), checking };
 }
 
 /**

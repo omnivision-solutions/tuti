@@ -21,7 +21,8 @@ import { saveScreenshotSettings, testScreenshots } from "@/server/screenshots";
 
 type Settings = Awaited<ReturnType<typeof settingsView>>;
 type SignIn = Settings["signIn"];
-type Found = { host: string; provider: string };
+/** A host found for the app's sign-in; `skipped` when removed (as saved: the field's own list says what's removed now). */
+type Found = { host: string; provider: string; skipped: boolean };
 
 const SIGN_INS = [
   { value: "password", label: "Password" },
@@ -243,6 +244,12 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
   }
   const [draft, setDraft] = useState("");
   const typedField = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  // Its button gone with it: focus back in the field.
+  const remove = (change: () => void) => {
+    change();
+    input.current?.focus();
+  };
   const skippedField = useRef<HTMLInputElement>(null);
   useFieldChanged(typedField, typed);
   useFieldChanged(skippedField, skipped);
@@ -267,10 +274,10 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
         data-domains
       >
         {typed.map((host) => (
-          <Chip key={host} host={host} onRemove={() => setTyped((all) => all.filter((one) => one !== host))} />
+          <Chip key={host} host={host} onRemove={() => remove(() => setTyped((all) => all.filter((one) => one !== host)))} />
         ))}
         {auto.map(({ host, provider }) => (
-          <Chip key={host} host={host} provider={provider} onRemove={() => setSkipped((all) => [...all, host])} />
+          <Chip key={host} host={host} provider={provider} onRemove={() => remove(() => setSkipped((all) => [...all, host]))} />
         ))}
         {checking && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-0.5 text-xs text-muted-foreground">
@@ -279,6 +286,7 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
           </span>
         )}
         <input
+          ref={input}
           id="screenshots-other-domains"
           value={draft}
           onChange={(event) => {
