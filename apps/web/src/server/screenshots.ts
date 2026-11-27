@@ -18,15 +18,17 @@ export async function saveScreenshotSettings(projectSlug: string, _state: FormSt
     appUrl: text("appUrl") ?? "",
     signIn,
     username: signIn === "password" ? text("username") : undefined,
-    // The password box under Other domains, there when one is added and a password is saved, as the password's own.
-    password: signIn === "password" ? text("password") || text("domainPassword") : undefined,
+    password: signIn === "password" ? text("password") : undefined,
+    // The box under Other domains, there when one is added and a password is saved: checked, never saved over it.
+    currentPassword: signIn === "password" ? text("domainPassword") || undefined : undefined,
     signInLink: signIn === "link" ? text("signInLink") : undefined,
     about: text("about")?.replace(/\r\n/g, "\n"),
     window: text("window") as "desktop" | "phone" | undefined,
     // A checkbox: sent only when it's on.
     residentialProxy: formData.get("residentialProxy") === "on",
     // One per line (or separated by commas or spaces); empty clears them.
-    otherDomains: (text("otherDomains") ?? "").split(/[\s,]+/).filter(Boolean),
+    // The chips, and what's typed after them, not a chip yet.
+    otherDomains: [...new Set(`${text("otherDomains") ?? ""} ${text("otherDomainsDraft") ?? ""}`.split(/[\s,]+/).filter(Boolean))],
     skippedDomains: (text("skippedDomains") ?? "").split(/[\s,]+/).filter(Boolean),
   };
   return asAdmin(projectSlug, DENIED, (context) => call(updateScreenshotSettings, context, input));

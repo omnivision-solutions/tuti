@@ -246,8 +246,11 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
   const typedField = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLInputElement>(null);
   // Its button gone with it: focus back in the field.
-  const remove = (change: () => void) => {
+  // Each add and removal said to screen readers.
+  const [said, setSaid] = useState("");
+  const remove = (host: string, change: () => void) => {
     change();
+    setSaid(`Removed ${host}.`);
     input.current?.focus();
   };
   const skippedField = useRef<HTMLInputElement>(null);
@@ -262,6 +265,7 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
     setSkipped((all) => all.filter((host) => !hosts.includes(host)));
     setTyped((all) => [...new Set([...all, ...hosts.filter((host) => !skipped.includes(host))])]);
     setDraft("");
+    setSaid(hosts.length > 0 ? `Added ${hosts.join(", ")}.` : "");
   };
 
   return (
@@ -274,10 +278,10 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
         data-domains
       >
         {typed.map((host) => (
-          <Chip key={host} host={host} onRemove={() => remove(() => setTyped((all) => all.filter((one) => one !== host)))} />
+          <Chip key={host} host={host} onRemove={() => remove(host, () => setTyped((all) => all.filter((one) => one !== host)))} />
         ))}
         {auto.map(({ host, provider }) => (
-          <Chip key={host} host={host} provider={provider} onRemove={() => remove(() => setSkipped((all) => [...all, host]))} />
+          <Chip key={host} host={host} provider={provider} onRemove={() => remove(host, () => setSkipped((all) => [...all, host]))} />
         ))}
         {checking && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-0.5 text-xs text-muted-foreground">
@@ -288,6 +292,8 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
         <input
           ref={input}
           id="screenshots-other-domains"
+          // Typed but not a chip yet: still a change to save, and saved with them.
+          name="otherDomainsDraft"
           value={draft}
           onChange={(event) => {
             const value = event.target.value;
@@ -301,8 +307,6 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
             if (event.key === "Enter" && draft.trim()) {
               event.preventDefault();
               commit(draft);
-            } else if (event.key === "Backspace" && !draft && typed.length > 0) {
-              setTyped((all) => all.slice(0, -1));
             }
           }}
           onBlur={() => draft.trim() && commit(draft)}
@@ -315,7 +319,7 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
         />
       </div>
       <div aria-live="polite" className="sr-only">
-        {checking ? "Checking how your app signs in." : auto.length > 0 ? `Added for ${[...new Set(auto.map(({ provider }) => provider))].join(", ")} sign-in: ${auto.map(({ host }) => host).join(", ")}.` : ""}
+        {checking ? "Checking how your app signs in." : said ? said : auto.length > 0 ? `Added for ${[...new Set(auto.map(({ provider }) => provider))].join(", ")} sign-in: ${auto.map(({ host }) => host).join(", ")}.` : ""}
       </div>
       {added && (
         <div className="flex flex-col gap-1.5">

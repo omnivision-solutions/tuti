@@ -43,9 +43,11 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(owner.getByRole("switch", { name: "Use a residential proxy" })).not.toBeChecked();
   await owner.getByLabel("About your app").fill("After signing in, pick the Acme workspace. Close the welcome tour.");
   // The browser opens only the app's own domain unless told of others (a sign-in elsewhere, a CDN).
-  // Each a chip, once a space, comma or Enter ends it.
-  await owner.getByLabel("Other domains").fill("acme.auth0.com cdn.example.net");
+  // Each a chip, once a space, comma or Enter ends it; one typed without is saved too.
+  const domains = owner.getByLabel("Other domains");
+  await domains.fill("acme.auth0.com,");
   await expect(owner.getByRole("button", { name: "Remove acme.auth0.com" })).toBeVisible();
+  await domains.fill("cdn.example.net");
   await save.click();
   await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
@@ -181,6 +183,10 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await owner.getByLabel("Other domains").fill("cdn.example.net,");
     const again = owner.getByLabel("Enter the password again to add a domain.");
     await expect(again).toBeVisible();
+    // Checked against the saved one, never saved over it.
+    await again.fill(`${password}-typo`);
+    await save.click();
+    await expect(owner.getByText("That isn't the saved password")).toBeVisible();
     await again.fill(password);
     await save.click();
     await expect(again).toBeHidden();
