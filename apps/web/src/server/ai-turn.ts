@@ -1,4 +1,4 @@
-import { type ConversationOrigin, prisma } from "@tuti/db";
+import { type ConversationOrigin, type MessageChannel, prisma } from "@tuti/db";
 import { aiFor, aiPaused } from "@tuti/jobs";
 import { decide, decisionsAvailable, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
@@ -31,8 +31,11 @@ import { summarize, SUMMARY_TIMEOUT_MS } from "./operations/docs-escalate";
 export const AI_TURN_WAIT_MS = 4000;
 /** When the inbox-due job runs a turn whose request didn't (a deploy, a crash). */
 export const AI_TURN_DUE_MS = 60_000;
-/** How long a running turn holds the conversation (`pathDueAt` pushed on): the job leaves it alone meanwhile. */
-const AI_TURN_LEASE_MS = 2 * 60_000;
+/**
+ * How long a running turn holds the conversation (`pathDueAt` pushed past AI_TURN_DUE_MS, so neither the job nor another
+ * turn takes it meanwhile). A turn that crashed is picked up after it, and handed over if its message is 10 minutes old.
+ */
+const AI_TURN_LEASE_MS = 5 * 60_000;
 /** A user's message the AI still hasn't answered this long after it's written is handed over. */
 export const AI_TURN_GIVE_UP_MS = 10 * 60_000;
 /** Characters of the user's messages a turn asks about. */
@@ -129,7 +132,7 @@ export async function asksForAPerson(state: { message: string; earlier: Turn[] }
   return noul >= PERSON_AT;
 }
 
-type Message = { id: string; author: "USER" | "TEAM" | "AI"; body: string; channel: string; createdAt: Date; handedOverAt: Date | null };
+type Message = { id: string; author: "USER" | "TEAM" | "AI"; body: string; channel: MessageChannel; createdAt: Date; handedOverAt: Date | null };
 
 /** The question (the user's messages since the last reply) and the turns before it, from the conversation's messages, oldest first. */
 function turnsOf(messages: Message[]): { question: string; earlier: Turn[] } {
@@ -181,7 +184,8 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
       handledBy: true,
       userId: true,
       messages: {
-        where: { note: false },
+        // Tuti's own lines (W8's notes, before W16) are nobody's turn.
+        where: { note: false, author: { in: ["USER", "TEAM", "AI"] } },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: MESSAGES_READ,
         select: { id: true, author: true, body: true, channel: true, createdAt: true, handedOverAt: true },
@@ -193,8 +197,9 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
     return "nothing";
   }
   const { projectId } = conversation;
+  // Only a turn that's due or about to be (a message's), never a running turn's lease: that turn has it.
   const { count } = await prisma.conversation.updateMany({
-    where: { id: conversationId, pathDueAt: conversation.pathDueAt, spamHeldAt: null },
+    where: { id: conversationId, pathDueAt: { equals: conversation.pathDueAt, lte: new Date(Date.now() + AI_TURN_DUE_MS) }, spamHeldAt: null },
     data: { pathDueAt: new Date(Date.now() + AI_TURN_LEASE_MS) },
   });
   if (count === 0) {
@@ -295,7 +300,7 @@ async function post(projectId: string, conversationId: string, latest: Message, 
     const at = new Date(Math.max(Date.now(), last ? last.getTime() + 1 : 0));
     // As the set reply is written: it answers nobody on the team's side, so the conversation's status and wait stay.
     await tx.conversationMessage.create({
-      data: { projectId, conversationId, author: "AI", authorId: null, channel: latest.channel as never, body, requestId: latest.id, createdAt: at },
+      data: { projectId, conversationId, author: "AI", authorId: null, channel: latest.channel, body, requestId: latest.id, createdAt: at },
     });
     await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: at, activeAt: at, pathDueAt: null } });
     await notifyInbox(tx, { projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });

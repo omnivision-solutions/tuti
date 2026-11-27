@@ -64,7 +64,10 @@ export async function inboxPath(projectId: string, arrival: Started | Replied, {
   // With the AI: its turn where it can answer, else about to go to a person again, as it's off. One the team has stays theirs.
   const handed: Handed = straight
     ? await handOver(projectId, conversation.id, message.id, "straight_to_person", { onlyFromAi: true, skipWorkflows: true })
-    : (await toAi(projectId, conversation.id, message.id))
+    : (await toAi(projectId, conversation.id, message.id).catch((error: unknown) => {
+          log.error("Giving a reply to the AI failed: it's handed over", { projectId, conversationId: conversation.id, error });
+          return false;
+        }))
       ? { handedOver: null, changed: {} }
       : await handOver(projectId, conversation.id, message.id, "ai_off", { onlyFromAi: true });
   const told = await announceUserMessage(projectId, conversation.number, message);

@@ -237,6 +237,42 @@ test("two turns at once: one runs, one answer", async () => {
   expect((await state()).thread).toEqual([`USER: ${QUESTION}`, "AI: Go to Settings → Export."]);
 });
 
+test("a turn started while another runs for the same message leaves it to that one", async () => {
+  const { mail, turn, state } = await setup();
+  await mail();
+  let second: unknown;
+  model.decide({ person: 0.05 }, QUESTION, async () => {
+    second = await turn();
+  });
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  expect(await turn()).toBe("answered");
+  expect(second).toBe("nothing");
+  expect((await state()).thread).toEqual([`USER: ${QUESTION}`, "AI: Go to Settings → Export."]);
+});
+
+test("someone a private portal doesn't let in gets no answer from its docs: handed over as the AI is off", async () => {
+  const { projectId, mail, turn, state, handovers } = await setup();
+  await prisma.project.update({ where: { id: projectId }, data: { portalAccess: "PRIVATE" } });
+  await mail();
+  model.reply("They ask how to export.", undefined, "askedBefore");
+  expect(await turn()).toBe("handed_over");
+  expect(await handovers()).toEqual(["ai_off"]);
+  expect((await state()).handledBy).toBe("TEAM");
+  // Nothing of the docs was read for them: no question asked of them.
+  expect(await prisma.docsQuestion.count({ where: { projectId } })).toBe(0);
+});
+
+test("a workflow that keeps it with the AI when the user asks for a person: no handover, and no summary note", async () => {
+  const { admin, mail, turn, state, handovers } = await setup();
+  await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "reply_text", text: "Our team is away; the AI can help." }, { kind: "dont_hand_over" }] });
+  await mail("Can I talk to a human?");
+  model.decide({ person: 0.95 }, "talk to a human");
+  model.reply("They want a human.", undefined, "askedBefore");
+  expect(await turn()).toBe("kept");
+  expect(await handovers()).toEqual([]);
+  expect(await state()).toEqual({ handledBy: "AI", due: false, thread: ["USER: Can I talk to a human?", "AI: Our team is away; the AI can help."] });
+});
+
 test("out of credits: a new conversation goes to the team as the AI is off, and one the AI has is handed over on its next message", async () => {
   vi.stubEnv("TUTI_CONFIG", creditsOn());
   const { projectId, mail, reply, turn, state, handovers } = await setup();
