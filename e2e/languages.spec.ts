@@ -1323,6 +1323,8 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   await visitor.getByRole("link", { name: "Getting started" }).click();
   await expect(visitor.getByRole("heading", { level: 1, name: "Getting started" })).toHaveAttribute("lang", "en");
   await expect(visitor.getByText("Invite your team from the Team page.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  // Not in German yet: said in German.
+  await expect(visitor.getByText("Diese Seite gibt es noch nicht auf Deutsch: Sie wird in ihrer Originalsprache angezeigt.")).toBeVisible();
   await expect(visitor.getByRole("link", { name: "In neuem Tab öffnen" })).toHaveAttribute("href", /^\/de\/docs\//);
   await checkpoint(visitor, "widget-help-center-in-german-phone", { fullPage: false });
   // A search with nothing found, and an article that isn't there.
@@ -1334,6 +1336,7 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   await visitor.goto(`/de/widget?tab=docs&article=${loose.slug}`);
   await expect(visitor.getByRole("heading", { level: 1, name: "Versionshinweise" })).toHaveAttribute("lang", "de");
   await expect(visitor.getByText("Was sich geändert hat.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "de");
+  await expect(visitor.getByText("Diese Seite gibt es noch nicht auf Deutsch", { exact: false })).toBeHidden();
 
   // Messages with the docs to answer from: the AI first, said in German.
   await visitor.goto("/de/widget?tab=messages");

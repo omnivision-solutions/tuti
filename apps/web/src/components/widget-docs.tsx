@@ -1,5 +1,5 @@
 import { RichText } from "@tuti/content/react";
-import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon, LanguagesIcon } from "lucide-react";
 import Link from "next/link";
 
 import { articleLinks } from "@/components/article-links";
@@ -214,7 +214,7 @@ async function WidgetArticle({
   /** The collection it was opened from: the way back is named after it. */
   from?: string;
 }) {
-  const [link, { t: w }, team] = await Promise.all([portalLinks(), pageTranslator("widget"), teamLanguage()]);
+  const [link, { t: w }, { t: d }, team] = await Promise.all([portalLinks(), pageTranslator("widget"), pageTranslator("docs"), teamLanguage()]);
   // An article's ID opens it at its slug; another language's slug (an AI answer's source, docs/plan.md L10), or an old slug of
   // one that has since moved, where it is now.
   const byId = await articleById(projectSlug, asked);
@@ -250,6 +250,13 @@ async function WidgetArticle({
           <ExternalLinkIcon aria-hidden />
         </Link>
       </div>
+      {/* Not translated into the address's language yet (docs/plan.md, "A page not yet translated"): said in the panel's. */}
+      {article.untranslated && (
+        <p className="flex items-start gap-2 rounded-lg bg-secondary px-3 py-2 text-sm text-muted-foreground">
+          <LanguagesIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {d("notTranslated")}
+        </p>
+      )}
       <div className="flex flex-col gap-1">
         {article.collection && (
           <p lang={team} className="text-sm text-muted-foreground">
