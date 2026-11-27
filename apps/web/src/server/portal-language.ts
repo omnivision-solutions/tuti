@@ -49,3 +49,14 @@ export async function portalTranslator<N extends keyof Messages>(projectId: stri
   const language = address && isLanguage(address) ? address : languages.default;
   return { language, t: createTranslator({ locale: language, messages: MESSAGES[language], namespace }) };
 }
+
+/**
+ * The portal's messages under `namespace` in this request's address's language (portalLanguage: the project's default on
+ * its own addresses), for server components that don't have the project to hand (the docs' tree, tabs and pages);
+ * English off the portal.
+ */
+export async function pageTranslator<N extends keyof Messages>(namespace: N) {
+  const { language: address } = await portalLanguage();
+  const language = address && isLanguage(address) ? address : DEFAULT_LANGUAGE;
+  return { language, t: createTranslator({ locale: language, messages: MESSAGES[language], namespace }) };
+}

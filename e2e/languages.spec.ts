@@ -493,3 +493,107 @@ test("on a phone, a changelog page with both its page links fits, in French's lo
   await expect(reader.getByRole("link", { name: "Entrées plus anciennes" })).toBeVisible();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+test("the docs in German: the home, search (box, dialog and page), a collection and a locked tab", async ({ browser }, testInfo) => {
+  // Two projects: one with tabs, one without.
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Written by the team (Manual): nothing asks the model to translate the articles.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: true, newPages: "manual" }] }, "PATCH");
+  await api("/tabs", { name: "Guides" });
+  await api("/tabs", { name: "Enterprise", access: "signed_in", noAccess: "lock" });
+  await api("/collections", { name: "Basics", tab: "guides" });
+  await api("/collections", { name: "SAML", tab: "enterprise" });
+  for (const title of ["Getting started", "Inviting your team"]) {
+    const article = await api("/articles", { title, body: `${title}: how it works.`, collection: "basics" });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+  // One in no collection: "More articles" on the home.
+  const loose = await api("/articles", { title: "Release notes", body: "What changed." });
+  await api(`/articles/${loose.slug}/publish`, {});
+  const saml = await api("/articles", { title: "Setting up SAML", body: "SAML.", collection: "saml" });
+  await api(`/articles/${saml.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/docs");
+  await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
+  await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).toBeVisible();
+  const collections = reader.getByRole("list", { name: "Sammlungen" });
+  await expect(collections.getByRole("link", { name: /Basics/ })).toContainText("2 Artikel");
+  await expect(collections.getByRole("heading", { name: "Basics" }).locator("[lang=en]")).toHaveText("Basics");
+  await expect(reader.getByRole("heading", { name: "Weitere Artikel" })).toBeVisible();
+  // The docs' tabs under the header, named in German.
+  await expect(reader.getByRole("navigation", { name: "Dokumentationsbereiche" }).getByRole("link", { name: "Guides" })).toBeVisible();
+  await checkpoint(reader, "docs-home-in-german", { fullPage: false });
+
+  // The search dialog: as typed, nothing found, then an article (its title the team's words).
+  await reader.getByRole("main").getByRole("button", { name: /^(Dokumentation durchsuchen|Suchen oder KI fragen)$/ }).click();
+  const dialog = reader.getByRole("dialog");
+  const box = dialog.getByRole("combobox");
+  await expect(dialog.getByText(/^Tippe, um die Dokumentation zu durchsuchen( oder die KI zu fragen)?\.$/)).toBeVisible();
+  await box.fill("zebra");
+  await expect(dialog.getByText("Keine Artikel zu „zebra“.")).toBeVisible();
+  await box.fill("inviting");
+  const results = dialog.getByRole("listbox", { name: "Suchergebnisse" });
+  await expect(results.getByRole("option").first()).toContainText(/^(KI fragen:|Alle Ergebnisse für)\s*inviting/);
+  await expect(results.getByRole("option", { name: /Inviting your team/ }).locator("[lang=en]").first()).toHaveText("Inviting your team");
+  await reader.keyboard.press("Escape");
+  // The results' page.
+  await reader.goto("/de/docs?q=zebra");
+  await expect(reader.getByRole("heading", { level: 1, name: "Ergebnisse für „zebra“" })).toBeVisible();
+  await expect(reader.getByText("Keine Artikel zu „zebra“", { exact: true })).toBeVisible();
+  await expect(reader.getByRole("link", { name: "Alle Artikel" })).toBeVisible();
+
+  // A collection: its articles' list.
+  await reader.goto("/de/docs/basics");
+  await expect(reader.getByRole("main").getByRole("list", { name: "Artikel" }).getByRole("link")).toHaveCount(2);
+  // The tree beside it, named in German.
+  await expect(reader.getByRole("navigation", { name: "Dokumentation", exact: true }).getByRole("link", { name: /Getting started/ })).toBeVisible();
+
+  // A locked tab: signing in to read it.
+  await reader.goto("/de/docs/enterprise");
+  await expect(reader.getByText("Melde dich an, um das zu lesen.")).toBeVisible();
+  await expect(reader.getByRole("main").getByRole("link", { name: "Anmelden" })).toBeVisible();
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/de/docs");
+  await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
+  await checkpoint(reader, "docs-home-in-german-phone", { fullPage: false });
+
+  // The home's box in French, whose "Demander à l’IA" is wider than "Ask AI": the button leaves the box's words and its
+  // shortcut uncovered, on desktop and on a phone.
+  await reader.goto("/fr/docs");
+  const hero = reader.locator("[data-docs-hero] [role=search]");
+  const askAI = hero.getByRole("button", { name: "Demander à l’IA", exact: true });
+  for (const width of [1280, 390]) {
+    await reader.setViewportSize({ width, height: 844 });
+    await expect(askAI).toBeVisible();
+    const button = (await askAI.boundingBox())!;
+    for (const covered of [hero.locator("button span.truncate"), hero.locator("kbd")]) {
+      if (await covered.isVisible()) {
+        const box = (await covered.boundingBox())!;
+        expect(box.x + box.width, `${width}px`).toBeLessThanOrEqual(button.x);
+      }
+    }
+  }
+
+  // Without tabs, the way up from a collection's page is the docs' home: "Alle Sammlungen".
+  const plain = `e2e-${randomUUID().slice(0, 8)}`;
+  await createProject(team, "Plain", plain);
+  const plainApi = await apiFor(team, plain);
+  await plainApi("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  await plainApi("/collections", { name: "Basics" });
+  const intro = await plainApi("/articles", { title: "Intro", body: "Hello.", collection: "basics" });
+  await plainApi(`/articles/${intro.slug}/publish`, {});
+  const visitor = await newPerson(browser, portalUrl(plain));
+  await visitor.setViewportSize({ width: 1280, height: 800 });
+  await visitor.goto("/de/docs/basics");
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+});

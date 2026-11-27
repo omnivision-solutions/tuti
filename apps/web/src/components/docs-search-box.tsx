@@ -4,11 +4,13 @@ import type { ApiOperation } from "@tuti/shared/api-reference";
 import { CornerDownLeftIcon, LoaderCircleIcon, LockIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
-import { Button } from "@/components/ui/button";
+import { useTeamLanguage } from "@/components/portal-look";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,7 +40,10 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 type Option = { id: string; href: string; result?: DocsSearchResult };
 
 /** What the box, and its dialog, are called: with AI answers on, it asks as well as searches (the dialog's first row is "Ask AI"). */
-const boxLabel = (askAI: boolean) => (askAI ? "Search or ask AI" : "Search docs");
+const useBoxLabel = (askAI: boolean) => {
+  const t = useTranslations("helpCenter");
+  return askAI ? t("searchOrAsk") : t("searchDocs");
+};
 
 /**
  * The docs' one box for searching and asking, in the header: a plain GET form to /docs
@@ -69,6 +74,8 @@ export function DocsSearchBox({
   className?: string;
 }) {
   const at = usePortalHref();
+  const t = useTranslations("helpCenter");
+  const label = useBoxLabel(askAI);
   // Once the page's script runs (false while rendering on the server and hydrating).
   const enhanced = useSyncExternalStore(
     () => () => {},
@@ -103,21 +110,20 @@ export function DocsSearchBox({
           name="q"
           defaultValue={query}
           maxLength={200}
-          placeholder="Search docs"
-          aria-label="Search the docs"
+          placeholder={t("searchDocs")}
+          aria-label={t("searchTheDocs")}
           className={cn("pl-8", inHeader && "h-9 md:h-8", hero && "h-14 rounded-lg bg-card pl-11 text-base shadow-sm")}
         />
       </form>
     );
   }
-  const label = boxLabel(askAI);
   return (
     <div role="search" className={cn("relative", className)}>
       <button
         type="button"
         onClick={() => setOpen(true)}
         // Its text in its name (the search on the page, if any, after what the box does), for screen readers and voice control.
-        aria-label={query ? `${label}: ${query}` : label}
+        aria-label={query ? t("boxWithQuery", { label, q: query }) : label}
         aria-haspopup="dialog"
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
@@ -125,7 +131,7 @@ export function DocsSearchBox({
           inHeader
             ? "h-9 max-sm:w-9 max-sm:justify-center max-sm:border-transparent max-sm:px-0 max-sm:dark:bg-transparent md:w-64 md:rounded-lg"
             : hero
-              ? cn("h-[3.75rem] gap-3 rounded-xl bg-card px-5 text-[1.0625rem] shadow-card dark:bg-card", assistant && askAI && "pr-32")
+              ? cn("h-[3.75rem] gap-3 rounded-xl bg-card px-5 text-[1.0625rem] shadow-card dark:bg-card", assistant && askAI && "pr-2.5")
               : "h-8",
         )}
       >
@@ -137,6 +143,13 @@ export function DocsSearchBox({
             {shortcutText}
           </kbd>
         )}
+        {/* Room for Ask AI (over it, below), as wide as it is in the page's language. */}
+        {hero && askAI && assistant && (
+          <span aria-hidden className={buttonVariants({ className: "invisible font-semibold" })}>
+            <SparklesIcon />
+            {t("askAI")}
+          </span>
+        )}
       </button>
       {/* The home's box: Ask AI at its end, straight to the assistant. */}
       {hero && askAI && assistant && (
@@ -146,7 +159,7 @@ export function DocsSearchBox({
           className="absolute top-1/2 right-2.5 -translate-y-1/2 font-semibold"
         >
           <SparklesIcon />
-          Ask AI
+          {t("askAI")}
         </Button>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -162,6 +175,11 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
   const router = useRouter();
   const assistant = useDocsAssistant();
   const listId = useId();
+  const t = useTranslations("helpCenter");
+  const h = useTranslations("header");
+  const label = useBoxLabel(askAI);
+  // The articles' titles and passages: the team's words.
+  const team = useTeamLanguage();
   const [query, setQuery] = useState(initialQuery);
   /** The latest search that came back; `failed` when it couldn't search (not counted in the insights). */
   const [found, setFound] = useState<{ query: string; results: DocsSearchResult[]; failed?: true } | null>(null);
@@ -233,7 +251,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
       showCloseButton={false}
       className="top-3 max-h-[calc(100dvh-1.5rem)] translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:top-[12vh] sm:max-h-[76vh] sm:max-w-xl"
     >
-      <DialogTitle className="sr-only">{boxLabel(askAI)}</DialogTitle>
+      <DialogTitle className="sr-only">{label}</DialogTitle>
       <div className="flex items-center gap-3 border-b px-4">
         {pending ? (
           <LoaderCircleIcon aria-hidden className="size-5 shrink-0 animate-spin text-muted-foreground" />
@@ -247,8 +265,8 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={options.length > 0 ? `${listId}-${current}` : undefined}
-          aria-label={boxLabel(askAI)}
-          placeholder={boxLabel(askAI)}
+          aria-label={label}
+          placeholder={label}
           maxLength={200}
           value={query}
           onChange={(event) => {
@@ -273,7 +291,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
       <div className="overflow-y-auto p-2" aria-busy={pending}>
         {!q ? (
           <div className="flex flex-col items-center gap-3 px-3 py-6 text-sm text-muted-foreground">
-            <p>Type to search the docs{askAI ? ", or ask AI" : ""}.</p>
+            <p>{askAI ? t("typeToSearchOrAsk") : t("typeToSearch")}</p>
             {/* The way back to the conversation as it was (the header has no button of its own for it). */}
             {askAI && assistant && (
               <Button
@@ -285,12 +303,12 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                 }}
               >
                 <SparklesIcon />
-                Open the assistant
+                {t("openAssistant")}
               </Button>
             )}
           </div>
         ) : (
-          <ul id={listId} role="listbox" aria-label="Search results" className="flex flex-col gap-0.5">
+          <ul id={listId} role="listbox" aria-label={t("searchResults")} className="flex flex-col gap-0.5">
             {options.map((option, i) => (
               <li key={option.id} id={`${listId}-${i}`} role="option" aria-selected={i === current}>
                 <Link
@@ -310,11 +328,13 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                       <span className="flex items-center gap-1.5 break-words">
                         {/* An API reference's operation: its method first, as the reference's cards list them. */}
                         {option.result.method && <Method kind={option.result.method as ApiOperation["kind"]} />}
-                        <span className="min-w-0 break-words">{option.result.title}</span>
-                        {option.result.locked && <LockIcon aria-label="Locked" className="size-3.5 shrink-0 text-muted-foreground" />}
+                        <span lang={team} className="min-w-0 break-words">
+                          {option.result.title}
+                        </span>
+                        {option.result.locked && <LockIcon aria-label={h("locked")} className="size-3.5 shrink-0 text-muted-foreground" />}
                       </span>
                       {option.result.snippet && (
-                        <span className="line-clamp-1 text-sm break-words text-muted-foreground">
+                        <span lang={team} className="line-clamp-1 text-sm break-words text-muted-foreground">
                           <Highlighted text={option.result.snippet} query={q} />
                         </span>
                       )}
@@ -322,7 +342,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                   ) : (
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       {askAI ? <SparklesIcon aria-hidden className="size-4 shrink-0" /> : <SearchIcon aria-hidden className="size-4 shrink-0" />}
-                      <span className="shrink-0 font-medium">{askAI ? "Ask AI:" : "All results for"}</span>
+                      <span className="shrink-0 font-medium">{askAI ? t("askAIColon") : t("allResultsFor")}</span>
                       <span className="truncate text-muted-foreground">{q}</span>
                     </span>
                   )}
@@ -338,11 +358,11 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
             )}
             {!pending && found?.failed && (
               <li role="alert" className="px-3 py-4 text-center text-sm text-muted-foreground">
-                Couldn&apos;t search just now. Keep typing to try again.
+                {t("searchFailed")}
               </li>
             )}
             {!pending && !found?.failed && results.length === 0 && (
-              <li className="px-3 py-4 text-center text-sm text-muted-foreground">No articles match “{q}”.</li>
+              <li className="px-3 py-4 text-center text-sm text-muted-foreground">{t("noMatchDialog", { q })}</li>
             )}
           </ul>
         )}
