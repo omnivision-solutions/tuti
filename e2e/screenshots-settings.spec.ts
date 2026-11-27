@@ -136,17 +136,25 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     const appAddress = owner.getByLabel("App address");
     const base = await appAddress.inputValue();
     let held: Route | undefined;
+    // Held while the test looks; once it fails one, every read fails (one the save's refresh starts later too).
+    let failing = false;
     await owner.route("**/settings/screenshots/suggestions", (route) => {
+      if (failing) return route.abort();
       held = route;
     });
-    await appAddress.fill(new URL("plain", base).href);
+    const plain = new URL("plain", base).href;
+    await appAddress.fill(plain);
     await save.click();
+    // Its save landed, not just a toast shown (the first save's may still be): the page has the saved address (the field's
+    // default). Typed into before that, the field would be reset to it as the save lands.
+    await expect(appAddress).toHaveAttribute("value", plain);
     await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
     await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
     await expect(suggestion).toBeHidden();
     await expect(failed).not.toContainText("Try the suggested domains.");
     // A read that fails shows none either.
     await expect.poll(() => held).toBeDefined();
+    failing = true;
     await held!.abort();
     await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
     await expect(suggestion).toBeHidden();

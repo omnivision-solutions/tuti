@@ -123,6 +123,12 @@ const CHANGELOG_FORM = "changelog-form";
 /** AiHelpers' menu button: Draft with AI's dialog gives the keyboard's focus back to it once the text is written. */
 /** The header's Ask AI: focus goes back to it from Draft with AI's dialog, opened from its own. */
 const ASK_AI_BUTTON = "ask-ai";
+/**
+ * Draft with AI wrote the text before Ask AI was there to take the keyboard's focus back (it shows once the page has the
+ * new text, which may come after the dialog closes): Ask AI takes it as it appears.
+ * ponytail: one flag for the page, as there's one editor on it.
+ */
+let focusAskAiWhenShown = false;
 export const ChangelogSavingContext = createContext<{
   pending: boolean;
   setPending: (pending: boolean) => void;
@@ -724,6 +730,12 @@ export function ChangelogForm({
               {/* Off, it still takes focus and says why: read with it (and its title on hover). */}
               <Button
                 id={ASK_AI_BUTTON}
+                ref={(button: HTMLButtonElement | null) => {
+                  if (button && focusAskAiWhenShown) {
+                    focusAskAiWhenShown = false;
+                    button.focus();
+                  }
+                }}
                 type="button"
                 variant="outline"
                 size="sm"
@@ -2120,7 +2132,13 @@ export function ChangelogEntryActions({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             disabled={busy || locked}
-            onClick={() => run(draftChangelogEntry, "Drafted with AI", () => setDrafting(false))}
+            onClick={() =>
+              run(draftChangelogEntry, "Drafted with AI", () => {
+                // Not there yet (the text was unwritten): it takes the focus once it shows.
+                focusAskAiWhenShown = !document.getElementById(ASK_AI_BUTTON);
+                setDrafting(false);
+              })
+            }
           >
             {pending ? "Drafting…" : "Replace the text"}
           </AlertDialogAction>
