@@ -17,6 +17,12 @@ import { droppedMarkers, type RewriteKind, rewritePrompt } from "./release-notes
 
 type Block = NonNullable<Doc["content"]>[number];
 
+/**
+ * The most text (as the Markdown sent) one edit takes: the reply has to bring all of it back within the model's
+ * 4,000-token answer, so a longer one could never succeed, and each try would still be charged.
+ */
+const MAX_REWRITE_LENGTH = 8000;
+
 export type RewriteInput = {
   kind: RewriteKind;
   /** A changelog entry's number: its writing style (Settings → Changelog) is the style. */
@@ -78,13 +84,17 @@ async function rewrite(projectId: string, input: RewriteInput): Promise<Doc> {
   if (parts.every((part) => part.startsWith("{{media ") || part.trim() === "")) {
     throw new OperationError(400, "nothing_to_rewrite", "There's no text the AI can edit there");
   }
+  const notes = parts.filter(Boolean).join("\n\n");
+  if (notes.length > MAX_REWRITE_LENGTH) {
+    throw new OperationError(400, "too_long", `Select a shorter part to edit with AI: up to ${MAX_REWRITE_LENGTH.toLocaleString("en")} characters at a time`);
+  }
 
   const ai = await aiOrRefuse(projectId, "changelog", kind === "article" ? "help_center" : undefined);
   await countAiEdit(projectId);
   let reply: string;
   try {
     reply = await complete({
-      ...rewritePrompt({ kind, task: "Edit this text as the team's instruction says.", text: parts.filter(Boolean).join("\n\n"), whole, instruction, style }),
+      ...rewritePrompt({ kind, task: "Edit this text as the team's instruction says.", text: notes, whole, instruction, style }),
       ...ai,
     });
   } catch (error) {
