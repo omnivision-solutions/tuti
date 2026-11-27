@@ -134,6 +134,8 @@ const PAGE_BYTES = 2_000_000;
 const SCRIPT_BYTES = 3_000_000;
 /** A Next.js page loads 40 or more of its own chunks, and the sign-in SDK can be any of them. */
 const MAX_SCRIPTS = 100;
+/** All the scripts together: past it, no more are read (the same ones nearly every time, so what's found is kept). */
+const SCRIPTS_BYTES = 40_000_000;
 /** Scripts read at once, so one read never opens more connections to the app, or holds more than PAGE_BYTES + this × SCRIPT_BYTES. */
 const SCRIPTS_AT_ONCE = 8;
 const MAX_REDIRECTS = 5;
@@ -220,10 +222,12 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
     const found = [findIn(page.text)];
     let complete = true;
+    let left = SCRIPTS_BYTES;
     await Promise.all(
       Array.from({ length: SCRIPTS_AT_ONCE }, async () => {
-        for (let script = queue.shift(); script; script = queue.shift()) {
-          const read = await get(script, SCRIPT_BYTES, signal).catch(() => null);
+        for (let script = queue.shift(); script && left > 0; script = queue.shift()) {
+          const read = await get(script, Math.min(SCRIPT_BYTES, left), signal).catch(() => null);
+          left -= read?.text.length ?? 0;
           complete &&= !!read;
           found.push(read ? findIn(read.text) : []);
         }

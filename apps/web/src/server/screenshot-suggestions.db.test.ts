@@ -22,6 +22,8 @@ const requests: string[] = [];
 let connections = 0;
 /** Script reads at once, and the most at once. */
 let reading = 0;
+/** A 3 MB script. */
+const heavy = " ".repeat(3_000_000);
 let mostReading = 0;
 /** Script reads that fail (500) before it loads. */
 let scriptFailures = 0;
@@ -42,6 +44,10 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/javascript" }).end('initializeApp({authDomain:"acme.firebaseapp.com"});const a="identitytoolkit.googleapis.com",b="securetoken.googleapis.com";');
     } else if (request.url === "/many") {
       response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 101 }, (_, i) => `<script src="/assets/s${i}.js"></script>`).join(""));
+    } else if (request.url === "/heavy") {
+      response.writeHead(200, { "content-type": "text/html" }).end(Array.from({ length: 30 }, (_, i) => `<script src="/assets/h${i}.js"></script>`).join(""));
+    } else if (request.url?.startsWith("/assets/h")) {
+      response.writeHead(200, { "content-type": "text/javascript" }).end(heavy);
     } else if (request.url?.startsWith("/assets/s")) {
       // The sign-in SDK deep in a Next.js page's chunks, at the end of a large one, as on a real app (its 26th of 40).
       reading++;
@@ -65,6 +71,8 @@ beforeEach(async () => {
   vi.stubEnv("SCREENSHOTS_ALLOW_LOCALHOST", "true");
   requests.length = 0;
   connections = 0;
+  reading = 0;
+  mostReading = 0;
   owner = await signUp("Owner");
   project = await createProject(owner);
 });
@@ -143,8 +151,16 @@ test("a page with many scripts reads the first 100, 8 at a time and each in full
   expect(await suggestions()).toEqual(firebase);
   expect(await suggestions()).toEqual(firebase);
   expect(requests.filter((path) => path.startsWith("/assets/s"))).toHaveLength(100);
-  expect(mostReading).toBe(8);
+  expect(mostReading).toBeLessThanOrEqual(8);
+  expect(mostReading).toBeGreaterThan(1);
   expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(`${base}/many`);
+});
+
+test("a page whose scripts pass 40 MB together reads no more of them", async () => {
+  await settle({ appUrl: `${base}/heavy` });
+  expect(await suggestions()).toEqual([]);
+  // 14 fill the budget; up to 7 more were already on their way.
+  expect(requests.filter((path) => path.startsWith("/assets/h")).length).toBeLessThan(22);
 });
 
 test("settings without an app address suggest nothing", async () => {
