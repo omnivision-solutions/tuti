@@ -170,7 +170,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           <PopularChips articles={popular} />
         </div>
       ) : (
-        <PortalPageHeader title={tab.name} />
+        <PortalPageHeader title={<span lang={tab.lang ?? lang}>{tab.name}</span>} />
       )}
       {collections.length === 0 && uncollected.length === 0 && references.length === 0 && (
         <EmptyState title={t("empty")} description={t("emptyDescription")} />
@@ -279,7 +279,9 @@ export async function DocsTabPage({
   if (tab?.locked) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : MESSAGES[(await pageTranslator("helpCenter")).language].header.docs} />
+        <PortalPageHeader
+          title={tab.slug !== docs.home ? <span lang={tab.lang ?? (await teamLanguage())}>{tab.name}</span> : MESSAGES[(await pageTranslator("helpCenter")).language].header.docs}
+        />
         <LockedMessage signedIn={docs.signedIn} />
         <PortalFooter docs />
       </div>
@@ -337,7 +339,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug} browse={(await pageTranslator("helpCenter")).t("browseDocs")}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
-          <Link lang={parent ? (parent.lang ?? lang) : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
+          <Link lang={parent ? (parent.lang ?? lang) : "tab" in up ? (tab?.lang ?? lang) : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
             {up.label}
           </Link>
           <PortalPageHeader
@@ -460,7 +462,7 @@ export async function DocsArticle({
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
               )}
-              <Link lang={collection ? (collection.lang ?? lang) : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
+              <Link lang={collection ? (collection.lang ?? lang) : "tab" in up ? (tab?.lang ?? lang) : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
                 {up.label}
               </Link>
             </nav>
@@ -599,8 +601,9 @@ async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<type
 
 /** Docs' row under the header: its tabs with something to read (with two or more), `active` the one this page is in. */
 export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active: string | null }) {
-  const at = await portalLinks();
-  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active, locked: tab.locked }));
+  const [at, lang] = await Promise.all([portalLinks(), teamLanguage()]);
+  // Their names: the team's words, in their own language (translated into the page's, or the default language's).
+  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active, locked: tab.locked, lang: tab.lang ?? lang }));
   return <PartRow label={(await pageTranslator("helpCenter")).t("docsTabs")} links={links} />;
 }
 

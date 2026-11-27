@@ -8,7 +8,6 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
-import { nextModelReply } from "./model";
 
 test("a reader chooses German in the portal's header and its text follows, on desktop and on phones", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -637,34 +636,53 @@ test("the docs in German: tabs' and collections' names translated on the home, a
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
+  // Two tabs: Handbooks translated, Plans not. Invoicing (translated) with Receipts in it (translated too).
   await api("/tabs", { name: "Handbooks" });
+  await api("/tabs", { name: "Plans" });
   await api("/collections", { name: "Invoicing", description: "Paying and receipts.", tab: "handbooks" });
-  const article = await api("/articles", { title: "Paying an invoice", body: "By card.", collection: "invoicing" });
-  await api(`/articles/${article.slug}/publish`, {});
-  // German kept up to date: its labels (collections first, then tabs) and the article translated once it's added (the
-  // model's answers, each for its own request).
-  await nextModelReply(JSON.stringify({ segments: { "0.n": "Rechnungen", "0.d": "Bezahlen und Belege.", "1.n": "Handbücher" } }), '"0.n":"Invoicing"');
-  await nextModelReply(JSON.stringify({ segments: { "1": "Eine Rechnung bezahlen", "2": "Mit Karte." } }), "Paying an invoice");
-  await api("/languages", { languages: [{ code: "de", live: true }] }, "PATCH");
+  await api("/collections", { name: "Receipts", description: "What you get.", parent: "invoicing" });
+  await api("/collections", { name: "Pricing", tab: "plans" });
+  for (const [title, collection] of [["Paying an invoice", "invoicing"], ["Downloading a receipt", "receipts"], ["Our plans", "pricing"]]) {
+    const article = await api("/articles", { title, body: `${title}.`, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+  // German written by the team: nothing asks the model. Its names as the team wrote them (L13's settings, later).
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const german = (name: string, description?: string) => JSON.stringify({ de: { name, ...(description !== undefined && { description }), auto: false, source: null } });
+  await query(`UPDATE collection SET translations = $1 WHERE slug = 'invoicing' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Rechnungen", "Bezahlen und Belege."), slug]);
+  await query(`UPDATE collection SET translations = $1 WHERE slug = 'receipts' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Belege", "Was du bekommst."), slug]);
+  await query(`UPDATE docs_tab SET translations = $1 WHERE slug = 'handbooks' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Handbücher"), slug]);
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 1280, height: 800 });
-  // Translated in the background: there once its job is done.
+  await reader.goto("/de/docs");
   const collections = reader.getByRole("list", { name: "Sammlungen" });
-  await expect(async () => {
-    await reader.goto("/de/docs");
-    await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen", { timeout: 1000 });
-  }).toPass();
+  await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen");
   await expect(collections.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  // The tabs: one in German, the other in the team's English, each marked so.
+  const tabs = reader.getByRole("navigation", { name: "Dokumentationsbereiche" });
+  await expect(tabs.getByRole("link", { name: "Handbücher" }).locator("[lang=de]")).toHaveText("Handbücher");
+  await expect(tabs.getByRole("link", { name: "Plans" }).locator("[lang=en]")).toHaveText("Plans");
   await checkpoint(reader, "docs-home-names-in-german", { fullPage: false });
-  // The collection's page: its heading and description.
+  // A collection's page: its heading and description, the one in it, and its link up to its tab.
   await reader.goto("/de/docs/invoicing");
   await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=de]")).toHaveText("Rechnungen");
-  await expect(reader.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
-  // An article in it: the breadcrumb's link to it, and the sidebar's tree.
-  await reader.goto(`/de/docs/${article.slug}`);
+  await expect(reader.getByRole("main").getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("main").getByRole("heading", { name: "Belege" }).locator("[lang=de]")).toHaveText("Belege");
+  await expect(reader.getByRole("main").getByText("Was du bekommst.")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("main").getByRole("link", { name: "Handbücher", exact: true })).toHaveAttribute("lang", "de");
+  await checkpoint(reader, "docs-collection-names-in-german", { fullPage: false });
+  // The one in it: its link up to Rechnungen.
+  await reader.goto("/de/docs/receipts");
+  // (Not the tree's link to it, which has its name as its title.)
+  await expect(reader.getByRole("main").getByRole("link", { name: "Rechnungen", exact: true }).and(reader.locator("a:not([title])"))).toHaveAttribute("lang", "de");
+  // An article in Invoicing: the breadcrumb's link to it, and the sidebar's tree.
+  await reader.goto("/de/docs/paying-an-invoice");
   await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Rechnungen" })).toHaveAttribute("lang", "de");
   await expect(reader.getByRole("navigation", { name: "Dokumentation" }).locator("[lang=de]", { hasText: "Rechnungen" })).toBeVisible();
+  // The tab not translated: its page's heading in the team's English.
+  await reader.goto("/de/docs/plans");
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=en]")).toHaveText("Plans");
   // At the default language's address, the team's names.
   await reader.goto("/docs");
   await expect(reader.getByRole("list", { name: "Collections" }).getByRole("heading", { name: "Invoicing" })).toBeVisible();
