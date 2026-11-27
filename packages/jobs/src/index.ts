@@ -16,6 +16,7 @@ import { tellEmailPauses } from "./email-pause";
 import { codeChange, retryCodeChanges } from "./code-changes";
 import { verifyArticle } from "./verify";
 import { screenshotRun } from "./screenshots";
+import { scanSignInServices } from "./sign-in-hosts";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies, wakeConversations } from "./conversations";
 export { automatedRepliesEmailed, replyRecipient, type ReplyRecipient } from "./conversations";
 export { checkPushReceipts, PUSH_TEXT_MAX, RECEIPT_AFTER_MS } from "./push";
@@ -66,6 +67,7 @@ export { ANNOUNCEMENT_WAITS_MS, behindOf, type BehindList, type Draft, entryTran
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
+export { scannedFor, scanSignInServices, type SignInService } from "./sign-in-hosts";
 export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
@@ -140,6 +142,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   verifyArticle,
   verifyAllArticle: verifyArticle,
   screenshotRun,
+  screenshotSignInScan: (input) => scanSignInServices(input),
   importStep,
   resumeImports: (_, log) => resumeImports(log),
   failStaleImports: () => failStaleImports(),

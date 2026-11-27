@@ -37,6 +37,9 @@ const WINDOWS = [
 
 /** How often the page reads a running Test again. */
 const REFRESH_MS = 5_000;
+/** While the worker reads the app for its sign-in services: how often the page asks again, and for how long at most. */
+const CHECK_EVERY_MS = 2_000;
+const CHECK_FOR_MS = 30_000;
 
 /**
  * Settings → Screenshots: the team's app (its address, how the agent signs in, what it should know, the window), saved
@@ -80,20 +83,39 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
   // object: a Test's refresh every few seconds makes a new one.
   const looked = JSON.stringify([settings.appUrl, settings.signIn, settings.otherDomains]);
   const loading = Boolean(settings.appUrl) && (readFor?.[0] !== looked || readFor[1] !== saves);
+  // The server is reading the app (in the background): asked again every few seconds, for half a minute at most.
+  const [checking, setChecking] = useState(false);
+  const waiting = Boolean(settings.appUrl) && checking;
   useEffect(() => {
     if (!settings.appUrl) {
       return;
     }
     let current = true;
-    fetch(`/app/${projectSlug}/settings/screenshots/suggestions`)
-      .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[] }>) : { suggestions: [] }))
-      .then(
-        (result) => current && setSuggestions(result.suggestions),
-        () => current && setSuggestions([]),
-      )
-      .finally(() => current && setReadFor([looked, saves]));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = CHECK_FOR_MS / CHECK_EVERY_MS;
+    // The first look may start a read; the next ones only ask how it went.
+    const ask = (start: boolean) =>
+      fetch(`/app/${projectSlug}/settings/screenshots/suggestions${start ? "" : "?start=false"}`)
+        .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[]; checking: boolean }>) : { suggestions: [], checking: false }))
+        .catch(() => ({ suggestions: [], checking: false }))
+        .then((result) => {
+          if (!current) {
+            return;
+          }
+          const again = result.checking && polls-- > 0;
+          // Not one whose hosts are listed already (added while it was checking, not saved yet).
+          const listed = otherDomains.current?.value.split(/[\s,]+/) ?? [];
+          setSuggestions(result.suggestions.filter(({ hosts }) => hosts.some((host) => !listed.includes(host))));
+          setChecking(again);
+          setReadFor([looked, saves]);
+          if (again) {
+            timer = setTimeout(() => void ask(false), CHECK_EVERY_MS);
+          }
+        });
+    void ask(true);
     return () => {
       current = false;
+      clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `looked` stands for the settings it reads
   }, [projectSlug, looked, saves]);
@@ -196,7 +218,8 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
               aria-describedby="screenshots-other-domains-description"
               placeholder="acme.auth0.com"
             />
-            <div className="contents" aria-busy={loading} data-suggestions>
+            <div className="contents" aria-busy={loading || waiting} data-suggestions>
+              {!loading && waiting && <p className="text-sm text-muted-foreground">Checking how your app signs in…</p>}
               {/* Only the answer for the settings as they are: never another address's while it's read again. */}
               {!loading &&
                 Boolean(settings.appUrl) &&

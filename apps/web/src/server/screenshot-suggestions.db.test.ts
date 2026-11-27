@@ -2,19 +2,19 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { prisma } from "@tuti/db";
-import { SCREENSHOT_SECRET } from "@tuti/jobs";
+import { SCREENSHOT_SECRET, scannedFor } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { call } from "@/server/operations/run";
 import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
 import { suggestScreenshotDomains } from "@/server/operations/screenshots";
-import { scannedFor } from "@/server/sign-in-hosts";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
  * Settings → Screenshots' suggestions (screenshotSettings.suggestions): the sign-in services an app's page and scripts
- * call, read from a fake app on this machine (tests' Tuti is on localhost, where only that is fetched).
+ * call, read from a fake app on this machine (tests' Tuti is on localhost, where only that is fetched). The read is the
+ * screenshot-sign-in-scan job's (inline here: done before the look that started it answers "checking").
  */
 
 let server: Server;
@@ -45,6 +45,10 @@ beforeAll(async () => {
     } else if (request.url === "/assets/main.js" && scriptFailures > 0) {
       scriptFailures--;
       response.writeHead(500).end();
+    } else if (request.url === "/slow") {
+      response.writeHead(200, { "content-type": "text/html" }).end('<script src="/assets/slow.js"></script>');
+    } else if (request.url === "/assets/slow.js") {
+      setTimeout(() => response.writeHead(200, { "content-type": "text/javascript" }).end('const a="identitytoolkit.googleapis.com";'), 200);
     } else if (request.url === "/assets/main.js") {
       response.writeHead(200, { "content-type": "text/javascript" }).end('initializeApp({authDomain:"acme.firebaseapp.com"});const a="identitytoolkit.googleapis.com",b="securetoken.googleapis.com";');
     } else if (request.url === "/many") {
@@ -97,7 +101,14 @@ beforeEach(async () => {
   project = await createProject(owner);
 });
 
-const suggestions = async () => (await call(suggestScreenshotDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).suggestions;
+/** A look at the suggestions; `start: false` (the screen's polls) only reads. */
+const look = (input: { start?: boolean } = {}) => call(suggestScreenshotDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+/** The suggestions once the read is done: a first look starts it (and says it's checking), the next reads its answer. */
+const suggestions = async () => {
+  const first = await look();
+  return first.checking ? (await look({ start: false })).suggestions : first.suggestions;
+};
+const saved = () => prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
 const settle = (data: { appUrl: string; otherDomains?: string[] }) => prisma.screenshotSettings.upsert({ where: { projectId: project.id }, create: { projectId: project.id, ...data }, update: data });
 
 test("finds the app's sign-in service in its own scripts, once per address, and leaves out hosts already allowed", async () => {
@@ -245,4 +256,63 @@ test("a kept answer counts against no limit: looked at again and again, never re
   for (let i = 0; i <= FETCHES_PER_MEMBER_PER_MINUTE + 1; i++) {
     expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
   }
+});
+
+test("the first look starts the read in the background and says it's checking; the next has its answer", async () => {
+  await settle({ appUrl: `${base}/` });
+  expect(await look()).toEqual({ suggestions: [], checking: true });
+  // Done: the read has ended and its answer is kept, with when it was found.
+  expect(await look({ start: false })).toEqual({ suggestions: [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }], checking: false });
+  expect(await saved()).toMatchObject({ signInServicesFor: scannedFor(`${base}/`), signInServicesAt: expect.any(Date), signInScanFor: null, signInScanAt: null });
+});
+
+test("one read per project at a time: a look while one runs for the same address starts no other", async () => {
+  await settle({ appUrl: `${base}/slow` });
+  const answers = await Promise.all([look(), look(), look()]);
+  expect(answers.every(({ checking }) => checking)).toBe(true);
+  expect(requests.filter((path) => path === "/slow")).toHaveLength(1);
+
+  // One running (a claim of a moment ago): the look says checking and reads nothing.
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServicesFor: null, signInScanFor: scannedFor(`${base}/slow`), signInScanAt: new Date() } });
+  expect(await look()).toEqual({ suggestions: [], checking: true });
+  expect(requests.filter((path) => path === "/slow")).toHaveLength(1);
+  // One started long ago was lost (its worker stopped, say): a look starts another.
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanAt: new Date(Date.now() - 10 * 60_000) } });
+  expect(await look()).toEqual({ suggestions: [], checking: true });
+  expect(requests.filter((path) => path === "/slow")).toHaveLength(2);
+});
+
+test("a read that isn't complete ends the checking without keeping its answer; a poll starts no other, the next look does", async () => {
+  scriptFailures = 1;
+  await settle({ appUrl: `${base}/` });
+  expect(await look()).toEqual({ suggestions: [], checking: true });
+  expect(await look({ start: false })).toEqual({ suggestions: [], checking: false });
+  expect(await saved()).toMatchObject({ signInServicesFor: null, signInScanFor: null });
+  expect(requests).toEqual(["/", "/app", "/assets/main.js"]);
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+});
+
+test("an answer older than 7 days is read again, and shown while it is", async () => {
+  const appUrl = `${base}/`;
+  await settle({ appUrl });
+  const old = [{ provider: "Auth0", hosts: ["acme.auth0.com"] }];
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: old, signInServicesFor: scannedFor(appUrl), signInServicesAt: new Date(Date.now() - 6 * 24 * 3600_000) } });
+  // Six days old: kept.
+  expect(await look()).toEqual({ suggestions: old, checking: false });
+  expect(requests).toHaveLength(0);
+  // Eight: shown while it's read again, then the new answer.
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServicesAt: new Date(Date.now() - 8 * 24 * 3600_000) } });
+  expect(await look()).toEqual({ suggestions: old, checking: true });
+  expect(await look({ start: false })).toEqual({ suggestions: [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }], checking: false });
+});
+
+test("past the fetch limits, an answer older than 7 days is still shown, not refused", async () => {
+  const appUrl = `${base}/missing`;
+  await settle({ appUrl });
+  for (let i = 0; i < FETCHES_PER_MEMBER_PER_MINUTE; i++) {
+    await look();
+  }
+  const old = [{ provider: "Auth0", hosts: ["acme.auth0.com"] }];
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: old, signInServicesFor: scannedFor(appUrl), signInServicesAt: new Date(0) } });
+  expect(await look()).toEqual({ suggestions: old, checking: false });
 });

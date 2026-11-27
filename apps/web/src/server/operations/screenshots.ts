@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
+import { aiPaused, allowedHosts, dropChangedScreenshotProfile, enqueue, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, scannedFor, screenshotsAsked, settleStaleScreenshotRuns, type SignInService, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -11,7 +11,6 @@ import { z } from "zod";
 import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters";
 
 import { displayDoc } from "../content";
-import { detectSignInServices, scannedFor, type SignInService } from "../sign-in-hosts";
 import { NO_CREDITS } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { countSpecFetch } from "./fetch-limits";
@@ -297,35 +296,42 @@ const suggestionsOutput = z
           hosts: z.array(z.string()).describe("Its hosts to add to the other domains").meta({ examples: [["identitytoolkit.googleapis.com", "securetoken.googleapis.com"]] }),
         }),
       )
-      .describe("Each sign-in service found whose hosts aren't allowed yet; empty when none is, or the app's page couldn't be read"),
+      .describe("Each sign-in service found whose hosts aren't allowed yet; empty when none is, the app's page couldn't be read, or it hasn't been read yet"),
+    checking: z.boolean().describe("Whether the app is being read now: ask again in a few seconds for the answer").meta({ examples: [false] }),
   })
   .meta({ id: "ScreenshotDomainSuggestions", description: "Hosts the screenshot agent likely needs to sign in" });
 
+/** An answer older than this is read again: the app may sign in through another service now. */
+const CHECK_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
+/** A read started longer ago than this is taken for lost: its job waits up to 2 minutes for the worker, then takes 15 seconds. */
+const SCAN_STALE_MS = 3 * 60 * 1000;
+
 /**
- * The hosted sign-in services the app calls (sign-in-hosts.ts), with their hosts its runs' browser doesn't open yet:
- * found once per app address (kept on the settings), as reading its page and scripts takes seconds. A page or script
- * that couldn't be read isn't kept, so the next look tries again.
+ * The hosted sign-in services the app calls (@tuti/jobs sign-in-hosts.ts), with their hosts its runs' browser doesn't
+ * open yet. Reading the app's page and scripts takes seconds, so the worker does it (the screenshot-sign-in-scan job),
+ * once per app address and week (kept on the settings); a look meanwhile says it's checking. `start: false` (the
+ * screen's polls) never starts a read: one that ended without an answer (a script didn't load) ends the waiting.
  */
-async function domainSuggestions(context: { actor: Actor; projectId: string }): Promise<SignInService[]> {
+async function domainSuggestions(context: { actor: Actor; projectId: string }, start: boolean): Promise<{ suggestions: SignInService[]; checking: boolean }> {
   const { projectId } = context;
-  const settings = await prisma.screenshotSettings.findUnique({ where: { projectId }, select: { appUrl: true, signIn: true, signInLink: true, otherDomains: true, signInServices: true, signInServicesFor: true } });
+  const settings = await prisma.screenshotSettings.findUnique({
+    where: { projectId },
+    select: { appUrl: true, signIn: true, signInLink: true, otherDomains: true, signInServices: true, signInServicesFor: true, signInServicesAt: true, signInScanFor: true, signInScanAt: true },
+  });
   if (!settings?.appUrl) {
-    return [];
+    return { suggestions: [], checking: false };
   }
-  let services = settings.signInServicesFor === scannedFor(settings.appUrl) ? (settings.signInServices as SignInService[] | null) : null;
-  if (!services) {
-    // Each read makes our server fetch and scan an address the team picks: limited as fetching an API reference is.
-    await countSpecFetch(context);
-    const found = await detectSignInServices(settings.appUrl);
-    if (!found) {
-      return [];
-    }
-    services = found.services;
-    // Only a full read (a script that didn't load may hold the service), and only while the address is still the one
-    // read: one changed meanwhile is found again.
-    if (found.complete) {
-      await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl: settings.appUrl }, data: { signInServices: services, signInServicesFor: scannedFor(settings.appUrl) } });
-    }
+  const key = scannedFor(settings.appUrl);
+  const now = Date.now();
+  const kept = settings.signInServicesFor === key ? (settings.signInServices as SignInService[] | null) : null;
+  // One kept before answers had a time (until 2026-11) is read again too.
+  const fresh = kept !== null && settings.signInServicesAt !== null && now - settings.signInServicesAt.getTime() < CHECK_AGAIN_MS;
+  let checking = !fresh && settings.signInScanFor === key && settings.signInScanAt !== null && now - settings.signInScanAt.getTime() < SCAN_STALE_MS;
+  if (!fresh && !checking && start) {
+    checking = await startScan(context, settings.appUrl, kept !== null);
+  }
+  if (!kept) {
+    return { suggestions: [], checking };
   }
   // What its runs' browser opens already: the app's host, the sign-in link's, the other domains (with subdomains).
   // A sign-in link that no longer opens (another server secret): without its host, rather than no answer.
@@ -336,22 +342,64 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }): 
     open = allowedHosts({ ...settings, signInLink: null });
   }
   const allowed = (host: string) => open.some((domain) => host === domain || host.endsWith(`.${domain}`));
-  return services.map(({ provider, hosts }) => ({ provider, hosts: hosts.filter((host) => acceptedDomain(host) && !allowed(host)) })).filter(({ hosts }) => hosts.length > 0);
+  return {
+    suggestions: kept.map(({ provider, hosts }) => ({ provider, hosts: hosts.filter((host) => acceptedDomain(host) && !allowed(host)) })).filter(({ hosts }) => hosts.length > 0),
+    checking,
+  };
+}
+
+/**
+ * Starts the read of the app at `appUrl`, unless one for it started meanwhile; whether one is running. Each makes our
+ * server fetch and scan an address the team picks: limited as fetching an API reference is, though a kept answer (one
+ * being read again) is shown rather than refused.
+ */
+async function startScan(context: { actor: Actor; projectId: string }, appUrl: string, keptAnswer: boolean): Promise<boolean> {
+  const { projectId } = context;
+  try {
+    await countSpecFetch(context);
+  } catch (error) {
+    if (keptAnswer && error instanceof OperationError && error.status === 429) {
+      return false;
+    }
+    throw error;
+  }
+  const key = scannedFor(appUrl);
+  // Claimed in one statement, so of looks at once only one starts it; only while the address is still this one.
+  const { count } = await prisma.screenshotSettings.updateMany({
+    where: { projectId, appUrl, OR: [{ signInScanFor: null }, { signInScanFor: { not: key } }, { signInScanAt: null }, { signInScanAt: { lt: new Date(Date.now() - SCAN_STALE_MS) } }] },
+    data: { signInScanFor: key, signInScanAt: new Date() },
+  });
+  if (count === 0) {
+    return true;
+  }
+  try {
+    await enqueue("screenshotSignInScan", { projectId, appUrl });
+  } catch (error) {
+    await prisma.screenshotSettings.updateMany({ where: { projectId, signInScanFor: key }, data: { signInScanFor: null, signInScanAt: null } });
+    throw error;
+  }
+  return true;
 }
 
 export const suggestScreenshotDomains = defineOperation({
   name: "screenshotSettings.suggestions",
   title: "Suggest screenshot domains",
   summary:
-    "The hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), with their hosts that aren't among the other domains yet: the agent can't sign in until they are.",
+    "The hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), with their hosts that aren't among the other domains yet: the agent can't sign in until they are. Read in the background: ask again while `checking`.",
   method: "GET",
   path: "/screenshots/settings/suggestions",
   scope: "read",
   access: "admin",
-  input: z.object({}),
+  input: z.object({
+    start: z
+      .union([z.boolean(), z.stringbool()])
+      .default(true)
+      .describe("`false` only reads: no read of the app is started (to ask again while `checking`)")
+      .meta({ examples: [false] }),
+  }),
   output: suggestionsOutput.describe("The suggested domains"),
   errors: [429],
-  run: async (context) => ({ suggestions: await domainSuggestions(context) }),
+  run: async (context, { start }) => domainSuggestions(context, start),
 });
 
 /** Refuses a run that can't go: no key or uploads here (503), no settings (409), no credits (402). */

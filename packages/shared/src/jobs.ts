@@ -193,6 +193,17 @@ export const jobs = {
     retries: 0,
   },
   /**
+   * Settings → Screenshots' suggestions: reads the app at `appUrl` for the sign-in services it calls (@tuti/jobs
+   * sign-in-hosts.ts) and keeps the answer on the project's screenshot settings. In the worker, not the web server: a
+   * read takes up to 15 seconds and 40 MB. Tried once, one at a time per project: the screen's next look starts another.
+   */
+  screenshotSignInScan: {
+    name: "screenshot-sign-in-scan",
+    input: z.object({ projectId: z.string(), appUrl: z.string() }),
+    retries: 0,
+    concurrencyKey: "input.projectId",
+  },
+  /**
    * One article of a Verify all (docs/plan.md, V7): verifyArticle, then the next article. A key of its own, so during a
    * deploy these wait for the new worker: the previous one's verifyArticle would neither go on nor leave the email to the end.
    */

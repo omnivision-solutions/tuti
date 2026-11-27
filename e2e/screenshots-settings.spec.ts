@@ -122,9 +122,15 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await save.click();
     await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
-    // The app's sign-in service, found in its script.
+    // The app's sign-in service, found in its script: read in the background while the page says so, then suggested.
+    const checking = owner.getByText("Checking how your app signs in…", { exact: true });
+    await expect(checking).toBeVisible();
+    await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
+    await checking.scrollIntoViewIfNeeded();
+    await checkpoint(owner, "team-settings-screenshots-checking");
     const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
     await expect(suggestion).toBeVisible();
+    await expect(checking).toBeHidden();
     // A Test that can't sign in points to it.
     await owner.getByRole("button", { name: "Test", exact: true }).click();
     const failed = owner.getByRole("alert").filter({ hasText: `The agent couldn't sign in: ${FAKE_SIGN_IN_REFUSED}` });
@@ -136,7 +142,7 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     const appAddress = owner.getByLabel("App address");
     const base = await appAddress.inputValue();
     let held: Route | undefined;
-    await owner.route("**/settings/screenshots/suggestions", (route) => {
+    await owner.route("**/settings/screenshots/suggestions*", (route) => {
       held = route;
     });
     await appAddress.fill(new URL("plain", base).href);
@@ -151,7 +157,7 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
     await expect(suggestion).toBeHidden();
     // Back to the app's own address: suggested again.
-    await owner.unroute("**/settings/screenshots/suggestions");
+    await owner.unroute("**/settings/screenshots/suggestions*");
     await appAddress.fill(base);
     await save.click();
     await expect(suggestion).toBeVisible();
