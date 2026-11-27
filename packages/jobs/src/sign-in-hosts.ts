@@ -267,7 +267,7 @@ export async function scanSignInServices({ projectId, appUrl }: JobInput<"screen
       await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl }, data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: new Date() } });
     } else if (found) {
       await prisma.screenshotSettings.updateMany({
-        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }] },
+        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }, { signInServicesAt: null }] },
         data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: null },
       });
     }

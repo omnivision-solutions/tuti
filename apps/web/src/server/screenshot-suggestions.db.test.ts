@@ -345,6 +345,10 @@ test("what a read that isn't complete found is shown, and the next look reads th
   expect(await look()).toEqual({ suggestions: firebase, checking: true });
   expect(requests.filter((path) => path === "/partial")).toHaveLength(2);
 
+  // An earlier partial answer is replaced by a newer partial read.
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: [] } });
+  expect(await suggestions()).toEqual(firebase);
+
   // A full answer, expired, isn't replaced by a partial read.
   const full = [{ provider: "Auth0", hosts: ["acme.auth0.com"] }];
   await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: full, signInServicesAt: new Date(0) } });
