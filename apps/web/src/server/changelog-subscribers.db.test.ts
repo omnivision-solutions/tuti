@@ -15,6 +15,7 @@ import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/su
 import { POST as unsubscribeRoute } from "@/app/portal/[project]/(site)/changelog/subscription/unsubscribe/route";
 import { POST as emailsOnRoute } from "@/app/portal/[project]/(site)/changelog/subscription/emails-on/route";
 import { POST as optOutRoute } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
+import { hashSecret } from "@/lib/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
@@ -2133,7 +2134,8 @@ test("a subscription in a language taken offline since: its confirmation email a
   expect(await subscribe(email)).toEqual({ sentTo: email });
   await prisma.projectLanguage.updateMany({ where: { projectId: project.id, code: "de" }, data: { live: false } });
   // Asked again (not confirmed yet) on the default language's page would set it there; here the same German page sends again.
-  await prisma.signInLink.deleteMany();
+  // Its own address's links only (stored by the address's hash, as countEmailedLink keeps them), past the hourly limit.
+  await prisma.signInLink.deleteMany({ where: { projectId: project.id, emailHash: hashSecret(email) } });
   expect(await subscribe(email)).toEqual({ sentTo: email });
   request.headers = {};
   const message = await mailbox.latestTo(email);
