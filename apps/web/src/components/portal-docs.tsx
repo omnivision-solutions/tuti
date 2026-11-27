@@ -336,7 +336,7 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   // address (teamLanguage), but names and descriptions translated into the page's (their own `lang`, docs/plan.md L9).
   const lang = await teamLanguage();
   return (
-    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug} browse={(await pageTranslator("helpCenter")).t("browseDocs")}>
+    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
           <Link lang={parent ? (parent.lang ?? lang) : "tab" in up ? (tab?.lang ?? lang) : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
@@ -412,7 +412,9 @@ export async function DocsArticle({
   // The tree: its tab's (the first tab's has the articles in none), its collection's branch open.
   const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
   const headings = readable ? docHeadings(readable.doc) : [];
-  const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab);
+  const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
+  // The way up's own words, in the page's language.
+  const crumbs = { docs: (await pageTranslator("header")).t("docs"), label: (await pageTranslator("helpCenter")).t("breadcrumb") };
   const markdown = readable && (await articleMarkdown(readable));
   // How long it takes to read, at about 200 words a minute.
   const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
@@ -434,7 +436,7 @@ export async function DocsArticle({
       // in the page's language (those pages are there, translated or not, and their names are that language's where they're
       // translated); the article's own at its own (ownPath: the default language's where it isn't translated there).
       breadcrumb: [
-        ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }]
+        ...[{ name: crumbs.docs, path: "/docs" }, { name: up.label, path: up.href }]
           .filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path)
           .map((crumb) => ({ ...crumb, path: `${prefix}${crumb.path}` })),
         { name: readable.title, path: ownPath },
@@ -447,7 +449,6 @@ export async function DocsArticle({
       headings={headings}
       headingsLang={textLang}
       reading={!!readable && outlined(headings)}
-      browse={(await pageTranslator("helpCenter")).t("browseDocs")}
     >
       {jsonLd}
       {/* The team's words (its title, text and headings, its collection's name, the articles around it) carry the default
@@ -457,11 +458,11 @@ export async function DocsArticle({
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
               has), the actions at the row's end on wide screens, under the title on phones. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+            <nav aria-label={crumbs.label} className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
               {up.href !== "/docs" && (
                 <>
                   <Link href={at("/docs")} className="hover:text-foreground">
-                    Documentation
+                    {crumbs.docs}
                   </Link>
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
@@ -707,7 +708,7 @@ const READING_HIDES = "md:[:root[data-docs-reading]_&]:hidden";
 /** Whether an article with `headings` gets "On this page" beside it (on wide screens). */
 const outlined = (headings: Heading[]) => headings.length >= 2;
 
-export function DocsLayout({
+export async function DocsLayout({
   tree,
   current,
   overview = false,
@@ -716,7 +717,6 @@ export function DocsLayout({
   reading = false,
   extra,
   wide = false,
-  browse = "Browse docs",
   children,
 }: {
   /** What `headings` are in (the article's text's language), for screen readers. */
@@ -733,8 +733,6 @@ export function DocsLayout({
   extra?: React.ReactNode;
   /** An operation's page: from desktop width the page takes the room "On this page" would, for its examples beside it. */
   wide?: boolean;
-  /** The tree's toggle without JavaScript, in the page's language (helpCenter.browseDocs). */
-  browse?: string;
   children: React.ReactNode;
 }) {
   const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0 || tree.references.length > 0 || extra) ? tree : null;
@@ -744,6 +742,8 @@ export function DocsLayout({
   // Keep the desktop columns (and header) in place when moving between articles. Short articles keep their 43rem
   // measure, aligned to the longer article's left edge, with empty space where its outline would be.
   const sections = outlined(headings);
+  // The tree's toggle without JavaScript, in the page's language.
+  const browse = (await pageTranslator("helpCenter")).t("browseDocs");
   return (
     // At least the window's height (flex-1 in <main>), so the tree runs to the bottom on a short page.
     // In the header's 82rem container (100rem on big screens), less its padding, so the tree's left edge is the logo's.
