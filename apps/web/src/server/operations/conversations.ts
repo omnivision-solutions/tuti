@@ -94,7 +94,7 @@ const conversationFields = {
     .meta({ examples: [null] }),
   handledBy: z
     .enum(HANDLERS)
-    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. Nothing answers for the AI yet: its user's next message hands it to the team (emailed, `conversation.handed_over`) unless an `about_to_hand_over` workflow keeps it with the AI")
+    .describe("Who has it: team, or ai. The AI's are in the Inbox's With AI view and out of its others, and the team isn't emailed or notified about them; a teammate's reply (not a note) takes one over. The AI answers its user's messages from the docs, and hands it to the team (emailed, `conversation.handed_over`) when they ask for a person or it can't answer, unless an `about_to_hand_over` workflow keeps it with the AI. Where the AI is off or unavailable (no AI on the server, no published articles, out of credits), each message from its user is about to go to a person the same way")
     .meta({ examples: ["team"] }),
   priority: z.boolean().describe("Marked priority: the Inbox's list says so on its row").meta({ examples: [false] }),
   lastMessageAt: at("When its latest message was written; notes don't move it"),
@@ -950,7 +950,7 @@ export const createConversation = defineOperation({
  * Emails the team about the user's message (packages/jobs, conversation-message) and pushes it to their phones
  * (conversation-push); never fails or holds up the request.
  */
-async function tellTeam(projectId: string, messageId: string) {
+export async function tellTeam(projectId: string, messageId: string) {
   const { translateConversations } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { translateConversations: true } });
   // Side by side: with jobs inline (JOBS_DRIVER=inline) each runs as it's queued, so the push doesn't wait on the email.
   await Promise.all([
@@ -1565,7 +1565,7 @@ export const updateConversation = defineOperation({
       handledBy: z
         .enum(HANDLERS)
         .optional()
-        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications. Nothing answers for the AI yet: its user's next message hands it back to the team unless an `about_to_hand_over` workflow keeps it. Closing and reopening leave it")
+        .describe("Who has it: team takes it over from the AI (Take over; a teammate's reply does too), ai hands it back to the AI, out of the team's views, emails and notifications, which answers its user's next message from the docs (or, where the AI is off or unavailable, hands it to the team unless an `about_to_hand_over` workflow keeps it). Closing and reopening leave it")
         .meta({ examples: ["team"] }),
       priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
       snoozedUntil: z.iso

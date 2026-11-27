@@ -3,6 +3,7 @@ import { historySince, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, config, creditsEnabled, decide, decisionsAvailable, log, type Meter } from "@tuti/shared";
 import { after } from "next/server";
 
+import { runAiTurn } from "./ai-turn";
 import { settleHold } from "./inbox-path";
 
 /**
@@ -257,7 +258,8 @@ export function spamChecksAfter(conversationId: string) {
 }
 
 /**
- * The inbox-due job's minute (POST /api/inbox/due): the conversations still held at `pathDueAt` (2 minutes on: a model
+ * The inbox-due job's minute (POST /api/inbox/due): the AI's turns left behind (`pathDueAt` on one the AI has, not held;
+ * server/ai-turn.ts), and the conversations still held at `pathDueAt` (2 minutes on: a model
  * slow or down, a deploy, a crash) are released, asking nothing (it fails open). settleHold claims each under its lock,
  * so a release at once with the models' verdict, or two minutes at once, settle it once. Returns how many this run settled.
  */
@@ -266,13 +268,20 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
   // a teammate marked as spam during the hold, which keeps `spamHeldAt` for a later Not spam: the second condition is the
   // partial index's own (conversation_spamHeldAt_idx), word for word, so it reads only holds left to settle.
   // The oldest first, so a flood can't keep any one waiting past a few minutes.
-  const due = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id", "createdAt" FROM "conversation" WHERE "pathDueAt" <= ${now}
+  const due = await prisma.$queryRaw<{ id: string; aiTurn: boolean }[]>`
+    SELECT "id", "createdAt", "spamHeldAt" IS NULL AND "handledBy" = 'AI' AS "aiTurn" FROM "conversation" WHERE "pathDueAt" <= ${now}
     UNION
-    SELECT "id", "createdAt" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
+    SELECT "id", "createdAt", false AS "aiTurn" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
     ORDER BY "createdAt" LIMIT 100`;
   let checked = 0;
-  for (const { id } of due) {
+  for (const { id, aiTurn } of due) {
+    // The AI's turn its request didn't run (server/ai-turn.ts): run now, or handed over 10 minutes on.
+    if (aiTurn) {
+      if ((await runAiTurn(id)) !== "nothing") {
+        checked++;
+      }
+      continue;
+    }
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {
       checked++;
     }
