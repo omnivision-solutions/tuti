@@ -27,7 +27,7 @@ export type AskAiSetup = { projectSlug: string; kind: "changelog" | "article"; e
 
 /** The presets: a short name, and the instruction the AI gets. */
 export const ASK_AI_PRESETS: [string, string][] = [
-  ["Shorter", "Make it shorter, keeping every change it mentions."],
+  ["Shorter", "Make it shorter, keeping everything it says."],
   ["Clearer", "Make it clearer and more direct."],
   ["Friendlier", "Make it friendlier and warmer, without exaggerating."],
   ["Fix grammar", "Fix spelling, grammar and punctuation only. Change nothing else."],

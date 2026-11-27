@@ -39,7 +39,7 @@ test("the team asks AI to rewrite part of a changelog entry, sees its version in
   const request = (await modelRequests()).findLast((each) => each.user.includes(marker))!;
   expect(request.user).toMatch(/^Edit this text as the team's instruction says/);
   expect(request.user).toContain('"textToEdit": "They run in the background and email you when they\'re done."');
-  expect(request.user).toContain('"teamInstruction": "Make it shorter, keeping every change it mentions."');
+  expect(request.user).toContain('"teamInstruction": "Make it shorter, keeping everything it says."');
 
   await version.getByRole("button", { name: "Accept" }).click();
   await expect(version).toBeHidden();
@@ -107,6 +107,9 @@ test("in a help center article too: Ask AI on a selected line, written like the 
   await team.keyboard.type(`Open Reports (${marker}).`);
   await team.keyboard.press("Enter");
   await team.keyboard.type("Then you must press the Export button which is at the top.");
+  // Before its first save too.
+  await text.getByText("Then you must press").selectText();
+  await expect(team.getByRole("toolbar", { name: "Text selection" }).getByRole("button", { name: "Ask AI" })).toBeVisible();
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/docs/exporting-reports`);
 

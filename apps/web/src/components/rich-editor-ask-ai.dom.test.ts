@@ -90,7 +90,7 @@ test("a preset on part of a line: the AI gets the selection and the whole text; 
     entry: 7,
     text: { type: "doc", content: [paragraph("They run in the background")] },
     whole: doc,
-    instruction: "Make it shorter, keeping every change it mentions.",
+    instruction: "Make it shorter, keeping everything it says.",
   });
   expect(view.shown("working")).toBe("They run in the background");
   await settle({ content: { type: "doc", content: [paragraph("They run quietly")] } });
