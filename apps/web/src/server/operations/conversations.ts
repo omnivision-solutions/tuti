@@ -1586,7 +1586,7 @@ export const updateConversation = defineOperation({
         .boolean()
         .optional()
         .describe(
-          "With `handledBy: ai`, on one the team has: refused (409 `waiting`) while its user waits on the team (their latest message unanswered, or handed to the team with no teammate's reply since), as the app's Hand back to the AI is, so their message isn't left unanswered",
+          "With `handledBy: ai`, on one the team has: refused (409 `waiting`) while its user waits on the team (their latest message unanswered, or handed to the team with no teammate's reply since), as the app's Hand back to the AI is, so their message isn't left unanswered; and (409 `spam`) in Spam, or while the spam filter holds it",
         )
         .meta({ examples: [true] }),
       priority: z.boolean().optional().describe("Mark it priority, or not").meta({ examples: [true] }),
@@ -1649,8 +1649,14 @@ export const updateConversation = defineOperation({
       }
       // Hand back to the AI only where nobody waits on the team: read after the hold, so a message being added (it holds the
       // row first) is in, or waits for this and gets the AI's turn.
-      if (input.ifNobodyWaits && held!.handledBy === "TEAM" && (await userWaits(conversation.id, tx))) {
-        throw new OperationError(409, "waiting", "Reply first: they're waiting on your team.");
+      if (input.ifNobodyWaits && held!.handledBy === "TEAM") {
+        // Nor one in Spam or held by the spam filter, which the AI never answers (conversations.get doesn't offer it).
+        if ((input.spam ?? held!.spam) || held!.spamHeldAt) {
+          throw new OperationError(409, "spam", "Mark it not spam first.");
+        }
+        if (await userWaits(conversation.id, tx)) {
+          throw new OperationError(409, "waiting", "Reply first: they're waiting on your team.");
+        }
       }
       // Waiting on the user is the team having spoken last (a reply kept open, its follow-up answered, is set so by hand).
       // Read after the hold: a message being added holds the row first, so it's written by now, or waits for this.

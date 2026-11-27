@@ -137,8 +137,9 @@ export default function Details() {
     setFailed(null);
     try {
       const answered = await updateConversation(api, number, body);
-      // An update's answer doesn't say whether Hand back is offered: kept as it was shown, but where who has it changed.
-      showTriage(key, "handledBy" in body ? answered : { ...answered, handBack: getTriage(key)?.handBack });
+      // An update's answer doesn't say whether Hand back is offered: kept as it was shown, but where who has it, or spam,
+      // changed (never offered in Spam; the server's to say again after either).
+      showTriage(key, "handledBy" in body || "spam" in body ? answered : { ...answered, handBack: getTriage(key)?.handBack });
       setPane("details");
       AccessibilityInfo.announceForAccessibility(done);
     } catch (e) {

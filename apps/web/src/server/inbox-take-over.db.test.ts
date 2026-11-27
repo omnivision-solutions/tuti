@@ -282,3 +282,13 @@ test("a message being written as a teammate hands back is seen: the hand back wa
   expect(await handingBack).toEqual({ error: "Reply first: they're waiting on your team." });
   expect((await row()).handledBy).toBe("TEAM");
 });
+
+test("over the API: ifNobodyWaits refuses handing back one in Spam, which the AI never answers", async () => {
+  const { owner, project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  const context = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  await call(updateConversation, context, { number: 1, spam: true });
+  await expect(call(updateConversation, context, { number: 1, handledBy: "ai", ifNobodyWaits: true })).rejects.toMatchObject({ status: 409, code: "spam" });
+  expect((await row()).handledBy).toBe("TEAM");
+});

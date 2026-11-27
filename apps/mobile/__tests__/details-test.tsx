@@ -331,6 +331,14 @@ describe("the details sheet", () => {
     expect(await screen.findByRole("button", { name: "Hand back to the AI" })).toBeTruthy();
   });
 
+  it("offers no Hand back once it's marked as spam, which the AI never answers", async () => {
+    serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Mark as spam" }));
+    expect(await screen.findByRole("button", { name: "Not spam" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Hand back to the AI" })).toBeNull();
+  });
+
   it("says why it wasn't handed back, in the server's words, where the user wrote meanwhile", async () => {
     serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
     const answer = mockApi.getMockImplementation()!;
