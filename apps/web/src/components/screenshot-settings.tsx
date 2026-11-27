@@ -99,12 +99,21 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
     // The first look may start a read; the next ones only ask how it went.
     const ask = (start: boolean) =>
       fetch(`/app/${projectSlug}/settings/screenshots/suggestions${start ? "" : "?start=false"}`)
-        .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[]; checking: boolean }>) : { suggestions: [], checking: false }))
-        .catch(() => ({ suggestions: [], checking: false }))
-        .then((result) => {
+        .then((response) => (response.ok ? (response.json() as Promise<{ suggestions: Suggestion[]; checking: boolean }>) : null))
+        .catch(() => null)
+        .then((answer) => {
           if (!current) {
             return;
           }
+          // A look again that failed (a deploy's restart, a dropped connection) changes nothing shown and asks again;
+          // the first look's failure shows none.
+          if (!answer && !start) {
+            if (polls-- > 0) {
+              timer = setTimeout(() => void ask(false), CHECK_EVERY_MS);
+            }
+            return;
+          }
+          const result = answer ?? { suggestions: [], checking: false };
           // Not those already added to Other domains and not saved yet (a look again while checking would bring them back).
           const listed = new Set(otherDomains.current?.value.split(/[\s,]+/).filter(Boolean));
           setSuggestions(result.suggestions.filter((suggestion) => !suggestion.hosts.every((host) => listed.has(host))));
