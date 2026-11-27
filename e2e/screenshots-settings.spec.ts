@@ -174,7 +174,8 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await expect(suggestion).toBeHidden();
     await passwordField.fill(password);
     await save.click();
-    await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
+    // Saved: the password is cleared (several "saved" toasts may be up by now).
+    await expect(passwordField).toHaveValue("");
 
     // Allowed now: not suggested again.
     await owner.reload();
