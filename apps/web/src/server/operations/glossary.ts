@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
-import { applyGlossaryChanges, type GlossaryChanges, lockProject, planGlossaryChanges, projectGlossary } from "@tuti/jobs";
-import { LANGUAGE_CODES } from "@tuti/shared";
+import { applyGlossaryChanges, type Glossary, type GlossaryChanges, lockProject, planGlossaryChanges, projectGlossary } from "@tuti/jobs";
+import { contentHash, LANGUAGE_CODES } from "@tuti/shared";
 import { z } from "zod";
 
 import { defineOperation, OperationError } from "./define";
@@ -22,7 +22,24 @@ const termOutput = z
   })
   .describe("A glossary term");
 
-const glossaryOutput = z.object({ terms: z.array(termOutput).describe("The terms, by term") }).describe("The glossary");
+const glossaryOutput = z
+  .object({
+    terms: z.array(termOutput).describe("The terms, by term"),
+    hash: z.string().describe("This version of the glossary: send it with glossary.update to save only over it").meta({ examples: ["3f2a9c1e"] }),
+  })
+  .describe("The glossary");
+
+/** The glossary with its version's hash (of its terms in one order, whatever order they came in). */
+const withHash = (terms: Glossary) => ({
+  terms,
+  hash: contentHash(
+    JSON.stringify(
+      terms
+        .map(({ term, keep, translations }) => [term, keep, Object.entries(translations).sort(([a], [b]) => (a < b ? -1 : 1))])
+        .sort(([a], [b]) => (String(a) < String(b) ? -1 : 1)),
+    ),
+  ),
+});
 
 export const getGlossary = defineOperation({
   name: "glossary.get",
@@ -34,7 +51,7 @@ export const getGlossary = defineOperation({
   access: "team",
   input: z.object({}),
   output: glossaryOutput,
-  run: async ({ projectId }) => ({ terms: await projectGlossary(projectId) }),
+  run: async ({ projectId }) => withHash(await projectGlossary(projectId)),
 });
 
 const termInput = z.object({
@@ -59,6 +76,11 @@ export const updateGlossary = defineOperation({
   errors: [409],
   input: z.object({
     terms: z.array(termInput).max(MAX_GLOSSARY_TERMS).describe(`Every term (up to ${MAX_GLOSSARY_TERMS}); one left out is removed`),
+    hash: z
+      .string()
+      .optional()
+      .describe("The glossary's hash as read (glossary.get): saved only if it's still that version, else refused (409), so a teammate's save isn't overwritten")
+      .meta({ examples: ["3f2a9c1e"] }),
     dryRun: z.boolean().optional().describe("Save nothing: only count what saving would translate again and mark behind"),
   }),
   output: glossaryOutput
@@ -68,7 +90,7 @@ export const updateGlossary = defineOperation({
     })
     .describe("The glossary, and what saving it translates again or marks behind"),
   example: { terms: [{ term: "Acme", keep: true }, { term: "Board", translations: { de: "Board", fr: "Tableau" } }] },
-  run: async ({ projectId }, { terms, dryRun = false }) => {
+  run: async ({ projectId }, { terms, hash, dryRun = false }) => {
     const seen = new Set<string>();
     for (const { term } of terms) {
       if (seen.has(term.toLowerCase())) {
@@ -92,7 +114,12 @@ export const updateGlossary = defineOperation({
       changes = await prisma.$transaction(
         async (tx) => {
           await lockProject(tx, projectId);
-          if (JSON.stringify(await projectGlossary(projectId, tx)) !== JSON.stringify(before)) {
+          const now = await projectGlossary(projectId, tx);
+          // Saved over a glossary the caller never saw (a teammate's save since it read it): refused, its terms kept.
+          if (hash !== undefined && withHash(now).hash !== hash) {
+            throw new OperationError(409, "changed", "The glossary changed since you opened it. Reload to see it, then save again");
+          }
+          if (JSON.stringify(now) !== JSON.stringify(before)) {
             if (tries >= 2) throw new OperationError(409, "changed", "The glossary changed while saving. Try again");
             return null;
           }
@@ -114,6 +141,6 @@ export const updateGlossary = defineOperation({
     if (!dryRun) {
       await changes.queue();
     }
-    return { terms: dryRun ? after.sort((a, b) => a.term.localeCompare(b.term)) : await projectGlossary(projectId), retranslating: changes.retranslated, behind: changes.behind };
+    return { ...withHash(dryRun ? after.sort((a, b) => a.term.localeCompare(b.term)) : await projectGlossary(projectId)), retranslating: changes.retranslated, behind: changes.behind };
   },
 });

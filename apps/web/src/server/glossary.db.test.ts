@@ -83,12 +83,10 @@ const systemOf = (request: (typeof model.requests)[number]) => String(request.me
 
 test("the glossary's terms: saved by term, a kept one without translations, the same term twice refused", async () => {
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel", fr: "" } }, { term: "Acme", keep: true, translations: { de: "Akme" } }] });
-  expect(await call(getGlossary, as(), {})).toEqual({
-    terms: [
-      { term: "Acme", keep: true, translations: {} },
-      { term: "Board", keep: false, translations: { de: "Tafel" } },
-    ],
-  });
+  expect((await call(getGlossary, as(), {})).terms).toEqual([
+    { term: "Acme", keep: true, translations: {} },
+    { term: "Board", keep: false, translations: { de: "Tafel" } },
+  ]);
   await expect(call(updateGlossary, as(), { terms: [{ term: "Board" }, { term: "board" }] })).rejects.toMatchObject({ status: 400 });
 });
 
@@ -408,6 +406,17 @@ test("a publish between a save's plan and its write: the plan is refused (null) 
   expect(await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }], dryRun: true })).toMatchObject({ behind: 1 });
 });
 
+test("an unpublished edit between a save's plan and its write (or a label's translation written): the plan still holds", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Boards", content: BOARDS });
+  await call(publishArticle, as(), { slug: "boards" });
+  await call(createCollection, as(), { name: "Guides", description: "" });
+  const plan = await planGlossaryChanges(project.id, [], [{ term: "Board", keep: false, translations: { de: "Brett" } }]);
+  await call(updateArticle, as(), { slug: "boards", content: doc("Intro", ["Boards", "Make a Board for plans."]) });
+  await prisma.collection.updateMany({ where: { projectId: project.id }, data: { translations: { de: { name: "Anleitungen", auto: true } } } });
+  expect(await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan))).not.toBeNull();
+});
+
 test("a second save landing while the first plans: the first, finding the glossary changed under its lock, plans again from it", async () => {
   await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
   await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
@@ -430,3 +439,27 @@ test("a second save landing while the first plans: the first, finding the glossa
   expect((await call(getGlossary, as(), {})).terms).toEqual([{ term: "Board", keep: false, translations: { de: "Brett" } }]);
 });
 
+test("a translation kept up to date refused by a glossary change no save queued it for: asked again at once, with the new term", async () => {
+  await translated();
+  // A save queues the versions its plan found. One it missed (a publish can't land inside its transaction, as both take the
+  // project's lock, but the job doesn't rely on that) is the glossary changing under the job with nothing queued: here,
+  // its rows written directly while the job waits on the model.
+  const edited = doc("Intro", ["Setup", "Install it on a Board."]);
+  model.reply(reply("Setup", edited, "de", "Tafel"), () => prisma.glossaryTerm.updateMany({ where: { projectId: project.id, term: "Board" }, data: { translations: { de: "Brett" } } }));
+  model.reply(reply("Setup", edited, "de2", "Brett"));
+  await call(updateArticle, as(), { slug: "setup", content: edited, publish: true });
+  await languageTranslationsDone();
+  expect((await version("setup")).body).toContain("[de2] Install it on a Brett.");
+});
+
+test("a save sent with the hash it read: refused (409) once a teammate's save changed the glossary, its terms kept", async () => {
+  await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Tafel" } }] });
+  const read = await call(getGlossary, as(), {});
+  // A teammate adds Acme; then the first save, from the list it read (no Acme).
+  const teammate = await call(updateGlossary, as(), { hash: read.hash, terms: [...read.terms, { term: "Acme", keep: true }] });
+  expect(teammate.hash).toBe((await call(getGlossary, as(), {})).hash);
+  await expect(call(updateGlossary, as(), { hash: read.hash, terms: [{ term: "Board", translations: { de: "Brett" } }] })).rejects.toMatchObject({ status: 409, code: "changed" });
+  expect((await call(getGlossary, as(), {})).terms.map(({ term }) => term)).toEqual(["Acme", "Board"]);
+  // From the glossary as it is now: saved.
+  expect((await call(updateGlossary, as(), { hash: teammate.hash, terms: [{ term: "Board", translations: { de: "Brett" } }] })).terms).toEqual([{ term: "Board", keep: false, translations: { de: "Brett" } }]);
+});
