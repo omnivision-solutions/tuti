@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { cn } from "cn";
 import { docHeadings, type Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { editsInChanges } from "@tuti/jobs";
-import { aiProvider, articleVersionsNote, planIncludes } from "@tuti/shared";
+import { aiPaused, editsInChanges } from "@tuti/jobs";
+import { aiProvider, articleVersionsNote, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
+import { mediaStorage } from "@tuti/shared/storage";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -42,6 +43,7 @@ import {
 import { getMembership, isAdminRole } from "@/server/membership";
 import { articleScreenshots, placeLeftoverScreenshots } from "@/server/operations/screenshots";
 import { mediaUrls } from "@/server/media-urls";
+import { generatorSources } from "@/server/changelog-queries";
 import { articleVerifications, verifyUnavailable } from "@/server/operations/verify";
 import { markedRun } from "@/lib/docs-review";
 import { pageTitle } from "@/lib/page-title";
@@ -404,6 +406,16 @@ export default async function ArticlePage(
               sections={docHeadings(displayDoc(edited)).length >= 2}
               screenshots={await articleScreenshots(membership.project.id, article, newest?.id ?? null)}
               canTakeScreenshots={isAdminRole(membership.role)}
+              // Edit with AI on the text's images (AI images): the project's logo to work from, the editor's own image first.
+              imageEditing={
+                imagesEnabled() && mediaStorage()
+                  ? {
+                      credits: creditsEnabled(),
+                      paused: await aiPaused(membership.project.id),
+                      logo: (await generatorSources(membership.project.id, { type: "doc", content: [] })).logo,
+                    }
+                  : null
+              }
             />
           </div>
         </section>

@@ -32,8 +32,22 @@ import { uploadStatus } from "@/server/media";
 export type PickedImage = { id: string; url: string };
 /** An image made in the dialog, as used: its full size (a signed link, fresh when used), and every stored size (for an editor that inserts it). */
 export type GeneratedImage = PickedImage & { width: number; height: number; urls: MediaUrls };
-/** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it. */
-type Try = PickedImage & { width: number; height: number };
+/** A try: a lasting link to its 480px size, which doesn't expire while the dialog keeps it; `root`, the image it was made for (Edit with AI). */
+export type Try = PickedImage & { width: number; height: number; root?: string };
+/** Tries an owner keeps for one image (see ImageGenerator's `kept`). */
+export type KeptTries = {
+  tries: Try[];
+  /** The image these tries are for: only tries made for it are picked and compared with it. */
+  root: string;
+  generating: boolean;
+  /** The last try's error, said where its try would be. */
+  error: string | null;
+  add: (made: Try) => void;
+  setGenerating: (on: boolean) => void;
+  setError: (error: string | null) => void;
+};
+/** What an editor needs for "Edit with AI" on its images: AI credits are on, the project is out of them, its logo. */
+export type ImageEditing = { credits: boolean; paused: boolean; logo: PickedImage | null };
 export type ImageSize = { label: string; width: number; height: number };
 
 const PRESETS: ImageSize[] = [
@@ -76,6 +90,9 @@ export function ImageGenerator({
   credits,
   useLabel,
   onUse,
+  alsoUse,
+  editing,
+  kept,
   finalFocus,
 }: {
   projectSlug: string;
@@ -97,6 +114,15 @@ export function ImageGenerator({
   /** The result's main action ("Use as cover"). */
   useLabel: string;
   onUse: (image: GeneratedImage) => void;
+  /** A second action on the result, beside the main one ("Insert as new"). */
+  alsoUse?: { label: string; onUse: (image: GeneratedImage) => void };
+  /** The image being edited ("Edit with AI"): the first reference, kept there, and shown beside each try. */
+  editing?: Try;
+  /**
+   * The tries kept by the owner, which outlive the dialog (another image edited meanwhile): the list, whether one is
+   * being made, and the two to change them. A try that lands after the dialog closed or was made again joins the list.
+   */
+  kept?: KeptTries;
   finalFocus?: Parameters<typeof DialogContent>[0]["finalFocus"];
 }) {
   const id = useId();
@@ -109,31 +135,59 @@ export function ImageGenerator({
     openRef.current = open;
   }, [open]);
   const [prompt, setPrompt] = useState("");
-  const [references, setReferences] = useState(initialReferences);
+  const [references, setReferences] = useState(editing ? [editing, ...initialReferences.filter((each) => each.id !== editing.id)] : initialReferences);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const sizes = [defaultSize, ...PRESETS];
   const [sizeLabel, setSizeLabel] = useState(defaultSize.label);
   const [custom, setCustom] = useState({ width: String(defaultSize.width), height: String(defaultSize.height) });
-  const [tries, setTries] = useState<Try[]>([]);
+  const [ownTries, setOwnTries] = useState<Try[]>([]);
+  const tries = kept?.tries ?? ownTries;
   // What the live region says once a try is in (while one runs, Generating…; errors are an alert of their own).
   const [said, setSaid] = useState("");
   const [using, startUsing] = useTransition();
   const [useError, setUseError] = useState<string | null>(null);
-  const [selected, setSelected] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  // Made for this image (kept: others are the page's too, made for other images).
+  const ours = (each: Try | undefined) => !!each && (!kept || each.root === kept.root);
+  // The try the edited image is (one placed before), or the last made for it; none when nothing was.
+  const [selected, setSelected] = useState(() => {
+    const placed = tries.findIndex((each) => each.id === editing?.id);
+    return placed >= 0 ? placed : tries.findLastIndex(ours);
+  });
+  // A new try, made here or landing from before (kept): picked and said.
+  const [count, setCount] = useState(tries.length);
+  if (tries.length !== count) {
+    setCount(tries.length);
+    if (tries.length > count && ours(tries.at(-1))) {
+      setSelected(tries.length - 1);
+      setSaid(`Try ${tries.length} is ready`);
+    }
+  }
+  // Kept with the tries (a try failing after the dialog was made again says so), or the dialog's own.
+  const [ownError, setOwnError] = useState<string | null>(null);
+  const error = kept ? kept.error : ownError;
+  const setError = kept ? kept.setError : setOwnError;
+  const [running, startTransition] = useTransition();
+  // Kept: whether one is being made for this image, as the owner keeps it (React's pending transitions are entangled, so
+  // another image's still running would hold this one too); else made here.
+  const pending = kept ? kept.generating : running;
 
   const preset = sizes.find((size) => size.label === sizeLabel);
   const size = preset ?? { width: Number(custom.width), height: Number(custom.height) };
   const sizeOk = fits(size.width) && fits(size.height);
-  const full = references.length >= MAX_IMAGE_REFERENCES;
+  // An upload still running counts: its image joins the list when it's done.
+  const full = references.length + (uploading ? 1 : 0) >= MAX_IMAGE_REFERENCES;
   const shown = tries[selected];
 
+  // The image being edited stays first: "first" is after it.
+  const pinned = editing ? 1 : 0;
   const add = (image: PickedImage, first = false) =>
     setReferences((list) => {
+      if (image.id === editing?.id) {
+        return list;
+      }
       const rest = list.filter((each) => each.id !== image.id);
-      return (first ? [image, ...rest] : [...rest, image]).slice(0, MAX_IMAGE_REFERENCES);
+      return (first ? [...rest.slice(0, pinned), image, ...rest.slice(pinned)] : [...rest, image]).slice(0, MAX_IMAGE_REFERENCES);
     });
   const upload = async (file: File | undefined) => {
     if (!file || uploading || full) {
@@ -150,26 +204,33 @@ export function ImageGenerator({
     }
   };
 
-  const generate = () =>
+  // Started outside the transition, so these land now, not after the try (whose list update isn't part of it).
+  const generate = () => {
+    setError(null);
+    setUseError(null);
+    setSaid("");
+    kept?.setGenerating(true);
     startTransition(async () => {
-      setError(null);
-      setUseError(null);
-      setSaid("");
       const result = await generateImage(projectSlug, { prompt, width: size.width, height: size.height, references: references.map((each) => each.id) }).catch(() => ({
         error: "Couldn't reach Tuti. Try again.",
         image: undefined,
       }));
+      kept?.setGenerating(false);
       if (!result.image) {
         setSaid("");
         setError(result.error ?? "The image couldn't be made. Try again.");
         return;
       }
       const { id: madeId, url, width, height } = result.image;
-      // One runs at a time (Generate waits), so the list is still the one it started with.
-      setTries([...tries, { id: madeId, url, width, height }]);
-      setSelected(tries.length);
-      setSaid(`Try ${tries.length + 1} is ready`);
+      // Picked and said as the list grows (above).
+      const made = { id: madeId, url, width, height };
+      if (kept) {
+        kept.add(made);
+      } else {
+        setOwnTries((list) => [...list, made]);
+      }
     });
+  };
   // The full size, signed now (a try may be hours old): to use it, or to save it.
   const fresh = (image: Try, then: (status: { src: string; urls: MediaUrls; download: string }) => void) =>
     startUsing(async () => {
@@ -205,10 +266,13 @@ export function ImageGenerator({
             void upload(file);
           }
         }}
-        onDragOver={(event) => event.preventDefault()}
+        // Only files: text dropped into the prompt stays the browser's to drop.
+        onDragOver={(event) => event.dataTransfer.types.includes("Files") && event.preventDefault()}
         onDrop={(event) => {
-          event.preventDefault();
-          void upload(event.dataTransfer.files[0]);
+          if (event.dataTransfer.types.includes("Files")) {
+            event.preventDefault();
+            void upload(event.dataTransfer.files[0]);
+          }
         }}
       >
         <DialogHeader>
@@ -221,7 +285,7 @@ export function ImageGenerator({
         <div className="grid gap-6 md:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <FieldLabel htmlFor={`${id}-prompt`}>Describe it</FieldLabel>
+              <FieldLabel htmlFor={`${id}-prompt`}>{editing ? "What to change" : "Describe it"}</FieldLabel>
               <Textarea id={`${id}-prompt`} ref={promptRef} value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={MAX_IMAGE_PROMPT} rows={4} />
             </div>
             <div className="flex flex-col gap-2" role="group" aria-labelledby={`${id}-references`}>
@@ -233,6 +297,9 @@ export function ImageGenerator({
                   <li key={image.id} className="relative size-16">
                     {/* eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized */}
                     <img src={image.url} alt={`Reference ${index + 1}`} className="size-16 rounded-lg border object-cover" />
+                    {index < pinned ? (
+                      <Badge className="absolute inset-x-0.5 bottom-0.5 h-4 px-1 text-[10px]">Editing</Badge>
+                    ) : (
                     <button
                       type="button"
                       aria-label={`Remove reference ${index + 1}`}
@@ -247,6 +314,7 @@ export function ImageGenerator({
                     >
                       <XIcon className="size-3" />
                     </button>
+                    )}
                   </li>
                 ))}
                 {uploading && (
@@ -375,8 +443,18 @@ export function ImageGenerator({
             <p role="status" className="sr-only">
               {pending ? "Generating, up to half a minute…" : said}
             </p>
+            <div className={cn(editing && shown && !pending && !error && "grid grid-cols-2 gap-2")}>
+            {editing && shown && !pending && !error && (
+              <figure className="flex min-w-0 flex-col gap-1">
+                {/* eslint-disable-next-line @next/next/no-img-element -- from media storage */}
+                <img src={editing.url} alt="Original" className="w-full rounded-xl border bg-muted object-contain" style={{ aspectRatio: `${editing.width} / ${editing.height}` }} />
+                <figcaption className="text-xs text-muted-foreground">Original</figcaption>
+              </figure>
+            )}
+            <figure className="flex min-w-0 flex-col gap-1">
             <div
-              className="flex min-h-48 items-center justify-center overflow-hidden rounded-xl border bg-muted"
+              // Beside the original, its own shape only (as the original's), so the two line up; alone, at least room for the states.
+              className={cn("flex items-center justify-center overflow-hidden rounded-xl border bg-muted", !(editing && shown && !pending && !error) && "min-h-48")}
               style={shown ? { aspectRatio: `${shown.width} / ${shown.height}` } : undefined}
             >
               {pending ? (
@@ -394,6 +472,14 @@ export function ImageGenerator({
               ) : (
                 <ImageIcon className="size-8 text-muted-foreground" aria-hidden />
               )}
+            </div>
+            {editing && shown && !pending && !error && (
+              <figcaption className="text-xs text-muted-foreground">
+                {/* Counted among this image's own tries; one made for another image is just its try. */}
+                {tries.filter(ours).includes(shown) ? `Edited · ${tries.filter(ours).indexOf(shown) + 1} of ${tries.filter(ours).length}` : `Try ${selected + 1}`}
+              </figcaption>
+            )}
+            </figure>
             </div>
             {tries.length > 0 && (
               <>
@@ -443,6 +529,18 @@ export function ImageGenerator({
                       <DownloadIcon />
                       Download
                     </Button>
+                    {alsoUse && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={using}
+                        focusableWhenDisabled
+                        onClick={() => fresh(shown, ({ src, urls }) => alsoUse.onUse({ id: shown.id, url: src, width: shown.width, height: shown.height, urls }))}
+                      >
+                        {alsoUse.label}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -474,12 +572,13 @@ export function ImageGenerator({
           <Button
             type="button"
             variant={shown ? "outline" : "default"}
-            disabled={pending || uploading || !prompt.trim() || !sizeOk}
+            // Not while a try is being used either: one made meanwhile would land with the image it replaced.
+            disabled={pending || uploading || using || !prompt.trim() || !sizeOk}
             focusableWhenDisabled
             onClick={generate}
           >
             <SparklesIcon />
-            {pending ? "Generating…" : "Generate"}
+            {pending ? "Generating…" : editing && tries.some(ours) ? "Try again" : "Generate"}
           </Button>
         </DialogFooter>
       </DialogContent>
