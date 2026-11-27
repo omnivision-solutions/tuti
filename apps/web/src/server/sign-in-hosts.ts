@@ -30,7 +30,7 @@ const SERVICES: { provider: string; hint: string[]; near?: string[]; marker?: Re
   // Never Okta's own sign-in and sites.
   { provider: "Okta", hint: ["okta"], near: [".okta.com", ".oktapreview.com", ".okta-emea.com"], found: [/\b[a-z0-9][a-z0-9-]{0,62}\.(?:okta|oktapreview|okta-emea)\.com\b/g], not: /^(?:www|login|developer|help|support|status)\./ },
   {
-    provider: "Amazon Cognito", hint: ["cognito"], near: ["cognito-idp.", ".amazoncognito.com", "userpoolid", "user_pool_id", "user_pools_id"],
+    provider: "Amazon Cognito", hint: ["cognito", "user_pool_id", "user_pools_id"], near: ["cognito-idp.", ".amazoncognito.com", "userpoolid", "user_pool_id", "user_pools_id"],
     found: [
       new RegExp(String.raw`\bcognito-idp\.${REGION}\.amazonaws\.com\b`, "g"),
       new RegExp(String.raw`\b[a-z0-9-]{1,63}\.auth\.${REGION}\.amazoncognito\.com\b`, "g"),

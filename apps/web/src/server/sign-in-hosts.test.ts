@@ -33,7 +33,7 @@ test("a window's edge never cuts a host into another: a host about BEFORE back i
 });
 
 test("Amplify Gen 2's user_pool_id gives the Cognito host", () => {
-  expect(findSignInServices(['{"auth":{"user_pool_id":"eu-west-1_AbC123xyz"},"cognito":1}'])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.eu-west-1.amazonaws.com"] }]);
+  expect(findSignInServices(['{"auth":{"user_pool_id":"eu-west-1_AbC123xyz","aws_region":"eu-west-1"}}'])).toEqual([{ provider: "Amazon Cognito", hosts: ["cognito-idp.eu-west-1.amazonaws.com"] }]);
 });
 
 test("text whose lower case is longer (İ) still reads a Clerk key in its own case", () => {
