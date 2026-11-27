@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { entryLanguages } from "./changelog-languages";
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { getChangelogTranslation, saveChangelogTranslation } from "./operations/changelog-translations";
 import { OperationError } from "./operations/define";
@@ -125,4 +126,40 @@ test("the product setting changing marks the team's version behind, and saving i
   expect(marked).toMatchObject({ behind: true, keepUpToDate: false });
   expect(marked.version).toBe(saved.version);
   expect(await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: marked.version })).toMatchObject({ behind: false });
+});
+
+test("a save made beside the entry's older text is refused, so it never reads as up to date with text its editor never saw", async () => {
+  const number = await published("manual");
+  const read = await call(getChangelogTranslation, as(), { number, language: "de" });
+  // A teammate changes the entry while the German is written.
+  await call(updateChangelogEntry, as(), { number, body: "Switch themes from the menu." });
+  const error = await refused(call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", content: paragraph("Wechsle das Design im Profilmenü."), version: read.version }));
+  expect(error.code).toBe("changed");
+});
+
+test("an Automatic language added after an entry was published has no version: Keep up to date reads off, and turning it on translates it", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }] });
+  const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  await call(publishChangelogEntry, as(), { number });
+  await call(updateLanguages, as(), { languages: [{ code: "fr", newPages: "manual" }, { code: "de" }] });
+  await languageTranslationsDone();
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: false, publishedAt: null });
+  model.reply(reply("de"));
+  await call(saveChangelogTranslation, as(), { number, language: "de", keepUpToDate: true });
+  await languageTranslationsDone();
+  expect(await call(getChangelogTranslation, as(), { number, language: "de" })).toMatchObject({ keepUpToDate: true, title: "[de] Dark mode" });
+});
+
+test("an entry's languages in its editor: none for a draft or a sample entry, each other language's state for a published one", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  const { number } = await call(createChangelogEntry, as(), { title: TITLE, body: BODY });
+  const read = () => prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
+  expect(await entryLanguages(project.id, project.slug, await read())).toBeNull();
+  await call(publishChangelogEntry, as(), { number });
+  expect(await entryLanguages(project.id, project.slug, await read())).toEqual([
+    { code: "en", name: "English", state: "default", href: `/app/${project.slug}/changelog/${number}` },
+    { code: "de", name: "Deutsch", state: "unwritten", href: `/app/${project.slug}/changelog/${number}?language=de` },
+  ]);
+  await prisma.changelogEntry.update({ where: { id: (await read()).id }, data: { sample: true } });
+  expect(await entryLanguages(project.id, project.slug, await read())).toBeNull();
 });

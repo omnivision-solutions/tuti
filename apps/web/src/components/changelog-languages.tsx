@@ -12,6 +12,8 @@ import { pillClass } from "@/components/filter-pills";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FieldError } from "@/components/ui/field";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { VersionState } from "@/lib/changelog-versions";
 import { keepingFields } from "@/lib/forms";
@@ -182,40 +184,63 @@ export function ChangelogVersionForm({
         <RichEditor bare profile="changelog" name="content" label="What changed" initial={view.content} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
-        <KeepUpToDate projectSlug={projectSlug} number={number} code={view.code} on={view.keepUpToDate} defaultName={defaultName} />
+        {/* Keyed on what's saved: a save turns it off, so it shows that (unsaved edits stay, in the form). */}
+        <KeepUpToDate
+          key={String(view.keepUpToDate)}
+          projectSlug={projectSlug}
+          number={number}
+          code={view.code}
+          on={view.keepUpToDate}
+          defaultName={defaultName}
+          teamWrote={view.state === "written" || view.state === "behind"}
+        />
         <ChangelogLanguageList languages={languages} current={view.code} />
       </aside>
     </form>
   );
 }
 
-/** Keep up to date: on, it's translated again (and whenever the default language's text changes). */
-function KeepUpToDate({ projectSlug, number, code, on, defaultName }: { projectSlug: string; number: number; code: string; on: boolean; defaultName: string }) {
+/**
+ * Keep up to date: on, it's translated again (and whenever the default language's text changes); over a version the team
+ * wrote (`teamWrote`), only once they confirm, as it replaces their text.
+ */
+function KeepUpToDate({ projectSlug, number, code, on, defaultName, teamWrote }: { projectSlug: string; number: number; code: string; on: boolean; defaultName: string; teamWrote: boolean }) {
   const [checked, setChecked] = useState(on);
-  // Saved, the form starts afresh (its key is the version's, which says whether it's kept up to date): `on` again.
+  const [confirming, setConfirming] = useState(false);
   const [pending, start] = useTransition();
+  const save = (next: boolean) => {
+    setChecked(next);
+    setConfirming(false);
+    start(async () => {
+      const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next);
+      if (result.error) {
+        setChecked(!next);
+        toast.error(result.error);
+      }
+    });
+  };
   return (
-    <label className="flex items-start justify-between gap-3">
-      <span className="flex flex-col gap-0.5">
-        <span className="font-medium">Keep up to date</span>
-        <span className="text-xs text-muted-foreground">Translated again whenever {defaultName} changes.</span>
-      </span>
-      <Switch
-        checked={checked}
-        disabled={pending}
-        onChange={(event) => {
-          const next = event.currentTarget.checked;
-          setChecked(next);
-          start(async () => {
-            const result = await keepChangelogVersionUpToDate(projectSlug, number, code, next);
-            if (result.error) {
-              setChecked(!next);
-              toast.error(result.error);
-            }
-          });
-        }}
-      />
-    </label>
+    <>
+      <label className="flex items-start justify-between gap-3">
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium">Keep up to date</span>
+          <span className="text-xs text-muted-foreground">Translated again whenever {defaultName} changes.</span>
+        </span>
+        <Switch checked={checked} disabled={pending} onChange={(event) => (event.currentTarget.checked && teamWrote ? setConfirming(true) : save(event.currentTarget.checked))} />
+      </label>
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Translate it again?</AlertDialogTitle>
+            <AlertDialogDescription>A new translation replaces your text in this version.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button onClick={() => save(true)}>Translate again</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

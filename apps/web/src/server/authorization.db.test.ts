@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type TeamRole, prisma } from "@tuti/db";
-import { importsSettled, languageTranslationsDone, resumeToken } from "@tuti/jobs";
+import { importsSettled, languageTranslationsDone, resumeToken, translationSource } from "@tuti/jobs";
 import { contentHash } from "@tuti/shared";
 import { SignJWT } from "jose";
 import sharp from "sharp";
@@ -260,15 +260,16 @@ const matrix: Matrix = {
     composeChangelogCover: { allowed: "MEMBER", call: (slug) => changelog.composeChangelogCover(slug, 1, "title") },
     // Owners and admins, as screenshots.take: what's asked for goes into the agent's task beside the sign-in. Inline, by Browser Use's fake.
     takeChangelogScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => changelog.takeChangelogScreenshots(slug, 3, ["The dashboard"])) },
-    // The published entry's German (Manual in the fixture), written from its editor's language pill: a first version (`version`
-    // as for none), then Keep up to date turned off again.
+    // The published entry's German (Manual in the fixture), written from its editor's language pill: a first version, then
+    // Keep up to date turned off again.
     saveChangelogVersion: {
       allowed: "MEMBER",
       call: (slug) => {
         const form = new FormData();
         form.set("title", "Matrix-Eintrag");
         form.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] }));
-        form.set("version", contentHash(JSON.stringify(null)));
+        // As changelog.getTranslation gives it for no version yet, beside the fixture entry's text.
+        form.set("version", contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash])));
         return changelog.saveChangelogVersion(slug, 1, "de", {}, form);
       },
     },

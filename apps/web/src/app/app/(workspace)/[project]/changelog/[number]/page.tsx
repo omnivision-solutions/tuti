@@ -4,9 +4,9 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { ImportSource, prisma } from "@tuti/db";
-import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft, translationSource } from "@tuti/jobs";
+import { aiPaused, autopilotLines, onlyPullRequestTitles, projectEmailWaits, RUNNING_DRAFT_TITLE, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { markersIn } from "@/server/release-notes";
-import { aiEnabled, creditsEnabled, imagesEnabled, isLanguage, LANGUAGES, planIncludes } from "@tuti/shared";
+import { aiEnabled, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cn } from "cn";
 import { ExternalLinkIcon } from "lucide-react";
@@ -14,7 +14,8 @@ import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
-import { NO_AI_WAITING, versionState } from "@/lib/changelog-versions";
+import { NO_AI_WAITING } from "@/lib/changelog-versions";
+import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
@@ -171,7 +172,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const readerUrl = entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null;
   // Its languages (docs/plan.md L16), once it's published (its versions are made from what's published; a sample entry is
   // never translated): the pill and the sidebar's Languages, and the version `?language=` opens.
-  const languages = entry.publishedAt && !entry.sample ? await entryLanguages(membership.project.id, slug, entry) : null;
+  const languages = await entryLanguages(membership.project.id, slug, entry);
   const { language: asked } = await props.searchParams;
   const opened = languages?.slice(1).find((language) => language.code === asked) ?? null;
   const version =
@@ -368,26 +369,4 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       </PaneLayout>
     </ChangelogSaving>
   );
-}
-
-/**
- * A published entry's languages for its editor: the project's default, then its others in the order added, each with where
- * its version stands and its address (`?language=`). Null with no other languages.
- */
-async function entryLanguages(projectId: string, slug: string, entry: { id: string; number: number; title: string; body: string; content: unknown }): Promise<EntryLanguage[] | null> {
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    select: { language: true, languages: { select: { code: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
-  });
-  if (project.languages.length === 0) {
-    return null;
-  }
-  const versions = await prisma.changelogTranslation.findMany({ where: { entryId: entry.id }, select: { language: true, automatic: true, publishedAt: true, sourceHash: true, error: true, behind: true } });
-  const { hash } = translationSource({ ...entry, content: entry.content as Doc | null });
-  const base = `/app/${slug}/changelog/${entry.number}`;
-  const name = (code: string) => (isLanguage(code) ? LANGUAGES[code].native : code);
-  return [
-    { code: project.language, name: name(project.language), state: "default", href: base },
-    ...project.languages.map(({ code }) => ({ code, name: name(code), state: versionState(versions.find((version) => version.language === code), hash, aiEnabled()), href: `${base}?language=${code}` })),
-  ];
 }

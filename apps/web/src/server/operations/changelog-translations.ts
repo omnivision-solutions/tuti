@@ -27,15 +27,20 @@ const translationOutput = z
     publishedAt: z.iso.datetime().nullable().describe("When it was first written or translated: until then readers get the default language's").meta({ examples: ["2026-11-27T09:00:00.000Z"] }),
     behind: z.boolean().describe("The entry's text, or the language's \"Our product is available in\", changed since it was written or translated").meta({ examples: [false] }),
     waiting: z.string().nullable().describe("Why it couldn't be translated (it's tried again), or null").meta({ examples: [null] }),
-    version: z.string().describe("What it says now, for changelog.saveTranslation's `version`: a save made from an older read is refused").meta({ examples: ["5f2c9a…"] }),
+    version: z.string().describe("What it says now, beside the entry's text, for changelog.saveTranslation's `version`: a save made from an older read of either is refused").meta({ examples: ["5f2c9a…"] }),
   })
   .describe("A changelog entry's version in another language");
 
 const versionSelect = { automatic: true, title: true, body: true, content: true, publishedAt: true, sourceHash: true, error: true, behind: true } as const;
 type Version = { automatic: boolean; title: string; body: string; content: unknown; publishedAt: Date | null; sourceHash: string | null; error: string | null; behind: unknown };
 
-/** What a version says now (none: there's no version yet), for a save's `version`. */
-const versionToken = (version: Version | null) => contentHash(JSON.stringify(version ? [version.automatic, version.title, version.content, version.publishedAt] : null));
+/**
+ * What a version says now (none: there's no version yet) and the entry's text it's shown beside (`sourceHash`), for a save's
+ * `version`: one made before either changed is refused, so a save never marks a version up to date with text its editor
+ * never saw.
+ */
+const versionToken = (version: Version | null, sourceHash: string) =>
+  contentHash(JSON.stringify([version ? [version.automatic, version.title, version.content, version.publishedAt] : null, sourceHash]));
 
 function output(code: string, version: Version | null, sourceHash: string): z.output<typeof translationOutput> {
   return {
@@ -48,7 +53,7 @@ function output(code: string, version: Version | null, sourceHash: string): z.ou
     // Made from other text, or marked behind (the product setting changed: markProductSettingBehind).
     behind: !!version?.publishedAt && (version.sourceHash !== sourceHash || Object.keys((version.behind as object | null) ?? {}).length > 0),
     waiting: version?.error ?? null,
-    version: versionToken(version),
+    version: versionToken(version, sourceHash),
   };
 }
 
@@ -132,8 +137,8 @@ export const saveChangelogTranslation = defineOperation({
       const sourceHash = translationSource({ ...locked!, content: locked!.content as Doc | null }).hash;
       const version = await tx.changelogTranslation.findUnique({ where, select: versionSelect });
       if (writing) {
-        if (versionToken(version) !== input.version) {
-          throw new OperationError(409, "changed", "It changed since you opened it (translated, or saved by someone else). Reload it to see the changes.");
+        if (versionToken(version, sourceHash) !== input.version) {
+          throw new OperationError(409, "changed", "It or the entry changed since you opened it (translated, or saved by someone else). Reload it to see the changes.");
         }
         const title = input.title ?? version?.title ?? "";
         if (!title) {
