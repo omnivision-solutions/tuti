@@ -255,7 +255,9 @@ test("while the app is read again, the page keeps asking for as long as a read c
   }
   // A look again that fails (the server restarting for a deploy, say) changes nothing, and the page asks again.
   fail = true;
+  const failed = owner.waitForResponse((response) => response.status() === 502);
   await nextAsk();
+  await failed;
   await expect(checking).toBeVisible();
   fail = false;
   // Its answer then shows.
