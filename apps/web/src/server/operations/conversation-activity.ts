@@ -15,7 +15,7 @@ const eventOutput = z
     id: z.string().describe("The event's id: `before` for the page after it").meta({ examples: ["cm3k9x2ab0005qz8h1a2b3c4d"] }),
     kind: z
       .string()
-      .describe("What happened: workflows_ran, spam_filter, status, snooze, assignee, priority, spam or handled_by; more kinds come")
+      .describe("What happened: workflows_ran, spam_filter, status, snooze, assignee, priority, spam, handled_by or handed_over; more kinds come")
       .meta({ examples: ["workflows_ran"] }),
     actor: z.enum(ACTORS).describe("Who did it: a teammate, an API key, the conversation's person (user), the workflows, the spam filter, the AI or Tuti").meta({ examples: ["workflow"] }),
     who: z

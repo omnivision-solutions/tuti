@@ -36,7 +36,8 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     const endpoint = dialog.getByRole("textbox", { name: "Endpoint URL" });
     await expect(endpoint).toBeFocused();
     await endpoint.fill(url);
-    await expect(dialog.getByRole("checkbox")).toHaveCount(8);
+    await expect(dialog.getByRole("checkbox")).toHaveCount(9);
+    await expect(dialog.getByRole("checkbox", { name: /Conversation handed to the team/ })).toBeChecked();
     await dialog.getByRole("checkbox", { name: /Status changed/ }).uncheck();
     // While the webhook is added nothing closes the dialog: its secret couldn't be shown.
     let release!: () => void;
@@ -70,7 +71,7 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     expect(box.x + box.width).toBeLessThanOrEqual(390);
     expect(await dialog.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
     const tops = await dialog.getByRole("checkbox").evaluateAll((boxes) => boxes.map((el) => el.getBoundingClientRect().top));
-    expect(new Set(tops).size).toBe(8);
+    expect(new Set(tops).size).toBe(9);
     await checkpoint(owner, "settings-webhook-added-phone", { fullPage: false });
     await dialog.getByRole("button", { name: "Close" }).click();
     await expect(dialog).toBeHidden();
@@ -78,7 +79,7 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     expect(await owner.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     await checkpoint(owner, "settings-webhooks-phone");
     await owner.setViewportSize({ width: 1280, height: 720 });
-    await expect(owner.getByText("New post, New comment, Changelog published, Changelog unsubscribe, Autopilot found updates, New conversation, New message from a user · no deliveries yet")).toBeVisible();
+    await expect(owner.getByText("New post, New comment, Changelog published, Changelog unsubscribe, Autopilot found updates, New conversation, New message from a user, Conversation handed to the team · no deliveries yet")).toBeVisible();
     await expect(owner.getByRole("heading", { name: "Webhooks 1" })).toBeVisible();
     // Opened again, the dialog is empty.
     await owner.getByRole("button", { name: "Add webhook" }).click();

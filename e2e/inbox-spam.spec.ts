@@ -231,8 +231,9 @@ test("with guidance written, the AI check holds a stranger's email: one it's uns
   await expect(activity.locator("li[data-event]").first()).toContainText("the AI check was 99% sure it's spam");
   await checkpoint(owner, "filed-by-the-ai-check");
 
-  // The customer's is in the inbox, its Activity saying the check let it through.
+  // The customer's is in the inbox, its Activity saying the check let it through, then that it was handed to the team.
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(owner.locator(".inbox-spam-notice")).toHaveCount(0);
-  await expect(activity.locator("li[data-event]").first()).toContainText("Spam filter let it through");
+  await expect(activity.locator("li[data-event]").first()).toContainText("Handed to the team");
+  await expect(activity.locator("li[data-event]").filter({ hasText: "Spam filter let it through" })).toHaveCount(1);
 });

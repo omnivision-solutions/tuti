@@ -191,9 +191,26 @@ export const MAX_TRIES = 3;
 /** References keeps the thread's latest Message-IDs, as many as this. */
 const MAX_REFERENCES = 20;
 
-/** The team's messages still to email: unseen a minute on, not notes, not imported, not sent, with tries left, and nobody else sending them. */
+/**
+ * Whether a conversation's automated replies may be emailed (docs/plan.md, Inbox automation, "Never an automated reply to
+ * mail we can't prove"): only where its address is proven, one of the project's users or an email whose DMARC passed. The
+ * one rule: `automated` and the job's query below send by it, and the conversation's page says by it when one isn't sent.
+ */
+export const automatedRepliesEmailed = (conversation: { userId: string | null; emailVerified: boolean }) => conversation.userId !== null || conversation.emailVerified;
+
+/**
+ * Automated replies that may be emailed: the AI's that answer a user's message, a workflow's set reply among them (they
+ * carry a `requestId`; the answer "Ask a person" copies in has none, and isn't emailed), where automatedRepliesEmailed
+ * says so. Sent with `Auto-Submitted: auto-replied`.
+ */
+const automated = { author: "AI" as const, requestId: { not: null }, conversation: { OR: [{ userId: { not: null } }, { emailVerified: true }] } };
+
+/**
+ * The team's messages still to email, and automated replies (above): unseen a minute on, not notes, not imported, not
+ * sent, with tries left, and nobody else sending them.
+ */
 const unsent = (now: Date) => ({
-  author: "TEAM" as const,
+  AND: [{ OR: [{ author: "TEAM" as const }, automated] }],
   note: false,
   seenAt: null,
   // Imported from another tool (docs/plan.md, Switching from Featurebase): years-old replies are never emailed.
@@ -239,7 +256,7 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
       FROM "conversation_message" m
       JOIN "conversation" c ON c."id" = m."conversationId"
       JOIN "project" p ON p."id" = m."projectId"
-      WHERE m."author" = 'TEAM'
+      WHERE (m."author" = 'TEAM' OR (m."author" = 'AI' AND m."requestId" IS NOT NULL AND (c."userId" IS NOT NULL OR c."emailVerified")))
         AND NOT m."note"
         AND m."seenAt" IS NULL
         AND m."importId" IS NULL
@@ -338,6 +355,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
+        author: true,
         body: true,
         teamText: true,
         authorUser: { select: { name: true } },
@@ -403,6 +421,8 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       attachments,
       headers: {
         [LOOP_HEADER]: subdomain,
+        // Automated replies alone (a teammate's in the same email isn't automatic): auto-responders don't answer it (RFC 3834).
+        ...(messages.every((m) => m.author === "AI") && { "Auto-Submitted": "auto-replied" }),
         ...tenant,
         ...(references.length > 0 && { "In-Reply-To": references.at(-1)!, References: references.join(" ") }),
       },

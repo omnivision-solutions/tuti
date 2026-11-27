@@ -3,7 +3,7 @@ import { log } from "@tuti/shared";
 import { inGroup, storedRule } from "@tuti/shared/group-conditions";
 import { storedProperties } from "@tuti/shared/user-properties";
 
-import { ACTIONS, storedWorkflow, type WorkflowAction, type WorkflowTrigger } from "@/lib/workflows";
+import { ACTIONS, AUTOMATED_REPLIES_PER_HOUR, type HandoverReason, storedWorkflow, type WorkflowAction, type WorkflowTrigger } from "@/lib/workflows";
 
 import { logEvents } from "./conversation-events";
 import { emitEvent } from "./events";
@@ -14,7 +14,9 @@ import { type SpamJudgement, spamChecksAfter } from "./spam-models";
 /**
  * The path a user's message takes once it's written (docs/plan.md, Inbox automation, "The path"): the spam filter has
  * answered where the conversation started (server/spam.ts), then the team's workflows for "A conversation starts" (the
- * first message) or "A user replies" (any later one), then the team is told (its email and push, the webhooks). Called
+ * first message) or "A user replies" (any later one), then, as the AI answers nothing yet, it's about to go to a person
+ * (handOver: "the AI is off", or "the user asked" for "Ask a person"), and unless a workflow keeps it with the AI the team
+ * is told (its email and push, the webhooks). Called
  * wherever a user's message arrives: email, the widget, "Ask a person", the API, and Not spam on what the filter filed.
  * A conversation in Spam runs nothing and tells nobody. One the free checks left to the models is held (`spamHeldAt`, as
  * spam) while they check it once the request has answered (server/spam-models.ts); settleHold files or releases it.
@@ -25,29 +27,62 @@ type Started = { started: Parameters<typeof announceConversation>[1]; message: P
 /** A later message from the user, as addMessage wrote it. */
 type Replied = { conversation: { id: string; number: number }; message: Parameters<typeof announceUserMessage>[2] };
 
-export function inboxPath(projectId: string, arrival: Started): ReturnType<typeof announceConversation>;
-export function inboxPath(projectId: string, arrival: Replied): ReturnType<typeof announceUserMessage>;
-export async function inboxPath(projectId: string, arrival: Started | Replied) {
+/**
+ * `ownerChosen`: a teammate set who has it in the same act (Not spam with `handledBy`): no handover overrides them, and
+ * the conversation is told as they left it (the team's notices only when it's the team's).
+ */
+type PathOptions = { ownerChosen?: boolean };
+
+export function inboxPath(projectId: string, arrival: Started, options?: PathOptions): ReturnType<typeof announceConversation>;
+export function inboxPath(projectId: string, arrival: Replied, options?: PathOptions): ReturnType<typeof announceUserMessage>;
+export async function inboxPath(projectId: string, arrival: Started | Replied, { ownerChosen = false }: PathOptions = {}) {
   if ("started" in arrival) {
     const { started, message } = arrival;
     if (started.spamHeldAt) {
-      // Held for the spam filter's models: they're asked once the request has answered, and nothing runs or is told
-      // till their verdict releases it (settleHold).
+      // Held for the spam filter's models: they're asked once the request has answered, and nothing runs, is handed over
+      // or told till their verdict releases it (settleHold).
       spamChecksAfter(started.id);
     }
-    const changed = started.spam ? {} : await runWorkflows(projectId, started.id, message.id, "conversation_started");
-    // Told as the workflows left it (marked priority).
-    return announceConversation(projectId, { ...started, ...changed }, message);
+    if (started.spam) {
+      return announceConversation(projectId, started, message);
+    }
+    const changed = await runWorkflows(projectId, started.id, message.id, "conversation_started");
+    // Every new conversation starts with the AI, which answers nothing yet: "Ask a person" because the user asked, the
+    // rest because it's off.
+    const handed: Handed = ownerChosen ? { handedOver: null, changed: {} } : await handOver(projectId, started.id, message.id, handoverReason(started));
+    // Told as the workflows left it (marked priority, kept with the AI). The team's email and push skip one the AI has.
+    const told = await announceConversation(projectId, { ...started, ...changed, ...handed.changed }, message);
+    await handedOverEvent(projectId, started.number, handed);
+    return told;
   }
   const { conversation, message } = arrival;
-  if (!message.inSpam) {
-    await runWorkflows(projectId, conversation.id, message.id, "user_replied");
+  if (message.inSpam) {
+    return announceUserMessage(projectId, conversation.number, message);
   }
-  return announceUserMessage(projectId, conversation.number, message);
+  await runWorkflows(projectId, conversation.id, message.id, "user_replied");
+  // With the AI, which answers nothing yet: about to go to a person again, as it's off.
+  const handed = await handOver(projectId, conversation.id, message.id, "ai_off", { onlyFromAi: true });
+  const told = await announceUserMessage(projectId, conversation.number, message);
+  await handedOverEvent(projectId, conversation.number, handed);
+  return told;
 }
 
-/** The conversation a list runs on, as it is while the list holds it: an action reads and changes it here too, for the next. */
-type Held = { id: string; priority: boolean };
+/** Why a new conversation is about to go to a person: "Ask a person" because the user asked, the rest as the AI is off. */
+const handoverReason = (conversation: { origin: string }): HandoverReason => (conversation.origin === "ESCALATION" ? "user_asked" : "ai_off");
+
+/** `conversation.handed_over`, once the conversation's own news (`conversation.created`, the message) has gone. */
+async function handedOverEvent(projectId: string, number: number, handed: Handed) {
+  if (handed.handedOver) {
+    await emitEvent(projectId, "conversation.handed_over", { conversation: number, reason: handed.handedOver });
+  }
+}
+
+/**
+ * The conversation a list runs on, as it is while the list holds it: an action reads and changes it here too, for the
+ * next. For "About to go to a person": `capped`, past the automated replies' cap (nothing replies or keeps it then);
+ * `replied`, it has had its set reply (once per conversation); `reply`, the set reply this run sends; `keep`, kept with the AI.
+ */
+type Held = { id: string; priority: boolean; capped?: boolean; replied?: boolean; reply?: string; keep?: boolean };
 
 /** What each action does to the conversation; whether it changed anything (the run's Activity row says what did). */
 const RUN: { [Kind in WorkflowAction["kind"]]: (tx: Prisma.TransactionClient, held: Held, action: Extract<WorkflowAction, { kind: Kind }>) => Promise<boolean> } = {
@@ -57,6 +92,22 @@ const RUN: { [Kind in WorkflowAction["kind"]]: (tx: Prisma.TransactionClient, he
     }
     await tx.conversation.update({ where: { id: held.id }, data: { priority: true } });
     held.priority = true;
+    return true;
+  },
+  // The first workflow that replies, and only once per conversation: written once the list has run.
+  reply_text: async (_tx, held, action) => {
+    if (held.capped || held.replied) {
+      return false;
+    }
+    held.reply = action.text;
+    held.replied = true;
+    return true;
+  },
+  dont_hand_over: async (_tx, held) => {
+    if (held.capped) {
+      return false;
+    }
+    held.keep = true;
     return true;
   },
 };
@@ -72,6 +123,53 @@ async function groupsOf(tx: Prisma.TransactionClient, projectId: string, userId:
   const properties = identity && storedProperties(identity.properties);
   const groups = await tx.readerGroup.findMany({ where: { projectId }, select: { key: true, name: true, conditions: true, match: true } });
   return new Map(groups.map((group) => [group.key, { name: group.name, in: !!properties && inGroup(storedRule(group), properties) }]));
+}
+
+type Checked = { name: string; matched: boolean; notIn?: string; did: string[] }[];
+
+/**
+ * A trigger's list, top to bottom, in the transaction that holds the conversation: the workflows that are on and whose
+ * conditions its person matches now. A marking action lets the next workflow run; a deciding one ends the list. Returns
+ * every workflow it checked, what each did or why it didn't match, for the run's Activity row.
+ */
+async function runList(tx: Prisma.TransactionClient, projectId: string, userId: string | null, trigger: WorkflowTrigger, held: Held): Promise<Checked> {
+  const workflows = await tx.workflow.findMany({
+    where: { projectId, trigger, enabled: true },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+    select: { name: true, trigger: true, conditions: true, actions: true },
+  });
+  // Asked once, and only when a workflow is for a group.
+  let groups: Awaited<ReturnType<typeof groupsOf>> | undefined;
+  const checked: Checked = [];
+  for (const workflow of workflows) {
+    const stored = storedWorkflow(workflow);
+    if (!stored) {
+      continue;
+    }
+    let notIn: string | undefined;
+    for (const condition of stored.conditions) {
+      groups ??= await groupsOf(tx, projectId, userId);
+      const group = groups.get(condition.group);
+      if (!group?.in) {
+        notIn ??= group?.name ?? condition.group;
+      }
+    }
+    if (notIn !== undefined) {
+      checked.push({ name: workflow.name, matched: false, notIn, did: [] });
+      continue;
+    }
+    const did: string[] = [];
+    for (const action of stored.actions) {
+      if (await RUN[action.kind](tx, held, action as never)) {
+        did.push(action.kind);
+      }
+    }
+    checked.push({ name: workflow.name, matched: true, did });
+    if (stored.actions.some((action) => ACTIONS[action.kind].deciding)) {
+      break;
+    }
+  }
+  return checked;
 }
 
 /**
@@ -97,6 +195,114 @@ export async function runWorkflows(projectId: string, conversationId: string, me
   }
 }
 
+/**
+ * What a handover did: `handedOver`, why, where it went to the team (null where a workflow kept it with the AI, it was the
+ * team's already, or nothing ran); `changed`, the conversation's fields as it left them, for whoever tells of it.
+ */
+type Handed = { handedOver: HandoverReason | null; changed: { priority?: boolean; handledBy?: "AI" | "TEAM" } };
+
+/**
+ * "About to go to a person" (docs/plan.md, Inbox automation, W11): the conversation would go to the team for `reason`, for
+ * the user's message `messageId`. The trigger's workflows run (Reply with set text, Don't hand over), then unless one
+ * kept it with the AI it's the team's, with a row in its Activity saying why. Past AUTOMATED_REPLIES_PER_HOUR (the AI's
+ * replies and the set ones together) the reason is "too many automated replies", and nothing replies or keeps it: it goes
+ * to the team. `onlyFromAi`: only while the AI has it (a user's later message; one the team has stays the team's).
+ *
+ * One transaction holding the conversation, as runWorkflows: the workflows' changes, the set reply, its owner, the
+ * Activity rows and the fact that it ran for this message (`handedOverAt`), so running it again does nothing. The caller
+ * tells the team (whose email and push skip one the AI has) and the webhooks. Never throws: a handover that fails gives
+ * the conversation to the team (a new one is the team's already), so it's never left with nobody told.
+ */
+export async function handOver(projectId: string, conversationId: string, messageId: string, reason: HandoverReason, { onlyFromAi = false } = {}): Promise<Handed> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const [conversation] = await tx.$queryRaw<
+        { spam: boolean; priority: boolean; handledBy: "AI" | "TEAM"; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]
+      >`
+        SELECT "spam", "priority", "handledBy", "number", "userId", "visitorHash", "email" FROM "conversation"
+        WHERE "id" = ${conversationId} AND "projectId" = ${projectId} FOR NO KEY UPDATE`;
+      if (!conversation || conversation.spam || (onlyFromAi && conversation.handledBy !== "AI")) {
+        return { handedOver: null, changed: {} };
+      }
+      const now = new Date();
+      const { count } = await tx.conversationMessage.updateMany({
+        where: { id: messageId, conversationId, author: "USER", note: false, handedOverAt: null },
+        data: { handedOverAt: now },
+      });
+      if (count === 0) {
+        return { handedOver: null, changed: { priority: conversation.priority, handledBy: conversation.handledBy } };
+      }
+      const [automated, replied] = await Promise.all([
+        tx.conversationMessage.count({ where: { conversationId, author: "AI", note: false, createdAt: { gt: new Date(now.getTime() - 60 * 60_000) } } }),
+        // The set reply carries its conversation as its requestId: once per conversation.
+        tx.conversationMessage.count({ where: { conversationId, author: "AI", requestId: conversationId } }),
+      ]);
+      const capped = automated >= AUTOMATED_REPLIES_PER_HOUR;
+      const why: HandoverReason = capped ? "too_many_replies" : reason;
+      const held: Held = { id: conversationId, priority: conversation.priority, capped, replied: replied > 0 };
+      const checked = await runList(tx, projectId, conversation.userId, "about_to_hand_over", held);
+      if (held.reply !== undefined) {
+        const { channel } = await tx.conversationMessage.findUniqueOrThrow({ where: { id: messageId }, select: { channel: true } });
+        // After the conversation's latest, as addMessage times messages. It answers nobody on the team's side: the
+        // conversation's status and wait stay as the user's message left them.
+        const [{ latest }] = await tx.$queryRaw<[{ latest: Date | null }]>`
+          SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversationId}`;
+        const at = new Date(Math.max(Date.now(), latest ? latest.getTime() + 1 : 0));
+        await tx.conversationMessage.create({
+          data: { projectId, conversationId, author: "AI", authorId: null, channel, body: held.reply, requestId: conversationId, createdAt: at },
+        });
+        await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: at, activeAt: at } });
+      }
+      const handledBy = held.keep ? "AI" : "TEAM";
+      if (handledBy !== conversation.handledBy || held.priority !== conversation.priority) {
+        await tx.conversation.update({ where: { id: conversationId }, data: { handledBy, priority: held.priority } });
+      }
+      await logEvents(tx, conversationId, [
+        ...(checked.length > 0 ? [{ kind: "workflows_ran" as const, actor: "workflow" as const, details: { trigger: "about_to_hand_over", reason: why, workflows: checked } }] : []),
+        ...(held.keep ? [] : [{ kind: "handed_over" as const, actor: "workflow" as const, details: { reason: why } }]),
+      ]);
+      // Open pages hear of what they show changing: a workflow's run, a reply, a new owner. A conversation that was the
+      // team's and stays so (every new one with no workflows) changed nothing a list shows.
+      if (checked.length > 0 || held.reply !== undefined || handledBy !== conversation.handledBy) {
+        await notifyInbox(tx, { projectId, conversationId, number: conversation.number, userId: conversation.userId, visitorHash: conversation.visitorHash, email: conversation.email });
+      }
+      return { handedOver: held.keep ? null : why, changed: { priority: held.priority, handledBy } };
+    });
+  } catch (error) {
+    log.error("Handing a conversation over failed", { projectId, conversationId, messageId, reason, error });
+    // To the team all the same, so its user's message is never left with nobody told (nothing answers for the AI). In a
+    // transaction of its own, under the conversation's lock and claiming the message as the main path does: a retry or a
+    // run at once finds it handed over (or kept) already, and changes and tells nothing twice.
+    return prisma
+      .$transaction(async (tx): Promise<Handed> => {
+        const [conversation] = await tx.$queryRaw<{ spam: boolean; handledBy: "AI" | "TEAM" }[]>`
+          SELECT "spam", "handledBy" FROM "conversation"
+          WHERE "id" = ${conversationId} AND "projectId" = ${projectId} FOR NO KEY UPDATE`;
+        if (!conversation || conversation.spam || (onlyFromAi && conversation.handledBy !== "AI")) {
+          return { handedOver: null, changed: {} };
+        }
+        const { count } = await tx.conversationMessage.updateMany({
+          where: { id: messageId, conversationId, author: "USER", note: false, handedOverAt: null },
+          data: { handedOverAt: new Date() },
+        });
+        if (count === 0) {
+          // Decided already, by whichever run claimed it: as it left it.
+          return { handedOver: null, changed: { handledBy: conversation.handledBy } };
+        }
+        if (conversation.handledBy !== "TEAM") {
+          await tx.conversation.update({ where: { id: conversationId }, data: { handledBy: "TEAM" } });
+        }
+        await logEvents(tx, conversationId, [{ kind: "handed_over", actor: "workflow", details: { reason } }]);
+        return { handedOver: reason, changed: { handledBy: "TEAM" } };
+      })
+      .catch((fallbackError: unknown): Handed => {
+        log.error("Handing a conversation over to the team after a failure failed too", { projectId, conversationId, messageId, error: fallbackError });
+        // A new conversation is the team's already, and the caller tells the team of it: so are the webhooks.
+        return onlyFromAi ? { handedOver: null, changed: {} } : { handedOver: reason, changed: { handledBy: "TEAM" } };
+      });
+  }
+}
+
 /** runWorkflows in a transaction that holds the conversation, or will: the release's (settleHold). Throws. */
 async function workflowsIn(tx: Prisma.TransactionClient, projectId: string, conversationId: string, messageId: string, trigger: WorkflowTrigger): Promise<{ priority?: boolean }> {
   const [conversation] = await tx.$queryRaw<{ spam: boolean; priority: boolean; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
@@ -113,43 +319,8 @@ async function workflowsIn(tx: Prisma.TransactionClient, projectId: string, conv
     // Ran for this message already: the conversation as it is now, whatever ran it.
     return { priority: conversation.priority };
   }
-  const workflows = await tx.workflow.findMany({
-    where: { projectId, trigger, enabled: true },
-    orderBy: [{ position: "asc" }, { id: "asc" }],
-    select: { name: true, trigger: true, conditions: true, actions: true },
-  });
   const held: Held = { id: conversationId, priority: conversation.priority };
-  // Asked once, and only when a workflow is for a group.
-  let groups: Awaited<ReturnType<typeof groupsOf>> | undefined;
-  const checked: { name: string; matched: boolean; notIn?: string; did: string[] }[] = [];
-  for (const workflow of workflows) {
-    const stored = storedWorkflow(workflow);
-    if (!stored) {
-      continue;
-    }
-    let notIn: string | undefined;
-    for (const condition of stored.conditions) {
-      groups ??= await groupsOf(tx, projectId, conversation.userId);
-      const group = groups.get(condition.group);
-      if (!group?.in) {
-        notIn ??= group?.name ?? condition.group;
-      }
-    }
-    if (notIn !== undefined) {
-      checked.push({ name: workflow.name, matched: false, notIn, did: [] });
-      continue;
-    }
-    const did: string[] = [];
-    for (const action of stored.actions) {
-      if (await RUN[action.kind](tx, held, action)) {
-        did.push(action.kind);
-      }
-    }
-    checked.push({ name: workflow.name, matched: true, did });
-    if (stored.actions.some((action) => ACTIONS[action.kind].deciding)) {
-      break;
-    }
-  }
+  const checked = await runList(tx, projectId, conversation.userId, trigger, held);
   // A trigger with no workflow to check (none on, or none this release can read) ran nothing to tell of.
   if (checked.length > 0) {
     await logEvents(tx, conversationId, [{ kind: "workflows_ran", actor: "workflow", details: { trigger, workflows: checked } }]);
@@ -231,7 +402,10 @@ export async function settleHold(conversationId: string, judgement: SpamJudgemen
     const { projectId } = settled;
     const { conversation, first, during } = settled.release;
     try {
-      await announceConversation(projectId, conversation, first);
+      // About to go to a person, as any new conversation is once "A conversation starts" has run: never while held.
+      const handed = await handOver(projectId, conversationId, first.id, handoverReason(conversation));
+      await announceConversation(projectId, { ...conversation, ...handed.changed }, first);
+      await handedOverEvent(projectId, conversation.number, handed);
       for (const message of during) {
         await emitEvent(projectId, "conversation.message_created", { conversation: conversation.number, message: messageView(message) });
       }
