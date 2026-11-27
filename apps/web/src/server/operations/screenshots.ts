@@ -327,7 +327,10 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }, s
   const kept = settings.signInServicesFor === key || settings.signInServicesFor === partlyScannedFor(settings.appUrl) ? (settings.signInServices as SignInService[] | null) : null;
   // One kept before answers had a time (until 2026-11) is read again too.
   const fresh = kept !== null && settings.signInServicesAt !== null && now - settings.signInServicesAt.getTime() < CHECK_AGAIN_MS;
-  let checking = !fresh && settings.signInScanFor === key && settings.signInScanAt !== null && now - settings.signInScanAt.getTime() < SCAN_STALE_MS;
+  // A read claimed: still checking while it may run; one taken for lost (never run, or the worker restarted) still is
+  // for the page's polls while there's no answer, so its last ones never read as nothing found; a look starts another.
+  const claimed = settings.signInScanFor === key && settings.signInScanAt !== null;
+  let checking = !fresh && claimed && (now - settings.signInScanAt!.getTime() < SCAN_STALE_MS || (!start && kept === null));
   if (!fresh && !checking && start) {
     checking = await startScan(context, settings.appUrl, kept !== null);
   }

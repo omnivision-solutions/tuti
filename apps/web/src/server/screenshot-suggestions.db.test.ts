@@ -327,6 +327,15 @@ test("past the fetch limits, an answer older than 7 days is still shown, not ref
   expect(await look()).toEqual({ suggestions: old, checking: false });
 });
 
+test("a read taken for lost (never run) still says checking to the page's polls while there's no answer; a look starts another", async () => {
+  const appUrl = `${base}/`;
+  await settle({ appUrl });
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(appUrl), signInScanAt: new Date(Date.now() - 10 * 60_000) } });
+  expect(await look({ start: false })).toEqual({ suggestions: [], checking: true });
+  expect(requests).toEqual([]);
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+});
+
 test("a read ending clears only its own claim, not a later one for the same address", async () => {
   const appUrl = `${base}/`;
   await settle({ appUrl });
