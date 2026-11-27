@@ -320,17 +320,20 @@ test("a retry after a fallback runs no workflow: what the fallback decided stays
 test("Not spam on what the filter filed answers with the conversation as its handover left it", async () => {
   const { projectId, admin, to, workflow, state } = await setup();
   await workflow("Keep", [{ kind: "dont_hand_over" }]);
-  await prisma.spamSender.create({ data: { projectId, sender: "blocked.example.com", blocked: true, byAdmin: true } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_domain", matcher: "is", value: "blocked.example.com" } });
   await postEmail(rawEmail({ from: "e2e-kim@blocked.example.com", to }), { recipient: to });
+  expect(await prisma.conversation.findFirstOrThrow({ where: { projectId, number: 1 } })).toMatchObject({ spam: true, handledBy: "TEAM" });
   expect(await call(updateConversation, admin, { number: 1, spam: false })).toMatchObject({ spam: false, handledBy: "ai" });
   expect((await state(1)).handledBy).toBe("AI");
 });
 
 test("Not spam with an owner keeps the caller's choice: no handover overrides it", async () => {
   const { owner, projectId, admin, to, workflow, state, activity } = await setup();
-  await prisma.spamSender.create({ data: { projectId, sender: "blocked.example.com", blocked: true, byAdmin: true } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_domain", matcher: "is", value: "blocked.example.com" } });
   await postEmail(rawEmail({ from: "e2e-kim@blocked.example.com", to }), { recipient: to });
   await postEmail(rawEmail({ from: "e2e-lee@blocked.example.com", to }), { recipient: to });
+  // Both filed by the block: nothing ran or was handed over yet.
+  expect(await prisma.conversation.count({ where: { projectId, spam: true } })).toBe(2);
 
   // No workflows: given to the AI, it stays the AI's, with no handover and nobody on the team told.
   expect(await call(updateConversation, admin, { number: 1, spam: false, handledBy: "ai" })).toMatchObject({ spam: false, handledBy: "ai" });
