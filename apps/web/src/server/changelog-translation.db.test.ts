@@ -758,6 +758,9 @@ test("an entry is marked before its translations are queued: one still queuing i
   expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
   await languageTranslationsDone();
   expect(await translation()).toMatchObject({ title: "[de] Dark mode" });
+  // Cleared in New York's time zone too: the next run takes nothing (and pays for nothing).
+  expect(await mark()).toBeNull();
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
   release(null);
   await publishing;
 });

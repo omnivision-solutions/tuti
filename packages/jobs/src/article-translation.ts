@@ -703,7 +703,9 @@ export async function queueChangelogTranslations(entryId: string) {
     UPDATE changelog_entry SET "translationsQueueFailedAt" = now() AT TIME ZONE 'UTC' WHERE id = ${entryId} RETURNING "translationsQueueFailedAt" AS at`;
   await queueTranslations(ENTRY, entryId);
   if (mark) {
-    // Unless a newer queuing set its own meanwhile (that one clears it).
+    // Unless a newer queuing set its own meanwhile (that one clears it). Prisma binds the Date as UTC wall-clock time with no
+    // zone, as the column holds it: `::timestamp(3)` takes it as it is, whatever the session's time zone (`::timestamptz`
+    // would read it in that zone, hours off; the New York test checks it).
     await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = NULL WHERE id = ${entryId} AND "translationsQueueFailedAt" = ${mark.at}::timestamp(3)`;
   }
 }
