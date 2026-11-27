@@ -344,6 +344,9 @@ export async function handOver(
       if (handledBy !== conversation.handledBy || held.priority !== conversation.priority) {
         await tx.conversation.update({ where: { id: conversationId }, data: { handledBy, priority: held.priority } });
       }
+      if (conversation.handledBy === "AI" && handledBy === "TEAM") {
+        await escalateAsked(tx, projectId, conversationId);
+      }
       await logEvents(tx, conversationId, [
         ...(checked.length > 0 ? [{ kind: "workflows_ran" as const, actor: "workflow" as const, details: { trigger: "about_to_hand_over", reason: why, workflows: checked } }] : []),
         ...(held.keep ? [] : [{ kind: "handed_over" as const, actor: "workflow" as const, details: { reason: why } }]),
@@ -380,6 +383,9 @@ export async function handOver(
           return { handedOver: null, changed: { handledBy: conversation.handledBy } };
         }
         await tx.conversation.update({ where: { id: conversationId }, data: { handledBy: "TEAM", ...(!conversation.spamHeldAt && { pathDueAt: null }) } });
+        if (conversation.handledBy === "AI") {
+          await escalateAsked(tx, projectId, conversationId);
+        }
         await logEvents(tx, conversationId, [{ kind: "handed_over", actor: "workflow", details: { reason } }]);
         return { handedOver: reason, changed: { handledBy: "TEAM" } };
       })
@@ -388,6 +394,17 @@ export async function handOver(
         // A new conversation is the team's already, and the caller tells the team of it: so are the webhooks.
         return onlyFromAi ? { handedOver: null, changed: {} } : { handedOver: reason, changed: { handledBy: "TEAM" } };
       });
+  }
+}
+
+/**
+ * A conversation the AI had, handed to the team (whatever the route: its turn, Straight to a person, the inbox-due job's
+ * give-up): its latest question to the docs, if it asked any, is passed to the team, as Reporting counts it.
+ */
+async function escalateAsked(tx: Prisma.TransactionClient, projectId: string, conversationId: string) {
+  const asked = await tx.docsQuestion.findFirst({ where: { projectId, conversationId, source: "INBOX" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (asked) {
+    await tx.docsQuestion.updateMany({ where: { id: asked.id, escalatedAt: null }, data: { escalatedAt: new Date() } });
   }
 }
 

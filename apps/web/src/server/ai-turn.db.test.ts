@@ -480,8 +480,8 @@ test("a backlog of older AI turns never delays releasing a spam hold that's due"
   expect(await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } }, select: { spam: true, spamHeldAt: true } })).toEqual({ spam: false, spamHeldAt: null });
 });
 
-test("Straight to a person: a new conversation and a reply to one the AI has go to the team without the AI or “About to go to a person”", async () => {
-  const { admin, mail, reply, turn, state, handovers } = await setup();
+test("Straight to a person: a new conversation and a reply to one the AI has go to the team without the AI or “About to go to a person”, counted in Reporting as passed to the team", async () => {
+  const { admin, conversation, mail, reply, turn, state, handovers } = await setup();
   await call(createWorkflow, admin, { name: "Billing to a person", trigger: "user_replied", conditions: [], actions: [{ kind: "straight_to_person" }] });
   await call(createWorkflow, admin, { name: "Keep", trigger: "about_to_hand_over", conditions: [], actions: [{ kind: "dont_hand_over" }] });
   await mail();
@@ -491,6 +491,8 @@ test("Straight to a person: a new conversation and a reply to one the AI has go 
   await reply("About my invoice");
   expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
   expect(await handovers()).toEqual(["straight_to_person"]);
+  // Passed to the team, as Reporting counts it: the question the AI answered before is its thread's.
+  expect(await prisma.docsQuestion.findMany({ where: { projectId: (await conversation()).projectId }, select: { escalatedAt: true } })).toEqual([{ escalatedAt: expect.any(Date) }]);
 
   await call(createWorkflow, admin, { name: "Everyone to a person", trigger: "conversation_started", conditions: [], actions: [{ kind: "straight_to_person" }] });
   await mail("Another question");
