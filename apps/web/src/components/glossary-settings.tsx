@@ -53,8 +53,11 @@ export function mergeMeanwhile(rows: Row[], before: GlossaryTermInput[], theirs:
 
 /** Languages side by side up to this many; with more, each term is a card (as on phones), its languages under it. */
 const MAX_COLUMNS = 3;
-/** The table's columns on wide screens (the headings' and each term's, so they line up): term, a column per language, Never translated, Remove. */
-const COLUMNS = "@min-[40rem]/settings:grid-cols-[minmax(8rem,1.2fr)_repeat(var(--languages),minmax(6rem,1fr))_7.5rem_2rem]";
+/**
+ * The table's columns on wide screens (the headings' and each term's, so they line up): term, a column per language, Never
+ * translated, Remove. From a 44rem card: three languages' minimums, gaps and padding come to 41.75rem.
+ */
+const COLUMNS = "@min-[44rem]/settings:grid-cols-[minmax(8rem,1.2fr)_repeat(var(--languages),minmax(6rem,1fr))_7.5rem_2rem]";
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count.toLocaleString("en")} ${many}`);
 
@@ -216,7 +219,7 @@ function GlossaryEditor({ projectSlug, languages, terms, hash }: { projectSlug: 
           <>
             {columns && (
               // The columns' names, beside each other on wide screens (each field says its own to screen readers).
-              <div aria-hidden style={{ "--languages": languages.length } as React.CSSProperties} className={cn("hidden gap-3 px-5 pt-3 pb-1 text-sm font-medium text-muted-foreground @min-[40rem]/settings:grid", COLUMNS)}>
+              <div aria-hidden style={{ "--languages": languages.length } as React.CSSProperties} className={cn("hidden gap-3 px-5 pt-3 pb-1 text-sm font-medium text-muted-foreground @min-[44rem]/settings:grid", COLUMNS)}>
                 <span>Term</span>
                 {languages.map((language) => (
                   <span key={language.code} lang={language.code}>
@@ -301,16 +304,16 @@ function TermRow({
 }) {
   const name = row.term.trim() || "this term";
   // Each field's own name: shown above it in a card, the column's on wide screens (only for screen readers there).
-  const fieldLabel = cn("text-sm font-medium", columns && "@min-[40rem]/settings:sr-only");
+  const fieldLabel = cn("text-sm font-medium", columns && "@min-[44rem]/settings:sr-only");
   return (
     <li
       style={{ "--languages": languages.length } as React.CSSProperties}
       className={cn(
         "grid grid-cols-2 items-end gap-x-3 gap-y-3 px-4 py-3.5 @min-[34rem]/settings:px-5",
-        columns && cn(COLUMNS, "@min-[40rem]/settings:items-center @min-[40rem]/settings:py-2.5"),
+        columns && cn(COLUMNS, "@min-[44rem]/settings:items-center @min-[44rem]/settings:py-2.5"),
       )}
     >
-      <div className={cn("col-span-2 flex flex-col gap-1.5", columns && "@min-[40rem]/settings:col-span-1")}>
+      <div className={cn("col-span-2 flex flex-col gap-1.5", columns && "@min-[44rem]/settings:col-span-1")}>
         <label htmlFor={`${row.key}-term`} className={fieldLabel}>
           Term
         </label>
@@ -332,10 +335,10 @@ function TermRow({
       </div>
       {row.keep ? (
         // In the table, across the languages' columns (a card says it by its switch).
-        columns && <p className="hidden self-center text-sm text-muted-foreground @min-[40rem]/settings:col-[span_var(--languages)] @min-[40rem]/settings:block">Never translated</p>
+        columns && <p className="hidden self-center text-sm text-muted-foreground @min-[44rem]/settings:col-[span_var(--languages)] @min-[44rem]/settings:block">Never translated</p>
       ) : (
         languages.map((language) => (
-          <div key={language.code} className={cn("flex flex-col gap-1.5", languages.length === 1 && "col-span-2", columns && "@min-[40rem]/settings:col-span-1")}>
+          <div key={language.code} className={cn("flex flex-col gap-1.5", languages.length === 1 && "col-span-2", columns && "@min-[44rem]/settings:col-span-1")}>
             <label htmlFor={`${row.key}-${language.code}`} lang={language.code} className={fieldLabel}>
               {language.native}
             </label>
@@ -350,10 +353,10 @@ function TermRow({
           </div>
         ))
       )}
-      <label className={cn("flex items-center gap-2 text-sm", columns && "@min-[40rem]/settings:justify-center")}>
+      <label className={cn("flex items-center gap-2 text-sm", columns && "@min-[44rem]/settings:justify-center")}>
         {/* Its name says the words shown ("Never translated") and whose they are. */}
         <Switch checked={row.keep} onChange={(event) => onChange({ keep: event.target.checked })} aria-label={`Never translated: ${name}`} />
-        <span className={cn(columns && "@min-[40rem]/settings:sr-only")}>Never translated</span>
+        <span className={cn(columns && "@min-[44rem]/settings:sr-only")}>Never translated</span>
       </label>
       <Button type="button" variant="ghost" size="icon-sm" className="justify-self-end" aria-label={`Remove ${name}`} onClick={onRemove}>
         <Trash2Icon />
