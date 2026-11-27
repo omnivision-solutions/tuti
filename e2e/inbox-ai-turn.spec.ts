@@ -29,8 +29,8 @@ test("an email the AI answers first: answered from the docs and kept from the te
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();
   await expect(owner.getByRole("button", { name: "Copy support address" })).toBeVisible();
-  // "AI answers first" for email: its switch is the AI's settings screen, still to come.
-  await query(`UPDATE project SET "emailAiFirst" = true WHERE slug = $1`, [slug]);
+  // "AI answers first" for email (Settings → Workflows → AI answers first, its own journey).
+  await api("/ai-first", { email: true }, "PATCH");
   const sender = "Sam Sender <e2e-sam-ai-turn@example.com>";
 
   // Their question: not a request for a person, and the docs answer it.

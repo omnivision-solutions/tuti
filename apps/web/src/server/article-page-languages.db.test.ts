@@ -98,7 +98,7 @@ test("at a language's address an article translated there reads in its version, 
   expect(data[1]).toMatchObject({
     "@type": "BreadcrumbList",
     itemListElement: [
-      { position: 1, name: "Documentation", item: `${portal}/de/docs` },
+      { position: 1, name: "Dokumentation", item: `${portal}/de/docs` },
       { position: 2, name: "Payments", item: `${portal}/de/docs/payments` },
       { position: 3, name: "Abrechnung", item: `${portal}/de/docs/abrechnung` },
     ],
@@ -267,12 +267,12 @@ test("the team's preview of a language not live yet: its Markdown's canonical is
   expect(md.headers.get("link")).toBe(`<${portal}/docs/billing>; rel="canonical"`);
 });
 
-test("\"On this page\" beside an article on wide screens: its list of headings in the article's text's language", () => {
+test("\"On this page\" beside an article on wide screens: its list of headings in the article's text's language", async () => {
   const headings = [
     { id: "einrichtung", text: "Einrichtung", level: 2 },
     { id: "abrechnung", text: "Abrechnung", level: 2 },
   ] as Parameters<typeof OnThisPage>[0]["headings"];
-  const layout = DocsLayout({ tree: null, current: null, headings, headingsLang: "de", children: null }) as ReactElement;
+  const layout = (await DocsLayout({ tree: null, current: null, headings, headingsLang: "de", children: null })) as ReactElement;
   const found: ReactElement[] = [];
   const walk = (node: ReactNode) => {
     if (Array.isArray(node)) return node.forEach(walk);
@@ -286,3 +286,57 @@ test("\"On this page\" beside an article on wide screens: its list of headings i
   expect(renderToStaticMarkup(found[0]!)).toContain('<ul lang="de"');
   expect(renderToStaticMarkup(createElement(OnThisPage, { headings, lang: "en" }))).toContain('<ul lang="en"');
 });
+
+test("an article's structured breadcrumb names the steps above it in the page's language, at that language's addresses, translated or not", async () => {
+  const collection = await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: collection.slug });
+  // Spanish too, with no version: its word for the docs differs from English's (French's doesn't).
+  await call(updateLanguages, as(), {
+    languages: [
+      { code: "de", live: true, newPages: "manual" },
+      { code: "fr", live: true, newPages: "manual" },
+      { code: "es", live: true, newPages: "manual" },
+    ],
+  });
+  const breadcrumb = async (slug: string) =>
+    (
+      (await structuredData(await docsPage(project.slug, slug), "/docs/billing")).find((block) => (block as { "@type"?: string })["@type"] === "BreadcrumbList") as {
+        itemListElement: { name: string; item: string }[];
+      }
+    )
+      .itemListElement.map(({ name, item }) => [name, item])
+      // The steps above the article (its own step follows whether it's translated, tested above).
+      .slice(0, -1);
+  // Translated (German) or not (Spanish), the docs' and the collection's pages are there at the language's address, in its words.
+  at("de");
+  expect(await breadcrumb("abrechnung")).toEqual([
+    ["Dokumentation", `${portal}/de/docs`],
+    ["Payments", `${portal}/de/docs/${collection.slug}`],
+  ]);
+  at("es");
+  expect(await breadcrumb("billing")).toEqual([
+    ["Documentación", `${portal}/es/docs`],
+    ["Payments", `${portal}/es/docs/${collection.slug}`],
+  ]);
+});
+
+test("the docs' tree toggle without JavaScript (its <noscript> summary) is in the page's language, from the layout itself, for every docs page", async () => {
+  const summary = async () => {
+    const found: string[] = [];
+    const walk = (node: ReactNode) => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!node || typeof node !== "object" || !("props" in node)) return;
+      const element = node as ReactElement<{ children?: ReactNode }>;
+      if (element.type === "summary") found.push(text(element.props.children));
+      walk(element.props.children);
+    };
+    // No caller passes it: an API reference's page, the tabs' overview and an article's all render the layout so.
+    walk((await DocsLayout({ tree: null, current: null, children: null })) as ReactElement);
+    return found;
+  };
+  at("de");
+  expect(await summary()).toEqual(["Dokumentation durchstöbern"]);
+  at(null);
+  expect(await summary()).toEqual(["Browse docs"]);
+});
+

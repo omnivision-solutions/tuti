@@ -66,7 +66,7 @@ export const REPLY_AT = 0.3;
 
 /**
  * Whether a new conversation from `origin` starts with the AI ("AI answers first", by channel): email's switch
- * (`project.emailAiFirst`, off until the team turns it on; W14 is its screen). The widget's Messages are W13's, "Ask a
+ * (`project.emailAiFirst`, off until the team turns it on; Settings → Workflows → AI answers first, W14). The widget's Messages are W13's, "Ask a
  * person" is the user asking, and one the team starts over the API is its own.
  */
 export async function aiAnswersFirst(projectId: string, origin: ConversationOrigin): Promise<boolean> {
@@ -77,14 +77,75 @@ export async function aiAnswersFirst(projectId: string, origin: ConversationOrig
   return !!project?.emailAiFirst;
 }
 
-/** Whether the AI can answer here now: the server has answers, the project has a published article of its own and AI credits. */
-export async function aiAvailable(projectId: string): Promise<boolean> {
+/** Why the AI can't answer here now (W14's "off for"): none where it can. */
+export type AiOffReason = "no_ai_answers" | "no_articles" | "out_of_credits";
+
+/** What keeps the AI from answering here now: the server has no answers, the project no published article of its own, or no AI credits. */
+export async function aiOffReasons(projectId: string): Promise<AiOffReason[]> {
   if (!answersEnabled()) {
-    return false;
+    return ["no_ai_answers"];
   }
   // Sample content (Home's "Add sample content") is never answered from: it isn't the team's docs.
-  const article = await prisma.article.findFirst({ where: { projectId, sample: false, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } }, select: { id: true } });
-  return !!article && !(await aiPaused(projectId));
+  const [article, paused] = await Promise.all([
+    prisma.article.findFirst({ where: { projectId, sample: false, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } }, select: { id: true } }),
+    aiPaused(projectId),
+  ]);
+  return [...(article ? [] : ["no_articles" as const]), ...(paused ? ["out_of_credits" as const] : [])];
+}
+
+/** Whether the AI can answer here now: the server has answers, the project has a published article of its own and AI credits. */
+export async function aiAvailable(projectId: string): Promise<boolean> {
+  return (await aiOffReasons(projectId)).length === 0;
+}
+
+/** Whether the latest message that isn't a note is the user's (a team's or the AI's reply answers it). */
+export const awaitsReply = (latest: { author: string } | null) => latest?.author === "USER";
+
+/**
+ * Whether a conversation's user waits on the team: the latest message that isn't a note is theirs, or their latest message
+ * was handed to the team (`handedOverAt`, with the handover's `handed_over` Activity row: one a Don't hand over kept with
+ * the AI has none) and no teammate has replied since. An answer from the AI counts as a reply
+ * only where it wasn't followed by a handover ("Ask a person" after an AI answer, a workflow's set reply as it went to the
+ * team). The one rule for Hand back to the AI: the page offers it, and the action allows it, only where nobody waits.
+ */
+export async function userWaits(conversationId: string): Promise<boolean> {
+  const latest = (author?: "USER") =>
+    prisma.conversationMessage.findFirst({
+      where: { conversationId, note: false, ...(author ? { author } : { author: { in: ["USER", "TEAM", "AI"] } }) },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { author: true, createdAt: true, handedOverAt: true },
+    });
+  const [said, asked] = await Promise.all([latest(), latest("USER")]);
+  if (awaitsReply(said)) {
+    return true;
+  }
+  if (!asked?.handedOverAt) {
+    return false;
+  }
+  // Handed to the team, not kept with the AI by a Don't hand over (which marks the message all the same): its Activity row,
+  // matched by the handover's own time. handOver writes `handedOverAt` and then the row in one transaction, from one clock,
+  // so the row is never earlier; the message's `createdAt` may be (it's timed after the conversation's latest message).
+  const [toTeam, replied] = await Promise.all([
+    prisma.conversationEvent.count({ where: { conversationId, kind: "handed_over", createdAt: { gte: asked.handedOverAt } } }),
+    prisma.conversationMessage.count({ where: { conversationId, author: "TEAM", note: false, createdAt: { gt: asked.createdAt } } }),
+  ]);
+  return toTeam > 0 && replied === 0;
+}
+
+/**
+ * Whether the AI would answer this conversation's user if it had the conversation: it can answer here now (aiAvailable),
+ * may read them the docs (a private portal's reader), and its answer can reach them (in the widget, a signed-out visitor's; by email only where the address is proven, as
+ * toAi requires of an email). Where "Hand back to the AI" is offered. Not in Spam, nor held.
+ */
+export async function aiWouldAnswer(
+  projectId: string,
+  conversation: { spam: boolean; spamHeldAt: Date | null; userId: string | null; emailVerified: boolean; visitorHash: string | null },
+): Promise<boolean> {
+  if (conversation.spam || conversation.spamHeldAt || !(automatedRepliesEmailed(conversation) || conversation.visitorHash)) {
+    return false;
+  }
+  // A private portal answers nobody it doesn't let in from its docs (the turn hands those over at once).
+  return (await readerToSend(projectId, conversation.userId)) !== false && (await aiAvailable(projectId));
 }
 
 /**
@@ -341,7 +402,7 @@ async function post(projectId: string, conversationId: string, latest: Message, 
       return false;
     }
     const answered = await tx.conversationMessage.count({ where: { conversationId, author: "AI", requestId: latest.id } });
-    if (conversation.spam || conversation.handledBy !== "AI" || newest.handedOverAt || answered > 0) {
+    if (conversation.spam || conversation.handledBy !== "AI" || newest.handedOverAt || answered > 0 || (await teamRepliedSince(tx, conversationId, newest))) {
       await tx.conversation.update({ where: { id: conversationId }, data: { pathDueAt: null } });
       return false;
     }
@@ -365,8 +426,24 @@ export const newestFromUser = (tx: Tx, conversationId: string) =>
   tx.conversationMessage.findFirst({
     where: { conversationId, author: "USER", note: false },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { id: true, handedOverAt: true },
+    select: { id: true, createdAt: true, handedOverAt: true },
   });
+
+/**
+ * Whether a teammate has replied (not a note) since the user's message, by the order messages are read in ((createdAt,
+ * id)): a turn for it is over, whoever has the conversation now (taken over, replied to and handed back meanwhile).
+ */
+export async function teamRepliedSince(tx: Tx, conversationId: string, message: { id: string; createdAt: Date }): Promise<boolean> {
+  const replied = await tx.conversationMessage.count({
+    where: {
+      conversationId,
+      author: "TEAM",
+      note: false,
+      OR: [{ createdAt: { gt: message.createdAt } }, { createdAt: message.createdAt, id: { gt: message.id } }],
+    },
+  });
+  return replied > 0;
+}
 
 /** Ends a turn with nothing to do: `pathDueAt` cleared, unless a newer message from the user (than `latest`) has its own turn due. */
 async function settle(conversationId: string, latest: string | null) {
