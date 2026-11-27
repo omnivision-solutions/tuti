@@ -48,3 +48,13 @@ test("focus put somewhere meanwhile (typing in the title) stays there", () => {
   focus.take(button(), 7);
   expect(document.activeElement).toBe(title);
 });
+
+for (const input of ["pointerdown", "keydown"] as const) {
+  test(`a ${input} meanwhile (focus put somewhere, then on the page itself) keeps it from taking the focus`, () => {
+    const focus = lateFocus();
+    focus.expect(7);
+    document.body.dispatchEvent(new Event(input, { bubbles: true }));
+    focus.take(button(), 7);
+    expect(document.activeElement).toBe(document.body);
+  });
+}
