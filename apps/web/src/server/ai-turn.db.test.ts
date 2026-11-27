@@ -214,6 +214,20 @@ test("thanks after an answer needs no reply: the AI keeps it, with no handover a
   expect(await prisma.docsQuestion.count({ where: { projectId } })).toBe(1);
 });
 
+test("a request for a person after a long message is still read: the newest text is kept where the messages are too long", async () => {
+  const { mail, reply, turn, handovers } = await setup();
+  await mail(`My export fails. ${"Here is the log line. ".repeat(150)}`);
+  await reply("A person please");
+  model.decide({ person: 0.95, reply: 0.9 }, "A person please");
+  model.reply("They want a person about a failing export.", undefined, "askedBefore");
+  expect(await turn()).toBe("handed_over");
+  expect(await handovers()).toEqual(["user_asked"]);
+  // What the model read ends with their latest words, and is no longer than the limit.
+  const { message } = model.decisions.at(-1)!.state as { message: string };
+  expect(message.endsWith("A person please")).toBe(true);
+  expect(message.length).toBe(2000);
+});
+
 test("taken over while the AI writes: its answer is dropped", async () => {
   const { admin, mail, turn, state } = await setup();
   await mail();

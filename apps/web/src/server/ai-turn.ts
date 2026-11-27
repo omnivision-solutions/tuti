@@ -38,8 +38,10 @@ export const AI_TURN_DUE_MS = 60_000;
 const AI_TURN_LEASE_MS = 5 * 60_000;
 /** A user's message the AI still hasn't answered this long after it's written is handed over. */
 export const AI_TURN_GIVE_UP_MS = 10 * 60_000;
-/** Characters of the user's messages a turn asks about. */
+/** Characters of the user's messages a turn asks about: the newest, as the latest says most ("a person please" after a long email). */
 const QUESTION_CHARS = 2000;
+/** The newest QUESTION_CHARS of `text`. */
+const newest = (text: string) => text.slice(-QUESTION_CHARS);
 /** The conversation's latest messages a turn reads. */
 const MESSAGES_READ = 50;
 /** At least this sure the user asks for a person, the decision model hands over. */
@@ -153,7 +155,7 @@ const PERSON = {
  * need a reply at all? Throws where the model fails.
  */
 export async function readMessage(state: { message: string; earlier: Turn[] }, meter: Meter): Promise<{ person: boolean; needsReply: boolean }> {
-  const answers = await decide({ ...state, message: state.message.slice(0, QUESTION_CHARS) }, PERSON, { meter, timeoutMs: 15_000 });
+  const answers = await decide({ ...state, message: newest(state.message) }, PERSON, { meter, timeoutMs: 15_000 });
   const [person, reply] = [answers.person as { noul: number }, answers.reply as { noul: number }];
   return { person: person.noul >= PERSON_AT, needsReply: reply.noul >= REPLY_AT };
 }
@@ -163,18 +165,19 @@ type Message = { id: string; author: "USER" | "TEAM" | "AI"; body: string; chann
 /** The question (the user's messages since the last reply) and the turns before it, from the conversation's messages, oldest first. */
 function turnsOf(messages: Message[]): { question: string; earlier: Turn[] } {
   const lastReply = messages.findLastIndex((message) => message.author !== "USER");
-  const question = messages
-    .slice(lastReply + 1)
-    .map((message) => message.body)
-    .join("\n\n")
-    .slice(0, QUESTION_CHARS);
+  const question = newest(
+    messages
+      .slice(lastReply + 1)
+      .map((message) => message.body)
+      .join("\n\n"),
+  );
   const earlier: Turn[] = [];
   let asked: string[] = [];
   for (const message of messages.slice(0, lastReply + 1)) {
     if (message.author === "USER") {
       asked.push(message.body);
     } else if (asked.length > 0) {
-      earlier.push({ question: asked.join("\n\n").slice(0, QUESTION_CHARS), answer: message.body });
+      earlier.push({ question: newest(asked.join("\n\n")), answer: message.body });
       asked = [];
     }
   }
