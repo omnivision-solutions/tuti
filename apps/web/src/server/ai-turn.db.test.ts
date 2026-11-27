@@ -10,7 +10,7 @@ const later = vi.hoisted(() => [] as (() => unknown)[]);
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (task: () => unknown) => void later.push(task) }));
 
 import { AUTOMATED_REPLIES_PER_HOUR } from "@/lib/workflows";
-import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
@@ -368,8 +368,16 @@ test("a handover that fails and falls back still counts the AI's conversation as
   model.decide({ person: 0.95, reply: 0.9 }, "A person please");
   model.reply("They want a person.", undefined, "askedBefore");
   // The handover's own transaction fails: its fallback gives it to the team.
-  failTransaction(new Error("connection reset"));
+  // Only that one: every later transaction (the fallback's) is the real one.
+  const failure = new Error("connection reset");
+  const transactions = vi.spyOn(prisma, "$transaction").mockImplementationOnce((() => Promise.reject(failure)) as never);
   expect(await turn()).toBe("handed_over");
+  // It was the fallback: the forced failure happened, then the fallback's own transaction, and the thread has no summary
+  // note, which only the normal path writes.
+  expect(transactions.mock.results).toHaveLength(2);
+  await expect(transactions.mock.results[0]!.value).rejects.toBe(failure);
+  transactions.mockRestore();
+  expect((await state()).thread.filter((line) => line.includes("Summary:"))).toEqual([]);
   expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
   expect(await handovers()).toEqual(["user_asked"]);
   expect(await prisma.docsQuestion.findMany({ where: { projectId }, select: { escalatedAt: true } })).toEqual([{ escalatedAt: expect.any(Date) }]);
