@@ -26,13 +26,17 @@ export const TRIGGER_HINTS: Record<WorkflowTrigger, string> = {
 
 /**
  * Why a conversation is about to go to a person, as its Activity says it. "The AI is off" is every conversation the AI
- * doesn't answer (nothing answers for it yet); "too many automated replies" is the cap (AUTOMATED_REPLIES_PER_HOUR),
- * where nothing can keep it from the team.
+ * doesn't answer: off for the channel, or unavailable (no AI on the server, no published articles, out of credits, the
+ * model failing); "too many automated replies" is the cap (AUTOMATED_REPLIES_PER_HOUR), where nothing can keep it from
+ * the team. "Straight to a person" is a workflow's action, which hands it over without the AI or the list.
  */
 export const HANDOVER_REASONS = {
   user_asked: "the user asked for a person",
+  no_answer: "the AI couldn't answer",
+  off_limits: "an off-limits topic",
   ai_off: "the AI is off",
   too_many_replies: "too many automated replies",
+  straight_to_person: "a workflow sent it straight to a person",
 } as const;
 export type HandoverReason = keyof typeof HANDOVER_REASONS;
 
@@ -76,12 +80,23 @@ const ACTION_SCHEMAS = {
       .describe("The reply, as plain text")
       .meta({ examples: ["Thanks! Our team answers Enterprise questions within the hour."] }),
   }),
+  straight_to_person: z.object({
+    kind: z
+      .literal("straight_to_person")
+      .describe("`straight_to_person` (conversation_started, user_replied): hands the conversation to the team without the AI, ending the list")
+      .meta({ examples: ["straight_to_person"] }),
+  }),
   dont_hand_over: z.object({
     kind: z.literal("dont_hand_over").describe("`dont_hand_over` (about_to_hand_over): keeps the conversation with the AI").meta({ examples: ["dont_hand_over"] }),
   }),
 };
 
-export const workflowAction = z.discriminatedUnion("kind", [ACTION_SCHEMAS.mark_priority, ACTION_SCHEMAS.reply_text, ACTION_SCHEMAS.dont_hand_over]);
+export const workflowAction = z.discriminatedUnion("kind", [
+  ACTION_SCHEMAS.mark_priority,
+  ACTION_SCHEMAS.straight_to_person,
+  ACTION_SCHEMAS.reply_text,
+  ACTION_SCHEMAS.dont_hand_over,
+]);
 export type WorkflowAction = z.output<typeof workflowAction>;
 
 /**
@@ -96,6 +111,13 @@ export const ACTIONS: Record<WorkflowAction["kind"], { label: string; hint: stri
     triggers: ["conversation_started", "user_replied"],
     deciding: false,
     did: "marked this priority",
+  },
+  straight_to_person: {
+    label: "Straight to a person",
+    hint: "Hands the conversation to your team, without the AI. Ends the list.",
+    triggers: ["conversation_started", "user_replied"],
+    deciding: true,
+    did: "sent it straight to a person",
   },
   reply_text: {
     label: "Reply with set text",

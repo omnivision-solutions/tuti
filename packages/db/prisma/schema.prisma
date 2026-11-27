@@ -277,6 +277,9 @@ model Project {
   widgetOnPortal                 Boolean      @default(true)
   /// A new message in Messages goes to the docs' AI first, with "Ask a person" to pass it to the team.
   widgetAiFirst                  Boolean      @default(true)
+  /// A new email conversation starts with the AI, which answers it from the docs (docs/plan.md, Inbox automation, W12;
+  /// its switch is W14's): off until the team turns it on.
+  emailAiFirst                   Boolean      @default(false)
   /// A new announcement pops up as a small card by the launcher (once per browser), on top of its dot.
   widgetPopup                    Boolean      @default(false)
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
@@ -3000,6 +3003,8 @@ enum DocsQuestionSource {
   WIDGET
   /// docs.ask (REST or MCP).
   API
+  /// The AI's turn in an Inbox conversation it has (server/ai-turn.ts).
+  INBOX
 }
 
 /// A question asked of the docs' AI (docs.ask) and the asker's thumbs up or down:
@@ -3733,7 +3738,7 @@ model ScreenshotSettings {
   profileId            String?
   profileSignIn        String           @default("")
   /// The sign-in services found in the app's page and scripts (screenshotSettings.suggestions: [{ provider, hosts }]),
-  /// and the app address they were found at: found again once the address changes.
+  /// and the app address they were found at, with the scanner's version (sign-in-hosts.ts scannedFor): found again once either changes.
   signInServices       Json?
   signInServicesFor    String?
   updatedAt            DateTime         @updatedAt
