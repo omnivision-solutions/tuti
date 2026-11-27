@@ -409,7 +409,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("button", { name: "Not snoozed" })).toHaveCount(0);
   await checkpoint(owner, "conversation-closed");
   await owner.keyboard.press("Enter");
-  await expect(owner.getByText("Reopened")).toBeVisible();
+  await expect(owner.getByText("Reopened", { exact: true })).toBeVisible();
   // Reopened, it leaves Closed, the only one there: back to Closed's list, nothing open.
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
   await owner.goto(`/app/${slug}/inbox/1`);
