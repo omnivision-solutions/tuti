@@ -14,7 +14,7 @@ import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
 import { ChangelogLanguageList, ChangelogLanguagePill, ChangelogVersionForm, ChangelogVersionSave, type EntryLanguage } from "@/components/changelog-languages";
-import { NO_AI_WAITING } from "@/lib/changelog-versions";
+import { NO_AI_WAITING, versionFormKey } from "@/lib/changelog-versions";
 import { entryLanguages } from "@/server/changelog-languages";
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
@@ -270,9 +270,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               the Publish dialog or by "Make a cover": the form's cover follows it, FeaturedImage).
             */}
             {version ? (
-              // Starts afresh when its text changes (a save, a translation), not when Keep up to date flips: unsaved edits stay.
+              // One per language: a new read sets its fields in place where nothing's typed (never a remount over typing).
               <ChangelogVersionForm
-                key={createHash("sha256").update(JSON.stringify([version.code, version.title, version.content])).digest("base64url")}
+                key={versionFormKey(version)}
                 projectSlug={slug}
                 number={entry.number}
                 defaultName={languages![0]!.name}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc, MediaUrls } from "@tuti/content";
+import type { Editor } from "@tiptap/react";
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
@@ -163,20 +164,43 @@ export function ChangelogVersionForm({
   const [edited, setEdited] = useState(false);
   // Edits so far: a save clears the marks only where none came after it was sent (typing goes on while it saves).
   const edits = useRef(0);
+  // Fields set from a new read (below): not an edit of the team's.
+  const resetting = useRef(false);
   const markEdited = () => {
+    if (resetting.current) {
+      return;
+    }
     dirty.current = true;
     edits.current += 1;
     setEdited(true);
   };
   // The page read again (its own save or toggle, or a refresh) with a new token: a form with nothing typed goes from it; one
   // with edits keeps its own, so their save is refused rather than marked up to date with a change they never saw.
+  // The form is kept across reads (keyed by its language, versionFormKey), so its own save never remounts it over what's typed
+  // meanwhile: with nothing typed, its fields are set in place to the new read's title and text, and its token taken with them.
   const [seen, setSeen] = useState(view.version);
+  // The read the fields are to show, set in place (null: as they were first rendered).
+  const [read, setRead] = useState<{ title: string; content: Doc } | null>(null);
   if (seen !== view.version) {
     setSeen(view.version);
     if (!edited) {
       setLoaded(view.version);
+      setRead({ title: view.title, content: view.content });
     }
   }
+  const titleField = useRef<HTMLInputElement>(null);
+  const editor = useRef<Editor | null>(null);
+  useEffect(() => {
+    if (!read) {
+      return;
+    }
+    resetting.current = true;
+    if (titleField.current) {
+      titleField.current.value = read.title;
+    }
+    editor.current?.commands.setContent(read.content);
+    resetting.current = false;
+  }, [read]);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const sent = edits.current;
     const result = await saveChangelogVersion(projectSlug, number, view.code, prev, formData);
@@ -216,6 +240,7 @@ export function ChangelogVersionForm({
         )}
         <div className="flex flex-col gap-2">
           <input
+            ref={titleField}
             name="title"
             aria-label="Title"
             lang={textLang}
@@ -228,7 +253,7 @@ export function ChangelogVersionForm({
           />
           {state.error && <FieldError id="version-error">{state.error}</FieldError>}
         </div>
-        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={view.content} onChange={markEdited} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
+        <RichEditor bare profile="changelog" name="content" label="What changed" lang={textLang} initial={view.content} editorRef={editor} onChange={markEdited} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         <KeepUpToDate

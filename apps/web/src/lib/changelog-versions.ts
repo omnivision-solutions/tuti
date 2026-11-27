@@ -31,3 +31,6 @@ export function versionState(version: VersionRow | undefined, hash: string, aiOn
   }
   return version.sourceHash === hash ? "setting" : "behind";
 }
+
+/** The changelog version form's key: its language alone, so a new read (its own save's included) never remounts it over typing. */
+export const versionFormKey = (view: { code: string }) => `version:${view.code}`;

@@ -22,6 +22,7 @@ const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() });
 vi.mock("sonner", () => ({ toast }));
 
 const { ChangelogVersionForm } = await import("./changelog-languages");
+const { versionFormKey } = await import("@/lib/changelog-versions");
 type VersionView = import("./changelog-languages").VersionView;
 const { forgetPageTries } = await import("./rich-editor");
 
@@ -56,7 +57,12 @@ async function form(props: Partial<typeof view> = {}) {
   const render = (changes: Partial<typeof view>) =>
     act(async () =>
       root.render(
-        h(ChangelogSavingContext, { value: { setPending } }, h(ChangelogVersionForm, { projectSlug: "acme", number: 1, defaultName: "English", view: { ...view, ...changes }, mediaUrls: null, languages })),
+        h(
+          ChangelogSavingContext,
+          { value: { setPending } },
+          // Keyed as the page keys it (versionFormKey), so a re-render here remounts it exactly where the page would.
+          h(ChangelogVersionForm, { key: versionFormKey({ ...view, ...changes }), projectSlug: "acme", number: 1, defaultName: "English", view: { ...view, ...changes }, mediaUrls: null, languages }),
+        ),
       ),
     );
   await render(props);
@@ -268,4 +274,31 @@ test("text typed while a save is on its way stays unsaved: a later read's token 
   await render({ version: "v-new" });
   await submit();
   expect((saveChangelogVersion.mock.calls[1]![4] as FormData).get("version")).toBe("v-saved");
+});
+
+test("typing while a save is on its way survives the page's next read, which shows what the save stored: the form isn't remounted", async () => {
+  let answer = (_: unknown) => {};
+  saveChangelogVersion.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  const { render } = await form({ version: "v1" });
+  await act(async () => type(title(), "Gespeicherter Titel"));
+  await submit();
+  await act(async () => type(title(), "Gespeicherter Titel, weiter getippt"));
+  await act(async () => answer({ version: "v-saved" }));
+  // The page reads again after the save: the title and text it stored.
+  await render({ version: "v-saved", title: "Gespeicherter Titel" });
+  expect(title().value).toBe("Gespeicherter Titel, weiter getippt");
+});
+
+test("with nothing typed, a new read's title and text are set in place, and its token taken with them", async () => {
+  saveChangelogVersion.mockResolvedValue({ version: "v-saved" });
+  const { render } = await form({ version: "v1" });
+  const editorText = () => document.querySelector('[role="textbox"][aria-label="What changed"]')!.textContent;
+  // A teammate's save (or a translation) lands: its text comes with the new read.
+  const newer = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Neue Fassung." }] }] };
+  await render({ version: "v2", title: "Neuer Titel", content: newer });
+  expect(title().value).toBe("Neuer Titel");
+  expect(editorText()).toContain("Neue Fassung.");
+  // Set in place, not typed: Save goes from that read.
+  await submit();
+  expect((saveChangelogVersion.mock.calls[0]![4] as FormData).get("version")).toBe("v2");
 });
