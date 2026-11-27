@@ -333,7 +333,12 @@ test("a read taken for lost (never run) still says checking to the page's last p
   const claim = (minutes: number) => prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(appUrl), signInScanAt: new Date(Date.now() - minutes * 60_000) } });
   await claim(3.5);
   expect(await look({ start: false })).toEqual({ suggestions: [], checking: true });
+  // Long enough for a page that began asking (another tab) just before it was taken for lost.
+  await claim(6.5);
+  expect(await look({ start: false })).toEqual({ suggestions: [], checking: true });
   // Long lost: an API client polling stops.
+  await claim(7.5);
+  expect(await look({ start: false })).toEqual({ suggestions: [], checking: false });
   await claim(10);
   expect(await look({ start: false })).toEqual({ suggestions: [], checking: false });
   expect(requests).toEqual([]);

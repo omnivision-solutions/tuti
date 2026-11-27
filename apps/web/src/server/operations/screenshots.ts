@@ -307,9 +307,10 @@ const CHECK_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
 const SCAN_STALE_MS = 3 * 60 * 1000;
 /**
  * How much longer a lost read still says checking to polls: as long again, so a page that began asking just before it
- * was taken for lost (another tab's read) has all its asks.
+ * was taken for lost (another tab's read) has all its asks (the screen's CHECK_FOR_MS, the same), and a minute for the
+ * asks' own time.
  */
-const POLL_GRACE_MS = SCAN_STALE_MS;
+const POLL_GRACE_MS = SCAN_STALE_MS + 60 * 1000;
 
 /**
  * The hosted sign-in services the app calls (@tuti/jobs sign-in-hosts.ts), with their hosts its runs' browser doesn't

@@ -42,6 +42,7 @@ const REFRESH_MS = 5_000;
  * read may wait its turn 2 minutes, then takes 15 seconds; one not done in 3 minutes is taken for lost).
  */
 const CHECK_EVERY_MS = 2_000;
+// The server's SCAN_STALE_MS, which its POLL_GRACE_MS (how long a lost read still says checking) covers: raise them together.
 const CHECK_FOR_MS = 3 * 60_000;
 
 /**
