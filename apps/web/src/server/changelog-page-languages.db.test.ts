@@ -7,6 +7,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import ChangelogEntryPage, { generateMetadata } from "@/app/portal/[project]/(site)/changelog/[number]/page";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { ChangelogMenu } from "@/components/changelog-pages";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -150,4 +151,25 @@ test("the changelog's list and its menu: each entry in the page's language where
   ]);
   // The default language's: as written.
   expect((await publishedEntries(project.slug, reader)).map(({ title }) => title)).toEqual(["Faster search", "Dark mode"]);
+});
+
+test("the header's menu (phones and tablets) names each entry in the page's language where it's translated there, in that `lang`", async () => {
+  const { number: other } = await call(createChangelogEntry, as(), { title: "Faster search", body: "Results come quicker." });
+  await call(publishChangelogEntry, as(), { number: other });
+  at("de");
+  const all: { type: unknown; props: Record<string, unknown> }[] = [];
+  const walk = (node: ReactNode) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === "object" && "props" in node) {
+      const { props } = node as ReactElement<Record<string, unknown>>;
+      all.push({ type: (node as ReactElement).type, props });
+      walk(props.children as ReactNode);
+    }
+  };
+  walk((await ChangelogMenu({ slug: project.slug, current: number })) as ReactNode);
+  const titles = all.filter(({ type, props }) => type === "span" && typeof props.lang === "string").map(({ props }) => ({ title: text(props.children), lang: props.lang }));
+  expect(titles).toEqual([
+    { title: "Faster search", lang: "en" },
+    { title: "Dunkler Modus", lang: "de" },
+  ]);
 });
