@@ -321,6 +321,11 @@ export const publishTranslation = defineOperation({
     slug: articleSlug,
     language,
     keep: sectionList.optional().describe("Sections behind the source (the draft's `behind`) whose edit to keep; the rest take the new translation"),
+    take: sectionList
+      .optional()
+      .describe(
+        "Sections behind only for a glossary change whose text to replace with the new translation. Left out, such a section stays yours and behind (on a version kept up to date, one you didn't keep takes it anyway)",
+      ),
     version: z
       .string()
       .min(1)
@@ -352,6 +357,7 @@ export const publishTranslation = defineOperation({
         throw new OperationError(409, "no_title", "Give it a title first");
       }
       const keep = new Set(input.keep);
+      const take = new Set(input.take);
       const hashes = new Map(parts.map((part) => [part.key, part.hash]));
       // Behind for a glossary change: as behind English, its section takes the new translation unless kept. The published one
       // is that only once it was made with the glossary as it is now.
@@ -377,8 +383,14 @@ export const publishTranslation = defineOperation({
         // Kept: the team's, even where an update asked earlier had made it no longer theirs.
         const own = part.meta.own || !version.automatic || keep.has(key ?? "");
         if (!own || key === null) return part;
-        const stale = hashes.get(key) !== part.meta.hash || forGlossary.has(key);
-        if (stale && !keep.has(key)) {
+        // Behind English: the new translation, unless kept. Behind only for the glossary: the team's text stays unless asked for
+        // (`take`), or, on a version kept up to date, it's a plain edit (not kept, not standing for more than one source section,
+        // as the glossary's save leaves those the team's).
+        const english = hashes.get(key) !== part.meta.hash;
+        const glossary = forGlossary.has(key);
+        const plain = version.automatic && !part.meta.kept && (part.meta.also ?? []).length === 0;
+        const stale = english || glossary;
+        if (!keep.has(key) && (english || (glossary && (take.has(key) || plain)))) {
           settled.add(key);
           const translated = fresh.get(key);
           // (The team's paragraph standing in for the source's intro stays after its translation: standingIn.)
@@ -388,7 +400,7 @@ export const publishTranslation = defineOperation({
         }
         // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
         // version kept up to date, publishing the source again replaces edits only in the sections it touches).
-        return stale ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
+        return stale && keep.has(key) ? { blocks: part.blocks, meta: { ...part.meta, own: true, kept: true } } : part;
       });
       const content = docOfSections(out);
       const saved = await tx.articleTranslation.update({
