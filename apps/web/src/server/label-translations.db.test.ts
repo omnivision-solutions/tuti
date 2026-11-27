@@ -317,3 +317,15 @@ test("the retry job's queuing failing after its claim: the language is tried aga
   expect(await retry()).toMatchObject({ labels: 1 });
   expect(labelIn(await collection("imported"), "de")?.name).toBe("Importiert");
 });
+
+test("collections made one after another while a labels job translates: the next run waits for it, so each label is sent once", async () => {
+  await german();
+  // Setup is made while Billing's translation is on its way: its run goes after, with Setup alone.
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), () => call(createCollection, as(), { name: "Setup", description: "" }));
+  model.reply(labelsReply({ "0.n": "Einrichtung" }));
+  await settled(call(createCollection, as(), { name: "Billing", description: "" }));
+  const sent = model.requests.map((request) => String(request.messages.at(-1)!.content));
+  expect(sent.filter((text) => text.includes('"Billing"'))).toHaveLength(1);
+  expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung");
+  expect(labelIn(await collection("setup"), "de")?.name).toBe("Einrichtung");
+});

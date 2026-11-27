@@ -211,14 +211,41 @@ export async function queueLabels(projectId: string, languages?: string[]) {
   queueAll(async () => {
     const codes = languages ?? (await prisma.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
     for (const language of codes) {
+      await queueOne(projectId, language);
+    }
+  });
+}
+
+/**
+ * The project languages whose labels are being queued here (inline: translated), each with whether it was asked for again
+ * meanwhile. Hatchet runs one at a time per project and language (its concurrency key); inline, this does: one asked for
+ * while another runs goes once it ends, so quick saves never translate (and pay for) the same labels twice at once.
+ * ponytail: one process's; several processes on the inline driver can still overlap (Hatchet is for that).
+ */
+const labelRuns = new Map<string, { again: boolean }>();
+
+async function queueOne(projectId: string, language: string) {
+  const key = `${projectId}:${language}`;
+  const running = labelRuns.get(key);
+  if (running) {
+    running.again = true;
+    return;
+  }
+  const run = { again: false };
+  labelRuns.set(key, run);
+  try {
+    do {
+      run.again = false;
       await enqueue("translateLabels", { projectId, language }).catch(async (error: unknown) => {
         serverLog.error("Queuing a project's label translations failed", { projectId, language, error });
         // Tried again at the retry job's next run but one (as an article's queuing is), not after a claim's safety net.
         await prisma.$executeRaw`UPDATE project_language SET "labelsRetryAt" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${retryDelay(1) / 1000})
           WHERE "projectId" = ${projectId} AND code = ${language}`.catch((marking: unknown) => serverLog.error("Saving a label translating's failure failed", { projectId, language, error: marking }));
       });
-    }
-  });
+    } while (run.again);
+  } finally {
+    labelRuns.delete(key);
+  }
 }
 
 /**
