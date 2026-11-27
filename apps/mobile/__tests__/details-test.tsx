@@ -99,7 +99,9 @@ function serve(person: Person, triage: Triage = OPEN) {
       const body = init.body as Record<string, unknown>;
       const assignee = "assignee" in body ? (TEAM.find((a) => a.email === body.assignee) ?? null) : now.assignee;
       now = { ...now, ...body, assignee: assignee && { name: assignee.name, email: assignee.email } } as Triage;
-      return Promise.resolve(now);
+      // As conversations.update answers: without conversations.get's `handBack`.
+      const { handBack: _handBack, ...answer } = now;
+      return Promise.resolve(answer);
     }
     return new Promise(() => {});
   });
@@ -319,6 +321,14 @@ describe("the details sheet", () => {
     // The AI's now (the update's answer doesn't offer it): nothing more to hand back.
     await act(async () => showTriage(KEY, { ...getTriage(KEY)!, handBack: false }));
     expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
+  });
+
+  it("keeps Hand back offered through another change, whose answer doesn't say", async () => {
+    serve(SAM, { ...OPEN, handledBy: "team", priority: false, handBack: true });
+    await render(<Details />);
+    await fireEvent.press(await screen.findByRole("button", { name: "Mark priority" }));
+    expect(patches()).toEqual([{ priority: true }]);
+    expect(await screen.findByRole("button", { name: "Hand back to the AI" })).toBeTruthy();
   });
 
   it("says why it wasn't handed back, in the server's words, where the user wrote meanwhile", async () => {

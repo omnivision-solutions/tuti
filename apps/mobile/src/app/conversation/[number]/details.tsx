@@ -136,7 +136,9 @@ export default function Details() {
     setBusy(true);
     setFailed(null);
     try {
-      showTriage(key, await updateConversation(api, number, body));
+      const answered = await updateConversation(api, number, body);
+      // An update's answer doesn't say whether Hand back is offered: kept as it was shown, but where who has it changed.
+      showTriage(key, "handledBy" in body ? answered : { ...answered, handBack: getTriage(key)?.handBack });
       setPane("details");
       AccessibilityInfo.announceForAccessibility(done);
     } catch (e) {

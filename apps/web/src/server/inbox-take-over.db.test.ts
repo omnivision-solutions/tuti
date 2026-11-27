@@ -249,3 +249,36 @@ test("conversations.get says whether Hand back to the AI is offered: on the team
   vi.unstubAllEnvs();
   expect(await offered()).toBe(false);
 });
+
+test("a message being written as a teammate hands back is seen: the hand back waits for the conversation's lock, then is refused", async () => {
+  const { project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  await call(replyToConversation, { actor: { kind: "user", userId: tess.id }, projectId: project.id }, { number: 1, body: "Looking into it." });
+  const { id } = await row();
+  // A message being added, as addMessage writes one: the conversation held first, then the message, not yet committed.
+  let commit!: () => void;
+  const committed = new Promise<void>((resolve) => (commit = resolve));
+  let written!: () => void;
+  const isWritten = new Promise<void>((resolve) => (written = resolve));
+  const adding = prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM "conversation" WHERE "id" = ${id} FOR NO KEY UPDATE`;
+      await tx.conversationMessage.create({ data: { projectId: project.id, conversationId: id, author: "USER", channel: "API", body: "One more thing" } });
+      written();
+      await committed;
+    },
+    { timeout: 20_000 },
+  );
+  await isWritten;
+  const handingBack = handBackConversation(project.slug, 1);
+  // Waiting on the row's lock, as Postgres says (never a sleep).
+  await vi.waitUntil(
+    async () => (await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`)[0]!.waiting > 0,
+    { timeout: 10_000, interval: 20 },
+  );
+  commit();
+  await adding;
+  expect(await handingBack).toEqual({ error: "Reply first: they're waiting on your team." });
+  expect((await row()).handledBy).toBe("TEAM");
+});
