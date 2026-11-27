@@ -131,8 +131,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   expect(early.url()).not.toContain("Secret");
   await noScript.close();
 
-  // AI rewrites the text into release notes, after asking; the title the team gave stays. One way into AI: Edit with
-  // AI over the text, Draft with AI in its menu (not a second button in the top bar).
+  // AI rewrites the text into release notes, after asking; the title the team gave stays. One way into AI: Ask AI
+  // over the text, Draft with AI in its dialog (not a second button in the top bar).
   await nextModelReply(
     JSON.stringify({
       title: "Dark mode",
@@ -140,16 +140,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     }),
   );
   await expect(team.getByRole("button", { name: "Draft with AI" })).toHaveCount(0);
-  await team.getByRole("button", { name: "Edit with AI" }).click();
-  await team.getByRole("menuitem", { name: "Draft with AI…" }).click();
+  await team.getByRole("button", { name: "Ask AI", exact: true }).click();
+  await team.getByRole("dialog", { name: "Ask AI" }).getByRole("button", { name: "Draft with AI…" }).click();
   const confirm = team.getByRole("alertdialog");
   await expect(confirm).toContainText("Replace the text with an AI draft?");
   await expect(confirm).toContainText("AI writes release notes from the entry's saved text, its pull requests and the posts it completes.");
   await checkpoint(team, "team-changelog-ai-draft-confirm", { fullPage: false });
   await confirm.getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
-  // The keyboard's focus back on the menu's button.
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeFocused();
+  // The keyboard's focus back on Ask AI's button.
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeFocused();
   await expect(editor.getByRole("heading", { name: "A darker look" })).toBeVisible();
   await expect(editor.getByRole("listitem")).toHaveText("Easier on the eyes at night");
   await expect(editor.getByRole("heading", { name: "Easier on the eyes" })).toHaveCount(0);
@@ -427,8 +427,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     }),
     tone,
   );
-  await team.getByRole("button", { name: "Edit with AI" }).click();
-  await team.getByRole("menuitem", { name: "Draft with AI…" }).click();
+  await team.getByRole("button", { name: "Ask AI", exact: true }).click();
+  await team.getByRole("dialog", { name: "Ask AI" }).getByRole("button", { name: "Draft with AI…" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
@@ -436,117 +436,34 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   expect(asked?.user).toContain('"title": "Dark mode is here"');
   expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
 
-  // The editor's AI helpers edit the saved text, so unsaved changes come first.
+  // The header's Ask AI edits the whole text as it is on screen, unsaved typing included, shown in place.
   const text = team.getByRole("textbox", { name: "What changed" });
   await text.getByText("Search looks at comments too.").click();
-  await team.keyboard.type(" And more");
-  const aiMenu = team.getByRole("button", { name: "Edit with AI" });
-  await aiMenu.click();
-  await team.getByRole("menuitem", { name: "Shorten", exact: true }).click();
-  await expect(team.getByText("Save your changes first: AI edits the saved text.")).toBeVisible();
-  await team.reload();
-
-  // Shorten: a preview of what changes, saved only on Accept.
+  await team.keyboard.press("End");
+  await team.keyboard.type(" And titles.");
   await nextModelReply(
     JSON.stringify({
-      notes: "Search is quicker now.\n\n## Faster search\n\nResults in half the time.\n\n## Better matches\n\nSearch looks at comments too.",
+      notes: "Search is quicker now.\n\n## Faster search\n\nResults in half the time.\n\n## Better matches\n\nSearch looks at comments too. And titles.",
     }),
     tone,
   );
-  await aiMenu.click();
-  await checkpoint(team, "team-changelog-ai-menu", { fullPage: false });
-  await team.getByRole("menuitem", { name: "Shorten", exact: true }).click();
-  const preview = team.getByRole("dialog", { name: "Shorter version" });
-  await expect(preview.locator("del")).toHaveText("Results show up in about half the time they used to, even on big boards with lots of posts.");
-  await expect(preview.locator("ins")).toHaveText("Results in half the time.");
-  await checkpoint(team, "team-changelog-ai-shorten-preview", { fullPage: false });
-  await preview.getByRole("button", { name: "Accept" }).click();
-  await expect(preview).toBeHidden();
-  await expect(text).toContainText("Results in half the time.");
-  await team.reload();
+  await team.getByRole("button", { name: "Ask AI", exact: true }).click();
+  const ask = team.getByRole("dialog", { name: "Ask AI" });
+  await expect(ask).toContainText("It edits the whole text.");
+  await checkpoint(team, "team-changelog-ask-ai-whole", { fullPage: false });
+  await ask.getByRole("button", { name: "Shorter" }).click();
+  const version = team.getByRole("group", { name: "The AI's version" });
+  await expect(version).toContainText("Results in half the time.");
+  const whole = (await modelRequests()).findLast((request) => request.user.includes(tone) && request.user.includes("textToEdit"));
+  expect(whole?.user).toContain("Search looks at comments too. And titles.");
+  await version.getByRole("button", { name: "Accept" }).click();
   await expect(text).toContainText("Results in half the time.");
   await expect(text).not.toContainText("even on big boards");
-
-  // Rewrite the section with the cursor, with an instruction; the rest stays.
-  const instruction = `Mention titles too (${slug})`;
-  await nextModelReply(JSON.stringify({ notes: "## Better matches\n\nSearch looks at post titles and comments." }), instruction);
-  await text.getByText("Search looks at comments too.").click();
-  await aiMenu.click();
-  await team.getByRole("menuitem", { name: "Rewrite this section…" }).click();
-  const ask = team.getByRole("dialog", { name: "Rewrite this section" });
-  await expect(ask).toContainText("“Better matches”, where your cursor is.");
-  await ask.getByLabel("Instruction (optional)").fill(instruction);
-  await checkpoint(team, "team-changelog-ai-rewrite-section", { fullPage: false });
-  await ask.getByRole("button", { name: "Rewrite" }).click();
-  const rewritten = team.getByRole("dialog", { name: "Rewritten section" });
-  await expect(rewritten.locator("ins")).toHaveText("Search looks at post titles and comments.");
-  await checkpoint(team, "team-changelog-ai-rewrite-preview", { fullPage: false });
-  await rewritten.getByRole("button", { name: "Accept" }).click();
-  await expect(rewritten).toBeHidden();
-  await expect(text).toContainText("Search looks at post titles and comments.");
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
   await expect(text).toContainText("Results in half the time.");
-  const section = (await modelRequests()).find((request) => request.user.includes(instruction));
-  expect(section?.user).toContain('"textToEdit": "## Better matches\\n\\nSearch looks at comments too."');
-
-  // Typing while the model writes: Accept doesn't save over it (the reply is held until the typing is done).
-  let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
-  await team.route(
-    `**/app/${slug}/changelog/2`,
-    async (route) => {
-      if (route.request().method() !== "POST") {
-        return route.fallback();
-      }
-      const response = await route.fetch();
-      await held;
-      await route.fulfill({ response });
-    },
-    { times: 1 },
-  );
-  await nextModelReply(JSON.stringify({ notes: "Search is quicker now. Written while you typed." }), tone);
-  await aiMenu.click();
-  await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
-  await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
-  // Off while it writes, but keeping the keyboard's focus (as the menu gave it back).
-  await expect(team.getByRole("button", { name: "Writing…" })).toBeFocused();
-  // Into the text at its very end, through the editor itself (as the app does), then waited for in the editor's own state:
-  // a click's or a key's caret, or the editor restoring an earlier one on focus, could land elsewhere.
-  type Editor = { isFocused: boolean; commands: { focus: (at: "end") => boolean }; state: { selection: { empty: boolean; head: number }; doc: { textBetween: (from: number, to: number, separator?: string) => string } } };
-  await text.evaluate((el) => (el as unknown as { editor: Editor }).editor.commands.focus("end"));
-  await expect
-    .poll(() =>
-      text.evaluate((el) => {
-        const { editor } = el as unknown as { editor: Editor };
-        const { selection, doc } = editor.state;
-        return editor.isFocused && selection.empty && doc.textBetween(0, selection.head, "\n").endsWith("comments.");
-      }),
-    )
-    .toBe(true);
-  await team.keyboard.type(" Typed meanwhile.");
-  release();
-  const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
-  await meanwhile.getByRole("button", { name: "Accept" }).click();
-  await expect(team.getByText("Save your changes first: AI edits the saved text.")).toBeVisible();
-  // Kept open, to save first and try again.
-  await expect(meanwhile).toBeVisible();
-  await meanwhile.getByRole("button", { name: "Discard" }).click();
-  await expect(meanwhile).toBeHidden();
-  await expect(text).toContainText("Search looks at post titles and comments. Typed meanwhile.");
-  await team.reload();
-  await expect(text).not.toContainText("Written while you typed.");
-  await expect(text).not.toContainText("Typed meanwhile.");
-
-  // Discarded: nothing changes.
-  await nextModelReply(JSON.stringify({ notes: "Search is quicker now. Plain words only." }), tone);
-  await aiMenu.click();
-  await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
-  const plain = team.getByRole("dialog", { name: "Explained for non-developers" });
-  await expect(plain.locator("ins")).toHaveText("Search is quicker now. Plain words only.");
-  await plain.getByRole("button", { name: "Discard" }).click();
-  await expect(plain).toBeHidden();
-  await team.reload();
-  await expect(text).toContainText("Search looks at post titles and comments.");
-  await expect(text).not.toContainText("Plain words only.");
+  await expect(text).toContainText("And titles.");
 
   // With a draft and a published entry, one list: the drafts above, then the published ones by year.
   await team.goto(`/app/${slug}/changelog`);
@@ -1252,8 +1169,8 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(titles).toBeHidden();
   await replace.getByRole("button", { name: "Cancel" }).click();
   await expect(replace).toBeHidden();
-  // Not written yet, there's nothing for Edit with AI to edit: Draft with AI is the one way into AI.
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toHaveCount(0);
+  // Not written yet, there's nothing for Ask AI to edit: Draft with AI is the one way into AI.
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toHaveCount(0);
   // On a phone the three are in reach at the bottom of the screen, not in the menu.
   await team.setViewportSize({ width: 390, height: 844 });
   for (const name of ["Save", "Publish", "Draft with AI"]) {
@@ -1267,8 +1184,8 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(titles).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
 
-  // Drafted with AI from the keyboard: written now, the top bar's Draft with AI goes, it's in Edit with AI's menu over
-  // the text, and the keyboard's focus goes to that menu's button.
+  // Drafted with AI from the keyboard: written now, the top bar's Draft with AI goes, it's in the dialog of Ask AI over
+  // the text, and the keyboard's focus goes to Ask AI's button.
   await nextModelReply(JSON.stringify({ title: "Dark mode is here", notes: "Switch to the dark theme from your profile menu." }), "Remember the theme");
   const draftButton = team.getByRole("button", { name: "Draft with AI", exact: true });
   await draftButton.focus();
@@ -1279,7 +1196,7 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   await expect(replace).toBeHidden();
   await expect(draftButton).toHaveCount(0);
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeFocused();
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeFocused();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toHaveClass(primary);
   // Written, the list's row still leads to it, with Write it now (Draft with AI is for notes not written yet), and
   // says the post it lists.
@@ -1304,8 +1221,8 @@ test("the next release waits to be written; its entry gets a featured image read
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
   await expect(sidebar.getByRole("group", { name: "Goes to" }).getByRole("switch", { name: "Email announcement" })).toHaveAccessibleDescription("Published without it · told 1 person who asked");
-  // Published as it was, Edit with AI is its way into AI (Draft with AI is for drafts).
-  await expect(team.getByRole("button", { name: "Edit with AI" })).toBeVisible();
+  // Published as it was, Ask AI is its way into AI (Draft with AI is for drafts).
+  await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
   await checkpoint(team, "team-changelog-told");
   await team.emulateMedia({ colorScheme: "dark" });
   await checkpoint(team, "team-changelog-told-dark");

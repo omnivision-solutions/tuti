@@ -10,7 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { rewriteText } from "@/server/rewrite";
@@ -23,7 +23,16 @@ import { rewriteText } from "@/server/rewrite";
  */
 
 /** Where Ask AI can be used, and for what. `paused`: the project is out of credits. */
-export type AskAiSetup = { projectSlug: string; kind: "changelog" | "article"; entry?: number; paused: boolean };
+export type AskAiSetup = {
+  projectSlug: string;
+  kind: "changelog" | "article";
+  entry?: number;
+  paused: boolean;
+  /** Given by the editor: what opens Ask AI on the whole text (for a header's button), or null while it's off. */
+  opener?: (open: (() => void) | null) => void;
+  /** Draft with AI (a changelog draft's): offered in the dialog opened on the whole text, which it would replace. */
+  draft?: (() => void) | null;
+};
 
 /** The presets: a short name, and the instruction the AI gets. */
 export const ASK_AI_PRESETS: [string, string][] = [
@@ -147,6 +156,8 @@ function aiVersion(state: EditorState, result: Doc, actions: { current: Actions 
   return box;
 }
 
+const plain = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 const set = (editor: Editor, asked: Asked | null) => editor.view.dispatch(editor.state.tr.setMeta(ASK_AI, asked).setMeta("addToHistory", false));
 
 /**
@@ -157,6 +168,8 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
+  /** Opened on the whole text, not the selection. */
+  const [whole, setWhole] = useState(false);
   const next = useRef(0);
   // The editor going (a save that changes the title or text remounts the form; leaving the page) takes a version working or
   // showing with it: said so, in words true of either.
@@ -190,8 +203,10 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
       kind: setup.kind,
       entry: setup.entry,
       // With the blocks around it, so part of a line goes as a paragraph (part of a list item as a list).
-      text: { type: "doc", content: sent.toJSON() as Doc["content"] },
-      whole: all ? undefined : editor.getJSON(),
+      // As plain JSON: ProseMirror's attrs (a heading's level, a list's start) are null-prototype objects, which a server
+      // action can't send (they'd arrive as a placeholder, and the text be refused).
+      text: plain({ type: "doc", content: sent.toJSON() as Doc["content"] }),
+      whole: all ? undefined : plain(editor.getJSON()),
       instruction,
     }).catch(() => ({ error: "The AI couldn't edit the text. Try again in a moment.", content: undefined }));
     // Discarded, lost or asked again since: this answer is no one's.
@@ -279,7 +294,7 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     // Only the text: a selection ending at the very start of the next line (Shift+Down, a drag) or starting at the very
     // end of a line would otherwise take the line break along, and Accept would join the two lines.
     const { doc } = editor.state;
-    let { from, to } = editor.state.selection;
+    let { from, to } = whole ? { from: 0, to: doc.content.size } : editor.state.selection;
     // Select All's ends are the document's own, outside every line: onto the first and last text.
     if (doc.resolve(from).depth === 0) {
       from = Selection.findFrom(doc.resolve(from), 1, true)?.from ?? from;
@@ -305,13 +320,23 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
 
   return {
     plugin: () => askAiPlugin(actions),
-    open: () => {
+    /** The dialog, on the selection; `all`: on the whole text. */
+    open: (all = false) => {
       setRecent(recentInstructions());
+      setWhole(all);
       setOpen(true);
     },
     dialog: editor && setup && (
       <>
-        <AskAiDialog open={open} recent={recent} onClose={() => setOpen(false)} onAsk={start} editor={editor} />
+        <AskAiDialog
+          open={open}
+          whole={whole}
+          recent={recent}
+          draft={whole ? setup.draft : null}
+          onClose={() => setOpen(false)}
+          onAsk={start}
+          editor={editor}
+        />
         <p role="status" className="sr-only">
           {status}
         </p>
@@ -322,12 +347,18 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
 
 function AskAiDialog({
   open,
+  whole,
+  draft,
   recent,
   onClose,
   onAsk,
   editor,
 }: {
   open: boolean;
+  /** On the whole text, not the selection. */
+  whole: boolean;
+  /** Draft with AI, offered beside it (it replaces the whole text). */
+  draft?: (() => void) | null;
   /** The person's own instructions, last used first (read as it opens). */
   recent: string[];
   onClose: () => void;
@@ -361,6 +392,7 @@ function AskAiDialog({
         >
           <DialogHeader>
             <DialogTitle>Ask AI</DialogTitle>
+            <DialogDescription>{whole ? "It edits the whole text." : "It edits the selected text."}</DialogDescription>
           </DialogHeader>
           <div role="group" aria-label="Presets" className="flex flex-wrap gap-2">
             {ASK_AI_PRESETS.map(([label, instruction]) => (
@@ -383,6 +415,19 @@ function AskAiDialog({
             <Input id={inputId} name="instruction" autoComplete="off" maxLength={MAX_INSTRUCTION} placeholder="Mention it works on phones too" required autoFocus />
           </Field>
           <DialogFooter>
+            {draft && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="sm:mr-auto"
+                onClick={() => {
+                  onClose();
+                  draft();
+                }}
+              >
+                Draft with AI…
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
