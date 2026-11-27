@@ -35,12 +35,12 @@ const versionSelect = { automatic: true, title: true, body: true, content: true,
 type Version = { automatic: boolean; title: string; body: string; content: unknown; publishedAt: Date | null; sourceHash: string | null; error: string | null; behind: unknown };
 
 /**
- * What a version says now (none: there's no version yet) and the entry's text it's shown beside (`sourceHash`), for a save's
+ * What a version says now (none: there's no version yet; what it's behind in too) and the entry's text it's shown beside (`sourceHash`), for a save's
  * `version`: one made before either changed is refused, so a save never marks a version up to date with text its editor
  * never saw.
  */
 const versionToken = (version: Version | null, sourceHash: string) =>
-  contentHash(JSON.stringify([version ? [version.automatic, version.title, version.content, version.publishedAt] : null, sourceHash]));
+  contentHash(JSON.stringify([version ? [version.automatic, version.title, version.content, version.publishedAt, version.behind] : null, sourceHash]));
 
 function output(code: string, version: Version | null, sourceHash: string): z.output<typeof translationOutput> {
   return {

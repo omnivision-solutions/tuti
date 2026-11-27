@@ -85,11 +85,14 @@ test("Keep up to date follows what's saved, and unsaved edits stay as it changes
   const { render } = await form();
   expect(keep().checked).toBe(true);
   type(title(), "Noch nicht gespeichert");
+  keep().focus();
   await act(async () => keep().click());
   expect(keepChangelogVersionUpToDate).toHaveBeenCalledWith("acme", 1, "de", false);
   // The page's next read: saved off, the same text.
   await render({ keepUpToDate: false, version: "v2" });
   expect(keep().checked).toBe(false);
+  // The same switch: keyboard focus stays on it.
+  expect(document.activeElement).toBe(keep());
   expect(title().value).toBe("Noch nicht gespeichert");
   expect(document.querySelector<HTMLInputElement>('input[name="version"]')!.value).toBe("v2");
   // Turned on elsewhere (a teammate), then off by a save of this text: the switch shows the server's value each time.

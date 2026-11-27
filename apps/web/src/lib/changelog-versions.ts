@@ -1,5 +1,5 @@
 /** Where a changelog entry's version in another language stands, for its editor's language pill and sidebar (docs/plan.md L16). */
-export type VersionState = "default" | "current" | "written" | "translating" | "waiting" | "behind" | "unwritten";
+export type VersionState = "default" | "current" | "written" | "translating" | "waiting" | "behind" | "setting" | "unwritten";
 
 export type VersionRow = { automatic: boolean; publishedAt: Date | null; sourceHash: string | null; error: string | null; behind: unknown };
 
@@ -8,8 +8,8 @@ export const NO_AI_WAITING = "translating isn't set up on this server";
 
 /**
  * A version's state against the entry's text as it is (`hash`, translationSource's): made from it (translated, or the
- * team's), on its way, unable to be translated (an error, or `aiOn` false), or behind (made from other text, or marked
- * behind by the product setting changing); none yet: not written.
+ * team's), on its way, unable to be translated (an error, or `aiOn` false), behind (made from other text), or marked behind
+ * by the product setting changing since (`setting`); none yet: not written.
  */
 export function versionState(version: VersionRow | undefined, hash: string, aiOn: boolean): VersionState {
   if (!version) {
@@ -22,5 +22,8 @@ export function versionState(version: VersionRow | undefined, hash: string, aiOn
   if (version.automatic) {
     return version.error || !aiOn ? "waiting" : "translating";
   }
-  return version.publishedAt ? "behind" : "unwritten";
+  if (!version.publishedAt) {
+    return "unwritten";
+  }
+  return version.sourceHash === hash ? "setting" : "behind";
 }

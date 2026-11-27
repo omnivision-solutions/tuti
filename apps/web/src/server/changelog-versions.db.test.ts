@@ -124,7 +124,8 @@ test("the product setting changing marks the team's version behind, and saving i
   await languageTranslationsDone();
   const marked = await call(getChangelogTranslation, as(), { number, language: "de" });
   expect(marked).toMatchObject({ behind: true, keepUpToDate: false });
-  expect(marked.version).toBe(saved.version);
+  // A save from a read before the mark is refused: it would clear a mark its editor never saw.
+  expect((await refused(call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: saved.version }))).code).toBe("changed");
   expect(await call(saveChangelogTranslation, as(), { number, language: "de", title: "Dunkler Modus", version: marked.version })).toMatchObject({ behind: false });
 });
 

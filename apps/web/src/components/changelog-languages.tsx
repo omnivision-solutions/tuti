@@ -33,6 +33,7 @@ const STATES: Record<VersionState, { label: string; dot: string }> = {
   translating: { label: "Translating…", dot: "bg-status-under-review" },
   waiting: { label: "Can't translate yet", dot: "bg-destructive" },
   behind: { label: "Default language changed", dot: "bg-status-under-review" },
+  setting: { label: "Product setting changed", dot: "bg-status-under-review" },
   unwritten: { label: "Not written", dot: "bg-muted-foreground" },
 };
 
@@ -123,6 +124,8 @@ function versionLine(view: VersionView, defaultName: string) {
       return `Can't translate it yet: ${view.waiting}.`;
     case "behind":
       return `${defaultName} changed since this was saved.`;
+    case "setting":
+      return `"Our product is available in ${view.name}" changed since this was saved.`;
     case "unwritten":
       return `Not written yet: it starts as the ${defaultName} text.`;
     default:
@@ -157,7 +160,7 @@ export function ChangelogVersionForm({
   const saving = useContext(ChangelogSavingContext);
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   const line = versionLine(view, defaultName);
-  const attention = view.state === "behind" || view.state === "waiting";
+  const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
   return (
     <form id={VERSION_FORM} {...keepingFields(action)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       {/* The version read: a save made from it is refused once it's changed (changelog.saveTranslation). */}
@@ -184,15 +187,13 @@ export function ChangelogVersionForm({
         <RichEditor bare profile="changelog" name="content" label="What changed" initial={view.content} uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined} />
       </div>
       <aside aria-label="Version settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
-        {/* Keyed on what's saved: a save turns it off, so it shows that (unsaved edits stay, in the form). */}
         <KeepUpToDate
-          key={String(view.keepUpToDate)}
           projectSlug={projectSlug}
           number={number}
           code={view.code}
           on={view.keepUpToDate}
           defaultName={defaultName}
-          teamWrote={view.state === "written" || view.state === "behind"}
+          teamWrote={view.state === "written" || view.state === "behind" || view.state === "setting"}
         />
         <ChangelogLanguageList languages={languages} current={view.code} />
       </aside>
@@ -206,6 +207,12 @@ export function ChangelogVersionForm({
  */
 function KeepUpToDate({ projectSlug, number, code, on, defaultName, teamWrote }: { projectSlug: string; number: number; code: string; on: boolean; defaultName: string; teamWrote: boolean }) {
   const [checked, setChecked] = useState(on);
+  // What's saved changing (a save turns it off) shows in place: the switch keeps focus, unsaved edits stay.
+  const [saved, setSaved] = useState(on);
+  if (saved !== on) {
+    setSaved(on);
+    setChecked(on);
+  }
   const [confirming, setConfirming] = useState(false);
   const [pending, start] = useTransition();
   const save = (next: boolean) => {

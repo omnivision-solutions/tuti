@@ -16,6 +16,7 @@ test("each state a version's dot and label show", () => {
   expect(versionState(row({ sourceHash: "before" }), "now", false)).toBe("waiting");
   // The team's, behind: the entry's text changed, or the product setting marked it.
   expect(versionState(row({ automatic: false, sourceHash: "before" }), "now", true)).toBe("behind");
-  expect(versionState(row({ automatic: false, behind: { "\u001f0": "The product setting changed" } }), "now", true)).toBe("behind");
+  expect(versionState(row({ automatic: false, behind: { "\u001f0": "The product setting changed" } }), "now", true)).toBe("setting");
+  expect(versionState(row({ automatic: false, sourceHash: "before", behind: { "\u001f0": "The product setting changed" } }), "now", true)).toBe("behind");
   expect(versionState(row({ automatic: false, publishedAt: null, sourceHash: null }), "now", true)).toBe("unwritten");
 });
