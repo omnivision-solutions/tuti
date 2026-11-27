@@ -273,3 +273,30 @@ test("kept up to date (no `only`): a section the team took out and then asked to
   const next = withTranslation(edited, doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), source, { asked: new Set([setup]), removed: new Set(removed) });
   expect(texts(docOfSections(next))).toEqual(["Einleitung", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
 });
+
+test("Update those sections on a version kept up to date: the team's paragraph standing in for the source's intro stays after its translation", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  const de = doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const edited: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...de.content!] };
+  const { sections: ours } = editedSections(versionSections(de, [], source), edited, source);
+  const v2 = doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source2 = sourceSections(v2);
+  const translated = doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const once = withTranslation(ours, translated, source2, { published: true });
+  // Update those sections, by default the ones behind (the intro): as articles.updateTranslation asks, its own flags gone.
+  const introKey = source2[0]!.key;
+  const asked = versionSections(docOfSections(once), metaOf(once), source2).map((part) =>
+    part.meta.key === introKey ? { blocks: part.blocks, meta: { key: introKey, hash: part.meta.hash, standIn: part.meta.standIn } } : part,
+  );
+  const updated = withTranslation(asked, translated, source2, { published: true, asked: new Set([introKey]) });
+  expect(texts(docOfSections(updated))).toEqual(["Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+  // Read back as three sections, the intro the team's (its paragraph in it) and up to date.
+  const back = versionSections(docOfSections(updated), metaOf(updated), source2);
+  expect(back).toHaveLength(3);
+  expect(behindSections(back, source2)).toEqual([]);
+  // A later new intro replaces only the translation: the team's paragraph stays.
+  const v3 = doc(["", "New intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const again = withTranslation(back, doc(["", "Neue Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), sourceSections(v3), { published: true });
+  expect(texts(docOfSections(again))).toEqual(["Neue Einleitung", "Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+});

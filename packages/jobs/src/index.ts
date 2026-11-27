@@ -27,7 +27,7 @@ import { translateMessage } from "./conversation-translation";
 import { retryArticleTranslations, translateArticle, translateChangelogEntry } from "./article-translation";
 import { translateLabels } from "./label-translation";
 export { forgetLabels, labelIn, type LabelTranslation, type LabelTranslations, labelSource, queueLabels, retranslateLabels, translateLabels } from "./label-translation";
-export { behindKey, behindSections, docOfSections, editedSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, versionSections, withTranslation } from "./translation-sections";
+export { behindKey, behindSections, docOfSections, editedSections, metaOf, ownedByTeam, type Section, type SectionMeta, sourceSections, standingIn, versionSections, withTranslation } from "./translation-sections";
 import { checkPushReceipts, conversationPush } from "./push";
 import { commentEmailsDue, commentsEmailed } from "./comment-email";
 import { replyEmailed, resubmitReplyEmails } from "./reply-email";

@@ -759,3 +759,23 @@ test("kept, then edited and published: up to date now, and still the team's when
   expect(after.behind.map(({ section }) => section)).toEqual([billing]);
 });
 
+
+test("publishing a draft whose paragraph at the top stands in for an intro English added since: the intro's translation, and the team's paragraph after it", async () => {
+  // English without an intro, translated into German (kept up to date).
+  const noIntro: Doc = { type: "doc", content: doc("x", ["Setup", "Install it"], ["Billing", "Pay by card"]).content!.slice(1) };
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: noIntro });
+  model.reply(reply(noIntro, "de"));
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  await languageTranslationsDone();
+  // The team's own paragraph at the top of the German draft.
+  const version = await call(getTranslation, as(), de);
+  const content = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...(version.content as Doc).content!] } as Doc;
+  await call(saveTranslation, as(), { ...de, content, version: version.version });
+  // English adds an intro; the team publishes its draft as it is.
+  await republish(V1, "de2");
+  const published = await call(publishTranslation, as(), de);
+  expect(text(published.content)).toContain("[de2] Intro");
+  expect(text(published.content)).toContain("Willkommen");
+  expect(text(published.content).indexOf("[de2] Intro")).toBeLessThan(text(published.content).indexOf("Willkommen"));
+});

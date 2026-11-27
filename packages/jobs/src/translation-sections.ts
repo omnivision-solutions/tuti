@@ -24,6 +24,11 @@ export type SectionMeta = {
   kept?: true;
   /** The hash of the section's own text as written with this: text written another way since (the previous release's job, during a deploy, rewrote it) isn't what this says. */
   text?: string;
+  /**
+   * The team's paragraph at the top standing in for the source's intro: how many of its first blocks are the intro's
+   * translation (0: none yet). Taking a new translation replaces only those, the team's paragraph staying after them.
+   */
+  standIn?: number;
 };
 
 /** A section's own text as a hash (see SectionMeta.text). */
@@ -99,7 +104,7 @@ export function withTranslation(
     if (keep) {
       if (had) out.push(had);
     } else if (fresh[i]) {
-      out.push({ blocks: fresh[i]!, meta: { key, hash } });
+      out.push(standingIn(had, fresh[i]!, { key, hash }));
     }
     out.push(...(after.get(key) ?? []));
   }
@@ -122,11 +127,20 @@ export function withTranslation(
       0,
       2,
       asked?.has(introKey)
-        ? { blocks: [...sources.blocks, ...theirs.blocks], meta: { key: introKey, hash: sources.meta.hash, own: true } }
-        : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true } },
+        ? { blocks: [...sources.blocks, ...theirs.blocks], meta: { key: introKey, hash: sources.meta.hash, own: true, standIn: sources.blocks.length } }
+        : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true, standIn: 0 } },
     );
   }
   return out;
+}
+
+/**
+ * A section taking its new translation (`blocks`, for the source section `meta`): the team's paragraph standing in for the
+ * source's intro (`had`'s `standIn`) stays after it, theirs; anything else is the translation alone.
+ */
+export function standingIn(had: Section | undefined, blocks: Block[], meta: { key: string; hash: string | null }): Section {
+  const standIn = had?.meta.standIn;
+  return standIn === undefined ? { blocks, meta } : { blocks: [...blocks, ...had!.blocks.slice(standIn)], meta: { ...meta, own: true, standIn: blocks.length } };
 }
 
 /** A section's text under its heading ("" for none), to know it again with its heading reworded. */

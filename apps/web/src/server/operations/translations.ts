@@ -8,6 +8,7 @@ import {
   metaOf,
   otherReasons,
   queueVersion,
+  standingIn,
   versionPublished,
   type Section,
   sourceSections,
@@ -307,9 +308,10 @@ export const publishTranslation = defineOperation({
         const stale = hashes.get(key) !== part.meta.hash;
         if (stale && !keep.has(key)) {
           const translated = fresh.get(key);
-          if (translated) return translated;
+          // (The team's paragraph standing in for the source's intro stays after its translation: standingIn.)
+          if (translated) return standingIn(part, translated.blocks, translated.meta as { key: string; hash: string | null });
           update.push(key);
-          return { blocks: part.blocks, meta: { key, hash: part.meta.hash } };
+          return { blocks: part.blocks, meta: { key, hash: part.meta.hash, ...(part.meta.standIn !== undefined && { standIn: part.meta.standIn }) } };
         }
         // Kept: the team's for good, behind until Update those sections. Otherwise the team's until its source changes (on a
         // version kept up to date, publishing the source again replaces edits only in the sections it touches).
@@ -386,7 +388,13 @@ export const updateTranslationSections = defineOperation({
         throw new OperationError(409, "nothing_behind", "No section is behind the source");
       }
       // No longer the team's: the job writes them.
-      const unowned = (list: Section[]) => list.map((part) => (part.meta.key !== null && asked.includes(part.meta.key) ? { blocks: part.blocks, meta: { key: part.meta.key, hash: part.meta.hash } } : part));
+      const unowned = (list: Section[]) =>
+        list.map((part) =>
+          part.meta.key !== null && asked.includes(part.meta.key)
+            ? // Still standing in for the source's intro: the update puts the intro's translation before the team's paragraph.
+              { blocks: part.blocks, meta: { key: part.meta.key, hash: part.meta.hash, ...(part.meta.standIn !== undefined && { standIn: part.meta.standIn }) } }
+            : part,
+        );
       const saved = await tx.articleTranslation.update({
         where: { id: version.id },
         data: {
