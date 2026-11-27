@@ -103,14 +103,17 @@ export function DocsAnswer({
           <AnswerSources sources={answer.sources} />
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
             {rated !== null ? (
-              <p>{t("thanks")}</p>
+              // Only ever shown after a rating here: focus moves to it from the button that's gone.
+              <p tabIndex={-1} ref={(thanks) => thanks?.focus()} className="outline-none">
+                {t("thanks")}
+              </p>
             ) : (
               <>
                 <p>{t("writtenByAI")}</p>
-                <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} disabled={pending} onClick={() => rate(true)}>
+                <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} disabled={pending} focusableWhenDisabled onClick={() => rate(true)}>
                   <ThumbsUpIcon />
                 </Button>
-                <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} disabled={pending} onClick={() => rate(false)}>
+                <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} disabled={pending} focusableWhenDisabled onClick={() => rate(false)}>
                   <ThumbsDownIcon />
                 </Button>
               </>

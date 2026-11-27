@@ -717,7 +717,8 @@ test("AI answers in German: an answer with its sources and rating, one it can't 
   await expect(sources.getByRole("link", { name: "Getting started" })).toHaveAttribute("lang", "en");
   await expect(answer).toContainText("Von KI aus den Artikeln oben geschrieben. War das hilfreich?");
   await answer.getByRole("button", { name: "Hilfreich", exact: true }).click();
-  await expect(answer.getByText("Danke für dein Feedback.")).toBeVisible();
+  // Focus moves to it from the button that's gone.
+  await expect(answer.getByText("Danke für dein Feedback.")).toBeFocused();
   await checkpoint(reader, "ai-answer-in-german", { fullPage: false });
 
   // One it can't give: Post this as feedback, and Ask a person, sent.

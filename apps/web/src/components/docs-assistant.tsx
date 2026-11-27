@@ -371,6 +371,7 @@ function AssistantReply({
   const at = usePortalHref();
   const t = useTranslations("answers");
   const [rating, setRating] = useState(false);
+  const justRated = useRef(false);
   const { answer, error } = turn;
 
   if (error) {
@@ -468,6 +469,7 @@ function AssistantReply({
     try {
       const result = await rateDocsAnswer(slug, answer.id, helpful);
       if (!result.error) {
+        justRated.current = true;
         onRated(helpful);
       }
     } catch {
@@ -482,15 +484,27 @@ function AssistantReply({
       <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
         {turn.rated === undefined ? (
           <>
-            <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} disabled={rating} onClick={() => void rate(true)}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} disabled={rating} focusableWhenDisabled onClick={() => void rate(true)}>
               <ThumbsUpIcon />
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} disabled={rating} onClick={() => void rate(false)}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} disabled={rating} focusableWhenDisabled onClick={() => void rate(false)}>
               <ThumbsDownIcon />
             </Button>
           </>
         ) : (
-          <p>{t("thanks")}</p>
+          // Focus moves here from the button that's gone, only just after rating (not on an earlier turn shown again).
+          <p
+            tabIndex={-1}
+            ref={(thanks) => {
+              if (thanks && justRated.current) {
+                justRated.current = false;
+                thanks.focus();
+              }
+            }}
+            className="outline-none"
+          >
+            {t("thanks")}
+          </p>
         )}
         {/* Always there: Messages asks the AI first, and the team is a way through. */}
         {person}
