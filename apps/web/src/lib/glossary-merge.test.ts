@@ -112,3 +112,14 @@ test("Never translated set on one side only: their every changed word is carried
   ]);
 });
 
+test("a term added both here and there, Never translated on one side only: the other side's choice carried, marked", () => {
+  // Never translated here; their words carried (shown under the term).
+  expect(mergeMeanwhile([row("Zeta", {}, true)], [], [{ term: "Zeta", keep: false, translations: { de: "Zett" } }], key)).toEqual([
+    { ...row("Zeta", { de: "Zett" }, true), meanwhile: "Changed meanwhile", theirs: { de: "Zett" } },
+  ]);
+  // Never translated there; beside each word typed here.
+  expect(mergeMeanwhile([row("Zeta", { de: "Zett" })], [], [{ term: "Zeta", keep: true, translations: {} }], key)).toEqual([
+    { ...row("Zeta", { de: "Zett" }), meanwhile: "Changed meanwhile", theirs: { de: NEVER } },
+  ]);
+});
+
