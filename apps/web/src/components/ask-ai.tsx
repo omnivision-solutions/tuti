@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import { closeHistory } from "@tiptap/pm/history";
 import { DOMSerializer, Fragment, Slice } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -69,7 +70,7 @@ export function askAiPlugin(actions: { current: Actions | null }) {
     key: ASK_AI,
     state: {
       init: () => null,
-      apply: (tr, value) => {
+      apply: (tr, value, before) => {
         const meta = tr.getMeta(ASK_AI) as Asked | null | undefined;
         if (meta !== undefined) {
           return meta;
@@ -77,17 +78,11 @@ export function askAiPlugin(actions: { current: Actions | null }) {
         if (!value || !tr.docChanged) {
           return value;
         }
-        // Through each step in turn: text added right at either end is outside it; anything touching what's inside drops it.
-        let { from, to } = value;
-        let touched = false;
-        for (const map of tr.mapping.maps) {
-          map.forEach((start, end) => {
-            touched ||= start < to && end > from;
-          });
-          from = map.map(from, 1);
-          to = map.map(to, -1);
-        }
-        if (touched || from >= to) {
+        // Moved along (text added right at either end is outside it); any change to what's inside drops it, formatting
+        // too (a mark added moves nothing, so it's the content that's compared).
+        const from = tr.mapping.map(value.from, 1);
+        const to = tr.mapping.map(value.to, -1);
+        if (from >= to || !before.doc.slice(value.from, value.to).eq(tr.doc.slice(from, to))) {
           queueMicrotask(() => actions.current?.lost());
           return null;
         }
@@ -234,8 +229,10 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
             fragment.firstChild?.type.name === now.ends[0] ? max.openStart : 0,
             fragment.lastChild?.type.name === now.ends[1] ? max.openEnd : 0,
           );
-          const tr: Transaction = editor.state.tr.replaceRange(now.from, now.to, slice).setMeta(ASK_AI, null);
+          // Its own step in the history: undo takes back only Accept, not typing just before or after it.
+          const tr: Transaction = closeHistory(editor.state.tr.replaceRange(now.from, now.to, slice).setMeta(ASK_AI, null));
           editor.view.dispatch(tr);
+          editor.view.dispatch(closeHistory(editor.state.tr));
           editor.commands.focus();
           setStatus("The AI's version is in the text.");
         },

@@ -290,3 +290,27 @@ test("a word in a nested list item goes as its own line, and comes back into it"
   await view.click("Accept");
   expect(view.saved().content[0]).toEqual({ type: "bulletList", content: [item("Outer", { type: "bulletList", content: [item("Inner WORDS here")] })] });
 });
+
+test("bold added inside the selected text while the AI works drops it; undo after Accept keeps typing done just before it", async () => {
+  const view = await editor();
+  await view.select(SECOND, SECOND + 26);
+  await view.click("Ask AI");
+  let settle = answer();
+  await view.click("Shorter");
+  await act(async () => view.editor.chain().setTextSelection({ from: SECOND + 5, to: SECOND + 8 }).toggleBold().run());
+  expect(toast).toHaveBeenCalledWith("The text changed, so the AI's edit was dropped. Select it again to ask again.");
+  await settle({ content: { type: "doc", content: [paragraph("Never shown")] } });
+  expect(view.shown("new")).toBeNull();
+  await act(async () => view.editor.commands.undo());
+
+  await view.select(SECOND, SECOND + 26);
+  await view.click("Ask AI");
+  settle = answer();
+  await view.click("Shorter");
+  await settle({ content: { type: "doc", content: [paragraph("They run quietly")] } });
+  // Typed in the first line, then accepted at once.
+  await act(async () => view.editor.chain().insertContentAt(1, "Big ").run());
+  await view.click("Accept");
+  await act(async () => view.editor.commands.undo());
+  expect(view.saved()).toEqual({ type: "doc", content: [paragraph("Big Exports are quick."), doc.content[1]] });
+});
