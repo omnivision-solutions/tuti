@@ -403,3 +403,38 @@ test("Retranslate while collections are being moved: it waits for the move (the 
   await languageTranslationsDone();
   expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung (neu)");
 });
+
+test("Retranslate as the language is being removed: it waits for the removal, then says the language is gone, queuing nothing", async () => {
+  await german();
+  // A removal held open as languages.update makes it: the project's lock, the language's row deleted.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let held!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const removing = prisma.$transaction(
+    async (tx) => {
+      await lockProject(tx, project.id);
+      await tx.projectLanguage.deleteMany({ where: { projectId: project.id, code: "de" } });
+      held();
+      await gate;
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  let done = false;
+  const retranslating = call(retranslateLanguage, as(), { code: "de" }).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  void retranslating.finally(() => (done = true));
+  for (let i = 0; i < 100 && !done; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    if (Number(count) > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  await removing;
+  expect(await retranslating).toMatchObject({ status: 404 });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(0);
+});

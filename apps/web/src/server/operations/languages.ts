@@ -258,7 +258,11 @@ export const retranslateLanguage = defineOperation({
     if (!waiting) {
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} AND code = ${code} FOR UPDATE`;
+        const locked = await tx.$queryRaw<unknown[]>`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} AND code = ${code} FOR UPDATE`;
+        // Removed since it was read above: nothing to make again (and nothing queued for it).
+        if (locked.length === 0) {
+          throw new OperationError(404, "not_found", "The project doesn't have that language");
+        }
         await retranslateLabels(tx, projectId, code);
       });
     }
