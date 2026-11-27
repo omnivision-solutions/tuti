@@ -33,6 +33,8 @@ test("an article's screenshot lines are filled from the editor; one not taken st
 
   // Without Screenshots set up: where to set it up.
   await team.goto(`/app/${slug}/docs/${article}`);
+  // Each line highlighted in the text, where it is.
+  await expect(text.locator("[data-fill-in]")).toHaveText(["[Screenshot: the billing page]", "[Screenshot: a screen that isn't there, the reports page]"]);
   await expect(section).toContainText("2 lines ask for a screenshot. Tuti can take them: set up your app in Settings → Screenshots.");
   await expect(section.getByRole("link", { name: "set up your app in Settings → Screenshots" })).toHaveAttribute("href", `/app/${slug}/settings/screenshots`);
 
