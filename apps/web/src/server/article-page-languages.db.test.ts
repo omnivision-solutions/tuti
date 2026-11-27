@@ -259,3 +259,37 @@ test("\"On this page\" beside an article on wide screens: its list of headings i
   expect(renderToStaticMarkup(found[0]!)).toContain('<ul lang="de"');
   expect(renderToStaticMarkup(createElement(OnThisPage, { headings, lang: "en" }))).toContain('<ul lang="en"');
 });
+
+test("an article's structured breadcrumb is its canonical page's: translated, in the address's words and addresses; not yet, the default language's", async () => {
+  const collection = await call(createCollection, as(), { name: "Payments" });
+  await call(reorderArticle, as(), { slug: "billing", collection: collection.slug });
+  // Spanish too, with no version: its word for the docs differs from English's.
+  await call(updateLanguages, as(), {
+    languages: [
+      { code: "de", live: true, newPages: "manual" },
+      { code: "fr", live: true, newPages: "manual" },
+      { code: "es", live: true, newPages: "manual" },
+    ],
+  });
+  const breadcrumb = async (slug: string) =>
+    (
+      (await structuredData(await docsPage(project.slug, slug), "/docs/billing")).find((block) => (block as { "@type"?: string })["@type"] === "BreadcrumbList") as {
+        itemListElement: { name: string; item: string }[];
+      }
+    )
+      .itemListElement.map(({ name, item }) => [name, item])
+      // The steps above the article (its own step is its address, tested above).
+      .slice(0, -1);
+  // German has a version: its page is its canonical, so its words and its addresses.
+  at("de");
+  expect(await breadcrumb("abrechnung")).toEqual([
+    ["Dokumentation", `${portal}/de/docs`],
+    ["Payments", `${portal}/de/docs/${collection.slug}`],
+  ]);
+  // Spanish has none: its canonical is the English page, so the English page's breadcrumb, not "Documentación".
+  at("es");
+  expect(await breadcrumb("billing")).toEqual([
+    ["Documentation", `${portal}/docs`],
+    ["Payments", `${portal}/docs/${collection.slug}`],
+  ]);
+});

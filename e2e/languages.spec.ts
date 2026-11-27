@@ -631,6 +631,14 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await plainApi(`/articles/${intro.slug}/publish`, {});
   await visitor.goto("/de/docs/basics");
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+  // An article in no collection: its breadcrumb's way up is the docs' home too.
+  const uncollected = await plainApi("/articles", { title: "Loose", body: "In no collection." });
+  await plainApi(`/articles/${uncollected.slug}/publish`, {});
+  await visitor.goto(`/de/docs/${uncollected.slug}`);
+  await expect(visitor.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+  // In a collection: Dokumentation, then the collection.
+  await visitor.goto(`/de/docs/${intro.slug}`);
+  await expect(visitor.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link")).toHaveText(["Dokumentation", "Basics"]);
 });
 
 test("signing in, signing up and resetting a password in German, the sign-in link's page and single sign-on's error, on desktop and on phones", async ({ browser }, testInfo) => {

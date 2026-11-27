@@ -9,6 +9,6 @@ export const docsTabPath = (docs: { home: string | null }, tab: string) => (tab 
 export const allCollections = (
   docs: { home: string | null; tabs: { slug: string }[] },
   tab: { slug: string; name: string } | null | undefined,
-  all = "All collections",
+  all: string,
 ): { href: string; label: string } =>
   tab && docs.tabs.length > 1 ? { href: docsTabPath(docs, tab.slug), label: tab.name } : { href: "/docs", label: all };

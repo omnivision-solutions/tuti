@@ -39,6 +39,7 @@
     "noAccess": "이 콘텐츠에 접근할 권한이 없습니다.",
     "signInToRead": "읽으려면 로그인하세요.",
     "allCollections": "모든 컬렉션",
+    "breadcrumb": "이동 경로",
     "articles": "문서",
     "docsTabs": "문서 탭",
     "docsNav": "문서",

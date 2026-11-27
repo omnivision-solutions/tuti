@@ -2,6 +2,7 @@ import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import type { ApiOperation } from "@tuti/shared/api-reference";
 import { prisma } from "@tuti/db";
+import { DEFAULT_LANGUAGE } from "@tuti/shared";
 import { MESSAGES } from "@tuti/shared/messages";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LanguagesIcon, LockIcon } from "lucide-react";
 import { createTranslator } from "next-intl";
@@ -394,7 +395,7 @@ export async function DocsArticle({
   /** Its slug at this address (its slug in the address's language, where it has one). */
   own?: string;
 }) {
-  const [at, lang, { language: pageLanguage, prefix }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage()]);
+  const [at, lang, { language: pageLanguage, prefix, defaultLanguage }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage()]);
   // Its own words are in its version's language here, or the default language's (docs/plan.md, "A page not yet translated"),
   // with a line in the page's language saying so.
   const textLang = article.language ?? lang;
@@ -410,7 +411,18 @@ export async function DocsArticle({
   // The tree: its tab's (the first tab's has the articles in none), its collection's branch open.
   const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
   const headings = readable ? docHeadings(readable.doc) : [];
-  const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab);
+  const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
+  // The way up's own words, in the page's language.
+  const crumbs = { docs: (await pageTranslator("header")).t("docs"), label: (await pageTranslator("helpCenter")).t("breadcrumb") };
+  // Its search data's breadcrumb is its canonical page's: translated, this address's words and addresses; else the
+  // default language's, as that page says it.
+  const searchLanguage = prefix && article.untranslated ? (defaultLanguage ?? DEFAULT_LANGUAGE) : (pageLanguage ?? DEFAULT_LANGUAGE);
+  const searchWords = MESSAGES[searchLanguage];
+  const search = {
+    docs: createTranslator({ locale: searchLanguage, messages: searchWords, namespace: "header" })("docs"),
+    up: collection ? up : allCollections(docs, tab, createTranslator({ locale: searchLanguage, messages: searchWords, namespace: "helpCenter" })("allCollections")),
+    prefix: prefix && !article.untranslated ? prefix : "",
+  };
   const markdown = readable && (await articleMarkdown(readable));
   // How long it takes to read, at about 200 words a minute.
   const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
@@ -430,7 +442,9 @@ export async function DocsArticle({
       modified: readable.updatedAt,
       // A tab showing it in its place is its own page: no step for it.
       breadcrumb: [
-        ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }].filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path),
+        ...[{ name: search.docs, path: "/docs" }, { name: search.up.label, path: search.up.href }]
+          .filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path)
+          .map((crumb) => ({ ...crumb, path: `${search.prefix}${crumb.path}` })),
         { name: readable.title, path: ownPath },
       ],
     }));
@@ -450,11 +464,11 @@ export async function DocsArticle({
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
               has), the actions at the row's end on wide screens, under the title on phones. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+            <nav aria-label={crumbs.label} className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
               {up.href !== "/docs" && (
                 <>
                   <Link href={at("/docs")} className="hover:text-foreground">
-                    Documentation
+                    {crumbs.docs}
                   </Link>
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
