@@ -1,13 +1,14 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { translationSource } from "@tuti/jobs";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import ChangelogEntryPage, { generateMetadata } from "@/app/portal/[project]/(site)/changelog/[number]/page";
 import { GET as shareImage } from "@/app/portal/[project]/(site)/og/[[...path]]/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { ChangelogMenu } from "@/components/changelog-pages";
+import { ChangelogMenu, changelogPage } from "@/components/changelog-pages";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -172,4 +173,44 @@ test("the header's menu (phones and tablets) names each entry in the page's lang
     { title: "Faster search", lang: "en" },
     { title: "Dunkler Modus", lang: "de" },
   ]);
+});
+
+/** The `lang` nearest before `text` in `html`: the one the text is read in. */
+const langOf = (html: string, text: string) => [...html.slice(0, html.indexOf(text)).matchAll(/lang="([^"]+)"/g)].at(-1)?.[1];
+
+/** Every ChangelogEntryView in `tree` (as returned, components not rendered), rendered to HTML. */
+function entriesIn(tree: ReactNode) {
+  const found: string[] = [];
+  const walk = (node: ReactNode) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === "object" && "props" in node) {
+      const { type, props } = node as ReactElement<Record<string, unknown>>;
+      if (props && "entry" in props && "react" in props) found.push(renderToStaticMarkup(createElement(type as never, props)));
+      else walk(props?.children as ReactNode);
+    }
+  };
+  walk(tree);
+  return found;
+}
+
+test("an entry's title and text carry the language they're in: its version's where translated, else the default's, in the list and on its page", async () => {
+  const { number: other } = await call(createChangelogEntry, as(), { title: "Faster search", body: "Results come quicker." });
+  await call(publishChangelogEntry, as(), { number: other });
+  // The page: German at /de, the English (in English's lang) at /fr.
+  at("de");
+  const [german] = entriesIn((await ChangelogEntryPage(params())) as ReactNode);
+  expect(langOf(german!, "Dunkler Modus")).toBe("de");
+  expect(langOf(german!, "Wechsle das Design")).toBe("de");
+  at("fr");
+  const [english] = entriesIn((await ChangelogEntryPage(params())) as ReactNode);
+  expect(langOf(english!, "Dark mode")).toBe("en");
+  expect(langOf(english!, "Switch themes")).toBe("en");
+  // The list: each entry in its own language.
+  at("de");
+  const list = entriesIn((await changelogPage(project.slug, 1)) as ReactNode);
+  expect(list).toHaveLength(2);
+  const translated = list.find((html) => html.includes("Dunkler Modus"))!;
+  const untranslated = list.find((html) => html.includes("Faster search"))!;
+  expect([langOf(translated, "Dunkler Modus"), langOf(translated, "Wechsle das Design")]).toEqual(["de", "de"]);
+  expect([langOf(untranslated, "Faster search"), langOf(untranslated, "Results come quicker")]).toEqual(["en", "en"]);
 });
