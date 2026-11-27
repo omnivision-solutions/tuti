@@ -1,6 +1,6 @@
 import { type Prisma, prisma, type ScreenshotWindow } from "@tuti/db";
 import { config, type JobInput, log, screenshotsEnabled } from "@tuti/shared";
-import { openValue } from "@tuti/shared/signed";
+import { openValue, signForever } from "@tuti/shared/signed";
 import { mediaLimit } from "@tuti/shared/storage";
 
 import { screenshotsMeter } from "./ai-usage";
@@ -199,7 +199,7 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
   const { count } = await prisma.screenshotRun.updateMany({ where: { id: runId, state: "RUNNING", startedAt: null }, data: { startedAt: new Date() } });
   const run = await prisma.screenshotRun.findUniqueOrThrow({
     where: { id: runId },
-    select: { projectId: true, startedById: true, screenshots: { orderBy: { position: "asc" }, select: { id: true, show: true } } },
+    select: { projectId: true, startedById: true, test: true, screenshots: { orderBy: { position: "asc" }, select: { id: true, show: true } } },
   });
   if (count === 0) {
     return results(runId);
@@ -213,6 +213,21 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
   }
   const { model, retryModel, maxCostUsd } = config().screenshots;
   const client = browserUse();
+  // A Test signs in with what's saved, not a session kept from before: its profile is made again (and kept for runs),
+  // or, Browser Use failing to delete the old one, it goes without one.
+  let useProfile = true;
+  if (run.test) {
+    const saved = await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId }, select: { profileId: true } });
+    if (saved?.profileId) {
+      useProfile = await dropProfile(client, run.projectId, saved.profileId).then(
+        () => true,
+        (error: unknown) => {
+          log.error("Deleting a screenshot browser profile for a Test failed: the Test goes without one", { projectId: run.projectId, profileId: saved.profileId, error });
+          return false;
+        },
+      );
+    }
+  }
   const shots = run.screenshots;
   let answer: Answer | null = null;
   let error: string = SCREENSHOT_ERRORS.service;
@@ -224,7 +239,7 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
     if (left < MIN_TRY_USD) {
       break;
     }
-    const tried = await attempt(client, { runId, projectId: run.projectId, settings, shots, model: tryModel, maxCostUsd: Number(left.toFixed(4)) });
+    const tried = await attempt(client, { runId, projectId: run.projectId, settings, shots, model: tryModel, maxCostUsd: Number(left.toFixed(4)), useProfile });
     if (tried.cost) {
       costs.push(tried.cost);
     }
@@ -284,7 +299,7 @@ type Answer = { signedIn: boolean; error?: string; shots: { file?: string; reach
 
 const fileName = (index: number) => `shot-${index + 1}.png`;
 
-type Attempt = { runId: string; projectId: string; settings: Settings; shots: { show: string }[]; model: string; maxCostUsd: number };
+type Attempt = { runId: string; projectId: string; settings: Settings; shots: { show: string }[]; model: string; maxCostUsd: number; useProfile: boolean };
 
 /**
  * One agent run: its answer and files, or why not; then, however it ended (an error, the time limit), the session's
@@ -381,19 +396,105 @@ async function policyGone(client: BrowserUse, id: string, settings: Settings): P
 const forgetNetworkPolicy = (projectId: string, id: string) =>
   prisma.screenshotSettings.updateMany({ where: { projectId, networkPolicyId: id }, data: { networkPolicyId: null, networkPolicyDomains: "" } });
 
+/**
+ * The browser profile its browser starts from, and saves to when stopped: one per project, so the agent stays signed in
+ * to the team's app between runs. Made for one sign-in (signInKey), and deleted once that changes, as it holds that
+ * account's session. Null when Browser Use refuses another (402, the account's limit): the run signs in as before.
+ */
+async function browserProfile(client: BrowserUse, projectId: string, settings: Settings, tries = 2): Promise<string | null> {
+  const key = signInKey(settings);
+  const saved = await prisma.screenshotSettings.findUnique({ where: { projectId }, select: { profileId: true, profileSignIn: true } });
+  if (saved?.profileId) {
+    if (saved.profileSignIn === key) {
+      return saved.profileId;
+    }
+    // Signed in with what's no longer the sign-in: deleted. Browser Use failing, the run goes without one, and the next
+    // run tries the delete again.
+    const dropped = await dropProfile(client, projectId, saved.profileId).then(
+      () => true,
+      (error: unknown) => {
+        log.error("Deleting a screenshot browser profile whose sign-in changed failed: tried again next run", { projectId, profileId: saved.profileId, error });
+        return false;
+      },
+    );
+    if (!dropped) {
+      return null;
+    }
+  }
+  const made = await client.createProfile(`Tuti screenshots ${projectId}`.slice(0, 100)).catch((error: unknown) => {
+    if (error instanceof BrowserUseError && error.status === 402) {
+      log.warn("Browser Use refused a screenshot browser profile (the account's limit): the run signs in without one", { projectId });
+    } else {
+      log.error("Making a screenshot browser profile failed: the run signs in without one", { projectId, error });
+    }
+    return null;
+  });
+  if (!made) {
+    return null;
+  }
+  // Saved only where none is, as the network policy: another run's kept, and this one deleted.
+  const { count } = await prisma.screenshotSettings.updateMany({ where: { projectId, profileId: null }, data: { profileId: made.id, profileSignIn: key } });
+  if (count === 1) {
+    return made.id;
+  }
+  await client.deleteProfile(made.id).catch((error: unknown) => log.error("Deleting a screenshot browser profile made twice failed: it's unused at Browser Use", { projectId, profileId: made.id, error }));
+  if (tries <= 1) {
+    throw new Error("The project's screenshot browser profile kept changing while it was saved");
+  }
+  return browserProfile(client, projectId, settings, tries - 1);
+}
+
+/**
+ * What a profile was signed in with: the app's address, the way it signs in, and its username and secrets (opened, so
+ * the same password saved again matches), keyed with the server's secret so the column can't be used to guess the
+ * password. Empty when a secret no longer opens (another server secret): never a match for a profile made before.
+ */
+function signInKey(settings: Settings): string {
+  try {
+    const open = (sealed: string | null) => (sealed ? openValue(SCREENSHOT_SECRET, sealed) : null);
+    return signForever("screenshot-profile", JSON.stringify([settings.appUrl, settings.signIn, settings.username, open(settings.password), open(settings.signInLink)]));
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * After the settings are saved: the project's profile deleted at once if the sign-in changed, as it holds a session of
+ * the account signed in before. Logged, never thrown: a run deletes it otherwise (browserProfile).
+ */
+export async function dropChangedScreenshotProfile(projectId: string) {
+  const settings = screenshotsEnabled() ? await prisma.screenshotSettings.findUnique({ where: { projectId } }) : null;
+  if (settings?.profileId && settings.profileSignIn !== signInKey(settings)) {
+    await dropProfile(browserUse(), projectId, settings.profileId).catch((error: unknown) =>
+      log.error("Deleting a screenshot browser profile whose sign-in changed failed: the next run tries again", { projectId, profileId: settings.profileId, error }),
+    );
+  }
+}
+
+/** Deletes a profile at Browser Use (one already gone is as good) and forgets it, unless another took its place; throws if Browser Use fails. */
+async function dropProfile(client: BrowserUse, projectId: string, id: string) {
+  await client.deleteProfile(id).catch((error: unknown) => {
+    if (!gone(error)) {
+      throw error;
+    }
+  });
+  await prisma.screenshotSettings.updateMany({ where: { projectId, profileId: id }, data: { profileId: null, profileSignIn: "" } });
+}
+
 async function agentRun(
   client: BrowserUse,
-  { runId, projectId, settings, shots, model, maxCostUsd }: Attempt,
+  { runId, projectId, settings, shots, model, maxCostUsd, useProfile }: Attempt,
   session: { id: string | null; summary: RunSummary | null; workspaceId: string | null },
 ): Promise<{ answer: Answer } | { error: string }> {
   // First: a run that can't be confined doesn't start.
   const networkPolicyId = await networkPolicy(client, projectId, settings);
+  const profileId = useProfile ? await browserProfile(client, projectId, settings) : null;
   const workspace = await client.createWorkspace(`tuti-${runId}`);
   session.workspaceId = workspace.id;
   // Kept until its files are deleted: a settle deletes them if the job dies.
   await prisma.screenshotRun.update({ where: { id: runId }, data: { workspaceId: workspace.id } });
   const password = settings.signIn === "PASSWORD" && settings.password ? openValue(SCREENSHOT_SECRET, settings.password) : null;
-  const runBody = (networkPolicyId: string) => ({
+  const runBody = (networkPolicyId: string, profileId: string | null) => ({
     task: screenshotTask(settings, shots),
     model,
     workspaceId: workspace.id,
@@ -403,16 +504,26 @@ async function agentRun(
     ...(password && { secretBindings: [{ alias: PASSWORD_ALIAS, source: { type: "inline" as const, value: password }, allowedDomains: allowedHosts(settings) }] }),
     // Always said: Browser Use's residential proxy is on by default and billed per GB at residential rates, so it's off
     // unless the project turned it on (an app that blocks cloud servers).
-    browserSettings: { screenWidth: WINDOWS[settings.window].width, screenHeight: WINDOWS[settings.window].height, proxyCountryCode: settings.residentialProxy ? ("us" as const) : null, networkPolicyId },
+    browserSettings: { screenWidth: WINDOWS[settings.window].width, screenHeight: WINDOWS[settings.window].height, proxyCountryCode: settings.residentialProxy ? ("us" as const) : null, networkPolicyId, ...(profileId && { profileId }) },
   });
-  const created = await client.createRun(runBody(networkPolicyId)).catch(async (error: unknown) => {
-    // Its policy gone at Browser Use (removed there, the saved id out of date): forgotten, made again, tried once more.
-    // A 404 for anything else leaves the policy: it's checked gone first (its update answers 404 too).
-    if (!gone(error) || !(await policyGone(client, networkPolicyId, settings))) {
+  const created = await client.createRun(runBody(networkPolicyId, profileId)).catch(async (error: unknown) => {
+    // Its policy or profile gone at Browser Use (removed there, the saved id out of date): forgotten, made again, tried
+    // once more. A 404 for anything else leaves the policy: it's checked gone first (its update answers 404 too). The
+    // profile has no such check: it's deleted (404 if gone) and replaced, costing at worst one sign-in.
+    if (!gone(error)) {
       throw error;
     }
-    await forgetNetworkPolicy(projectId, networkPolicyId);
-    return client.createRun(runBody(await networkPolicy(client, projectId, settings)));
+    const policyLost = await policyGone(client, networkPolicyId, settings);
+    if (!policyLost && !profileId) {
+      throw error;
+    }
+    if (policyLost) {
+      await forgetNetworkPolicy(projectId, networkPolicyId);
+    }
+    if (profileId) {
+      await dropProfile(client, projectId, profileId);
+    }
+    return client.createRun(runBody(await networkPolicy(client, projectId, settings), useProfile ? await browserProfile(client, projectId, settings) : null));
   });
   session.id = created.sessionId;
   await prisma.screenshotRun.update({ where: { id: runId }, data: { externalId: created.id, sessionId: created.sessionId } });

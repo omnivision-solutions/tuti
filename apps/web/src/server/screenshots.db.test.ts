@@ -174,7 +174,7 @@ test("a run signs in once, takes every screenshot as an upload, stops its browse
   expect(sent).toMatchObject({
     model: "bu-4.0-mini",
     maxCostUsd: 1,
-    browserSettings: { screenWidth: 1440, screenHeight: 900, proxyCountryCode: null, networkPolicyId: expect.any(String) },
+    browserSettings: { screenWidth: 1440, screenHeight: 900, proxyCountryCode: null, networkPolicyId: expect.any(String), profileId: expect.any(String) },
     secretBindings: [{ alias: "app_password", source: { type: "inline", value: PASSWORD }, allowedDomains: ["app.example.com"] }],
   });
   expect(sent.task).toContain("Open https://app.example.com/home.");
@@ -216,7 +216,7 @@ test("a screenshot the agent couldn't reach says why; the others are kept", asyn
     { state: "taken", failed: null },
     { state: "failed", image: null, failed: "There's no Reports page in the menu." },
   ]);
-  expect(browserUse.runs.at(-1)!.body.browserSettings).toEqual({ screenWidth: 390, screenHeight: 844, proxyCountryCode: null, networkPolicyId: expect.any(String) });
+  expect(browserUse.runs.at(-1)!.body.browserSettings).toEqual({ screenWidth: 390, screenHeight: 844, proxyCountryCode: null, networkPolicyId: expect.any(String), profileId: expect.any(String) });
   expect(lastBrowser().status).toBe("stopped");
   expect(browserUse.files.get(browserUse.runs.at(-1)!.workspaceId)!.size).toBe(0);
 });
@@ -808,4 +808,142 @@ test("adding another domain while a password or sign-in link is saved needs it s
     message: "Enter the sign-in link again to add another domain: the browser can go there with it",
   });
   expect(await call(updateScreenshotSettings, as(), { otherDomains: ["evil.example.net"], signInLink: LINK })).toMatchObject({ otherDomains: ["evil.example.net"] });
+});
+
+const profileOf = (run = browserUse.runs.at(-1)!) => (run.body.browserSettings as { profileId?: string }).profileId;
+
+test("runs reuse one browser profile per project, so the agent stays signed in; a Test signs in afresh and keeps its profile for runs", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const first = profileOf();
+  expect(browserUse.profiles.get(first!)).toEqual({ name: `Tuti screenshots ${project.id}` });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(profileOf()).toBe(first);
+  // A Test checks what's saved, not a kept session: the old profile deleted, a new one made, and runs use it.
+  await call(testScreenshotSettings, as(), {});
+  const tested = profileOf()!;
+  expect(tested).not.toBe(first);
+  expect(browserUse.profiles.has(first!)).toBe(false);
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(profileOf()).toBe(tested);
+  // Saving settings that don't change the sign-in (the notes, the same password again) keeps it.
+  await call(updateScreenshotSettings, as(), { about: "Close the tour.", password: PASSWORD });
+  expect(browserUse.profiles.has(tested)).toBe(true);
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(profileOf()).toBe(tested);
+});
+
+test("a changed sign-in deletes the profile at once: a new password, then a new address, each give the next run a new one", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const first = profileOf()!;
+  await call(updateScreenshotSettings, as(), { password: "another-password" });
+  expect(browserUse.profiles.has(first)).toBe(false);
+  expect(await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id }, select: { profileId: true } })).toEqual({ profileId: null });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const second = profileOf()!;
+  expect(second).not.toBe(first);
+  await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other" });
+  expect(browserUse.profiles.has(second)).toBe(false);
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect([first, second]).not.toContain(profileOf());
+});
+
+test("a new username (same password) or a new sign-in link deletes the profile too", async () => {
+  const changed = async (input: Parameters<typeof updateScreenshotSettings.run>[1]) => {
+    await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+    const before = profileOf()!;
+    await call(updateScreenshotSettings, as(), input);
+    expect(browserUse.profiles.has(before)).toBe(false);
+    expect(await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id }, select: { profileId: true } })).toEqual({ profileId: null });
+    await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+    expect(profileOf()).not.toBe(before);
+  };
+  await setUp();
+  await changed({ username: "e2e-other@example.com", password: PASSWORD });
+  await call(updateScreenshotSettings, as(), { signIn: "link", signInLink: LINK });
+  await changed({ signInLink: `${LINK}-another` });
+});
+
+test("a saved password that no longer opens (another server secret) counts as a changed sign-in: saving the notes deletes the profile", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const first = profileOf()!;
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { password: "v1.not-sealed-here" } });
+  await call(updateScreenshotSettings, as(), { about: "Close the tour." });
+  expect(browserUse.profiles.has(first)).toBe(false);
+  expect(await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id }, select: { profileId: true } })).toEqual({ profileId: null });
+});
+
+test("Browser Use refusing a profile (its limit, 402) runs without one, and the next run tries again", async () => {
+  await setUp();
+  browserUse.refuseProfiles = { status: 402, count: 1 };
+  expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "done" });
+  expect(profileOf()).toBeUndefined();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(profileOf()).toEqual(expect.any(String));
+});
+
+test("Browser Use failing to make a profile (a 503) runs without one too", async () => {
+  await setUp();
+  browserUse.refuseProfiles = { status: 503, count: 1 };
+  expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "done", screenshots: [{ state: "taken" }] });
+  expect(profileOf()).toBeUndefined();
+});
+
+test("a profile gone at Browser Use is replaced once and the run goes", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const first = profileOf()!;
+  browserUse.profiles.delete(first);
+  expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "done", screenshots: [{ state: "taken" }] });
+  const second = profileOf()!;
+  expect(second).not.toBe(first);
+  expect(browserUse.profiles.has(second)).toBe(true);
+  expect(await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id }, select: { profileId: true } })).toEqual({ profileId: second });
+});
+
+test("a profile made while another run saved one keeps the saved one: the made one deleted, one left", async () => {
+  await setUp();
+  // A first run's profile, its sign-in key kept for the other run below, then forgotten.
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const { profileSignIn } = await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
+  browserUse.profiles.delete(profileOf()!);
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { profileId: null } });
+  // Another run's, made and saved while this run makes its own.
+  const other = "00000000-0000-4000-8000-otherprofile1";
+  browserUse.profiles.set(other, { name: `Tuti screenshots ${project.id}` });
+  browserUse.beforeProfileCreate = async () => {
+    await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { profileId: other, profileSignIn } });
+  };
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(profileOf()).toBe(other);
+  expect([...browserUse.profiles.values()].filter((profile) => profile.name === `Tuti screenshots ${project.id}`)).toHaveLength(1);
+});
+
+test("a profile whose delete fails after a sign-in change: the save still goes, the next run runs without it and deletes it, then one after gets a new one", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const first = profileOf()!;
+  browserUse.failProfileDeletes = 2;
+  await call(updateScreenshotSettings, as(), { password: "another-password" });
+  expect(browserUse.profiles.has(first)).toBe(true);
+  // Browser Use still failing: the run goes without the old session.
+  expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "done" });
+  expect(profileOf()).toBeUndefined();
+  // Answering again: deleted, and a new one made.
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(browserUse.profiles.has(first)).toBe(false);
+  expect(profileOf()).toEqual(expect.any(String));
+  expect(profileOf()).not.toBe(first);
+});
+
+test("a Test whose old profile can't be deleted goes without one: never on the kept session", async () => {
+  await setUp();
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  const first = profileOf()!;
+  browserUse.failProfileDeletes = 1;
+  expect(await call(testScreenshotSettings, as(), {})).toMatchObject({ state: "done" });
+  expect(profileOf()).toBeUndefined();
+  expect(browserUse.profiles.has(first)).toBe(true);
 });

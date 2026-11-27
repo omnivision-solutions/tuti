@@ -61,7 +61,7 @@ export { inboxDue, inboxDueToken } from "./inbox-due";
 export { aiFor, duplicatesMeter, imagesMeter, screenshotsMeter } from "./ai-usage";
 export { ANNOUNCEMENT_WAITS_MS, behindKey, entryTranslationsPending, languageTranslationsDone, lostAfterMs, markProductSettingBehind, nameBatch, PRODUCT_SETTING_CHANGED, queueArticleTranslations, queueChangelogTranslations, queueLanguageTranslations, retryBatch, retryDelay, translateArticle, translateChangelogEntry, TRANSLATION_WAITS, translationInstructions, translationSource } from "./article-translation";
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
-export { LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
+export { dropChangedScreenshotProfile, LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
 export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";

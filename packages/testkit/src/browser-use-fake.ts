@@ -65,6 +65,14 @@ export type BrowserUseFake = {
   goneNext: number;
   /** Network policies by id (POST/PATCH /network-policies): every run must be given one it has (Screenshots confines its browser to the team's app). */
   policies: Map<string, { name: string; defaultAction: "allow" | "block"; allow: { domains: string[] } }>;
+  /** Browser profiles by id (POST/DELETE /profiles): a run given one (browserSettings.profileId) must be given one it has. */
+  profiles: Map<string, { name: string }>;
+  /** How many of the next profile creates answer this status instead (e.g. 402, the account's profile limit). */
+  refuseProfiles: { status: number; count: number };
+  /** How many of the next profile deletes fail (500). */
+  failProfileDeletes: number;
+  /** Awaited as a profile is made, before it's answered: e.g. another run saving its own meanwhile. */
+  beforeProfileCreate?: () => Promise<void>;
   /** Awaited as a policy is made, before it's answered: e.g. another run saving its own meanwhile. */
   beforePolicyCreate?: () => Promise<void>;
   /** Lets every stuck run end. */
@@ -117,6 +125,9 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
     goneNext: 0,
     files,
     policies: new Map(),
+    profiles: new Map(),
+    refuseProfiles: { status: 402, count: 0 },
+    failProfileDeletes: 0,
     release: () => {
       for (const run of runs.values()) {
         run.script.stuck = false;
@@ -160,6 +171,28 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         fake.beforePolicyCreate = undefined;
         return hook ? void hook().then(make) : make();
       }
+      if (path === "/profiles" && req.method === "POST") {
+        if (fake.refuseProfiles.count > 0) {
+          fake.refuseProfiles.count--;
+          return answer(fake.refuseProfiles.status, { detail: "Profile limit reached: delete unused profiles" });
+        }
+        const make = () => {
+          const profileId = id("f");
+          fake.profiles.set(profileId, { name: String(body.name) });
+          answer(201, { id: profileId, name: body.name });
+        };
+        const hook = fake.beforeProfileCreate;
+        fake.beforeProfileCreate = undefined;
+        return hook ? void hook().then(make) : make();
+      }
+      const profilePath = /^\/profiles\/([^/]+)$/.exec(path);
+      if (profilePath && req.method === "DELETE") {
+        if (fake.failProfileDeletes > 0) {
+          fake.failProfileDeletes--;
+          return answer(500, { detail: "The fake was told to fail this delete" });
+        }
+        return fake.profiles.delete(profilePath[1]!) ? res.writeHead(204).end() : answer(404, { detail: "No such profile" });
+      }
       const policyPath = /^\/network-policies\/([^/]+)$/.exec(path);
       if (policyPath && req.method === "DELETE") {
         return fake.policies.delete(policyPath[1]!) ? res.writeHead(204).end() : answer(404, { detail: "No such policy" });
@@ -181,13 +214,16 @@ export async function startBrowserUseFake(): Promise<BrowserUseFake> {
         // A copy: release() changes it.
         // Browser Use's residential proxy is on by default (billed per GB): Tuti always says whether it wants it, so a run
         // that leaves it out is refused.
-        const settings = body.browserSettings as { proxyCountryCode?: unknown; networkPolicyId?: unknown } | null | undefined;
+        const settings = body.browserSettings as { proxyCountryCode?: unknown; networkPolicyId?: unknown; profileId?: unknown } | null | undefined;
         if (!settings || !("proxyCountryCode" in settings) || (settings.proxyCountryCode !== null && typeof settings.proxyCountryCode !== "string")) {
           return answer(422, { detail: "The fake refuses a run without browserSettings.proxyCountryCode (Browser Use's residential proxy is on by default)" });
         }
         // Screenshots confine every run's browser to the team's app: the fake refuses one without a policy it knows.
         if (typeof settings.networkPolicyId !== "string" || !fake.policies.has(settings.networkPolicyId)) {
           return answer(settings.networkPolicyId ? 404 : 422, { detail: "The fake refuses a run without a network policy it has (browserSettings.networkPolicyId)" });
+        }
+        if (settings.profileId !== undefined && (typeof settings.profileId !== "string" || !fake.profiles.has(settings.profileId))) {
+          return answer(404, { detail: "Profile not found" });
         }
         const script = { ...(scripts.shift() ?? {}) };
         script.stuck ||= String(body.task).includes(FAKE_SLOW);
