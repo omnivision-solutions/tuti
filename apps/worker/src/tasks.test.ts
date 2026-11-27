@@ -129,3 +129,7 @@ test("a project's labels' translation gets two quick retries (the retry job back
     ],
   });
 });
+
+test("a read of an app's sign-in services: tried once, one at a time per project and 4 on the server, waiting its turn 2 minutes at most", () => {
+  expect(taskOptions("screenshotSignInScan")).toMatchObject({ name: "screenshot-sign-in-scan", retries: 0, scheduleTimeout: "2m", concurrency: [{ expression: "input.projectId", maxRuns: 1 }, { expression: "'screenshot-sign-in-scan'", maxRuns: 4 }] });
+});

@@ -33,7 +33,7 @@ export type Person = {
 export type Assignee = { name: string; email: string; image: string | null; you: boolean };
 
 /** What the sheet changes, and the header shows. */
-export type Triage = Pick<Conversation, "status" | "assignee" | "spam" | "snoozedUntil" | "handledBy" | "priority">;
+export type Triage = Pick<Conversation, "status" | "assignee" | "spam" | "snoozedUntil" | "handledBy" | "priority" | "handBack">;
 
 export const getPerson = (api: Api, number: number) => api<Person>(`/conversations/${number}/person`);
 
@@ -41,8 +41,18 @@ export const getPerson = (api: Api, number: number) => api<Person>(`/conversatio
 export const getAssignees = (api: Api) =>
   api<{ assignees: Assignee[] }>("/inbox/assignees").then(({ assignees }) => [...assignees.filter((a) => a.you), ...assignees.filter((a) => !a.you)]);
 
-/** `handledBy`: Take over, from the AI. Handing back to it isn't offered: nothing answers for the AI yet. */
-export type Change = { status: "open" | "closed" } | { assignee: string | null } | { spam: boolean } | { snoozedUntil: string | null } | { handledBy: "team" } | { priority: boolean };
+/**
+ * `handledBy`: Take over, from the AI ("team"), or Hand back to the AI ("ai", with `ifNobodyWaits`: the server refuses it
+ * while the user waits on the team, as the web's does).
+ */
+export type Change =
+  | { status: "open" | "closed" }
+  | { assignee: string | null }
+  | { spam: boolean }
+  | { snoozedUntil: string | null }
+  | { handledBy: "team" }
+  | { handledBy: "ai"; ifNobodyWaits: true }
+  | { priority: boolean };
 
 export const updateConversation = (api: Api, number: number, change: Change) => api<Triage>(`/conversations/${number}`, { method: "PATCH", body: change });
 
@@ -92,7 +102,7 @@ export const triageChanges = (key: string) => changes.get(key) ?? 0;
  * after the fetch started, so it doesn't put back what the change replaced. Nothing is kept for a key nobody holds: an
  * answer after its screen and sheet closed.
  */
-export function showTriage(key: string, { status, assignee, spam, snoozedUntil, handledBy, priority }: Triage, since?: number) {
+export function showTriage(key: string, { status, assignee, spam, snoozedUntil, handledBy, priority, handBack }: Triage, since?: number) {
   if (!holders.has(key)) {
     return;
   }
@@ -101,7 +111,7 @@ export function showTriage(key: string, { status, assignee, spam, snoozedUntil, 
   } else if (since !== triageChanges(key)) {
     return;
   }
-  shown.set(key, { status, assignee, spam, snoozedUntil, handledBy, priority });
+  shown.set(key, { status, assignee, spam, snoozedUntil, handledBy, priority, handBack });
   notify();
 }
 export const getTriage = (key: string) => shown.get(key) ?? null;

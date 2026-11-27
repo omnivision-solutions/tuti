@@ -40,6 +40,8 @@ export type Conversation = {
   company: string | null;
   unread: boolean;
   onlineUntil: string | null;
+  /** Whether Hand back to the AI is offered (conversations.get's): missing from a server from before it, so not offered. */
+  handBack?: boolean;
   messages: Message[];
 } & Owned;
 

@@ -647,7 +647,7 @@ export const publishTranslation = defineOperation({
     take: sectionList
       .optional()
       .describe(
-        "Sections behind only for a glossary change whose text to replace with the new translation. Left out, such a section stays yours and behind (on a version kept up to date, one you didn't keep takes it anyway)",
+        "Sections behind only for a glossary change whose text to replace with the new translation. Left out, such a section stays yours and behind; on a version kept up to date, a plain edit takes it anyway; one kept earlier, or standing for more than one source section, stays yours unless listed here",
       ),
     version: z
       .string()

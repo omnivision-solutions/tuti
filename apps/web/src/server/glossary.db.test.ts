@@ -2,12 +2,14 @@ import { type Doc, segmentsOf, termTests } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { applyGlossaryChanges, type Glossary, glossaryChangedFor, planGlossaryChanges, labelIn, languageTranslationsDone, sourceSections, translationSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { revalidatePath } from "next/cache";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry } from "./operations/changelog";
 import { createArticle, createCollection, publishArticle, updateArticle } from "./operations/docs";
+import { saveGlossary } from "./glossary";
 import { getGlossary, updateGlossary, withHash } from "./operations/glossary";
 import { updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
@@ -18,6 +20,9 @@ vi.mock("@tuti/jobs", async (original) => {
   const actual = await original<typeof import("@tuti/jobs")>();
   return { ...actual, planGlossaryChanges: vi.fn(actual.planGlossaryChanges), applyGlossaryChanges: vi.fn(actual.applyGlossaryChanges) };
 });
+
+// The pages a save refreshes, seen.
+vi.mock("next/cache", () => ({ refresh: () => {}, revalidatePath: vi.fn() }));
 
 /** The glossary (docs/plan.md, Languages, L12): terms never translated, or translated one way per language. */
 
@@ -719,6 +724,17 @@ test("on a version kept up to date, the team's draft edit stays when a term in i
   const read = await call(getTranslation, as(), de);
   expect(read.draft!.behind).toEqual([key]);
   expect(read.behind).toEqual([]);
+});
+
+test("saving the glossary from its page refreshes Settings → Languages (its Glossary row counts the terms); a dry run doesn't", async () => {
+  actAs(owner);
+  const revalidated = vi.mocked(revalidatePath);
+  revalidated.mockClear();
+  const terms = [{ term: "Board", keep: false, translations: {} }];
+  expect(await saveGlossary(project.slug, terms, undefined, true)).not.toHaveProperty("error");
+  expect(revalidated).not.toHaveBeenCalled();
+  expect(await saveGlossary(project.slug, terms)).not.toHaveProperty("error");
+  expect(revalidated).toHaveBeenCalledWith(`/app/${project.slug}/settings/languages`);
 });
 
 test("on a version kept up to date, the team's section standing for two source sections keeps both's text when a term in it changes, marked behind", async () => {
