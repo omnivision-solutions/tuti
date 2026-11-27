@@ -70,7 +70,8 @@ function TranslationRow({ projectSlug, slug, defaultName, row, ai }: { projectSl
             </Badge>
           </>
         ) : (
-          <span className="text-sm text-muted-foreground">{row.keepUpToDate ? `Being translated: readers see the ${defaultName} name` : `Not translated: readers see the ${defaultName} name`}</span>
+          // Being translated only while something will (AI on, not a sample): else it's not, whatever it was set to.
+          <span className="text-sm text-muted-foreground">{row.keepUpToDate && ai ? `Being translated: readers see the ${defaultName} name` : `Not translated: readers see the ${defaultName} name`}</span>
         )}
       </div>
       {translated && (

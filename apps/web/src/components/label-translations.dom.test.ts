@@ -35,3 +35,17 @@ test("opened again, the dialog's Keep up to date is the row's as it is now, not 
   await act(async () => edit().click());
   expect(keep().checked).toBe(false);
 });
+
+test("kept up to date but not made: being translated while AI can make it, else not translated", async () => {
+  const box = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(box);
+  roots.push(root);
+  const waiting = { language: "de", native: "Deutsch", name: null, description: null, keepUpToDate: true };
+  const render = (ai: boolean) => act(async () => root.render(h(CollectionTranslations, { projectSlug: "acme", slug: "billing", defaultName: "English", translations: [waiting], ai })));
+  await render(true);
+  expect(box.textContent).toContain("Being translated: readers see the English name");
+  // AI off (or a sample collection): nothing will make it.
+  await render(false);
+  expect(box.textContent).toContain("Not translated: readers see the English name");
+});
+
