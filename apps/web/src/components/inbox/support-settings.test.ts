@@ -22,6 +22,6 @@ test("without AI on the server, Translate conversations can't be turned on, and 
   // With AI it can be turned on; what it costs only where credits are on.
   const ai = translation({ translate: false, ai: true });
   expect(ai.switch).not.toMatch(/ disabled=""/);
-  expect(ai.html).not.toContain("Uses AI credits");
-  expect(translation({ translate: false, ai: true, credits: true }).html).toContain("Uses AI credits.");
+  expect(ai.html).not.toContain("Uses credits");
+  expect(translation({ translate: false, ai: true, credits: true }).html).toContain("Uses credits.");
 });

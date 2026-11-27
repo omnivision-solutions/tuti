@@ -16,6 +16,7 @@ import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } f
 import { ChangelogComment } from "@/components/changelog-comment";
 import { CommentList } from "@/components/comments";
 import { PageActions } from "@/components/page-actions";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
@@ -266,11 +267,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               standing={
                 <>
                   {entry.sample && <SampleBadge />}{" "}
-                  {entry.publishedAt
-                    ? `Published ${formatDate(entry.publishedAt)}`
-                    : entry.collecting
-                      ? "Draft, collecting merged pull requests until a release or you publish it"
-                      : "Draft"}
+                  {/* One pill: the running draft takes merged pull requests until it's published. */}
+                  <Badge variant="outline">
+                    {entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : entry.collecting ? "Draft · collecting PRs" : "Draft"}
+                  </Badge>
                 </>
               }
               mediaUrls={await mediaUrls(displayDoc(entry))}
