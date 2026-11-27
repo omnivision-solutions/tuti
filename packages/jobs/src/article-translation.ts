@@ -792,7 +792,7 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
     // new glossary. Their rows first, as a languages save and a label's write lock them.
     await tx.projectLanguage.updateMany({ where: { projectId, code: { in: codes } }, data: { labelsVersion: { increment: 1 } } });
   }
-  const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true, memory: true } } as const;
+  const versions = { where: { language: { in: codes } }, select: { id: true, language: true, automatic: true } } as const;
   const sources = [
     ...(await tx.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, title: true, description: true, keywords: true, body: true, content: true, translations: versions } })).map(
       (row) => ({ kind: ARTICLE, row }),
@@ -811,6 +811,15 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
       await (kind.name === "article" ? tx.$queryRaw`SELECT 1 FROM article WHERE id = ${row.id} FOR UPDATE` : tx.$queryRaw`SELECT 1 FROM changelog_entry WHERE id = ${row.id} FOR UPDATE`);
     }
     const table = Prisma.raw(kind.name === "article" ? "article_translation" : "changelog_translation");
+    // Their memory read again under the source's lock: a job's write before it took the lock isn't written over.
+    const memories = dryRun
+      ? new Map<string, unknown>()
+      : new Map(
+          (kind.name === "article"
+            ? await tx.articleTranslation.findMany({ where: { id: { in: touched.map(({ id }) => id) } }, select: { id: true, memory: true } })
+            : await tx.changelogTranslation.findMany({ where: { id: { in: touched.map(({ id }) => id) } }, select: { id: true, memory: true } })
+          ).map(({ id, memory }) => [id, memory]),
+        );
     for (const version of touched) {
       const terms = changed.get(version.language)!;
       // The sections that use a changed term, each with the first it uses.
@@ -828,7 +837,7 @@ export async function glossaryChanges(tx: Prisma.TransactionClient, projectId: s
       if (dryRun) continue;
       // Its remembered segments that use a changed term go (one removed, or left to the model, too: nothing in the checks
       // would make a run send it again), so its next translation of them, the job's or Update those sections', is anew.
-      const memory = Object.fromEntries(Object.entries(version.memory as Record<string, string>).filter(([text]) => termsUsed(text, terms).length === 0));
+      const memory = Object.fromEntries(Object.entries((memories.get(version.id) ?? {}) as Record<string, string>).filter(([text]) => termsUsed(text, terms).length === 0));
       await tx.$executeRaw`UPDATE ${table} SET memory = ${JSON.stringify(memory)}::jsonb,
         behind = behind || ${JSON.stringify(version.automatic ? {} : reasons)}::jsonb, "updatedAt" = now() WHERE id = ${version.id}`;
       if (version.automatic) await safetyNet(kind, { id: version.id }, tx);

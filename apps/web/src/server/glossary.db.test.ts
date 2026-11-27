@@ -261,13 +261,15 @@ test("a glossary save while a translation's write holds an article (German kept 
   );
   await holding;
   model.otherwise(reply("Boards", BOARDS, "de2", "Brett"), "Make a Board");
-  let done = false;
+  let [done, waited] = [false, false];
   const saving = call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett", fr: "Planche" } }] }).finally(() => (done = true));
-  for (let i = 0; i < 100 && !done; i++) {
+  for (let i = 0; i < 200 && !done && !waited; i++) {
     const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-    if (Number(count) > 0) break;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    waited = Number(count) > 0;
+    if (!waited) await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  // The save got as far as waiting on the held write (else this would test nothing).
+  expect(waited).toBe(true);
   release();
   await Promise.all([writing, saving]);
 });
