@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers, labelIn, languageTranslationsDone, queueLabels } from "@tuti/jobs";
+import { handlers, labelIn, languageTranslationsDone, queueLabels, queueStaleLabels } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -75,6 +75,8 @@ test("a board only the team sees, or turned off, isn't translated; turned on, it
   await languageTranslationsDone();
   expect(await inGerman("notes")).toBeNull();
   expect(await inGerman("old")).toBeNull();
+  // Nor does the retry job claim the language for them: it would every 15 minutes, its job finding nothing each time.
+  expect(await queueStaleLabels()).toBe(0);
   model.reply(labelsReply({ "0.n": "Alte Ideen" }));
   expect(await setBoardOff(project.slug, (await board("old")).id, false)).toEqual({});
   await languageTranslationsDone();
