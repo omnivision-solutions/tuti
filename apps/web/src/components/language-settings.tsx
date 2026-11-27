@@ -1,6 +1,7 @@
 "use client";
 
-import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { ChevronRightIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -114,6 +115,21 @@ export function LanguageSettings({
           </ul>
         )}
       </SettingsCard>
+      {languages.length > 0 && (
+        // The glossary every translation follows: its own page (docs/plan.md, L12).
+        <SettingsCard>
+          <Link
+            href={`/app/${projectSlug}/settings/languages/glossary`}
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @min-[34rem]/settings:px-5"
+          >
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium">Glossary</span>
+              <span className="text-sm text-muted-foreground">Words kept as they are, or always translated one way.</span>
+            </span>
+            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
+          </Link>
+        </SettingsCard>
+      )}
     </>
   );
 }
@@ -428,7 +444,7 @@ function InstructionsDialog({
                 Our product is available in {native}
               </label>
               <p id={`${id}-product-description`} className="text-sm text-muted-foreground">
-                Off: names of buttons and screens stay as written. On: they&apos;re translated.
+                Off: button and screen names stay as written. On: translated, using your Glossary&apos;s words.
               </p>
             </div>
             <Switch id={`${id}-product`} name="productAvailable" defaultChecked={language.productAvailable} aria-describedby={`${id}-product-description`} />
