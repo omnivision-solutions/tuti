@@ -357,8 +357,7 @@ model Project {
   assistantLength                AnswerLength @default(MEDIUM)
   assistantInstructions          String       @default("")
   assistantOffLimits             String[]     @default([])
-  /// The spam filter's phrases (check 5, server/spam.ts): a new conversation whose subject or first message has one, as
-  /// whole words in any case, is filed as spam.
+  /// The spam filter's phrases (W2), copied to `spam_rule` (W2b) and read no more: kept for the release before it.
   spamPhrases                    String[]     @default([])
   /// The team's guidance for the spam filter's models (checks 6 and 7, server/spam-models.ts): a line in its own words.
   spamGuidance                   String       @default("")
@@ -449,6 +448,7 @@ model Project {
   mailSubdomain            MailSubdomain?
   inboundEmails            InboundEmail[]
   spamSenders              SpamSender[]
+  spamRules                SpamRule[]
   workflows                Workflow[]
   emailBlocks              EmailBlock[]
   emailDays                ProjectEmailDay[]
@@ -1322,6 +1322,30 @@ model SpamSender {
   @@unique([projectId, sender], where: raw("\"conversationId\" IS NULL"))
   @@index([projectId, sender, decidedAt(sort: Desc)])
   @@map("spam_sender")
+}
+
+/// A block rule of the spam filter (docs/plan.md, Inbox automation, W2b; lib/spam-rules.ts): a field of a new
+/// conversation, a matcher and a value. A conversation one matches goes to Spam: a rule on its sender (domain, address)
+/// in check 1, as the lists, one on what it says in check 5.
+model SpamRule {
+  id         String   @id @default(cuid())
+  projectId  String
+  /// sender_domain, sender_address, sender_name, subject, body, subject_or_body or sent_to.
+  field      String
+  /// is, contains, starts_with, ends_with or pattern (`*` and `?`).
+  matcher    String
+  value      String
+  /// Who it files: `everyone`, or `strangers` (never one the trust check vouches for: the project's users, a teammate,
+  /// someone the team has replied to).
+  appliesTo  String   @default("everyone")
+  /// Put there by marking a conversation as spam ("Also block").
+  fromReport Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("spam_rule")
 }
 
 /// Something the team set to happen on its own in the inbox (docs/plan.md, Inbox automation, "A workflow"): when its

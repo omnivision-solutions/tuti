@@ -64,13 +64,25 @@ async function setup({ hook = false } = {}) {
       (await prisma.conversation.findMany({ where: { projectId }, orderBy: { number: "asc" }, select: { spam: true, spamReason: true } })).map((c) =>
         c.spam ? (c.spamReason ?? "marked") : "inbox",
       ),
-    /** What's kept about senders: each address or domain, blocked or allowed, on a list or as a conversation's mark, and whose. */
-    senders: async () =>
-      (await prisma.spamSender.findMany({ where: { projectId }, orderBy: [{ decidedAt: "asc" }, { id: "asc" }] })).map(
-        (row) => `${row.sender} ${row.blocked ? "blocked" : "allowed"} by ${row.byAdmin ? "an admin" : "a member"}${row.conversationId ? "'s mark" : ", listed"}`,
-      ),
-    /** An entry on the team's blocked or allowed list (Settings' lists, which fill it later). */
-    list: (sender: string, blocked: boolean) => prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }),
+    /**
+     * What's kept about senders: the conversations' marks, oldest first, then each address or domain on a list (a
+     * blocked one is its "Sender address is" or "Sender domain is" rule), in alphabetical order; and whose.
+     */
+    senders: async () => {
+      const [rows, rules] = await Promise.all([
+        prisma.spamSender.findMany({ where: { projectId }, orderBy: [{ decidedAt: "asc" }, { id: "asc" }] }),
+        prisma.spamRule.findMany({ where: { projectId, matcher: "is" } }),
+      ]);
+      const said = (row: { sender: string; blocked: boolean; byAdmin: boolean; conversationId: string | null }) =>
+        `${row.sender} ${row.blocked ? "blocked" : "allowed"} by ${row.byAdmin ? "an admin" : "a member"}${row.conversationId ? "'s mark" : ", listed"}`;
+      const listed = [...rows.filter((row) => !row.conversationId), ...rules.map((rule) => ({ sender: rule.value, blocked: true, byAdmin: true, conversationId: null }))];
+      return [...rows.filter((row) => row.conversationId).map(said), ...listed.sort((x, y) => x.sender.localeCompare(y.sender)).map(said)];
+    },
+    /** An address or domain blocked (its "is" rule) or on the allowed list. */
+    list: (sender: string, blocked: boolean) =>
+      blocked
+        ? prisma.spamRule.create({ data: { projectId, field: sender.includes("@") ? "sender_address" : "sender_domain", matcher: "is", value: sender } })
+        : prisma.spamSender.create({ data: { projectId, sender, blocked, byAdmin: true } }),
     /** How many new conversations the project's webhooks were told of. */
     told: () => prisma.webhookDelivery.count({ where: { webhook: { projectId }, event: "conversation.created" } }),
   };
@@ -96,10 +108,10 @@ test("the team's decisions come first, the most exact winning: a listed address,
   await mail("e2e-kim@spam.example"); // #4
   expect((await filed())[3]).toBe("inbox");
   expect(await senders()).toEqual([
-    "spam.example blocked by an admin, listed",
     "e2e-kim@spam.example allowed by an admin's mark",
     "e2e-kim@spam.example blocked by a member's mark",
     "e2e-kim@spam.example allowed by an admin's mark",
+    "spam.example blocked by an admin, listed",
   ]);
   // The address on a list beats every mark.
   await list("e2e-kim@spam.example", true);
@@ -126,8 +138,8 @@ test("the checks answer in order: a decision before trust, trust before the rest
   expect(await byEmail(owner.email, "pass")).toMatchObject({ spam: false, check: "trusted" });
   // Blocking a known user works: the team's decision is asked first.
   await list("e2e-sam@example.com", true);
-  expect(await byEmail("e2e-sam@example.com", "pass", sam)).toEqual({ spam: true, reason: "blocked_address", check: "decisions" });
-  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, sam))).toEqual({ spam: true, reason: "blocked_address", check: "decisions" });
+  expect(await byEmail("e2e-sam@example.com", "pass", sam)).toEqual({ spam: true, reason: "blocked_address", check: "decisions", phrase: "Sender address is e2e-sam@example.com" });
+  expect(await spamVerdict(prisma, await arrivalOf(prisma, projectId, sam))).toEqual({ spam: true, reason: "blocked_address", check: "decisions", phrase: "Sender address is e2e-sam@example.com" });
   // Allowed: decided there too.
   await list("e2e-friend@example.com", false);
   expect(await byEmail("e2e-friend@example.com", "none")).toEqual({ spam: false, reason: null, check: "decisions" });
@@ -192,10 +204,10 @@ test("Also block offers the organisational domain to owners and admins, never a 
   await mail("e2e-kim@m2.spam.example"); // #2
   const choices = async (number: number, isAdmin: boolean) =>
     spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } }), isAdmin);
-  expect(await choices(1, true)).toEqual({ blockDomain: null, unblocks: null });
-  expect(await choices(2, true)).toEqual({ blockDomain: "spam.example", unblocks: null });
+  expect(await choices(1, true)).toEqual({ blockDomain: null, unblocks: null, removesRule: null });
+  expect(await choices(2, true)).toEqual({ blockDomain: "spam.example", unblocks: null, removesRule: null });
   // The lists are the owners' and admins': a member is never offered it, nor can ask for it.
-  expect(await choices(2, false)).toEqual({ blockDomain: null, unblocks: null });
+  expect(await choices(2, false)).toEqual({ blockDomain: null, unblocks: null, removesRule: null });
   await expect(call(updateConversation, asMember, { number: 2, spam: true, blockDomain: true })).rejects.toMatchObject({ status: 403 });
   await expect(call(updateConversation, admin, { number: 1, spam: true, blockDomain: true })).rejects.toThrow(
     new OperationError(409, "no_domain", "Anyone can get an address at this domain, so it isn't blocked: marking as spam blocks this address"),
@@ -207,11 +219,21 @@ test("Also block offers the organisational domain to owners and admins, never a 
   await call(updateConversation, admin, { number: 2, spam: true, blockDomain: true });
   expect(await senders()).toEqual(["e2e-kim@m2.spam.example blocked by an admin's mark", "spam.example blocked by an admin, listed"]);
   // Blocked now: not offered again.
-  expect(await choices(2, true)).toEqual({ blockDomain: null, unblocks: null });
+  expect(await choices(2, true)).toEqual({ blockDomain: null, unblocks: null, removesRule: null });
   await mail("e2e-lee@m2.spam.example"); // #3
   await mail("e2e-lee@spam.example"); // #4
   await mail("e2e-lee@notspam.example"); // #5
   expect((await filed()).slice(2)).toEqual(["blocked_domain", "blocked_domain", "inbox"]);
+});
+
+test("two admins blocking the same domain at once from two of its conversations leave one rule, marked from a report", async () => {
+  const { projectId, admin, mail } = await setup();
+  await mail("e2e-kim@corp.example"); // #1
+  await mail("e2e-lee@mail.corp.example"); // #2
+  await Promise.all([1, 2].map((number) => call(updateConversation, admin, { number, spam: true, blockDomain: true })));
+  expect(await prisma.spamRule.findMany({ where: { projectId }, select: { field: true, matcher: true, value: true, fromReport: true } })).toEqual([
+    { field: "sender_domain", matcher: "is", value: "corp.example", fromReport: true },
+  ]);
 });
 
 test("a domain's entry is for its subdomains, never for the domain above it", async () => {
@@ -426,9 +448,9 @@ test("a member's Not spam leaves an admin's blocked address and blocked domain i
   // Both are back in the inbox, told as new; a member's Not spam against a blocked domain isn't kept at all.
   expect(await told()).toBe(2);
   expect(await senders()).toEqual([
+    "e2e-kim@corp.example allowed by a member's mark",
     "e2e-kim@corp.example blocked by an admin, listed",
     "spam.example blocked by an admin, listed",
-    "e2e-kim@corp.example allowed by a member's mark",
   ]);
   await mail("e2e-kim@corp.example"); // #3
   await mail("e2e-lee@mail.spam.example"); // #4
@@ -436,7 +458,7 @@ test("a member's Not spam leaves an admin's blocked address and blocked domain i
 
   // A spam mark the conversation had goes when a member unmarks it under a blocked domain: it's unmarked, no more.
   await call(updateConversation, asMember, { number: 2, spam: true });
-  expect((await senders()).at(-1)).toBe("e2e-lee@mail.spam.example blocked by a member's mark");
+  expect(await senders()).toContain("e2e-lee@mail.spam.example blocked by a member's mark");
   await call(updateConversation, asMember, { number: 2, spam: false });
   expect(await senders()).toHaveLength(3);
 });
@@ -573,4 +595,36 @@ test("a mark goes with its conversation, and users.delete takes the marks on the
   await call(deleteUser, admin, { user: "user-42" });
   expect(await prisma.conversation.count({ where: { projectId } })).toBe(2);
   expect(await senders()).toEqual(["e2e-sam@example.com blocked by an admin, listed", "example.com allowed by an admin, listed"]);
+});
+
+test("users.delete clears a sender rule's words from the conversations it erases and their Activity, which could name them; a rule on what it says stays", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const { project, projectId, mail, admin } = await setup();
+  await prisma.spamRule.create({ data: { projectId, field: "subject_or_body", matcher: "contains", value: "crypto", createdAt: new Date(Date.now() - 60_000) } });
+  await prisma.spamRule.create({ data: { projectId, field: "sender_address", matcher: "starts_with", value: "e2e-sam" } });
+  const sam = await upsertProjectUser(projectId, "user-42", { name: "Sam", email: "e2e-sam@example.com" });
+  await mail("e2e-sam@example.com"); // #1: the rule on their address
+  expect(await widgetStartConversation(project.slug, { token: widgetToken(projectId, sam) }, "About crypto")).toEqual({ number: 2 });
+  const words = async () => (await prisma.conversation.findMany({ where: { projectId }, orderBy: { number: "asc" }, select: { spamReason: true, spamPhrase: true } })).map((c) => [c.spamReason, c.spamPhrase]);
+  expect(await words()).toEqual([
+    ["rule", "Sender address starts with e2e-sam"],
+    ["rule", "Subject or body contains crypto"],
+  ]);
+  const activity = async () =>
+    (await prisma.conversationEvent.findMany({
+      where: { conversation: { projectId }, kind: "spam_filter" },
+      // By conversation first: the email's and the widget's rows can share a millisecond.
+      orderBy: [{ conversation: { number: "asc" } }, { createdAt: "asc" }, { id: "asc" }],
+      select: { details: true },
+    })).map(
+      (row) => (row.details as { phrase?: string }).phrase ?? null,
+    );
+  expect(await activity()).toEqual(["Sender address starts with e2e-sam", "Subject or body contains crypto"]);
+  await call(deleteUser, admin, { user: "user-42" });
+  expect(await words()).toEqual([
+    ["rule", null],
+    ["rule", "Subject or body contains crypto"],
+  ]);
+  // Their Activity's spam filter row too: it reads the reason's own words now.
+  expect(await activity()).toEqual([null, "Subject or body contains crypto"]);
 });
