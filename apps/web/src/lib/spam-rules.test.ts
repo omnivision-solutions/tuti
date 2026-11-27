@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { describeSpamRule, matchesPattern, type SpamRule, type SpamRuleInput, spamRuleKey, spamRuleMatches, spamRuleValue } from "./spam-rules";
+import { describeSpamRule, matchesPattern, PATTERN_STEPS, type SpamRule, type SpamRuleInput, spamRuleKey, spamRuleMatcher, spamRuleMatches, spamRuleValue } from "./spam-rules";
 
 const matches = (field: SpamRule["field"], matcher: SpamRule["matcher"], value: string, input: SpamRuleInput) => spamRuleMatches({ field, matcher, value }, input);
 
@@ -79,4 +79,19 @@ test("a rule in words, and two rules that compare the same are one", () => {
   expect(spamRuleKey({ field: "subject", matcher: "is", value: "hi", appliesTo: "strangers" })).not.toBe(spamRuleKey({ field: "subject", matcher: "is", value: "hi" }));
   expect(spamRuleKey({ field: "subject", matcher: "contains", value: "Facebook-Admin!" })).toBe(spamRuleKey({ field: "subject", matcher: "contains", value: "facebook admin" }));
   expect(spamRuleKey({ field: "subject", matcher: "is", value: "Facebook-Admin" })).not.toBe(spamRuleKey({ field: "subject", matcher: "is", value: "facebook admin" }));
+});
+
+test("a message's patterns share one budget of steps: the worst rules against the longest texts stop at it, matching nothing more", () => {
+  const budget = { left: PATTERN_STEPS };
+  const text = "a".repeat(10_000);
+  const matcher = spamRuleMatcher({ subject: text, text }, budget);
+  // 500 rules (the most a project holds) that each take about 4 million steps on these texts.
+  const rules = Array.from({ length: 500 }, (_, i) => ({ field: "subject_or_body" as const, matcher: "pattern" as const, value: `*${"a".repeat(197)}${String.fromCharCode(98 + (i % 20))}` }));
+  expect(rules.some(matcher)).toBe(false);
+  // Spent, and not a step past it.
+  expect(budget.left).toBe(0);
+  // An ordinary pattern's few steps leave the budget almost whole.
+  const fresh = { left: PATTERN_STEPS };
+  expect(spamRuleMatcher({ subject: "You won 50 dollars today" }, fresh)({ field: "subject", matcher: "pattern", value: "you won*" })).toBe(true);
+  expect(PATTERN_STEPS - fresh.left).toBeLessThan(100);
 });
