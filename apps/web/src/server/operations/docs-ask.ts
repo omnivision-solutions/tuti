@@ -31,6 +31,8 @@ const EMBED_TIMEOUT_MS = 3000;
 const ANSWER_TIMEOUT_MS = 20_000;
 /** Characters kept of an answer; the longest length's token cap fits in it. */
 const MAX_ANSWER_LENGTH = 8000;
+/** The reply's cap where the answer model is asked only whether the user asks for a person: enough for its JSON flag. */
+const PERSON_FLAG_TOKENS = 50;
 /** How many earlier turns of a conversation a follow-up takes as its context. */
 export const MAX_EARLIER_TURNS = 4;
 /** How many of the earlier questions the docs are searched with, besides the follow-up: the latest ones say most. */
@@ -62,7 +64,7 @@ export const askFields = z.object({
 });
 
 /** One earlier turn of a conversation: what was asked, and the answer (null: it had none). */
-type Turn = { question: string; answer: string | null };
+export type Turn = { question: string; answer: string | null };
 
 export type DocsAnswer = {
   id: string;
@@ -95,7 +97,12 @@ The JSON may also have the team's settings for you, apart from the sections: sta
 
 Reply with JSON only, no other text: {"answer": "...", "sources": ["s1"]}`;
 
-export function answerPrompt(question: string, sections: AnswerSection[], settings: AssistantSettings, earlier: Turn[]) {
+/** For a conversation in the Inbox on a server without a decision model: the answer model says whether the user asks for a person. */
+const ASKS_FOR_A_PERSON = `
+
+If the latest question asks to talk to a person (a human, someone on the team, support staff) rather than for an answer, or accepts an earlier answer's offer to connect them with someone ("yes", "sure", "please do"), reply {"answer": "", "sources": [], "person": true} instead.`;
+
+export function answerPrompt(question: string, sections: AnswerSection[], settings: AssistantSettings, earlier: Turn[], { askPerson = false } = {}) {
   const teamSettings = {
     ...(settings.instructions && { standingInstructions: settings.instructions }),
     ...(settings.offLimits.length > 0 && { offLimitsTopics: settings.offLimits }),
@@ -109,7 +116,7 @@ export function answerPrompt(question: string, sections: AnswerSection[], settin
     sections: sections.map((section, i) => ({ id: `s${i + 1}`, article: section.title, heading: section.heading, text: section.text })),
   };
   return {
-    system: system(ANSWER_LENGTHS[settings.length].prompt),
+    system: system(ANSWER_LENGTHS[settings.length].prompt) + (askPerson ? ASKS_FOR_A_PERSON : ""),
     user: `Answer the question from these sections.\n\n${JSON.stringify(data, null, 2)}`,
     maxTokens: ANSWER_LENGTHS[settings.length].maxTokens,
   };
@@ -129,6 +136,15 @@ export function readAnswer(reply: string, sections: AnswerSection[]): { answer: 
   const ids = new Set(Array.isArray(sources) ? sources.filter((id) => typeof id === "string") : []);
   const cited = sections.filter((_, i) => ids.has(`s${i + 1}`));
   return text && cited.length > 0 ? { answer: text, cited } : null;
+}
+
+/** Whether the model's reply says the user asks for a person (ASKS_FOR_A_PERSON). */
+export function asksForPerson(reply: string): boolean {
+  try {
+    return (JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1)) as { person?: unknown })?.person === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Each article once, in order; `portal`, the address its pages are under (the reader's language's prefix too). */
@@ -169,7 +185,7 @@ export async function earlierTurns(projectId: string, askerId: string, followUpT
 }
 
 /** Logs the question, or refuses it (429) if the asker or the project asked too often in the last hour. */
-async function logQuestion(projectId: string, askerId: string, question: string, source: DocsQuestionSource, followsId: string | null) {
+async function logQuestion(projectId: string, askerId: string, question: string, source: DocsQuestionSource, followsId: string | null, conversationId: string | null) {
   return prisma.$transaction(async (tx) => {
     // One at a time per project, so concurrent questions can't overrun the limits together.
     await lockProject(tx, projectId);
@@ -185,7 +201,7 @@ async function logQuestion(projectId: string, askerId: string, question: string,
       throw new OperationError(429, "rate_limited", "These docs have had a lot of questions in the last hour. Try again later.");
     }
     // FAILED until it's answered, so a question that never finishes stays logged as failed.
-    return tx.docsQuestion.create({ data: { projectId, askerId, question, source, followsId }, select: { id: true } });
+    return tx.docsQuestion.create({ data: { projectId, askerId, question, source, followsId, conversationId }, select: { id: true } });
   });
 }
 
@@ -208,7 +224,43 @@ export async function answerQuestion(
     throw new OperationError(503, "ai_unavailable", "AI answers aren't set up on this server");
   }
   const earlier = followUpTo ? await earlierTurns(projectId, askerId, followUpTo) : [];
-  const { id } = await logQuestion(projectId, askerId, question, source, earlier.at(-1)?.id ?? null);
+  return answerTurn(projectId, { askerId, question, source, reader, earlier, followsId: earlier.at(-1)?.id ?? null, timeoutMs, language });
+}
+
+/**
+ * One turn of answering, given its question and the turns before it: docs.ask's (from the asker's earlier questions) and
+ * the AI's turn in an Inbox conversation (from the conversation's messages, server/ai-turn.ts, which links the row to
+ * it with `conversationId`). Logged in `docs_question` (and refused, 429, past the hourly limits) whatever comes of it.
+ * `askPerson`: the model also says whether the user asks for a person (`person`; a server without a decision model).
+ * `language`: the reader's (answerQuestion's); the Inbox's turn answers in the default one.
+ */
+export async function answerTurn(
+  projectId: string,
+  {
+    askerId,
+    question,
+    source,
+    reader,
+    earlier,
+    followsId,
+    conversationId = null,
+    askPerson = false,
+    timeoutMs = ANSWER_TIMEOUT_MS,
+    language = null,
+  }: {
+    askerId: string;
+    question: string;
+    source: DocsQuestionSource;
+    reader: Reader;
+    earlier: Turn[];
+    followsId: string | null;
+    conversationId?: string | null;
+    askPerson?: boolean;
+    timeoutMs?: number;
+    language?: { code: string; prefix: string } | null;
+  },
+): Promise<DocsAnswer & { person?: boolean }> {
+  const { id } = await logQuestion(projectId, askerId, question, source, followsId, conversationId);
   const [settings, slug] = await Promise.all([assistantSettings(projectId), projectSlug(projectId)]);
   /** Saves the outcome, and why it's "I don't know" (`cause`, for no_answer). */
   const finish = async (
@@ -229,12 +281,32 @@ export async function answerQuestion(
     return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, `${await portalAddress(slug)}${language?.prefix ?? ""}`) };
   };
 
-  // A topic the team put off-limits: a fixed reply, decided here rather than by the model (which isn't asked).
-  if (offLimitsTopic(question, settings.offLimits)) {
-    return finish("off_limits");
-  }
-  // Nor does an earlier turn on one steer a follow-up: it's left out of what's searched and what the model gets.
+  // A topic the team put off-limits: a fixed reply, decided here rather than by the model, which isn't asked for an answer
+  // (with `askPerson`, only whether the user asks for a person; see asksPerson). Nor does an earlier turn on one steer a
+  // follow-up: it's left out of what's searched and what the model gets.
   const context = earlier.filter((turn) => !offLimitsTopic(turn.question, settings.offLimits));
+  /**
+   * With `askPerson`, where nothing would ask the model (an off-limits topic, nothing in the docs close enough): it's still
+   * asked, with no sections, whether the user asks for a person, so "Can I talk to a human?" isn't taken for a gap in
+   * the docs. False where it can't be asked (out of credits, failing): the outcome stands.
+   */
+  const asksPerson = async () => {
+    if (!askPerson) {
+      return false;
+    }
+    try {
+      // Only the flag is read: a small cap on the reply.
+      return asksForPerson(await complete({ ...answerPrompt(question, [], settings, context, { askPerson }), maxTokens: PERSON_FLAG_TOKENS, timeoutMs, ...(await aiFor(projectId, "answers")) }));
+    } catch (error) {
+      log.warn("Asking the answer model whether the user asks for a person failed", { projectId, error });
+      return false;
+    }
+  };
+  /** Asks for a person: logged as unanswered, out of Gaps. */
+  const person = async () => ({ ...(await finish("failed")), person: true });
+  if (offLimitsTopic(question, settings.offLimits)) {
+    return (await asksPerson()) ? person() : finish("off_limits");
+  }
   // A follow-up ("and on mobile?") says little alone: the docs are searched with the latest earlier questions too.
   const searched = [...context.slice(-SEARCHED_EARLIER_QUESTIONS).map((turn) => turn.question), question].join("\n");
   const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS, language?.code);
@@ -243,7 +315,7 @@ export async function answerQuestion(
   }
   // Nothing close enough: "I don't know", without asking the model.
   if (sections.length === 0) {
-    return finish("no_answer", { cause: "NO_RELEVANT_SECTION" });
+    return (await asksPerson()) ? person() : finish("no_answer", { cause: "NO_RELEVANT_SECTION" });
   }
   let ai: Ai;
   try {
@@ -260,10 +332,13 @@ export async function answerQuestion(
   }
   let reply: string;
   try {
-    reply = await complete({ ...answerPrompt(question, sections, settings, context), timeoutMs, ...ai });
+    reply = await complete({ ...answerPrompt(question, sections, settings, context, { askPerson }), timeoutMs, ...ai });
   } catch (error) {
     log.warn("AI docs answer failed", { projectId, error });
     return finish("failed", { fallback: await stillUsable(projectId, sections, reader) });
+  }
+  if (askPerson && asksForPerson(reply)) {
+    return person();
   }
   const answer = readAnswer(reply, sections);
   if (!answer) {
