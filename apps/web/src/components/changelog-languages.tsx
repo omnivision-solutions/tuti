@@ -135,7 +135,8 @@ function versionLine(view: VersionView, defaultName: string, kind: VersionKind) 
     case "setting":
       return `"Our product is available in ${view.name}" changed since this was saved.`;
     case "unwritten":
-      return `Not written yet: it starts as the ${defaultName} text.`;
+      // An article's draft, saved and not published yet (an entry's version has no drafts).
+      return view.own ? `Not published yet: readers get the ${defaultName} text until you publish it.` : `Not written yet: it starts as the ${defaultName} text.`;
     default:
       return null;
   }

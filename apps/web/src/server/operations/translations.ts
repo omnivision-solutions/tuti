@@ -18,8 +18,10 @@ import {
   translationSource,
   versionSections,
 } from "@tuti/jobs";
-import { contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { aiEnabled, contentHash, LANGUAGE_CODES, LANGUAGES, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
+
+import { articleVersionState } from "@/lib/changelog-versions";
 
 import { displayDoc, readContent } from "../content";
 import { defineOperation, OperationError } from "./define";
@@ -108,6 +110,10 @@ const versionSelect = {
   behind: true,
   updateSections: true,
   tries: true,
+  error: true,
+  sourceHash: true,
+  retranslate: true,
+  retranslated: true,
 } as const;
 type Version = Prisma.ArticleTranslationGetPayload<{ select: typeof versionSelect }>;
 
@@ -184,6 +190,29 @@ function output(version: Version, { parts, sourceLanguage, sourceHash }: { parts
   };
 }
 
+/** A version not started yet, as its row starts (the database's defaults), so a read of it gives the token a save of it matches. */
+const blankVersion = (language: string, automatic: boolean): Version => ({
+  id: "",
+  language,
+  slug: null,
+  automatic,
+  title: "",
+  content: null,
+  body: "",
+  publishedAt: null,
+  sections: [],
+  removedSections: [],
+  removedHashes: {},
+  draft: null,
+  behind: {},
+  updateSections: [],
+  tries: 0,
+  error: null,
+  sourceHash: null,
+  retranslate: 0,
+  retranslated: 0,
+});
+
 /**
  * Runs `change` on an article's version in `language`, both locked in that order (as the translate job locks them), so a
  * translation written meanwhile is never lost and never loses the team's change. `read`: only reading, nothing locked (a
@@ -197,18 +226,27 @@ async function withVersion<T>(
   { read = false } = {},
 ) {
   const article = await teamArticle(projectId, slug);
-  if (read) {
-    const version = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: lang } }, select: versionSelect });
-    if (!version) {
-      throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[lang].name}`);
+  const where = { articleId_language: { articleId: article.id, language: lang } };
+  // None yet (a Manual language's, until the team writes it): the project's language's, so it can be written.
+  const setting = async (db: Prisma.TransactionClient) => {
+    const found = await db.projectLanguage.findUnique({ where: { projectId_code: { projectId, code: lang } }, select: { automatic: true } });
+    if (!found) {
+      throw new OperationError(404, "not_found", `${LANGUAGES[lang].name} isn't one of the project's languages`);
     }
-    return change(prisma, version, article.id);
+    return found;
+  };
+  if (read) {
+    const version = await prisma.articleTranslation.findUnique({ where, select: versionSelect });
+    return change(prisma, version ?? blankVersion(lang, (await setting(prisma)).automatic), article.id);
   }
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM article WHERE id = ${article.id} FOR UPDATE`;
-    const found = await tx.articleTranslation.findUnique({ where: { articleId_language: { articleId: article.id, language: lang } }, select: { id: true } });
+    let found = await tx.articleTranslation.findUnique({ where, select: { id: true } });
     if (!found) {
-      throw new OperationError(404, "not_found", `The article has no version in ${LANGUAGES[lang].name}`);
+      // Started as the blank one a read answers (its token the same), and gone again if the change is refused.
+      const { automatic } = await setting(tx);
+      await tx.articleTranslation.createMany({ data: [{ articleId: article.id, projectId, language: lang, automatic }], skipDuplicates: true });
+      found = await tx.articleTranslation.findUniqueOrThrow({ where, select: { id: true } });
     }
     await tx.$queryRaw`SELECT 1 FROM article_translation WHERE id = ${found.id} FOR UPDATE`;
     const version = await tx.articleTranslation.findUniqueOrThrow({ where: { id: found.id }, select: versionSelect });
@@ -228,9 +266,27 @@ export const getTranslation = defineOperation({
   errors: [409],
   input: z.object({ slug: articleSlug, language }),
   output: translationOutput,
-  run: async ({ projectId }, input) =>
-    withVersion(projectId, input.slug, input.language, async (db, version, articleId) => output(version, await sourceOf(db, articleId)), { read: true }),
+  run: async ({ projectId }, input) => (await readArticleVersion(projectId, input.slug, input.language)).read,
 });
+
+/**
+ * articles.getTranslation's read, and where the version stands from the same row (the editor's pill and its confirm
+ * before Keep up to date replaces the team's text), so state, text and token never come from two reads.
+ */
+export async function readArticleVersion(projectId: string, slug: string, language: (typeof LANGUAGE_CODES)[number]) {
+  return withVersion(
+    projectId,
+    slug,
+    language,
+    async (db, version, articleId) => {
+      const source = await sourceOf(db, articleId);
+      const read = output(version, source);
+      // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
+      return { read, state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), read.behind.length > 0), waiting: version.error };
+    },
+    { read: true },
+  );
+}
 
 export const saveTranslation = defineOperation({
   name: "articles.saveTranslation",

@@ -9,7 +9,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
-import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
+import { getTranslation, keepTranslationUpToDate, publishTranslation, readArticleVersion, saveTranslation, updateTranslationSections } from "./operations/translations";
 
 /** Retranslating and unpublished changes (docs/plan.md, Languages, L6 part three). */
 
@@ -925,4 +925,22 @@ test("Keep up to date from an older read is refused: a teammate's newer text isn
     (thrown: unknown) => thrown as { code: string },
   );
   expect(error?.code).toBe("changed");
+});
+
+test("a Manual language's first version: read blank until the team writes it, started by its first save", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  expect(blank).toMatchObject({ keepUpToDate: false, title: "", publishedAt: null, draft: null });
+  expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("unwritten");
+  const ours = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]);
+  // From an older read: refused, and nothing started.
+  await expect(call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: ours, version: "older" })).rejects.toMatchObject({ status: 409 });
+  expect(await prisma.articleTranslation.count({ where: { projectId: project.id } })).toBe(0);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: ours, version: blank.version });
+  const published = await call(publishTranslation, as(), de);
+  expect(published).toMatchObject({ keepUpToDate: false, title: "Bezahlt werden", draft: null });
+  expect(text(published.content)).toContain("Unsere Zahlung");
+  expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("written");
 });

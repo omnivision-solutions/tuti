@@ -59,3 +59,52 @@ test("a reader reads an article in German at its German address, and in French s
   await expect(line).toBeVisible();
   await checkpoint(reader, "article-not-in-french-phone");
 });
+
+/** The team writes an article's German in its editor (docs/plan.md L11): the language pill, a draft, then published. */
+test("the team writes a published article's German from its editor's language pill: a draft, then published", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // German written by the team (Manual): nothing goes to the model.
+  await api("/languages", { languages: [{ code: "de", newPages: "manual" }] }, "PATCH");
+  const { slug: article } = await api("/articles", { title: "Getting paid", body: "Payouts go out every Monday." });
+  await api(`/articles/${article}/publish`, {});
+
+  await team.setViewportSize({ width: 1280, height: 800 });
+  await team.goto(`${APP_URL}/app/${slug}/docs/${article}`);
+  // The pill: English, and Deutsch not written yet.
+  await team.getByRole("button", { name: "Language: English" }).click();
+  await expect(team.getByRole("menuitem", { name: /Deutsch/ })).toContainText("Not written");
+  await team.getByRole("menuitem", { name: /Deutsch/ }).click();
+  await expect(team).toHaveURL(/\?language=de$/);
+  await expect(team.getByText("Not written yet: it starts as the English text.")).toBeVisible();
+  // It starts as the English text, to write over.
+  const title = team.getByRole("textbox", { name: "Title" });
+  await expect(title).toHaveValue("Getting paid");
+  await title.fill("Bezahlt werden");
+  await team.getByRole("textbox", { name: "Text" }).fill("Auszahlungen gehen jeden Montag raus.");
+  await checkpoint(team, "team-article-version");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await expect(team.getByText("Not published yet: readers get the English text until you publish it.")).toBeVisible();
+  await expect(team.getByRole("switch", { name: /Keep up to date/ })).not.toBeChecked();
+
+  await team.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(team.getByText("Published", { exact: true })).toBeVisible();
+  await team.getByRole("button", { name: "Language: Deutsch" }).click();
+  await expect(team.getByRole("menuitem", { name: /Deutsch/ })).toContainText("Written by your team");
+  await team.keyboard.press("Escape");
+
+  // On a phone: the pill under the top bar, Save draft and Publish in it.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.reload();
+  await expect(team.getByRole("button", { name: "Language: Deutsch" })).toBeVisible();
+  await expect(title).toHaveValue("Bezahlt werden");
+  await checkpoint(team, "team-article-version-phone", { fullPage: false });
+  // Back to English: its own editor.
+  await team.getByRole("button", { name: "Language: Deutsch" }).click();
+  await team.getByRole("menuitem", { name: /English/ }).click();
+  await expect(team).not.toHaveURL(/language=/);
+  await expect(team.getByRole("textbox", { name: "Title" })).toHaveValue("Getting paid");
+});
