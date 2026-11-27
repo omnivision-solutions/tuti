@@ -191,7 +191,7 @@
     "thatsAll": "Ecco tutte le {count, plural, one {# idea in arrivo} other {# idee in arrivo}} in {board}. <link>Condividi la tua</link>",
     "notHere": "Non c’è? <link>Pubblicala</link>",
     "aboutBoard": "Informazioni sulla bacheca",
-    "openIdeas": "{board}, {count, plural, one {# idea aperta} other {# idee aperte}}",
+    "openIdeas": "{count, plural, one {# idea aperta} other {# idee aperte}}",
     "comments": "{count, plural, one {# commento} other {# commenti}}",
     "status": {
       "OPEN": "Aperta",

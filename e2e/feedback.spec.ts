@@ -1103,8 +1103,11 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   const sidebar = ada.getByRole("complementary", { name: "About this board" });
   const boards = sidebar.getByRole("navigation", { name: "Boards" });
   await expect(boards.getByRole("link")).toHaveCount(2);
-  await expect(boards.getByRole("link").first()).toHaveAccessibleName("Feature requests, 3 open ideas");
-  await expect(boards.getByRole("link").last()).toHaveAccessibleName("Bug reports, 1 open idea");
+  // Named by the board (in its own language), its count read after it.
+  await expect(boards.getByRole("link").first()).toHaveAccessibleName("Feature requests");
+  await expect(boards.getByRole("link").first()).toHaveAccessibleDescription("3 open ideas");
+  await expect(boards.getByRole("link").last()).toHaveAccessibleName("Bug reports");
+  await expect(boards.getByRole("link").last()).toHaveAccessibleDescription("1 open idea");
   await expect(boards.getByRole("link").first()).toHaveText("Feature requests3");
   await expect(boards.getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
   await expect(boards.getByRole("link", { name: "Bug reports" })).not.toHaveAttribute("aria-current");

@@ -191,7 +191,7 @@
     "thatsAll": "Das sind alle {count, plural, one {# Idee} other {# Ideen}}, die in {board} noch ausstehen. <link>Teile deine</link>",
     "notHere": "Nicht dabei? <link>Poste sie</link>",
     "aboutBoard": "Über dieses Board",
-    "openIdeas": "{board}, {count, plural, one {# offene Idee} other {# offene Ideen}}",
+    "openIdeas": "{count, plural, one {# offene Idee} other {# offene Ideen}}",
     "comments": "{count, plural, one {# Kommentar} other {# Kommentare}}",
     "status": {
       "OPEN": "Offen",

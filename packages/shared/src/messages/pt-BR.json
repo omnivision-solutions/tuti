@@ -191,7 +191,7 @@
     "thatsAll": "Essas são todas: {count, plural, one {# ideia por vir} other {# ideias por vir}} em {board}. <link>Compartilhe a sua</link>",
     "notHere": "Não encontrou? <link>Publique</link>",
     "aboutBoard": "Sobre este quadro",
-    "openIdeas": "{board}, {count, plural, one {# ideia aberta} other {# ideias abertas}}",
+    "openIdeas": "{count, plural, one {# ideia aberta} other {# ideias abertas}}",
     "comments": "{count, plural, one {# comentário} other {# comentários}}",
     "status": {
       "OPEN": "Aberta",

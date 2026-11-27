@@ -191,7 +191,7 @@
     "thatsAll": "C’est tout : {count, plural, one {# idée} other {# idées}} à venir dans {board}. <link>Partagez la vôtre</link>",
     "notHere": "Introuvable ? <link>Publiez-la</link>",
     "aboutBoard": "À propos de ce tableau",
-    "openIdeas": "{board}, {count, plural, one {# idée ouverte} other {# idées ouvertes}}",
+    "openIdeas": "{count, plural, one {# idée ouverte} other {# idées ouvertes}}",
     "comments": "{count, plural, one {# commentaire} other {# commentaires}}",
     "status": {
       "OPEN": "Ouverte",

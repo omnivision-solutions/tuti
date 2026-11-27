@@ -191,7 +191,7 @@
     "thatsAll": "{board} 中待实现的 {count, plural, other {# 个想法}}都在这里了。<link>分享你的想法</link>",
     "notHere": "没找到？<link>发布它</link>",
     "aboutBoard": "关于此看板",
-    "openIdeas": "{board}，{count, plural, other {# 个开放的想法}}",
+    "openIdeas": "{count, plural, other {# 个开放的想法}}",
     "comments": "{count, plural, other {# 条评论}}",
     "status": {
       "OPEN": "开放",

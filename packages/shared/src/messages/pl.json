@@ -191,7 +191,7 @@
     "thatsAll": "To wszystkie pomysły czekające na realizację w {board}: {count, number}. <link>Dodaj swój</link>",
     "notHere": "Nie ma go tu? <link>Dodaj go</link>",
     "aboutBoard": "O tej tablicy",
-    "openIdeas": "{board}, {count, plural, one {# otwarty pomysł} few {# otwarte pomysły} many {# otwartych pomysłów} other {# otwartego pomysłu}}",
+    "openIdeas": "{count, plural, one {# otwarty pomysł} few {# otwarte pomysły} many {# otwartych pomysłów} other {# otwartego pomysłu}}",
     "comments": "{count, plural, one {# komentarz} few {# komentarze} many {# komentarzy} other {# komentarza}}",
     "status": {
       "OPEN": "Otwarty",

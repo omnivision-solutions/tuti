@@ -191,7 +191,7 @@
     "thatsAll": "{board}の未対応のアイデアは以上の{count, plural, other {#件}}です。<link>あなたのアイデアを共有</link>",
     "notHere": "見つかりませんか？<link>投稿する</link>",
     "aboutBoard": "このボードについて",
-    "openIdeas": "{board}、未対応のアイデア{count, plural, other {#件}}",
+    "openIdeas": "未対応のアイデア{count, plural, other {#件}}",
     "comments": "{count, plural, other {コメント#件}}",
     "status": {
       "OPEN": "受付中",

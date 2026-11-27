@@ -40,8 +40,9 @@ export async function portalLinks(): Promise<(path: string) => string> {
  * portal. The one mechanism with the portal's client components' useTeamLanguage (L5's, from PortalIntl): this reads the same
  * default from proxy.ts's header, for server components. What the team or people wrote (an article, a post and its comments,
  * a changelog entry, and the lists and search results made of them, the docs' tree and collections included) carries it;
- * the portal's own text doesn't (L5 translates it), nor the names the team gives boards, statuses and tabs (L13–L15
- * translate those). Translated articles (L8) and entries (L17) will take their own.
+ * the portal's own text doesn't (L5 translates it). The names the team gives tabs, collections and boards carry the page's
+ * language where they're translated (L9, L14: docsContents, boardNames), else this. Translated articles (L8) and entries
+ * (L17) take their own.
  */
 export async function teamLanguage(): Promise<string | undefined> {
   return (await portalLanguage()).defaultLanguage ?? undefined;

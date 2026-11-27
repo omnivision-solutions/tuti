@@ -191,7 +191,7 @@
     "thatsAll": "{board}의 진행 예정 아이디어 {count, plural, other {#개}}를 모두 보셨습니다. <link>내 아이디어 공유하기</link>",
     "notHere": "찾는 게 없나요? <link>게시하기</link>",
     "aboutBoard": "이 보드 정보",
-    "openIdeas": "{board}, {count, plural, other {열린 아이디어 #개}}",
+    "openIdeas": "{count, plural, other {열린 아이디어 #개}}",
     "comments": "{count, plural, other {댓글 #개}}",
     "status": {
       "OPEN": "접수",

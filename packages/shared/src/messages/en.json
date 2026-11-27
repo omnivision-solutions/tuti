@@ -191,7 +191,7 @@
     "thatsAll": "That's all {count, plural, one {# idea} other {# ideas}} still to come in {board}. <link>Share yours</link>",
     "notHere": "Not here? <link>Post it</link>",
     "aboutBoard": "About this board",
-    "openIdeas": "{board}, {count, plural, one {# open idea} other {# open ideas}}",
+    "openIdeas": "{count, plural, one {# open idea} other {# open ideas}}",
     "comments": "{count, plural, one {# comment} other {# comments}}",
     "status": {
       "OPEN": "Open",

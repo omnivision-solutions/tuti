@@ -191,7 +191,7 @@
     "thatsAll": "Dat zijn alle {count, plural, one {# idee} other {# ideeën}} in de wacht op {board}. <link>Deel het jouwe</link>",
     "notHere": "Staat het er niet bij? <link>Plaats het</link>",
     "aboutBoard": "Over dit bord",
-    "openIdeas": "{board}, {count, plural, one {# open idee} other {# open ideeën}}",
+    "openIdeas": "{count, plural, one {# open idee} other {# open ideeën}}",
     "comments": "{count, plural, one {# reactie} other {# reacties}}",
     "status": {
       "OPEN": "Open",
