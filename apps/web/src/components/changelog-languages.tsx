@@ -276,11 +276,12 @@ export function ChangelogVersionForm({
   useEffect(() => saving?.setPending(pending), [saving, pending]);
   // An article's version behind English: in how many sections (the orange line, with Show changes and Update those sections).
   const count = behind?.count ?? 0;
-  const line = view.state === "behind" && count > 0 ? `${defaultName} changed in ${count} ${count === 1 ? "section" : "sections"} since this was edited.` : versionLine(view, defaultName, kind);
+  // Whenever sections are behind (a draft never published, or one kept up to date, too), not only in the "behind" state.
+  const line = count > 0 ? `${defaultName} changed in ${count} ${count === 1 ? "section" : "sections"} since this was edited.` : versionLine(view, defaultName, kind);
   // On the text alone (the labels, line and errors are the app's English): the default language's while the text shown is
   // its, whatever the state (not written, or a first translation on its way or failing).
   const textLang = view.own ? view.code : languages[0]!.code;
-  const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting";
+  const attention = view.state === "behind" || view.state === "setting" || view.state === "waiting" || (behind?.count ?? 0) > 0;
   return (
     <form id={VERSION_FORM} {...keepingFields(action)} onInput={(event) => {
         if ((event.target as HTMLElement).getAttribute("role") !== "switch") {

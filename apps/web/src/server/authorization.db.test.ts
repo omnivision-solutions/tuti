@@ -399,7 +399,10 @@ const matrix: Matrix = {
     updateArticleVersionSections: {
       allowed: "MEMBER",
       // The fixture's German has a section behind (its English went), so there's one to update.
-      call: (slug) => articleVersions.updateArticleVersionSections(slug, "matrix-article", "de", ["Gone\u001f0"]),
+      call: async (slug, f) => {
+        const read = await callOperation(getTranslation, { actor: { kind: "user", userId: users.OWNER.id }, projectId: f.projectId }, { slug: "matrix-article", language: "de" });
+        return articleVersions.updateArticleVersionSections(slug, "matrix-article", "de", ["Gone\u001f0"], read.version);
+      },
     },
   },
   "docs-readers": {

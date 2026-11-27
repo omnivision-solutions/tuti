@@ -279,6 +279,13 @@ export const getTranslation = defineOperation({
   run: async ({ projectId }, input) => (await readArticleVersion(projectId, input.slug, input.language)).read,
 });
 
+/**
+ * A version's sections behind for English (not only the product setting): its draft's where it has one (what Publish
+ * publishes: a section the draft brought up to date is no longer behind), else its published text's.
+ */
+const behindForEnglish = (read: z.output<typeof translationOutput>) =>
+  read.draft ? read.draft.behind : read.behind.filter(({ reason }) => reason !== PRODUCT_SETTING_CHANGED).map(({ section }) => section);
+
 /** How many revisions back Show changes looks for the English a section was edited against. */
 const CHANGES_LOOK_BACK = 200;
 
@@ -295,7 +302,7 @@ export async function behindChanges(projectId: string, slug: string, language: (
     async (db, version, articleId) => {
       const source = await sourceOf(db, articleId);
       const read = output(version, source);
-      const keys = [...new Set([...read.behind.filter(({ reason }) => reason !== PRODUCT_SETTING_CHANGED).map(({ section }) => section), ...(read.draft?.behind ?? [])])];
+      const keys = behindForEnglish(read);
       if (keys.length === 0) {
         return [];
       }
@@ -348,7 +355,7 @@ export async function readArticleVersion(projectId: string, slug: string, langua
       // The orange line's sections: behind for English (not only the product setting), published or in the draft. Publish
       // asks about those the text it publishes has (an edit to keep or not; a section English added has none).
       const { published, drafted } = versionParts(version, source.parts);
-      const sections = [...new Set([...read.behind.filter(({ reason }) => reason !== PRODUCT_SETTING_CHANGED).map(({ section }) => section), ...(read.draft?.behind ?? [])])];
+      const sections = behindForEnglish(read);
       const has = new Set((drafted ?? published).map(({ meta }) => meta.key));
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
       return {
@@ -606,6 +613,13 @@ export const updateTranslationSections = defineOperation({
     slug: articleSlug,
     language,
     sections: sectionList.optional().describe("The sections to translate again (left out: every one behind the source, in the published text and the draft)"),
+    version: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("Optional: the `version` of the read the sections were picked from. Refused (409 `changed`) if it changed since, so an edit saved meanwhile isn't replaced. Left out, there's no check")
+      .meta({ examples: ["5f2c9a…"] }),
   }),
   output: translationOutput,
   run: async ({ projectId }, input) => {
@@ -613,6 +627,7 @@ export const updateTranslationSections = defineOperation({
     const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
       const source = await sourceOf(tx, articleId);
       const { parts, sourceLanguage } = source;
+      if (input.version !== undefined) checkToken(version, source.sourceHash, input.version);
       const { published, draft, drafted } = versionParts(version, parts);
       // No text yet (never written or translated): no section to place a translation in.
       if (!version.publishedAt && !draft) {

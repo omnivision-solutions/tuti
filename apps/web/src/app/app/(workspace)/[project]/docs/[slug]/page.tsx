@@ -206,7 +206,7 @@ export default async function ArticlePage(
       own: text !== null,
     };
     const defaultName = languages![0]!.name;
-    const changes = state === "behind" ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];
+    const changes = behind.sections.length > 0 ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];
     const none = { type: "doc" as const, content: [] };
     const shown = (content: Doc) => ({ title: "", body: "", content, collection: null });
     const changesShown =
@@ -259,7 +259,7 @@ export default async function ArticlePage(
               view={version}
               mediaUrls={await mediaUrls(version.content)}
               languages={languages!}
-              behind={{ count: behind.sections.length, changes: changesShown, update: updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections) }}
+              behind={{ count: behind.sections.length, changes: changesShown, update: updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections, read.version) }}
             />
           </div>
         </section>

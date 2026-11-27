@@ -441,3 +441,9 @@ test("Publish with sections of the draft behind English asks first: each ticked 
   const send = [...document.querySelectorAll<HTMLButtonElement>("button")].filter((each) => each.textContent === "Publish").at(-1)!;
   expect([send.type, send.getAttribute("form"), send.value]).toEqual(["submit", "changelog-version", "publish"]);
 });
+
+test("an article's draft never published, with sections behind English, has the orange line too", async () => {
+  await form({ state: "unwritten", keepUpToDate: false, own: true }, { kind: "article", behind: { count: 1, changes: null, update: vi.fn() } });
+  expect(document.body.textContent).toContain("English changed in 1 section since this was edited.");
+  expect(document.body.textContent).not.toContain("Not published yet");
+});

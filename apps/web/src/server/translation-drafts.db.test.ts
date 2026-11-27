@@ -1160,21 +1160,36 @@ test("the sections behind English: Publish asks about those its text has, with n
   expect(changes.find(({ key }) => key.startsWith("Billing"))).toMatchObject({ added: false });
 });
 
-test("Update those sections from the editor updates the sections it showed, not one behind since", async () => {
+test("Update those sections from the editor goes from the read it showed: refused once an edit was saved since, which stays", async () => {
   await teamWritten();
   await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
   await languageTranslationsDone();
-  const shown = (await readArticleVersion(project.id, de.slug, "de")).behind.sections;
-  // English changes Setup after the page was read: the team hasn't seen that edit behind.
-  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it today"], ["Billing", "Pay by card or invoice"]), publish: true });
-  await languageTranslationsDone();
-  model.reply(sectionsReply("de", ["Billing", "Pay by card or invoice"]));
+  const page = await readArticleVersion(project.id, de.slug, "de");
+  expect(page.behind.sections).toHaveLength(1);
+  // Someone rewrites Billing against the new English and saves it: no longer behind.
+  const content = doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Per Karte oder Rechnung"]);
+  await call(saveTranslation, as(), { ...de, content, version: page.read.version });
+  expect((await readArticleVersion(project.id, de.slug, "de")).behind).toEqual({ sections: [], ask: [] });
+  // The page read before that: its Update those sections is refused, the edit kept, nothing asked of the model.
   actAs(owner);
-  expect(await updateArticleVersionSections(project.slug, de.slug, "de", shown)).toEqual({});
+  expect(await updateArticleVersionSections(project.slug, de.slug, "de", page.behind.sections, page.read.version)).toMatchObject({ error: expect.stringContaining("changed since you opened it") });
   await languageTranslationsDone();
-  const updated = await call(getTranslation, as(), de);
-  expect(text(updated.content)).toContain("Unsere Installation");
-  expect(text(updated.content)).toContain("[de] Pay by card or invoice");
+  expect(text((await call(getTranslation, as(), de)).draft!.content)).toContain("Per Karte oder Rechnung");
+  expect(model.requests).toHaveLength(0);
+});
+
+test("a draft never published with sections behind English: the line counts them, and Show changes has them", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await call(createArticle, as(), { title: "Getting paid", content: V1 });
+  await call(publishArticle, as(), { slug: "getting-paid" });
+  const blank = await call(getTranslation, as(), de);
+  await call(saveTranslation, as(), { ...de, title: "Bezahlt werden", content: doc("Hallo", ["Einrichtung", "Unsere Installation"], ["Abrechnung", "Unsere Zahlung"]), version: blank.version });
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const page = await readArticleVersion(project.id, de.slug, "de");
+  expect(page.state).toBe("unwritten");
+  expect(page.behind.sections.map((key) => key.split("\u001f")[0])).toEqual(["Billing"]);
+  expect((await behindChanges(project.id, de.slug, "de")).map(({ key }) => key.split("\u001f")[0])).toEqual(["Billing"]);
 });
 
 test("Show changes finds the English of a section the team took out of its draft, as it was taken out", async () => {
