@@ -175,8 +175,12 @@ test("the header's menu (phones and tablets) names each entry in the page's lang
   ]);
 });
 
-/** The `lang` nearest before `text` in `html`: the one the text is read in. */
-const langOf = (html: string, text: string) => [...html.slice(0, html.indexOf(text)).matchAll(/lang="([^"]+)"/g)].at(-1)?.[1];
+/** The `lang` nearest before `text` in `html`: the one the text is read in. Throws when the text isn't there. */
+const langOf = (html: string, text: string) => {
+  const at = html.indexOf(text);
+  if (at === -1) throw new Error(`"${text}" isn't in the page`);
+  return [...html.slice(0, at).matchAll(/lang="([^"]+)"/g)].at(-1)?.[1];
+};
 
 /** Every ChangelogEntryView in `tree` (as returned, components not rendered), rendered to HTML. */
 function entriesIn(tree: ReactNode) {
