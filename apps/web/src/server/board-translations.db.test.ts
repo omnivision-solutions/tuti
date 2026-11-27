@@ -7,7 +7,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createBoard, setBoardOff, updateBoard } from "./boards";
 import { updateGlossary } from "./operations/glossary";
-import { updateLanguages } from "./operations/languages";
+import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
 /** Boards' translations (docs/plan.md, Languages, L14): a feedback board's name and description in the project's languages. */
@@ -104,3 +104,16 @@ test("a glossary term a board's name uses changing: the board is translated agai
   await languageTranslationsDone();
   expect(await inGerman("ideas")).toEqual({ name: "Brett-Ideen", description: "" });
 });
+
+test("Retranslate makes a board's translation kept up to date again", async () => {
+  await german();
+  model.reply(labelsReply({ "0.n": "Ideen" }));
+  await createBoard(project.slug, {}, form({ name: "Ideas", slug: "ideas" }));
+  await languageTranslationsDone();
+  expect(await inGerman("ideas")).toEqual({ name: "Ideen", description: "" });
+  model.reply(labelsReply({ "0.n": "Vorschläge" }));
+  await call(retranslateLanguage, as(), { code: "de" });
+  await languageTranslationsDone();
+  expect(await inGerman("ideas")).toEqual({ name: "Vorschläge", description: "" });
+});
+
