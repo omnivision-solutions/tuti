@@ -288,6 +288,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             <ChangelogForm
               key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
               projectSlug={slug}
+              // What its saved text still has to fill in, said under its status (Publish waits for them).
+              fillIns={entry.publishedAt ? 0 : markersIn(displayDoc(entry)).length}
               entry={{
                 number: entry.number,
                 title: entry.title,

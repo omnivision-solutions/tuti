@@ -127,20 +127,22 @@ test("Who sees it: Everyone hides the chips; Some groups shows them, saying they
   const chips = () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.closest("div")!;
   expect(box.querySelector<HTMLInputElement>('input[value="everyone"]')!.checked).toBe(true);
   expect(chips().hidden).toBe(true);
-  const reach = "Only readers in these groups see it, wherever it goes.";
-  expect(box.textContent).not.toContain(reach);
+  // Who it reaches, in a word, read with the choice too.
+  expect(box.textContent).toContain("All users");
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
   expect(chips().hidden).toBe(false);
-  expect(box.textContent).toContain(reach);
-  // Read with each group too, where a screen reader tabs.
-  const beta = box.querySelector<HTMLInputElement>('input[value="beta"]')!;
-  expect(beta.getAttribute("aria-describedby")!.split(" ").map((id) => document.getElementById(id)?.textContent)).toContain(reach);
+  expect(box.textContent).toContain("Only users in selected groups");
+  expect(box.textContent).not.toContain("All users");
   // Only showing the chips is no change to send.
   expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
   await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
   expect(new FormData(box).getAll("groups")).toEqual(["beta"]);
+  // Read with each group too, where a screen reader tabs.
+  const beta = box.querySelector<HTMLInputElement>('input[value="beta"]')!;
+  expect(beta.getAttribute("aria-describedby")!.split(" ").map((id) => document.getElementById(id)?.textContent)).toContain("Only users in selected groups");
   await act(async () => box.querySelector<HTMLInputElement>('input[value="everyone"]')!.click());
   expect(chips().hidden).toBe(true);
+  expect(box.textContent).toContain("All users");
   expect(new FormData(box).getAll("groups")).toEqual([]);
   expect(box.querySelector('input[name="groupsEditable"]')).not.toBeNull();
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
@@ -171,7 +173,7 @@ test("on a plan without reader groups, choosing Some groups opens the upgrade pr
   document.body.append(box);
   await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(WhoSeesIt, { groups, picked: [], upgrade, onChange: () => {} }))));
   const audience = box.querySelector('[role="radiogroup"]')!;
-  expect(document.getElementById(audience.getAttribute("aria-describedby")!)?.textContent).toBe("Reader groups need the Business plan");
+  expect(audience.getAttribute("aria-describedby")!.split(" ").map((id) => document.getElementById(id)?.textContent)).toEqual(["Reader groups need the Business plan", "All users"]);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Reader groups need the Business plan");
   expect(box.querySelector<HTMLInputElement>('input[value="everyone"]')!.checked).toBe(true);
@@ -198,15 +200,15 @@ test("an entry saved for some groups opens on Some groups, its chips picked", as
   expect(new FormData(box).getAll("groups")).toEqual(["beta"]);
 });
 
-test("Goes to: a draft goes to the changelog list, the widget popup and an email announcement, all on to start with", async () => {
+test("Published in: a draft goes to the changelog list, the widget popup and an email announcement, all on to start with", async () => {
   const box = document.createElement("form");
   document.body.append(box);
   await act(async () => createRoot(box).render(h(ChangelogSaving, null, h(WhoSeesIt, { groups: [], picked: [], entry, subscribers: 3, upgrade: null, onChange: () => {} }))));
-  for (const name of ["Changelog list", "Widget", "Email announcement"]) {
+  for (const name of ["Changelog list", "Widget", "Email"]) {
     expect(switchNamed(box, name).checked).toBe(true);
     expect(switchNamed(box, name).disabled).toBe(false);
   }
-  expect(lineOf(switchNamed(box, "Email announcement"))).toBe("3 subscribers");
+  expect(lineOf(switchNamed(box, "Email"))).toBe("3 subscribers");
   // No hint lines: the list and the popup have none.
   expect(switchNamed(box, "Changelog list").hasAttribute("aria-describedby")).toBe(false);
   expect(switchNamed(box, "Widget").hasAttribute("aria-describedby")).toBe(false);
@@ -237,7 +239,7 @@ test("the changelog list off: email only, sent once changed and holding Publish 
   expect(popup().disabled).toBe(true);
   expect(lineOf(popup())).toBe("Needs the changelog list");
   // The email still goes: that's what email only is.
-  expect(switchNamed(box, "Email announcement").checked).toBe(true);
+  expect(switchNamed(box, "Email").checked).toBe(true);
   await act(async () => switchNamed(box, "Changelog list").click());
   expect(popup().checked).toBe(true);
   expect(popup().disabled).toBe(false);
@@ -261,7 +263,7 @@ test("an entry saved as email only opens with the list off, and sends nothing un
   expect(new FormData(box).get("emailOnlyEditable")).toBeNull();
 });
 
-test("Publish with Email announcement off emails no subscriber", async () => {
+test("Publish with Email off emails no subscriber", async () => {
   const box = document.createElement("form");
   document.body.append(box);
   await act(async () =>
@@ -274,8 +276,8 @@ test("Publish with Email announcement off emails no subscriber", async () => {
       ),
     ),
   );
-  await act(async () => switchNamed(box, "Email announcement").click());
-  expect(switchNamed(box, "Email announcement").checked).toBe(false);
+  await act(async () => switchNamed(box, "Email").click());
+  expect(switchNamed(box, "Email").checked).toBe(false);
   const publish = () => [...document.querySelectorAll("button")].filter((button) => button.textContent === "Publish");
   await act(async () => publish()[0].click());
   expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("It goes on your portal and in your widget.");
@@ -292,5 +294,5 @@ test("emailed already, an entry for some groups doesn't say only they see it: th
     ),
   );
   expect(box.querySelector<HTMLInputElement>('input[value="beta"]')!.checked).toBe(true);
-  expect(box.textContent).not.toContain("Only readers in these groups see it");
+  expect(box.textContent).not.toContain("Only users in selected groups");
 });

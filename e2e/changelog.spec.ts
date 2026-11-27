@@ -614,7 +614,7 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link")).toHaveCount(0);
   // Quietly: no widget popup.
-  const goesTo = team.getByRole("group", { name: "Goes to" });
+  const goesTo = team.getByRole("group", { name: "Published in" });
   await goesTo.getByRole("switch", { name: "Widget" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
   // What's saved is published: the post taken off here is still in it.
@@ -1220,7 +1220,7 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
-  await expect(sidebar.getByRole("group", { name: "Goes to" }).getByRole("switch", { name: "Email announcement" })).toHaveAccessibleDescription("Published without it · told 1 person who asked");
+  await expect(sidebar.getByRole("group", { name: "Published in" }).getByRole("switch", { name: "Email" })).toHaveAccessibleDescription("Published without it · told 1 person who asked");
   // Published as it was, Ask AI is its way into AI (Draft with AI is for drafts).
   await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
   await checkpoint(team, "team-changelog-told");
@@ -1655,7 +1655,7 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   expect((await saved(3)).cover!.id).toBe(composed);
 });
 
-test("readers get the changelog by email: confirmed first, each entry published with Email announcement, unsubscribed in one click", async ({ browser }, testInfo) => {
+test("readers get the changelog by email: confirmed first, each entry published with Email, unsubscribed in one click", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1720,8 +1720,8 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await team.keyboard.type("Switch themes from your profile menu.");
   await team.getByRole("button", { name: "Save draft" }).first().click();
   await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/1$`));
-  const announced = team.getByRole("group", { name: "Goes to" });
-  const email = announced.getByRole("switch", { name: "Email announcement" });
+  const announced = team.getByRole("group", { name: "Published in" });
+  const email = announced.getByRole("switch", { name: "Email" });
   await expect(email).toBeChecked();
   await expect(email).toHaveAccessibleDescription("1 subscriber");
   await expect(announced.getByRole("switch", { name: "Widget" })).toBeChecked();

@@ -99,8 +99,8 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await audience.getByText("Some groups", { exact: true }).click();
   await expect(audience.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
   await audience.getByRole("checkbox", { name: "Enterprise" }).check();
-  // Who it's for is who it reaches, wherever it goes.
-  await expect(audience).toContainText("Only readers in these groups see it, wherever it goes.");
+  // Who it reaches, in a few words: the list, the widget and the email all leave out everyone else.
+  await expect(audience).toContainText("Only users in selected groups");
   await checkpoint(owner, "editor-audience");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
