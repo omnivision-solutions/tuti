@@ -209,6 +209,20 @@ test("an owner edits the glossary: a term's word per language, one never transla
   await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toHaveValue("Acme");
   await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
 
+  // A row with a word but no term isn't dropped quietly: saving it says so.
+  await pane.getByRole("button", { name: "Add term" }).click();
+  await terms.getByRole("textbox", { name: "this term in Deutsch" }).fill("Tafel");
+  await pane.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Write the term first")).toBeVisible();
+  await expect(terms.getByRole("textbox", { name: "Term", exact: true }).last()).toBeFocused();
+  // Leaving with changes not saved asks first.
+  await pane.getByRole("link", { name: "Languages" }).click();
+  const leave = owner.getByRole("alertdialog", { name: "Leave without saving?" });
+  await leave.getByRole("button", { name: "Keep editing" }).click();
+  await expect(leave).toBeHidden();
+  await terms.getByRole("button", { name: "Remove this term", exact: true }).click();
+  await expect(pane.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
   // Saved: there after a reload, and as a card per term on a phone.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.reload();

@@ -5,6 +5,7 @@ import { PlusIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { usePreview } from "@/components/customize-shell";
 import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -17,16 +18,32 @@ type Row = GlossaryTermInput & { key: string };
 
 /** Languages side by side up to this many; with more, each term is a card (as on phones), its languages under it. */
 const MAX_COLUMNS = 3;
+/** The table's columns on wide screens (the headings' and each term's, so they line up): term, a column per language, Never translated, Remove. */
+const COLUMNS = "@min-[40rem]/settings:grid-cols-[minmax(8rem,1.2fr)_repeat(var(--languages),minmax(6rem,1fr))_7.5rem_2rem]";
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count.toLocaleString("en")} ${many}`);
 
 /**
  * Settings → Languages → Glossary (docs/plan.md, Languages, L12): a row per term, its word in each language ("Model decides"
- * when empty) or Never translated; on phones (and with many languages) a card per term. Saving asks first when pages use a
- * term that changed: how many are translated again, and how many the team writes get sections to update.
+ * when empty) or Never translated; on phones (and with many languages, or none) a card per term. Saving asks first when pages
+ * use a term that changed: how many are translated again, and how many the team writes get sections to update.
  */
-export function GlossarySettings({ projectSlug, languages, terms }: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[] }) {
+export function GlossarySettings(props: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[] }) {
+  return (
+    <SettingsPane title="Glossary" description="Words kept as they are, or always translated one way." back={{ href: `/app/${props.projectSlug}/settings/languages`, label: "Languages" }}>
+      <GlossaryEditor {...props} />
+    </SettingsPane>
+  );
+}
+
+/**
+ * The terms, as a form of the pane's: its "Save changes" (or Enter in a field) submits it, and leaving with changes not saved
+ * asks first, as on every settings page.
+ */
+function GlossaryEditor({ projectSlug, languages, terms }: { projectSlug: string; languages: Language[]; terms: GlossaryTermInput[] }) {
   const id = useId();
+  const formId = `${id}-form`;
+  const addId = `${id}-add`;
   const keyed = (list: GlossaryTermInput[]) => list.map((term, i) => ({ ...term, key: `${id}-${i}` }));
   const [rows, setRows] = useState<Row[]>(() => keyed(terms));
   const [saved, setSaved] = useState(JSON.stringify(terms));
@@ -43,8 +60,7 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
       focusAfterRemove.current = null;
     }
   }, [rows]);
-  const addId = `${id}-add`;
-  // What's saved: terms written, translations only where one is, none on a kept term.
+  // What's saved: terms written, translations only where one is, none on a kept term. A row left empty is dropped.
   const toSave = (): GlossaryTermInput[] =>
     rows
       .filter((row) => row.term.trim())
@@ -53,8 +69,12 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
         keep,
         translations: keep ? {} : Object.fromEntries(Object.entries(translations).filter(([, word]) => word.trim()).map(([code, word]) => [code, word.trim()])),
       }));
-  const dirty = JSON.stringify(toSave()) !== saved;
-  // Side by side with one to MAX_COLUMNS languages (with none there are no columns to line up).
+  // A row with words (or Never translated) but no term: never dropped quietly, it's for the team to name or remove.
+  const unnamed = rows.find((row) => !row.term.trim() && (row.keep || Object.values(row.translations).some((word) => word.trim())));
+  const dirty = JSON.stringify(toSave()) !== saved || !!unnamed;
+  const { register } = usePreview();
+  useEffect(() => register(formId, { dirty, pending, saving: pending }), [register, formId, dirty, pending]);
+  useEffect(() => () => register(formId, null), [register, formId]);
   const columns = languages.length > 0 && languages.length <= MAX_COLUMNS;
   const update = (key: string, change: Partial<GlossaryTermInput>) => setRows((list) => list.map((row) => (row.key === key ? { ...row, ...change } : row)));
   const add = () => {
@@ -74,7 +94,12 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
       setSaved(JSON.stringify(terms));
       toast.success("Saved the glossary");
     });
-  const save = () =>
+  const save = () => {
+    if (unnamed) {
+      toast.error("Write the term first");
+      document.getElementById(`${unnamed.key}-term`)?.focus();
+      return;
+    }
     startTransition(async () => {
       // What saving would change first: pages that use a changed term are worth asking about (docs/plan.md, "Nothing large without asking").
       const preview = await saveGlossary(projectSlug, toSave(), true);
@@ -88,22 +113,21 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
       }
       commit();
     });
+  };
   return (
-    <SettingsPane
-      title="Glossary"
-      description="Words kept as they are, or always translated one way."
-      back={{ href: `/app/${projectSlug}/settings/languages`, label: "Languages" }}
-      actions={
-        <Button disabled={!dirty || pending} focusableWhenDisabled onClick={save}>
-          {pending ? "Saving…" : "Save changes"}
-        </Button>
-      }
+    <form
+      id={formId}
+      className="flex flex-col gap-7"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (dirty && !pending) save();
+      }}
     >
       <SettingsCard
         title="Terms"
         count={rows.filter((row) => row.term.trim()).length}
         action={
-          <Button id={addId} variant="outline" size="sm" onClick={add}>
+          <Button id={addId} type="button" variant="outline" size="sm" onClick={add}>
             <PlusIcon aria-hidden /> Add term
           </Button>
         }
@@ -116,19 +140,15 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
           <>
             {columns && (
               // The columns' names, beside each other on wide screens (each field says its own to screen readers).
-              <div
-                aria-hidden
-                style={{ "--languages": languages.length } as React.CSSProperties}
-                className="hidden gap-3 px-5 pt-3 pb-1 text-sm font-medium text-muted-foreground @min-[40rem]/settings:grid @min-[40rem]/settings:grid-cols-[minmax(8rem,1.2fr)_repeat(var(--languages),minmax(6rem,1fr))_auto_auto]"
-              >
+              <div aria-hidden style={{ "--languages": languages.length } as React.CSSProperties} className={cn("hidden gap-3 px-5 pt-3 pb-1 text-sm font-medium text-muted-foreground @min-[40rem]/settings:grid", COLUMNS)}>
                 <span>Term</span>
                 {languages.map((language) => (
                   <span key={language.code} lang={language.code}>
                     {language.native}
                   </span>
                 ))}
-                <span>Never translated</span>
-                <span className="w-8" />
+                <span className="text-center">Never translated</span>
+                <span />
               </div>
             )}
             <ul aria-label="Terms" className="flex flex-col divide-y">
@@ -152,12 +172,12 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
           </>
         )}
       </SettingsCard>
-      <p className="-mt-4 text-sm text-muted-foreground">Changing a term retranslates the sections that use it.</p>
+      <p className="-mt-4 text-sm text-muted-foreground">Changing a term updates the pages that use it.</p>
       <AlertDialog open={confirm !== null} onOpenChange={(next) => !next && !pending && setConfirm(null)}>
         <AlertDialogContent closeDisabled={pending}>
           <AlertDialogHeader>
             <AlertDialogTitle>Save the glossary?</AlertDialogTitle>
-            <AlertDialogDescription>Pages that use a term you changed are updated.</AlertDialogDescription>
+            <AlertDialogDescription>Pages that use a term you changed:</AlertDialogDescription>
           </AlertDialogHeader>
           {confirm && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -183,7 +203,7 @@ export function GlossarySettings({ projectSlug, languages, terms }: { projectSlu
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SettingsPane>
+    </form>
   );
 }
 
@@ -211,7 +231,7 @@ function TermRow({
       style={{ "--languages": languages.length } as React.CSSProperties}
       className={cn(
         "grid grid-cols-2 items-end gap-x-3 gap-y-3 px-4 py-3.5 @min-[34rem]/settings:px-5",
-        columns && "@min-[40rem]/settings:grid-cols-[minmax(8rem,1.2fr)_repeat(var(--languages),minmax(6rem,1fr))_auto_auto] @min-[40rem]/settings:items-center @min-[40rem]/settings:py-2.5",
+        columns && cn(COLUMNS, "@min-[40rem]/settings:items-center @min-[40rem]/settings:py-2.5"),
       )}
     >
       <div className={cn("col-span-2 flex flex-col gap-1.5", columns && "@min-[40rem]/settings:col-span-1")}>
@@ -253,7 +273,7 @@ function TermRow({
         <Switch checked={row.keep} onChange={(event) => onChange({ keep: event.target.checked })} aria-label={`Never translated: ${name}`} />
         <span className={cn(columns && "@min-[40rem]/settings:sr-only")}>Never translated</span>
       </label>
-      <Button variant="ghost" size="icon-sm" className="justify-self-end" aria-label={`Remove ${name}`} onClick={onRemove}>
+      <Button type="button" variant="ghost" size="icon-sm" className="justify-self-end" aria-label={`Remove ${name}`} onClick={onRemove}>
         <Trash2Icon />
       </Button>
     </li>
