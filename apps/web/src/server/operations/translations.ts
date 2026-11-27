@@ -42,6 +42,15 @@ const section = z
   .min(1)
   .max(MAX_ARTICLE_LENGTH + 16)
   .describe("A section, as `behind` names it");
+/**
+ * A list of sections (`keep`, `sections`): as many as an article can have, and no longer together than an article's text
+ * (each key is its heading, which is part of that text), with room for each key's suffix.
+ */
+const sectionList = z
+  .array(section)
+  .max(500)
+  .refine((list) => list.reduce((total, key) => total + key.length, 0) <= MAX_ARTICLE_LENGTH + 16 * list.length, "Those sections together are longer than an article can be");
+
 const docExample = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Mit Karte zahlen." }] }] };
 
 const behindOutput = z
@@ -296,7 +305,7 @@ export const publishTranslation = defineOperation({
   input: z.object({
     slug: articleSlug,
     language,
-    keep: z.array(section).max(500).optional().describe("Sections behind the source (the draft's `behind`) whose edit to keep; the rest take the new translation"),
+    keep: sectionList.optional().describe("Sections behind the source (the draft's `behind`) whose edit to keep; the rest take the new translation"),
     version: z
       .string()
       .min(1)
@@ -412,7 +421,7 @@ export const updateTranslationSections = defineOperation({
   input: z.object({
     slug: articleSlug,
     language,
-    sections: z.array(section).max(500).optional().describe("The sections to translate again (left out: every one behind the source, in the published text and the draft)"),
+    sections: sectionList.optional().describe("The sections to translate again (left out: every one behind the source, in the published text and the draft)"),
   }),
   output: translationOutput,
   run: async ({ projectId }, input) => {

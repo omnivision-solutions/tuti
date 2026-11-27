@@ -29,6 +29,11 @@ export type SectionMeta = {
    * translation (0: none yet). Taking a new translation replaces only those, the team's paragraph staying after them.
    */
   standIn?: number;
+  /**
+   * Other source sections it stands for too: a section of the team's with no heading, standing for a source section the
+   * source moved later, merged into the one at the top (two with no heading in a row read back as one). Counted as there.
+   */
+  also?: string[];
 };
 
 /** A section's own text as a hash (see SectionMeta.text). */
@@ -88,7 +93,13 @@ export function withTranslation(
     const { key } = section.meta;
     if (key !== null && inSource.has(key) && !byKey.has(key)) {
       byKey.set(key, section);
+      for (const other of section.meta.also ?? []) if (inSource.has(other) && !byKey.has(other)) byKey.set(other, section);
       previous = key;
+    } else if (section.meta.standIn !== undefined && key !== null && !inSource.has(key)) {
+      // Standing in for an intro the source no longer has: the intro's translation goes, the team's own paragraph stays,
+      // theirs (as it was before the intro came).
+      const own = section.blocks.slice(section.meta.standIn);
+      if (own.length > 0) after.set(previous, [...(after.get(previous) ?? []), { blocks: own, meta: { key: null, hash: null, own: true } }]);
     } else if (key === null || (section.meta.own && (!published || section.meta.kept) && !asked?.has(key)) || (only && !only.has(key))) {
       // (Published on a version kept up to date, the team's edit whose source section went goes too, unless they kept it.)
       // (A version the team writes keeps its sections whose source went, but where it asked for them.)
@@ -96,13 +107,25 @@ export function withTranslation(
     }
   }
   const out: Section[] = [...(after.get(null) ?? [])];
+  // Each section once, though it stands for more than one source section (`also`).
+  const placed = new Set<Section>();
   for (const [i, { key, hash }] of source.entries()) {
-    const had = byKey.get(key);
+    const found = byKey.get(key);
+    // Standing for this one too (`also`): kept where it is, unless this one is asked for, which then comes in by itself.
+    if (found && found.meta.key !== key) {
+      if (asked?.has(key) && fresh[i]) out.push({ blocks: fresh[i]!, meta: { key, hash } });
+      out.push(...(after.get(key) ?? []));
+      continue;
+    }
+    const had = found;
     const theirs = !asked?.has(key) && !!had?.meta.own && (!published || !!had.meta.kept || had.meta.hash === hash);
     // Not there because the team took it out (and didn't ask for it back, or took it out after asking): left out.
     const keep = theirs || (only && !only.has(key)) || (!had && !!removed?.has(key) && !asked?.has(key));
     if (keep) {
-      if (had) out.push(had);
+      if (had && !placed.has(had)) {
+        out.push(had);
+        placed.add(had);
+      }
     } else if (fresh[i]) {
       out.push(standingIn(had, fresh[i]!, { key, hash }));
     }
@@ -124,14 +147,16 @@ export function withTranslation(
     const introKey = source[0]!.key;
     const [first, second] = [out[0]!, out[1]!];
     const [sources, theirs] = first.meta.key === introKey ? [first, second] : [second, first];
+    // The source sections the team's stood for besides the intro: still stood for, not missing.
+    const also = [...new Set([...(sources.meta.also ?? []), ...(theirs.meta.also ?? []), ...(theirs.meta.key !== null && theirs.meta.key !== introKey ? [theirs.meta.key] : [])])];
     // Asked for (Update those sections, on a version the team writes): its new translation, and the team's own paragraph after
     // it (it asked to add the intro, not to drop its text). Else the team's, kept (so a later run keeps it too).
     out.splice(
       0,
       2,
       asked?.has(introKey)
-        ? { blocks: [...sources.blocks, ...theirs.blocks], meta: { key: introKey, hash: sources.meta.hash, own: true, standIn: sources.blocks.length } }
-        : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true, standIn: 0 } },
+        ? { blocks: [...sources.blocks, ...theirs.blocks], meta: { key: introKey, hash: sources.meta.hash, own: true, standIn: sources.blocks.length, ...(also.length > 0 && { also }) } }
+        : { blocks: theirs.blocks, meta: { key: introKey, hash: null, own: true, kept: true, standIn: 0, ...(also.length > 0 && { also }) } },
     );
   }
   return out;
@@ -216,7 +241,21 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
       const behindUnseen = automatic && !was.meta.own;
       // Kept (publishing with `keep`) stays kept: an edit updates the section, it doesn't take back never replacing it.
       const hash = behindUnseen || was.meta.key === null ? was.meta.hash : (hashes.get(was.meta.key) ?? null);
-      return { blocks: section, meta: { key: was.meta.key, hash, own: true, ...(was.meta.kept && { kept: true as const }) } };
+      // Standing in for the source's intro while the intro's translation at its top is as it was (the team edited their own
+      // paragraph after it); what else it stands for, as it was.
+      const standIn = was.meta.standIn;
+      const introKept = standIn !== undefined && canonicalBlocks(was.blocks.slice(0, standIn)) === canonicalBlocks(section.slice(0, standIn));
+      return {
+        blocks: section,
+        meta: {
+          key: was.meta.key,
+          hash,
+          own: true,
+          ...(was.meta.kept && { kept: true as const }),
+          ...(introKept && { standIn }),
+          ...(was.meta.also && { also: was.meta.also }),
+        },
+      };
     }
     // Nothing to line up with yet (written before its first translation): the source's section in its place, as it is now.
     const key = base.length === 0 ? (source[i]?.key ?? null) : null;
@@ -234,7 +273,7 @@ export function editedSections(base: Section[], edited: Doc, source: SourceSecti
 export function behindSections(list: Section[], source: SourceSection[], { missing = false, removed }: { missing?: boolean; removed?: Set<string> } = {}): string[] {
   const hashes = new Map(source.map((section) => [section.key, section.hash]));
   const stale = list.filter(({ meta }) => meta.own && meta.key !== null && hashes.get(meta.key) !== meta.hash).map(({ meta }) => meta.key!);
-  const has = new Set(list.map(({ meta }) => meta.key));
+  const has = new Set(list.flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
   return [...stale, ...(missing ? source.filter(({ key }) => !has.has(key) && !removed?.has(key)).map(({ key }) => key) : [])];
 }
 

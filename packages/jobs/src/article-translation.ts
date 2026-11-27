@@ -330,7 +330,7 @@ export function behindOf(sourceLanguage: string, source: ReturnType<typeof sourc
     for (const key of behindSections(own, source)) out[key] = changed;
     for (const key of outButChanged ?? []) out[key] = changed;
     if (teamWrites) {
-      const has = new Set(list.map(({ meta }) => meta.key));
+      const has = new Set(list.flatMap(({ meta }) => [meta.key, ...(meta.also ?? [])]));
       for (const key of behindSections(own, source, { missing: true, removed: new Set(removed) })) if (!has.has(key)) out[key] ??= added;
     }
   }

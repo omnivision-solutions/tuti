@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { expect, test } from "vitest";
 
-import { behindSections, docOfSections, editedSections, metaOf, sourceSections, versionSections, withTranslation } from "./translation-sections";
+import { behindSections, docOfSections, editedSections, metaOf, ownedByTeam, sourceSections, versionSections, withTranslation } from "./translation-sections";
 
 /** A document of sections: [heading, text] each ("" for the part before the first heading). */
 const doc = (...parts: [string, string][]): Doc => ({
@@ -317,4 +317,59 @@ test("a section of the team's with no heading, standing for a source section tha
   // Read back as written: its sections and what each stands for kept.
   const back = versionSections(docOfSections(out), metaOf(out), source2);
   expect(back.map(({ meta }) => meta.key)).toEqual(out.map(({ meta }) => meta.key));
+});
+
+/** A version kept up to date where the team's "Willkommen" stands in for an intro English added, updated (Update those sections). */
+function standInUpdated() {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  const de = doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const edited: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Willkommen" }] }, ...de.content!] };
+  const { sections: ours } = editedSections(versionSections(de, [], source), edited, source);
+  const source2 = sourceSections(doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]));
+  const translated = doc(["", "Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]);
+  const once = withTranslation(ours, translated, source2, { published: true });
+  const introKey = source2[0]!.key;
+  const asked = versionSections(docOfSections(once), metaOf(once), source2).map((part) =>
+    part.meta.key === introKey ? { blocks: part.blocks, meta: { key: introKey, hash: part.meta.hash, standIn: part.meta.standIn } } : part,
+  );
+  const updated = withTranslation(asked, translated, source2, { published: true, asked: new Set([introKey]) });
+  return versionSections(docOfSections(updated), metaOf(updated), source2);
+}
+
+test("the team's paragraph standing in for an intro stays when English takes its intro out again", () => {
+  const back = standInUpdated();
+  const v3 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const gone = withTranslation(back, doc(["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), sourceSections(v3), { published: true });
+  expect(texts(docOfSections(gone))).toEqual(["Willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+});
+
+test("the team editing their own paragraph after the intro's translation keeps it standing in: a later intro replaces only the intro's", () => {
+  const back = standInUpdated();
+  const source2 = sourceSections(doc(["", "Intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]));
+  const edited: Doc = { ...docOfSections(back) };
+  edited.content = structuredClone(edited.content);
+  edited.content![1]!.content![0]!.text = "Herzlich willkommen";
+  const { sections: ours } = editedSections(back, edited, source2);
+  const v3 = doc(["", "New intro"], ["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const again = withTranslation(ours, doc(["", "Neue Einleitung"], ["Einrichtung", "Installieren"], ["Abrechnung", "Mit Karte zahlen"]), sourceSections(v3), { published: true });
+  expect(texts(docOfSections(again))).toEqual(["Neue Einleitung", "Herzlich willkommen", "Einrichtung", "Installieren", "Abrechnung", "Mit Karte zahlen"]);
+});
+
+test("a section of the team's with no heading, merged into the intro English added after moving it, still stands for its own section", () => {
+  const v1 = doc(["Setup", "Install it"], ["Billing", "Pay by card"]);
+  const source = sourceSections(v1);
+  // A version the team writes: its first section has no heading, so it stands for Setup.
+  const ours: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Unsere Einrichtung" }] }, ...doc(["Abrechnung", "Mit Karte zahlen"]).content!] };
+  const list = ownedByTeam(versionSections(ours, [], source));
+  // English adds an intro and moves Setup after Billing; the team updates the intro.
+  const source2 = sourceSections(doc(["", "Intro"], ["Billing", "Pay by card"], ["Setup", "Install it"]));
+  const intro = source2[0]!.key;
+  const out = withTranslation(list, doc(["", "Einleitung"], ["Abrechnung", "Mit Karte zahlen"], ["Einrichtung", "Installieren"]), source2, { only: new Set([intro]) });
+  expect(texts(docOfSections(out))).toEqual(["Einleitung", "Unsere Einrichtung", "Abrechnung", "Mit Karte zahlen"]);
+  // Read back: Setup isn't missing (its text is in the section at the top), and nothing is there twice.
+  const back = versionSections(docOfSections(out), metaOf(out), source2);
+  expect(behindSections(back, source2, { missing: true }).filter((key) => key.startsWith("Setup"))).toEqual([]);
+  const again = withTranslation(back, doc(["", "Einleitung"], ["Abrechnung", "Mit Karte zahlen"], ["Einrichtung", "Installieren"]), source2, { only: new Set([intro]) });
+  expect(texts(docOfSections(again))).toEqual(["Einleitung", "Unsere Einrichtung", "Abrechnung", "Mit Karte zahlen"]);
 });

@@ -873,3 +873,18 @@ test("a section updated back into the draft, then taken out again, is out agains
   await republish(doc("Intro", ["Setup", "Install it now"], ["Billing", "Pay by card or invoice"]), "de4");
   expect(text((await call(getTranslation, as(), de)).content)).not.toContain("Pay by card");
 });
+
+test("sections named in `keep` or `sections` are no longer together than an article can be", async () => {
+  await translated();
+  const huge = "x".repeat(40_000);
+  for (const [op, input] of [
+    [publishTranslation, { ...de, keep: [`${huge}a`, `${huge}b`] }],
+    [updateTranslationSections, { ...de, sections: [`${huge}a`, `${huge}b`] }],
+  ] as const) {
+    const error = await call(op as typeof publishTranslation, as(), input as never).then(
+      () => null,
+      (thrown: unknown) => thrown as { status: number },
+    );
+    expect(error?.status).toBe(400);
+  }
+});
