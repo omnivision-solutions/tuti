@@ -59,6 +59,11 @@ test("while a rating saves, its buttons keep focus; a reader who moves on meanwh
     expect(button(name).getAttribute("aria-disabled"), name).toBe("true");
     expect(button(name).hasAttribute("disabled"), name).toBe(false);
   }
+  // Pressed again (or the other) while it saves: nothing more is sent.
+  const calls = rateDocsAnswer.mock.calls.length;
+  await act(async () => button("Helpful").click());
+  await act(async () => button("Not helpful").click());
+  expect(rateDocsAnswer.mock.calls.length).toBe(calls);
   // Still saving: the reader goes to the search box.
   elsewhere.focus();
   await act(async () => saved());
