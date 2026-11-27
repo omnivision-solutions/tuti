@@ -171,10 +171,13 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await save.click();
     await expect(identity).toBeVisible();
 
-    // One removed, saved without the password; focus stays in the field.
+    // One removed, saved without the password; focus stays in the field, and screen readers are told.
+    const said = owner.locator("[data-domains-said]");
+    await expect(said).toHaveText("Added for Firebase sign-in: identitytoolkit.googleapis.com, securetoken.googleapis.com.");
     await token.click();
     await expect(token).toBeHidden();
     await expect(owner.getByLabel("Other domains")).toBeFocused();
+    await expect(said).toHaveText("Removed securetoken.googleapis.com.");
     await save.click();
     await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
     await expect(save).toBeDisabled();
@@ -183,10 +186,6 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await owner.getByLabel("Other domains").fill("cdn.example.net,");
     const again = owner.getByLabel("Enter the password again to add a domain.");
     await expect(again).toBeVisible();
-    // Checked against the saved one, never saved over it.
-    await again.fill(`${password}-typo`);
-    await save.click();
-    await expect(owner.getByText("That isn't the saved password")).toBeVisible();
     await again.fill(password);
     await save.click();
     await expect(again).toBeHidden();
@@ -201,6 +200,18 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await owner.getByLabel("Other domains").fill("securetoken.googleapis.com ");
     await expect(token).toBeVisible();
     await expect(owner.getByLabel("Enter the password again to add a domain.")).toBeHidden();
+    await save.click();
+    await expect(save).toBeDisabled();
+    // A domain typed but not ended is a change by itself: Save takes it (and asks for the password).
+    await owner.getByLabel("Other domains").fill("api.example.net");
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(owner.getByText("Enter the password again to add another domain: it can be typed there")).toBeVisible();
+    await again.fill(password);
+    await save.click();
+    await expect(again).toBeHidden();
+    await owner.reload();
+    await expect(owner.getByRole("button", { name: "Remove api.example.net" })).toBeVisible();
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }

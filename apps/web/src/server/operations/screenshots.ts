@@ -3,10 +3,8 @@ import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
 import { aiPaused, dropChangedScreenshotProfile, enqueue, foundDomains, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, partlyScannedFor, scannedFor, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
-import { openValue, sealValue } from "@tuti/shared/signed";
+import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
-import { createHash, timingSafeEqual } from "node:crypto";
-
 import { getDomain } from "tldts";
 import { z } from "zod";
 
@@ -205,11 +203,6 @@ export const updateScreenshotSettings = defineOperation({
     signIn: z.enum(SIGN_INS, { error: "Pick password, link or none" }).optional().describe("How it signs in: `password`, `link` or `none`; the other way's secret is forgotten"),
     username: z.string().trim().max(320, "Keep the username under 320 characters").optional().describe("The username or email to sign in with (`password`)"),
     password: z.string().max(1000, "Keep the password under 1,000 characters").optional().describe("The password (`password`); left out or empty keeps the saved one"),
-    currentPassword: z
-      .string()
-      .max(1000, "Keep the password under 1,000 characters")
-      .optional()
-      .describe("The saved password, sent again to add a domain (or change the address) without replacing it: refused unless it's the one saved"),
     signInLink: z
       .union([z.literal(""), webAddress("Enter the sign-in link's full address, starting with https://")])
       .optional()
@@ -256,18 +249,6 @@ export const updateScreenshotSettings = defineOperation({
   },
 });
 
-/** Whether `typed` is the password sealed in `sealed`, compared in constant time. */
-function isSavedPassword(sealed: string | null, typed: string): boolean {
-  let saved: string;
-  try {
-    saved = sealed ? openValue(SCREENSHOT_SECRET, sealed) : "";
-  } catch {
-    return false;
-  }
-  const digest = (text: string) => createHash("sha256").update(text).digest();
-  return saved !== "" && timingSafeEqual(digest(saved), digest(typed));
-}
-
 /** screenshotSettings.update's read, merge and save, in `tx` under the project's lock. */
 async function saveSettings(tx: Prisma.TransactionClient, projectId: string, input: z.infer<typeof updateScreenshotSettings.input>) {
   const saved = await tx.screenshotSettings.findUnique({ where: { projectId } });
@@ -282,12 +263,8 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   // site too: the hosts found in the page it points to are allowed for them (foundDomains), and a page can echo text
   // from its address (a search's query).
   const sameAddress = !!saved && saved.appUrl === appUrl;
-  // The saved password sent again: checked, never saved over it (a typo there would replace it unseen).
-  const confirmed = !!input.currentPassword && isSavedPassword(saved?.password ?? null, input.currentPassword);
-  if (input.currentPassword && !confirmed) {
-    throw new OperationError(400, "invalid_input", "That isn't the saved password");
-  }
-  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameAddress || confirmed ? saved!.password : null;
+  // Sent again, it's saved as sent: never checked against the saved one, so no request can test a guess at it.
+  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameAddress ? saved.password : null;
   const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameAddress ? saved.signInLink : null;
   const moved = saved && !sameAddress ? " again: the app's address changed" : "";
   if (signIn === "PASSWORD" && (!username || !password)) {
@@ -301,7 +278,7 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   // One found for the app's sign-in (allowed already) isn't another.
   const found = saved ? foundDomains({ ...saved, appUrl }).map(({ host }) => host) : [];
   const added = (input.otherDomains ?? []).filter((domain) => !(saved?.otherDomains ?? []).includes(domain) && !found.includes(domain));
-  if (added.length > 0 && signIn === "PASSWORD" && password && !input.password && !confirmed) {
+  if (added.length > 0 && signIn === "PASSWORD" && password && !input.password) {
     throw new OperationError(400, "invalid_input", "Enter the password again to add another domain: it can be typed there");
   }
   if (added.length > 0 && signIn === "LINK" && signInLink && !input.signInLink) {

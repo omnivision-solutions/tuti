@@ -248,6 +248,13 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
   // Its button gone with it: focus back in the field.
   // Each add and removal said to screen readers.
   const [said, setSaid] = useState("");
+  // A check starting or new hosts found: what's found is said instead.
+  const foundKey = `${checking} ${found.map(({ host }) => host).join(" ")}`;
+  const [seenFound, setSeenFound] = useState(foundKey);
+  if (seenFound !== foundKey) {
+    setSeenFound(foundKey);
+    setSaid("");
+  }
   const remove = (host: string, change: () => void) => {
     change();
     setSaid(`Removed ${host}.`);
@@ -318,7 +325,7 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
           className="h-6 min-w-36 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
-      <div aria-live="polite" className="sr-only">
+      <div aria-live="polite" className="sr-only" data-domains-said>
         {checking ? "Checking how your app signs in." : said ? said : auto.length > 0 ? `Added for ${[...new Set(auto.map(({ provider }) => provider))].join(", ")} sign-in: ${auto.map(({ host }) => host).join(", ")}.` : ""}
       </div>
       {added && (

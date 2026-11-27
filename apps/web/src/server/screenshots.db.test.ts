@@ -803,14 +803,6 @@ test("adding another domain while a password or sign-in link is saved needs it s
   await call(updateScreenshotSettings, as(), { otherDomains: ["acme.auth0.com"], password: PASSWORD });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect((browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[])[0]!.allowedDomains).toEqual(["acme.auth0.com", "app.example.com"]);
-  // The saved password sent again, checked and never saved over it: a typo is refused.
-  await expect(call(updateScreenshotSettings, as(), { otherDomains: ["acme.auth0.com", "cdn.example.net"], currentPassword: `${PASSWORD}x` })).rejects.toMatchObject({
-    status: 400,
-    message: "That isn't the saved password",
-  });
-  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["acme.auth0.com", "cdn.example.net"], currentPassword: PASSWORD })).toMatchObject({ otherDomains: ["acme.auth0.com", "cdn.example.net"] });
-  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
-  expect((browserUse.runs.at(-1)!.body.secretBindings as { source: { value: string } }[])[0]!.source.value).toBe(PASSWORD);
   // The same list, or less: nothing asked.
   expect(await call(updateScreenshotSettings, as(), { otherDomains: ["acme.auth0.com"], about: "Close the tour." })).toMatchObject({ otherDomains: ["acme.auth0.com"] });
   expect(await call(updateScreenshotSettings, as(), { otherDomains: [] })).toMatchObject({ otherDomains: [] });
