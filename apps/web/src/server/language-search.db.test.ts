@@ -3,8 +3,10 @@ import { prisma } from "@tuti/db";
 import { embedTranslation } from "@tuti/jobs";
 import { articleChunkText } from "@tuti/shared";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import { WidgetDocs } from "@/components/widget-docs";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
@@ -321,5 +323,22 @@ test("at a language's address the query is embedded once per search, as the read
   expect(await embedded(() => search("Karte"))).toBe(1);
   // (Nothing close enough: "I don't know", the model not asked.)
   expect(await embedded(() => answerQuestion(project.id, "asker", "Wie zahle ich mit Karte?", "PORTAL", SIGNED_OUT, { language: { code: "de", prefix: "/de" } }))).toBe(1);
+});
+
+test("an answer's source opened in the widget's panel by its slug in another language: the article, not \"Article not found\"", async () => {
+  await article("Billing", "Pay by card.", { title: "Abrechnung", slug: "abrechnung", body: "Mit Karte zahlen." });
+  // The widget's panel, at no language's address ("Ask a follow-up" hands it the answer with its sources).
+  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: "abrechnung" })) as ReactElement<object>;
+  const texts = (node: ReactNode): string[] =>
+    Array.isArray(node)
+      ? node.flatMap(texts)
+      : typeof node === "string"
+        ? [node]
+        : isValidElement<{ children?: ReactNode; title?: string }>(node)
+          ? [...(node.props.title ? [node.props.title] : []), ...texts(node.props.children)]
+          : [];
+  const shown = texts(await (widget.type as (props: object) => Promise<ReactNode>)(widget.props));
+  expect(shown).toContain("Billing");
+  expect(shown).not.toContain("Article not found");
 });
 
