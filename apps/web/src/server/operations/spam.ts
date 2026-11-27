@@ -67,7 +67,8 @@ function ruleProblem(field: SpamRuleField, matcher: SpamRuleMatcher, value: stri
     return emailAddress.safeParse(value).success ? null : "Enter an address, like kim@acme.example";
   }
   if (matcher === "pattern") {
-    if ([...value].length > MAX_PATTERN) {
+    // As it's matched, folded: one character can become many ("ﷺ" is 18).
+    if ([...value.normalize("NFKC")].length > MAX_PATTERN) {
       return `Keep a pattern under ${MAX_PATTERN} characters`;
     }
     // As it's matched: a fullwidth "＊" is a star there too.

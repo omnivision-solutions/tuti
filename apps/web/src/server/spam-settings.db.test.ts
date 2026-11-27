@@ -244,6 +244,8 @@ test("spam.update refuses a rule whose value can't match as asked, a free-mail d
   await refused({ addRules: [rule("body", "pattern", "*?*")] }, "Add something besides * and ?");
   await refused({ addRules: [rule("subject", "pattern", "＊")] }, "Add something besides * and ?");
   await refused({ addRules: [rule("subject", "pattern", `*${"a".repeat(100)}`)] }, "Keep a pattern under 100 characters");
+  // Counted as it's matched, folded: 10 characters that fold into 180.
+  await refused({ addRules: [rule("body", "pattern", `*${"ﷺ".repeat(10)}*`)] }, "Keep a pattern under 100 characters");
   await refused({ addRules: [rule("subject", "is", "   ")] }, "Enter a value");
   // "@" alone is nothing once a domain's "@" goes, and would match every sender.
   await refused({ addRules: [rule("sender_domain", "contains", "@")] }, "Enter a value");

@@ -153,7 +153,12 @@ export function spamRuleMatcher(input: SpamRuleInput): (rule: SpamRule) => boole
     const done = new Map<string, T>();
     return (text: string) => (done.has(text) ? done.get(text)! : done.set(text, fn(text)).get(text)!);
   };
-  const folds: Folds = { fold: once(fold), words: once(matchText), chars: once((text) => [...text]) };
+  // Cut again once folded: folding can make one character many ("ﷺ" is 18), and the cap is on what's compared.
+  const folds: Folds = {
+    fold: once((text) => fold(text).slice(0, SPAM_RULE_TEXT_CHARS)),
+    words: once((text) => matchText(text).slice(0, SPAM_RULE_TEXT_CHARS)),
+    chars: once((text) => [...text].slice(0, SPAM_RULE_TEXT_CHARS)),
+  };
   return (rule) => (fields[rule.field as SpamRuleField] ?? []).some((text) => !!text && matchesOne(rule, text, folds));
 }
 

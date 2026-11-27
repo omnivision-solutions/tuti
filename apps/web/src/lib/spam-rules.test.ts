@@ -127,6 +127,14 @@ describe("patterns, without backtracking", () => {
     expect(matchesPattern("a*a*a*a*a", text)).toBe(true);
   });
 
+  test("a text is cut once folded: characters that fold into many can't take it past the cap", () => {
+    // 1,204 characters as sent, over 11,000 once "ﷺ" (18 each) is folded: its end is past what the rules read.
+    const text = `${"x".repeat(600)}${"ﷺ".repeat(600)}spam`;
+    expect(matches("body", "starts_with", "xxx", { text })).toBe(true);
+    expect(matches("body", "ends_with", "spam", { text })).toBe(false);
+    expect(matches("body", "pattern", "*spam", { text })).toBe(false);
+  });
+
   test("a padded body of the longest length through the most pattern rules a project holds still matches on the last rule", () => {
     const text = `${"facebook admi ".repeat(714)}giveaway`.slice(-SPAM_RULE_TEXT_CHARS);
     const matcher = spamRuleMatcher({ text });
