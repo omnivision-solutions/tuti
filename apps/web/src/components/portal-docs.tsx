@@ -61,6 +61,7 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
 import { portalLanguage, portalLinks, teamLanguage } from "@/server/portal-base";
+import { pageTranslator } from "@/server/portal-language";
 import { mediaUrls } from "@/server/media-urls";
 import { firstBoardPath } from "@/server/portal-home";
 
@@ -69,16 +70,17 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
   const results = project ? await searchForReader(project.id, projectSlug, query, 10, { operations: true }) : [];
+  const { t } = await pageTranslator("helpCenter");
   // Titles and snippets: the team's words, in the default language under another's address (teamLanguage).
   const lang = await teamLanguage();
   if (results.length === 0) {
     return (
       <EmptyState
-        title={`No articles match “${query}”`}
-        description="Try other words, or browse all articles."
+        title={t("noMatchFor", { q: query })}
+        description={t("tryOther")}
         action={
           <Link href={at("/docs")} className={buttonVariants({ variant: "outline" })}>
-            All articles
+            {t("allArticles")}
           </Link>
         }
       />
@@ -86,7 +88,7 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   }
   return (
     // Rows on the paper.
-    <ul aria-label="Search results" className="flex flex-col">
+    <ul aria-label={t("searchResults")} className="flex flex-col">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-1 border-b py-4 first:pt-0">
           <Link href={at(`/docs/${result.slug}`)} className="text-[1.0625rem] font-semibold break-words hover:underline">
@@ -118,7 +120,7 @@ async function feedbackHref(projectSlug: string, question: string) {
 export async function DocsSearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   return (
     <div className="flex flex-col gap-8">
-      <PortalPageHeader title={`Results for “${query}”`} />
+      <PortalPageHeader title={(await pageTranslator("helpCenter")).t("resultsFor", { q: query })} />
       {answersEnabled() && (
         <DocsAnswer
           key={query}
@@ -150,6 +152,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   const popular = (await shownPopularArticles(project, tab ?? docs, { preview })).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
   // "Can't find it?": how to reach the team (Ask AI is in the search above it).
   const support = home ? await supportContact(project) : null;
+  const { t } = await pageTranslator("helpCenter");
   // The team's words (collections' names and descriptions, references' names, articles' titles): in the default language
   // under another's address (teamLanguage). Not the portal's own text around them.
   const lang = await teamLanguage();
@@ -170,10 +173,10 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
         <PortalPageHeader title={tab.name} />
       )}
       {collections.length === 0 && uncollected.length === 0 && references.length === 0 && (
-        <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
+        <EmptyState title={t("empty")} description={t("emptyDescription")} />
       )}
       {collections.length > 0 && (
-        <ul aria-label="Collections" className="grid gap-4 sm:grid-cols-2">
+        <ul aria-label={t("collections")} className="grid gap-4 sm:grid-cols-2">
           {collections.map((collection) => (
             <li key={collection.slug}>
               {/* A card: its icon on a neutral tile beside its name, description and count. */}
@@ -194,7 +197,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                   {collection.sample && <SampleBadge />}
                   {collection.description && <p lang={lang} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
                   <div className="mt-auto pt-2">
-                    <ArticleCount count={articleCount(collection)} />
+                    <ArticleCount count={articleCount(collection)} label={t("articleCount", { count: articleCount(collection) })} />
                   </div>
                 </div>
               </Link>
@@ -203,7 +206,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
         </ul>
       )}
       {references.length > 0 && (
-        <ul aria-label="API references" className="grid gap-4 sm:grid-cols-2">
+        <ul aria-label={t("apiReferences")} className="grid gap-4 sm:grid-cols-2">
           {references.map((reference) => (
             <li key={reference.slug}>
               <Link
@@ -211,7 +214,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                 className="flex h-full flex-col gap-1 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md sm:px-6"
               >
                 <h2 lang={lang} className="font-sans text-[1.0625rem] font-semibold break-words">{reference.name}</h2>
-                <p className="text-sm font-medium text-muted-foreground">API reference</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("apiReference")}</p>
               </Link>
             </li>
           ))}
@@ -222,7 +225,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-3">
           {collections.length > 0 && (
             <h2 id="more-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
-              More articles
+              {t("moreArticles")}
             </h2>
           )}
           <ArticleLinks articles={uncollected} href={(slug) => at(`/docs/${slug}`)} lang={lang} />
@@ -234,22 +237,23 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
 }
 
 /** A collection card's "2 articles": what this reader may open in it (none in a locked one, which shows nothing). */
-function ArticleCount({ count }: { count: number }) {
-  return count > 0 && <p className="text-sm font-medium text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</p>;
+function ArticleCount({ count, label }: { count: number; label: string }) {
+  return count > 0 && <p className="text-sm font-medium text-muted-foreground">{label}</p>;
 }
 
 /**
  * What a page this reader may not read, but sees with a lock, says in place of what's on it: to
  * sign in (and come back here), or that they don't have access.
  */
-export function LockedMessage({ signedIn }: { signedIn: boolean }) {
+export async function LockedMessage({ signedIn }: { signedIn: boolean }) {
+  const { t, language } = await pageTranslator("helpCenter");
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border p-5">
       <p className="flex items-center gap-2 font-medium">
         <LockIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-        {signedIn ? "You don't have access to this." : "Sign in to read this."}
+        {signedIn ? t("noAccess") : t("signInToRead")}
       </p>
-      {!signedIn && <SignInLink className={buttonVariants()}>Sign in</SignInLink>}
+      {!signedIn && <SignInLink className={buttonVariants()}>{MESSAGES[language].header.signIn}</SignInLink>}
     </div>
   );
 }
@@ -258,7 +262,7 @@ export function LockedMessage({ signedIn }: { signedIn: boolean }) {
  * A tab's path (/docs for the first; `tab` null without tabs): its overview, or the article,
  * collection or API reference it shows in its place; a locked tab, its name and LockedMessage.
  */
-export function DocsTabPage({
+export async function DocsTabPage({
   project,
   docs,
   tab,
@@ -275,7 +279,7 @@ export function DocsTabPage({
   if (tab?.locked) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : "Documentation"} />
+        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : MESSAGES[(await pageTranslator("helpCenter")).language].header.docs} />
         <LockedMessage signedIn={docs.signedIn} />
         <PortalFooter docs />
       </div>
@@ -325,12 +329,12 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   const at = await portalLinks();
   const { docs, tab, parent, collection } = page;
   // The level above: the collection it's in, else its tab or all of them.
-  const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab);
+  const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
   // The team's words (its and its parent's names, its description, its articles): in the default language under another's
   // address (teamLanguage).
   const lang = await teamLanguage();
   return (
-    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
+    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug} browse={(await pageTranslator("helpCenter")).t("browseDocs")}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
           <Link lang={parent ? lang : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
@@ -357,7 +361,13 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
         {collection.locked ? (
           <LockedMessage signedIn={docs.signedIn} />
         ) : (
-          <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} lang={lang} />
+          <CollectionContents
+            collection={collection}
+            href={(s) => at(`/docs/${s}`)}
+            collectionHref={(s) => at(`/docs/${s}`)}
+            lang={lang}
+            articlesLabel={(await pageTranslator("helpCenter")).t("articles")}
+          />
         )}
       </div>
     </DocsLayout>
@@ -425,7 +435,14 @@ export async function DocsArticle({
       ],
     }));
   return (
-    <DocsLayout tree={tree} current={slug} headings={headings} headingsLang={textLang} reading={!!readable && outlined(headings)}>
+    <DocsLayout
+      tree={tree}
+      current={slug}
+      headings={headings}
+      headingsLang={textLang}
+      reading={!!readable && outlined(headings)}
+      browse={(await pageTranslator("helpCenter")).t("browseDocs")}
+    >
       {jsonLd}
       {/* The team's words (its title, text and headings, its collection's name, the articles around it) carry the default
           language's `lang` under another's address (teamLanguage); the portal's own text around them doesn't. */}
@@ -584,7 +601,7 @@ async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<type
 export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active: string | null }) {
   const at = await portalLinks();
   const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active, locked: tab.locked }));
-  return <PartRow label="Docs tabs" links={links} />;
+  return <PartRow label={(await pageTranslator("helpCenter")).t("docsTabs")} links={links} />;
 }
 
 /**
@@ -650,7 +667,7 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
     </ul>
   );
   return (
-    <nav aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
+    <nav aria-label={(await pageTranslator("helpCenter")).t("docsNav")} className="flex flex-col gap-1 text-[0.9375rem]">
       <DocsSidebarLinks className="mb-3 border-b pb-4" />
       {/* Each collection a row that opens (`<details>`, so it works without JavaScript): the page's own open. */}
       {tree.collections.map((collection) => (
@@ -691,6 +708,7 @@ export function DocsLayout({
   reading = false,
   extra,
   wide = false,
+  browse = "Browse docs",
   children,
 }: {
   /** What `headings` are in (the article's text's language), for screen readers. */
@@ -707,6 +725,8 @@ export function DocsLayout({
   extra?: React.ReactNode;
   /** An operation's page: from desktop width the page takes the room "On this page" would, for its examples beside it. */
   wide?: boolean;
+  /** The tree's toggle without JavaScript, in the page's language (helpCenter.browseDocs). */
+  browse?: string;
   children: React.ReactNode;
 }) {
   const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0 || tree.references.length > 0 || extra) ? tree : null;
@@ -752,7 +772,7 @@ export function DocsLayout({
             <PortalMenuPart>{nav}</PortalMenuPart>
             <noscript>
               <details className="rounded-xl border md:hidden">
-                <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
+                <summary className="cursor-pointer px-4 py-2 text-sm font-medium">{browse}</summary>
                 <div className="border-t p-2">{nav}</div>
               </details>
             </noscript>
