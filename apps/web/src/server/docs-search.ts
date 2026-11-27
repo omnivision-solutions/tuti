@@ -5,14 +5,24 @@ import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILA
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { visibleArticleSql, visibleReferenceSql } from "@/lib/reader-groups";
 
-import { docsContents, everyCollection } from "./docs-queries";
+import { docsContents, everyCollection, translatedInto } from "./docs-queries";
 import { canReadPortal, currentReader, readerOf } from "./portal-access";
+import { portalLanguage } from "./portal-base";
+import { searchTranslatedDocs } from "./translated-search";
 
 /**
  * `locked`: an article this reader may not read, found by its title alone (no snippet). An API reference's operation has
  * its `method` (GET, or GraphQL's query) and a slug that's its path under /docs: "<reference>/<operation>".
  */
-export type DocsSearchResult = { slug: string; title: string; snippet: string; locked?: true; method?: string };
+export type DocsSearchResult = {
+  slug: string;
+  title: string;
+  snippet: string;
+  locked?: true;
+  method?: string;
+  /** The language its title and snippet are in, where it's an article's translation into the page's (docs/plan.md L10); else the team's. */
+  lang?: string;
+};
 
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
@@ -93,7 +103,8 @@ export async function searchForReader(
   limit: number,
   options: SearchOptions = {},
 ): Promise<DocsSearchResult[]> {
-  const [results, docs] = await Promise.all([searchDocs(projectId, query, limit, await currentReader(projectId), options), docsContents(projectSlug)]);
+  const reader = await currentReader(projectId);
+  const [results, docs] = await Promise.all([searchFor(projectId, query, limit, reader, options), docsContents(projectSlug)]);
   const locked = [...everyCollection(docs.collections).flatMap((c) => c.articles), ...docs.uncollected].filter((a) => a.locked).map((a) => a.slug);
   if (locked.length === 0 || results.length >= limit) {
     return results;
@@ -110,6 +121,37 @@ export async function searchForReader(
     ORDER BY ts_rank(to_tsvector('english', a.title), q) + coalesce(ts_rank(to_tsvector('simple', a.title), pq), 0) DESC, a.title
     LIMIT ${limit - results.length}`;
   return [...results, ...byTitle.map(({ slug, title }) => ({ slug, title, snippet: "", locked: true as const }))];
+}
+
+/**
+ * searchDocs in the page's language (docs/plan.md L10): at another language's address, the articles translated there, by
+ * their translations (current ones only: never a version made from an older English text), at their slug there and marked
+ * as in it; then, by the default language's search, the articles that aren't (and API references' operations), in the
+ * team's words. At the default language's address, searchDocs as it is.
+ */
+async function searchFor(projectId: string, query: string, limit: number, reader: Reader, options: SearchOptions): Promise<DocsSearchResult[]> {
+  const { language, prefix } = await portalLanguage();
+  if (!language || !prefix) {
+    return searchDocs(projectId, query, limit, reader, options);
+  }
+  // Twice as many from each: those dropped (a version not current; an article found by its translation) leave room.
+  const [translated, inDefault] = await Promise.all([
+    searchTranslatedDocs(projectId, language, query, limit * 2, reader, options),
+    searchDocs(projectId, query, limit * 2, reader, { ...options, log: false }),
+  ]);
+  const slugs = [...new Set([...translated, ...inDefault].filter((result) => !result.method).map((result) => result.slug))];
+  const articles = slugs.length > 0 ? await prisma.article.findMany({ where: { projectId, slug: { in: slugs }, deletedAt: null }, select: { id: true, slug: true } }) : [];
+  const current = await translatedInto(articles, [language]);
+  // The article's slug → its current version's there.
+  const there = new Map(articles.flatMap((article) => (current.get(article.id)?.[0] ? [[article.slug, current.get(article.id)![0]!.slug] as const] : [])));
+  const results = [
+    ...translated.filter((result) => there.has(result.slug)).map((result) => ({ ...result, slug: there.get(result.slug)!, lang: language })),
+    ...inDefault.filter((result) => result.method || !there.has(result.slug)),
+  ].slice(0, limit);
+  if (options.log !== false) {
+    logSearch(projectId, query, results.length);
+  }
+  return results;
 }
 
 /** A query as the team's insights count it: trimmed, one space between words, lower case. */
@@ -230,7 +272,17 @@ const operationResult = (row: OperationRow): DocsSearchResult => ({
  * A section AI answers may use: an article's, or an API reference's operation (`operation`: its Markdown's start, `articleId`
  * the operation's entry, `slug` its path under /docs, and its method and path after its title, for the sources).
  */
-export type AnswerSection = { articleId: string; slug: string; title: string; listing: ArticleListing; heading: string; text: string; operation?: true };
+export type AnswerSection = {
+  articleId: string;
+  slug: string;
+  title: string;
+  listing: ArticleListing;
+  heading: string;
+  text: string;
+  operation?: true;
+  /** A translation's section (docs/plan.md L10): the language it's in (its slug and title are its own there). */
+  language?: string;
+};
 
 /**
  * The published sections closest to a question, at least ANSWER_MIN_SIMILARITY alike, best
@@ -245,6 +297,8 @@ export async function answerSections(
   limit: number,
   reader: Reader,
   timeoutMs: number,
+  /** The reader's language, where it isn't the default one: articles translated there answer from their translation. */
+  language?: string | null,
 ): Promise<AnswerSection[] | null> {
   let vector: string;
   try {
@@ -263,15 +317,46 @@ export async function answerSections(
       AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
-    LIMIT ${limit}`;
-  const [articles, operations] = await Promise.all([sections, operationsByMeaning(projectId, vector, ANSWER_MIN_SIMILARITY, limit, reader)]);
+    LIMIT ${language ? limit * 2 : limit}`;
+  const [articles, operations, translated] = await Promise.all([
+    sections,
+    operationsByMeaning(projectId, vector, ANSWER_MIN_SIMILARITY, limit, reader),
+    language ? translatedSections(projectId, language, vector, limit * 2, reader) : [],
+  ]);
+  // In the reader's language: an article with a current translation there answers from it (never from a version made from an
+  // older English text, nor from its English as well); the others from the default language's.
+  const there = language ? await currentIn(projectId, [...articles, ...translated].map((section) => section.articleId), language) : new Set<string>();
   return [
-    ...articles.map(({ distance, ...section }) => ({ distance, section })),
+    ...articles.filter((section) => !there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
+    ...translated.filter((section) => there.has(section.articleId)).map(({ distance, ...section }) => ({ distance, section })),
     ...operations.map((entry) => ({ distance: entry.distance, section: operationSection(entry) })),
   ]
     .sort((a, b) => a.distance - b.distance)
     .slice(0, limit)
     .map(({ section }) => section);
+}
+
+/** The sections of a language's published translations closest to the question's `vector`, as answerSections's: the same articles. */
+function translatedSections(projectId: string, language: string, vector: string, limit: number, reader: Reader) {
+  return prisma.$queryRaw<(AnswerSection & { distance: number })[]>`
+    SELECT a.id AS "articleId", coalesce(t.slug, a.slug) AS slug, t.title, a.listing, c.heading, c.text, ${language}::text AS language,
+      c.embedding <=> ${vector}::vector AS distance
+    FROM article_translation_chunk c
+    JOIN article_translation t ON t.id = c."translationId"
+    JOIN article a ON a.id = t."articleId"
+    WHERE c."projectId" = ${projectId} AND c.language = ${language} AND t."publishedAt" IS NOT NULL
+      AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+      AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
+      AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
+    ORDER BY c.embedding <=> ${vector}::vector, t.title, c.position
+    LIMIT ${limit}`;
+}
+
+/** Of these articles, the ones with a current version in `language` (translatedInto). */
+async function currentIn(projectId: string, ids: string[], language: string): Promise<Set<string>> {
+  const unique = [...new Set(ids)];
+  const articles = unique.length > 0 ? await prisma.article.findMany({ where: { projectId, id: { in: unique } }, select: { id: true, slug: true } }) : [];
+  return new Set((await translatedInto(articles, [language])).keys());
 }
 
 const operationSection = (row: OperationRow): AnswerSection => ({

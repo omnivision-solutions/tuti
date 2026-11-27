@@ -15,6 +15,7 @@ import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
 import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
 import { currentReader, readableProject } from "./portal-access";
+import { portalLanguage } from "./portal-base";
 import { sessionIn } from "./session";
 import type { WidgetAuth } from "./widget-person";
 
@@ -157,7 +158,8 @@ export async function askDocs(
       input.data.q,
       widget ? "WIDGET" : "PORTAL",
       await currentReader(project.id),
-      { followUpTo: input.data.followUpTo },
+      // In the page's language (docs/plan.md L10): at another language's address, its translations, its pages.
+      { followUpTo: input.data.followUpTo, language: await readerLanguage() },
     );
   } catch (error) {
     if (error instanceof OperationError) {
@@ -166,6 +168,12 @@ export async function askDocs(
     }
     throw error;
   }
+}
+
+/** The page's language, where it isn't the default one (its address has a prefix); else null. The widget's is the default's. */
+async function readerLanguage(): Promise<{ code: string; prefix: string } | null> {
+  const { language, prefix } = await portalLanguage();
+  return language && prefix ? { code: language, prefix } : null;
 }
 
 /** Thumbs up or down on an AI answer. Rating again replaces it. */

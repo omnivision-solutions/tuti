@@ -131,7 +131,7 @@ export function readAnswer(reply: string, sections: AnswerSection[]): { answer: 
   return text && cited.length > 0 ? { answer: text, cited } : null;
 }
 
-/** Each article once, in order. */
+/** Each article once, in order; `portal`, the address its pages are under (the reader's language's prefix too). */
 function sourcesOf(sections: AnswerSection[], portal: string): DocsAnswer["sources"] {
   const seen = new Set<string>();
   return sections
@@ -197,8 +197,12 @@ export async function answerQuestion(
   source: DocsQuestionSource,
   /** The asker: answers only come from articles they may read (null: the team). */
   reader: Reader,
-  /** `followUpTo`: the question this follows up on (see earlierTurns). */
-  { followUpTo, timeoutMs = ANSWER_TIMEOUT_MS }: { followUpTo?: string; timeoutMs?: number } = {},
+  /**
+   * `followUpTo`: the question this follows up on (see earlierTurns). `language`: the reader's, where it isn't the default
+   * one (the page they asked on, docs/plan.md L10): articles translated there answer from their translation, and every source
+   * links to its page there (`prefix`).
+   */
+  { followUpTo, timeoutMs = ANSWER_TIMEOUT_MS, language }: { followUpTo?: string; timeoutMs?: number; language?: { code: string; prefix: string } | null } = {},
 ): Promise<DocsAnswer> {
   if (!answersEnabled()) {
     throw new OperationError(503, "ai_unavailable", "AI answers aren't set up on this server");
@@ -222,7 +226,7 @@ export async function answerQuestion(
         operationIds: [...new Set(answer?.cited.filter((section) => section.operation).map((section) => section.articleId))],
       },
     });
-    return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, await portalAddress(slug)) };
+    return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, `${await portalAddress(slug)}${language?.prefix ?? ""}`) };
   };
 
   // A topic the team put off-limits: a fixed reply, decided here rather than by the model (which isn't asked).
@@ -233,7 +237,7 @@ export async function answerQuestion(
   const context = earlier.filter((turn) => !offLimitsTopic(turn.question, settings.offLimits));
   // A follow-up ("and on mobile?") says little alone: the docs are searched with the latest earlier questions too.
   const searched = [...context.slice(-SEARCHED_EARLIER_QUESTIONS).map((turn) => turn.question), question].join("\n");
-  const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS);
+  const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS, language?.code);
   if (!sections) {
     return finish("failed");
   }
