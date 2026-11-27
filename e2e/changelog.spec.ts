@@ -1323,6 +1323,9 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/changelog/1`);
+  // Highlighted in the text, where they are.
+  await expect(team.getByRole("textbox", { name: "What changed" }).locator("[data-fill-in]")).toHaveText(["[Check: is it out on iOS yet?]", "[Screenshot: the theme menu, open]"]);
+  await checkpoint(team, "team-changelog-fill-ins", { fullPage: false });
   await team.getByRole("button", { name: "Publish", exact: true }).click();
   const dialog = team.getByRole("alertdialog");
   // Its heading and its description (read out as it opens) say what's in the way, each line named; nothing about what publishing does.

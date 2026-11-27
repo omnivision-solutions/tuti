@@ -22,10 +22,11 @@ import { createTranslator } from "next-intl";
 import { hashSecret } from "@/lib/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
 import { withLockRetries } from "@/server/lock-retries";
+import { portalLanguages } from "@/server/portal-language";
 
 /**
  * Where a subscription stands, as the sender sees it (changelogReach): the one sentence every state of this page says,
- * so it never promises what isn't sent; in `language` (the portal page's: English on the subscription's own pages, for now).
+ * so it never promises what isn't sent; in `language` (the portal page's).
  */
 export function reachSentence(reach: ChangelogReach, name: string, email: string, language: Language = "en"): string {
   const t = createTranslator({ locale: language, messages: MESSAGES[language], namespace: "changelog.reach" });
@@ -224,7 +225,15 @@ export async function emailConfirmation(
     where: { id: subscriber.id },
     data: { confirmTokenHash: hashSecret(confirm), confirmExpiresAt: new Date(Date.now() + CONFIRM_LINK_HOURS * 3_600_000), confirmUsedAt: null },
   });
-  const url = new URL(`${await portalAddress(project.slug)}/changelog/subscription`);
+  // In the subscription's language (the page it was asked on) while the portal serves it, else the portal's default; its link
+  // opens the page at that language's address.
+  const [{ language: saved }, languages] = await Promise.all([
+    prisma.changelogSubscriber.findUniqueOrThrow({ where: { id: subscriber.id }, select: { language: true } }),
+    portalLanguages(project.id),
+  ]);
+  const language = saved && (languages.live as string[]).includes(saved) ? saved : languages.default;
+  const prefix = language === languages.default ? "" : `/${language.toLowerCase()}`;
+  const url = new URL(`${await portalAddress(project.slug)}${prefix}/changelog/subscription`);
   url.searchParams.set("confirm", confirm);
   try {
     await sendEmail({
@@ -233,6 +242,7 @@ export async function emailConfirmation(
         ...(await emailBrand(project.id)),
         url: url.toString(),
         optedOut: (await changelogReach(project.id, { email: subscriber.email, confirmed: true })) === "opted-out",
+        language,
       }),
       ...(await projectSender(project.id)),
     });

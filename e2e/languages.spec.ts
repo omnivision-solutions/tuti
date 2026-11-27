@@ -413,10 +413,25 @@ test("the changelog in German: its list, tags, months, pages, an entry's page, t
   // The email box, in Subscribe's popover.
   await reader.getByRole("button", { name: "Abonnieren" }).click();
   const box = reader.getByRole("region", { name: "Updates per E-Mail erhalten" });
-  await box.getByRole("textbox", { name: "E-Mail" }).fill(`e2e-${randomUUID()}@example.com`);
+  const subscriber = `e2e-${randomUUID()}@example.com`;
+  await box.getByRole("textbox", { name: "E-Mail" }).fill(subscriber);
   await box.getByRole("button", { name: "Abonnieren" }).click();
   await expect(box.getByRole("status")).toContainText("Sieh in dein Postfach: Wir haben einen Bestätigungslink an");
   await reader.keyboard.press("Escape");
+  // Its email is German, and its link opens the subscription's page at the German address, in German (on a phone).
+  const confirmation = await latestEmailTo(subscriber);
+  expect(confirmation.subject).toBe("Updates von Acme per E-Mail bestätigen");
+  const confirmLink = linkIn(confirmation, portalUrl(slug));
+  expect(new URL(confirmLink).pathname).toBe("/de/changelog/subscription");
+  const inbox = await newPerson(browser, portalUrl(slug));
+  await inbox.setViewportSize({ width: 390, height: 844 });
+  await inbox.goto(confirmLink);
+  await expect(inbox).toHaveTitle(/^Changelog-E-Mails/);
+  await expect(inbox.getByRole("heading", { name: "Updates von Acme per E-Mail bekommen?" })).toBeVisible();
+  await checkpoint(inbox, "changelog-subscription-in-german-phone", { fullPage: false });
+  await inbox.getByRole("button", { name: "Abo bestätigen" }).click();
+  await expect(inbox).toHaveURL(/\/de\/changelog\/subscription\?token=/);
+  await expect(inbox.getByRole("heading", { name: "Du bekommst die Updates von Acme per E-Mail" })).toBeVisible();
 
   // An entry's page: the way back, its reactions and comments.
   await darkMode.getByRole("link", { name: "Dark mode is here" }).click();
@@ -534,6 +549,8 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await reader.setViewportSize({ width: 1280, height: 800 });
   await reader.goto("/de/docs");
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
+  // Its title (what a search result or a tab shows) in German too.
+  await expect(reader).toHaveTitle(/^Dokumentation/);
   await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
   await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).toBeVisible();
   // The default heading is the portal's words: the page's language, no lang of its own.
@@ -562,12 +579,20 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   // The results' page.
   await reader.goto("/de/docs?q=zebra");
   await expect(reader.getByRole("heading", { level: 1, name: "Ergebnisse für „zebra“" })).toBeVisible();
+  await expect(reader).toHaveTitle(/^Ergebnisse für „zebra“ · Dokumentation/);
   await expect(reader.getByText("Keine Artikel zu „zebra“", { exact: true })).toBeVisible();
   await expect(reader.getByRole("link", { name: "Alle Artikel" })).toBeVisible();
 
   // A collection: its articles' list.
   await reader.goto("/de/docs/basics");
   await expect(reader.getByRole("main").getByRole("list", { name: "Artikel" }).getByRole("link")).toHaveCount(2);
+  await expect(reader).toHaveTitle(/^Basics · Dokumentation/);
+  // Its breadcrumb for search engines: German words, German addresses.
+  const breadcrumb = JSON.parse((await reader.locator('script[type="application/ld+json"]').textContent())!) as { itemListElement: { name: string; item: string }[] };
+  expect(breadcrumb.itemListElement.map(({ name, item }) => [name, new URL(item).pathname])).toEqual([
+    ["Dokumentation", "/de/docs"],
+    ["Basics", "/de/docs/basics"],
+  ]);
   // The tree beside it, named in German.
   await expect(reader.getByRole("navigation", { name: "Dokumentation", exact: true }).getByRole("link", { name: /Getting started/ })).toBeVisible();
 
@@ -1036,11 +1061,11 @@ test("The widget's assistant marks its sources' titles in the project's default 
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   await visitor.goto("/docs");
   await visitor.getByRole("main").getByRole("button", { name: "Demander à l’IA", exact: true }).click();
-  // The widget is English until it has the reader's language (L5's last part); the titles are the team's French.
+  // The widget's own words are the project's default language's too now (French); the titles are the team's French.
   const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
   await nextModelReply(JSON.stringify({ answer: "Depuis la page Équipe.", sources: ["s1"] }), question);
-  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(question);
-  await assistant.getByRole("button", { name: "Send" }).click();
+  await assistant.getByRole("textbox", { name: "Poser une question" }).fill(question);
+  await assistant.getByRole("button", { name: "Envoyer" }).click();
   const source = assistant.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Premiers pas" });
   await expect(source).toHaveAttribute("lang", "fr");
   await checkpoint(visitor, "widget-assistant-french-sources", { fullPage: false });
@@ -1081,4 +1106,178 @@ test("searching the docs in German finds the articles translated there by their 
   // An article not translated: found by its English, marked as the team's.
   await reader.goto("/de/docs?q=install");
   await expect(reader.getByRole("list", { name: "Suchergebnisse" }).getByRole("link", { name: "Setup" }).locator("[lang=en]")).toHaveText("Setup");
+});
+
+test("a post's news to a reader who chose German: its email in German, and its unsubscribe page and button at the German address, on a phone", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const post = await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // Signed in, they choose German in the header (saved on their account), and vote.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/feedback/feature-requests");
+  await reader.getByRole("button", { name: "Language: English" }).click();
+  await reader.getByRole("menuitemradio", { name: "Deutsch" }).click();
+  await expect(reader).toHaveURL(/\/de\/feedback\/feature-requests$/);
+  await reader.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
+  await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible();
+  await expect(async () => {
+    await reader.reload();
+    await expect(reader.getByRole("button", { name: "Stimme zurückziehen (2 Stimmen)" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+
+  // The team starts it: the reader's email is German.
+  await api(`/posts/${post.number}`, { status: "in_progress" }, "PATCH");
+  const email = await latestEmailTo(reader.email, { subject: /Dark mode/ });
+  expect(email.subject).toBe("In Arbeit: Dark mode");
+  expect(email.text).toContain("Das Team hat mit der Umsetzung begonnen.");
+  // Its unsubscribe link opens the page at the German address, in German; its button stays there.
+  const unsubscribe = linkIn(email, `${portalUrl(slug)}/de/unsubscribe?token=`);
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto(unsubscribe);
+  await expect(reader.getByRole("heading", { name: "Keine E-Mails mehr von Acme?" })).toBeVisible();
+  await checkpoint(reader, "unsubscribe-in-german-phone", { fullPage: false });
+  await reader.getByRole("button", { name: "Abbestellen" }).click();
+  await expect(reader).toHaveURL(/\/de\/unsubscribe\?token=/);
+  await expect(reader.getByRole("heading", { name: "Du hast abbestellt" })).toBeVisible();
+});
+
+test("the widget's panel in German at its language's address (/de/widget): its tabs, Home, Feedback and What's new, the team's words in theirs", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const darkMode = await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts", { board: "feature-requests", title: "Offline mode" });
+  // An update (the team's words, in the default language): on Home's What's new row, and in What's new. It completes Dark mode.
+  await api("/changelog", { title: "CSV export is here", posts: [darkMode.number] });
+  await api("/changelog/1/publish", {});
+
+  // The panel as the widget's frame shows it, at a phone's width.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 700 });
+  await visitor.goto("/de/widget");
+  await expect(visitor.locator("html")).toHaveAttribute("lang", "de");
+  const tabs = visitor.getByRole("navigation", { name: "Widget" });
+  await expect(tabs.getByRole("link")).toHaveText(["Start", "Feedback"]);
+  await expect(tabs.getByRole("link", { name: "Feedback" })).toHaveAttribute("href", "/de/widget?tab=feedback");
+  await expect(visitor.getByText("Hallo 👋")).toBeVisible();
+  await expect(visitor.getByText("Wie können wir helfen?")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: /Teile eine Idee/ })).toBeVisible();
+  await expect(visitor.getByText("Schlag eine Funktion vor oder melde ein Problem")).toBeVisible();
+  await expect(visitor.getByRole("button", { name: "Schließen" })).toBeAttached();
+  await expect(visitor.getByRole("link", { name: /Bereitgestellt von/ })).toBeVisible();
+  // The team's words keep their language: the update's title.
+  await expect(visitor.getByText("CSV export is here", { exact: true })).toHaveAttribute("lang", "en");
+  await checkpoint(visitor, "widget-home-in-german-phone", { fullPage: false });
+
+  // The team's own greeting, heading and quick link: their words, in their language; and Messages on.
+  await api("/widget", { greeting: "Welcome to Acme", title: "Questions about Acme?", links: [{ label: "Status", url: "https://status.example.com" }] }, "PATCH");
+  await team.goto(`/app/${slug}/settings/support`);
+  await team.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(team.getByText("Messages on")).toBeVisible();
+  await visitor.reload();
+  await expect(visitor.getByText("Welcome to Acme")).toHaveAttribute("lang", "en");
+  await expect(visitor.getByText("Questions about Acme?")).toHaveAttribute("lang", "en");
+  await expect(visitor.getByRole("navigation", { name: "Schnelllinks" }).getByText("Status")).toHaveAttribute("lang", "en");
+  await expect(tabs.getByRole("link")).toHaveText(["Start", "Feedback", "Nachrichten"]);
+  await expect(visitor.getByRole("link", { name: /Schreib uns eine Nachricht/ })).toBeVisible();
+  await tabs.getByRole("link", { name: "Nachrichten" }).click();
+  await expect(visitor.getByRole("region", { name: "Das Team" })).toContainText("Das Team von Acme");
+  await visitor.goto("/de/widget");
+
+  // Feedback: suggesting an idea, and the ideas (the post's title the team's words).
+  await tabs.getByRole("link", { name: "Feedback" }).click();
+  await expect(visitor).toHaveURL(/\/de\/widget\?tab=feedback$/);
+  await expect(visitor.getByRole("heading", { name: "Schlag eine Idee vor" })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Beliebt" })).toBeVisible();
+  // The board's words for posting, the team hasn't set its own: the page's language's.
+  await expect(visitor.getByPlaceholder("Kurzer, aussagekräftiger Titel")).toBeVisible();
+  await expect(visitor.getByRole("region", { name: "Ideen" }).getByRole("link", { name: "Offline mode" })).toHaveAttribute("lang", "en");
+  await checkpoint(visitor, "widget-feedback-in-german-phone", { fullPage: false });
+  // Signed in on the portal: Trending or theirs.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.goto("/de/widget?tab=feedback");
+  await expect(reader.getByRole("group", { name: "Anzeigen" }).getByRole("button")).toHaveText(["Beliebt", "Meine"]);
+
+  // What's new: the update, its title the team's words, Read more in German.
+  await visitor.goto("/de/widget?tab=whats-new");
+  await expect(visitor.getByText("Neuigkeiten", { exact: true }).first()).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "CSV export is here" })).toHaveAttribute("lang", "en");
+  const readMore = visitor.getByRole("link", { name: "Weiterlesen über CSV export is here" });
+  await expect(readMore.locator("[lang=en]")).toHaveText("CSV export is here");
+  await expect(visitor.getByRole("link", { name: "Start" }).first()).toBeVisible();
+  // The update's page: the way back, its comments, and signing in to comment (nobody signed in here).
+  await readMore.click();
+  await expect(visitor).toHaveURL(/\/de\/widget\?tab=whats-new&entry=1$/);
+  await expect(visitor.getByRole("link", { name: "Neuigkeiten" })).toHaveAttribute("href", "/de/widget?tab=whats-new");
+  await expect(visitor.getByRole("heading", { name: "0 Kommentare" })).toBeVisible();
+  // The entry's date and its empty comments in German; its title the team's words.
+  await expect(visitor.getByRole("heading", { level: 1, name: "CSV export is here" })).toHaveAttribute("lang", "en");
+  await expect(visitor.locator("time").first()).toHaveText(/^\d{1,2}\. [A-ZÄÖÜ][a-zäöü]+ \d{4}$/);
+  await expect(visitor.getByText("Noch keine Kommentare.")).toBeVisible();
+  // The idea it completes, at the German address.
+  await expect(visitor.getByRole("main").getByRole("link", { name: /Dark mode/ }).first()).toHaveAttribute("href", /^\/de\/feedback\//);
+  await expect(visitor.getByText("Melde dich an, um zu kommentieren.")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Anmelden" })).toBeVisible();
+
+  // A private portal's panel, for someone who may not read it: signing in, in German.
+  await query(`UPDATE project SET "portalAccess" = 'PRIVATE' WHERE slug = $1`, [slug]);
+  await visitor.goto("/de/widget");
+  await expect(visitor.getByText("Melde dich an, um das zu sehen. Das öffnet sich in einem neuen Tab.")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Anmelden" })).toHaveAttribute("href", /\/de\/sign-in$/);
+  await expect(visitor.getByRole("button", { name: "Schließen" })).toBeAttached();
+});
+
+test("the widget's panel in German framed by a page: a portal reader's named greeting and Your ideas, and a failed sign-in said in German", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const post = await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // A reader signed in on the portal votes, and the team plans the idea.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.goto(`/feedback/feature-requests/dark-mode-${post.number}`);
+  const voted = reader.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await reader.getByRole("button", { name: /^Upvote/ }).click();
+  expect((await voted).ok()).toBe(true);
+  await api(`/posts/${post.number}`, { status: "planned" }, "PATCH");
+
+  // A page of the portal's site framing the German panel, which says it signs nobody in: Home shows the portal's reader.
+  const framing = (message: string) => (route: import("@playwright/test").Route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<iframe title="Panel" src="/de/widget" style="width:400px;height:700px"></iframe>
+        <script>addEventListener("message", (event) => event.data?.type === "tuti:ready" && event.source.postMessage(${message}, "*"));</script>`,
+    });
+  await reader.route(`${portalUrl(slug)}/our-app`, framing(`{ type: "tuti:identify", token: null }`));
+  await reader.goto("/our-app");
+  const panel = reader.frameLocator('iframe[title="Panel"]');
+  await expect(panel.getByText("Hallo Rita 👋")).toBeVisible();
+  const ideaNews = panel.getByRole("region", { name: "Deine Ideen" }).getByRole("link", { name: /Dark mode ist jetzt Geplant/ });
+  await expect(ideaNews).toHaveAttribute("href", `/de/feedback/feature-requests/dark-mode-${post.number}`);
+  // The idea's title is its people's words, in the default language.
+  await expect(ideaNews.locator("[lang=en]")).toHaveText("Dark mode");
+
+  // A page that sends a sign-in token whose exchange fails (offline, the server): the panel says so in German.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.route(`${portalUrl(slug)}/our-app`, framing(`{ type: "tuti:identify", token: "e2e-token" }`));
+  await visitor.route(
+    (url) => url.pathname === "/de/widget",
+    (route) => (route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.continue()),
+  );
+  await visitor.goto("/our-app");
+  const visitorPanel = visitor.frameLocator('iframe[title="Panel"]');
+  await visitorPanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(visitorPanel.getByText("Anmeldung fehlgeschlagen")).toBeVisible();
+  await expect(visitorPanel.getByText("sign-in-failed")).toHaveCount(0);
 });

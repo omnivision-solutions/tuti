@@ -5,6 +5,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { WIDGET_CLOSABLE_MESSAGE, WIDGET_CLOSE_MESSAGE, widgetFrame } from "@/lib/widget-messages";
+import { useTranslations } from "next-intl";
 
 /** Asks the loader on the customer's page to close the widget. */
 const close = () => window.parent.postMessage(WIDGET_CLOSE_MESSAGE, "*");
@@ -38,6 +39,7 @@ export function announceClose(window: Pick<Window, "addEventListener" | "removeE
  * it goes to next.
  */
 export function WidgetClose({ inline, className }: { inline: boolean; className?: string }) {
+  const t = useTranslations("widget");
   const hidden = useSyncExternalStore(
     noSubscription,
     () => inline || widgetFrame(window.name).inline,
@@ -64,7 +66,7 @@ export function WidgetClose({ inline, className }: { inline: boolean; className?
     return null;
   }
   return (
-    <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close" className={className}>
+    <Button variant="ghost" size="icon-sm" onClick={close} aria-label={t("close")} className={className}>
       <XIcon />
     </Button>
   );

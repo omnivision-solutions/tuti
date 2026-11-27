@@ -47,6 +47,12 @@ import { generatorSources } from "@/server/changelog-queries";
 import { articleVerifications, verifyUnavailable } from "@/server/operations/verify";
 import { markedRun } from "@/lib/docs-review";
 import { pageTitle } from "@/lib/page-title";
+import { ChangelogSaving } from "@/components/changelog";
+import { ArticleVersionSave, ChangelogLanguagePill, ChangelogVersionEditor } from "@/components/changelog-languages";
+import { NO_AI_WAITING, sectionName, versionFormKey, versionTextKey } from "@/lib/changelog-versions";
+import { keepArticleVersionUpToDate, saveArticleVersion, updateArticleVersionSections } from "@/server/article-versions";
+import { articleLanguages } from "@/server/changelog-languages";
+import { behindChanges, readArticleVersion } from "@/server/operations/translations";
 
 /** The tab: the article's title. */
 export async function generateMetadata(props: PageProps<"/app/[project]/docs/[slug]">): Promise<Metadata> {
@@ -179,6 +185,89 @@ export default async function ArticlePage(
     },
   );
 
+  // Its languages (docs/plan.md L11), once it's published (its versions are made from what's published): the pill, and
+  // the version `?language=` opens, written in a form of its own.
+  const languages = await articleLanguages(membership.project.id, slug, article);
+  const opened = languages?.slice(1).find((language) => language.code === search.language) ?? null;
+  if (opened) {
+    // Its state from the read its text and token come from, not the pill's (read before it).
+    const { read, state, waiting, behind } = await readArticleVersion(membership.project.id, article.slug, opened.code as "de");
+    // Its draft, else its published text; neither yet: the default language's, to write over.
+    const text = read.draft ?? (read.publishedAt ? read : null);
+    const version = {
+      code: opened.code,
+      name: opened.name,
+      state,
+      keepUpToDate: read.keepUpToDate,
+      version: read.version,
+      waiting: waiting ?? (state === "waiting" ? NO_AI_WAITING : null),
+      title: text?.title || article.title,
+      content: (text?.content ?? displayDoc(article)) as Doc,
+      own: text !== null,
+      draft: read.draft !== null,
+    };
+    const defaultName = languages![0]!.name;
+    const changes = behind.sections.length > 0 ? await behindChanges(membership.project.id, article.slug, opened.code as "de") : [];
+    const none = { type: "doc" as const, content: [] };
+    const shown = (content: Doc) => ({ title: "", body: "", content, collection: null });
+    const changesShown =
+      changes.length > 0 ? (
+        <div className="flex flex-col gap-5">
+          {changes.map((change) => (
+            <section key={change.key} className="flex flex-col gap-2">
+              {/* Its heading is in its text, unless it's the introduction (none) or English took it out (no text). */}
+              {(change.key.startsWith("\u001f") || change.after === null) && <h3 className="group-label">{sectionName(change.key)}</h3>}
+              {change.after === null ? (
+                <p className="text-sm text-muted-foreground">Taken out of {defaultName}.</p>
+              ) : (
+                <>
+                  {change.added ? (
+                    <p className="text-sm text-muted-foreground">New in {defaultName}.</p>
+                  ) : (
+                    change.before === null && <p className="text-sm text-muted-foreground">Its earlier {defaultName} isn&apos;t kept any more. As it is now:</p>
+                  )}
+                  <ArticleDiff before={shown(change.before ?? none)} after={shown(change.after)} same="Nothing changed in its text." />
+                </>
+              )}
+            </section>
+          ))}
+        </div>
+      ) : null;
+    return (
+      <ChangelogSaving>
+        <section className="docs-editor-page @container/editor flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border [--docs-pad:0px]">
+          <DocsPageHeader
+            back={{ href: languages![0]!.href, label: edited.title }}
+            title={version.title}
+            titleInForm
+            filters={<ChangelogLanguagePill languages={languages!} current={version.code} />}
+            actions={
+              <div className="flex shrink-0 items-center gap-1.5">
+                <ArticleVersionSave behind={behind.ask} gone={behind.gone} defaultName={defaultName} />
+              </div>
+            }
+          />
+          <div className="min-h-0 flex-1 overflow-auto p-6 [scrollbar-width:thin] max-sm:p-4">
+            {/* One per language, carrying what's typed; its form mounted afresh for each read with new text. */}
+            <ChangelogVersionEditor
+              key={versionFormKey(version)}
+              formKey={versionTextKey(version)}
+              kind="article"
+              projectSlug={slug}
+              save={saveArticleVersion.bind(null, slug, article.slug, version.code)}
+              keep={keepArticleVersionUpToDate.bind(null, slug, article.slug, version.code)}
+              defaultName={languages![0]!.name}
+              view={version}
+              mediaUrls={await mediaUrls(version.content)}
+              languages={languages!}
+              behind={{ count: behind.sections.length, changes: changesShown, update: aiEnabled() ? updateArticleVersionSections.bind(null, slug, article.slug, version.code, behind.sections, read.version) : null, removes: behind.gone.length > 0 }}
+            />
+          </div>
+        </section>
+      </ChangelogSaving>
+    );
+  }
+
   // Out of credits: Ask AI and Edit with AI on images show, off (read once for both).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
   return (
@@ -275,6 +364,7 @@ export default async function ArticlePage(
             }}
             title={edited.title}
             titleInForm
+            filters={languages && <ChangelogLanguagePill languages={languages} current={languages[0]!.code} />}
             actions={
               <>
               <div className={cn(

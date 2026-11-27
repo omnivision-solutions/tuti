@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import type { Language } from "@tuti/shared/languages";
 
+import { currentEntryVersions } from "@/server/changelog-queries";
 import { visibleEntry } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
 import { languagePrefix } from "@/lib/language-addresses";
@@ -59,7 +60,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       collections: { where: { sample: false }, select: { slug: true, updatedAt: true } },
       docsTabs: { select: { slug: true, updatedAt: true } },
       apiReferences: { select: { slug: true, updatedAt: true } },
-      changelogEntries: { where: { publishedAt: { not: null }, sample: false, ...visibleEntry(SIGNED_OUT) }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
+      changelogEntries: { where: { publishedAt: { not: null }, sample: false, ...visibleEntry(SIGNED_OUT) }, orderBy: { number: "desc" }, select: { id: true, number: true, updatedAt: true, title: true, body: true, content: true } },
     },
   });
   if (!project) {
@@ -123,7 +124,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const [portal, languages] = await Promise.all([portalAddress(slug), pageLanguages(slug)]);
   const live = languages?.live ?? [];
   // Which versions are current, read without any version's text (translatedInto).
-  const [translations, landingTranslations] = await Promise.all([translatedInto(articles, live), translatedInto(landingRows, live)]);
+  // ponytail: an entry's current versions are read with its text (to compare with its hash); a stored hash if entries grow many.
+  const [translations, landingTranslations, entryTranslations] = await Promise.all([
+    translatedInto(articles, live),
+    translatedInto(landingRows, live),
+    currentEntryVersions(project.changelogEntries, live.filter((code) => code !== languages?.default)),
+  ]);
   // A tab (or the docs home) showing an article in its place: in the languages that article is translated into, at its own path.
   const landingLanguages = new Map(landingRows.map((row) => [row.slug, (landingTranslations.get(row.id) ?? []).map((version) => version.language)]));
   const tabLanguages = (tab: (typeof docs.tabs)[number] | undefined, path: string): [string, string][] =>
@@ -138,7 +144,13 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     })),
     { path: "/roadmap", lastmod: latestPost },
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
-    ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt, teamText: true })),
+    // An entry's page in the live languages it's translated into (docs/plan.md L17), at the same path under each's prefix.
+    ...project.changelogEntries.map((entry) => ({
+      path: `/changelog/${entry.number}`,
+      lastmod: entry.updatedAt,
+      teamText: true,
+      inLanguages: (entryTranslations.get(entry.id) ?? []).map((version): [string, string] => [version.language, `/changelog/${entry.number}`]),
+    })),
     {
       path: "/docs",
       lastmod: newest([...articles.map((article) => article.updatedAt), ...referencesDates(homeReferences)]),

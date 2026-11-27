@@ -94,7 +94,7 @@ import { getLanguages, retranslateLanguage, updateLanguages } from "./languages"
 import { getGlossary, updateGlossary } from "./glossary";
 import { getCollectionTranslations, getTabTranslations, updateCollectionTranslation, updateTabTranslation } from "./label-translations";
 import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
-import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
+import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
@@ -198,6 +198,7 @@ const all = [
   saveTranslation,
   publishTranslation,
   updateTranslationSections,
+  keepTranslationUpToDate,
   publishChanges,
   discardChanges,
   unpublishArticle,

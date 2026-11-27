@@ -23,6 +23,9 @@ import { request } from "@/test/next-headers";
 import * as aiFirst from "./ai-first";
 import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
+import * as articleVersions from "./article-versions";
+import { call as callOperation } from "./operations/run";
+import { getTranslation } from "./operations/translations";
 import * as apiReferences from "./api-references";
 import * as appSearch from "./app-search";
 import * as appWidget from "./app-widget";
@@ -102,6 +105,7 @@ const modules = {
   github,
   docs,
   "docs-readers": docsReaders,
+  "article-versions": articleVersions,
   "email-pause": emailPause,
   "email-preferences": emailPreferences,
   groups,
@@ -381,6 +385,36 @@ const matrix: Matrix = {
     chooseLanguage: { allowed: "public", call: (slug) => readerLanguage.chooseLanguage(slug, "en") },
   },
   // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
+  // The article's German, from its editor's language pill: from the version read (the owner's read, so the token is the
+  // fixture's as it is).
+  "article-versions": {
+    saveArticleVersion: {
+      allowed: "MEMBER",
+      call: async (slug, f) => {
+        const read = await callOperation(getTranslation, { actor: { kind: "user", userId: users.OWNER.id }, projectId: f.projectId }, { slug: "matrix-article", language: "de" });
+        const form = new FormData();
+        form.set("title", "Matrix-Artikel");
+        form.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Von der Matrix." }] }] }));
+        form.set("version", read.version);
+        return articleVersions.saveArticleVersion(slug, "matrix-article", "de", {}, form);
+      },
+    },
+    keepArticleVersionUpToDate: {
+      allowed: "MEMBER",
+      call: async (slug, f) => {
+        const read = await callOperation(getTranslation, { actor: { kind: "user", userId: users.OWNER.id }, projectId: f.projectId }, { slug: "matrix-article", language: "de" });
+        return articleVersions.keepArticleVersionUpToDate(slug, "matrix-article", "de", false, read.version);
+      },
+    },
+    updateArticleVersionSections: {
+      allowed: "MEMBER",
+      // The fixture's German has a section behind (its English went), so there's one to update.
+      call: async (slug, f) => {
+        const read = await callOperation(getTranslation, { actor: { kind: "user", userId: users.OWNER.id }, projectId: f.projectId }, { slug: "matrix-article", language: "de" });
+        return articleVersions.updateArticleVersionSections(slug, "matrix-article", "de", ["Gone\u001f0"], read.version);
+      },
+    },
+  },
   "docs-readers": {
     answerArticle: { allowed: "public", call: (slug) => docsReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
     countArticleView: { allowed: "public", call: (slug) => docsReaders.countArticleView(slug, "matrix-article") },
@@ -1193,6 +1227,13 @@ async function createFixture(own: "domain" | "site" = "domain") {
       { projectId, slug: "matrix-screenshots", title: "Matrix screenshots", body: "[Screenshot: The dashboard]" },
     ],
   });
+  // The published article's German (Manual in the fixture), for its editor's language pill.
+  const translated = await prisma.article.findFirstOrThrow({ where: { projectId, slug: "matrix-article" }, select: { id: true } });
+  // A section of the team's whose English went since: behind, for Update those sections (the job takes it out).
+  const gone = { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Weg" }] }, { type: "paragraph", content: [{ type: "text", text: "Nicht mehr da." }] }] };
+  await prisma.articleTranslation.create({
+    data: { articleId: translated.id, projectId, language: "de", automatic: false, title: "Matrix-Artikel", content: gone, sections: [{ key: "Gone\u001f0", hash: "gone", own: true }], publishedAt: new Date() },
+  });
   const question = await prisma.docsQuestion.create({
     data: { projectId, askerId: "matrix-reader", question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
   });
@@ -1283,6 +1324,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   return {
     slug: project.slug,
+    projectId,
     planLicenseId: planLicense.id,
     assignedPlanLicenseId: assignedPlanLicense.id,
     planLicenseClaim: claimToken("appsumo", unclaimed.externalKey),

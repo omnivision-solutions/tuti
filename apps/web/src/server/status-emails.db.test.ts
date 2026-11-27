@@ -4,14 +4,15 @@ import { readFileSync } from "node:fs";
 
 import { handlers } from "@tuti/jobs";
 import { billingFile } from "@tuti/testkit";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
-import { setVote } from "@/server/operations/more";
+import { setSubscription, setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 /** A post's people hear when the team moves it to Planned or In progress, once per status, as they hear when it ships. */
 
@@ -371,4 +372,135 @@ test("a run the monthly limit holds leaves a newer move's due time as it was, no
   expect(await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} })).toMatchObject({ emailed: 1, waiting: expect.any(String) });
   vi.restoreAllMocks();
   expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).toEqual(newer);
+});
+
+test("each person's email is in their language while the portal serves it, its links at that language's address; else the portal's default", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const [author, german, french] = [await verified("Author"), await verified("Greta"), await verified("Fleur")];
+  await prisma.user.update({ where: { id: german.id }, data: { language: "de" } });
+  // French isn't one of the portal's languages: the default's.
+  await prisma.user.update({ where: { id: french.id }, data: { language: "fr" } });
+  const post = await postVotedBy(author, [german, french]);
+
+  await setStatus(post.number, "in_progress");
+  expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export"]);
+  const email = mailbox.emails.find((e) => e.to.includes(german.email))!;
+  expect(email.html).toMatch(/<html[^>]* lang="de"/);
+  expect(email.text).toContain("Das Team hat mit der Umsetzung begonnen. Wir mailen dir wieder, wenn sie fertig ist.");
+  // The post's title is its people's words, in the default language: marked so in the heading and the card.
+  expect(email.html).toMatch(/<h1[^>]*><span lang="en">CSV export<\/span> ist in Arbeit<\/h1>/);
+  expect(email.html).toMatch(/<div lang="en"[^>]*>CSV export<\/div>/);
+  expect(email.text).toContain(`/de/feedback/feature-requests/csv-export-${post.number}`);
+  expect(email.text).toContain("/de/unsubscribe?token=");
+  for (const person of [author, french]) {
+    expect(subjectsTo(person.email)).toEqual(["In progress: CSV export"]);
+  }
+  expect(mailbox.emails.find((e) => e.to.includes(french.email))!.text).not.toContain("/de/");
+
+  // Shipped: German too, its title marked as the default language's in the heading.
+  await setStatus(post.number, "completed");
+  expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export", "Erledigt: CSV export"]);
+  const shipped = mailbox.emails.filter((e) => e.to.includes(german.email)).at(-1)!;
+  expect(shipped.html).toMatch(/<h1[^>]*><span lang="en">CSV export<\/span> ist fertig<\/h1>/);
+  expect(shipped.text).toContain(`/de/feedback/feature-requests/csv-export-${post.number}`);
+
+  // German taken offline: another post's news is the default language's, its links too.
+  await prisma.projectLanguage.updateMany({ where: { projectId: project.id, code: "de" }, data: { live: false } });
+  const other = await call(createPost, as(author.id), { board: "feature-requests", title: "PDF export" });
+  await call(setVote, as(german.id), { number: other.number, voted: true });
+  await setStatus(other.number, "planned");
+  expect(subjectsTo(german.email).at(-1)).toBe("Planned: PDF export");
+  expect(mailbox.emails.filter((e) => e.to.includes(german.email)).at(-1)!.text).not.toContain("/de/");
+});
+
+test("a reader who never chose a language takes the page's when they vote at a language's address: its news is in it; one they chose stays", async () => {
+  for (const code of ["de", "fr"]) {
+    await prisma.projectLanguage.create({ data: { projectId: project.id, code, live: true, automatic: false } });
+  }
+  const [author, german, french] = [await verified("Author"), await verified("Greta"), await verified("Fleur")];
+  await prisma.user.update({ where: { id: french.id }, data: { language: "fr" } });
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  // Both vote on the German address (what proxy.ts sets on its requests).
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  for (const voter of [german, french]) {
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+  }
+  request.headers = {};
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: german.id } })).language).toBe("de");
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: french.id } })).language).toBe("fr");
+
+  await setStatus(post.number, "in_progress");
+  expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export"]);
+  expect(subjectsTo(french.email)).toEqual(["En cours : CSV export"]);
+});
+
+test("a vote saves no language at the default language's address, at an offline one's (the team's preview), or by an API key on someone's behalf", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", live: false, automatic: false } });
+  const author = await verified("Author");
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  const languageOf = async (id: string) => (await prisma.user.findUniqueOrThrow({ where: { id } })).language;
+
+  const atDefault = await verified("At default");
+  request.headers = { "x-tuti-language": "en", "x-tuti-language-prefix": "" };
+  await call(setVote, as(atDefault.id), { number: post.number, voted: true });
+  expect(await languageOf(atDefault.id)).toBeNull();
+
+  // French isn't live: only the team's preview shows it at /fr.
+  const previewing = await verified("Previewing");
+  request.headers = { "x-tuti-language": "fr", "x-tuti-language-prefix": "/fr" };
+  await call(setVote, as(previewing.id), { number: post.number, voted: true });
+  expect(await languageOf(previewing.id)).toBeNull();
+
+  // An API key voting for someone from the team's app, sending a live language's headers: not theirs to set.
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  const key = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "write" as const, createdById: owner.id };
+  await call(setVote, { actor: key, projectId: project.id }, { number: post.number, voted: true, author: { id: "app-user-1", email: "e2e-behalf@example.com", name: "Behalf" } });
+  const voters = await prisma.vote.findMany({ where: { post: { projectId: project.id, number: post.number } }, select: { userId: true } });
+  const behalf = voters.map(({ userId }) => userId).filter((id) => ![author.id, atDefault.id, previewing.id].includes(id));
+  expect(behalf).toHaveLength(1);
+  expect(await languageOf(behalf[0]!)).toBeNull();
+});
+
+test("a reader who never chose a language takes the page's when they post, comment or follow at a language's address", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const author = await verified("Author");
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  const [poster, commenter, follower] = [await verified("Poster"), await verified("Commenter"), await verified("Follower")];
+  // On the German address (what proxy.ts sets on its requests).
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  await call(createPost, as(poster.id), { board: "feature-requests", title: "PDF export" });
+  await call(createComment, as(commenter.id), { number: post.number, body: "Ja, bitte." });
+  await call(setSubscription, as(follower.id), { number: post.number, subscribed: true });
+  request.headers = {};
+  for (const [what, reader] of [["posted", poster], ["commented", commenter], ["followed", follower]] as const) {
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: reader.id } })).language, what).toBe("de");
+  }
+  // Their news is German: the follower's, for one.
+  await setStatus(post.number, "in_progress");
+  expect(subjectsTo(follower.email)).toEqual(["In Arbeit: CSV export"]);
+});
+
+test("saving the page's language failing never fails what was saved: the post is created once, with no error", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const reader = await verified("Reader");
+  request.headers = { "x-tuti-language": "de", "x-tuti-language-prefix": "/de" };
+  onTestFinished(() => {
+    request.headers = {};
+  });
+  const update = vi.spyOn(prisma.user, "updateMany").mockRejectedValueOnce(new Error("connection reset"));
+  const post = await call(createPost, as(reader.id), { board: "feature-requests", title: "Offline mode" });
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(post).toMatchObject({ title: "Offline mode" });
+  expect(await prisma.post.count({ where: { projectId: project.id, title: "Offline mode" } })).toBe(1);
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: reader.id } })).language).toBeNull();
 });

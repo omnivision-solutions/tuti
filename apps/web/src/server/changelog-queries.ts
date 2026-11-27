@@ -1,5 +1,7 @@
 import { type Doc, mediaIdsIn } from "@tuti/content";
-import { prisma, type ChangelogTag } from "@tuti/db";
+import { prisma, type ChangelogTag, type Prisma } from "@tuti/db";
+import { translationSource } from "@tuti/jobs";
+import { languageLimit, liveLanguages } from "@tuti/shared";
 
 import type { PublishedEntry } from "@/components/changelog-entry";
 import type { Reader } from "@/lib/read-access";
@@ -8,8 +10,77 @@ import { visibleEntry } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
 import { lastingImage } from "./media-urls";
+import { portalLanguage } from "./portal-base";
 
 /** Reads for the changelog pages: the team's editor and the portal. */
+
+/**
+ * The language a portal page asks entries in (docs/plan.md L17), where it isn't the default's: its address's ("/de/…").
+ * Null at the default language's addresses, or off the portal.
+ */
+export async function entryLanguageAsked(): Promise<string | null> {
+  const { language, defaultLanguage } = await portalLanguage().catch(() => ({ language: null, defaultLanguage: null }));
+  return language && defaultLanguage && language !== defaultLanguage ? language : null;
+}
+
+type EntryText = { id: string; title: string; body: string; content: Prisma.JsonValue };
+const versionShown = { entryId: true, language: true, title: true, body: true, content: true } as const;
+export type ShownEntryVersion = Prisma.ChangelogTranslationGetPayload<{ select: typeof versionShown }>;
+
+/**
+ * The current versions of `entries` in `languages`, by entry (docs/plan.md, "A page not yet translated", as articles'
+ * isCurrent): published, and, kept up to date, made from the entry as it is now. One whose entry changed but couldn't be
+ * translated again yet is as good as none, never its old text; one the team writes counts once it's published.
+ */
+export async function currentEntryVersions(entries: EntryText[], languages: string[]): Promise<Map<string, ShownEntryVersion[]>> {
+  const out = new Map<string, ShownEntryVersion[]>();
+  if (entries.length === 0 || languages.length === 0) {
+    return out;
+  }
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const versions = await prisma.changelogTranslation.findMany({
+    where: { entryId: { in: [...byId.keys()] }, language: { in: languages }, publishedAt: { not: null } },
+    select: { ...versionShown, automatic: true, sourceHash: true },
+  });
+  for (const { automatic, sourceHash, ...version } of versions.sort((a, b) => languages.indexOf(a.language) - languages.indexOf(b.language))) {
+    const entry = byId.get(version.entryId)!;
+    if (!automatic || sourceHash === translationSource({ ...entry, content: entry.content as Doc | null }).hash) {
+      out.set(version.entryId, [...(out.get(version.entryId) ?? []), version]);
+    }
+  }
+  return out;
+}
+
+/** A project's live languages besides its default: the ones an entry's page can be in. */
+async function liveOthers(projectSlug: string) {
+  const project = await prisma.project.findUnique({
+    where: { slug: projectSlug },
+    select: { plan: true, language: true, languages: { select: { code: true, live: true }, orderBy: [{ createdAt: "asc" }, { code: "asc" }] } },
+  });
+  return project ? liveLanguages(project.languages, languageLimit(project.plan)).filter((code) => code !== project.language) : [];
+}
+
+/**
+ * Where entry `number` reads in each language it's in (portalPageMetadata's `addresses`): the default language's, and each
+ * live language it has a current version in (its canonical and `hreflang` follow them). Empty for none.
+ */
+export async function entryAddresses(projectSlug: string, entry: EntryText & { number: number; projectLanguage: string }): Promise<Record<string, string>> {
+  const path = `/changelog/${entry.number}`;
+  const versions = (await currentEntryVersions([entry], await liveOthers(projectSlug))).get(entry.id) ?? [];
+  return Object.fromEntries([[entry.projectLanguage, path], ...versions.map((version) => [version.language, path])]);
+}
+
+/** Each of `entries` in `language` where it has a current version there; `lang`: the language its text is in then. */
+async function inLanguage<T extends EntryText>(entries: T[], language: string | null | undefined): Promise<(T & { lang?: string; untranslated?: true })[]> {
+  if (!language) {
+    return entries;
+  }
+  const versions = await currentEntryVersions(entries, [language]);
+  return entries.map((entry) => {
+    const version = versions.get(entry.id)?.[0];
+    return version ? { ...entry, title: version.title, body: version.body, content: version.content, lang: version.language } : { ...entry, untranslated: true };
+  });
+}
 
 /** How many of each reaction these entries have, by entry id (`db`: a transaction's client, inside one). */
 export async function reactionCounts(
@@ -85,13 +156,15 @@ export async function draftToWrite(projectId: string) {
 }
 
 /** The newest published changelog entries `reader` may read, by date (the header's menu on phones lists them): just enough to name and link them. */
-export function changelogContents(projectSlug: string, reader: Reader, take = 30) {
-  return prisma.changelogEntry.findMany({
+export async function changelogContents(projectSlug: string, reader: Reader, { take = 30, language }: { take?: number; language?: string | null } = {}) {
+  const entries = await prisma.changelogEntry.findMany({
     where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...visibleEntry(reader) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
     take,
-    select: { number: true, title: true, publishedAt: true },
+    select: { id: true, number: true, title: true, body: true, content: true, publishedAt: true },
   });
+  // In `language` where translated there (docs/plan.md L17).
+  return (await inLanguage(entries, language)).map(({ number, title, publishedAt, lang }) => ({ number, title, publishedAt, lang }));
 }
 
 /**
@@ -122,9 +195,20 @@ export async function publishedEntries(
     skip = 0,
     userId,
     withSample = true,
-  }: { number?: number; numbers?: number[]; tag?: ChangelogTag; take?: number; skip?: number; userId?: string; withSample?: boolean } = {},
+    language,
+  }: {
+    number?: number;
+    numbers?: number[];
+    tag?: ChangelogTag;
+    take?: number;
+    skip?: number;
+    userId?: string;
+    withSample?: boolean;
+    /** In this language where an entry has a current version there (docs/plan.md L17); else the default language's, `untranslated`. */
+    language?: string | null;
+  } = {},
 ) {
-  const entries = await prisma.changelogEntry.findMany({
+  const read = await prisma.changelogEntry.findMany({
     where: {
       project: { slug: projectSlug },
       publishedAt: { not: null },
@@ -154,6 +238,7 @@ export async function publishedEntries(
       },
     },
   });
+  const entries = await inLanguage(read, language);
   const ids = entries.map((e) => e.id);
   const [counts, mine] = await Promise.all([
     reactionCounts(ids),
@@ -176,6 +261,8 @@ export async function publishedEntries(
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),
       sample: e.sample,
+      ...(e.lang && { lang: e.lang }),
+      ...(e.untranslated && { untranslated: true }),
     }),
   );
 }

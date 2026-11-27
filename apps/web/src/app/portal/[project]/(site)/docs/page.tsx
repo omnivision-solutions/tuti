@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 
 import { referenceListing } from "@/components/portal-api-operation";
 import { DocsLayout, docsPageListing, DocsSearchResults, DocsTabPage } from "@/components/portal-docs";
-import { DOCS_HEADING } from "@/lib/portal-look";
 import { docsHome, docsTree, landingAddresses } from "@/server/docs-queries";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
+import { pageTranslator } from "@/server/portal-language";
 
 const searchQuery = (q: string | string[] | undefined) => (typeof q === "string" ? q.trim().slice(0, 200) : "");
 
@@ -15,22 +15,25 @@ const searchQuery = (q: string | string[] | undefined) => (typeof q === "string"
 export async function generateMetadata(props: PageProps<"/portal/[project]/docs">): Promise<Metadata> {
   const [{ project }, { q }] = await Promise.all([props.params, props.searchParams]);
   const query = searchQuery(q);
+  // In the page's language: "Documentation", the search's title, the default subtitle.
+  const [header, helpCenter] = await Promise.all([pageTranslator("header"), pageTranslator("helpCenter")]);
+  const docs = header.t("docs");
   if (query) {
-    return portalPageMetadata(project, { title: `Results for “${query}” · Documentation`, path: "/docs", noindex: true });
+    return portalPageMetadata(project, { title: `${helpCenter.t("resultsFor", { q: query })} · ${docs}`, path: "/docs", noindex: true });
   }
   const { tab, landing } = await docsHome(project);
   if (tab?.locked) {
-    return portalPageMetadata(project, { title: "Documentation", path: "/docs", noindex: true });
+    return portalPageMetadata(project, { title: docs, path: "/docs", noindex: true });
   }
   if (landing.kind === "reference") {
     return portalPageMetadata(project, { ...((await referenceListing(project, landing.slug)) ?? { title: landing.name }), path: "/docs" });
   }
   if (landing.kind !== "overview") {
     // An article in its place: in each language it's translated into, here (docs/plan.md, "A page not yet translated").
-    return portalPageMetadata(project, { ...docsPageListing(landing), path: "/docs", ...(landing.kind === "article" && { addresses: await landingAddresses(project, landing.slug, "/docs") }) });
+    return portalPageMetadata(project, { ...docsPageListing(landing, docs), path: "/docs", ...(landing.kind === "article" && { addresses: await landingAddresses(project, landing.slug, "/docs") }) });
   }
   const home = (await portalSite(project))?.brand.docsHome;
-  return portalPageMetadata(project, { title: "Documentation", description: home?.subtitle || DOCS_HEADING.subtitle, path: "/docs" });
+  return portalPageMetadata(project, { title: docs, description: home?.subtitle || helpCenter.t("headingSubtitle"), path: "/docs" });
 }
 
 /**

@@ -12,6 +12,7 @@ import type { EditorUploads } from "@/components/rich-editor";
 import { buttonVariants } from "@/components/ui/button";
 import { signInTo, useWidgetSignIn } from "@/components/widget-feedback";
 import { widgetComment, widgetComments, widgetDeleteComment, widgetEditComment } from "@/server/widget";
+import { useTranslations } from "next-intl";
 
 const NONE = new Set<string>();
 
@@ -19,7 +20,6 @@ const NONE = new Set<string>();
  * What a save answers while the page trades a token: without one the server would act for the portal's session, which may
  * be someone else's. Nothing's sent; what's typed stays, to send once they're signed in.
  */
-const SIGNING_IN = { error: "Signing you in… Try again in a moment.", waiting: true };
 
 const Commenter = createContext<{
   projectSlug: string;
@@ -60,6 +60,9 @@ export function WidgetComments({
   mediaUrls?: MediaUrls | null;
   children: React.ReactNode;
 }) {
+  const t = useTranslations("widget");
+  // Shown in the box while the page is still signing them in.
+  const SIGNING_IN = { error: t("signingInRetry"), waiting: true };
   const { signedIn, known, pending, signingOut } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const link = usePortalHref();
   // While the page switches people or signs them out, nobody: never the last person's token.
@@ -117,14 +120,14 @@ export function WidgetComments({
     !signedIn && (
       <div className="flex items-center gap-3 rounded-xl bg-muted p-4">
         <MessageCircleIcon aria-hidden className="size-[1.125rem] shrink-0 text-muted-foreground" />
-        <p className="min-w-0 flex-1 text-sm text-muted-foreground">Sign in to comment.</p>
+        <p className="min-w-0 flex-1 text-sm text-muted-foreground">{t("signInToComment")}</p>
         <a
           href={link(signInTo(`/changelog/${number}`))}
           target="_blank"
           rel="noreferrer"
           className={buttonVariants({ variant: "outline", className: "font-semibold portal:bg-card portal:hover:bg-card/70" })}
         >
-          Sign in
+          {t("signIn")}
         </a>
       </div>
     )
@@ -132,7 +135,7 @@ export function WidgetComments({
 
   return (
     <Commenter value={{ projectSlug, number, token, person, portal: portalSignedIn, mine: own, uploads, mediaUrls }}>
-      {read && !token && <p className="text-sm text-muted-foreground">Signing you in…</p>}
+      {read && !token && <p className="text-sm text-muted-foreground">{t("signingIn")}</p>}
       {box}
       {children}
     </Commenter>
@@ -141,6 +144,8 @@ export function WidgetComments({
 
 /** A comment's text in the widget, with Edit and Delete when it's its person's own (WidgetComments). */
 export function WidgetComment({ commentId, author, doc, children }: { commentId: string; author: string; doc: Doc; children: React.ReactNode }) {
+  const t = useTranslations("widget");
+  const SIGNING_IN = { error: t("signingInRetry"), waiting: true };
   const { projectSlug, number, token, person, portal, mine, uploads, mediaUrls } = use(Commenter);
   // Someone the page signs in acts only with their token: never the portal session's fallback (SIGNING_IN).
   const signingIn = !portal && !token;

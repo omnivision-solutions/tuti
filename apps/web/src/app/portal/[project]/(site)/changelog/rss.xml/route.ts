@@ -3,7 +3,8 @@ import { prisma } from "@tuti/db";
 
 import { SIGNED_OUT } from "@/lib/read-access";
 import { portalAddress } from "@/server/custom-domains";
-import { publishedEntries } from "@/server/changelog-queries";
+import { pageLanguages } from "@/server/language-addresses";
+import { entryLanguageAsked, publishedEntries } from "@/server/changelog-queries";
 import { portalLanguage } from "@/server/portal-base";
 import { portalTranslator } from "@/server/portal-language";
 
@@ -24,21 +25,36 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   }
   // In the address's language (/de/changelog/rss.xml): its title, description and the entries' tags, and its links to that
   // language's pages (the entries are the team's words).
-  const [address, { prefix }, { t }] = await Promise.all([portalAddress(slug), portalLanguage(), portalTranslator(project.id, "changelog")]);
+  const [address, { prefix, defaultLanguage }, { t, language }, asked, languages] = await Promise.all([
+    portalAddress(slug),
+    portalLanguage(),
+    portalTranslator(project.id, "changelog"),
+    entryLanguageAsked(),
+    pageLanguages(slug),
+  ]);
+  // The team's preview of a language that isn't live: its translations aren't released, so no shared cache may keep them
+  // (proxy.ts sets this too; here it holds whatever's in front of the route).
+  const preview = !!asked && !languages?.live.some((code) => code === asked);
   const portal = `${address}${prefix}`;
   // Not sample content (Home's "Add sample content"): feed readers keep what they're sent. For everyone only: no feed
-  // reader signs in, and it's kept in shared caches.
-  const entries = await publishedEntries(slug, SIGNED_OUT, { withSample: false });
+  // reader signs in, and it's kept in shared caches. Each entry in the address's language where its version there is
+  // current, else the default language's (docs/plan.md L17, as the changelog's pages).
+  const entries = await publishedEntries(slug, SIGNED_OUT, { withSample: false, language: asked });
   const items = entries.map((entry) => {
+    // At this language's address either way (its page there shows the default language's with a line until it's
+    // translated): its guid stays the same once it is, so feed readers don't list it twice.
     const url = `${portal}/changelog/${entry.number}`;
+    // Not translated into the feed's language: its title and text are the default language's, and say so (as its page's
+    // `lang`); its tags are the feed's.
+    const lang = entry.untranslated && defaultLanguage ? ` xml:lang="${xml(defaultLanguage)}"` : "";
     return [
       "<item>",
-      `<title>${xml(entry.title)}</title>`,
+      `<title${lang}>${xml(entry.title)}</title>`,
       `<link>${xml(url)}</link>`,
       `<guid isPermaLink="true">${xml(url)}</guid>`,
       `<pubDate>${entry.publishedAt.toUTCString()}</pubDate>`,
       ...entry.tags.map((tag) => `<category>${xml(t(`tag.${tag}`))}</category>`),
-      `<description>${xml(toPlainText(entry.doc))}</description>`,
+      `<description${lang}>${xml(toPlainText(entry.doc))}</description>`,
       "</item>",
     ].join("");
   });
@@ -50,11 +66,13 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     `<link>${xml(`${portal}/changelog`)}</link>`,
     `<atom:link href="${xml(`${portal}/changelog/rss.xml`)}" rel="self" type="application/rss+xml"/>`,
     `<description>${xml(t("description", { name: project.name }))}</description>`,
+    // The feed's language: its address's.
+    `<language>${xml(language)}</language>`,
     ...items,
     "</channel>",
     "</rss>",
   ].join("\n");
   return new Response(feed, {
-    headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": "public, max-age=300" },
+    headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": preview ? "private, no-store" : "public, max-age=300" },
   });
 }
