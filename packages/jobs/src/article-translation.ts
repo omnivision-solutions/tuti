@@ -697,8 +697,10 @@ const translatedByJob = {
  * the mark could be lost with it.)
  */
 export async function queueChangelogTranslations(entryId: string) {
-  // Its own time, not the entry's change (updatedAt, which @updatedAt would move).
-  const [mark] = await prisma.$queryRaw<{ at: Date }[]>`UPDATE changelog_entry SET "translationsQueueFailedAt" = now() WHERE id = ${entryId} RETURNING "translationsQueueFailedAt" AS at`;
+  // Its own time, not the entry's change (updatedAt, which @updatedAt would move); in UTC, as Prisma writes the column (no
+  // time zone in it: the database session's own zone would put it hours off).
+  const [mark] = await prisma.$queryRaw<{ at: Date }[]>`
+    UPDATE changelog_entry SET "translationsQueueFailedAt" = now() AT TIME ZONE 'UTC' WHERE id = ${entryId} RETURNING "translationsQueueFailedAt" AS at`;
   await queueTranslations(ENTRY, entryId);
   if (mark) {
     // Unless a newer queuing set its own meanwhile (that one clears it).
@@ -798,13 +800,13 @@ export async function retryArticleTranslations(): Promise<JobResult> {
 export const QUEUING_GRACE_MS = 60_000;
 
 async function entriesLeftBehind(): Promise<number> {
-  const entries = await prisma.changelogEntry.findMany({
-    // Not one marked in the last minute: its queuing may still be under way (it clears the mark once it's done).
-    where: { translationsQueueFailedAt: { lt: new Date(Date.now() - QUEUING_GRACE_MS) } },
-    orderBy: [{ translationsQueueFailedAt: "asc" }, { id: "asc" }],
-    take: retryBatch.size,
-    select: { id: true, translationsQueueFailedAt: true },
-  });
+  // Not one marked in the last minute: its queuing may still be under way (it clears the mark once it's done). Against the
+  // database's clock, the one the mark was written by (the app's may be off).
+  const entries = await prisma.$queryRaw<{ id: string; translationsQueueFailedAt: Date }[]>`
+    SELECT id, "translationsQueueFailedAt" FROM changelog_entry
+    WHERE "translationsQueueFailedAt" < (now() AT TIME ZONE 'UTC') - ${QUEUING_GRACE_MS} * interval '1 millisecond'
+    ORDER BY "translationsQueueFailedAt", id
+    LIMIT ${retryBatch.size}`;
   let queued = 0;
   for (const { id, translationsQueueFailedAt: failedAt } of entries) {
     try {

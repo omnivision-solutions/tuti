@@ -730,3 +730,34 @@ test("an email in a subscriber's language marks its translated title and text wi
   expect(body.slice(at)).toContain("[de] Switch themes from your profile menu.");
   expect(body.slice(0, at)).not.toContain("[de]");
 });
+
+test("an entry is marked before its translations are queued: one still queuing is left alone (on the database's clock, in any time zone), one left past the grace period is taken", async () => {
+  // The database's sessions in New York's time zone, hours behind UTC (a self-hoster's Postgres, say).
+  const [{ db }] = await prisma.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
+  await prisma.$executeRawUnsafe(`ALTER DATABASE "${db}" SET timezone TO 'America/New_York'`);
+  await prisma.$disconnect();
+  onTestFinished(async () => {
+    await prisma.$executeRawUnsafe(`ALTER DATABASE "${db}" RESET timezone`);
+    await prisma.$disconnect();
+  });
+  expect((await prisma.$queryRaw<{ zone: string }[]>`SELECT current_setting('TimeZone') AS zone`)[0]!.zone).toBe("America/New_York");
+  await languages({ languages: [{ code: "de" }] });
+  const { entry } = await draft();
+  // Its queuing held partway (a slow read, or a restart before it's done).
+  let release = (_: null) => {};
+  const reading = vi.spyOn(prisma.changelogEntry, "findFirst").mockReturnValueOnce(new Promise((resolve) => (release = resolve)) as never);
+  const publishing = call(publishChangelogEntry, as(), { number: entry.number });
+  const mark = async () => (await prisma.changelogEntry.findUniqueOrThrow({ where: { id: entry.id } })).translationsQueueFailedAt;
+  // Marked before anything's queued.
+  await vi.waitFor(async () => expect(await mark()).not.toBeNull());
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 0 });
+  // Its queuing never finishes (released with nothing read, it ends without clearing a mark moved meanwhile); past the minute, the retry job takes it.
+  await prisma.$executeRaw`UPDATE changelog_entry SET "translationsQueueFailedAt" = "translationsQueueFailedAt" - interval '2 minutes' WHERE id = ${entry.id}`;
+  reading.mockRestore();
+  model.reply(reply("de"));
+  expect(await handlers.retryArticleTranslations({}, log)).toEqual({ queued: 1 });
+  await languageTranslationsDone();
+  expect(await translation()).toMatchObject({ title: "[de] Dark mode" });
+  release(null);
+  await publishing;
+});
