@@ -46,3 +46,14 @@ test("a plan sold only yearly is bought yearly while Monthly is picked", async (
   await act(async () => upgrade.click());
   expect(subscribe).toHaveBeenCalledWith("acme", "pro", "year");
 });
+
+test("a plan's numbers read as one line each, in lower case after the number like the others: 1,000 credits a month", async () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  await act(async () => {
+    createRoot(root).render(h(PlanPicker, { projectSlug: "acme", current: "free", pricingPage: null, plans: [plan("free", null), plan("pro", { month: 39, year: 32 })] }));
+  });
+  const labels = [...root.querySelectorAll("dt")].map((dt) => dt.textContent);
+  expect(labels).toContain("credits a month");
+  expect(labels).not.toContain("Credits a month");
+});
