@@ -18,7 +18,7 @@ import { createWorkflow } from "./operations/workflows";
 import { call } from "./operations/run";
 import { notifyInboxNow, subscribeInbox } from "./live";
 import { upsertProjectUser } from "./project-users";
-import { widgetAskPerson, widgetConversation, widgetSendMessage, widgetStartConversation, widgetUploadAttachment } from "./widget-inbox";
+import { widgetAskPerson, widgetConversation, widgetConversations, widgetSendMessage, widgetStartConversation, widgetUploadAttachment } from "./widget-inbox";
 
 /**
  * The widget's Messages with the AI in the conversation (docs/plan.md, Inbox automation, W13): with "Answer with AI first"
@@ -95,7 +95,10 @@ test("a first message in Messages starts a conversation the AI has: answered in 
   model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   expect(await turn()).toBe("answered");
+  // Unseen till it's shown: the launcher's dot, for a panel closed while it answered.
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 1 });
   const answered = await opened();
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 0 });
   expect(answered).toMatchObject({ withAi: true, answering: false, askPerson: true });
   // The answer's text alone (the email's "Sources: …" line is the list under it), its source and its question.
   const [, reply] = answered.messages;

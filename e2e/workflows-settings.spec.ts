@@ -49,7 +49,7 @@ test("an owner sees the path in Settings → Workflows, reorders a trigger's wor
     return found.every((index, i) => index >= 0 && (i === 0 || index > found[i - 1]!));
   };
   await expect.poll(inOrder).toBe(true);
-  await expect(main).toContainText("On in the widget, where it answers before a conversation starts, once you've published articles");
+  await expect(main).toContainText("On in the widget, once you've published articles");
   await expect(main.getByRole("link", { name: "Spam filter settings" })).toHaveAttribute("href", `/app/${slug}/settings/spam`);
   const started = main.getByRole("list", { name: "When a conversation starts" });
   const replied = main.getByRole("list", { name: "When a user replies" });

@@ -34,7 +34,7 @@ export function Workflows({ projectSlug, workflows, groupNames, aiFirst }: { pro
   return (
     <ol className="flex flex-col gap-6">
       {/* First for now: it answers in the widget before there is a conversation. Once the AI answers in conversations (W12), it moves after the triggers. */}
-      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, where it answers before a conversation starts, once you've published articles" : "Off in the widget"}>
+      <BuiltIn name="AI answers first" description={aiFirst === null ? "This server has no AI answers" : aiFirst ? "On in the widget, once you've published articles" : "Off in the widget"}>
         <Link href={settings("widget")} aria-label="AI answers first in the widget's settings" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Widget
         </Link>
