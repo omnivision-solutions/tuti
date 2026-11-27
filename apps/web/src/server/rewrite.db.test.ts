@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { AI_EDITS_PER_HOUR, createChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
+import { AI_EDITS_PER_HOUR, createChangelogEntry, publishChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { rewriteText } from "@/server/rewrite";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -196,4 +196,19 @@ test("a new changelog entry, not saved yet, is edited in the changelog's style t
 
   expect(data(model.requests[0]!.user)).toMatchObject({ writingStyle: { toneNotes: "Friendly. Address the reader as you." } });
   expect(result).toEqual({ content: doc(paragraph(text("You can export reports now."))) });
+});
+
+test("with no examples picked, a changelog edit follows the project's other latest published entries, as Markdown: never the entry being edited", async () => {
+  const other = await call(createChangelogEntry, team(), { title: "Agenda view", markdown: "## Search\n\n- Quicker as you type\n\nThanks for reading" });
+  await call(publishChangelogEntry, team(), { number: other.number });
+  const entry = await call(createChangelogEntry, team(), { title: "Spring release", markdown: "Reports can now be exported by users." });
+  await call(publishChangelogEntry, team(), { number: entry.number });
+  model.reply(reply("You can export reports now."));
+
+  await rewriteText(project.slug, { kind: "changelog", entry: entry.number, text: doc(paragraph(text("Reports can now be exported by users."))), instruction: "Friendlier" });
+
+  expect(data(model.requests[0]!.user).writingStyle).toEqual({
+    toneNotes: "",
+    examplesOfPublishedEntries: [{ title: "Agenda view", text: "## Search\n\n- Quicker as you type\n\nThanks for reading" }],
+  });
 });
