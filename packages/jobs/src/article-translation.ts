@@ -261,6 +261,15 @@ async function translate(kind: Kind, parentId: string, language: string, log: Jo
       await queue(kind, parentId, language);
       return result;
     }
+    if (result.skipped === CHANGED && kind.name === "article") {
+      // An article's version the team writes, with sections asked for (Update those sections), whose write a change refused
+      // (the glossary saved meanwhile, which queues only versions kept up to date): asked again now, not after the safety net.
+      const version = await prisma.articleTranslation.findUnique({ where: { articleId_language: { articleId: parentId, language } }, select: { automatic: true, updateSections: true } });
+      if (version && !version.automatic && (version.updateSections as string[]).length > 0) {
+        await queue(kind, parentId, language);
+      }
+      return result;
+    }
     if (result.skipped && result.skipped !== STALE && result.skipped !== CHANGED && result.skipped !== NO_AI && started.retryAt) {
       // Nothing left to do for it: the safety net's try goes, unless a newer publish or Retranslate set another since it read it.
       // Without AI it stays, so the retry job translates the page once AI is set up.
