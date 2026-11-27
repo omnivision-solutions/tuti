@@ -119,7 +119,7 @@ const entry = {
   subscribersSent: 0,
 };
 
-test("Audience: Everyone hides the chips; Some groups shows them; going back to Everyone sends no groups, and Some groups again has the picks as they were", async () => {
+test("Who sees it: Everyone hides the chips; Some groups shows them, saying they're who it reaches; going back to Everyone sends no groups, and Some groups again has the picks as they were", async () => {
   const box = document.createElement("form");
   document.body.append(box);
   const onChange = vi.fn();
@@ -127,8 +127,11 @@ test("Audience: Everyone hides the chips; Some groups shows them; going back to 
   const chips = () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.closest("div")!;
   expect(box.querySelector<HTMLInputElement>('input[value="everyone"]')!.checked).toBe(true);
   expect(chips().hidden).toBe(true);
+  const reach = "Only readers in these groups see it, wherever it goes.";
+  expect(box.textContent).not.toContain(reach);
   await act(async () => box.querySelector<HTMLInputElement>('input[value="some"]')!.click());
   expect(chips().hidden).toBe(false);
+  expect(box.textContent).toContain(reach);
   // Only showing the chips is no change to send.
   expect(box.querySelector('input[name="groupsEditable"]')).toBeNull();
   await act(async () => box.querySelector<HTMLInputElement>('input[value="beta"]')!.click());
@@ -204,8 +207,8 @@ test("Goes to: a draft goes to the changelog list, the widget popup and an email
   // No hint lines: the list and the popup have none.
   expect(switchNamed(box, "Changelog list").hasAttribute("aria-describedby")).toBe(false);
   expect(switchNamed(box, "Widget").hasAttribute("aria-describedby")).toBe(false);
-  // Without groups, there's no Audience.
-  expect(box.textContent).not.toContain("Audience");
+  // Without groups, there's no Who sees it.
+  expect(box.textContent).not.toContain("Who sees it");
 });
 
 test("a new entry has the changelog list only: the popup and the email are picked once it's saved, for Publish", async () => {

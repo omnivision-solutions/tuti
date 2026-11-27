@@ -786,12 +786,9 @@ export function ChangelogForm({
         </div>
       </FieldGroup>
 
-      {/* Beside the text with a line on its left, as a post's sidebar is: held in view as the pane scrolls, no taller than
-          it (its PaneBody, a size container); under it on phones, after a line. */}
-      <aside
-        aria-label="Entry settings"
-        className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100cqh-3rem)] lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
-      >
+      {/* Beside the text with a line on its left, as a post's sidebar is, scrolling with the page (one scrollbar, not one
+          inside another); under it on phones, after a line. */}
+      <aside aria-label="Entry settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
         {standing && (
           <section aria-label="Status" className="flex flex-col gap-2">
             <h2 className="group-label">Status</h2>
@@ -925,10 +922,10 @@ export function WhoSeesIt({
       {!listed && <input type="hidden" name="emailOnly" value="1" />}
       {groups.length > 0 && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="group-label mb-2">Audience</legend>
+          <legend className="group-label mb-2">Who sees it</legend>
           <Segmented
             name="audience"
-            aria-label="Audience"
+            aria-label="Who sees it"
             aria-describedby={upgrade ? needsId : undefined}
             options={[
               { value: "everyone", label: "Everyone" },
@@ -1000,6 +997,8 @@ export function WhoSeesIt({
               </label>
             ))}
           </div>
+          {/* Who it's for is who it reaches: Goes to's list, widget and email all leave out anyone else. */}
+          {someGroups && <p className="text-xs text-muted-foreground">Only readers in these groups see it, wherever it goes.</p>}
           {upgrade && (
             <>
               <span id={needsId} hidden>
@@ -1012,6 +1011,8 @@ export function WhoSeesIt({
       )}
       <fieldset className="flex flex-col gap-2">
         <legend className="group-label mb-2">Goes to</legend>
+        {/* One list, a line between rows. */}
+        <div className="flex flex-col divide-y rounded-lg border">
         <GoesToRow
           icon={<ListIcon />}
           label="Changelog list"
@@ -1026,6 +1027,7 @@ export function WhoSeesIt({
           }}
         />
         {entry && <AnnounceRows entry={entry} subscribers={subscribers} listed={listed} announce={announce} pick={pick} />}
+        </div>
       </fieldset>
     </>
   );
@@ -1035,7 +1037,7 @@ export function WhoSeesIt({
 function GoesToRow({ icon, label, line, ...input }: { icon: ReactNode; label: string; line?: string | null } & Omit<React.ComponentProps<"input">, "type">) {
   const id = useId();
   return (
-    <div className="flex items-center gap-3 rounded-lg border px-3 py-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground">
+    <div className="flex items-center gap-3 px-3 py-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground">
       {icon}
       <div className="flex min-w-0 flex-1 flex-col">
         <label htmlFor={id}>{label}</label>

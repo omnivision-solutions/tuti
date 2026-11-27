@@ -88,15 +88,19 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(newDot(bea)).toHaveCount(0);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
-  // The team makes Dark mode for enterprise customers too, in the editor's Audience: now Bea has none.
+  // The team makes Dark mode for enterprise customers too, in the editor's Who sees it: now Bea has none.
   await owner.goto(`/app/${slug}/changelog/1`);
-  const audience = owner.getByRole("group", { name: "Audience" });
+  const audience = owner.getByRole("group", { name: "Who sees it" });
+  // The sidebar scrolls with the page: no scrollbar of its own beside the page's.
+  await expect(owner.getByRole("complementary", { name: "Entry settings" })).toHaveCSS("overflow-y", "visible");
   // Everyone to start with: no chips until Some groups.
   await expect(audience.getByRole("radio", { name: "Everyone" })).toBeChecked();
   await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toHaveCount(0);
   await audience.getByText("Some groups", { exact: true }).click();
   await expect(audience.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
   await audience.getByRole("checkbox", { name: "Enterprise" }).check();
+  // Who it's for is who it reaches, wherever it goes.
+  await expect(audience).toContainText("Only readers in these groups see it, wherever it goes.");
   await checkpoint(owner, "editor-audience");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
