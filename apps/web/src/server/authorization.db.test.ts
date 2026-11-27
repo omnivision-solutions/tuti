@@ -20,6 +20,7 @@ import { testLicensePrivateKey } from "@/test/license";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
+import * as aiFirst from "./ai-first";
 import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
 import * as apiReferences from "./api-references";
@@ -86,6 +87,7 @@ const modules = {
   "code-changes": codeChanges,
   "code-changes-tuning": codeChangesTuning,
   credits,
+  "ai-first": aiFirst,
   "ai-models": aiModels,
   "api-keys": apiKeys,
   "api-references": apiReferences,
@@ -198,6 +200,9 @@ const matrix: Matrix = {
     manageSubscription: { allowed: "ADMIN", call: (slug) => credits.manageSubscription(slug) },
     // Off on the free plan: nothing to remove (adding it is in plans.db.test.ts).
     setBadge: { allowed: "ADMIN", call: (slug) => credits.setBadge(slug, false) },
+  },
+  "ai-first": {
+    saveAiFirst: { allowed: "ADMIN", call: (slug) => aiFirst.saveAiFirst(slug, { widget: false, email: true, name: "Ada" }) },
   },
   "ai-models": {
     saveAiModel: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModel(slug, { levels: { changelog: "balanced" } }) },

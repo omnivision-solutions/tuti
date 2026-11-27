@@ -20,6 +20,7 @@ import { AI_TURN_GIVE_UP_MS, runAiTurn } from "./ai-turn";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation, updateConversation } from "./operations/conversations";
+import { updateAiFirst } from "./operations/ai-first";
 import { aiReport } from "./operations/reports";
 import { call } from "./operations/run";
 import { createWorkflow } from "./operations/workflows";
@@ -145,11 +146,30 @@ test("a new email conversation starts with the AI, which answers from the docs o
   expect(sent[0]!.text).toContain("Go to Settings → Export.");
   expect(sent[0]!.text).toContain("Sources: Exporting (");
   expect(sent[0]!.headers["auto-submitted"]).toBe("auto-replied");
+  // From the project's name, with no name of the AI's set (W14).
+  const { name } = await prisma.project.findFirstOrThrow({ where: { conversations: { some: { id } } }, select: { name: true } });
+  expect(sent[0]!.from).toMatch(new RegExp(`^"${name}" <`));
   expect(teamEmails(owner.email)).toBe(0);
 
   // Run again: nothing more.
   expect(await turn()).toBe("nothing");
   expect((await state()).thread).toHaveLength(2);
+});
+
+test("the AI's emailed answer comes from the name the team gave it, at the project (W14)", async () => {
+  const { admin, mail, turn, conversation, projectId } = await setup();
+  expect(await call(updateAiFirst, admin, { name: "  Ada  " })).toMatchObject({ name: "Ada", email: true });
+  await mail();
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  expect(await turn()).toBe("answered");
+  const { id } = await conversation();
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "conversationId" = ${id}`;
+  await handlers.sendConversationReplies({}, log);
+  const { name } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } });
+  const sent = mailbox.emails.filter((email) => email.to.includes(SENDER) && email.from.startsWith(`"Ada at ${name}" <`));
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.text).toContain("Ada");
 });
 
 test("asking for a person hands it over with a summary for the team, told by email and conversation.handed_over; the team's reply is the team's", async () => {
