@@ -226,7 +226,7 @@ test("an owner turns AI answers first off and on for the widget and email, names
   await checkpoint(owner, "ai-first");
   await main.getByRole("region", { name: "AI answers first" }).getByRole("link", { name: "Workflows" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/workflows`);
-  await expect(row).toContainText("On for email");
+  await expect(row.getByText("On for email", { exact: true })).toBeVisible();
 
   // Out of AI credits: off for now, for that.
   await spendCredits(slug);
@@ -240,7 +240,8 @@ test("an owner turns AI answers first off and on for the widget and email, names
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("AI answers first saved")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/workflows`);
-  await expect(row).toContainText("Off");
+  // Off by its switches: no reason given, whatever would keep it off.
+  await expect(row.getByText("Off", { exact: true })).toBeVisible();
   await row.getByRole("link", { name: "AI answers first settings" }).click();
   await widget.click();
   await name.fill("");
