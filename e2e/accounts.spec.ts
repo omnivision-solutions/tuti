@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "./fixtures";
+import { expect, type Page, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { query } from "./db";
@@ -383,17 +383,17 @@ test("a teammate renames the project in another tab: once this tab hears of it, 
   const olive = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(olive, "Acme", slug);
   const [{ id: projectId }] = await query(`SELECT id FROM project WHERE slug = $1`, [slug]);
-  const name = (page: typeof olive) => page.getByLabel("Project name");
-  const save = (page: typeof olive) => page.getByRole("button", { name: "Save changes" });
+  const name = (page: Page) => page.getByLabel("Project name");
+  const save = (page: Page) => page.getByRole("button", { name: "Save changes" });
   // A change in the support inbox refreshes the project's pages (server/live.ts): told again till the page shows the name
   // in its sidebar's project switcher (a stream not open yet misses it).
-  const hears = async (page: typeof olive, project: RegExp) => {
+  const hears = async (page: Page, project: RegExp) => {
     await expect(async () => {
       await query(`SELECT pg_notify('tuti_inbox', $1)`, [JSON.stringify({ projectId, conversationId: "none", userId: null, visitorHash: null })]);
       await expect(page.getByRole("button", { name: project }).first()).toBeVisible({ timeout: 1_000 });
     }).toPass();
   };
-  const rename = async (page: typeof olive, to: string) => {
+  const rename = async (page: Page, to: string) => {
     await expect(async () => {
       await name(page).fill(to);
       await expect(save(page)).toBeEnabled({ timeout: 1_000 });

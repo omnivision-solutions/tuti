@@ -1,11 +1,11 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test, type Route } from "./fixtures";
+import { expect, type Page, test, type Route } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { fillSignUp, newPerson, signUp, type TestPage } from "./helpers";
+import { fillSignUp, newPerson, signUp } from "./helpers";
 
 /** Who `page`'s browser is when it next continues with Google or GitHub (the fakes, by its X-Forwarded-For); `sub`: which Google account (default a new one). */
 async function nextSignIn(page: { ip: string }, provider: "google" | "github", person: { email: string; name: string; verified?: boolean; sub?: string }) {
@@ -32,7 +32,7 @@ async function storedTokens(email: string, provider: string) {
   }
 }
 
-const signOut = (page: TestPage) => page.context().clearCookies({ name: /(^|__Secure-)tuti\./ });
+const signOut = (page: Page) => page.context().clearCookies({ name: /(^|__Secure-)tuti\./ });
 
 test("someone signs up with Google, and later in with it again", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
