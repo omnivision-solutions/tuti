@@ -89,7 +89,7 @@ export function TranslationSettings({
         label="Translate conversations"
         description={
           ai
-            ? `Customers' messages are shown in your team's language, and your replies go out in theirs.${credits ? " Uses AI credits." : ""}`
+            ? `Customers' messages are shown in your team's language, and your replies go out in theirs.${credits ? " Uses credits." : ""}`
             : "Needs AI, which isn't set up on this server."
         }
         htmlFor="translate-conversations"

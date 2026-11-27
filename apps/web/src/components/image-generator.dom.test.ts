@@ -141,12 +141,12 @@ test("an error from the action is said in the result area", async () => {
   expect(document.querySelector('[role="alert"]')?.textContent).toBe("This project is out of credits");
 });
 
-test("Uses AI credits is said only where credits are on", async () => {
+test("Uses credits is said only where credits are on", async () => {
   await dialog();
-  expect(document.body.textContent).not.toContain("Uses AI credits");
+  expect(document.body.textContent).not.toContain("Uses credits");
   document.body.replaceChildren();
   await dialog({ credits: true });
-  expect(document.body.textContent).toContain("Uses AI credits");
+  expect(document.body.textContent).toContain("Uses credits");
 });
 
 test("the + menu adds the logo and this entry's images; Media library is there, off", async () => {
