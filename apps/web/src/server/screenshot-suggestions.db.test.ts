@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { prisma } from "@tuti/db";
-import { SCREENSHOT_SECRET, scannedFor } from "@tuti/jobs";
+import { SCREENSHOT_SECRET, scannedFor, scanSignInServices } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -32,6 +32,8 @@ const wide = "é".repeat(1_000_000);
 let mostReading = 0;
 /** Script reads that fail (500) before it loads. */
 let scriptFailures = 0;
+/** /assets/slow.js answers once this is let go. */
+let slowScript: Promise<void> = Promise.resolve();
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -48,7 +50,7 @@ beforeAll(async () => {
     } else if (request.url === "/slow") {
       response.writeHead(200, { "content-type": "text/html" }).end('<script src="/assets/slow.js"></script>');
     } else if (request.url === "/assets/slow.js") {
-      setTimeout(() => response.writeHead(200, { "content-type": "text/javascript" }).end('const a="identitytoolkit.googleapis.com";'), 200);
+      void slowScript.then(() => response.writeHead(200, { "content-type": "text/javascript" }).end('const a="identitytoolkit.googleapis.com";'));
     } else if (request.url === "/assets/main.js") {
       response.writeHead(200, { "content-type": "text/javascript" }).end('initializeApp({authDomain:"acme.firebaseapp.com"});const a="identitytoolkit.googleapis.com",b="securetoken.googleapis.com";');
     } else if (request.url === "/many") {
@@ -268,8 +270,14 @@ test("the first look starts the read in the background and says it's checking; t
 
 test("one read per project at a time: a look while one runs for the same address starts no other", async () => {
   await settle({ appUrl: `${base}/slow` });
-  const answers = await Promise.all([look(), look(), look()]);
-  expect(answers.every(({ checking }) => checking)).toBe(true);
+  let letGo!: () => void;
+  slowScript = new Promise((resolve) => (letGo = resolve));
+  const first = look();
+  // Its script asked for: the read is claimed and running.
+  await vi.waitFor(() => expect(requests).toContain("/assets/slow.js"));
+  expect(await Promise.all([look(), look()])).toEqual([{ suggestions: [], checking: true }, { suggestions: [], checking: true }]);
+  letGo();
+  expect(await first).toEqual({ suggestions: [], checking: true });
   expect(requests.filter((path) => path === "/slow")).toHaveLength(1);
 
   // One running (a claim of a moment ago): the look says checking and reads nothing.
@@ -315,4 +323,12 @@ test("past the fetch limits, an answer older than 7 days is still shown, not ref
   const old = [{ provider: "Auth0", hosts: ["acme.auth0.com"] }];
   await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: old, signInServicesFor: scannedFor(appUrl), signInServicesAt: new Date(0) } });
   expect(await look()).toEqual({ suggestions: old, checking: false });
+});
+
+test("a read of an address since changed keeps nothing and leaves the new address's read alone", async () => {
+  const now = new Date();
+  await settle({ appUrl: `${base}/many` });
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInScanFor: scannedFor(`${base}/many`), signInScanAt: now } });
+  await scanSignInServices({ projectId: project.id, appUrl: `${base}/` });
+  expect(await saved()).toMatchObject({ signInServicesFor: null, signInServices: null, signInScanFor: scannedFor(`${base}/many`), signInScanAt: now });
 });
