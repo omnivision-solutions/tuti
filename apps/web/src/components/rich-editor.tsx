@@ -67,6 +67,7 @@ import {
 import { createPortal } from "react-dom";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { fillInsPlugin } from "@/components/fill-in-marks";
 import { verificationPlugin, type VerificationFinding } from "@/components/verification-marks";
 import { useEditorSlot } from "@/components/use-editor-slot";
 import { Button } from "@/components/ui/button";
@@ -458,6 +459,8 @@ export function RichEditor({
           }),
         ],
       }),
+      // Lines a draft left to fill in, highlighted where publishing would refuse them.
+      ...(profile === "changelog" || profile === "article" ? [Extension.create({ name: "fillIns", addProseMirrorPlugins: () => [fillInsPlugin()] })] : []),
       // A new placeholder, sent in a transaction (a reply box names whose Reply opened it).
       Extension.create({
         name: "placeholderNow",

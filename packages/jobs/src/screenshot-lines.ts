@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, MAX_ALT_LENGTH, toPlainText } from "@tuti/content";
+import { type Doc, fromPlainText, MARKERS, markerSpans, MAX_ALT_LENGTH, toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 import { log as serverLog } from "@tuti/shared";
 
@@ -50,31 +50,8 @@ const TEXT_BLOCKS = new Set(["paragraph", "heading", "codeBlock", "stepTitle", "
 /** The "[Screenshot: …]" lines a text asks for, in order (see screenshotAsked). */
 export const screenshotsAsked = (doc: Doc) => (doc.content ?? []).map(screenshotAsked).filter((show): show is string => show !== null);
 
-// Where a marker starts, however it was written ("[check: …]", "[ Screenshot : …]").
-const MARKERS = { any: /\[\s*(?:check|screenshot)\s*:/gi, screenshot: /\[\s*screenshot\s*:/gi };
-
-/** The markers in a line of text, each from its opening bracket to the one that closes it (brackets of its own inside counted), or to the line's end if none does: one left open is no less a note to self. */
-function markersOf(text: string, kind: keyof typeof MARKERS): string[] {
-  const found: string[] = [];
-  let covered = 0;
-  for (const start of text.matchAll(MARKERS[kind])) {
-    // Inside the one before it ("[Check: or [Check: this?]]"): that one names it.
-    if (start.index < covered) {
-      continue;
-    }
-    let depth = 0;
-    covered = text.length;
-    for (let i = start.index; i < text.length; i++) {
-      depth += text[i] === "[" ? 1 : text[i] === "]" ? -1 : 0;
-      if (depth === 0) {
-        covered = i + 1;
-        break;
-      }
-    }
-    found.push(text.slice(start.index, covered).trim());
-  }
-  return found;
-}
+/** The markers in a line of text, as written. */
+const markersOf = (text: string, kind: keyof typeof MARKERS) => markerSpans(text, kind).map(([from, to]) => text.slice(from, to).trim());
 
 /**
  * The markers still in a text ("[Check: …]" and "[Screenshot: …]", or only the latter outside code), as written, each
