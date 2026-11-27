@@ -104,7 +104,7 @@ test("a tab showing an article in its place gives the tab's address", async () =
   await call(publishArticle, as, { slug });
   await call(updateTab, as, { slug: "api", landing: "page", landingPage: slug });
   const tab = (await DocsSlugPage({ params: Promise.resolve({ project: project.slug, slug: "api" }) } as never)) as ReactElement<Parameters<typeof DocsTabPage>[0]>;
-  const article = DocsTabPage(tab.props) as ReactElement<Parameters<typeof DocsArticle>[0]>;
+  const article = (await DocsTabPage(tab.props)) as ReactElement<Parameters<typeof DocsArticle>[0]>;
   const [data, breadcrumb] = JSON.parse((jsonLdIn(await DocsArticle(article.props)))!);
   expect(data.url).toBe(`${portal}/docs/api`);
   expect(breadcrumb.itemListElement.map((crumb: { name: string; item: string }) => `${crumb.name} ${crumb.item}`)).toEqual([
@@ -123,7 +123,7 @@ test("at /docs, the first tab's article has no step for /docs, and no trail with
     const tab = (await DocsPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never)) as ReactElement<
       Parameters<typeof DocsTabPage>[0]
     >;
-    return JSON.parse(jsonLdIn(await DocsArticle((DocsTabPage(tab.props) as ReactElement<Parameters<typeof DocsArticle>[0]>).props))!);
+    return JSON.parse(jsonLdIn(await DocsArticle(((await DocsTabPage(tab.props)) as ReactElement<Parameters<typeof DocsArticle>[0]>).props))!);
   };
   const [data, breadcrumb] = await docsJsonLd();
   expect(data.url).toBe(`${portal}/docs`);

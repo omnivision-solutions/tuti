@@ -55,6 +55,7 @@ import * as posts from "./posts";
 import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
 import * as readerLanguage from "./reader-language";
+import * as rewrite from "./rewrite";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
 import * as spamSettings from "./spam-settings";
@@ -114,6 +115,7 @@ const modules = {
   "project-settings": projectSettings,
   projects,
   "reader-language": readerLanguage,
+  rewrite,
   screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
@@ -870,6 +872,19 @@ const matrix: Matrix = {
     },
     // Browser Use (the fake) signs in and takes the screen it lands on, inline; the fixture's project is set up for it.
     testScreenshots: { allowed: "ADMIN", call: (slug) => withEnv(browserUse.env, () => screenshots.testScreenshots(slug)) },
+  },
+  rewrite: {
+    // An article's selection (the model fake answers); nothing is saved.
+    rewriteText: {
+      allowed: "MEMBER",
+      before: () => model.reply(JSON.stringify({ notes: "Shipped." })),
+      call: (slug) =>
+        rewrite.rewriteText(slug, {
+          kind: "article",
+          text: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "We shipped it today." }] }] },
+          instruction: "Shorter",
+        }),
+    },
   },
   images: {
     // The model fake makes it; uploads keep it.

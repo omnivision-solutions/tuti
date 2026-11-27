@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { aiFor, creditBalance, OutOfCredits } from "@tuti/jobs";
-import { type Ai, type AiRole, creditsEnabled, creditsPerTopupDollar, log, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { type Ai, type AiRole, creditsEnabled, creditsPerTopupDollar, log, topupExpiryDays, topupsEnabled, type UsageFeature } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
@@ -13,9 +13,9 @@ import { projectSlug } from "./read";
 export const NO_CREDITS = "This project is out of credits. See Settings → Billing.";
 
 /** aiFor, for an operation a team member is waiting on: out of credits, it's refused (402) with the reason. */
-export async function aiOrRefuse(projectId: string, role: AiRole): Promise<Ai> {
+export async function aiOrRefuse(projectId: string, role: AiRole, feature?: UsageFeature): Promise<Ai> {
   try {
-    return await aiFor(projectId, role);
+    return await aiFor(projectId, role, feature);
   } catch (error) {
     if (error instanceof OutOfCredits) {
       throw new OperationError(402, "no_credits", NO_CREDITS);
