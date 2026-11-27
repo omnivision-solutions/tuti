@@ -3,7 +3,7 @@ import { cn } from "cn";
 import { docHeadings, type Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { aiPaused, editsInChanges } from "@tuti/jobs";
-import { aiProvider, articleVersionsNote, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
+import { aiEnabled, aiProvider, articleVersionsNote, creditsEnabled, imagesEnabled, planIncludes } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
@@ -406,6 +406,7 @@ export default async function ArticlePage(
               sections={docHeadings(displayDoc(edited)).length >= 2}
               screenshots={await articleScreenshots(membership.project.id, article, newest?.id ?? null)}
               canTakeScreenshots={isAdminRole(membership.role)}
+              askAi={aiEnabled() ? { paused: await aiPaused(membership.project.id) } : null}
               // Edit with AI on the text's images (AI images): the project's logo to work from, the editor's own image first.
               imageEditing={
                 imagesEnabled() && mediaStorage()

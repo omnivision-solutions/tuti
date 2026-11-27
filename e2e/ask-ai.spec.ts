@@ -92,3 +92,41 @@ test("a new entry, not saved yet, gets Ask AI too; an entry still only its pull 
   await expect(bar.getByRole("button", { name: "Bold" })).toBeVisible();
   await expect(bar.getByRole("button", { name: "Ask AI" })).toHaveCount(0);
 });
+
+test("in a help center article too: Ask AI on a selected line, written like the article, accepted and saved", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Ari Article");
+  await createProject(team, "Acme", slug);
+  const marker = randomUUID().slice(0, 8);
+
+  await team.goto(`/app/${slug}/docs/new`);
+  await team.getByLabel("Title").fill("Exporting reports");
+  const text = team.getByRole("textbox", { name: "Article" });
+  await text.click();
+  await team.keyboard.type(`Open Reports (${marker}).`);
+  await team.keyboard.press("Enter");
+  await team.keyboard.type("Then you must press the Export button which is at the top.");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/exporting-reports`);
+
+  await text.getByText("Then you must press").selectText();
+  await nextModelReply(JSON.stringify({ notes: "Then press **Export** at the top." }), marker);
+  await team.getByRole("toolbar", { name: "Text selection" }).getByRole("button", { name: "Ask AI" }).click();
+  await team.getByRole("dialog", { name: "Ask AI" }).getByRole("button", { name: "Clearer" }).click();
+  const version = team.getByRole("group", { name: "The AI's version" });
+  await expect(version).toContainText("Then press Export at the top.");
+  await checkpoint(team, "ask-ai-article-version", { fullPage: false });
+  const request = (await modelRequests()).findLast((each) => each.user.includes(marker))!;
+  expect(request.system).toMatch(/^You edit part of an article in a product's help center/);
+  expect(request.user).toContain('"wholeArticle"');
+
+  await version.getByRole("button", { name: "Accept" }).click();
+  await expect(text).toContainText("Then press Export at the top.");
+  await expect(text.locator("strong")).toHaveText("Export");
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByRole("button", { name: "Saved" })).toBeVisible();
+  await team.reload();
+  await expect(text).toContainText("Then press Export at the top.");
+  await expect(text).not.toContainText("you must press");
+});
