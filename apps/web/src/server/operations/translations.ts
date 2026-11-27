@@ -282,7 +282,9 @@ export async function readArticleVersion(projectId: string, slug: string, langua
     async (db, version, articleId) => {
       const source = await sourceOf(db, articleId);
       const read = output(version, source);
-      const reasons = read.behind.map(({ reason }) => reason);
+      // The published text's sections behind, and the draft's (a draft's edit English changed in since: the job keeps it,
+      // as drafts never give way, and it stays behind until published or updated).
+      const reasons = [...read.behind.map(({ reason }) => reason), ...(read.draft?.behind ?? []).map(() => "source")];
       const behind = reasons.length === 0 ? null : reasons.every((reason) => reason === PRODUCT_SETTING_CHANGED) ? "setting" : "source";
       // `waiting`: why it can't be translated (it's tried again), not in the operation's answer.
       return { read, state: articleVersionState(version.id ? version : undefined, source.sourceHash, aiEnabled(), behind), waiting: version.error };

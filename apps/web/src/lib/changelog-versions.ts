@@ -24,10 +24,13 @@ export function articleVersionState(version: VersionRow | undefined, hash: strin
   }
   if (version.automatic) {
     // On its way or failing first; then the team's edits kept behind; else translated (or on its way) by the hash.
+    // The stored `behind` isn't read here: `behind` (from the read) says it, the draft's sections too. Left in, a mark the
+    // job keeps for a draft's edit would read as translating for good.
+    const unmarked = { ...version, behind: {} };
     if (version.error || version.retranslate !== version.retranslated) {
-      return versionState(version, hash, aiOn);
+      return versionState(unmarked, hash, aiOn);
     }
-    return version.publishedAt && behind ? why : versionState(version, hash, aiOn);
+    return behind ? why : versionState(unmarked, hash, aiOn);
   }
   if (!version.publishedAt) {
     return "unwritten";

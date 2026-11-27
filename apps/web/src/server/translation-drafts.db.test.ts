@@ -1022,3 +1022,13 @@ test("writing a version kept up to date before its first translation arrives tur
   expect(await saveArticleVersion(project.slug, de.slug, "de", {}, form)).not.toHaveProperty("error");
   expect(await call(getTranslation, as(), de)).toMatchObject({ keepUpToDate: false });
 });
+
+test("a version kept up to date with an unpublished draft edit English changed in since reads behind, not translating", async () => {
+  await translated();
+  await editBilling();
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  expect((await call(getTranslation, as(), de)).draft!.behind).toHaveLength(1);
+  expect((await readArticleVersion(project.id, de.slug, "de")).state).toBe("behind");
+  const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id } });
+  expect((await articleLanguages(project.id, project.slug, article))![1]!.state).toBe("behind");
+});
