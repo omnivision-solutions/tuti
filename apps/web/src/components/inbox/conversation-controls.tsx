@@ -14,6 +14,7 @@ import { CONVERSATION_STATUS_STYLES } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
 import {
   assignConversation,
+  handBackConversation,
   markConversationSpam,
   setConversationPriority,
   setConversationStatus,
@@ -394,6 +395,28 @@ export function PriorityButton({ projectSlug, number, priority }: Props & { prio
       }
     >
       {priority ? "Remove priority" : "Mark priority"}
+    </DropdownMenuItem>
+  );
+}
+
+/** More actions' Hand back to the AI, on a conversation the team has where the AI would answer: the AI's again, out of the team's views. */
+export function HandBackButton({ projectSlug, number }: Props) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <DropdownMenuItem
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await handBackConversation(projectSlug, number).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success("Handed back to the AI");
+          }
+        })
+      }
+    >
+      Hand back to the AI
     </DropdownMenuItem>
   );
 }

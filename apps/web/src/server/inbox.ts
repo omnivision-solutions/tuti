@@ -8,6 +8,8 @@ import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
 
 import type { FormState } from "./form-state";
+import { awaitsReply, toAi, userWaits } from "./ai-turn";
+import { handOverAndTell } from "./inbox-path";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import {
@@ -190,12 +192,59 @@ export async function snoozeConversation(projectSlug: string, conversation: numb
 
 /**
  * Take over: a conversation the AI has becomes the team's, with nothing else about it moved (conversations.update's
- * `handledBy`). The app never hands one back: nothing answers for the AI yet (docs/plan.md W6, W12).
+ * `handledBy`).
  */
 export async function takeOverConversation(projectSlug: string, conversation: number): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can take over conversations", async (context) =>
     call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "team" }),
   );
+}
+
+/**
+ * Hand back to the AI (docs/plan.md, Inbox automation, W12): a conversation the team has becomes the AI's, out of the
+ * team's views, with nothing else about it moved; the AI answers its user's next message. Refused while its user waits on
+ * the team (userWaits): their message would go unanswered, with nobody told. The page offers it only where nobody waits
+ * and the AI would answer (aiWouldAnswer).
+ */
+export async function handBackConversation(projectSlug: string, conversation: number): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can hand conversations back to the AI", async (context) => {
+    const number = conversationNumber(conversation);
+    const found = await prisma.conversation.findUnique({ where: { projectId_number: { projectId: context.projectId, number } }, select: { id: true } });
+    if (found && (await userWaits(found.id))) {
+      throw new OperationError(409, "waiting", "Reply first: they're waiting on your team.");
+    }
+    await call(updateConversation, context, { number, handledBy: "ai" });
+    await turnForSlippedMessage(context.projectId, number);
+  });
+}
+
+/**
+ * A message from the user that came between Hand back's check and its update (written while the team had it, so its path
+ * gave the AI no turn and handed nothing over): its turn now, or, where the AI can't answer, the team, told. Never left
+ * with the AI unanswered. A message after the update has its own path, which gives the AI the turn; a turn given twice is
+ * claimed once.
+ */
+async function turnForSlippedMessage(projectId: string, number: number) {
+  const conversation = await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { id: true, handledBy: true } });
+  if (conversation?.handledBy !== "AI") {
+    return;
+  }
+  const said = await prisma.conversationMessage.findFirst({
+    where: { conversationId: conversation.id, note: false },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, author: true, handedOverAt: true },
+  });
+  if (!said || !awaitsReply(said) || said.handedOverAt) {
+    return;
+  }
+  // As the path does where giving it to the AI fails: the team has it, told (handOver never throws).
+  const toTheAi = await toAi(projectId, conversation.id, said.id).catch((error: unknown) => {
+    log.error("Giving a message that came while handing back to the AI failed: it's handed over", { projectId, conversationId: conversation.id, error });
+    return false;
+  });
+  if (!toTheAi) {
+    await handOverAndTell(projectId, { id: conversation.id, number }, said.id, "ai_off", { onlyFromAi: true });
+  }
 }
 
 /** Mark priority, or Remove priority. */
