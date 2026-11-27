@@ -1,4 +1,4 @@
-import type { Doc } from "@tuti/content";
+import { type Doc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import {
   type Ai,
@@ -41,6 +41,7 @@ import { type PullRequestRead, readPullRequest } from "./pull-request";
 import { type Repository, readRepository } from "./repository";
 import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
 import { verifyAfterEdit } from "./verify-decision";
+import { screenshotEdit, staleReason, type StaleScreenshot, staleScreenshots, withLines } from "./stale-screenshots";
 
 /**
  * Code changes (docs/plan.md): every pull request merged on a project's repositories is read once
@@ -544,17 +545,30 @@ async function analyse(
     }
     const summary = docs.summary || (await writeSummary(pr, use));
     let posts: PostCandidate[] = [];
+    let vector: string | null = null;
     if (seen) {
       const [embedding] = await embed([summary]);
+      vector = toVectorLiteral(embedding!);
       const portals = [...new Set([portalOrigin(change.slug), await portalAddress(change.slug)])];
       const named = namedPosts([pr.title, pr.body, ...pr.commits].join("\n"), portals);
-      posts = await postCandidates(change.projectId, toVectorLiteral(embedding!), named);
+      posts = await postCandidates(change.projectId, vector, named);
     }
+    // With Screenshots set up, the writers may mark where a picture belongs (SC3): the team fills it in the editor.
+    const screenshots = screenshotsEnabled() && (await prisma.screenshotSettings.count({ where: { projectId: change.projectId } })) > 0;
 
     // A link is only applied by itself (sure enough, where the team lets it): it changes nothing customers see, so one
     // that would wait isn't proposed (Autopilot's review leaves links out). Read again under the lock as it's saved.
     const autoLinks = (await prisma.project.findUnique({ where: { id: change.projectId }, select: { autoApplyLinks: true } }))?.autoApplyLinks ?? false;
+    let stale: StaleScreenshot[] = [];
     await Promise.all([
+      // Screenshots it may have made out of date (SC4): only where users see it and they can be taken again, in the
+      // articles the docs agent picked and those nearest the summary.
+      seen &&
+        screenshots &&
+        (async () => {
+          const near = await nearestArticles(change.projectId, vector!);
+          stale = await staleScreenshots(change.projectId, pr, summary, [...docs.edits.map((edit) => edit.articleId), ...near], use.meter);
+        })(),
       ...posts.map(async (post) => {
         const proposal = postProposal(await decide(postState(pr, summary, post), POST_QUESTION, { meter: use.meter }));
         if (proposal && (proposal.kind !== "LINKS" || (autoLinks && proposal.probability >= codeChangesSettings().decisions.autoLink))) {
@@ -567,8 +581,6 @@ async function analyse(
     const ask = askingWithTools(tools, use, signal);
     // Each article edit checked before it's proposed (E5).
     const review: Review = { projectId: change.projectId, context: tools, signal };
-    // With Screenshots set up, the writers may mark where a picture belongs (SC3): the team fills it in the editor.
-    const screenshots = screenshotsEnabled() && (await prisma.screenshotSettings.count({ where: { projectId: change.projectId } })) > 0;
     const [{ why, line }, written] = await Promise.all([
       // Why, the posts' reasons and the changelog line: only for what users see (the gate).
       seen ? writeProposals(pr, summary, proposals, posts, use) : { why: "", line: "" },
@@ -586,7 +598,7 @@ async function analyse(
     for (let tries = 1; !saved; tries++) {
       try {
         // The gate's word only where it was asked: a run past it (the team's pick, Analyse anyway) keeps the one before.
-        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? seen : undefined, ...versions }, kept, {
+        saved = await finish(change.id, { state: "READY", reason: "", summary, why: told, forUsers: gate ? seen : undefined, ...versions }, await withStale(kept, stale), {
           projectId: change.projectId,
           pullRequest: change.pullRequest,
           data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/activity/${change.id}` } }),
@@ -621,6 +633,65 @@ async function analyse(
     await closeTools(tools);
   }
 }
+
+/**
+ * The proposals with the out-of-date screenshots' lines put back (SC4): into the article's edit where the docs agent
+ * has one, else as an edit of their own on the article's newest text (read again on each try, so a conflict is
+ * written again on top). Each waits for a person (waitsBecause).
+ */
+async function withStale(kept: Proposal[], stale: StaleScreenshot[]): Promise<Proposal[]> {
+  const out = [...kept];
+  for (const articleId of new Set(stale.map((shot) => shot.articleId))) {
+    const at = out.findIndex((proposal) => proposal.kind === "ARTICLE_EDIT" && proposal.articleId === articleId && proposal.edit);
+    const edit = at === -1 ? null : out[at]!;
+    // Into the docs agent's edit: only the images it kept (one it took out has no line to put back).
+    const shots = stale.filter((shot) => shot.articleId === articleId && (!edit || withLines(edit.edit!.doc, [shot])));
+    const payload = { screenshots: shots.map(({ mediaId, show }) => ({ mediaId, show })) };
+    const doc = edit && shots.length > 0 && withLines(edit.edit!.doc, shots);
+    if (edit && doc) {
+      const before = (edit.payload ?? {}) as Record<string, unknown>;
+      out[at] = {
+        ...edit,
+        reason: [edit.reason, staleReason(shots)].filter(Boolean).join(" "),
+        payload: { ...before, ...payload, body: toPlainText(doc) } as Prisma.InputJsonValue,
+        edit: { ...edit.edit!, doc },
+      };
+      continue;
+    }
+    // An edit that dropped the image (or none): the screenshots' own edit, unless the docs agent's took the image out.
+    if (edit) {
+      continue;
+    }
+    const own = await screenshotEdit(articleId, shots);
+    if (own) {
+      out.push({
+        kind: "ARTICLE_EDIT",
+        articleId,
+        probability: Math.max(...shots.map((shot) => shot.probability)),
+        reason: staleReason(shots),
+        payload: { problem: "wrong", title: own.title, body: own.body, before: own.before, overview: "", overviewOf: [], ...payload },
+        edit: { writtenOn: own.writtenOn, doc: own.doc },
+      });
+    }
+  }
+  return out;
+}
+
+/** The published articles nearest the summary (by their nearest section), a few: where its screenshots are looked for. */
+async function nearestArticles(projectId: string, vector: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT best."articleId" AS id FROM (
+      SELECT DISTINCT ON (c."articleId") c."articleId", c.embedding <=> ${vector}::vector AS distance
+      FROM article_chunk c WHERE c."projectId" = ${projectId}
+      ORDER BY c."articleId", distance
+    ) best
+    ORDER BY best.distance
+    LIMIT ${NEAREST_ARTICLES}`;
+  return rows.map((row) => row.id);
+}
+
+/** Articles near the summary whose screenshots are looked at, beside the docs agent's picks. */
+const NEAREST_ARTICLES = 3;
 
 /** What analysed a code change: the decision model, the writing model, and the Advanced tuning values it ran with. */
 type Versions = { decider: string; model: string; settings: { values: Record<string, string | number>; tuned: string[] } };
@@ -864,8 +935,8 @@ async function finish(
         landed.push(proposal.articleId!);
       } else if (outcome === "conflict") {
         conflicts.push(proposal.articleId!);
-      } else if (outcome === "gone") {
-        // Deleted meanwhile: nothing to edit.
+      } else if (outcome === "gone" || outcome === "nothing") {
+        // Deleted meanwhile, or another edit made the same change: nothing to edit.
         await tx.codeChangeAction.delete({ where: { id: action.id } });
       }
     }

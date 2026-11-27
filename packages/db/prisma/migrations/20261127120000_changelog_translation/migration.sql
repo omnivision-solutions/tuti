@@ -32,3 +32,7 @@ ALTER TABLE "changelog_translation" ADD CONSTRAINT "changelog_translation_entryI
 ALTER TABLE "changelog_translation" ADD CONSTRAINT "changelog_translation_projectId_language_fkey" FOREIGN KEY ("projectId", "language") REFERENCES "project_language"("projectId", "code") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "changelog_subscriber" ADD COLUMN "language" TEXT;
+
+-- When queuing an entry's translations failed: the retry job queues them again. Nullable, unread by the previous release.
+ALTER TABLE "changelog_entry" ADD COLUMN "translationsQueueFailedAt" TIMESTAMP(3);
+CREATE INDEX "changelog_entry_translationsQueueFailedAt_idx" ON "changelog_entry"("translationsQueueFailedAt");
