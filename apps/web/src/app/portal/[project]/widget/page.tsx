@@ -1,5 +1,4 @@
 import { prisma } from "@tuti/db";
-import { aiPaused } from "@tuti/jobs";
 import { BookOpenIcon, ChevronRightIcon, FileTextIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -38,7 +37,8 @@ import { WIDGET_ROW, WIDGET_TILE } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
-import { answerableArticle, listedArticle } from "@/server/docs-queries";
+import { aiAvailable } from "@/server/ai-turn";
+import { listedArticle } from "@/server/docs-queries";
 import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -91,8 +91,6 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         // The first board on the portal (a Team only board isn't).
         boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
-        // Something for the AI to answer from, for Messages' AI first.
-        _count: { select: { articles: { where: answerableArticle } } },
         supportInbox: true,
       },
     }),
@@ -142,10 +140,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         askAPerson: await askAPerson(slug),
       }
     : null;
-  // Messages' AI first (Customize → Widget) where the assistant is here, has docs to answer from, can pass a question to the
-  // team (Ask a person: not with Messages turned off, though the page's own code may still open it), and isn't paused (out
-  // of credits, when it would only say it's unavailable). Only worked out on Messages, the one tab that uses it.
-  const aiFirst = tab === "messages" && settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0 && !(await aiPaused(project.id));
+  // Messages' AI first (Customize → Widget) where the AI can answer a new conversation now, as the server decides
+  // (aiAvailable): its first line says so. Only worked out on Messages, the one tab that uses it.
+  const aiFirst = tab === "messages" && settings.aiFirst && (await aiAvailable(project.id));
 
   return (
     <PortalBaseProvider base={base} slug={slug}>

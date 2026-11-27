@@ -404,13 +404,20 @@ export const newestFromUser = (tx: Tx, conversationId: string) =>
     select: { id: true, handedOverAt: true },
   });
 
-/** Ends a turn with nothing to do: `pathDueAt` cleared, unless a newer message from the user (than `latest`) has its own turn due. */
+/**
+ * Ends a turn with nothing to do: `pathDueAt` cleared, unless a newer message from the user (than `latest`) has its own turn
+ * due. Open pages hear of it: the widget's thread stops saying "Answering…".
+ */
 async function settle(conversationId: string, latest: string | null) {
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
+    const [conversation] = await tx.$queryRaw<{ projectId: string; number: number; userId: string | null; visitorHash: string | null; email: string | null }[]>`
+      SELECT "projectId", "number", "userId", "visitorHash", "email" FROM "conversation" WHERE "id" = ${conversationId} FOR NO KEY UPDATE`;
     const newest = await newestFromUser(tx, conversationId);
-    if ((newest?.id ?? null) === latest) {
-      await tx.conversation.updateMany({ where: { id: conversationId, spamHeldAt: null }, data: { pathDueAt: null } });
+    if (conversation && (newest?.id ?? null) === latest) {
+      const { count } = await tx.conversation.updateMany({ where: { id: conversationId, spamHeldAt: null, pathDueAt: { not: null } }, data: { pathDueAt: null } });
+      if (count > 0) {
+        await notifyInbox(tx, { ...conversation, conversationId });
+      }
     }
   });
 }

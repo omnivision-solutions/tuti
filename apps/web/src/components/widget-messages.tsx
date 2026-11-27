@@ -827,9 +827,15 @@ function Conversation({
   const panel = useCallback(() => list.current?.closest("[data-widget-scroll]") ?? null, []);
   useScrollToEnd(opened?.messages.length ?? 0, panel);
   const lastAnswer = opened?.messages.findLast((m) => m.answer);
-  const askPerson = async () => {
-    await widgetAskPerson(projectSlug, auth, number);
+  // Where the focus goes once Ask a person is gone: the line saying where the team's reply comes.
+  const status = useRef<HTMLParagraphElement>(null);
+  const askPerson = async (button: HTMLElement) => {
+    const result = await widgetAskPerson(projectSlug, auth, number).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+    if ("error" in result) {
+      return result.error;
+    }
     await reload();
+    keepFocus(button, status.current);
   };
 
   return (
@@ -842,7 +848,8 @@ function Conversation({
           <h2 className={cn("font-medium break-words", opened.messages[0] && subjectFrom(opened.messages[0].body) === opened.subject && "line-clamp-2")}>
             {opened.subject}
           </h2>
-          <ol ref={list} className="flex flex-col gap-2" aria-label="Messages">
+          {/* New messages are read out as they come (the AI's answer, the team's reply). */}
+          <ol ref={list} className="flex flex-col gap-2" aria-label="Messages" aria-live="polite" aria-relevant="additions">
             {opened.messages.map((m) => (
               <li key={m.id} className={cn("flex", !m.fromTeam && "justify-end")}>
                 <div className={cn("max-w-[85%] rounded-xl border px-3 py-2", !m.fromTeam && "bg-muted")}>
@@ -885,7 +892,7 @@ function Conversation({
       )}
       {/* Waiting for the team's reply, theirs the latest: where it comes, and when. A live region on the page from the
           start (empty until then), so screen readers hear it appear once they've sent a message. */}
-      <p role="status" className="text-center text-sm break-words text-muted-foreground">
+      <p ref={status} tabIndex={-1} role="status" className="text-center text-sm break-words text-muted-foreground outline-none">
         {opened?.answering
           ? "Answering…"
           : opened?.awaitingReply && !opened.withAi && opened.messages.findLast((m) => !m.ai)?.fromTeam === false
@@ -923,14 +930,16 @@ function AiAnswerFooter({
 }: {
   projectSlug: string;
   answer: NonNullable<Opened["messages"][number]["answer"]>;
-  askPerson?: () => Promise<void>;
+  /** Hands the conversation to the team; an error to show if it couldn't. */
+  askPerson?: (button: HTMLElement) => Promise<string | undefined>;
 }) {
   const at = usePortalHref();
   const [rated, setRated] = useState(answer.helpful);
+  const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const rate = (helpful: boolean) =>
     startTransition(async () => {
-      // Offline, or the server failing: the buttons stay, to try again.
+      // Offline, or the server failing: as it was, to try again.
       const result = await rateDocsAnswer(projectSlug, answer.questionId, helpful).catch(() => ({ error: "failed" }));
       if (!result.error) {
         setRated(helpful);
@@ -948,26 +957,32 @@ function AiAnswerFooter({
           }}
         />
       )}
+      {/* The thumbs stay (pressed once rated, and can be changed), so the focus stays on them. */}
       <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-        {rated === null ? (
-          <>
-            <Button variant="ghost" size="icon-sm" aria-label="Helpful" disabled={pending} onClick={() => rate(true)}>
-              <ThumbsUpIcon />
-            </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Not helpful" disabled={pending} onClick={() => rate(false)}>
-              <ThumbsDownIcon />
-            </Button>
-          </>
-        ) : (
-          <p>Thanks for letting us know.</p>
-        )}
+        <Button variant="ghost" size="icon-sm" aria-label="Helpful" aria-pressed={rated === true} disabled={pending} focusableWhenDisabled onClick={() => rate(true)}>
+          <ThumbsUpIcon className={cn(rated === true && "fill-current")} />
+        </Button>
+        <Button variant="ghost" size="icon-sm" aria-label="Not helpful" aria-pressed={rated === false} disabled={pending} focusableWhenDisabled onClick={() => rate(false)}>
+          <ThumbsDownIcon className={cn(rated === false && "fill-current")} />
+        </Button>
+        <span role="status">{rated !== null && "Thanks for letting us know."}</span>
         {askPerson && (
-          <Button variant="outline" size="sm" disabled={pending} onClick={() => startTransition(askPerson)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            focusableWhenDisabled
+            onClick={(event) => {
+              const button = event.currentTarget;
+              startTransition(async () => setError(await askPerson(button)));
+            }}
+          >
             <MessageCircleIcon data-icon="inline-start" />
             Ask a person
           </Button>
         )}
       </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

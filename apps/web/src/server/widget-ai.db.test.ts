@@ -15,6 +15,7 @@ import { rateDocsAnswer } from "./docs-readers";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation } from "./operations/conversations";
 import { call } from "./operations/run";
+import { notifyInboxNow, subscribeInbox } from "./live";
 import { upsertProjectUser } from "./project-users";
 import { widgetAskPerson, widgetConversation, widgetSendMessage, widgetStartConversation, widgetUploadAttachment } from "./widget-inbox";
 
@@ -168,4 +169,30 @@ test("a later message with files, on a conversation the AI has, goes to the team
   await fetch(started.uploadUrl, { method: "PUT", body: "\x89PNG", headers: { "content-type": "image/png" } });
   expect(await widgetSendMessage(project.slug, auth, 1, "Here's the error", [started.id])).toEqual({});
   expect(await conversation()).toMatchObject({ handledBy: "TEAM" });
+});
+
+test("a message that needs no reply ends the turn with none, and the open thread hears it stopped answering", async () => {
+  const { project, auth, conversation, turn, opened } = await setup();
+  await widgetStartConversation(project.slug, auth, "Thanks!");
+  const { id } = await conversation();
+  expect(await opened()).toMatchObject({ answering: true });
+  // NOTIFYs arrive in order: once a marker sent after the turn is heard, so is all the turn said.
+  const heard: string[] = [];
+  const stop = subscribeInbox((c) => c.projectId === project.id && !!heard.push(c.conversationId), () => {});
+  const change = { projectId: project.id, userId: null, visitorHash: null };
+  try {
+    await vi.waitFor(async () => {
+      await notifyInboxNow({ ...change, conversationId: "marker-connected" });
+      expect(heard).toContain("marker-connected");
+    });
+    heard.length = 0;
+    model.decide({ person: 0.05, reply: 0.1 }, "Thanks!");
+    expect(await turn()).toBe("nothing");
+    await notifyInboxNow({ ...change, conversationId: "marker" });
+    await vi.waitFor(() => expect(heard).toContain("marker"));
+    expect(heard).toContain(id);
+  } finally {
+    stop();
+  }
+  expect(await opened()).toMatchObject({ withAi: true, answering: false, messages: [{ body: "Thanks!" }] });
 });
