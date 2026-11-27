@@ -233,7 +233,9 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     let left = SCRIPTS_BYTES;
     await Promise.all(
       Array.from({ length: SCRIPTS_AT_ONCE }, async () => {
-        for (let script = queue.shift(); script && left > 0; script = queue.shift()) {
+        // The budget checked before a script is taken, so one it has no room for stays in the queue (and the read isn't complete).
+        while (left > 0 && queue.length > 0) {
+          const script = queue.shift()!;
           // Taken from the budget before reading (8 at once can't each count on the same bytes left); what a read
           // didn't use is given back, all of it kept for one that failed (it may have read some first).
           const allowance = Math.min(SCRIPT_BYTES, left);
