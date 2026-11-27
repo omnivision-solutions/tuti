@@ -52,13 +52,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const sidebar = team.getByRole("complementary", { name: "Entry settings" });
   const writing = (await editor.boundingBox())!;
   expect((await sidebar.boundingBox())!.x).toBeGreaterThan(writing.x + writing.width);
-  const completes = sidebar.getByRole("region", { name: "Posts it completes" });
+  const completes = sidebar.getByRole("region", { name: "Posts" });
   await completes.getByRole("button", { name: "Link post…" }).click();
   const linkPost = team.getByRole("dialog", { name: "Link a post" });
   await linkPost.getByLabel("Search posts").fill("dark");
   await linkPost.getByRole("button", { name: /#1\s*Dark mode/ }).click();
   await expect(linkPost).toBeHidden();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  // Its count beside the heading, the actions in the same row.
+  const postsRow = completes.getByRole("heading", { name: "Posts" }).locator("..");
+  await expect(postsRow).toHaveText(/^Posts\s*1\s*Link$/);
   // Linked, it's not offered again.
   await completes.getByRole("button", { name: "Link post…" }).click();
   await expect(linkPost.getByText("No matching posts.")).toBeVisible();
@@ -163,6 +166,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await expect(completes.getByRole("button", { name: "Link post…" })).toBeFocused();
+  // None now: the count says so, with no line of its own.
+  await expect(postsRow).toHaveText(/^Posts\s*0\s*Link$/);
+  await expect(completes).not.toContainText("None.");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   // One line: where it goes and the post it completes; nobody has subscribed, so no subscriber is emailed.
@@ -627,7 +633,7 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).toContainText("1 post");
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" })).not.toContainText("2 posts");
   await team.goto(`/app/${slug}/changelog/1`);
-  const completes = team.getByRole("region", { name: "Posts it completes" });
+  const completes = team.getByRole("region", { name: "Posts" });
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   await team.getByLabel("Title").fill("Dark mode is here at last");
   await team.getByRole("button", { name: "Save", exact: true }).click();
@@ -690,15 +696,15 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link")).toHaveCount(0);
-  // Quietly: not marked new.
-  const announced = team.getByRole("group", { name: "How it's announced" });
-  await announced.getByRole("checkbox", { name: "Mark it new" }).uncheck();
+  // Quietly: no widget popup.
+  const goesTo = team.getByRole("group", { name: "Goes to" });
+  await goesTo.getByRole("switch", { name: "Widget" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
   // What's saved is published: the post taken off here is still in it.
   await expect(team.getByRole("alertdialog")).toContainText("It goes on your portal and in your widget, completes 1 post.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
-  await expect(announced).toContainText("Not marked new.");
+  await expect(goesTo.getByRole("switch", { name: "Widget" })).not.toBeChecked();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   // While it's taken down (its answer held here), Save waits: it would save over what that changes.
   let releaseUnpublish!: () => void;
@@ -1111,7 +1117,7 @@ test("the next release waits to be written; its entry gets a featured image read
   // One upload: its first call (createUpload) made once.
   expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
   await team.getByLabel("Title").fill("Dark mode is here");
-  const completes = team.getByRole("region", { name: "Posts it completes" });
+  const completes = team.getByRole("region", { name: "Posts" });
   await completes.getByRole("button", { name: "Link post…" }).click();
   const linkPost = team.getByRole("dialog", { name: "Link a post" });
   await linkPost.getByLabel("Search posts").fill("dark");
@@ -1297,7 +1303,7 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
-  await expect(sidebar.getByRole("group", { name: "How it's announced" })).toContainText("Told 1 person who asked.");
+  await expect(sidebar.getByRole("group", { name: "Goes to" }).getByRole("switch", { name: "Email announcement" })).toHaveAccessibleDescription("Published without it · told 1 person who asked");
   // Published as it was, Edit with AI is its way into AI (Draft with AI is for drafts).
   await expect(team.getByRole("button", { name: "Edit with AI" })).toBeVisible();
   await checkpoint(team, "team-changelog-told");
@@ -1729,7 +1735,7 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   expect((await saved(3)).cover!.id).toBe(composed);
 });
 
-test("readers get the changelog by email: confirmed first, each entry published with Email subscribers, unsubscribed in one click", async ({ browser }, testInfo) => {
+test("readers get the changelog by email: confirmed first, each entry published with Email announcement, unsubscribed in one click", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1794,13 +1800,14 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await team.keyboard.type("Switch themes from your profile menu.");
   await team.getByRole("button", { name: "Save draft" }).first().click();
   await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/1$`));
-  const announced = team.getByRole("group", { name: "How it's announced" });
-  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeChecked();
-  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toHaveAccessibleDescription("1 person subscribed.");
-  await expect(announced.getByRole("checkbox", { name: "Mark it new" })).toBeChecked();
+  const announced = team.getByRole("group", { name: "Goes to" });
+  const email = announced.getByRole("switch", { name: "Email announcement" });
+  await expect(email).toBeChecked();
+  await expect(email).toHaveAccessibleDescription("1 subscriber");
+  await expect(announced.getByRole("switch", { name: "Widget" })).toBeChecked();
   // The sidebar scrolls on its own: to its end, where this is.
   await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
-  await checkpoint(team, "team-changelog-how-announced");
+  await checkpoint(team, "team-changelog-goes-to");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("It goes on your portal and in your widget, and sends 1 email.");
@@ -1818,9 +1825,9 @@ test("readers get the changelog by email: confirmed first, each entry published 
   expect(entry.text).toContain("Switch themes from your profile menu.");
   expect(entry.text).toContain(`${portalUrl(slug)}/changelog/1`);
   await team.reload();
-  await expect(announced).toContainText("Emailed to 1 subscriber.");
-  // Said once: no "Told 1 subscriber." under it.
-  await expect(announced).not.toContainText("Told");
+  await expect(email).toHaveAccessibleDescription("Sent to 1 subscriber");
+  // Said once: no "told 1 subscriber" beside it.
+  await expect(announced).not.toContainText("told");
   await checkpoint(team, "team-changelog-announced");
 
   // Unsubscribe: the email's link, signed out, one button.
@@ -1837,11 +1844,12 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await team.getByLabel("Title").fill("Exports");
   await team.getByRole("button", { name: "Save draft" }).first().click();
   await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/2$`));
-  await expect(announced.getByRole("checkbox", { name: "Email subscribers" })).toBeDisabled();
+  await expect(email).toBeDisabled();
+  await expect(email).toHaveAccessibleDescription("No subscribers yet");
   await team.getByRole("button", { name: "Publish" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish", exact: true }).click();
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
-  await expect(announced).toContainText("Not emailed to subscribers.");
+  await expect(email).toHaveAccessibleDescription("Published without it");
   expect(countEmailsTo(address)).toBe(before);
 });
 
@@ -2028,6 +2036,7 @@ test("pull requests by hand: ones merged before GitHub was connected are added f
   // Each as Autopilot shows it: a "PR #14" chip, its title beside it; the chip opens its repo#number and GitHub's link.
   const chip = (number: number, title: string) => section.getByRole("button", { name: `PR #${number}: ${title}` });
   await expect(section.getByRole("listitem").first()).toHaveText(/^PR #14\s*Remember the theme$/);
+  await expect(section.getByRole("heading", { name: "Pull requests" }).locator("..")).toHaveText(/^Pull requests\s*1\s*Add$/);
   await chip(14, "Remember the theme").click();
   await expect(team.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", `https://github.com/${repo}/pull/14`);
   // Autopilot is off here, so it never read it: no who merged it when, no activity page.
