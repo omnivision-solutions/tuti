@@ -66,7 +66,7 @@ export const REPLY_AT = 0.3;
 
 /**
  * Whether a new conversation from `origin` starts with the AI ("AI answers first", by channel): email's switch
- * (`project.emailAiFirst`, off until the team turns it on; W14 is its screen). The widget's Messages are W13's, "Ask a
+ * (`project.emailAiFirst`, off until the team turns it on; Settings → Workflows → AI answers first, W14). The widget's Messages are W13's, "Ask a
  * person" is the user asking, and one the team starts over the API is its own.
  */
 export async function aiAnswersFirst(projectId: string, origin: ConversationOrigin): Promise<boolean> {
@@ -77,14 +77,25 @@ export async function aiAnswersFirst(projectId: string, origin: ConversationOrig
   return !!project?.emailAiFirst;
 }
 
-/** Whether the AI can answer here now: the server has answers, the project has a published article of its own and AI credits. */
-export async function aiAvailable(projectId: string): Promise<boolean> {
+/** Why the AI can't answer here now (W14's "off for"): none where it can. */
+export type AiOffReason = "no_ai_answers" | "no_articles" | "out_of_credits";
+
+/** What keeps the AI from answering here now: the server has no answers, the project no published article of its own, or no AI credits. */
+export async function aiOffReasons(projectId: string): Promise<AiOffReason[]> {
   if (!answersEnabled()) {
-    return false;
+    return ["no_ai_answers"];
   }
   // Sample content (Home's "Add sample content") is never answered from: it isn't the team's docs.
-  const article = await prisma.article.findFirst({ where: { projectId, sample: false, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } }, select: { id: true } });
-  return !!article && !(await aiPaused(projectId));
+  const [article, paused] = await Promise.all([
+    prisma.article.findFirst({ where: { projectId, sample: false, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } }, select: { id: true } }),
+    aiPaused(projectId),
+  ]);
+  return [...(article ? [] : ["no_articles" as const]), ...(paused ? ["out_of_credits" as const] : [])];
+}
+
+/** Whether the AI can answer here now: the server has answers, the project has a published article of its own and AI credits. */
+export async function aiAvailable(projectId: string): Promise<boolean> {
+  return (await aiOffReasons(projectId)).length === 0;
 }
 
 /**
