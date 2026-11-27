@@ -79,7 +79,7 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     expect(await owner.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     await checkpoint(owner, "settings-webhooks-phone");
     await owner.setViewportSize({ width: 1280, height: 720 });
-    await expect(owner.getByText("New post, New comment, Changelog published, Changelog unsubscribe, Autopilot found updates, New conversation, New message from a user · no deliveries yet")).toBeVisible();
+    await expect(owner.getByText("New post, New comment, Changelog published, Changelog unsubscribe, Autopilot found updates, New conversation, New message from a user, Conversation handed to the team · no deliveries yet")).toBeVisible();
     await expect(owner.getByRole("heading", { name: "Webhooks 1" })).toBeVisible();
     // Opened again, the dialog is empty.
     await owner.getByRole("button", { name: "Add webhook" }).click();
