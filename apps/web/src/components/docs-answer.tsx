@@ -2,6 +2,7 @@
 
 import { MessageCircleIcon, SparklesIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { type FormEvent, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -17,6 +18,7 @@ import { widgetStartConversation } from "@/server/widget-inbox";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
 import { askedFrom, useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref } from "@/components/portal-base";
+import { useTeamLanguage } from "@/components/portal-look";
 
 /**
  * "Ask AI" above the docs' search results. The AI only answers when the visitor
@@ -37,6 +39,8 @@ export function DocsAnswer({
   askAPerson: { email: string } | null;
 }) {
   const assistant = useDocsAssistant();
+  // In the page's language on the portal; English in the widget, for now (the root layout's messages).
+  const t = useTranslations("answers");
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [rated, setRated] = useState<boolean | null>(null);
   const [pending, startTransition] = useTransition();
@@ -70,7 +74,7 @@ export function DocsAnswer({
     <div>
       <Button variant="outline" size="sm" onClick={() => assistant.continueWith(question, answer)}>
         <MessageCircleIcon />
-        Ask a follow-up
+        {t("askFollowUp")}
       </Button>
     </div>
   );
@@ -79,16 +83,16 @@ export function DocsAnswer({
     // The portal's search page's one filled primary.
     <Button disabled={pending} onClick={ask}>
       <SparklesIcon />
-      {pending ? "Asking…" : "Ask AI"}
+      {pending ? t("asking") : t("askAI")}
     </Button>
   );
 
   return (
-    <section aria-label="AI answer" aria-busy={pending} className={"flex flex-col gap-3 rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge"}>
+    <section aria-label={t("aiAnswer")} aria-busy={pending} className={"flex flex-col gap-3 rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge"}>
       {(!answer || answer.status === "failed") && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {answer ? "The AI couldn't answer just now. Try again, or read the articles below." : "Get a short answer from the docs, written by AI."}
+            {answer ? t("failedRetry") : t("intro")}
           </p>
           {askButton}
         </div>
@@ -99,14 +103,14 @@ export function DocsAnswer({
           <AnswerSources sources={answer.sources} />
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
             {rated !== null ? (
-              <p>Thanks for letting us know.</p>
+              <p>{t("thanks")}</p>
             ) : (
               <>
-                <p>Written by AI from the articles above. Was it helpful?</p>
-                <Button variant="ghost" size="icon-sm" aria-label="Helpful" disabled={pending} onClick={() => rate(true)}>
+                <p>{t("writtenByAI")}</p>
+                <Button variant="ghost" size="icon-sm" aria-label={t("helpful")} disabled={pending} onClick={() => rate(true)}>
                   <ThumbsUpIcon />
                 </Button>
-                <Button variant="ghost" size="icon-sm" aria-label="Not helpful" disabled={pending} onClick={() => rate(false)}>
+                <Button variant="ghost" size="icon-sm" aria-label={t("notHelpful")} disabled={pending} onClick={() => rate(false)}>
                   <ThumbsDownIcon />
                 </Button>
               </>
@@ -120,27 +124,27 @@ export function DocsAnswer({
         <div className="flex flex-col gap-1">
           {answer.status === "no_answer" ? (
             <>
-              <p className="font-semibold">I don&apos;t know</p>
-              <p className="text-sm text-muted-foreground">Nothing in the docs answers that yet. Post it as feedback so the team sees it.</p>
+              <p className="font-semibold">{t("dontKnow")}</p>
+              <p className="text-sm text-muted-foreground">{t("nothingAnswers")}</p>
             </>
           ) : answer.status === "unavailable" ? (
             // The project's AI is paused (out of credits): the AI wasn't asked; the closest articles instead.
             <>
-              <p className="font-semibold">AI answers aren&apos;t available right now.</p>
-              <p className="text-sm text-muted-foreground">These articles may help. Or post it as feedback so the team sees it.</p>
+              <p className="font-semibold">{t("unavailable")}</p>
+              <p className="text-sm text-muted-foreground">{t("mayHelp")}</p>
               {answer.sources.length > 0 && <AnswerSources sources={answer.sources} />}
             </>
           ) : (
             // A topic the team put off-limits: a fixed reply, the AI wasn't asked.
             <>
-              <p className="font-semibold">I can&apos;t help with that here.</p>
-              <p className="text-sm text-muted-foreground">Post it as feedback so the team sees it.</p>
+              <p className="font-semibold">{t("cantHelp")}</p>
+              <p className="text-sm text-muted-foreground">{t("postIt")}</p>
             </>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {feedbackHref && (
               <Link href={feedbackHref} className={buttonVariants({ variant: "outline" })}>
-                Post this as feedback
+                {t("postAsFeedback")}
               </Link>
             )}
             {person}
@@ -192,10 +196,13 @@ export function AnswerSources({
   onOpen?: () => void;
 }) {
   const at = usePortalHref();
+  const t = useTranslations("answers");
+  // The articles' titles: the team's words.
+  const team = useTeamLanguage();
   return (
     <div className="flex flex-col gap-1">
-      <h2 className="text-sm font-semibold">Sources</h2>
-      <ul aria-label="Sources" className="flex flex-col gap-1 text-sm">
+      <h2 className="text-sm font-semibold">{t("sources")}</h2>
+      <ul aria-label={t("sources")} className="flex flex-col gap-1 text-sm">
         {sources.map((source) => {
           const inPlace = href?.(source.slug);
           // On its own page: only a web page's address is a link (never `javascript:` or another scheme).
@@ -203,13 +210,15 @@ export function AnswerSources({
           return (
             <li key={source.slug}>
               {source.url === null || page === null ? (
-                <span className="break-words">{source.title}</span>
+                <span lang={team} className="break-words">
+                  {source.title}
+                </span>
               ) : page ? (
-                <a href={page} target="_blank" rel="noopener noreferrer" className="break-words text-primary hover:underline">
+                <a href={page} target="_blank" rel="noopener noreferrer" lang={team} className="break-words text-primary hover:underline">
                   {source.title}
                 </a>
               ) : (
-                <Link href={inPlace ?? at(`/docs/${source.slug}`)} onClick={onOpen} className="break-words text-primary hover:underline">
+                <Link href={inPlace ?? at(`/docs/${source.slug}`)} onClick={onOpen} lang={team} className="break-words text-primary hover:underline">
                   {source.title}
                 </Link>
               )}
@@ -264,6 +273,7 @@ export function AskAPerson({
   const visitor = useVisitor(projectSlug);
   const signedInEmail = signedIn ? (signedIn.email ?? "") : defaultEmail;
   const at = usePortalHref();
+  const t = useTranslations("answers");
   const id = useId();
 
   const send = (event: FormEvent<HTMLFormElement>) => {
@@ -293,15 +303,15 @@ export function AskAPerson({
     const button = buttonVariants({ variant: "outline", size: "sm" });
     return (
       <div role="status" className="flex w-full flex-col items-start gap-2 text-foreground">
-        <p className="font-semibold">We&apos;ve passed this to the team. Their reply will show in Messages.</p>
+        <p className="font-semibold">{t("passed")}</p>
         {widget ? (
           <Link href={at("/widget?tab=messages")} onClick={onLeave} className={button}>
-            Open Messages
+            {t("openMessages")}
           </Link>
         ) : (
           // The portal's Messages are the widget's, on a page of their own (as "Contact us" opens them).
           <a href={at("/widget?tab=messages")} target="_blank" rel="noopener" className={button}>
-            Open Messages
+            {t("openMessages")}
           </a>
         )}
       </div>
@@ -310,18 +320,18 @@ export function AskAPerson({
   if (!open) {
     return (
       <Button variant="outline" onClick={() => setOpen(true)}>
-        Ask a person
+        {t("askPerson")}
       </Button>
     );
   }
   return (
-    <form aria-label="Ask a person" onSubmit={send} className="flex w-full flex-col gap-3 rounded-lg border p-3 text-foreground">
+    <form aria-label={t("askPerson")} onSubmit={send} className="flex w-full flex-col gap-3 rounded-lg border p-3 text-foreground">
       <p className="text-sm text-muted-foreground">
         {/* Without a recorded question (asking failed), there's no answer of the AI's to pass on. */}
-        {questionId ? "We'll pass your question and the AI's answer to the team." : "We'll pass your question to the team."} They&apos;ll reply in Messages.
+        {questionId ? t("passWithAnswer") : t("passQuestion")}
       </p>
       <Field>
-        <FieldLabel htmlFor={`${id}-email`}>Your email</FieldLabel>
+        <FieldLabel htmlFor={`${id}-email`}>{t("yourEmail")}</FieldLabel>
         <Input
           id={`${id}-email`}
           name="email"
@@ -337,16 +347,16 @@ export function AskAPerson({
         />
       </Field>
       <Field>
-        <FieldLabel htmlFor={`${id}-note`}>Anything to add? (optional)</FieldLabel>
+        <FieldLabel htmlFor={`${id}-note`}>{t("anythingToAdd")}</FieldLabel>
         <Textarea id={`${id}-note`} name="note" maxLength={1000} rows={3} />
       </Field>
       {error && <FieldError>{error}</FieldError>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-          Cancel
+          {t("cancel")}
         </Button>
         <Button type="submit" disabled={pending || waiting}>
-          {pending ? "Sending…" : "Send to the team"}
+          {pending ? t("sending") : t("sendToTeam")}
         </Button>
       </div>
     </form>

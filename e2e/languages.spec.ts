@@ -8,6 +8,8 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { query } from "./db";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { nextModelReply } from "./model";
+import { similar } from "./openai";
 
 test("a reader chooses German in the portal's header and its text follows, on desktop and on phones", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -628,4 +630,95 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await plainApi(`/articles/${intro.slug}/publish`, {});
   await visitor.goto("/de/docs/basics");
   await expect(visitor.getByRole("main").getByRole("link", { name: "Alle Sammlungen" })).toBeVisible();
+});
+
+test("AI answers in German: an answer with its sources and rating, one it can't give, Ask a person, and Still stuck?, on desktop and on phones", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Written by the team (Manual): nothing asks the model to translate the article.
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  // The article's only section is close to the question the reader asks.
+  const answered = "Wie lade ich mein Team ein?";
+  await similar(answered, "Getting started\n\nStart here: invite your team from the Team page.", 0.8);
+  const article = await api("/articles", { title: "Getting started", body: "Start here: invite your team from the Team page." });
+  await api(`/articles/${article.slug}/publish`, {});
+  // Messages on: Ask a person after an answer, and Contact us.
+  await team.goto(`/app/${slug}/settings/support`);
+  await team.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(team.getByText("Messages on")).toBeVisible();
+
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  // An answer: its sources (the article's title the team's words) and its rating.
+  await reader.goto(`/de/docs?${new URLSearchParams({ q: answered })}`);
+  const answer = reader.getByRole("region", { name: "KI-Antwort" });
+  await expect(answer).toContainText("Erhalte eine kurze Antwort aus der Dokumentation, geschrieben von KI.");
+  await nextModelReply(JSON.stringify({ answer: "Über die Team-Seite.", sources: ["s1"] }), answered);
+  await answer.getByRole("button", { name: "KI fragen" }).click();
+  await expect(answer.getByText("Über die Team-Seite.")).toBeVisible();
+  const sources = answer.getByRole("list", { name: "Quellen" });
+  await expect(sources.getByRole("link", { name: "Getting started" })).toHaveAttribute("lang", "en");
+  await expect(answer).toContainText("Von KI aus den Artikeln oben geschrieben. War das hilfreich?");
+  await answer.getByRole("button", { name: "Hilfreich", exact: true }).click();
+  await expect(answer.getByText("Danke für dein Feedback.")).toBeVisible();
+  await checkpoint(reader, "ai-answer-in-german", { fullPage: false });
+
+  // One it can't give: Post this as feedback, and Ask a person, sent.
+  const unanswered = "Gibt es einen Dunkelmodus?";
+  await reader.goto(`/de/docs?${new URLSearchParams({ q: unanswered })}`);
+  await answer.getByRole("button", { name: "KI fragen" }).click();
+  await expect(answer.getByText("Das weiß ich nicht")).toBeVisible();
+  await expect(answer).toContainText("Dazu steht noch nichts in der Dokumentation. Poste es als Feedback, damit das Team es sieht.");
+  await expect(answer.getByRole("link", { name: "Als Feedback posten" })).toBeVisible();
+  await answer.getByRole("button", { name: "Eine Person fragen" }).click();
+  const form = answer.getByRole("form", { name: "Eine Person fragen" });
+  await expect(form).toContainText("Wir geben deine Frage und die Antwort der KI ans Team weiter. Die Antwort kommt in Nachrichten.");
+  await expect(form.getByLabel("Deine E-Mail-Adresse")).toHaveValue(reader.email);
+  await form.getByLabel("Noch etwas hinzuzufügen? (optional)").fill("Für die App.");
+  await nextModelReply("They ask about a dark mode.", unanswered);
+  await form.getByRole("button", { name: "An das Team senden" }).click();
+  await expect(answer.getByText("Wir haben das ans Team weitergegeben. Die Antwort erscheint in Nachrichten.")).toBeVisible();
+  await expect(answer.getByRole("link", { name: "Nachrichten öffnen" })).toBeVisible();
+
+  // Under an article: Still stuck?, with Ask AI and Contact us; on the docs' home, Can't find it?
+  await reader.goto(`/de/docs/${article.slug}`);
+  const stuck = reader.getByRole("region", { name: "Noch Fragen?" });
+  await expect(stuck).toContainText("Frag die KI nach einer schnellen Antwort oder schreib dem Team.");
+  await expect(stuck.getByRole("button", { name: "KI fragen" })).toBeVisible();
+  await expect(stuck.getByRole("link", { name: "Kontakt" })).toBeVisible();
+  await reader.goto("/de/docs");
+  await expect(reader.getByRole("region", { name: "Nicht gefunden?" })).toContainText("Schreib dem Team, wir helfen dir.");
+
+  // On a phone.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto(`/de/docs?${new URLSearchParams({ q: unanswered })}`);
+  await expect(reader.getByRole("region", { name: "KI-Antwort" })).toBeVisible();
+  await checkpoint(reader, "ai-answer-in-german-phone", { fullPage: false });
+});
+
+test("The widget's assistant marks its sources' titles in the project's default language", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { default: "fr" }, "PATCH");
+  const question = "Comment inviter mon équipe ?";
+  await similar(question, "Premiers pas\n\nInvitez votre équipe depuis la page Équipe.", 0.8);
+  const article = await api("/articles", { title: "Premiers pas", body: "Invitez votre équipe depuis la page Équipe." });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
+  await visitor.goto("/docs");
+  await visitor.getByRole("main").getByRole("button", { name: "Demander à l’IA", exact: true }).click();
+  // The widget is English until it has the reader's language (L5's last part); the titles are the team's French.
+  const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await nextModelReply(JSON.stringify({ answer: "Depuis la page Équipe.", sources: ["s1"] }), question);
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(question);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  const source = assistant.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Premiers pas" });
+  await expect(source).toHaveAttribute("lang", "fr");
 });
