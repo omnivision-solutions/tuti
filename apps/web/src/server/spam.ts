@@ -305,11 +305,11 @@ export function blockableDomain(address: string): string | null {
 const RULE_REASONS = new Set(["rule", "blocked_address", "blocked_domain", "phrase"]);
 
 /**
- * The rule that filed a conversation, while the filter's reason is still on it and the rule is still there. A teammate's
- * mark clears the reason: words left from before are no rule's doing.
+ * The rule that filed a conversation, while it's still there: the filter's (its reason still on the conversation), or
+ * the one a teammate's report added ("Report spam and block …": no reason, a mark keeps that rule's words or none).
  */
 async function ruleThatFiled(db: Db, projectId: string, reason: string | null | undefined, phrase: string | null | undefined): Promise<Rule | null> {
-  if (!phrase || !RULE_REASONS.has(reason ?? "")) {
+  if (!phrase || (reason && !RULE_REASONS.has(reason))) {
     return null;
   }
   const words = reason === "phrase" ? `Subject or body contains ${phrase}` : phrase;

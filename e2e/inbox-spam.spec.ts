@@ -94,6 +94,8 @@ test("Report spam, and block the sender or the domain, files their next emails, 
   await expect(notice).toContainText("Marked as spam: you marked an earlier conversation from this sender as spam");
   await open("Cheap followers");
   await expect(notice).toContainText("Marked as spam: a teammate marked it");
+  // The domain its report blocked can go with Not spam.
+  await expect(notice.getByRole("button", { name: "Not spam, and remove the rule" })).toBeVisible();
   await open("Followers from Lee");
   await expect(notice).toContainText("Marked as spam: you blocked this address's domain");
   // The button is beside the reason, not under it.

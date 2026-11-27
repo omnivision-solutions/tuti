@@ -251,7 +251,8 @@ the list picks none to approve at once.
   where an owner's or admin's takes a blocked address off the list, the button says so first ("Not spam, and unblock
   <address>"). More actions has "Report spam"; for owners and admins, "Report spam and block sender" (the address
   under it, muted) and "Report spam and block domain" (the organisational domain under it), where the sender's address is
-  proven and, for the domain, it isn't free mail. None asks first: Not spam undoes each.
+  proven and, for the domain, it isn't free mail. None asks first: for an owner or admin, Not spam undoes each ("Not spam,
+  and unblock <address>", "Not spam, and remove the rule").
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,

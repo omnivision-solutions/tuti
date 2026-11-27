@@ -218,8 +218,8 @@ test("Report spam and block domain offers the organisational domain to owners an
 
   await call(updateConversation, admin, { number: 2, spam: true, blockDomain: true });
   expect(await senders()).toEqual(["e2e-kim@m2.spam.example blocked by an admin's mark", "spam.example blocked by an admin, listed"]);
-  // Blocked now: not offered again.
-  expect(await choices(2, true)).toEqual({ blockSender: "e2e-kim@m2.spam.example", blockDomain: null, unblocks: null, removesRule: null });
+  // Blocked now: not offered again, and Not spam offers to remove the rule the report added.
+  expect(await choices(2, true)).toEqual({ blockSender: "e2e-kim@m2.spam.example", blockDomain: null, unblocks: null, removesRule: "Sender domain is spam.example" });
   await mail("e2e-lee@m2.spam.example"); // #3
   await mail("e2e-lee@spam.example"); // #4
   await mail("e2e-lee@notspam.example"); // #5
@@ -249,6 +249,28 @@ test("Report spam and block sender: an owner's or admin's, an Everyone rule from
   expect(await choices(1, true)).toMatchObject({ blockSender: null, unblocks: "e2e-kim@spam.example" });
   await mail("e2e-kim@spam.example"); // #3
   expect((await filed())[2]).toBe("blocked_address");
+});
+
+test("Not spam undoes a report's block: the rule it added is offered for removal, and removing it lets the next email in", async () => {
+  const { projectId, mail, filed, admin } = await setup();
+  const choices = async (number: number) =>
+    spamChoices(prisma, await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } }), true);
+  // Block domain: "Not spam, and remove the rule".
+  await mail("e2e-kim@mail.corp.example"); // #1
+  await call(updateConversation, admin, { number: 1, spam: true, blockDomain: true });
+  expect(await choices(1)).toMatchObject({ removesRule: "Sender domain is corp.example" });
+  expect((await call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).notice).toBe("Filed by your rule: Sender domain is corp.example. It's removed.");
+  await mail("e2e-lee@corp.example"); // #2: the domain's next email arrives
+  // Block sender: Not spam unblocks the address, or removes the rule when asked.
+  await mail("e2e-pat@other.example"); // #3
+  await call(updateConversation, admin, { number: 3, spam: true, blockSender: true });
+  expect(await choices(3)).toMatchObject({ unblocks: "e2e-pat@other.example" });
+  expect((await call(updateConversation, admin, { number: 3, spam: false, removeRule: true })).notice).toContain("Filed by your rule: Sender address is e2e-pat@other.example. It's removed.");
+  await mail("e2e-pat@other.example"); // #4
+  expect([await filed(), await prisma.spamRule.count({ where: { projectId } })]).toEqual([["inbox", "inbox", "inbox", "inbox"], 0]);
+  // A plain Report spam remembers no rule: nothing to remove.
+  await call(updateConversation, admin, { number: 2, spam: true });
+  expect(await choices(2)).toMatchObject({ removesRule: null });
 });
 
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {

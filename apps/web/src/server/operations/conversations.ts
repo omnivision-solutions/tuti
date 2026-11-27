@@ -8,6 +8,7 @@ import { rowLine, subjectFrom } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 import { isAdminRole } from "@/lib/roles";
 import { SPAM_REASON_KEYS, type SpamReason } from "@/lib/spam-reasons";
+import { describeSpamRule } from "@/lib/spam-rules";
 
 import { attachmentLinks, checkUploads, claimUploads, startUpload } from "../attachments";
 import { logEvents, teamActor } from "../conversation-events";
@@ -1646,6 +1647,8 @@ export const updateConversation = defineOperation({
         throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
       }
       let markedAt = new Date();
+      // The rule a report added ("Report spam and block …"), in words, kept as a filed one's are: Not spam can remove it.
+      let reported: string | null = null;
       if (marked || input.blockDomain || input.blockSender) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
         const admin = !!member && isAdminRole(member.role);
@@ -1673,10 +1676,10 @@ export const updateConversation = defineOperation({
           }
         }
         if (input.blockSender) {
-          await blockSenderOf(tx, sent, admin);
+          reported = describeSpamRule({ field: "sender_address", matcher: "is", value: await blockSenderOf(tx, sent, admin) });
         }
         if (input.blockDomain) {
-          await blockDomainOf(tx, sent, admin);
+          reported = describeSpamRule({ field: "sender_domain", matcher: "is", value: await blockDomainOf(tx, sent, admin) });
         }
         if (marked && held!.spamHeldAt) {
           // The mark ends the hold: the Reply-To kept for the model (a sign, maybe another of the sender's addresses) goes.
@@ -1697,7 +1700,9 @@ export const updateConversation = defineOperation({
           // Assigned or unassigned by the team: no longer the imported holder's to take over (handOverPlaceholders).
           ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
-          ...(marked && { spamMarkedAt: markedAt, spamReason: null }),
+          // A teammate's mark replaces the filter's reason, and its words with the report's rule's, or none.
+          ...(marked && { spamMarkedAt: markedAt, spamReason: null, spamPhrase: null }),
+          ...(reported && { spamPhrase: reported }),
           // Held: decided now, so the models' checks have nothing left to do (W4). Mark as spam keeps `spamHeldAt`, as
           // nobody was ever told of it: a later Not spam then tells of it as a new conversation.
           ...(marked && held!.spamHeldAt && { pathDueAt: null, ...(!input.spam && { spamHeldAt: null }) }),
