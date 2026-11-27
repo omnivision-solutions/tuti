@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers, labelIn, labelSource } from "@tuti/jobs";
+import { forgetLabels, handlers, labelIn, labelSource } from "@tuti/jobs";
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -164,4 +164,37 @@ test("a language removed and added again while a labels job translates: that job
   model.reply(labelsReply({ "0.n": "Abrechnung (neu)" }));
   await call(createCollection, as(), { name: "Billing", description: "" });
   expect(labelIn(await collection("billing"), "de")?.name).toBe("Abrechnung (neu)");
+});
+
+test("a language being removed as a labels job writes a new label's translation: the write waits for the removal, and writes nothing", async () => {
+  await german();
+  // A removal held open (not yet committed) as the job writes: its row deleted and its labels forgotten (Billing has none yet).
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let removing!: Promise<void>;
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), async () => {
+    let deleted!: () => void;
+    const started = new Promise<void>((resolve) => (deleted = resolve));
+    removing = prisma.$transaction(
+      async (tx) => {
+        await tx.projectLanguage.deleteMany({ where: { projectId: project.id, code: "de" } });
+        await forgetLabels(tx, project.id, ["de"]);
+        deleted();
+        await gate;
+      },
+      { timeout: 20_000 },
+    );
+    await started;
+  });
+  const creating = call(createCollection, as(), { name: "Billing", description: "" });
+  // Let the removal go once the job is waiting on the language's row (or after 5 seconds).
+  let waited = false;
+  for (let i = 0; i < 100 && !waited; i++) {
+    const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+    waited = Number(count) > 0;
+    if (!waited) await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  release();
+  await Promise.all([removing, creating]);
+  expect((await collection("billing")).translations).toEqual({});
 });

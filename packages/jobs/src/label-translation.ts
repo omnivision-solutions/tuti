@@ -181,6 +181,9 @@ async function sameSetting(db: Prisma.TransactionClient | typeof prisma, project
  */
 async function writeLabel(label: Label, projectId: string, language: string, started: Versions, entry: LabelTranslation): Promise<number> {
   return prisma.$transaction(async (tx) => {
+    // The language's row first (as its changes lock it: removing it, its product setting, Retranslate), shared: a change
+    // under way is waited for, and one after waits for this write (and then clears or remakes it).
+    await tx.$queryRaw`SELECT 1 FROM project_language WHERE "projectId" = ${projectId} AND code = ${language} FOR SHARE`;
     const rows =
       label.table === "collection"
         ? await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, description, translations FROM collection WHERE id = ${label.id} FOR UPDATE`
