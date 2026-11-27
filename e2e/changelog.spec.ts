@@ -196,10 +196,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     expect(button.y).toBeGreaterThanOrEqual(toolbar.y);
     expect(button.y + button.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
   }
-  // The settings beside the text are no taller than the pane under its header (the email banner above it too).
-  const paneBox = (await team.locator('[data-slot="pane"]').boundingBox())!;
-  const asideBox = (await sidebar.boundingBox())!;
-  expect(asideBox.y + asideBox.height).toBeLessThanOrEqual(paneBox.y + paneBox.height);
+  // The settings beside the text scroll with the page: no scrollbar of their own beside the page's.
+  await expect(sidebar).toHaveCSS("overflow-y", "visible");
   // The title shows once at this width too, the one to edit: the pane's header keeps it for screen readers.
   await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
   expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
