@@ -325,8 +325,11 @@ test("a selection running to the very start of the next line, or from the very e
   // From the start of the first line to the start of the second (Shift+Down).
   await view.select(1, SECOND);
   await view.click("Ask AI");
-  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("Quick.")] } });
+  const settle = answer();
   await view.click("Shorter");
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await settle({ content: { type: "doc", content: [paragraph("Quick.")] } });
+  expect(document.activeElement?.textContent).toBe("Accept");
   expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: { type: "doc", content: [paragraph("Exports are quick.")] } }));
   await view.click("Accept");
   expect(view.saved()).toEqual({ type: "doc", content: [paragraph("Quick."), doc.content[1]] });
@@ -347,10 +350,33 @@ test("Select All edits the whole text: no extra context, and Accept replaces it"
   await act(async () => view.editor.chain().focus().selectAll().run());
   await vi.waitFor(() => expect(view.button("Bold")).toBeTruthy());
   await view.click("Ask AI");
-  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("All of it, shorter.")] } });
+  const settle = answer();
   await view.click("Shorter");
   expect(rewriteText).toHaveBeenLastCalledWith("acme", expect.objectContaining({ text: doc, whole: undefined }));
-  await vi.waitFor(() => expect(view.shown("new")).toContain("All of it, shorter."));
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  await settle({ content: { type: "doc", content: [paragraph("All of it, shorter.")] } });
+  expect(view.shown("new")).toContain("All of it, shorter.");
+  // On Accept, though Select All's own selection was wider than the text.
+  expect(document.activeElement?.textContent).toBe("Accept");
   await view.click("Accept");
   expect(view.saved()).toEqual({ type: "doc", content: [paragraph("All of it, shorter.")] });
+});
+
+test("the version shows right after the list item it's for, and an editor that goes (a save remounting it) says the edit was dropped", async () => {
+  const item = (text: string) => ({ type: "listItem", content: [paragraph(text)] });
+  const listed = { type: "doc", content: [{ type: "bulletList", content: [item("One"), item("Two words"), item("Three")] }] };
+  const view = await editor({ initial: listed });
+  // "words" in the second item.
+  const words = 1 + 1 + 5 + 2 + "Two ".length;
+  await view.select(words, words + 5);
+  await view.click("Ask AI");
+  rewriteText.mockResolvedValueOnce({ content: { type: "doc", content: [paragraph("things")] } });
+  await view.click("Clearer");
+  await vi.waitFor(() => expect(view.shown("new")).toContain("things"));
+  const items = [...document.querySelectorAll("li")];
+  expect(items[1]!.querySelector('[data-ask-ai="new"]')).toBeTruthy();
+  expect(items[2]!.querySelector('[data-ask-ai="new"]')).toBeNull();
+
+  await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+  expect(toast).toHaveBeenCalledWith("The text reloaded, so the AI's edit was dropped. Select it again to ask again.");
 });

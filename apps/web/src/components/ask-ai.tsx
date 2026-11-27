@@ -99,9 +99,9 @@ export function askAiPlugin(actions: { current: Actions | null }) {
           return DecorationSet.create(state.doc, [Decoration.inline(asked.from, asked.to, { class: "animate-pulse rounded-sm bg-primary/10", "data-ask-ai": "working" })]);
         }
         const result = asked.result;
-        // After the block the selection ends in: its own lines, whatever part of a line was selected.
+        // Right after the line the selection ends in (in a list, inside its item), so it's beside the struck-through text.
         const $end = state.doc.resolve(asked.to);
-        const after = $end.depth > 0 ? $end.after(1) : asked.to;
+        const after = $end.depth > 0 ? $end.after() : asked.to;
         return DecorationSet.create(state.doc, [
           Decoration.inline(asked.from, asked.to, { class: "text-muted-foreground line-through decoration-destructive/70", "data-ask-ai": "old" }),
           Decoration.widget(after, (view) => aiVersion(view.state, result, actions), { side: 1, key: `ask-ai-${asked.id}`, stopEvent: () => true, ignoreSelection: true }),
@@ -158,6 +158,15 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
   const [status, setStatus] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const next = useRef(0);
+  // The editor going (a save that changes the title or text remounts the form) takes a version working or showing with it: said so.
+  useEffect(
+    () => () => {
+      if (editor && ask(editor.state)) {
+        toast("The text reloaded, so the AI's edit was dropped. Select it again to ask again.");
+      }
+    },
+    [editor],
+  );
   const actions = useRef<Actions | null>(null);
 
   const run = async (from: number, to: number, instruction: string) => {
@@ -287,6 +296,8 @@ export function useAskAi(editor: Editor | null, setup: AskAiSetup | null | undef
     }
     setOpen(false);
     if (from < to) {
+      // The selection made the trimmed range, so focus coming back from the dialog is on it (and moves on to Accept).
+      editor.commands.setTextSelection({ from, to });
       void run(from, to, instruction);
     }
   };
