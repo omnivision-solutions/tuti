@@ -100,6 +100,16 @@ export default function Details() {
   // it, as the control it was on is gone.
   const assignRow = useRef<HostInstance>(null);
   const snoozeRow = useRef<HostInstance>(null);
+  // Handed back here: its row goes (it's the AI's now), so a screen reader's focus moves to the Status, which says so.
+  const statusRow = useRef<HostInstance>(null);
+  const handedBack = useRef(false);
+  const handledBy = triage?.handledBy;
+  useEffect(() => {
+    if (handedBack.current && handledBy === "ai" && statusRow.current) {
+      handedBack.current = false;
+      AccessibilityInfo.sendAccessibilityEvent(statusRow.current, "focus");
+    }
+  }, [handledBy]);
   const last = useRef<Pane>("details");
   useEffect(() => {
     const from = last.current;
@@ -137,6 +147,7 @@ export default function Details() {
     setFailed(null);
     try {
       const answered = await updateConversation(api, number, body);
+      handedBack.current = "handledBy" in body && body.handledBy === "ai";
       // An update's answer doesn't say whether Hand back is offered: kept as it was shown, but where who has it, or spam,
       // changed (never offered in Spam; the server's to say again after either).
       showTriage(key, "handledBy" in body || "spam" in body ? answered : { ...answered, handBack: getTriage(key)?.handBack });
@@ -260,7 +271,7 @@ export default function Details() {
             // Once who has it is known: the list marks them.
             onPress={triage && assignees && assignees.length > 0 ? () => setPane("assign") : undefined}
           />
-          <Row label="Status" value={triage ? statusWords(triage) : ""} dot={triage && (statusWords(triage) === STATUS_WORDS.open ? colors.onNote : colors.muted)} colors={colors} />
+          <Row ref={statusRow} label="Status" value={triage ? statusWords(triage) : ""} dot={triage && (statusWords(triage) === STATUS_WORDS.open ? colors.onNote : colors.muted)} colors={colors} />
           <Row
             ref={snoozeRow}
             label="Snooze"

@@ -308,19 +308,24 @@ describe("the details sheet", () => {
     expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
   });
 
-  it("hands one back to the AI where the server offers it, asking it to refuse if the user waits, and says so to screen readers", async () => {
+  it("hands one back to the AI where the server offers it, asking it to refuse if the user waits; says so to screen readers, whose focus goes to the Status", async () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {});
+    focus.mockClear();
     serve(SAM, { ...OPEN, handledBy: "team", handBack: true });
     await render(<Details />);
 
     await fireEvent.press(await screen.findByRole("button", { name: "Hand back to the AI" }));
     expect(patches()).toEqual([{ handledBy: "ai", ifNobodyWaits: true }]);
     expect(getTriage(KEY)?.handledBy).toBe("ai");
+    // The AI's now, and the update's answer doesn't offer it: gone at once.
+    expect(getTriage(KEY)?.handBack).toBeUndefined();
+    expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
     expect(announce).toHaveBeenLastCalledWith("Handed back to the AI");
     expect(await screen.findByLabelText("Status, With AI")).toBeTruthy();
-    // The AI's now (the update's answer doesn't offer it): nothing more to hand back.
-    await act(async () => showTriage(KEY, { ...getTriage(KEY)!, handBack: false }));
-    expect(screen.queryByRole("button", { name: /hand back/i })).toBeNull();
+    // Its row went from under the screen reader: its focus is on the Status, which says who has it.
+    const [[row, kind]] = focus.mock.calls.slice(-1) as unknown as [[{ props: { accessibilityLabel: string } }, string]];
+    expect(`${kind}: ${row.props.accessibilityLabel}`).toBe("focus: Status, With AI");
   });
 
   it("keeps Hand back offered through another change, whose answer doesn't say", async () => {

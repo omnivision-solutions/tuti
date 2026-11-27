@@ -423,6 +423,26 @@ describe("a conversation the AI has", () => {
     expect(cached<Conversation>(conversationKey(mockSession, 12), mockSession.owner)?.data.handledBy).toBe("team");
   });
 
+  it("drops Hand back as Take over answers: whether it's offered is the server's to say again once the team has it", async () => {
+    // A stale offer on screen as it's taken over; the update answers without `handBack`, as conversations.update does.
+    let now: Conversation = { ...withAi, handBack: true };
+    mockApi.mockImplementation(async (path, init) => {
+      if (path === "/conversations/12" && init?.method === "PATCH") {
+        const { handBack: _handBack, ...rest } = { ...now, ...(init.body as Partial<Conversation>) };
+        now = rest;
+      }
+      return path === "/conversations/12" ? now : {};
+    });
+    await render(<ConversationRoute />);
+    await screen.findByText("The AI has this conversation.");
+    expect(getTriage(key)?.handBack).toBe(true);
+
+    await fireEvent.press(screen.getByRole("button", { name: "Take over" }));
+    expect(await screen.findByLabelText("Reply")).toBeTruthy();
+    expect(getTriage(key)).toMatchObject({ handledBy: "team" });
+    expect(getTriage(key)?.handBack).toBeUndefined();
+  });
+
   it("moves a screen reader to the reply field when a fetch brings it before Take over's own answer, and only then", async () => {
     const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent").mockImplementation(() => {}).mockClear();
     serve(withAi);
