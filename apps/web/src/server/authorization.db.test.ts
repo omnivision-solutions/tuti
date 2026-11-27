@@ -46,6 +46,7 @@ import * as imports from "./imports";
 import * as inbox from "./inbox";
 import { getMembership } from "./membership";
 import * as invitations from "./invitations";
+import * as glossary from "./glossary";
 import * as languages from "./languages";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
@@ -107,6 +108,7 @@ const modules = {
   imports,
   inbox,
   invitations,
+  glossary,
   languages,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
@@ -617,6 +619,9 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
+  },
+  glossary: {
+    saveGlossary: { allowed: "ADMIN", call: (slug) => glossary.saveGlossary(slug, [{ term: "Acme", keep: true, translations: {} }]) },
   },
   languages: {
     // The fixture has German besides English, so the default stays as it is.
