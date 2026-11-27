@@ -643,7 +643,7 @@ const safetyNet = (kind: Kind, where: object, client?: Client) =>
 /** Queuing (inline, translating) still going after the request or publish answered. */
 const inBackground = new Set<Promise<void>>();
 /** Runs `queuing`: inline, where each job runs as it's queued, in the background, so a save or request never waits on the model. */
-function queueAll(queuing: () => Promise<void>) {
+export function queueAll(queuing: () => Promise<void>) {
   // Never awaited: a language's every page queued (or, inline, translated) one by one would hold the request for long. Each
   // page already has its safety net, so one a restart keeps this from reaching is queued again by the retry job.
   const running = queuing().catch((error: unknown) => serverLog.error("Queuing translations failed", { error }));

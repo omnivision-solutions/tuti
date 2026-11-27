@@ -5,7 +5,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { aiEnabled, complete, type JobInput, log as serverLog } from "@tuti/shared";
 
 import { aiFor } from "./ai-usage";
-import { languageName, retryDelay, translationInstructions } from "./article-translation";
+import { languageName, lostAfterMs, queueAll, retryDelay, translationInstructions } from "./article-translation";
 import { OutOfCredits } from "./credits";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -201,13 +201,19 @@ async function writeLabel(label: Label, projectId: string, language: string, sta
   });
 }
 
-/** Queues a project's labels' translating into each of its languages (or `languages`), never failing the caller: the retry job finds what's left. */
+/**
+ * Queues a project's labels' translating into each of its languages (or `languages`), in the background (never awaited, as
+ * an article's languages are: inline, the save would wait for the model), never failing the caller: the retry job finds
+ * what's left. Tests wait for it with languageTranslationsDone.
+ */
 export async function queueLabels(projectId: string, languages?: string[]) {
   if (!aiEnabled()) return;
-  const codes = languages ?? (await prisma.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
-  for (const language of codes) {
-    await enqueue("translateLabels", { projectId, language }).catch((error: unknown) => serverLog.error("Queuing a project's label translations failed", { projectId, language, error }));
-  }
+  queueAll(async () => {
+    const codes = languages ?? (await prisma.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
+    for (const language of codes) {
+      await enqueue("translateLabels", { projectId, language }).catch((error: unknown) => serverLog.error("Queuing a project's label translations failed", { projectId, language, error }));
+    }
+  });
 }
 
 /**
@@ -237,13 +243,17 @@ export async function forgetLabels(tx: Prisma.TransactionClient, projectId: stri
  * its job, whatever wrote the labels (imports, Autopilot, a job lost in a restart). How many it queued.
  */
 export async function queueStaleLabels(): Promise<number> {
+  // Claimed in one update, its time moved to the safety net's (as articles' retries are): a run overlapping this one, or the
+  // next while its job is still on its way, doesn't queue it again; a job lost in a restart is found once that time comes.
+  // The job's end clears it, or sets the next try's.
   const due = await prisma.$queryRaw<{ projectId: string; code: string }[]>`
-    SELECT l."projectId", l.code FROM project_language l
+    UPDATE project_language l SET "labelsRetryAt" = (now() AT TIME ZONE 'UTC') + make_interval(secs => ${lostAfterMs() / 1000})
     WHERE (l."labelsRetryAt" IS NULL OR l."labelsRetryAt" <= now() AT TIME ZONE 'UTC')
       AND (
         EXISTS (SELECT 1 FROM collection c WHERE c."projectId" = l."projectId" AND NOT c.sample AND ${staleIn(COLLECTION_SOURCE)})
         OR EXISTS (SELECT 1 FROM docs_tab t WHERE t."projectId" = l."projectId" AND ${staleIn(TAB_SOURCE)})
-      )`;
+      )
+    RETURNING l."projectId", l.code`;
   for (const { projectId, code } of due) {
     await queueLabels(projectId, [code]);
   }
