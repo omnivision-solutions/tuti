@@ -5,11 +5,12 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { stopSignal, taskFn, taskOptions } from "./tasks";
 
-const { importStep, translateArticle } = vi.hoisted(() => ({
+const { importStep, translateArticle, translateChangelogEntry } = vi.hoisted(() => ({
   importStep: vi.fn(async (_input: unknown, _log: unknown, stop: () => boolean) => ({ stopped: stop() })),
   translateArticle: vi.fn(async (_input: unknown, _log: unknown, run: { lastTry: boolean }) => run),
+  translateChangelogEntry: vi.fn(async (_input: unknown, _log: unknown, run: { lastTry: boolean }) => run),
 }));
-vi.mock("@tuti/jobs", () => ({ importStep, translateArticle, codeChange: vi.fn(), handlers: {} }));
+vi.mock("@tuti/jobs", () => ({ importStep, translateArticle, translateChangelogEntry, codeChange: vi.fn(), handlers: {} }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -94,10 +95,24 @@ test("an article's translation may take ten minutes and wait a day for its turn,
     concurrency: [
       { expression: "input.articleId + ':' + input.language", maxRuns: 1 },
       // …and a few on the whole server.
-      { expression: "'translate-article'", maxRuns: 4 },
+      { expression: "'translate-article'", maxRuns: 2 },
     ],
   });
   const run = (retryCount: number) => taskFn("translateArticle", 3, () => false)({ articleId: "a", language: "de" }, { retryCount: () => retryCount, cancelled: false });
   expect(await run(2)).toEqual({ lastTry: false });
   expect(await run(3)).toEqual({ lastTry: true });
+});
+
+test("a changelog entry's translation is an article's: the same limits, its group two runs beside articles' two (each task's group is its own), told which try is its last", () => {
+  expect(taskOptions("translateChangelogEntry")).toMatchObject({
+    name: "translate-changelog-entry",
+    retries: 3,
+    executionTimeout: "10m",
+    scheduleTimeout: "24h",
+    concurrency: [
+      { expression: "input.entryId + ':' + input.language", maxRuns: 1 },
+      { expression: "'translate-changelog-entry'", maxRuns: 2 },
+    ],
+  });
+  return expect(taskFn("translateChangelogEntry", 3, () => false)({ entryId: "e", language: "de" }, { retryCount: () => 3, cancelled: false })).resolves.toEqual({ lastTry: true });
 });

@@ -278,5 +278,8 @@
       "private": "Le portail de {name} est privé et {email} ne fait pas partie de ses lecteurs : ses nouveautés n’y sont donc pas envoyées.",
       "optedOut": "Vous avez désactivé tous les e-mails de {name} : ses nouveautés ne sont donc pas non plus envoyées à {email}."
     }
+  },
+  "docs": {
+    "notTranslated": "Cette page n'est pas encore disponible en français : elle s'affiche dans sa langue d'origine."
   }
 }

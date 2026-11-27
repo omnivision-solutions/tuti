@@ -278,5 +278,8 @@
       "private": "El portal de {name} es privado y {email} no es uno de sus lectores, así que sus novedades no se envían allí.",
       "optedOut": "Desactivaste todos los correos de {name}, así que sus novedades tampoco se envían a {email}."
     }
+  },
+  "docs": {
+    "notTranslated": "Esta página aún no está en español: se muestra en su idioma original."
   }
 }

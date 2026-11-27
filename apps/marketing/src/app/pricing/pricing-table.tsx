@@ -91,7 +91,7 @@ function Card({ plan, previous, interval, credits }: { plan: Plan; previous?: Pl
       {/* The plan's three numbers, value above label. */}
       <dl className={cn("grid rounded-xl bg-muted px-1.5 py-3 text-center", credits ? "grid-cols-3" : "grid-cols-2")}>
         {[
-          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} emails={facts.emails} />, creditsCell(plan) || <NotIncluded />] as const] : []),
+          ...(credits ? [[<CreditsTip key="c" buy={facts.creditsBuy} credits={facts.credits} emails={facts.emails} label="credits a month" />, creditsCell(plan) || <NotIncluded />] as const] : []),
           ["feedback boards", compact(facts.boards)] as const,
           ["emails a month", compact(facts.emails)] as const,
         ].map(([label, value], index) => (
@@ -181,11 +181,11 @@ function Tip({ label, title, children }: { label: string; title: string; childre
  * "Credits a month", opening a rough idea of what credits buy: an estimate, as it depends on the model. Emails past the
  * included ones only where they spend credits: a plan with monthly credits and an email limit (emailsSpendCredits).
  */
-function CreditsTip({ buy, credits, emails }: { buy: PlanFacts["creditsBuy"]; credits: number | null; emails: number | null }) {
+function CreditsTip({ buy, credits, emails, label = "Credits a month" }: { buy: PlanFacts["creditsBuy"]; credits: number | null; emails: number | null; label?: string }) {
   const also = `screenshots of your app${credits !== null && emails !== null ? ", and emails past those your plan includes" : ""}`;
   const rows: [string, number][] = buy ? [["AI answers", buy.answers], ...(buy.changes !== null ? [["Or checked changes", buy.changes] as [string, number]] : [])] : [];
   return (
-    <Tip label="Credits a month" title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
+    <Tip label={label} title={credits !== null && buy ? `${number(credits)} credits buy about` : "What credits buy"}>
       {rows.length > 0 ? (
         <>
           <dl className="grid gap-2 text-sm">

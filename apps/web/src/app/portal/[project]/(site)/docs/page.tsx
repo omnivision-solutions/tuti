@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { referenceListing } from "@/components/portal-api-operation";
 import { DocsLayout, docsPageListing, DocsSearchResults, DocsTabPage } from "@/components/portal-docs";
 import { DOCS_HEADING } from "@/lib/portal-look";
-import { docsHome, docsTree } from "@/server/docs-queries";
+import { docsHome, docsTree, landingAddresses } from "@/server/docs-queries";
 import { portalPageMetadata, portalSite } from "@/server/portal-metadata";
 import { pageTranslator } from "@/server/portal-language";
 
@@ -27,7 +27,8 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs"
     return portalPageMetadata(project, { ...((await referenceListing(project, landing.slug)) ?? { title: landing.name }), path: "/docs" });
   }
   if (landing.kind !== "overview") {
-    return portalPageMetadata(project, { ...docsPageListing(landing), path: "/docs" });
+    // An article in its place: in each language it's translated into, here (docs/plan.md, "A page not yet translated").
+    return portalPageMetadata(project, { ...docsPageListing(landing), path: "/docs", ...(landing.kind === "article" && { addresses: await landingAddresses(project, landing.slug, "/docs") }) });
   }
   const home = (await portalSite(project))?.brand.docsHome;
   return portalPageMetadata(project, { title: "Documentation", description: home?.subtitle || DOCS_HEADING.subtitle, path: "/docs" });

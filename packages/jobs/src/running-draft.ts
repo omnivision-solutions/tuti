@@ -1,5 +1,6 @@
 import { toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
+import { log as serverLog } from "@tuti/shared";
 
 /** A content document (@tuti/content's JSON), kept loose here so the worker needn't load the editor's schema. */
 type Doc = { type: "doc"; content?: { type: string; content?: unknown[] }[] };
@@ -401,7 +402,8 @@ export async function setChangelogLine(
   if (!found) {
     await addToRunningDraft(projectId, pr);
   }
-  return prisma.$transaction(async (tx) => {
+  let published: string | null = null;
+  const result = await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const known = await tx.changelogEntryPullRequest.findFirstOrThrow({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
     // The entry's row too: an edit in the changelog (which doesn't take the project's lock) waits, or is seen here.
@@ -415,10 +417,23 @@ export async function setChangelogLine(
     // The team may have rewritten the bullet without its link: then the line goes at the end of the draft's list.
     const doc = withLine(current, pr.url, line) ?? withPullRequest(current, { ...pr, title: line }, line);
     await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    if (entry?.publishedAt) {
+      published = known.entryId;
+    }
     return {
       number: entry!.number,
       previous: found && bullet ? textOf(bullet) : null,
       added: !found ? ("entry" as const) : bullet ? null : ("bullet" as const),
     };
   });
+  if (published) {
+    // A published entry's text changed (an Autopilot line approved into it): its languages kept up to date follow
+    // (docs/plan.md L16), never failing the line, which is written.
+    const entryId = published;
+    // Imported here: at the top it would close an import cycle (code-change-docs → article-layers → … → running-draft →
+    // article-translation → … → verify → code-change-docs) that has verify read code-change-docs' prompts before they're defined.
+    const { queueChangelogTranslations } = await import("./article-translation");
+    await queueChangelogTranslations(entryId).catch((error: unknown) => serverLog.error("Couldn't queue a changelog entry's translations", { entryId, error }));
+  }
+  return result;
 }

@@ -278,5 +278,8 @@
       "private": "Das Portal von {name} ist privat und {email} gehört nicht zu seinen Lesern, daher wird sein Changelog nicht dorthin gemailt.",
       "optedOut": "Du hast alle E-Mails von {name} abbestellt, daher wird auch sein Changelog nicht an {email} gemailt."
     }
+  },
+  "docs": {
+    "notTranslated": "Diese Seite gibt es noch nicht auf Deutsch: Sie wird in ihrer Originalsprache angezeigt."
   }
 }

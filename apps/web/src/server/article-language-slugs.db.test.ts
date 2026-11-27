@@ -62,7 +62,9 @@ async function billing() {
 }
 
 /** `articleId`'s version in `language` (Manual: written by the team), with `slug`. */
-async function version(articleId: string, language: string, slug: string | null, title = "Version") {
+async function version(articleId: string, language: string, slug: string | null, given?: string) {
+  // Its title says which article and language it is (what an address shows, translated, since L8).
+  const title = given ?? `${(await prisma.article.findUniqueOrThrow({ where: { id: articleId }, select: { title: true } })).title} (${language})`;
   await prisma.projectLanguage.upsert({ where: { projectId_code: { projectId: project.id, code: language } }, create: { projectId: project.id, code: language, automatic: false }, update: {} });
   return prisma.articleTranslation.create({ data: { articleId, projectId: project.id, language, automatic: false, title, slug, publishedAt: new Date() } });
 }
@@ -203,13 +205,13 @@ test("a live language's address finds an article by its slug there; any other of
   await version(articleId, "fr", "konto");
 
   at("de");
-  expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+  expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "article", article: { title: "Billing (de)" } });
   // Its default-language slug and its old German one go to its German one (the switcher keeps the path).
   expect(await docsPage(project.slug, "billing")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
   expect(await docsPage(project.slug, "zahlungen")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
-  expect(await docsPage(project.slug, "konto")).toMatchObject({ kind: "article", article: { title: "Invoices" } });
+  expect(await docsPage(project.slug, "konto")).toMatchObject({ kind: "article", article: { title: "Invoices (de)" } });
   at("fr");
-  expect(await docsPage(project.slug, "konto")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+  expect(await docsPage(project.slug, "konto")).toMatchObject({ kind: "article", article: { title: "Billing (fr)" } });
   // In the default language, another language's slug goes to the default-language one: German first, in Settings' order.
   at(null);
   expect(await docsPage(project.slug, "abrechnung")).toEqual({ kind: "redirect", path: "/docs/billing" });
@@ -251,7 +253,7 @@ test("an old default-language address keeps its article, though another language
   at(null);
   expect(await docsPage(project.slug, "tuti-pro")).toEqual({ kind: "redirect", path: "/docs/billing" });
   at("de");
-  expect(await docsPage(project.slug, "tuti-pro")).toMatchObject({ kind: "article", article: { title: "Invoices" } });
+  expect(await docsPage(project.slug, "tuti-pro")).toMatchObject({ kind: "article", article: { title: "Invoices (de)" } });
 });
 
 test("a team's redirect into an offline language's article address that comes back round is skipped", async () => {
@@ -265,10 +267,12 @@ test("a team's redirect into an offline language's article address that comes ba
   expect(response.headers.get("x-middleware-rewrite")).toMatch(/\/docs\/billing$/);
 });
 
-test("at a language's slug, the page's canonical address and its Markdown are the article's default-language ones", async () => {
+test("at a language's slug of a version not published yet, the page's canonical address and its Markdown are the default language's", async () => {
   const articleId = await billing();
   await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
   await version(articleId, "de", "abrechnung");
+  // Named, but no translation to read yet: the English is shown (docs/plan.md, "A page not yet translated").
+  await prisma.articleTranslation.updateMany({ where: { articleId }, data: { publishedAt: null } });
   at("de");
   const params = Promise.resolve({ project: project.slug, slug: "abrechnung" });
   const metadata = await slugMetadata({ params, searchParams: Promise.resolve({}) } as never);
@@ -321,7 +325,7 @@ test("a locked article shows its lock at its language slug too, and an AI tool a
   // For signed-in readers only, shown with a lock to the rest.
   await prisma.article.update({ where: { id: articleId }, data: { access: "SIGNED_IN", noAccess: "LOCK" } });
   at("de");
-  expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "locked", article: { title: "Billing" } });
+  expect(await docsPage(project.slug, "abrechnung")).toMatchObject({ kind: "locked", article: { title: "Billing (de)" } });
   expect(await docsPage(project.slug, "zahlungen")).toEqual({ kind: "redirect", path: "/docs/abrechnung" });
 });
 
@@ -357,7 +361,8 @@ test("versions translated before they had slugs are served at the default-langua
   await call(updateLanguages, as(), { languages: [{ code: "de", live: true, newPages: "manual" }] });
   await version(articleId, "de", null, "Abrechnung");
   at("de");
-  expect(await docsPage(project.slug, "billing")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+  // Translated, so read in German (its title the version's), at the default-language slug while it has none of its own.
+  expect(await docsPage(project.slug, "billing")).toMatchObject({ kind: "article", article: { title: "Abrechnung" } });
   // (Every project's: this file's other tests leave some too.)
   expect(await handlers.retryArticleTranslations({}, { info: () => {}, warn: () => {} })).toMatchObject({ named: expect.any(Number) });
   expect(await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).toMatchObject({ slug: "abrechnung" });
@@ -382,7 +387,7 @@ test("restored, a version whose slug or old slug a collection took meanwhile giv
   // Neither address leads to the article any more (the collections, with nothing in them yet, have no page to show).
   expect(await articleNamed(project.slug, "abrechnung")).toBeNull();
   expect(await articleNamed(project.slug, "zahlungen")).toBeNull();
-  expect(await docsPage(project.slug, "abrechnung-2")).toMatchObject({ kind: "article", article: { title: "Billing" } });
+  expect(await docsPage(project.slug, "abrechnung-2")).toMatchObject({ kind: "article", article: { title: "Abrechnung" } });
 });
 
 test("an offline language's address finds an article by its default-language slug before another's old slug there", async () => {
@@ -473,4 +478,25 @@ test("articles sharing a slug that this reader can't see are ruled out together,
   } finally {
     findFirst.mockRestore();
   }
+});
+
+test("an up-to-date version whose naming fails is left unnamed without failing its translate job; the next names it", async () => {
+  const articleId = await billing();
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  // Kept up to date and translated from the article as it is, but not named (its naming failed then).
+  const article = await prisma.article.findUniqueOrThrow({ where: { id: articleId }, select: { title: true, description: true, keywords: true, body: true, content: true } });
+  await prisma.articleTranslation.create({
+    data: { articleId, projectId: project.id, language: "de", automatic: true, title: "Abrechnung", publishedAt: new Date(), sourceHash: translationSource(article).hash, productAvailable: false },
+  });
+  // Naming fails (its transaction: a lock timeout, a slug taken meanwhile).
+  const failing = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("lock timeout"));
+  try {
+    expect(await translateArticle({ articleId, language: "de" }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "up to date" });
+  } finally {
+    failing.mockRestore();
+  }
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).slug).toBeNull();
+  // The next job names it.
+  expect(await translateArticle({ articleId, language: "de" }, { info: () => {}, warn: () => {} })).toEqual({ skipped: "up to date" });
+  expect((await prisma.articleTranslation.findFirstOrThrow({ where: { articleId } })).slug).toBe("abrechnung");
 });

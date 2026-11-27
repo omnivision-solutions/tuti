@@ -3,7 +3,8 @@ import { RichText } from "@tuti/content/react";
 import type { ApiOperation } from "@tuti/shared/api-reference";
 import { prisma } from "@tuti/db";
 import { MESSAGES } from "@tuti/shared/messages";
-import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LanguagesIcon, LockIcon } from "lucide-react";
+import { createTranslator } from "next-intl";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { Fragment } from "react";
@@ -59,7 +60,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
-import { portalLinks, teamLanguage } from "@/server/portal-base";
+import { portalLanguage, portalLinks, teamLanguage } from "@/server/portal-base";
 import { pageTranslator } from "@/server/portal-language";
 import { mediaUrls } from "@/server/media-urls";
 import { firstBoardPath } from "@/server/portal-home";
@@ -382,14 +383,24 @@ export async function DocsArticle({
   slug,
   article,
   path = `/docs/${slug}`,
+  own = slug,
 }: {
   project: string;
+  /** Its default-language slug. */
   slug: string;
   article: Extract<DocsPage, { kind: "article" }>["article"] | LockedArticle;
   /** Its canonical path: a tab showing it in its place, the tab's. */
   path?: string;
+  /** Its slug at this address (its slug in the address's language, where it has one). */
+  own?: string;
 }) {
-  const [at, lang] = await Promise.all([portalLinks(), teamLanguage()]);
+  const [at, lang, { language: pageLanguage, prefix }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage()]);
+  // Its own words are in its version's language here, or the default language's (docs/plan.md, "A page not yet translated"),
+  // with a line in the page's language saying so.
+  const textLang = article.language ?? lang;
+  // Translated here: its search data is its address here (as its canonical is); a tab showing it keeps the tab's.
+  const ownPath = prefix && !article.untranslated ? `${prefix}${path === `/docs/${slug}` ? `/docs/${own}` : path}` : path;
+  const notTranslated = article.untranslated && pageLanguage ? createTranslator({ locale: pageLanguage, messages: MESSAGES[pageLanguage], namespace: "docs" })("notTranslated") : null;
   const readable = "doc" in article ? article : null;
   // Its tab and collection have pages for this reader when they have something to read (an unlisted
   // article may be all there is): the way back is its tab's, or /docs.
@@ -414,17 +425,24 @@ export async function DocsArticle({
       type: "TechArticle",
       title: readable.title,
       description: listing.description,
-      path,
+      path: ownPath,
       published: readable.publishedAt,
       modified: readable.updatedAt,
       // A tab showing it in its place is its own page: no step for it.
       breadcrumb: [
         ...[{ name: "Documentation", path: "/docs" }, { name: up.label, path: up.href }].filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path),
-        { name: readable.title, path },
+        { name: readable.title, path: ownPath },
       ],
     }));
   return (
-    <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
+    <DocsLayout
+      tree={tree}
+      current={slug}
+      headings={headings}
+      headingsLang={textLang}
+      reading={!!readable && outlined(headings)}
+      browse={(await pageTranslator("helpCenter")).t("browseDocs")}
+    >
       {jsonLd}
       {/* The team's words (its title, text and headings, its collection's name, the articles around it) carry the default
           language's `lang` under another's address (teamLanguage); the portal's own text around them doesn't. */}
@@ -454,11 +472,17 @@ export async function DocsArticle({
                     <ReadingModeToggle />
                   </span>
                 )}
-                <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
+                <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}${prefix}/docs/${own}.md`} />
               </div>
             )}
           </div>
-          <h1 lang={lang} id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
+          {notTranslated && (
+            <p lang={pageLanguage ?? undefined} className="flex items-start gap-2 rounded-lg bg-secondary px-3 py-2 text-sm text-muted-foreground">
+              <LanguagesIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {notTranslated}
+            </p>
+          )}
+          <h1 lang={textLang} id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {article.title}
           </h1>
           {readable?.sample && <SampleBadge />}
@@ -475,7 +499,7 @@ export async function DocsArticle({
           {/* On phones the page's actions under its title and dates, only as wide as their buttons. */}
           {readable && markdown && (
             <div className="w-fit sm:hidden">
-              <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
+              <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}${prefix}/docs/${own}.md`} />
             </div>
           )}
           {/* Where "On this page" isn't beside it (below wide screens, or in reading mode), a compact menu under the title. */}
@@ -485,7 +509,7 @@ export async function DocsArticle({
                 On this page
                 <ChevronDownIcon aria-hidden className="size-4 transition-transform group-open/toc:rotate-180" />
               </summary>
-              <ul lang={lang} className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border border-border bg-card p-1.5 shadow-sm">
+              <ul lang={textLang} className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border border-border bg-card p-1.5 shadow-sm">
                 {headings.map((heading) => (
                   <li key={heading.id}>
                     <a href={`#${heading.id}`} className={cn("block rounded-md px-2 py-1.5 text-muted-foreground hover:text-foreground", heading.level === 3 && "pl-5")}>
@@ -500,7 +524,7 @@ export async function DocsArticle({
         {readable ? (
           <>
             <RichText
-              lang={lang}
+              lang={textLang}
               doc={readable.doc}
               mediaUrls={await mediaUrls(readable.doc)}
               headingIds
@@ -680,12 +704,15 @@ export function DocsLayout({
   current,
   overview = false,
   headings = [],
+  headingsLang,
   reading = false,
   extra,
   wide = false,
   browse = "Browse docs",
   children,
 }: {
+  /** What `headings` are in (the article's text's language), for screen readers. */
+  headingsLang?: string;
   /** Null for none (a tab's overview, whose cards are its collections). */
   tree: DocsTree | null;
   current: string | null;
@@ -759,7 +786,7 @@ export function DocsLayout({
           {/* Stays in view as the article scrolls, under the header. */}
           {sections && (
             <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
-              <OnThisPage headings={headings} />
+              <OnThisPage headings={headings} lang={headingsLang} />
             </div>
           )}
         </aside>
