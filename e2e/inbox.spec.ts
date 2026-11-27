@@ -473,7 +473,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(conversations).toContainText("Do you have a discount for nonprofits?");
   await owner.goto(`/app/${slug}/inbox/2`);
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("menuitem", { name: "Mark as spam" }).click();
+  await owner.getByRole("menuitem", { name: "Report spam", exact: true }).click();
   // The toast, word for word: the conversation's Spam line ("Marked as spam: a teammate marked it") starts the same.
   await expect(owner.getByText("Marked as spam", { exact: true })).toBeVisible();
   await owner.goto(`/app/${slug}/p/1`);
@@ -1660,7 +1660,7 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   await expect(row(4)).toBeFocused();
 });
 
-test("after a Send that kept it open, Snooze and Mark as spam are done with it too: the next one down opens", async ({ browser }) => {
+test("after a Send that kept it open, Snooze and Report spam are done with it too: the next one down opens", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
   await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
@@ -1683,7 +1683,7 @@ test("after a Send that kept it open, Snooze and Mark as spam are done with it t
   // Answered, then marked as spam: the same.
   await send(2, "Is this about the export?");
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("menuitem", { name: "Mark as spam" }).click();
+  await owner.getByRole("menuitem", { name: "Report spam", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(row(1)).toBeFocused();
 });

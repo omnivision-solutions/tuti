@@ -20,7 +20,7 @@ import { inboxPath } from "../inbox-path";
 import { notifyInbox, notifyInboxNow } from "../live";
 import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
-import { blockDomainOf, recordMark } from "../spam";
+import { blockDomainOf, blockSenderOf, recordMark } from "../spam";
 import { SPAM_HOLD_MS } from "../spam-models";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
@@ -1548,6 +1548,13 @@ export const updateConversation = defineOperation({
           "Mark it as spam, or not. Where its sender's address is proven (not mail that failed DMARC, nor an address a signed-out visitor typed or the API gave), their next conversation is filed the same way. false on one the spam filter filed (`spamReason`) tells the team and webhooks (`conversation.created`), as a new conversation",
         )
         .meta({ examples: [true] }),
+      blockSender: z
+        .boolean()
+        .optional()
+        .describe(
+          "With `spam: true`: also block the sender's address (a block rule, marked as from a report), so new conversations from it go to Spam. Refused (409 `no_sender`) where the sender's address isn't proven (an address a signed-out visitor typed or the API gave, mail that failed DMARC)",
+        )
+        .meta({ examples: [false] }),
       blockDomain: z
         .boolean()
         .optional()
@@ -1580,6 +1587,7 @@ export const updateConversation = defineOperation({
       "Send a status, an assignee, spam, handledBy, priority or snoozedUntil",
     )
     .refine((input) => !input.blockDomain || input.spam === true, "blockDomain goes with spam: true")
+    .refine((input) => !input.blockSender || input.spam === true, "blockSender goes with spam: true")
     .refine((input) => !input.removeRule || input.spam === false, "removeRule goes with spam: false")
     .meta({ anyOf: ["status", "assignee", "spam", "handledBy", "priority", "snoozedUntil"].map((field) => ({ required: [field] })) }),
   example: { status: "closed" },
@@ -1638,7 +1646,7 @@ export const updateConversation = defineOperation({
         throw new OperationError(409, "no_rule", "It's out of Spam already: remove the rule in Settings → Spam");
       }
       let markedAt = new Date();
-      if (marked || input.blockDomain) {
+      if (marked || input.blockDomain || input.blockSender) {
         const member = await tx.teamMember.findFirst({ where: { projectId, userId: teamMemberId(actor) }, select: { role: true } });
         const admin = !!member && isAdminRole(member.role);
         const sent = { ...conversation, projectId };
@@ -1663,6 +1671,9 @@ export const updateConversation = defineOperation({
               SELECT MAX("createdAt") AS latest FROM "conversation_message" WHERE "conversationId" = ${conversation.id}`;
             markedAt = new Date(Math.max(markedAt.getTime(), latest?.getTime() ?? 0));
           }
+        }
+        if (input.blockSender) {
+          await blockSenderOf(tx, sent);
         }
         if (input.blockDomain) {
           await blockDomainOf(tx, sent, admin);

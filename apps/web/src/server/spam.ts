@@ -317,15 +317,22 @@ async function ruleThatFiled(db: Db, projectId: string, reason: string | null | 
 }
 
 /**
- * What marking this conversation would do beyond it, for the teammate looking (`admin`: an owner or admin, whose the
- * rules are): the domain Mark as spam offers to block too, the "Sender address is" rule Not spam would remove
- * (`unblocks`), and, in words, another rule that filed it, which Not spam offers to remove (`removesRule`).
+ * What reporting or unmarking this conversation would do beyond it, for the teammate looking (`admin`: an owner or
+ * admin): the address Report spam offers to block (`blockSender`, any teammate's, where the sender's is proven), the
+ * domain it offers to block (`blockDomain`, owners' and admins', whose the rules are), the "Sender address is" rule Not
+ * spam would remove (`unblocks`), and, in words, another rule that filed it, which Not spam offers to remove (`removesRule`).
  */
-export async function spamChoices(db: Db, conversation: Marked, admin: boolean): Promise<{ blockDomain: string | null; unblocks: string | null; removesRule: string | null }> {
-  const sender = admin ? await conversationSender(db, conversation) : null;
-  const on = sender ? await listed(db, conversation.projectId, sender) : null;
+export async function spamChoices(
+  db: Db,
+  conversation: Marked,
+  admin: boolean,
+): Promise<{ blockSender: string | null; blockDomain: string | null; unblocks: string | null; removesRule: string | null }> {
+  const proven = await conversationSender(db, conversation);
+  const on = proven ? await listed(db, conversation.projectId, proven) : null;
+  const sender = admin ? proven : null;
   const filedBy = admin && conversation.spam ? await ruleThatFiled(db, conversation.projectId, conversation.spamReason, conversation.spamPhrase) : null;
   return {
+    blockSender: proven && !on?.blockedAddresses.length ? proven : null,
     blockDomain: sender && !on?.domain?.blocked ? blockableDomain(sender) : null,
     unblocks: sender && on?.blockedAddresses.length ? sender : null,
     removesRule: filedBy && !on?.blockedAddresses.some((rule) => rule.id === filedBy.id) ? describeSpamRule(filedBy) : null,
@@ -413,9 +420,23 @@ export async function recordMark(
 }
 
 /**
- * "Also block <domain>", with Mark as spam: the sender's organisational domain goes on the blocked list, its subdomains
- * with it. Owners and admins only, as the lists are theirs; never a free-mail domain, nor for a sender check 1 doesn't
- * apply to. Returns the domain.
+ * "Report spam and block sender": a "Sender address is" rule for the conversation's sender, from a report, for everyone.
+ * Any teammate's, as a report already files the sender's next conversation; never for a sender check 1 doesn't apply to
+ * (an address a signed-out visitor typed, mail that failed DMARC). Returns the address.
+ */
+export async function blockSenderOf(db: Db, conversation: Marked): Promise<string> {
+  const sender = await conversationSender(db, conversation);
+  if (!sender) {
+    throw new OperationError(409, "no_sender", "This conversation's sender isn't proven, so there's no address to block");
+  }
+  await addSpamRule(db, conversation.projectId, { field: "sender_address", matcher: "is", value: sender }, true);
+  return sender;
+}
+
+/**
+ * "Report spam and block domain": the sender's organisational domain as a "Sender domain is" rule, its subdomains with
+ * it, from a report. Owners and admins only, as the rules are theirs; never a free-mail domain, nor for a sender check 1
+ * doesn't apply to. Returns the domain.
  */
 export async function blockDomainOf(db: Db, conversation: Marked, admin: boolean): Promise<string> {
   if (!admin) {
