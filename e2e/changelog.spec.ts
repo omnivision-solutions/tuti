@@ -443,7 +443,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.keyboard.type(" And titles.");
   await nextModelReply(
     JSON.stringify({
-      notes: "Search is quicker now.\n\n## Faster search\n\nResults in half the time.\n\n## Better matches\n\nSearch looks at comments too. And titles.",
+      notes: "Search is quicker now.\n\n## Faster search\n\nResults in half the time.\n\n## Better matches\n\nSearch looks at post titles and comments.",
     }),
     tone,
   );
@@ -463,7 +463,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(text).toContainText("Results in half the time.");
-  await expect(text).toContainText("And titles.");
+  await expect(text).toContainText("Search looks at post titles and comments.");
 
   // With a draft and a published entry, one list: the drafts above, then the published ones by year.
   await team.goto(`/app/${slug}/changelog`);
