@@ -794,7 +794,26 @@ type TouchedVersion = { kind: Kind; sourceId: string; id: string; language: stri
  * one that uses a term), never terms × sections. applyGlossaryChanges writes it.
  * ponytail: reads every published source's text per save (a rare, deliberate act); a per-term index if glossaries get big.
  */
+/**
+ * What a glossary plan was made from, without any text: the project's languages, and each published source's and label's
+ * last change with its versions (which, in which language, kept up to date or not). Read before the plan reads the texts, and
+ * again under the save's lock: a publish, an edit, a version added or switched in between makes them differ, and the save
+ * plans again.
+ */
+async function glossaryPlanState(db: Prisma.TransactionClient | typeof prisma, projectId: string): Promise<string> {
+  const versions = { select: { id: true, language: true, automatic: true }, orderBy: { id: "asc" as const } };
+  const [languages, articles, entries, collections, tabs] = await Promise.all([
+    db.projectLanguage.findMany({ where: { projectId }, select: { code: true }, orderBy: { code: "asc" } }),
+    db.article.findMany({ where: { projectId, ...(ARTICLE.translatable as Prisma.ArticleWhereInput) }, select: { id: true, updatedAt: true, translations: versions }, orderBy: { id: "asc" } }),
+    db.changelogEntry.findMany({ where: { projectId, ...(ENTRY.translatable as Prisma.ChangelogEntryWhereInput) }, select: { id: true, updatedAt: true, translations: versions }, orderBy: { id: "asc" } }),
+    db.collection.findMany({ where: { projectId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } }),
+    db.docsTab.findMany({ where: { projectId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } }),
+  ]);
+  return contentHash(JSON.stringify([languages, articles, entries, collections, tabs]));
+}
+
 export async function planGlossaryChanges(projectId: string, before: Glossary, after: Glossary) {
+  const state = await glossaryPlanState(prisma, projectId);
   const languages = (await prisma.projectLanguage.findMany({ where: { projectId }, select: { code: true } })).map(({ code }) => code);
   // Each language's changed terms, by lowercase term; and all of them, to match once.
   const changed = new Map(languages.map((code) => [code, new Set(changedIn(before, after, code).map(({ term }) => term.toLowerCase()))] as const).filter(([, terms]) => terms.size > 0));
@@ -804,7 +823,7 @@ export async function planGlossaryChanges(projectId: string, before: Glossary, a
   const touched: TouchedVersion[] = [];
   const labels: { table: "collection" | "docs_tab"; id: string; languages: string[] }[] = [];
   if (changed.size === 0) {
-    return { projectId, codes: [], touched, labels, matchTerms: (_: string, __: string) => false };
+    return { projectId, state, codes: [], touched, labels, matchTerms: (_: string, __: string) => false };
   }
   const versions = { where: { language: { in: [...changed.keys()] } }, select: { id: true as const, language: true as const, automatic: true as const } };
   const sources = [
@@ -849,7 +868,7 @@ export async function planGlossaryChanges(projectId: string, before: Glossary, a
   }
   /** Whether `text` (a remembered segment's source) uses a term changed in `language`. */
   const matchTerms = (text: string, language: string) => keys(text).some((term) => changed.get(language)?.has(term));
-  return { projectId, codes: [...changed.keys()], touched, labels, matchTerms };
+  return { projectId, state, codes: [...changed.keys()], touched, labels, matchTerms };
 }
 
 export type GlossaryPlan = Awaited<ReturnType<typeof planGlossaryChanges>>;
@@ -861,13 +880,19 @@ export type GlossaryPlan = Awaited<ReturnType<typeof planGlossaryChanges>>;
  * sections that use one are marked behind, naming the term; labels kept up to date that use one are made again; a labels job
  * already running writes nothing. Only locks, reads and writes here: a few statements per kind however many there are (one
  * lock, one read, a write per 500), so a big help center saves well inside the transaction's time. `dryRun`: counted only.
+ * Null where what the plan was made from changed since (glossaryPlanState): the caller plans again.
  */
-export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: GlossaryPlan, { dryRun = false } = {}): Promise<GlossaryChanges> {
+export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: GlossaryPlan, { dryRun = false } = {}): Promise<GlossaryChanges | null> {
   const { projectId, codes, touched, labels, matchTerms } = plan;
   const pages: Page[] = touched.filter((version) => version.automatic).map(({ kind, sourceId, language }) => ({ kind, parentId: sourceId, language }));
   const behind = touched.filter((version) => !version.automatic && Object.keys(version.reasons).length > 0).length;
   if (codes.length === 0 || dryRun) {
     return { retranslated: pages.length, behind, queue: async () => {} };
+  }
+  // Made from the sources as they still are (read under the project's lock, which every write to them takes or follows):
+  // else null, and the save plans again.
+  if ((await glossaryPlanState(tx, projectId)) !== plan.state) {
+    return null;
   }
   // A labels job already running for those languages writes nothing (as after Retranslate): the one queued after takes the
   // new glossary. Their rows first, as a languages save and a label's write lock them.

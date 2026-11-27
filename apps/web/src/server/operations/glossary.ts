@@ -97,6 +97,11 @@ export const updateGlossary = defineOperation({
             return null;
           }
           const applied = await applyGlossaryChanges(tx, plan, { dryRun });
+          // Planned from sources that changed since (a publish, a version added): planned again.
+          if (!applied) {
+            if (tries >= 2) throw new OperationError(409, "changed", "The pages changed while saving. Try again");
+            return null;
+          }
           if (!dryRun) {
             await tx.glossaryTerm.deleteMany({ where: { projectId } });
             await tx.glossaryTerm.createMany({ data: after.map((term) => ({ projectId, ...term })) });
