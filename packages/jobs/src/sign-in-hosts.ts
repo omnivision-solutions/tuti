@@ -1,12 +1,14 @@
 import { isIP } from "node:net";
 
+import { prisma } from "@tuti/db";
+import type { JobInput } from "@tuti/shared";
 import { publicOnlyLookup } from "@tuti/shared/webhook-url";
 import { getDomain, parse } from "tldts";
 import { Agent, fetch } from "undici";
 
 /**
  * Settings → Screenshots' suggestions: the hosted sign-in services an app calls, found in its page and scripts, whose
- * hosts its runs' browser must open (packages/jobs screenshots.ts allowedHosts) for the agent to sign in. A Firebase
+ * hosts its runs' browser must open (screenshots.ts allowedHosts) for the agent to sign in. A Firebase
  * app's sign-in fails with "auth/network-request-failed" until identitytoolkit.googleapis.com is allowed, say.
  */
 
@@ -139,7 +141,7 @@ const SCRIPTS_BYTES = 40_000_000;
 /** Scripts read at once, so one read never opens more connections to the app, or holds more than PAGE_BYTES + this × SCRIPT_BYTES. */
 const SCRIPTS_AT_ONCE = 8;
 const MAX_REDIRECTS = 5;
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 15_000;
 
 /** Connects only to public addresses, checked on the address connected to (see publicOnlyLookup). */
 const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
@@ -207,17 +209,23 @@ export function scriptsOf(page: { url: URL; text: string }): URL[] {
 }
 
 /**
- * The sign-in services the app at `appUrl` calls: its page (over https, an http address asked for over https) and the
- * scripts it loads from its own site, read within size and time limits; null when the page couldn't be read.
- * `complete` when every script was read too: what's found otherwise may be missing one.
- */
-/**
  * What a saved answer is kept under (ScreenshotSettings.signInServicesFor): the address and this scanner's version, so
  * an answer from an earlier one (15 scripts, until 2026-11) is found again, even one saved by the previous release
  * while a deploy runs both.
  */
 export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
+/**
+ * What a read that wasn't complete (a script that didn't load may hold the service) is kept under: shown, read again on
+ * the next look, and never in place of a full answer, which is kept under scannedFor (with a time or, saved before
+ * answers had one, without).
+ */
+export const partlyScannedFor = (appUrl: string) => `partial ${scannedFor(appUrl)}`;
 
+/**
+ * The sign-in services the app at `appUrl` calls: its page (over https, an http address asked for over https) and the
+ * scripts it loads from its own site, read within size and time limits; null when the page couldn't be read.
+ * `complete` when every script was read too: what's found otherwise may be missing one.
+ */
 export async function detectSignInServices(appUrl: string): Promise<{ services: SignInService[]; complete: boolean } | null> {
   const url = new URL(appUrl);
   if (!localTesting()) {
@@ -248,5 +256,30 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     return { services: merge(found), complete: complete && queue.length === 0 && budget.left > 0 };
   } catch {
     return null;
+  }
+}
+
+/**
+ * The screenshot-sign-in-scan job: reads the app and keeps its answer, only while the address is still the one read
+ * (one changed meanwhile is read again). One that isn't full (a script that didn't load may hold the service) is kept
+ * without a time, so it's shown but read again on the next look, and never in place of a full one; either way the read
+ * ends, so the screen stops waiting.
+ */
+export async function scanSignInServices({ projectId, appUrl, claimedAt }: JobInput<"screenshotSignInScan">) {
+  const key = scannedFor(appUrl);
+  try {
+    const found = await detectSignInServices(appUrl);
+    if (found?.complete) {
+      await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl }, data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: new Date() } });
+    } else if (found) {
+      await prisma.screenshotSettings.updateMany({
+        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }] },
+        data: { signInServices: found.services, signInServicesFor: partlyScannedFor(appUrl), signInServicesAt: null },
+      });
+    }
+    return { read: !!found, complete: !!found?.complete, services: found?.services.length ?? 0 };
+  } finally {
+    // Only its own claim: a later look may have claimed the same address again for the read queued after this one.
+    await prisma.screenshotSettings.updateMany({ where: { projectId, signInScanFor: key, ...(claimedAt && { signInScanAt: new Date(claimedAt) }) }, data: { signInScanFor: null, signInScanAt: null } });
   }
 }
