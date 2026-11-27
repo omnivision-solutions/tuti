@@ -10,7 +10,7 @@ import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createApiKey, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
-import { modelRequests, nextDecision, nextModelReply } from "./model";
+import { heldModelReply, modelRequests, nextDecision, nextModelReply, releaseModelReply } from "./model";
 import { similar } from "./openai";
 
 /** An HS256 SSO token, as a customer's app signs it (see docs/sso.md). */
@@ -1418,13 +1418,16 @@ test("a new message in the widget's Messages starts a conversation the AI answer
   await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
   await expect(widget.getByText("Ask anything: you'll get an answer right away, and a person if you need one.")).toBeVisible();
   await nextDecision({ person: 0.05, reply: 0.9 }, question);
-  await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
+  // The answer held till "Answering…" is seen, so the turn can't finish first.
+  const writing = `writing-${slug}`;
+  await heldModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question, writing);
   await widget.getByRole("textbox", { name: "Your email" }).fill(`e2e-asker-${slug}@example.com`);
   await widget.getByRole("textbox", { name: "Message" }).fill(question);
   await widget.getByRole("button", { name: "Send" }).click();
   const thread = widget.getByRole("list", { name: "Messages" });
   await expect(thread).toContainText(question);
   await expect(widget.getByText("Answering…")).toBeVisible();
+  await releaseModelReply(writing);
   const answer = thread.getByRole("listitem").filter({ hasText: "Owners and admins send invites from the Team page." });
   // Once the request has answered and the turn's few seconds' wait is over.
   await expect(answer).toContainText("AI ·", { timeout: 30_000 });
@@ -1451,8 +1454,18 @@ test("a new message in the widget's Messages starts a conversation the AI answer
 
   // Ask a person failing (here, the request is cut off) says so, and it can be tried again.
   let cut = false;
+  // Only Ask a person's request: a server action whose arguments are the project, who they are and the conversation's
+  // number (the thread's own reads send more, or fewer).
+  const asksPerson = (body: string | null) => {
+    try {
+      const args: unknown = JSON.parse(body ?? "");
+      return Array.isArray(args) && args.length === 3 && args[0] === slug && typeof args[1] === "object" && typeof args[2] === "number";
+    } catch {
+      return false;
+    }
+  };
   await visitor.route("**/widget**", async (route) => {
-    if (!cut && route.request().method() === "POST") {
+    if (!cut && route.request().method() === "POST" && asksPerson(route.request().postData())) {
       cut = true;
       await route.abort();
     } else {

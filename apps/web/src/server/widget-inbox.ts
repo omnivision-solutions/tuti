@@ -60,8 +60,8 @@ async function visitorExpired(projectSlug: string, token: string) {
 
 /**
  * Their latest conversations, newest first, each with its latest message's first line (unless it says
- * the subject again), whether they wrote it (`yours`) or a person of the team did (`replied`: the AI's
- * answer before "Ask a person" isn't one), whether the team closed it, and how many of the team's
+ * the subject again), whether they wrote it (`yours`) or it answered them (`replied`: the team, or the AI while it has
+ * the conversation; the AI's answer "Ask a person" copies in isn't one), whether the team closed it, and how many of the team's
  * messages they haven't seen; and how many they haven't seen in all (`unseen`, for the launcher's dot, older
  * conversations included).
  */
@@ -96,6 +96,7 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
         number: true,
         subject: true,
         status: true,
+        handledBy: true,
         lastMessageAt: true,
         _count: { select: { messages: { where: unseenReplies } } },
       },
@@ -104,14 +105,15 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
   ]);
   const latest = await latestMessages(rows.map((row) => row.id));
   return {
-    conversations: rows.map(({ id, status, _count, ...row }) => {
+    conversations: rows.map(({ id, status, handledBy, _count, ...row }) => {
       const message = latest.get(id);
       return {
         ...row,
         closed: status === "CLOSED",
         line: message && rowLine(row.subject, message.body),
         yours: message?.author === "USER",
-        replied: message?.author === "TEAM",
+        // The AI's answer counts while the AI has it; once handed over, they wait for the team (as for "Ask a person"'s copy).
+        replied: message?.author === "TEAM" || (message?.author === "AI" && handledBy === "AI"),
         unseen: _count.messages,
       };
     }),

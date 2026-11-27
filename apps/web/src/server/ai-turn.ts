@@ -337,6 +337,23 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
  * have), then the team is told. False where the AI doesn't have it (handed over already, the team's, in Spam).
  */
 export async function askPerson(projectId: string, conversation: { id: string; number: number }): Promise<boolean> {
+  // Claimed first, as a turn is (`pathDueAt` leased; never over a running turn's lease), so presses at once pay for one
+  // summary: the others find it claimed. The handover clears the lease.
+  const lease = new Date(Date.now() + AI_TURN_LEASE_MS);
+  const { count } = await prisma.conversation.updateMany({
+    where: {
+      id: conversation.id,
+      projectId,
+      handledBy: "AI",
+      spam: false,
+      spamHeldAt: null,
+      OR: [{ pathDueAt: null }, { pathDueAt: { lte: new Date(Date.now() + AI_TURN_DUE_MS) } }],
+    },
+    data: { pathDueAt: lease },
+  });
+  if (count === 0) {
+    return false;
+  }
   const messages = (
     await prisma.conversationMessage.findMany({
       where: { conversationId: conversation.id, note: false, author: { in: ["USER", "TEAM", "AI"] } },
@@ -346,9 +363,9 @@ export async function askPerson(projectId: string, conversation: { id: string; n
     })
   ).reverse() as Message[];
   const latest = messages.findLast((message) => message.author === "USER");
-  const owner = await prisma.conversation.findUnique({ where: { id: conversation.id }, select: { handledBy: true, spam: true } });
   // Handed over for it already (a workflow kept it with the AI): nothing to ask again, nor a summary to pay for.
-  if (!latest || latest.handedOverAt || owner?.handledBy !== "AI" || owner.spam) {
+  if (!latest || latest.handedOverAt) {
+    await prisma.conversation.updateMany({ where: { id: conversation.id, pathDueAt: lease }, data: { pathDueAt: null } });
     return false;
   }
   // What they asked last and the AI's answer to it (or, still unanswered, their messages since), and what came before.

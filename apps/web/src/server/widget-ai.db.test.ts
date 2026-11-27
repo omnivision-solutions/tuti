@@ -95,8 +95,8 @@ test("a first message in Messages starts a conversation the AI has: answered in 
   model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
   model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
   expect(await turn()).toBe("answered");
-  // Unseen till it's shown: the launcher's dot, for a panel closed while it answered.
-  expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 1 });
+  // Unseen till it's shown: the launcher's dot, for a panel closed while it answered. Their list says it's answered.
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 1, conversations: [{ replied: true, yours: false }] });
   const answered = await opened();
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 0 });
   expect(answered).toMatchObject({ withAi: true, answering: false, askPerson: true });
@@ -132,6 +132,8 @@ test("a first message in Messages starts a conversation the AI has: answered in 
     body: "Summary: They want to export as JSON.",
   });
   expect(await opened()).toMatchObject({ withAi: false, answering: false, askPerson: false });
+  // Handed over, they wait for the team: the AI's answer isn't the team's reply.
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ replied: false }] });
   // Asked again: nothing more.
   expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
   expect(await prisma.conversationEvent.count({ where: { conversationId: (await conversation()).id, kind: "handed_over" } })).toBe(1);
@@ -217,4 +219,20 @@ test("kept with the AI by a workflow, Ask a person is gone, and pressing it agai
   const asked = model.requests.length;
   expect(await widgetAskPerson(project.slug, auth, 1)).toEqual({});
   expect(model.requests).toHaveLength(asked);
+});
+
+test("Ask a person pressed twice at once hands it over once, paying for one summary", async () => {
+  const { project, auth, conversation, turn } = await setup();
+  await widgetStartConversation(project.slug, auth, QUESTION);
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  await turn();
+  const asked = model.requests.length;
+  model.reply("They want to export.", undefined, QUESTION);
+  expect(await Promise.all([widgetAskPerson(project.slug, auth, 1), widgetAskPerson(project.slug, auth, 1)])).toEqual([{}, {}]);
+  expect(model.requests).toHaveLength(asked + 1);
+  const { id, handledBy, pathDueAt } = await conversation();
+  expect({ handledBy, pathDueAt }).toEqual({ handledBy: "TEAM", pathDueAt: null });
+  expect(await prisma.conversationEvent.count({ where: { conversationId: id, kind: "handed_over" } })).toBe(1);
+  expect(await prisma.conversationMessage.count({ where: { conversationId: id, note: true } })).toBe(1);
 });
