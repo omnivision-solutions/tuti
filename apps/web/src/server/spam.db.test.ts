@@ -406,6 +406,22 @@ test.each([
   expect([await prisma.spamRule.count({ where: { projectId } }), await prisma.spamSender.count({ where: { projectId, conversationId: null, sender: allowed } })]).toEqual([0, 1]);
 });
 
+test("a conversation the filter still holds (W4) can be reported with a block: the report decides it, and Not spam can undo the rule", async () => {
+  const { projectId, mail, admin } = await setup();
+  await mail("e2e-kim@corp.example"); // #1
+  // Held while the AI check runs: filed as spam, unmarked, its checks due.
+  await prisma.conversation.update({ where: { projectId_number: { projectId, number: 1 } }, data: { spam: true, spamHeldAt: new Date(), pathDueAt: new Date() } });
+  await call(updateConversation, admin, { number: 1, spam: true, blockDomain: true });
+  const row = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number: 1 } } });
+  // Decided by the report: marked, nothing left for the models, and the rule kept for Not spam.
+  expect([row.spam, !!row.spamMarkedAt, row.pathDueAt]).toEqual([true, true, null]);
+  expect(await spamChoices(prisma, row, true)).toMatchObject({ removesRule: "Sender domain is corp.example" });
+  // Now it is in Spam: another block is refused.
+  await expect(call(updateConversation, admin, { number: 1, spam: true, blockSender: true })).rejects.toMatchObject({ status: 409, code: "already_spam" });
+  expect((await call(updateConversation, admin, { number: 1, spam: false, removeRule: true })).notice).toBe("Filed by your rule: Sender domain is corp.example. It's removed.");
+  expect(await prisma.spamRule.count({ where: { projectId } })).toBe(0);
+});
+
 test("a full filter takes no rule from a report: block sender and domain aren't offered, and asked for anyway, the report is refused", async () => {
   const { projectId, mail, filed, admin } = await setup();
   await prisma.spamRule.createMany({ data: Array.from({ length: 500 }, (_, i) => ({ projectId, field: "subject", matcher: "is", value: `pitch ${i}` })) });

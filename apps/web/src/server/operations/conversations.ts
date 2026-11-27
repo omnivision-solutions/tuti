@@ -1644,9 +1644,10 @@ export const updateConversation = defineOperation({
       // A teammate's decision (the mark changes): kept on the conversation and, where it applies, about its sender.
       // One the spam filter is holding (W4) is undecided: either mark decides it, and the models' verdict is dropped.
       const marked = input.spam !== undefined && (input.spam !== held!.spam || (!!held!.spamHeldAt && !held!.spamMarkedAt));
-      // A block goes with reporting it: one already in Spam keeps the rule its report added (Not spam can still undo
-      // that one), and another block is made in Settings.
-      if ((input.blockSender || input.blockDomain) && held!.spam) {
+      // A block goes with reporting it: one already in Spam (filed or marked; not one the filter still holds, which the
+      // report decides, as `marked` has it) keeps the rule its report added for Not spam to undo, and another block is
+      // made in Settings.
+      if ((input.blockSender || input.blockDomain) && held!.spam && !(held!.spamHeldAt && !held!.spamMarkedAt)) {
         throw new OperationError(409, "already_spam", "It's in Spam already: block in Settings → Spam");
       }
       // Removing the rule goes with taking it out of Spam: one a teammate took out meanwhile is said, not passed over.
