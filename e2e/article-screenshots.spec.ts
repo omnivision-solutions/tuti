@@ -100,7 +100,7 @@ test("screenshots taken while the article editor is open come in once they're do
   await checkpoint(team, "team-article-screenshots-done-unsaved");
   // Saved: on top of the screenshot's version by section, so both are in.
   await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(text.getByRole("img", { name: /^The screen: a screen that takes a while/ })).toBeVisible();
   await expect(text).toContainText("Typed while it ran.");
