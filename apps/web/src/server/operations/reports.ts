@@ -532,7 +532,7 @@ const reportsOutput = z
                       .number()
                       .int()
                       .nullable()
-                      .describe("The Inbox conversation it started (its number), when passed to the team")
+                      .describe("The Inbox conversation it started (its number), when passed to the team; for one the AI was asked in the Inbox (source `inbox`), the conversation it was asked in")
                       .meta({ examples: [null] }),
                   }),
                 )

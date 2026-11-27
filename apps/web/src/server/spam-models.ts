@@ -27,6 +27,8 @@ export const EXAMPLES = 10;
 export const SPAM_AT = 0.97;
 /** The longest a conversation is held for the models: the inbox-due job releases it then, judged or not. */
 export const SPAM_HOLD_MS = 2 * 60_000;
+/** The AI's turns the inbox-due job runs at once. */
+const AI_TURNS_AT_ONCE = 3;
 /** The team's guidance for the models (Settings → Spam). */
 export const MAX_SPAM_GUIDANCE = 500;
 
@@ -274,18 +276,27 @@ export async function runDueInbox(now = new Date()): Promise<{ checked: number }
     SELECT "id", "createdAt", false AS "aiTurn" FROM "conversation" WHERE "spamHeldAt" IS NOT NULL AND ("spamMarkedAt" IS NULL OR NOT "spam") AND "spamHeldAt" <= ${new Date(now.getTime() - SPAM_HOLD_MS)}
     ORDER BY "createdAt" LIMIT 100`;
   let checked = 0;
-  for (const { id, aiTurn } of due) {
-    // The AI's turn its request didn't run (server/ai-turn.ts): run once this request has answered, so its model calls
-    // never hold up the holds here or the worker's request (or now, outside a request); handed over 10 minutes on.
-    if (aiTurn) {
-      try {
-        after(() => runAiTurn(id));
-        checked++;
-      } catch {
-        if ((await runAiTurn(id)) !== "nothing") {
-          checked++;
-        }
+  // The AI's turns their requests didn't run (server/ai-turn.ts): run once this request has answered, so their model
+  // calls never hold up the holds here or the worker's request (or now, outside a request), a few at a time, so a backlog
+  // after a deploy doesn't hit the provider all at once; each is handed over 10 minutes on.
+  const turns = due.filter((row) => row.aiTurn).map((row) => row.id);
+  if (turns.length > 0) {
+    const runTurns = async () => {
+      let ran = 0;
+      for (let i = 0; i < turns.length; i += AI_TURNS_AT_ONCE) {
+        ran += (await Promise.all(turns.slice(i, i + AI_TURNS_AT_ONCE).map(runAiTurn))).filter((outcome) => outcome !== "nothing").length;
       }
+      return ran;
+    };
+    try {
+      after(runTurns);
+      checked += turns.length;
+    } catch {
+      checked += await runTurns();
+    }
+  }
+  for (const { id, aiTurn } of due) {
+    if (aiTurn) {
       continue;
     }
     if (await settleHold(id, null).catch((error: unknown) => log.error("Releasing a held conversation failed", { conversationId: id, error }))) {

@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { grantCredits, handlers } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, articleChunkText } from "@tuti/shared";
-import { configFile, creditsOn, type ModelFake, startModelFake } from "@tuti/testkit";
+import { configFile, creditsOn, type ModelFake, startModelFake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 // What the path leaves to `after`: counted here, and the turn run by hand (without its wait), as Next.js would once the
@@ -14,10 +14,13 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
+import { reportRange } from "@/lib/report-range";
+
 import { AI_TURN_GIVE_UP_MS, runAiTurn } from "./ai-turn";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation, updateConversation } from "./operations/conversations";
+import { aiReport } from "./operations/reports";
 import { call } from "./operations/run";
 import { createWorkflow } from "./operations/workflows";
 import { runDueInbox, runSpamChecks } from "./spam-models";
@@ -35,14 +38,17 @@ const QUESTION = "How do I export my data?";
 const log = { info: () => {}, warn: () => {} };
 
 let model: ModelFake;
+// The project's webhook endpoint: local, so nothing reaches the network.
+let receiver: WebhookReceiver;
 beforeAll(async () => {
-  model = await startModelFake();
+  [model, receiver] = await Promise.all([startModelFake(), startWebhookReceiver()]);
 });
-afterAll(() => Promise.all([model.embeddings.close(), model.close()]));
+afterAll(() => Promise.all([model.embeddings.close(), model.close(), receiver.close()]));
 
 beforeEach(() => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   for (const [name, value] of Object.entries(model.env)) {
     vi.stubEnv(name, value);
   }
@@ -65,7 +71,7 @@ async function setup({ aiFirst = true } = {}) {
   const projectId = project.id;
   await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true, emailAiFirst: aiFirst } });
   await prisma.webhook.create({
-    data: { projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created", "conversation.message_created", "conversation.handed_over"], createdById: owner.id },
+    data: { projectId, url: receiver.url, secret: "secret", events: ["conversation.created", "conversation.message_created", "conversation.handed_over"], createdById: owner.id },
   });
   const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId };
   // An article whose one section answers QUESTION.
@@ -171,6 +177,24 @@ test("asking for a person hands it over with a summary for the team, told by ema
   await reply("Thanks Olive");
   expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
   expect(later).toHaveLength(2);
+});
+
+test("Reporting counts a conversation the AI answered as handled, and one it handed over as passed to the team, each with its conversation", async () => {
+  const { projectId, mail, turn } = await setup();
+  await mail();
+  model.decide({ person: 0.05, reply: 0.9 }, QUESTION);
+  model.reply(answer("Go to Settings → Export."), undefined, QUESTION);
+  await turn(1);
+  await mail("Do you sell gift cards?");
+  model.decide({ person: 0.05, reply: 0.9 }, "gift cards");
+  model.reply("They ask about gift cards.", undefined, "askedBefore");
+  await turn(2);
+  const report = await aiReport(projectId, reportRange(undefined));
+  expect(report.totals).toMatchObject({ conversations: 2, escalated: 1, answered: 1 });
+  expect(report.conversations.map((c) => [c.turns[0]!.question, c.source, c.escalated, c.turns[0]!.conversation]).sort()).toEqual([
+    ["Do you sell gift cards?", "inbox", true, 2],
+    [QUESTION, "inbox", false, 1],
+  ]);
 });
 
 test("each reason to hand over: no answer in the docs, an off-limits topic, a model failing", async () => {
@@ -340,6 +364,15 @@ test("an email the spam filter holds gets no turn till it's released; one it fil
   expect(await runSpamChecks((await conversation(2)).id)).toBe(true);
   expect(await state(2)).toMatchObject({ handledBy: "TEAM", due: false });
   expect(await turn(2)).toBe("nothing");
+});
+
+test("sample articles alone aren't docs to answer from: the conversation goes to the team as the AI is off", async () => {
+  const { projectId, mail, state, handovers } = await setup();
+  await prisma.article.updateMany({ where: { projectId }, data: { sample: true } });
+  await mail();
+  expect(await state()).toMatchObject({ handledBy: "TEAM", due: false });
+  expect(await handovers()).toEqual(["ai_off"]);
+  expect(later).toHaveLength(0);
 });
 
 test("“AI answers first” off for email: the conversation goes to the team as before", async () => {

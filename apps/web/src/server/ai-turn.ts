@@ -62,12 +62,13 @@ export async function aiAnswersFirst(projectId: string, origin: ConversationOrig
   return !!project?.emailAiFirst;
 }
 
-/** Whether the AI can answer here now: the server has answers, the project has a published article and AI credits. */
+/** Whether the AI can answer here now: the server has answers, the project has a published article of its own and AI credits. */
 export async function aiAvailable(projectId: string): Promise<boolean> {
   if (!answersEnabled()) {
     return false;
   }
-  const article = await prisma.article.findFirst({ where: { projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } }, select: { id: true } });
+  // Sample content (Home's "Add sample content") is never answered from: it isn't the team's docs.
+  const article = await prisma.article.findFirst({ where: { projectId, sample: false, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } }, select: { id: true } });
   return !!article && !(await aiPaused(projectId));
 }
 
@@ -248,6 +249,13 @@ async function turn(conversationId: string): Promise<TurnOutcome> {
       ? await summarize(projectId, { question, askedBefore: earlier.map((t) => t.question), answer: null, notHelpful: false, note: null }, SUMMARY_TIMEOUT_MS)
       : null;
     const handed = await handOverAndTell(projectId, { id: conversationId, number: conversation.number }, latest.id, reason, { onlyFromAi: true, onlyIfLatest: true, note });
+    if (handed?.handedOver) {
+      // Passed to the team, as Reporting counts it: on the conversation's latest question to the docs, if it asked any.
+      const asked = await prisma.docsQuestion.findFirst({ where: { projectId, conversationId, source: "INBOX" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+      if (asked) {
+        await prisma.docsQuestion.updateMany({ where: { id: asked.id, escalatedAt: null }, data: { escalatedAt: new Date() } });
+      }
+    }
     return handed === null ? "dropped" : handed.handedOver ? "handed_over" : "kept";
   };
   if (Date.now() - latest.createdAt.getTime() > AI_TURN_GIVE_UP_MS) {
