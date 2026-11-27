@@ -56,17 +56,12 @@ export function spamRuleValue(field: SpamRuleField, value: string) {
 const fold = (text: string) => text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 
 /**
- * How many steps the pattern rules may take for one message, together: past it, patterns match nothing more (the
- * filter fails open, as the AI check does). A team's ordinary patterns take a few thousand.
- */
-export const PATTERN_STEPS = 2_000_000;
-
-/**
  * Whether `text` is all of `pattern`, where `*` is any run of characters and `?` any one: never a regex, which a team's
  * pattern could make take forever. Greedy with one step back to the last `*`, so at most the two lengths multiplied,
- * and never more than `budget` steps (shared by a message's patterns), when it says no.
+ * and never more than `budget` steps, when it says no.
  */
 export function matchesPattern(pattern: string, text: string | string[], budget = { left: PATTERN_STEPS }): boolean {
+  // Its own budget, unless a caller counts the steps.
   const p = [...pattern];
   const t = typeof text === "string" ? [...text] : text;
   let i = 0;
@@ -111,9 +106,17 @@ export type SpamRuleInput = { domain?: string | null; address?: string | null; n
  */
 export const SPAM_RULE_TEXT_CHARS = 10_000;
 
-type Folds = { fold: (text: string) => string; words: (text: string) => string; chars: (text: string) => string[]; budget: { left: number } };
+/**
+ * How many steps one pattern may take on one text: 30 times the longest text the rules read, so an ordinary pattern
+ * (a few segments of up to 30 characters, however the text is padded) always finishes its scan. Only a pathological
+ * one (long segments against text built to almost match them) reaches it, and that rule alone doesn't match: the
+ * filter fails open for it, as the AI check does. Each rule has its own, so no text can use up another's.
+ */
+export const PATTERN_STEPS = 30 * SPAM_RULE_TEXT_CHARS;
 
-function matchesOne(rule: SpamRule, text: string, { fold, words, chars, budget }: Folds): boolean {
+type Folds = { fold: (text: string) => string; words: (text: string) => string; chars: (text: string) => string[] };
+
+function matchesOne(rule: SpamRule, text: string, { fold, words, chars }: Folds): boolean {
   if (rule.matcher === "contains" && WORDS.has(rule.field)) {
     const value = words(rule.value);
     return value !== "" && ` ${words(text)} `.includes(` ${value} `);
@@ -131,7 +134,7 @@ function matchesOne(rule: SpamRule, text: string, { fold, words, chars, budget }
     case "ends_with":
       return folded.endsWith(value);
     case "pattern":
-      return matchesPattern(value, chars(folded), budget);
+      return matchesPattern(value, chars(folded));
   }
 }
 
@@ -139,7 +142,7 @@ function matchesOne(rule: SpamRule, text: string, { fold, words, chars, budget }
  * A test of rules against a conversation's fields (any of them, for "Subject or body" and "Sent to"): each text is cut
  * to `SPAM_RULE_TEXT_CHARS` and folded once, however many rules read it.
  */
-export function spamRuleMatcher(input: SpamRuleInput, budget = { left: PATTERN_STEPS }): (rule: SpamRule) => boolean {
+export function spamRuleMatcher(input: SpamRuleInput): (rule: SpamRule) => boolean {
   const cut = (text: string | null | undefined) => text?.slice(0, SPAM_RULE_TEXT_CHARS) || null;
   const fields: Record<SpamRuleField, (string | null)[]> = {
     sender_domain: [cut(input.domain)],
@@ -154,7 +157,7 @@ export function spamRuleMatcher(input: SpamRuleInput, budget = { left: PATTERN_S
     const done = new Map<string, T>();
     return (text: string) => (done.has(text) ? done.get(text)! : done.set(text, fn(text)).get(text)!);
   };
-  const folds: Folds = { fold: once(fold), words: once(matchText), chars: once((text) => [...text]), budget };
+  const folds: Folds = { fold: once(fold), words: once(matchText), chars: once((text) => [...text]) };
   return (rule) => (fields[rule.field as SpamRuleField] ?? []).some((text) => !!text && matchesOne(rule, text, folds));
 }
 

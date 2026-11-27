@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { describeSpamRule, matchesPattern, PATTERN_STEPS, type SpamRule, type SpamRuleInput, spamRuleKey, spamRuleMatcher, spamRuleMatches, spamRuleValue } from "./spam-rules";
+import { describeSpamRule, matchesPattern, PATTERN_STEPS, SPAM_RULE_TEXT_CHARS, type SpamRule, type SpamRuleInput, spamRuleKey, spamRuleMatcher, spamRuleMatches, spamRuleValue } from "./spam-rules";
 
 const matches = (field: SpamRule["field"], matcher: SpamRule["matcher"], value: string, input: SpamRuleInput) => spamRuleMatches({ field, matcher, value }, input);
 
@@ -81,17 +81,22 @@ test("a rule in words, and two rules that compare the same are one", () => {
   expect(spamRuleKey({ field: "subject", matcher: "is", value: "Facebook-Admin" })).not.toBe(spamRuleKey({ field: "subject", matcher: "is", value: "facebook admin" }));
 });
 
-test("a message's patterns share one budget of steps: the worst rules against the longest texts stop at it, matching nothing more", () => {
-  const budget = { left: PATTERN_STEPS };
-  const text = "a".repeat(10_000);
-  const matcher = spamRuleMatcher({ subject: text, text }, budget);
-  // 500 rules (the most a project holds) that each take about 4 million steps on these texts.
-  const rules = Array.from({ length: 500 }, (_, i) => ({ field: "subject_or_body" as const, matcher: "pattern" as const, value: `*${"a".repeat(197)}${String.fromCharCode(98 + (i % 20))}` }));
-  expect(rules.some(matcher)).toBe(false);
-  // Spent, and not a step past it.
-  expect(budget.left).toBe(0);
-  // An ordinary pattern's few steps leave the budget almost whole.
-  const fresh = { left: PATTERN_STEPS };
-  expect(spamRuleMatcher({ subject: "You won 50 dollars today" }, fresh)({ field: "subject", matcher: "pattern", value: "you won*" })).toBe(true);
-  expect(PATTERN_STEPS - fresh.left).toBeLessThan(100);
+test("each pattern has its own budget: padding can't switch other rules off, and a pathological pattern stops at its own limit alone", () => {
+  // A padded body of the longest length the rules read, almost matching every rule.
+  const text = `${"facebook admi ".repeat(714)}giveaway`.slice(-SPAM_RULE_TEXT_CHARS);
+  const matcher = spamRuleMatcher({ text });
+  // 499 ordinary patterns that each scan the whole body and don't match, then one that does: it still matches.
+  const misses = Array.from({ length: 499 }, (_, i) => ({ field: "body" as const, matcher: "pattern" as const, value: `*facebook admin ${i}*` }));
+  expect([...misses, { field: "body" as const, matcher: "pattern" as const, value: "*giveaway" }].map(matcher).at(-1)).toBe(true);
+  // An ordinary pattern's full scan of that body stays well within its budget.
+  const ordinary = { left: PATTERN_STEPS };
+  expect(matchesPattern("*facebook admin 7*", text, ordinary)).toBe(false);
+  expect(PATTERN_STEPS - ordinary.left).toBeLessThan(PATTERN_STEPS / 2);
+  // A pathological one (a long segment against text built to almost match it) stops at exactly its own limit…
+  const worst = { left: PATTERN_STEPS };
+  expect(matchesPattern(`*${"a".repeat(197)}b`, "a".repeat(SPAM_RULE_TEXT_CHARS), worst)).toBe(false);
+  expect(worst.left).toBe(0);
+  // …and the next rule on the same message still has its own.
+  const padded = spamRuleMatcher({ text: `${"a".repeat(SPAM_RULE_TEXT_CHARS - 4)}spam` });
+  expect([`*${"a".repeat(197)}b`, "*spam"].map((value) => padded({ field: "body", matcher: "pattern", value }))).toEqual([false, true]);
 });
