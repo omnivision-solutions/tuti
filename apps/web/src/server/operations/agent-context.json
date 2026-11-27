@@ -14,6 +14,7 @@
   "articles.feedback": ["answer","answering","article","behalf","creator","help","helpful","missing","published","replaces","someone","under"],
   "articles.get": ["article","articles","changes","docs","drafts","gets","hidden","slug","team","unpublished"],
   "articles.getTranslation": ["article","behind","changes","editor","languages","project","published","sections","source","unpublished","version"],
+  "articles.keepTranslationUpToDate": ["another","article","changes","date","english","keep","language","sections","stay","team","theirs","translated","turn","version","writes"],
   "articles.languageSlug": ["address","another","article","collection","docs","give","language","languages","project","reference","refused","slug","title","translated"],
   "articles.list": ["articles","deleted","docs","drafts","edited","every","everywhere","first","latest","list","listed","listing","ones","published","restore","sees","still","team","title"],
   "articles.publish": ["actions","among","article","articles","autopilot","changed","codechanges","docs","draft","edits","exists","fine","first","gone","including","later","limit","live","newest","none","null","optional","past","plan","portal","project","publish","published","publishes","refused","required","reviewed","revision","revisions","save","since","still","target","version","wait","waiting"],

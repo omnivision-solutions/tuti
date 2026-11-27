@@ -9,7 +9,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
-import { getTranslation, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
+import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./operations/translations";
 
 /** Retranslating and unpublished changes (docs/plan.md, Languages, L6 part three). */
 
@@ -887,4 +887,42 @@ test("sections named in `keep` or `sections` are no longer together than an arti
     );
     expect(error?.status).toBe(400);
   }
+});
+
+test("Keep up to date off: English changing no longer retranslates the version, and its sections show as behind", async () => {
+  await translated();
+  const read = await call(getTranslation, as(), de);
+  expect(await call(keepTranslationUpToDate, as(), { ...de, keepUpToDate: false, version: read.version })).toMatchObject({ keepUpToDate: false });
+  await call(updateArticle, as(), { slug: "getting-paid", content: doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), publish: true });
+  await languageTranslationsDone();
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("[de] Pay by card");
+  expect(after.behind.map(({ section }) => section.split("\u001f")[0])).toContain("Billing");
+});
+
+test("Keep up to date on over the team's text: their sections stay theirs until English changes in them, and the version is kept up to date", async () => {
+  await manualVersion();
+  const read = await call(getTranslation, as(), de);
+  // Turned on: translated again; English hasn't changed, so every section the team wrote stays.
+  model.otherwise(reply(V1, "de"), "Install it");
+  expect(await call(keepTranslationUpToDate, as(), { ...de, keepUpToDate: true, version: read.version })).toMatchObject({ keepUpToDate: true });
+  await languageTranslationsDone();
+  expect(text((await call(getTranslation, as(), de)).content)).toContain("Unsere Zahlung");
+  // English changes Billing: that section takes the new translation, the team's others stay.
+  await republish(doc("Intro", ["Setup", "Install it"], ["Billing", "Pay by card or invoice"]), "de2");
+  const after = await call(getTranslation, as(), de);
+  expect(text(after.content)).toContain("[de2] Pay by card or invoice");
+  expect(text(after.content)).toContain("Unsere Installation");
+  expect(text(after.content)).not.toContain("Unsere Zahlung");
+});
+
+test("Keep up to date from an older read is refused: a teammate's newer text isn't handed to the translator unseen", async () => {
+  await translated();
+  const read = await call(getTranslation, as(), de);
+  await editBilling();
+  const error = await call(keepTranslationUpToDate, as(), { ...de, keepUpToDate: false, version: read.version }).then(
+    () => null,
+    (thrown: unknown) => thrown as { code: string },
+  );
+  expect(error?.code).toBe("changed");
 });

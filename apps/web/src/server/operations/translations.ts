@@ -6,6 +6,7 @@ import {
   type Draft,
   editedSections,
   metaOf,
+  ownedByTeam,
   lostAfterMs,
   otherReasons,
   queueVersion,
@@ -475,3 +476,56 @@ export const updateTranslationSections = defineOperation({
 
 /** Queues the translate job for a version (with its safety net: queuing that fails is tried again by the retry job). */
 const queueTranslation = ({ articleId, language }: { articleId: string; language: string }) => queueVersion(articleId, language);
+
+export const keepTranslationUpToDate = defineOperation({
+  name: "articles.keepTranslationUpToDate",
+  title: "Keep a translation up to date",
+  summary:
+    "Turn Keep up to date on for an article's version in another language (it's translated again; the team's sections stay theirs until English changes in them) or off (the team writes it).",
+  method: "POST",
+  path: "/articles/{slug}/languages/{language}/keep-up-to-date",
+  scope: "write",
+  access: "team",
+  errors: [409],
+  input: z.object({
+    slug: articleSlug,
+    language,
+    keepUpToDate: z.boolean().describe("On: translated again, now and whenever English changes. Off: the team writes it").meta({ examples: [true] }),
+    version: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe("The `version` of the read it was turned from: refused (409 `changed`) if it changed since, so a teammate's newer text isn't handed to the translator unseen")
+      .meta({ examples: ["5f2c9a…"] }),
+  }),
+  output: translationOutput,
+  run: async ({ projectId }, input) => {
+    let queued: { articleId: string; language: string } | null = null;
+    const result = await withVersion(projectId, input.slug, input.language, async (tx, version, articleId) => {
+      const source = await sourceOf(tx, articleId);
+      const { parts, sourceLanguage } = source;
+      if (versionToken(version, source.sourceHash) !== input.version) {
+        throw new OperationError(409, "changed", "It changed since you opened it (translated again, or saved by someone else). Reload it to see the changes.");
+      }
+      if (version.automatic === input.keepUpToDate) {
+        return output(version, source);
+      }
+      const { published, draft, drafted } = versionParts(version, parts);
+      // On: the team's sections are their edits now, as on any version kept up to date (theirs until English changes in
+      // them); translated again, nothing reused. Off: the team writes every section.
+      const data = input.keepUpToDate
+        ? {
+            automatic: true,
+            sections: metaOf(ownedByTeam(published)) as Prisma.InputJsonValue,
+            ...(draft && drafted && { draft: { ...draft, sections: metaOf(ownedByTeam(drafted)) } as Prisma.InputJsonValue }),
+            retranslate: { increment: 1 },
+          }
+        : { automatic: false };
+      const saved = await tx.articleTranslation.update({ where: { id: version.id }, data, select: versionSelect });
+      if (input.keepUpToDate) queued = { articleId, language: input.language };
+      return output(saved, { parts, sourceLanguage, sourceHash: source.sourceHash });
+    });
+    if (queued) await queueTranslation(queued);
+    return result;
+  },
+});
