@@ -531,6 +531,9 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await expect(reader.locator("html")).toHaveAttribute("lang", "de");
   await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
   await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).toBeVisible();
+  // The default heading is the portal's words: the page's language, no lang of its own.
+  await expect(reader.getByRole("heading", { level: 1 })).not.toHaveAttribute("lang");
+  await expect(reader.getByText("Anleitungen und Antworten auf häufige Fragen.")).not.toHaveAttribute("lang");
   const collections = reader.getByRole("list", { name: "Sammlungen" });
   await expect(collections.getByRole("link", { name: /Basics/ })).toContainText("2 Artikel");
   await expect(collections.getByRole("heading", { name: "Basics" }).locator("[lang=en]")).toHaveText("Basics");
@@ -585,6 +588,12 @@ test("the docs in German: the home, search (box, dialog and page), a collection,
   await reader.goto("/de/docs");
   await expect(reader.getByRole("heading", { level: 1, name: "Wie können wir helfen?" })).toBeVisible();
   await checkpoint(reader, "docs-home-in-german-phone", { fullPage: false });
+
+  // The team's own heading (Customize → Docs home) is the team's words: in the project's language.
+  await api("/branding", { docsHome: { title: "Acme Help", subtitle: "Answers for Acme customers." } }, "PATCH");
+  await reader.goto("/de/docs");
+  await expect(reader.getByRole("heading", { level: 1, name: "Acme Help" })).toHaveAttribute("lang", "en");
+  await expect(reader.getByText("Answers for Acme customers.")).toHaveAttribute("lang", "en");
 
   // The home's box in French, whose "Demander à l’IA" is wider than "Ask AI": the button leaves the box's words and its
   // shortcut uncovered, on desktop and on a phone.
