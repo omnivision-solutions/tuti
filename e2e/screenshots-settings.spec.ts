@@ -248,6 +248,19 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     await owner.reload();
     await expect(identity).toBeVisible();
     await expect(token).toBeVisible();
+
+    // A save with another address that's refused (no password) leaves what's removed alone for the next one.
+    await token.click();
+    await appAddress.fill(new URL("plain", base).href);
+    await save.click();
+    await expect(owner.getByText("Enter the password again: the app's address changed")).toBeVisible();
+    await appAddress.fill(base);
+    await save.click();
+    await expect(save).toBeDisabled();
+    await owner.reload();
+    await expect(identity).toBeVisible();
+    await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
+    await expect(token).toBeHidden();
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }

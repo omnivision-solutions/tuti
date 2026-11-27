@@ -214,7 +214,12 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
   if (settings.signInServicesFor !== scannedFor(settings.appUrl) && settings.signInServicesFor !== partlyScannedFor(settings.appUrl)) {
     // A claim of its own (no read the page started is claimed at this instant): it leaves the page's read's alone.
     await scanSignInServices({ projectId: run.projectId, appUrl: settings.appUrl, claimedAt: new Date().toISOString() }).catch((error: unknown) => log.warn("Reading an app's sign-in hosts before a screenshot run failed", { projectId: run.projectId, error }));
-    settings = (await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId } })) ?? settings;
+    // Read again after it (seconds): settings removed meanwhile end the run, never run on with what they held.
+    const read = await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId } });
+    if (!read?.appUrl) {
+      return finish(runId, SCREENSHOT_ERRORS.noSettings);
+    }
+    settings = read;
   }
   if (await aiPaused(run.projectId)) {
     return finish(runId, SCREENSHOT_ERRORS.credits);

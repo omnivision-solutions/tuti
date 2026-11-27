@@ -202,17 +202,19 @@ async function get(url: URL, max: number, signal: AbortSignal, budget = { left: 
   return null;
 }
 
+const siteOf = (url: URL) => getDomain(url.hostname, { allowPrivateDomains: true }) ?? url.hostname;
+
 /**
  * The scripts a page loads (and preloads), on the app's own site (`app`, the address asked for: a redirect elsewhere
  * doesn't make that site's scripts the app's).
  */
 export function scriptsOf(page: { url: URL; text: string }, app: URL = page.url): URL[] {
-  const site = getDomain(app.hostname, { allowPrivateDomains: true }) ?? app.hostname;
+  const site = siteOf(app);
   const sources = [
     ...page.text.matchAll(/<script\b[^>]{0,2000}?\bsrc\s{0,20}=\s{0,20}["']([^"']{1,2000})["']/gi),
     ...page.text.matchAll(/<link\b[^>]{0,2000}?\bhref\s{0,20}=\s{0,20}["']([^"']{1,2000}?\.m?js(?:\?[^"']{0,2000})?)["']/gi),
   ].map(([, src]) => URL.canParse(src!, page.url) && new URL(src!, page.url));
-  const own = sources.filter((url): url is URL => !!url && (url.hostname === app.hostname || getDomain(url.hostname, { allowPrivateDomains: true }) === site));
+  const own = sources.filter((url): url is URL => !!url && (url.hostname === app.hostname || siteOf(url) === site));
   return [...new Map(own.map((url) => [url.href, url])).values()];
 }
 
@@ -270,8 +272,10 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     if (!page) {
       return null;
     }
-    // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
-    const queue = scriptsOf(page, url).slice(0, MAX_SCRIPTS);
+    // The app's own scripts only: none from a page a redirect took to another site, and (below) none whose read ended
+    // on another. Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
+    const site = siteOf(url);
+    const queue = siteOf(page.url) === site ? scriptsOf(page, url).slice(0, MAX_SCRIPTS) : [];
     // The page's text and inline data can be its users': only services' own hosts from it, tenants' from the scripts.
     const found = [findIn(page.text, false)];
     let complete = true;
@@ -281,7 +285,7 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
         while (budget.left > 0 && queue.length > 0) {
           const read = await get(queue.shift()!, SCRIPT_BYTES, signal, budget).catch(() => null);
           complete &&= !!read;
-          found.push(read ? findIn(read.text) : []);
+          found.push(read ? findIn(read.text, siteOf(read.url) === site) : []);
         }
       }),
     );

@@ -45,6 +45,11 @@ beforeAll(async () => {
     } else if (request.url === "/elsewhere") {
       // To another site (this machine by another name), whose own script names a tenant.
       response.writeHead(302, { location: `http://localhost:${(server.address() as AddressInfo).port}/tenant` }).end();
+    } else if (request.url === "/hop") {
+      // A script of the app's own site that redirects to another site's.
+      response.writeHead(200, { "content-type": "text/html" }).end('<html><script src="/assets/hop.js"></script></html>');
+    } else if (request.url === "/assets/hop.js") {
+      response.writeHead(302, { location: `http://localhost:${(server.address() as AddressInfo).port}/assets/tenant.js` }).end();
     } else if (request.url === "/tenant") {
       response.writeHead(200, { "content-type": "text/html" }).end('<html><script src="/assets/tenant.js"></script></html>');
     } else if (request.url === "/assets/tenant.js") {
@@ -265,6 +270,9 @@ test("an address that redirects to another site: that site's scripts aren't the 
   await settle({ appUrl: `${base}/elsewhere` });
   expect(await suggestions()).toEqual([]);
   expect(requests).not.toContain("/assets/tenant.js");
+  // A script of its own that redirects to another site's: only a service's own hosts from it, never a tenant's.
+  await settle({ appUrl: `${base}/hop` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
 test("settings without an app address suggest nothing", async () => {

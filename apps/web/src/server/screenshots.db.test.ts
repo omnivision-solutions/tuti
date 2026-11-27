@@ -850,6 +850,22 @@ test("a run before the app was read for its sign-in's hosts reads it first, so i
   }
 });
 
+test("settings removed while a run reads the app end the run: it never goes on with what they held", async () => {
+  const app = createServer((request, response) => {
+    // Removed while the page is read.
+    void prisma.screenshotSettings.deleteMany({ where: { projectId: project.id } }).then(() => response.end("<html></html>"));
+  });
+  await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
+  try {
+    await setUp({ appUrl: `http://localhost:${(app.address() as AddressInfo).port}/` });
+    const runs = browserUse.runs.length;
+    expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "failed" });
+    expect(browserUse.runs).toHaveLength(runs);
+  } finally {
+    app.close();
+  }
+});
+
 const profileOf = (run = browserUse.runs.at(-1)!) => (run.body.browserSettings as { profileId?: string }).profileId;
 
 test("runs reuse one browser profile per project, so the agent stays signed in; a Test signs in afresh and keeps its profile for runs", async () => {

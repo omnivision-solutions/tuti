@@ -269,15 +269,16 @@ function DomainField({ settings, signIn, found, checking, saves }: { settings: S
   // saved matches what the field starts again with (it's keyed on the address).
   useEffect(() => {
     const form = skippedField.current?.form;
+    // Set on every submit, so one refused (another address, no password) leaves the next with the list again.
     const clear = () => {
       const address = form?.elements.namedItem("appUrl");
-      if (address instanceof HTMLInputElement && address.value.trim() !== (settings.appUrl ?? "") && skippedField.current) {
-        skippedField.current.value = "";
+      if (skippedField.current) {
+        skippedField.current.value = address instanceof HTMLInputElement && address.value.trim() !== (settings.appUrl ?? "") ? "" : skipped.join("\n");
       }
     };
     form?.addEventListener("submit", clear);
     return () => form?.removeEventListener("submit", clear);
-  }, [settings.appUrl]);
+  }, [settings.appUrl, skipped]);
   const auto = found.filter(({ host }) => !typed.includes(host) && !skipped.includes(host));
   const added = signIn === "password" && settings.passwordSet && typed.some((host) => !saved.includes(host) && !found.some((one) => one.host === host));
 
