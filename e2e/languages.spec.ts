@@ -1235,3 +1235,49 @@ test("the widget's panel in German at its language's address (/de/widget): its t
   await expect(visitor.getByRole("link", { name: "Anmelden" })).toHaveAttribute("href", /\/de\/sign-in$/);
   await expect(visitor.getByRole("button", { name: "Schließen" })).toBeAttached();
 });
+
+test("the widget's panel in German framed by a page: a portal reader's named greeting and Your ideas, and a failed sign-in said in German", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const post = await api("/posts", { board: "feature-requests", title: "Dark mode" });
+
+  // A reader signed in on the portal votes, and the team plans the idea.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.goto(`/feedback/feature-requests/dark-mode-${post.number}`);
+  const voted = reader.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await reader.getByRole("button", { name: /^Upvote/ }).click();
+  expect((await voted).ok()).toBe(true);
+  await api(`/posts/${post.number}`, { status: "planned" }, "PATCH");
+
+  // A page of the portal's site framing the German panel, which says it signs nobody in: Home shows the portal's reader.
+  const framing = (message: string) => (route: import("@playwright/test").Route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<iframe title="Panel" src="/de/widget" style="width:400px;height:700px"></iframe>
+        <script>addEventListener("message", (event) => event.data?.type === "tuti:ready" && event.source.postMessage(${message}, "*"));</script>`,
+    });
+  await reader.route(`${portalUrl(slug)}/our-app`, framing(`{ type: "tuti:identify", token: null }`));
+  await reader.goto("/our-app");
+  const panel = reader.frameLocator('iframe[title="Panel"]');
+  await expect(panel.getByText("Hallo Rita 👋")).toBeVisible();
+  const ideaNews = panel.getByRole("region", { name: "Deine Ideen" }).getByRole("link", { name: /Dark mode ist jetzt Geplant/ });
+  await expect(ideaNews).toHaveAttribute("href", `/de/feedback/feature-requests/dark-mode-${post.number}`);
+  // The idea's title is its people's words, in the default language.
+  await expect(ideaNews.locator("[lang=en]")).toHaveText("Dark mode");
+
+  // A page that sends a sign-in token whose exchange fails (offline, the server): the panel says so in German.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.route(`${portalUrl(slug)}/our-app`, framing(`{ type: "tuti:identify", token: "e2e-token" }`));
+  await visitor.route(
+    (url) => url.pathname === "/de/widget",
+    (route) => (route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.continue()),
+  );
+  await visitor.goto("/our-app");
+  const visitorPanel = visitor.frameLocator('iframe[title="Panel"]');
+  await visitorPanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(visitorPanel.getByText("Anmeldung fehlgeschlagen")).toBeVisible();
+  await expect(visitorPanel.getByText("sign-in-failed")).toHaveCount(0);
+});
